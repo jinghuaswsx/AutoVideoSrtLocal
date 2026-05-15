@@ -180,10 +180,7 @@ class PipelineRunner:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
 
     def _set_step(self, task_id: str, step: str, status: str, message: str = "", *, model_tag: str = "") -> None:
-        task_state.set_step(task_id, step, status)
-        task_state.set_step_message(task_id, step, message)
-        if model_tag:
-            task_state.set_step_model_tag(task_id, step, model_tag)
+        task_state.set_step_state(task_id, step, status, message, model_tag=model_tag)
         payload = {"step": step, "status": status, "message": message}
         existing_tag = model_tag or (task_state.get(task_id) or {}).get("step_model_tags", {}).get(step, "")
         if existing_tag:
@@ -200,6 +197,31 @@ class PipelineRunner:
         if existing_tag:
             payload["model_tag"] = existing_tag
         self._emit(task_id, EVT_STEP_UPDATE, payload)
+
+    def _reconcile_completed_pipeline_steps(self, task_id: str, step_names: tuple[str, ...] | list[str]) -> None:
+        task = task_state.get(task_id) or {}
+        steps = dict(task.get("steps") or {})
+        step_messages = dict(task.get("step_messages") or {})
+        changed = False
+        for step_name in step_names:
+            if steps.get(step_name) in {"pending", "queued", "running"}:
+                steps[step_name] = "done"
+                step_messages.setdefault(step_name, "")
+                changed = True
+        if changed:
+            task_state.update(task_id, steps=steps, step_messages=step_messages)
+
+    def _step_names_for_completion_reconcile(
+        self,
+        task_id: str,
+        video_path: str = "",
+        task_dir: str = "",
+    ) -> tuple[str, ...]:
+        try:
+            return tuple(name for name, _fn in self._get_pipeline_steps(task_id, video_path, task_dir))
+        except Exception:
+            log.warning("[task %s] failed to resolve step names for completion reconcile", task_id, exc_info=True)
+            return _ALL_STEP_NAMES
 
     def _get_localization_module(self, task: dict):
         del task
@@ -2101,7 +2123,10 @@ class PipelineRunner:
                     task_state.update(task_id, _failure_count=0)
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
-                if current.get("status") in {"failed", "error", "done"}:
+                if current.get("status") == "done":
+                    self._reconcile_completed_pipeline_steps(task_id, step_names)
+                    return
+                if current.get("status") in {"failed", "error"}:
                     return
         except OperationCancelled as exc:
             current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
@@ -2336,6 +2361,10 @@ class PipelineRunner:
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
         self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
+        self._reconcile_completed_pipeline_steps(
+            task_id,
+            self._step_names_for_completion_reconcile(task_id, video_path, task_dir),
+        )
         self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {variant: exports}})
         _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
         return result
@@ -3793,6 +3822,10 @@ class PipelineRunner:
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact(manifest_text, archive_url=archive_url))
         self._set_step(task_id, "export", "done", "CapCut 项目已导出")
+        self._reconcile_completed_pipeline_steps(
+            task_id,
+            self._step_names_for_completion_reconcile(task_id, video_path, task_dir),
+        )
         self._emit(task_id, EVT_CAPCUT_READY, {"variants": [variant]})
         self._emit(task_id, EVT_PIPELINE_DONE, {
             "task_id": task_id,
