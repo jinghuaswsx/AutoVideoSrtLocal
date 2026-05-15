@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from flask import Flask, render_template
+
 
 def test_multi_and_ja_detail_templates_extend_shared_shell():
     root = Path(__file__).resolve().parents[1]
@@ -198,13 +200,28 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "+10%" in separation
     assert "+100%" in separation
     assert "loudnessStepStatus" in separation
-    assert 'state.steps.loudness_match' in separation
+    assert "state.steps.get('loudness_match', '')" in separation
     assert 'task.steps.loudness_match' in separation
     assert 'loudnessStepStatus === "running"' in separation
     assert "escapeHtml(sep.model" in separation
     assert "escapeHtml(sep.api_url" in separation
     assert "escapeHtml(sep.error" in separation
     assert 'hasOwnProperty.call(task, "separation")' in separation
+
+
+def test_separation_card_renders_when_loudness_step_is_missing():
+    root = Path(__file__).resolve().parents[1]
+    app = Flask(__name__, template_folder=str(root / "web" / "templates"))
+
+    with app.app_context():
+        html = render_template(
+            "_separation_card.html",
+            project={"id": "task-without-loudness"},
+            api_base="/api/omni-translate",
+            state={"steps": {"extract": "done"}},
+        )
+
+    assert 'var loudnessStepStatus = "";' in html
 
 
 def test_tts_generation_summary_is_rendered_in_duration_log():

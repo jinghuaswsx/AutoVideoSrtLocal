@@ -22,7 +22,7 @@
   var separation = {{ sep|tojson }} || null;
   var selectedLoudnessProfile = {{ (state.loudness_profile or 'standard')|tojson }};
   var selectedManualBoostPct = Number({{ (state.loudness_manual_boost_pct or 50)|tojson }}) || 50;
-  var loudnessStepStatus = {{ (state.steps.loudness_match if state.steps else '')|tojson }};
+  var loudnessStepStatus = {{ (state.steps.get('loudness_match', '') if state.steps else '')|tojson }};
   var loudnessProfileSaving = false;
 
   var STATUS_LABEL_ZH = {
