@@ -81,6 +81,11 @@ def _normalize_item(ref: dict, file_payload: dict) -> dict:
             model=file_payload.get("model") or ref.get("model"),
             messages=messages,
         )
+    response_payload = file_payload.get("response_payload")
+    response_error = file_payload.get("response_error")
+    success = file_payload.get("success")
+    if success is None:
+        success = response_payload is not None and response_error is None
     item = {
         "id": ref.get("id") or ref.get("path") or file_payload.get("phase") or "",
         "label": ref.get("label") or file_payload.get("label") or file_payload.get("phase") or "LLM 调用",
@@ -96,6 +101,9 @@ def _normalize_item(ref: dict, file_payload: dict) -> dict:
         "messages": messages,
         "request_payload": request_payload,
         "input_snapshot": file_payload.get("input_snapshot") or [],
+        "response_payload": response_payload,
+        "response_error": response_error,
+        "success": success,
         "raw_payload": file_payload,
         "message_stats": _message_stats(messages),
     }

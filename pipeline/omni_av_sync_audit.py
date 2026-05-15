@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -611,6 +612,29 @@ def _save_debug_payload(
     })
 
 
+def _append_debug_response(task_dir: str, phase: str, *, response_payload: dict | None = None, error: str | None = None) -> None:
+    filename = f"av_sync_audit.{phase}.json"
+    filepath = os.path.join(task_dir, filename)
+    try:
+        with open(filepath, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception:
+        return
+    if not isinstance(payload, dict):
+        return
+    if response_payload is not None:
+        payload["response_payload"] = response_payload
+        payload["success"] = True
+    if error is not None:
+        payload["response_error"] = error
+        payload["success"] = False
+    try:
+        with open(filepath, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 def _reset_step_debug_refs(task_id: str, step: str = "av_sync_audit") -> None:
     task = task_state.get(task_id) or {}
     all_refs = dict(task.get("llm_debug_refs") or {})
@@ -694,7 +718,12 @@ def _call_video_understand(
             temperature=0.1,
             max_output_tokens=1800,
         )
+        resp_preview = {"text": str(result.get("text") or "")[:4000]}
+        if result.get("usage"):
+            resp_preview["usage"] = {k: str(v) for k, v in result["usage"].items()}
+        _append_debug_response(task_dir, "understand", response_payload=resp_preview)
     except Exception as exc:  # noqa: BLE001 - keep program audit usable if video understanding fails
+        _append_debug_response(task_dir, "understand", error=str(exc)[:500])
         return {"summary": "", "error": str(exc)[:500]}
     finally:
         cleanup_optimized_media(media_input)
@@ -794,7 +823,16 @@ def _call_sync_assess(
             provider_override=provider,
             model_override=model,
         )
+        resp_preview = {}
+        if result.get("text"):
+            resp_preview["text"] = str(result["text"])[:8000]
+        if result.get("json"):
+            resp_preview["json"] = result["json"]
+        if result.get("usage"):
+            resp_preview["usage"] = {k: str(v) for k, v in result["usage"].items()}
+        _append_debug_response(task_dir, "assess", response_payload=resp_preview)
     except Exception as exc:  # noqa: BLE001 - keep deterministic timing candidates visible
+        _append_debug_response(task_dir, "assess", error=str(exc)[:500])
         if _is_report_only_scorecard(cfg):
             raise
         if _is_multi_translate_report(cfg):
@@ -903,15 +941,27 @@ def _call_verify(
             },
         ],
     )
-    result = llm_client.invoke_chat(
-        use_case_code,
-        messages=messages,
-        user_id=getattr(runner, "user_id", None),
-        project_id=task_id,
-        temperature=0.1,
-        max_tokens=4096,
-        response_format=response_format,
-    )
+    try:
+        result = llm_client.invoke_chat(
+            use_case_code,
+            messages=messages,
+            user_id=getattr(runner, "user_id", None),
+            project_id=task_id,
+            temperature=0.1,
+            max_tokens=4096,
+            response_format=response_format,
+        )
+        resp_preview = {}
+        if result.get("text"):
+            resp_preview["text"] = str(result["text"])[:8000]
+        if result.get("json"):
+            resp_preview["json"] = result["json"]
+        if result.get("usage"):
+            resp_preview["usage"] = {k: str(v) for k, v in result["usage"].items()}
+        _append_debug_response(task_dir, "verify", response_payload=resp_preview)
+    except Exception as exc:
+        _append_debug_response(task_dir, "verify", error=str(exc)[:500])
+        raise
     return _json_from_result(result, {"accepted_issues": [], "rejected_count": 0, "summary": ""})
 
 

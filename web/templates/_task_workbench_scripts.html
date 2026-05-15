@@ -2448,6 +2448,7 @@
 
   let _promptInspectorPayload = null;
   let _promptInspectorActiveIndex = 0;
+  let _promptInspectorActiveSubTab = 0;
 
   function closePromptInspector() {
     const overlay = document.getElementById('promptInspectorModal');
@@ -2468,7 +2469,8 @@
       if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
       _promptInspectorPayload = payload;
       _promptInspectorActiveIndex = Math.max(0, (payload.items || []).length - 1);
-      bodyEl.innerHTML = renderPromptInspectorPayload(payload, _promptInspectorActiveIndex);
+      _promptInspectorActiveSubTab = 0;
+      bodyEl.innerHTML = renderPromptInspectorPayload(payload, _promptInspectorActiveIndex, 0);
     } catch (err) {
       bodyEl.innerHTML = `<div class="prompt-inspector-error">加载失败：${escapeHtml(err && err.message || String(err))}</div>`;
     }
@@ -2477,9 +2479,19 @@
   function switchPromptInspectorItem(index) {
     if (!_promptInspectorPayload) return;
     _promptInspectorActiveIndex = index;
+    _promptInspectorActiveSubTab = 0;
     const bodyEl = document.getElementById('promptInspectorBody');
     if (bodyEl) {
-      bodyEl.innerHTML = renderPromptInspectorPayload(_promptInspectorPayload, index);
+      bodyEl.innerHTML = renderPromptInspectorPayload(_promptInspectorPayload, index, 0);
+    }
+  }
+
+  function switchPromptInspectorSubTab(subIndex) {
+    if (!_promptInspectorPayload) return;
+    _promptInspectorActiveSubTab = subIndex;
+    const bodyEl = document.getElementById('promptInspectorBody');
+    if (bodyEl) {
+      bodyEl.innerHTML = renderPromptInspectorPayload(_promptInspectorPayload, _promptInspectorActiveIndex, subIndex);
     }
   }
 
@@ -2500,7 +2512,7 @@
     return `decodeURIComponent('${escapeJs(encodeURIComponent(text || ''))}')`;
   }
 
-  function renderPromptInspectorPayload(payload, activeIndex = 0) {
+  function renderPromptInspectorPayload(payload, activeIndex = 0, subTabIndex = 0) {
     const items = Array.isArray(payload?.items) ? payload.items : [];
     if (!items.length) return '<div class="prompt-inspector-empty">没有可展示的提示词记录</div>';
     const active = items[Math.min(Math.max(0, activeIndex), items.length - 1)] || items[0];
@@ -2512,6 +2524,8 @@
         ${escapeHtml(item.label || `调用 ${idx + 1}`)}
       </button>
     `).join('');
+
+    // --- 请求子标签内容 ---
     const messages = Array.isArray(active.messages) ? active.messages : [];
     const msgHtml = messages.length ? messages.map((msg, idx) => {
       const content = _promptText(msg && msg.content);
@@ -2562,6 +2576,122 @@
       </div>
     ` : '';
 
+    const requestHtml = `
+      <div class="prompt-inspector-grid">
+        <div>
+          <div class="prompt-inspector-panel">
+            <div class="prompt-inspector-panel-head">
+              <div class="prompt-inspector-panel-title">消息可视化</div>
+            </div>
+            <div class="prompt-message-list">${msgHtml}</div>
+          </div>
+          ${inputHtml}
+        </div>
+        <div class="prompt-inspector-panel">
+          <div class="prompt-inspector-panel-head">
+            <div class="prompt-inspector-panel-title">请求报文</div>
+          </div>
+          <div class="prompt-request-kv">${kvRows}</div>
+          <pre class="prompt-request-pre">${escapeHtml(JSON.stringify(requestPayload, null, 2))}</pre>
+        </div>
+      </div>
+    `;
+
+    // --- 结果子标签内容 ---
+    const responsePayload = active.response_payload;
+    const responseError = active.response_error;
+    const callSuccess = active.success === true;
+    const callFailed = active.success === false;
+    const hasResponse = responsePayload || responseError;
+
+    let resultHtml = '';
+    if (!hasResponse) {
+      resultHtml = '<div class="prompt-inspector-empty">该调用尚未记录响应数据（旧任务可能缺少此信息，重跑任务后即可捕获）</div>';
+    } else if (callFailed) {
+      resultHtml = `
+        <div class="prompt-inspector-panel">
+          <div class="prompt-inspector-panel-head">
+            <div class="prompt-inspector-panel-title">
+              <span class="prompt-result-badge prompt-result-badge--fail">调用失败</span>
+            </div>
+          </div>
+          <div class="prompt-message-list">
+            <div class="prompt-message-card">
+              <div class="prompt-message-head">
+                <span class="prompt-message-meta">错误信息</span>
+                <button type="button" class="prompt-inspector-copy"
+                        onclick="copyPromptInspectorText(${_copyArg(responseError || '')})">复制</button>
+              </div>
+              <pre class="prompt-message-pre prompt-result-error">${escapeHtml(responseError || '未知错误')}</pre>
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (callSuccess && responsePayload) {
+      const respText = responsePayload.text || '';
+      const respJson = responsePayload.json;
+      const respUsage = responsePayload.usage;
+      let respParts = '';
+      if (respText) {
+        respParts += `
+          <div class="prompt-message-card">
+            <div class="prompt-message-head">
+              <span class="prompt-message-meta">响应文本</span>
+              <button type="button" class="prompt-inspector-copy"
+                      onclick="copyPromptInspectorText(${_copyArg(respText)})">复制</button>
+            </div>
+            <pre class="prompt-message-pre">${escapeHtml(respText)}</pre>
+          </div>
+        `;
+      }
+      if (respJson) {
+        respParts += `
+          <div class="prompt-message-card">
+            <div class="prompt-message-head">
+              <span class="prompt-message-meta">结构化 JSON</span>
+              <button type="button" class="prompt-inspector-copy"
+                      onclick="copyPromptInspectorText(${_copyArg(JSON.stringify(respJson, null, 2))})">复制</button>
+            </div>
+            <pre class="prompt-message-pre">${escapeHtml(JSON.stringify(respJson, null, 2))}</pre>
+          </div>
+        `;
+      }
+      let usageHtml = '';
+      if (respUsage) {
+        usageHtml = `
+          <div class="prompt-inspector-panel" style="margin-top: var(--space-4);">
+            <div class="prompt-inspector-panel-head">
+              <div class="prompt-inspector-panel-title">用量信息</div>
+            </div>
+            <div class="prompt-request-kv">
+              ${Object.entries(respUsage).map(([k, v]) => `<div>${escapeHtml(k)}</div><div>${escapeHtml(String(v))}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+      resultHtml = `
+        <div class="prompt-inspector-panel">
+          <div class="prompt-inspector-panel-head">
+            <div class="prompt-inspector-panel-title">
+              <span class="prompt-result-badge prompt-result-badge--ok">调用成功</span>
+            </div>
+          </div>
+          <div class="prompt-message-list">${respParts}</div>
+          ${usageHtml}
+        </div>
+      `;
+    }
+
+    // --- 顶部子标签 ---
+    const subTabsHtml = `
+      <div class="prompt-inspector-subtabs">
+        <button type="button" class="prompt-inspector-subtab ${subTabIndex === 0 ? 'active' : ''}"
+                onclick="switchPromptInspectorSubTab(0)">请求</button>
+        <button type="button" class="prompt-inspector-subtab ${subTabIndex === 1 ? 'active' : ''}"
+                onclick="switchPromptInspectorSubTab(1)">结果</button>
+      </div>
+    `;
+
     return `
       <div class="prompt-inspector-summary">
         <div class="prompt-inspector-stat">
@@ -2582,24 +2712,8 @@
         </div>
       </div>
       ${items.length > 1 ? `<div class="prompt-inspector-tabs">${tabs}</div>` : ''}
-      <div class="prompt-inspector-grid">
-        <div>
-          <div class="prompt-inspector-panel">
-            <div class="prompt-inspector-panel-head">
-              <div class="prompt-inspector-panel-title">消息可视化</div>
-            </div>
-            <div class="prompt-message-list">${msgHtml}</div>
-          </div>
-          ${inputHtml}
-        </div>
-        <div class="prompt-inspector-panel">
-          <div class="prompt-inspector-panel-head">
-            <div class="prompt-inspector-panel-title">请求报文</div>
-          </div>
-          <div class="prompt-request-kv">${kvRows}</div>
-          <pre class="prompt-request-pre">${escapeHtml(JSON.stringify(requestPayload, null, 2))}</pre>
-        </div>
-      </div>
+      ${subTabsHtml}
+      ${subTabIndex === 0 ? requestHtml : resultHtml}
     `;
   }
 

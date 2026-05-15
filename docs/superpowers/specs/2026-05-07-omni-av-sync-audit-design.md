@@ -309,3 +309,15 @@ pytest tests/test_omni_av_sync_audit.py -q
 5. 审计失败不阻塞任务继续合成。
 6. 自动修正不会改原视频画面、不会扩大 TTS speed 范围。
 7. 聚焦测试通过。
+
+## 2026-05-15 补丁：LLM 响应捕获与提示词检查器子标签
+
+调试音画同步审计步骤时，原提示词检查器（Prompt Inspector）只展示 LLM 请求侧数据（messages、request_payload、input_snapshot），不展示 LLM 返回了什么、是否成功。本次补丁：
+
+1. **响应持久化**：`_append_debug_response()` 在每次 LLM 调用后将 `response_payload`（text/json/usage）或 `response_error` 追加到同一 debug JSON 文件。
+2. **API 透传**：`build_llm_debug_payload` 在 `_normalize_item` 中提取 `response_payload`、`response_error`、`success` 三个字段。
+3. **前端子标签**：提示词检查器每个调用 Tab 下新增"请求"/"结果"两个子标签：
+   - 请求：消息可视化 + 输入快照 + 请求报文（原内容）
+   - 结果：成功/失败徽章 + 响应文本/JSON + 用量信息 + 错误详情
+
+受影响的 LLM 调用点限于 `pipeline/omni_av_sync_audit.py` 的三次调用（understand/assess/verify）。旧任务重跑后即可在提示词检查器中看到响应数据，未重跑的旧任务结果子标签会提示"尚未记录响应数据"。
