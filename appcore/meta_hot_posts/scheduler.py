@@ -45,6 +45,7 @@ SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
 FULL_SYNC_MAX_PAGES = 120
 SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 10
 SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS = 30
+SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS = 3
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -805,18 +806,73 @@ def _video_analysis_queue_summary(queued_us: int) -> dict[str, int]:
         "scanned": 0,
         "done": 0,
         "failed": 0,
+        "suspended": 0,
+        "rate_limited_requeued": 0,
         "us_copyability_scanned": 0,
         "us_copyability_done": 0,
         "us_copyability_failed": 0,
+        "us_copyability_suspended": 0,
+        "us_copyability_rate_limited_requeued": 0,
         "europe_fit_scanned": 0,
         "europe_fit_done": 0,
         "europe_fit_failed": 0,
+        "europe_fit_suspended": 0,
+        "europe_fit_rate_limited_requeued": 0,
     }
 
 
 def _mark_video_analysis_queue_superseded(summary: dict[str, Any]) -> None:
     summary["superseded"] = True
     summary["stop_reason"] = "newer_run_started"
+
+
+def _is_rate_limited_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(
+        marker in message
+        for marker in (
+            "429",
+            "too many requests",
+            "rate limit",
+            "rate_limit",
+            "resource_exhausted",
+            "quota exceeded",
+        )
+    )
+
+
+def _attempt_number(row: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        try:
+            return int(row.get(key) or 0) + 1
+        except (TypeError, ValueError):
+            continue
+    return 1
+
+
+def _failure_status_for_attempt(exc: Exception, attempt_number: int) -> tuple[str, bool]:
+    if attempt_number >= SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS:
+        return "suspended", False
+    if _is_rate_limited_error(exc):
+        return "pending", True
+    return "failed", False
+
+
+def _record_video_analysis_failure(
+    summary: dict[str, Any],
+    *,
+    task_type: str,
+    status: str,
+    rate_limited_requeued: bool,
+) -> None:
+    summary["failed"] += 1
+    summary[f"{task_type}_failed"] += 1
+    if status == "suspended":
+        summary["suspended"] += 1
+        summary[f"{task_type}_suspended"] += 1
+    if rate_limited_requeued:
+        summary["rate_limited_requeued"] += 1
+        summary[f"{task_type}_rate_limited_requeued"] += 1
 
 
 def process_video_analysis_queue(
@@ -843,6 +899,7 @@ def process_video_analysis_queue(
         summary[f"{task_type}_scanned"] += 1
         if task_type == VIDEO_ANALYSIS_TASK_US_COPYABILITY:
             analysis_id = int(row["analysis_id"])
+            attempt_number = _attempt_number(row, "attempts")
             store.mark_video_copyability_running(analysis_id)
             if not _is_current_video_analysis_queue_run(run_id):
                 _mark_video_analysis_queue_superseded(summary)
@@ -854,13 +911,19 @@ def process_video_analysis_queue(
                     _mark_video_analysis_queue_superseded(summary)
                     break
                 log.warning("meta hot post US copyability analysis failed id=%s: %s", analysis_id, exc)
+                status_override, rate_limited_requeued = _failure_status_for_attempt(exc, attempt_number)
                 store.finish_video_copyability_analysis(
                     analysis_id,
                     result={},
                     error_message=str(exc)[:1000],
+                    status_override=status_override,
                 )
-                summary["failed"] += 1
-                summary[f"{task_type}_failed"] += 1
+                _record_video_analysis_failure(
+                    summary,
+                    task_type=task_type,
+                    status=status_override,
+                    rate_limited_requeued=rate_limited_requeued,
+                )
             else:
                 if not _is_current_video_analysis_queue_run(run_id):
                     _mark_video_analysis_queue_superseded(summary)
@@ -874,6 +937,7 @@ def process_video_analysis_queue(
                 summary[f"{task_type}_done"] += 1
         else:
             post_id = int(row["id"])
+            attempt_number = _attempt_number(row, "europe_fit_attempts", "attempts")
             store.mark_europe_fit_running(post_id)
             if not _is_current_video_analysis_queue_run(run_id):
                 _mark_video_analysis_queue_superseded(summary)
@@ -885,15 +949,20 @@ def process_video_analysis_queue(
                     _mark_video_analysis_queue_superseded(summary)
                     break
                 log.warning("meta hot post Europe fit assessment failed id=%s: %s", post_id, exc)
+                status, rate_limited_requeued = _failure_status_for_attempt(exc, attempt_number)
                 store.finish_europe_fit_assessment(
                     post_id,
-                    status="failed",
+                    status=status,
                     result={},
                     video_optimization={},
                     error_message=str(exc)[:1000],
                 )
-                summary["failed"] += 1
-                summary[f"{task_type}_failed"] += 1
+                _record_video_analysis_failure(
+                    summary,
+                    task_type=task_type,
+                    status=status,
+                    rate_limited_requeued=rate_limited_requeued,
+                )
             else:
                 if not _is_current_video_analysis_queue_run(run_id):
                     _mark_video_analysis_queue_superseded(summary)

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS meta_hot_post_video_copyability_analyses (
   product_url VARCHAR(2048) NOT NULL,
   local_video_path VARCHAR(2048) NOT NULL,
   compressed_video_path VARCHAR(2048) NULL,
-  status ENUM('pending', 'running', 'done', 'failed') NOT NULL DEFAULT 'pending',
+  status ENUM('pending', 'running', 'done', 'failed', 'suspended') NOT NULL DEFAULT 'pending',
   attempts INT UNSIGNED NOT NULL DEFAULT 0,
   last_error MEDIUMTEXT NULL,
   overall_score DECIMAL(5, 2) NULL,

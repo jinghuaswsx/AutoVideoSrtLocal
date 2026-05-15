@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS meta_hot_post_europe_assessments (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   post_id BIGINT UNSIGNED NOT NULL,
-  status ENUM('pending', 'running', 'done', 'failed') NOT NULL DEFAULT 'pending',
+  status ENUM('pending', 'running', 'done', 'failed', 'suspended') NOT NULL DEFAULT 'pending',
   attempts INT UNSIGNED NOT NULL DEFAULT 0,
   last_error MEDIUMTEXT NULL,
   suitability_score DECIMAL(6, 2) NULL,

@@ -112,16 +112,12 @@ def _text_providers(alias_order: tuple[str, ...], *, openrouter_extra: bool = Fa
             "label": "GOOGLE VERTEX",
             "models": _gemini_text_models(alias_order),
         },
-        "gemini_vertex_adc": {
-            "label": "GOOGLE VERTEX ADC",
-            "models": _gemini_text_models(alias_order),
-        },
     }
 
 TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
     "video_analysis": {
         "label": "视频分析",
-        "default_provider": "gemini_vertex_adc",
+        "default_provider": "gemini_aistudio",
         "providers": _text_providers(("gemini_31_pro", "gemini_3_flash", "gemini_31_flash_lite")),
     },
     "product_analysis": {
@@ -145,7 +141,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
     "providers": {
         "local": "本地接口",
         "openrouter": "OPENROUTER",
-        "gemini_vertex_adc": "GOOGLE VERTEX ADC",
+        "gemini_aistudio": "GOOGLE AI STUDIO",
         "apimart": "APIMART",
     },
     "models": {
@@ -163,7 +159,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "nano_banana_pro": "google/gemini-3-pro-image-preview",
             "nano_banana_1": "google/gemini-2.5-flash-image-preview",
         },
-        "gemini_vertex_adc": {
+        "gemini_aistudio": {
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
             "nano_banana_1": "gemini-2.5-flash-image-preview",
@@ -193,6 +189,11 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "gemini-3-pro-image-preview": "nano_banana_pro",
             "gemini-2.5-flash-image-preview": "nano_banana_1",
         },
+        "gemini_aistudio": {
+            "gemini-3.1-flash-image-preview": "nano_banana_2",
+            "gemini-3-pro-image-preview": "nano_banana_pro",
+            "gemini-2.5-flash-image-preview": "nano_banana_1",
+        },
         "apimart": {
             "gpt_image_2": "apimart_gpt_image_2",
             "gpt-image-2": "apimart_gpt_image_2",
@@ -207,12 +208,19 @@ def _first_model_alias(models: dict[str, Any]) -> str:
     return next(iter(models))
 
 
+def _normalize_retired_adc_provider(provider_key: str, providers: dict[str, Any]) -> str:
+    if provider_key == "gemini_vertex_adc" and "gemini_aistudio" in providers:
+        return "gemini_aistudio"
+    return provider_key
+
+
 def resolve_text_model_selection(step: str, provider: str | None, model: str | None) -> ModelSelection:
     config = TEXT_STEP_MODEL_OPTIONS.get(step)
     if not config:
         raise VideoCoverGenerationError(f"未知步骤：{step}")
     provider_key = (provider or config["default_provider"]).strip().lower()
     providers = config["providers"]
+    provider_key = _normalize_retired_adc_provider(provider_key, providers)
     if provider_key not in providers:
         provider_key = config["default_provider"]
     model_options = providers[provider_key]["models"]
@@ -242,6 +250,7 @@ def resolve_text_model_selection(step: str, provider: str | None, model: str | N
 
 def resolve_cover_model_selection(provider: str | None, model: str | None) -> ModelSelection:
     provider_key = (provider or COVER_MODEL_OPTIONS["default_provider"]).strip().lower()
+    provider_key = _normalize_retired_adc_provider(provider_key, COVER_MODEL_OPTIONS["providers"])
     if provider_key not in COVER_MODEL_OPTIONS["providers"]:
         provider_key = COVER_MODEL_OPTIONS["default_provider"]
     model_options = COVER_MODEL_OPTIONS["models"][provider_key]
@@ -1288,7 +1297,7 @@ def generate_cover_image(
             service="video_cover.generate",
             channel="openrouter",
         )
-    if selection.provider == "gemini_vertex_adc":
+    if selection.provider == "gemini_aistudio":
         return gemini_image.generate_image(
             prompt,
             source_image=source_image,
@@ -1297,7 +1306,7 @@ def generate_cover_image(
             user_id=user_id,
             project_id=task_id,
             service="video_cover.generate",
-            channel="cloud_adc",
+            channel="aistudio",
         )
     if selection.provider == "apimart":
         return gemini_image.generate_image(

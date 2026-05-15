@@ -650,10 +650,13 @@ def finish_video_copyability_analysis(
     *,
     result: Mapping[str, Any] | None = None,
     error_message: str | None = None,
+    status_override: str | None = None,
     execute_fn: ExecuteFn = execute,
 ) -> int:
     payload = dict(result or {})
-    status = "failed" if error_message else "done"
+    status = status_override or ("failed" if error_message else "done")
+    if status not in {"pending", "done", "failed", "suspended"}:
+        status = "failed" if error_message else "done"
     return execute_fn(
         """
         UPDATE meta_hot_post_video_copyability_analyses

@@ -131,9 +131,9 @@ def test_video_cover_analysis_use_cases_match_requested_models():
     assert product["units_type"] == "tokens"
 
     assert video["module"] == "video_cover"
-    assert video["default_provider"] == "gemini_vertex_adc"
+    assert video["default_provider"] == "gemini_aistudio"
     assert video["default_model"] == "gemini-3.1-pro-preview"
-    assert video["usage_log_service"] == "gemini_vertex_adc"
+    assert video["usage_log_service"] == "gemini_aistudio"
     assert video["units_type"] == "tokens"
 
 
@@ -188,6 +188,20 @@ def test_meta_hot_posts_video_copyability_use_case_is_registered_for_billing():
     assert uc["units_type"] == "tokens"
 
 
+def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
+    adc_defaults = {
+        code
+        for code, uc in USE_CASES.items()
+        if uc["default_provider"] == "gemini_vertex_adc"
+        or uc["usage_log_service"] == "gemini_vertex_adc"
+    }
+
+    assert adc_defaults == {
+        "meta_hot_posts.europe_fit",
+        "meta_hot_posts.video_copyability",
+    }
+
+
 def test_copywriting_translate_audit_uses_gemini_flash_lite():
     """二次审核走 OpenRouter + Gemini 3.1 Flash-Lite，便宜且足以判断符合/不符合。"""
     uc = USE_CASES["copywriting_translate.audit"]
@@ -197,12 +211,12 @@ def test_copywriting_translate_audit_uses_gemini_flash_lite():
     assert uc["units_type"] == "tokens"
 
 
-def test_material_evaluation_defaults_to_vertex_adc_gemini_pro():
+def test_material_evaluation_defaults_to_aistudio_gemini_pro():
     uc = USE_CASES["material_evaluation.evaluate"]
     assert uc["module"] == "material"
-    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_provider"] == "gemini_aistudio"
     assert uc["default_model"] == "gemini-3.1-pro-preview"
-    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["usage_log_service"] == "gemini_aistudio"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"
 

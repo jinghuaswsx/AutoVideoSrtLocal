@@ -20,7 +20,7 @@ from pipeline import video_ai_review
 
 log = logging.getLogger(__name__)
 
-CHANNEL = "gemini_vertex_adc"
+CHANNEL = "gemini_aistudio"
 MODEL = "gemini-3.1-pro-preview"
 
 

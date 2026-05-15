@@ -379,6 +379,13 @@ def test_get_channel_falls_back_on_invalid_value(monkeypatch):
     assert its.get_channel() == "aistudio"
 
 
+def test_get_channel_treats_retired_cloud_adc_as_aistudio(monkeypatch):
+    from appcore import image_translate_settings as its
+    _patch_store(monkeypatch, {"image_translate.channel": "cloud_adc"})
+    assert "cloud_adc" not in its.CHANNELS
+    assert its.get_channel() == "aistudio"
+
+
 def test_set_channel_writes_valid_value(monkeypatch):
     from appcore import image_translate_settings as its
     store = {}

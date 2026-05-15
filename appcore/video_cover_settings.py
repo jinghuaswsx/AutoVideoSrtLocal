@@ -5,8 +5,6 @@ from typing import Any
 
 from appcore import settings as system_settings
 from appcore.video_cover_generation import (
-    COVER_MODEL_OPTIONS,
-    TEXT_STEP_MODEL_OPTIONS,
     normalize_cover_execution_mode,
     resolve_cover_model_selection,
     resolve_text_model_selection,
@@ -38,11 +36,8 @@ def _steps_payload(payload: Any) -> dict:
 
 
 def _normalize_text_step(step: str, row: Any, fallback: dict[str, str]) -> dict[str, str]:
-    config = TEXT_STEP_MODEL_OPTIONS[step]
     source = row if isinstance(row, dict) else {}
     provider = str(source.get("provider") or fallback["provider"]).strip().lower()
-    if provider not in config["providers"]:
-        provider = fallback["provider"]
     model_id = str(source.get("model_id") or source.get("model") or fallback["model_id"]).strip()
     selection = resolve_text_model_selection(step, provider, model_id)
     return {"provider": selection.provider, "model_id": selection.model}
@@ -51,8 +46,6 @@ def _normalize_text_step(step: str, row: Any, fallback: dict[str, str]) -> dict[
 def _normalize_cover_step(row: Any, fallback: dict[str, str]) -> dict[str, str]:
     source = row if isinstance(row, dict) else {}
     provider = str(source.get("provider") or fallback["provider"]).strip().lower()
-    if provider not in COVER_MODEL_OPTIONS["providers"]:
-        provider = fallback["provider"]
     model_id = str(source.get("model_id") or source.get("model") or fallback["model_id"]).strip()
     selection = resolve_cover_model_selection(provider, model_id)
     execution_mode = normalize_cover_execution_mode(

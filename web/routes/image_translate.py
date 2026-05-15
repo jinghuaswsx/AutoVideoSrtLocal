@@ -55,7 +55,7 @@ _MAX_ITEMS = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _PRODUCT_NAME_MAX_LEN = 60
 _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
-_BANANA_RETRY_CHANNEL = "cloud_adc"
+_BANANA_RETRY_CHANNEL = "aistudio"
 _BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
 _BANANA_RETRY_LABEL = "banana重新生成"
 

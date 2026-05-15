@@ -1220,7 +1220,7 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]
 
 
-def test_banana_retry_item_sets_adc_override_and_deletes_old_dst(authed_client_no_db, monkeypatch):
+def test_banana_retry_item_sets_aistudio_override_and_deletes_old_dst(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     from web.services import image_translate_runner
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
@@ -1243,7 +1243,7 @@ def test_banana_retry_item_sets_adc_override_and_deletes_old_dst(authed_client_n
     assert item["dst_tos_key"] == ""
     assert item["provider_task_id"] == ""
     assert item["provider_task_submitted_at"] == 0.0
-    assert item["generation_channel_override"] == "cloud_adc"
+    assert item["generation_channel_override"] == "aistudio"
     assert item["generation_model_override"] == "gemini-3.1-flash-image-preview"
     assert item["generation_override_label"] == "banana重新生成"
     assert deleted == ["artifacts/image_translate/1/tid/out_0.png"]

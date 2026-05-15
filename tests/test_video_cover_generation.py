@@ -182,7 +182,7 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     ]
     assert analysis_calls[0]["kwargs"]["provider_override"] == "openrouter"
     assert analysis_calls[0]["kwargs"]["model_override"] == "google/gemini-3-flash-preview"
-    assert analysis_calls[1]["kwargs"]["provider_override"] == "gemini_vertex_adc"
+    assert analysis_calls[1]["kwargs"]["provider_override"] == "gemini_aistudio"
     assert analysis_calls[1]["kwargs"]["model_override"] == "gemini-3.1-pro-preview"
     assert ad_copy_calls[0]["use_case_code"] == "video_cover.ad_copy"
     assert ad_copy_calls[0]["kwargs"]["response_format"] == {"type": "json_object"}
@@ -531,9 +531,11 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
         video_cover_model_options,
     )
 
-    assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "").model == "gemini-3.1-pro-preview"
+    assert resolve_text_model_selection("video_analysis", "gemini_aistudio", "").model == "gemini-3.1-pro-preview"
     assert resolve_text_model_selection("video_analysis", "openrouter", "").model == "google/gemini-3.1-pro-preview"
+    assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").provider == "gemini_aistudio"
     assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").model == "gemini-3-flash-preview"
+    assert resolve_text_model_selection("product_analysis", "gemini_vertex_adc", "").provider == "gemini_aistudio"
     assert resolve_text_model_selection("product_analysis", "gemini_vertex_adc", "").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "").model == "google/gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
@@ -550,9 +552,12 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     openrouter_image2 = resolve_cover_model_selection("openrouter", "openai_image_2_high")
     assert openrouter_image2.provider == "openrouter"
     assert openrouter_image2.model == "openai/gpt-5.4-image-2:high"
-    vertex_adc = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
-    assert vertex_adc.provider == "gemini_vertex_adc"
-    assert vertex_adc.model == "gemini-3.1-flash-image-preview"
+    aistudio = resolve_cover_model_selection("gemini_aistudio", "nano_banana_2")
+    assert aistudio.provider == "gemini_aistudio"
+    assert aistudio.model == "gemini-3.1-flash-image-preview"
+    retired_adc = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
+    assert retired_adc.provider == "gemini_aistudio"
+    assert retired_adc.model == "gemini-3.1-flash-image-preview"
     apimart = resolve_cover_model_selection("apimart", "apimart_gpt_image_2")
     assert apimart.provider == "apimart"
     assert apimart.model == "gpt-image-2"
@@ -560,16 +565,18 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert apimart_banana.model == "gemini-3-pro-image-preview"
 
     options = video_cover_model_options()
-    assert options["steps"]["video_analysis"]["default_provider"] == "gemini_vertex_adc"
-    assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_vertex_adc"]["models"]
+    assert options["steps"]["video_analysis"]["default_provider"] == "gemini_aistudio"
+    assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
     assert "local" in options["steps"]["cover_generation"]["providers"]
-    assert options["steps"]["cover_generation"]["providers"]["gemini_vertex_adc"] == "GOOGLE VERTEX ADC"
+    assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
+    assert "gemini_vertex_adc" not in options["steps"]["video_analysis"]["providers"]
+    assert "gemini_vertex_adc" not in options["steps"]["cover_generation"]["providers"]
     assert options["steps"]["cover_generation"]["models"]["local"]["gpt_image_2"] == "gpt-image-2"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "google/gemini-3.1-flash-image-preview"
-    assert options["steps"]["cover_generation"]["models"]["gemini_vertex_adc"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["models"]["gemini_aistudio"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
     assert options["steps"]["cover_generation"]["providers"]["apimart"] == "APIMART"
     assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_gpt_image_2"] == "gpt-image-2"
     assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_2"] == "gemini-3.1-flash-image-preview"
@@ -578,7 +585,7 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "doubao" not in options["steps"]["cover_generation"]["models"]
 
 
-def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
+def test_generate_cover_image_uses_aistudio_channel(monkeypatch):
     from appcore.video_cover_generation import generate_cover_image, resolve_cover_model_selection
 
     captured = {}
@@ -594,7 +601,7 @@ def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
 
     monkeypatch.setattr("appcore.video_cover_generation.gemini_image.generate_image", fake_generate_image)
 
-    selection = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
+    selection = resolve_cover_model_selection("gemini_aistudio", "nano_banana_2")
     payload, mime = generate_cover_image(
         "make a cover",
         source_image=_png_bytes(),
@@ -606,7 +613,7 @@ def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
 
     assert payload.startswith(b"\x89PNG")
     assert mime == "image/png"
-    assert captured["kwargs"]["channel"] == "cloud_adc"
+    assert captured["kwargs"]["channel"] == "aistudio"
     assert captured["kwargs"]["model"] == "gemini-3.1-flash-image-preview"
     assert captured["kwargs"]["service"] == "video_cover.generate"
 
@@ -760,7 +767,7 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert result["ad_copy_sets"][0]["english"]["message"] == "A simple upgrade for busy mornings."
     assert result["ad_copy_sets"][0]["english"]["description"] == "Upgrade Your Routine"
     assert captured["use_case_code"] == "video_cover.ad_copy"
-    assert captured["provider_override"] == "gemini_vertex_adc"
+    assert captured["provider_override"] == "gemini_aistudio"
     assert captured["model_override"] == "gemini-3-flash-preview"
     assert captured["response_format"] == {"type": "json_object"}
     prompt = captured["messages"][1]["content"]
@@ -1029,7 +1036,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
         video_cover.video_cover_settings,
         "get_model_defaults",
         lambda: {
-            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3.1-pro-preview"},
             "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid", "execution_mode": "parallel"},
@@ -1054,7 +1061,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     assert "refreshCoverExecutionMode" in html
     assert "execution.value = 'parallel'" in html
     assert "Nano Banana 2" in html
-    assert "GOOGLE VERTEX ADC" in html
+    assert "GOOGLE AI STUDIO" in html
     assert "APIMART" in html
     assert "google/gemini-3.1-flash-image-preview" in html
     assert "gemini-3.1-flash-image-preview" in html
@@ -1109,15 +1116,15 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     })
     assert local["cover_generation"]["execution_mode"] == "serial"
 
-    vertex = video_cover_settings.normalize_model_defaults({
+    aistudio = video_cover_settings.normalize_model_defaults({
         "cover_generation": {
             "provider": "gemini_vertex_adc",
             "model_id": "gemini-3-pro-image-preview",
             "execution_mode": "parallel",
         }
     })
-    assert vertex["cover_generation"] == {
-        "provider": "gemini_vertex_adc",
+    assert aistudio["cover_generation"] == {
+        "provider": "gemini_aistudio",
         "model_id": "gemini-3-pro-image-preview",
         "execution_mode": "serial",
     }
@@ -1206,6 +1213,10 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
             "execution_mode": "parallel",
         },
     }
+    normalized_defaults = {
+        **model_defaults,
+        "product_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3-flash-preview"},
+    }
 
     def fake_insert_project(**kwargs):
         inserted.update(kwargs)
@@ -1253,7 +1264,7 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     assert state["type"] == "video_cover"
     assert state["product_url"] == "https://shop.example/products/lamp"
     assert state["image_count"] == 3
-    assert state["model_defaults"] == model_defaults
+    assert state["model_defaults"] == normalized_defaults
     assert state["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
     assert inserted["thumbnail_path"] == str(Path(inserted["task_dir"]) / "thumb.jpg")
     assert thumbnail_calls == [
@@ -1423,7 +1434,7 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
 
     assert calls == [
         {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.1-pro-preview", "execution_mode": None, "user_id": 8},
-        {"step": "product_analysis", "provider": "gemini_vertex_adc", "model": "gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
+        {"step": "product_analysis", "provider": "gemini_aistudio", "model": "gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
         {"step": "ad_copy", "provider": "openrouter", "model": "google/gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
         {"step": "cover_generation", "provider": "openrouter", "model": "openai/gpt-5.4-image-2:mid", "execution_mode": "serial", "user_id": 8},
     ]
@@ -1636,7 +1647,7 @@ def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defa
     assert 'data-step-model-badge="video_analysis"' in html
     assert 'data-step-model-badge="cover_generation"' in html
     assert "openrouter · google/gemini-3.1-pro-preview" in html
-    assert "gemini_vertex_adc · gemini-3-flash-preview" in html
+    assert "gemini_aistudio · gemini-3-flash-preview" in html
     assert "openrouter · anthropic/claude-sonnet-4.6" in html
     assert "openrouter · openai/gpt-5.4-image-2:high · 串行" in html
     assert "function stepModelText(step)" in html
@@ -2337,7 +2348,12 @@ def test_video_cover_duplicate_copies_inputs_and_restarts(
     assert next_state["product_url"] == "https://shop.example/products/lamp"
     assert next_state["image_count"] == 3
     for step, defaults in state["model_defaults"].items():
-        assert next_state["model_defaults"][step]["provider"] == defaults["provider"]
+        expected_provider = (
+            "gemini_aistudio"
+            if defaults["provider"] == "gemini_vertex_adc"
+            else defaults["provider"]
+        )
+        assert next_state["model_defaults"][step]["provider"] == expected_provider
         assert next_state["model_defaults"][step]["model_id"] == defaults["model_id"]
     assert next_state["steps"] == {
         "video_analysis": "pending",

@@ -246,12 +246,12 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates
     assert "listing_status" not in result
-    assert llm_calls[0][1]["provider_override"] == "gemini_vertex_adc"
+    assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
     assert llm_calls[0][1]["model_override"] == "gemini-3.1-pro-preview"
     assert llm_calls[0][1]["google_search"] is True
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
-    assert detail["provider"] == "gemini_vertex_adc"
+    assert detail["provider"] == "gemini_aistudio"
     assert detail["model"] == "gemini-3.1-pro-preview"
     assert detail["search_tools"] == [{"google_search": {}}]
     assert detail["countries"][0]["lang"] == "de"
@@ -356,8 +356,8 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
     assert detail["search_tools"] == [{"google_search": {}}]
 
 
-@pytest.mark.parametrize("provider", ["gemini_vertex", "gemini_vertex_adc"])
-def test_resolve_evaluation_llm_config_keeps_vertex_bindings(monkeypatch, provider):
+@pytest.mark.parametrize("provider", ["gemini_vertex", "gemini_aistudio"])
+def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provider):
     from appcore import material_evaluation
 
     monkeypatch.setattr(

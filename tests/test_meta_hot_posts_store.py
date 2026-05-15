@@ -443,6 +443,25 @@ def test_video_copyability_status_transitions_are_recorded():
     assert failure_params[1] == "provider failed"
 
 
+def test_finish_video_copyability_can_suspend_after_attempt_limit():
+    calls = []
+
+    store.finish_video_copyability_analysis(
+        78,
+        result={},
+        error_message="model returned empty response",
+        status_override="suspended",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in sql
+    assert "status=%s" in sql
+    assert params[0] == "suspended"
+    assert params[1] == "model returned empty response"
+    assert params[-1] == 78
+
+
 def test_reset_running_video_copyability_analyses_requeues_for_takeover():
     calls = []
 

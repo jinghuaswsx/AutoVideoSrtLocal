@@ -21,7 +21,7 @@ from appcore.llm_media_optimizer import SHORT_CLIP_AUDIO, prepare_video_for_llm
 logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
-EVALUATION_PROVIDER = "gemini_vertex_adc"
+EVALUATION_PROVIDER = "gemini_aistudio"
 EVALUATION_MODEL = "gemini-3.1-pro-preview"
 EVALUATION_SEARCH_ENABLED = True
 MAX_AUTOMATIC_ATTEMPTS = 1

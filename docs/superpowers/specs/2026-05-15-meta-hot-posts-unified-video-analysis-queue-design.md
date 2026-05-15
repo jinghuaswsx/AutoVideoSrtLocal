@@ -19,6 +19,8 @@ Both analyze downloaded local videos with product links. They should now share o
 - Process at most 10 items per 10-minute round.
 - Use Google Vertex ADC with Gemini 3.1 Pro Preview for both analysis types.
 - Run serially with a conservative 30-second delay between LLM video calls.
+- Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
+- Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
 - Use takeover singleton behavior: every new 10-minute round marks any previous running queue run failed, resets both analysis types still marked running, starts a new run, and the old worker stops cooperatively before writing stale results.
 
 ## Non-goals
@@ -64,6 +66,16 @@ Register one APScheduler job:
 - batch size: 10
 - per-item delay: 30 seconds
 
+## Retry And Suspension
+
+Both task types count attempts when an item is marked `running`.
+
+- Attempts 1-2: any 429 / quota / rate-limit error is written back as `pending` with the error text, so the item is retried by a later queue round instead of immediately hammering the same quota window.
+- Attempts 1-2: non-rate-limit failures remain `failed` and are eligible for another later queue round.
+- Attempt 3: any failure is written as `suspended`. The pending selectors exclude `suspended`, so the video is no longer retried automatically until an operator decides how to handle it.
+
+Queue summaries include `rate_limited_requeued` and `suspended` counters, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real 429 rate and throughput.
+
 The previous separate scheduled jobs for Europe fit and US copyability are removed from APScheduler registration and from the scheduled task registry as controllable jobs. Manual page actions call the unified queue tick with the same limits instead of starting separate loops.
 
 ## Verification
@@ -74,5 +86,7 @@ Focused tests cover:
 - max 10 items per tick and 30-second delay between item executions
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
+- 429 failures are requeued for a later round
+- third failed attempts are suspended for both task types
 - both use cases and analyzer overrides use Vertex ADC Gemini 3.1 Pro Preview
 - scheduled task registry and APScheduler registration expose only the unified video analysis queue task

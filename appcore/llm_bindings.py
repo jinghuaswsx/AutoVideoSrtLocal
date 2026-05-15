@@ -15,6 +15,21 @@ from typing import Any
 from appcore.db import execute, query, query_one
 from appcore.llm_use_cases import USE_CASES, get_use_case
 
+VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
+    "meta_hot_posts.europe_fit",
+    "meta_hot_posts.video_copyability",
+})
+
+
+def _normalize_binding_provider(use_case_code: str, provider: str, model: str) -> tuple[str, str]:
+    provider = (provider or "").strip()
+    model = (model or "").strip()
+    if provider == "gemini_vertex_adc" and use_case_code not in VERTEX_ADC_ALLOWED_USE_CASES:
+        provider = "gemini_aistudio"
+        if model.startswith("google/"):
+            model = model.split("/", 1)[1]
+    return provider, model
+
 
 def _parse_extra(raw: Any) -> dict:
     if raw is None:
@@ -39,9 +54,14 @@ def resolve(use_case_code: str) -> dict:
         (use_case_code,),
     )
     if row and int(row.get("enabled") or 0) == 1:
+        provider, model = _normalize_binding_provider(
+            use_case_code,
+            str(row["provider_code"] or ""),
+            str(row["model_id"] or ""),
+        )
         return {
-            "provider": row["provider_code"],
-            "model": row["model_id"],
+            "provider": provider,
+            "model": model,
             "extra": _parse_extra(row.get("extra_config")),
             "source": "db",
         }
@@ -71,6 +91,7 @@ def upsert(use_case_code: str, *, provider: str, model: str,
            extra: dict | None = None, enabled: bool = True,
            updated_by: int | None) -> None:
     get_use_case(use_case_code)  # 校验存在
+    provider, model = _normalize_binding_provider(use_case_code, provider, model)
     execute(
         "INSERT INTO llm_use_case_bindings "
         "(use_case_code, provider_code, model_id, extra_config, enabled, updated_by) "
@@ -110,13 +131,18 @@ def list_all() -> list[dict]:
     for code, uc in USE_CASES.items():
         row = by_code.get(code)
         if row and int(row.get("enabled") or 0) == 1:
+            provider, model = _normalize_binding_provider(
+                code,
+                str(row["provider_code"] or ""),
+                str(row["model_id"] or ""),
+            )
             out.append({
                 "code": code,
                 "module": uc["module"],
                 "label": uc["label"],
                 "description": uc["description"],
-                "provider": row["provider_code"],
-                "model": row["model_id"],
+                "provider": provider,
+                "model": model,
                 "extra": _parse_extra(row.get("extra_config")),
                 "enabled": True,
                 "is_custom": True,

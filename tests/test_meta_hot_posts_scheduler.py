@@ -479,6 +479,103 @@ def test_process_video_analysis_queue_stops_when_run_is_superseded(monkeypatch):
     assert events == [("mark", 1)]
 
 
+def test_process_video_analysis_queue_requeues_429_for_next_round(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 1)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: [{"analysis_id": 1, "hot_post_id": 10, "local_video_path": "us-a.mp4", "attempts": 0}],
+    )
+    monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
+    monkeypatch.setattr(scheduler.store, "mark_video_copyability_running", lambda analysis_id: events.append(("mark", analysis_id)))
+
+    def raise_429(row, user_id=None):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded")
+
+    monkeypatch.setattr(scheduler.video_copyability, "analyze_video_copyability", raise_429)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_video_copyability_analysis",
+        lambda analysis_id, **kwargs: events.append(("finish", analysis_id, kwargs)),
+    )
+
+    summary = scheduler.process_video_analysis_queue(limit=1, user_id=7, run_id=42)
+
+    assert summary["failed"] == 1
+    assert summary["rate_limited_requeued"] == 1
+    assert summary["suspended"] == 0
+    assert events[1][2]["status_override"] == "pending"
+    assert "429" in events[1][2]["error_message"]
+
+
+def test_process_video_analysis_queue_suspends_after_third_us_attempt(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 1)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: [{"analysis_id": 1, "hot_post_id": 10, "local_video_path": "us-a.mp4", "attempts": 2}],
+    )
+    monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
+    monkeypatch.setattr(scheduler.store, "mark_video_copyability_running", lambda analysis_id: events.append(("mark", analysis_id)))
+    monkeypatch.setattr(
+        scheduler.video_copyability,
+        "analyze_video_copyability",
+        lambda row, user_id=None: (_ for _ in ()).throw(RuntimeError("model returned empty response")),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_video_copyability_analysis",
+        lambda analysis_id, **kwargs: events.append(("finish", analysis_id, kwargs)),
+    )
+
+    summary = scheduler.process_video_analysis_queue(limit=1, user_id=7, run_id=42)
+
+    assert summary["failed"] == 1
+    assert summary["suspended"] == 1
+    assert summary["us_copyability_suspended"] == 1
+    assert events[1][2]["status_override"] == "suspended"
+
+
+def test_process_video_analysis_queue_suspends_after_third_europe_attempt(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "next_pending_video_copyability_analyses", lambda limit: [])
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: [{"id": 21, "local_video_path": "eu-a.mp4", "europe_fit_attempts": 2}],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_europe_fit_running", lambda post_id: events.append(("mark", post_id)))
+    monkeypatch.setattr(
+        scheduler.europe_fit,
+        "assess_material",
+        lambda row, user_id=None: (_ for _ in ()).throw(RuntimeError("bad json")),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_europe_fit_assessment",
+        lambda post_id, **kwargs: events.append(("finish", post_id, kwargs)),
+    )
+
+    summary = scheduler.process_video_analysis_queue(limit=1, user_id=7, run_id=42)
+
+    assert summary["failed"] == 1
+    assert summary["suspended"] == 1
+    assert summary["europe_fit_suspended"] == 1
+    assert events[1][2]["status"] == "suspended"
+
+
 def test_process_video_analysis_queue_idles_without_billing_user_when_empty(monkeypatch):
     monkeypatch.setattr(
         scheduler,

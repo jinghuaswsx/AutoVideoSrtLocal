@@ -128,7 +128,7 @@ def test_invoke_translation_chat_routes_through_llm_client(monkeypatch):
     assert captured["kwargs"]["user_id"] == 7
 
 
-def test_resolve_provider_and_model_supports_vertex_adc_pref(monkeypatch):
+def test_resolve_provider_and_model_retires_vertex_adc_pref_to_aistudio(monkeypatch):
     from pipeline import text_translate as mod
 
     provider, model = mod._resolve_provider_and_model(
@@ -137,5 +137,5 @@ def test_resolve_provider_and_model_supports_vertex_adc_pref(monkeypatch):
         openrouter_api_key=None,
     )
 
-    assert provider == "gemini_vertex_adc"
+    assert provider == "gemini_aistudio"
     assert model == "gemini-3.1-pro-preview"
