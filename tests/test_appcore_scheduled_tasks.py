@@ -533,6 +533,39 @@ def test_task_definitions_include_push_quality_check():
     assert task["log_table"] == "scheduled_task_runs"
 
 
+def test_task_definitions_include_apimart_balance_watchdog():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["apimart_balance_watchdog"]
+    assert task["schedule"] == "每小时"
+    assert task["source_type"] == "apscheduler"
+    assert task["runner"] == "appcore.apimart_balance_watchdog.run_scheduled_check"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert task["failure_alert_immediate"] is True
+    assert "2026-05-15-apimart-balance-watchdog-design.md" in task["description"]
+
+
+def test_failure_alert_policy_allows_immediate_task_first_failure(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "consecutive_failure_count",
+        lambda task_code, current_run_id=None: 1,
+    )
+
+    assert scheduled_tasks._should_dispatch_failure_alert_for_run(
+        {
+            "id": 77,
+            "task_code": "apimart_balance_watchdog",
+            "status": "failed",
+            "summary": {"reason": "usage_gap"},
+        }
+    )
+
+
 def test_task_definitions_include_meta_hot_posts_tasks():
     from appcore import scheduled_tasks
 

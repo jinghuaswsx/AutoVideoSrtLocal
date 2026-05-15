@@ -242,6 +242,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "apimart_balance_watchdog": {
+        "code": "apimart_balance_watchdog",
+        "name": "APIMART 余额看护",
+        "description": (
+            "每小时查询 APIMART API key 与账户余额，对照本地 usage_logs 中 APIMART 成功调用成本；"
+            "余额查询失败、低余额或远端用量明显高于本地账单时标记 failed 并立即触发飞书告警。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-15-apimart-balance-watchdog-design.md"
+        ),
+        "schedule": "每小时",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "apimart_balance_watchdog",
+        "runner": "appcore.apimart_balance_watchdog.run_scheduled_check",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+        "failure_alert_immediate": True,
+    },
     "meta_hot_posts_sync_tick": {
         "code": "meta_hot_posts_sync_tick",
         "name": "Meta 热帖同步",
@@ -1039,9 +1056,15 @@ def _dispatch_failure_alert(run_id: int) -> None:
         sample_alert = _is_sample_failure_alert_worthy(row)
         from appcore import feishu_alerts
 
-        should_send, streak = feishu_alerts.should_dispatch_failure(
-            task_code, current_run_id=run_id, immediate=sample_alert
-        )
+        if _is_immediate_failure_alert_task(task_code):
+            should_send = True
+            streak = feishu_alerts.consecutive_failure_count(
+                task_code, current_run_id=run_id
+            )
+        else:
+            should_send, streak = feishu_alerts.should_dispatch_failure(
+                task_code, current_run_id=run_id, immediate=sample_alert
+            )
         if not should_send:
             log.info(
                 "feishu failure alert suppressed (streak=%s sample_alert=%s) task_code=%s run_id=%s",
@@ -1300,10 +1323,17 @@ def _is_sample_failure_alert_worthy(row: dict[str, Any]) -> bool:
     )
 
 
+def _is_immediate_failure_alert_task(task_code: str) -> bool:
+    task = TASK_DEFINITIONS.get((task_code or "").strip())
+    return bool(task and task.get("failure_alert_immediate"))
+
+
 def _should_dispatch_failure_alert_for_run(row: dict[str, Any]) -> bool:
     task_code = str(row.get("task_code") or "")
     if not task_code or str(row.get("status") or "") != "failed":
         return False
+    if _is_immediate_failure_alert_task(task_code):
+        return True
     if _is_sample_failure_alert_worthy(row):
         return True
     from appcore import feishu_alerts
@@ -1355,6 +1385,8 @@ def _should_dispatch_recovery_alert_for_run(
     if not task_code:
         return False
     prior = _non_negative_int(prior_failures)
+    if _is_immediate_failure_alert_task(task_code):
+        return prior > 0
     if prior >= FAILURE_ALERT_MIN_CONSECUTIVE_RUNS:
         return True
     if prior <= 0:
