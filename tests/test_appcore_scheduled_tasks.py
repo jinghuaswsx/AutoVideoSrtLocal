@@ -538,12 +538,12 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     sync_task = definitions["meta_hot_posts_sync_tick"]
-    assert sync_task["schedule"] == "每天 07:00（北京时间），目标采集 500 条"
+    assert sync_task["schedule"] == "每天 07:00（北京时间），按上游接口全集采集"
     assert sync_task["source_type"] == "apscheduler"
     assert sync_task["runner"] == "appcore.meta_hot_posts.scheduler.sync_tick_once"
     assert sync_task["log_table"] == "scheduled_task_runs"
-    assert "500 条" in sync_task["description"]
-    assert "2026-05-13-meta-hot-posts-selection-design.md" in sync_task["description"]
+    assert "按上游接口 total/空页停止条件采集全集" in sync_task["description"]
+    assert "2026-05-15-meta-hot-posts-full-sync-design.md" in sync_task["description"]
 
     analysis_task = definitions["meta_hot_posts_analysis_tick"]
     assert analysis_task["schedule"] == "每 10 分钟"

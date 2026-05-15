@@ -88,6 +88,26 @@ def test_build_list_response_prefers_translated_chinese_message(monkeypatch):
     assert item["message_zh_status"] == "done"
 
 
+def test_build_refresh_response_runs_full_sync_by_default(monkeypatch):
+    captured = {}
+
+    def fake_sync_tick_once(**kwargs):
+        captured.update(kwargs)
+        return {"posts": 2307, "stop_reason": "reported_total_reached"}
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.scheduler.sync_tick_once",
+        fake_sync_tick_once,
+    )
+
+    result = service.build_refresh_response()
+
+    assert result.status_code == 202
+    assert result.payload["ok"] is True
+    assert result.payload["result"]["posts"] == 2307
+    assert captured == {}
+
+
 def test_build_translate_response_runs_message_translation_tick(monkeypatch):
     captured = {}
 

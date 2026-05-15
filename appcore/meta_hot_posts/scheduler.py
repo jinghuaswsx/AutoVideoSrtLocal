@@ -39,6 +39,7 @@ SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS = 5
 SCHEDULED_EUROPE_FIT_LIMIT = 30
 SCHEDULED_VIDEO_COPYABILITY_LIMIT = 20
 SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
+FULL_SYNC_MAX_PAGES = 120
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -94,14 +95,26 @@ def _sleep_after_item(
 
 def sync_hot_posts(
     *,
-    target_count: int = 500,
-    max_pages: int = 50,
+    target_count: int | None = None,
+    max_pages: int = FULL_SYNC_MAX_PAGES,
     client: MetaHotPostsClient | None = None,
 ) -> dict[str, Any]:
     api = client or MetaHotPostsClient()
-    safe_target = max(1, int(target_count))
+    safe_target = None
+    if target_count is not None:
+        parsed_target = int(target_count)
+        if parsed_target > 0:
+            safe_target = max(1, parsed_target)
     safe_max_pages = max(1, int(max_pages))
-    summary = {"pages": 0, "posts": 0, "queued_products": 0, "target_count": safe_target}
+    summary = {
+        "pages": 0,
+        "posts": 0,
+        "queued_products": 0,
+        "target_count": safe_target,
+        "reported_total": None,
+        "page_size": None,
+        "stop_reason": None,
+    }
     for page in range(1, safe_max_pages + 1):
         payload = api.fetch_page(
             page=page,
@@ -111,17 +124,34 @@ def sync_hot_posts(
             creatives_min=5,
         )
         summary["pages"] += 1
+        if summary["reported_total"] is None and payload.get("total") is not None:
+            summary["reported_total"] = int(payload.get("total") or 0)
+        if summary["page_size"] is None and payload.get("size") is not None:
+            summary["page_size"] = int(payload.get("size") or 0)
         items = payload.get("items") or []
+        if not items:
+            summary["stop_reason"] = "empty_page"
+            break
         for item in items:
-            if summary["posts"] >= safe_target:
+            if safe_target is not None and summary["posts"] >= safe_target:
+                summary["stop_reason"] = "target_count_reached"
                 break
             store.upsert_hot_post(item)
             summary["posts"] += 1
             if item.get("product_url"):
                 store.ensure_product_analysis(str(item["product_url"]))
                 summary["queued_products"] += 1
-        if not items or summary["posts"] >= safe_target:
+        if summary["stop_reason"]:
             break
+        if safe_target is not None and summary["posts"] >= safe_target:
+            summary["stop_reason"] = "target_count_reached"
+            break
+        reported_total = summary.get("reported_total")
+        if safe_target is None and reported_total and summary["posts"] >= int(reported_total):
+            summary["stop_reason"] = "reported_total_reached"
+            break
+    if not summary["stop_reason"]:
+        summary["stop_reason"] = "max_pages_reached"
     return summary
 
 
@@ -399,7 +429,7 @@ def reanalyze_categories(
     return summary
 
 
-def sync_tick_once(*, target_count: int = 500, max_pages: int = 50) -> dict[str, Any]:
+def sync_tick_once(*, target_count: int | None = None, max_pages: int = FULL_SYNC_MAX_PAGES) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(SYNC_TASK_CODE)

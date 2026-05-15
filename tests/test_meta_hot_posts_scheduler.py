@@ -53,6 +53,95 @@ def test_sync_hot_posts_stops_when_upstream_returns_empty(monkeypatch):
     assert summary["posts"] == 1
 
 
+def test_sync_hot_posts_full_sync_uses_reported_total(monkeypatch):
+    pages = []
+    upserts = []
+    queued = []
+
+    class FakeClient:
+        def fetch_page(self, *, page, **params):
+            pages.append((page, params))
+            if page <= 3:
+                count = 30
+            elif page == 4:
+                count = 7
+            else:
+                count = 0
+            start = (page - 1) * 30
+            return {
+                "total": 97,
+                "size": 30,
+                "items": [
+                    {
+                        "wedev_post_id": start + idx + 1,
+                        "product_url": f"https://example.com/products/{start + idx + 1}",
+                    }
+                    for idx in range(count)
+                ],
+            }
+
+    monkeypatch.setattr(scheduler.store, "upsert_hot_post", lambda item: upserts.append(item))
+    monkeypatch.setattr(scheduler.store, "ensure_product_analysis", lambda url: queued.append(url))
+
+    summary = scheduler.sync_hot_posts(client=FakeClient(), target_count=None, max_pages=20)
+
+    assert [page for page, _params in pages] == [1, 2, 3, 4]
+    assert len(upserts) == 97
+    assert len(queued) == 97
+    assert summary["posts"] == 97
+    assert summary["reported_total"] == 97
+    assert summary["page_size"] == 30
+    assert summary["stop_reason"] == "reported_total_reached"
+
+
+def test_sync_hot_posts_full_sync_stops_on_empty_page_before_reported_total(monkeypatch):
+    pages = []
+
+    class FakeClient:
+        def fetch_page(self, *, page, **params):
+            pages.append(page)
+            if page == 1:
+                return {
+                    "total": 200,
+                    "size": 30,
+                    "items": [{"wedev_post_id": 1, "product_url": ""}],
+                }
+            return {"total": 200, "size": 30, "items": []}
+
+    monkeypatch.setattr(scheduler.store, "upsert_hot_post", lambda item: None)
+    monkeypatch.setattr(scheduler.store, "ensure_product_analysis", lambda url: None)
+
+    summary = scheduler.sync_hot_posts(client=FakeClient(), target_count=None, max_pages=20)
+
+    assert pages == [1, 2]
+    assert summary["posts"] == 1
+    assert summary["reported_total"] == 200
+    assert summary["stop_reason"] == "empty_page"
+
+
+def test_sync_hot_posts_full_sync_reports_max_pages_reached(monkeypatch):
+    class FakeClient:
+        def fetch_page(self, *, page, **params):
+            return {
+                "total": 1000,
+                "size": 30,
+                "items": [
+                    {"wedev_post_id": page * 100 + idx, "product_url": ""}
+                    for idx in range(30)
+                ],
+            }
+
+    monkeypatch.setattr(scheduler.store, "upsert_hot_post", lambda item: None)
+    monkeypatch.setattr(scheduler.store, "ensure_product_analysis", lambda url: None)
+
+    summary = scheduler.sync_hot_posts(client=FakeClient(), target_count=None, max_pages=2)
+
+    assert summary["pages"] == 2
+    assert summary["posts"] == 60
+    assert summary["reported_total"] == 1000
+    assert summary["stop_reason"] == "max_pages_reached"
+
+
 def test_register_schedules_daily_sync_analysis_translation_video_and_europe_fit(monkeypatch):
     calls = []
     now = datetime(2026, 5, 14, 18, 0, 0)

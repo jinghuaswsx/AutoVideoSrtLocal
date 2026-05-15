@@ -247,10 +247,10 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖同步",
         "description": (
             "每天北京时间 07:00 使用已同步的 wedev Cookie/Bearer 拉取 /api/spy/hot/posts，"
-            "目标采集 500 条，单请求最小间隔 3 秒，并把热帖卡片字段与商品链接写入本地表。"
-            "Docs-anchor: docs/superpowers/specs/2026-05-13-meta-hot-posts-selection-design.md"
+            "按上游接口 total/空页停止条件采集全集，单请求最小间隔 3 秒，并把热帖卡片字段与商品链接写入本地表。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-15-meta-hot-posts-full-sync-design.md"
         ),
-        "schedule": "每天 07:00（北京时间），目标采集 500 条",
+        "schedule": "每天 07:00（北京时间），按上游接口全集采集",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "meta_hot_posts_sync_tick",

@@ -240,7 +240,7 @@ def build_mark_response(
 def build_refresh_response() -> MetaHotPostsResponse:
     from appcore.meta_hot_posts import scheduler
 
-    return MetaHotPostsResponse({"ok": True, "result": scheduler.sync_tick_once(target_count=500)}, 202)
+    return MetaHotPostsResponse({"ok": True, "result": scheduler.sync_tick_once()}, 202)
 
 
 def build_analyze_response(payload: Mapping[str, Any] | None = None) -> MetaHotPostsResponse:
