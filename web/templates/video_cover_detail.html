@@ -290,6 +290,9 @@
   const allPayloadModal = document.getElementById('vcdAllPayloadModal');
   const allPayloadBody = document.getElementById('vcdAllPayloadBody');
 
+  // 事件监听器已绑定标记，避免重复绑定
+  let eventListenersBound = false;
+
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute('content') || '' : '';
@@ -309,6 +312,15 @@
     input.select();
     document.execCommand('copy');
     input.remove();
+  }
+  // 显示复制成功反馈
+  function showCopyFeedback(btn, originalText) {
+    btn.textContent = '已复制';
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1200);
   }
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
@@ -557,10 +569,15 @@
       const visualBox = document.querySelector(`[data-visual-step="${step}"]`);
       if (visualBox) visualBox.innerHTML = renderVisual(step);
       const retry = document.querySelector(`[data-retry-step="${step}"]`);
-      if (retry) retry.disabled = status === 'running';
+      if (retry) {
+        retry.disabled = status === 'running';
+        if (status === 'running') {
+          retry.textContent = '运行中...';
+        } else {
+          retry.textContent = '重新跑';
+        }
+      }
     });
-    document.querySelectorAll('[data-copy-ad-copy]').forEach(btn => btn.addEventListener('click', () => copyAdCopyText(btn.dataset.copyAdCopy, btn.dataset.copyMode)));
-    document.querySelectorAll('[data-copy-cover-text]').forEach(btn => btn.addEventListener('click', () => copyCoverText(btn.dataset.copyCoverText)));
   }
   async function loadState() {
     const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/state`, {cache: 'no-store'});
@@ -624,42 +641,94 @@
     allPayloadBody.textContent = compactJson(payload);
     allPayloadModal.classList.add('show');
   }
-  async function copyCoverText(index) {
+  async function copyCoverText(btn, index) {
     const covers = (((currentState.result || {}).covers) || []);
     index = Number(index || 0);
     const text = copyTextForCover(covers[index]);
     if (!text) return;
-    await copyText(text);
+    const original = btn.textContent;
+    try {
+      await copyText(text);
+      showCopyFeedback(btn, original);
+    } catch (e) {
+      btn.textContent = '复制失败';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    }
   }
-  async function copyAdCopyText(index, mode) {
+  async function copyAdCopyText(btn, index, mode) {
     const sets = ((currentState.ad_copy_sets || {}).ad_copy_sets) || [];
     index = Number(index || 0);
     if (!sets[index]) return;
     const text = copyTextByMode(sets[index], mode);
     if (!text) return;
-    await copyText(text);
-  }
-  document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
-    setRestartCount(btn.dataset.restartCount);
-  }));
-  document.getElementById('vcdRestartBtn').addEventListener('click', restart);
-  document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
     const original = btn.textContent;
     try {
-      await copyText(btn.dataset.copyProductUrl || '');
-      btn.textContent = '已复制';
+      await copyText(text);
+      showCopyFeedback(btn, original);
     } catch (e) {
       btn.textContent = '复制失败';
+      setTimeout(() => { btn.textContent = original; }, 1200);
     }
-    window.setTimeout(() => { btn.textContent = original; }, 1200);
-  }));
-  document.querySelectorAll('[data-retry-step]').forEach(btn => btn.addEventListener('click', () => retryStep(btn.dataset.retryStep)));
-  document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
-  document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
-  document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
-  document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
-  modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
-  allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
+  }
+  // 一次性绑定所有事件监听器
+  function bindEventListeners() {
+    if (eventListenersBound) return;
+    eventListenersBound = true;
+
+    // 张数选择按钮
+    document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
+      setRestartCount(btn.dataset.restartCount);
+    }));
+
+    // 强制重新开始按钮
+    document.getElementById('vcdRestartBtn').addEventListener('click', restart);
+
+    // 复制产品链接按钮
+    document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
+      const original = btn.textContent;
+      try {
+        await copyText(btn.dataset.copyProductUrl || '');
+        showCopyFeedback(btn, original);
+      } catch (e) {
+        btn.textContent = '复制失败';
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      }
+    }));
+
+    // 重新跑步骤按钮（事件委托）
+    document.addEventListener('click', (e) => {
+      const retryBtn = e.target.closest('[data-retry-step]');
+      if (retryBtn && !retryBtn.disabled) {
+        retryStep(retryBtn.dataset.retryStep);
+      }
+    });
+
+    // 提示词按钮
+    document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
+
+    // 全部报文预览
+    document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
+
+    // 模态框关闭
+    document.getElementById('vcdPromptClose').addEventListener('click', () => modal.classList.remove('show'));
+    document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
+    allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
+
+    // 复制文案按钮（事件委托）
+    document.addEventListener('click', (e) => {
+      const copyAdBtn = e.target.closest('[data-copy-ad-copy]');
+      if (copyAdBtn) {
+        copyAdCopyText(copyAdBtn, copyAdBtn.dataset.copyAdCopy, copyAdBtn.dataset.copyMode);
+      }
+      const copyCoverBtn = e.target.closest('[data-copy-cover-text]');
+      if (copyCoverBtn) {
+        copyCoverText(copyCoverBtn, copyCoverBtn.dataset.copyCoverText);
+      }
+    });
+  }
+
+  bindEventListeners();
   render();
   setInterval(() => { loadState().catch(() => {}); }, 2500);
 })();
