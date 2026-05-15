@@ -161,6 +161,12 @@ def build_list_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
     return MetaHotPostsResponse(payload)
 
 
+def build_today_new_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+    payload = store.list_today_new_hot_posts(args)
+    payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
+    return MetaHotPostsResponse(payload)
+
+
 def build_europe_top_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
     try:
         limit = int(args.get("limit") or 50)

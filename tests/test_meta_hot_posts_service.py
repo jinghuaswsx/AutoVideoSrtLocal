@@ -35,6 +35,33 @@ def test_build_list_response_adds_chinese_category_label(monkeypatch):
     assert item["category_l1_zh"] == "家居用品"
 
 
+def test_build_today_new_response_hydrates_first_seen_items(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "list_today_new_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 7,
+                    "category_l1": "Home Supplies",
+                    "sku_prices_json": "[]",
+                    "first_seen_at": "2026-05-15 07:00:53",
+                }
+            ],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+        },
+    )
+
+    payload = service.build_today_new_response({"page": "1"}).payload
+
+    item = payload["items"][0]
+    assert payload["total"] == 1
+    assert item["first_seen_at"] == "2026-05-15 07:00:53"
+    assert item["category_l1_zh"] == "家居用品"
+
+
 def test_build_list_response_prefers_translated_chinese_message(monkeypatch):
     monkeypatch.setattr(
         service.store,

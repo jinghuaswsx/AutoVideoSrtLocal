@@ -149,7 +149,7 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
         f"""
         SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
                p.post_url, p.ad_library_url, p.product_url, p.creation_time,
-               p.last_synced_at, p.likes, p.comments, p.shares,
+               p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
@@ -170,6 +170,62 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
         LIMIT %s OFFSET %s
         """,
         list(params + [page_size, offset]),
+    )
+    return {
+        "items": rows,
+        "total": int(count_rows[0]["cnt"] if count_rows else 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def list_today_new_hot_posts(
+    args: Mapping[str, Any] | None = None,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any]:
+    args = args or {}
+    page = _int_arg(args, "page", 1, 1, 10000)
+    page_size = _int_arg(args, "page_size", 50, 10, 100)
+    offset = (page - 1) * page_size
+    where_sql = """
+        WHERE p.first_seen_at >= CURDATE()
+          AND p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+    """
+    count_rows = query_fn(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {where_sql}
+        """,
+        [],
+    )
+    rows = query_fn(
+        f"""
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
+               p.post_url, p.ad_library_url, p.product_url, p.creation_time,
+               p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               p.video_url, p.image_url, p.invisible, p.invisible_region,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
+               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
+               a.status AS analysis_status,
+               a.product_title, a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               a.last_error, a.analyzed_at
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {where_sql}
+        ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
+        LIMIT %s OFFSET %s
+        """,
+        [page_size, offset],
     )
     return {
         "items": rows,

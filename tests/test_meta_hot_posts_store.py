@@ -69,6 +69,28 @@ def test_list_hot_posts_empty_mark_status_selects_unchecked_rows():
     assert data_params == [30, 0]
 
 
+def test_list_today_new_hot_posts_filters_by_first_seen_today():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 66}]
+        return [{"id": 9, "first_seen_at": "2026-05-15 07:00:53"}]
+
+    payload = store.list_today_new_hot_posts(query_fn=fake_query)
+
+    data_sql, data_params = calls[-1]
+    assert payload["total"] == 66
+    assert payload["items"] == [{"id": 9, "first_seen_at": "2026-05-15 07:00:53"}]
+    assert "p.first_seen_at >= CURDATE()" in data_sql
+    assert "p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)" in data_sql
+    assert "p.first_seen_at" in data_sql
+    assert "ORDER BY p.first_seen_at DESC" in data_sql
+    assert "COALESCE(p.sync_period_likes, 0) DESC" in data_sql
+    assert data_params == [50, 0]
+
+
 def test_upsert_hot_post_uses_wedev_post_unique_key():
     calls = []
 

@@ -97,6 +97,7 @@
 
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
     <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>
+    <button class="mh-subtab" id="mhTodayNewSubtab" type="button" onclick="switchMetaHotSubtab('today')">今日新增</button>
     <button class="mh-subtab" id="mhEuropeSubtab" type="button" onclick="switchMetaHotSubtab('europe')">欧洲Top50</button>
   </div>
 
@@ -298,7 +299,7 @@ function renderCard(row) {
       </div>
     </div>
     <div class="mh-card-body">
-      <div class="mh-time">创建：${fmt(row.creation_time)}，更新：${fmt(row.last_synced_at)}</div>
+      <div class="mh-time">创建：${fmt(row.creation_time)}，抓取：${fmt(row.first_seen_at)}，更新：${fmt(row.last_synced_at)}</div>
       <div class="mh-metric">交互数：<b>${fmt(row.likes)}</b>，评论数：<b>${fmt(row.comments)}</b>，分享数：<b>${fmt(row.shares)}</b></div>
       <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
       <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
@@ -334,16 +335,19 @@ function buildParams(page) {
   return params;
 }
 function switchMetaHotSubtab(tab) {
-  mhSubtab = tab === 'europe' ? 'europe' : 'library';
+  mhSubtab = ['today', 'europe'].includes(tab) ? tab : 'library';
   qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
+  qs('mhTodayNewSubtab').classList.toggle('active', mhSubtab === 'today');
   qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
   if (mhSubtab === 'europe') {
     loadEuropeTopMaterials();
+  } else if (mhSubtab === 'today') {
+    loadTodayNewMaterials(1);
   } else {
     loadMetaHotPosts(mhPage || 1);
   }
 }
-function renderMetaHotPager(data) {
+function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
   const total = Number(data.total || 0);
   const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
   const rawPage = Math.max(1, Number(data.page || mhPage || 1));
@@ -353,18 +357,18 @@ function renderMetaHotPager(data) {
   const disabledPrev = totalPages <= 0 || page <= 1 ? ' disabled' : '';
   const disabledNext = totalPages <= 0 || page >= totalPages ? ' disabled' : '';
   const buttons = [
-    `<button type="button"${disabledPrev} onclick="loadMetaHotPosts(1)">首页</button>`,
-    `<button type="button"${disabledPrev} onclick="loadMetaHotPosts(${Math.max(1, page - 1)})">上一页</button>`,
+    `<button type="button"${disabledPrev} onclick="${loaderName}(1)">首页</button>`,
+    `<button type="button"${disabledPrev} onclick="${loaderName}(${Math.max(1, page - 1)})">上一页</button>`,
   ];
   const start = Math.max(1, page - 2);
   const end = Math.min(safeLastPage, page + 2);
   for (let i = start; i <= end; i += 1) {
     const active = i === page ? ' active' : '';
-    buttons.push(`<button type="button" class="${active.trim()}" onclick="loadMetaHotPosts(${i})">${i}</button>`);
+    buttons.push(`<button type="button" class="${active.trim()}" onclick="${loaderName}(${i})">${i}</button>`);
   }
   buttons.push(
-    `<button type="button"${disabledNext} onclick="loadMetaHotPosts(${Math.min(safeLastPage, page + 1)})">下一页</button>`,
-    `<button type="button"${disabledNext} onclick="loadMetaHotPosts(${safeLastPage})">末页</button>`,
+    `<button type="button"${disabledNext} onclick="${loaderName}(${Math.min(safeLastPage, page + 1)})">下一页</button>`,
+    `<button type="button"${disabledNext} onclick="${loaderName}(${safeLastPage})">末页</button>`,
     `<span class="mh-pager-info">第 ${totalPages ? page : 0} / ${totalPages} 页 · 共 ${total} 条 · 每页 ${pageSize} 条</span>`
   );
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => {
@@ -374,6 +378,7 @@ function renderMetaHotPager(data) {
 async function loadMetaHotPosts(page = 1) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
+  qs('mhTodayNewSubtab').classList.remove('active');
   qs('mhEuropeSubtab').classList.remove('active');
   mhPage = page;
   qs('mhStatus').textContent = 'Loading...';
@@ -387,9 +392,27 @@ async function loadMetaHotPosts(page = 1) {
   renderMetaHotPager(data);
   qs('mhStatus').textContent = `Page ${mhPage}`;
 }
+async function loadTodayNewMaterials(page = 1) {
+  mhSubtab = 'today';
+  qs('mhLibrarySubtab').classList.remove('active');
+  qs('mhTodayNewSubtab').classList.add('active');
+  qs('mhEuropeSubtab').classList.remove('active');
+  mhPage = page;
+  qs('mhStatus').textContent = 'Loading today new...';
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/today-new?page=${page}&page_size=${mhPageSize}`);
+  const data = await res.json();
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">今日暂无新抓到的帖子</div>';
+  mhPage = Number(data.page || page || 1);
+  renderMetaHotPager(data, 'loadTodayNewMaterials');
+  qs('mhStatus').textContent = `今日新增 · ${data.total || 0} 条`;
+}
 async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
   qs('mhLibrarySubtab').classList.remove('active');
+  qs('mhTodayNewSubtab').classList.remove('active');
   qs('mhEuropeSubtab').classList.add('active');
   qs('mhStatus').textContent = 'Loading Europe Top50...';
   const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');

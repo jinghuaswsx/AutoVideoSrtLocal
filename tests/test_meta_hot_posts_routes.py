@@ -40,7 +40,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "标注" in body
     assert '<option value="empty">空</option>' in body
     assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
-    assert "function renderMetaHotPager(data)" in body
+    assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
     assert "首页" in body
     assert "上一页" in body
     assert "下一页" in body
@@ -66,7 +66,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "row.local_video_url" in body
     assert "<video" in body
     assert "欧洲Top50" in body
+    assert "今日新增" in body
     assert "mhSubtab" in body
+    assert "function loadTodayNewMaterials" in body
+    assert "/xuanpin/api/meta-hot-posts/today-new" in body
     assert "function loadEuropeTopMaterials" in body
     assert "/xuanpin/api/meta-hot-posts/europe-top" in body
     assert "function assessEuropeFitMaterials" in body
@@ -183,6 +186,18 @@ def test_meta_hot_posts_europe_top_api_delegates_to_service(authed_client_no_db,
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 2}]
+
+
+def test_meta_hot_posts_today_new_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.build_today_new_response",
+        lambda args: type("Resp", (), {"payload": {"items": [{"id": 3}], "total": 1}, "status_code": 200})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/today-new?page=1")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"id": 3}]
 
 
 def test_meta_hot_posts_analyze_videos_api_passes_current_user_for_billing(authed_client_no_db, monkeypatch):

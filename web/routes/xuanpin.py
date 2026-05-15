@@ -199,6 +199,15 @@ def api_meta_hot_posts_europe_top():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/today-new", methods=["GET"])
+@login_required
+def api_meta_hot_posts_today_new():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_today_new_response(request.args)
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/meta-hot-posts/<int:post_id>/mark", methods=["POST"])
 @login_required
 def api_meta_hot_posts_mark(post_id: int):
