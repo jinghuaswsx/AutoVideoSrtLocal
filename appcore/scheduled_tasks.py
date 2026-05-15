@@ -15,8 +15,11 @@ log = logging.getLogger(__name__)
 TaskDefinition = dict[str, Any]
 
 META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE = "meta_hot_posts_video_localization_tick"
-VIDEO_LOCALIZATION_ALERT_MIN_DAILY_ATTEMPTS = 20
-VIDEO_LOCALIZATION_ALERT_FAILURE_RATE_THRESHOLD = 0.80
+FAILURE_ALERT_MIN_CONSECUTIVE_RUNS = 20
+FAILURE_ALERT_MIN_SAMPLE_ATTEMPTS = 20
+FAILURE_ALERT_FAILURE_RATE_THRESHOLD = 0.80
+VIDEO_LOCALIZATION_ALERT_MIN_DAILY_ATTEMPTS = FAILURE_ALERT_MIN_SAMPLE_ATTEMPTS
+VIDEO_LOCALIZATION_ALERT_FAILURE_RATE_THRESHOLD = FAILURE_ALERT_FAILURE_RATE_THRESHOLD
 
 TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "shopifyid": {
@@ -1033,22 +1036,17 @@ def _dispatch_failure_alert(run_id: int) -> None:
         if not row:
             return
         task_code = str(row.get("task_code") or "")
-        if not _should_dispatch_failure_alert_for_run(row):
-            log.info(
-                "scheduled task failure alert suppressed by task rule task_code=%s run_id=%s",
-                task_code,
-                run_id,
-            )
-            return
+        sample_alert = _is_sample_failure_alert_worthy(row)
         from appcore import feishu_alerts
 
         should_send, streak = feishu_alerts.should_dispatch_failure(
-            task_code, current_run_id=run_id
+            task_code, current_run_id=run_id, immediate=sample_alert
         )
         if not should_send:
             log.info(
-                "feishu failure alert suppressed (streak=%s) task_code=%s run_id=%s",
+                "feishu failure alert suppressed (streak=%s sample_alert=%s) task_code=%s run_id=%s",
                 streak,
+                sample_alert,
                 task_code,
                 run_id,
             )
@@ -1066,19 +1064,17 @@ def _dispatch_recovery_alert(run_id: int) -> None:
         if not row:
             return
         task_code = str(row.get("task_code") or "")
-        if not _should_dispatch_recovery_alert_for_run(row):
-            log.info(
-                "scheduled task recovery alert suppressed by task rule task_code=%s run_id=%s",
-                task_code,
-                run_id,
-            )
-            return
         from appcore import feishu_alerts
 
         prior = feishu_alerts.prior_consecutive_failures_before_run(
             task_code, current_run_id=run_id
         )
-        if prior <= 0:
+        if not _should_dispatch_recovery_alert_for_run(row, prior_failures=prior):
+            log.info(
+                "scheduled task recovery alert suppressed by task rule task_code=%s run_id=%s",
+                task_code,
+                run_id,
+            )
             return
         feishu_alerts.send_scheduled_task_recovery(row, prior_failures=prior)
     except Exception:
@@ -1119,6 +1115,106 @@ def _non_negative_int(value: Any) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+_SUMMARY_FAILURE_KEYS = (
+    "failed",
+    "failures",
+    "failed_count",
+    "failure_count",
+    "error_count",
+    "errors",
+)
+_SUMMARY_ATTEMPT_KEYS = (
+    "attempts",
+    "total",
+    "scanned",
+    "processed",
+    "checked",
+    "items",
+    "count",
+    "rows",
+    "videos",
+    "tasks",
+)
+_SUMMARY_SUCCESS_KEYS = (
+    "success",
+    "successes",
+    "succeeded",
+    "success_count",
+    "downloaded",
+    "completed",
+    "passed",
+    "ok",
+    "updated",
+    "created",
+)
+_FAILED_STATUS_VALUES = {
+    "failed",
+    "failure",
+    "error",
+    "timeout",
+    "unavailable",
+    "auth_failed",
+    "request_failed",
+    "cancelled",
+    "canceled",
+}
+
+
+def _first_summary_int(summary: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        if key in summary:
+            return _non_negative_int(summary.get(key))
+    return None
+
+
+def _status_list_failure_metrics(items: Any) -> tuple[int, int]:
+    if not isinstance(items, list):
+        return 0, 0
+    attempts = 0
+    failed = 0
+    for item in items:
+        status = ""
+        if isinstance(item, dict):
+            status = str(item.get("status") or item.get("result") or "").strip().lower()
+        else:
+            status = str(item or "").strip().lower()
+        if not status:
+            continue
+        attempts += 1
+        if status in _FAILED_STATUS_VALUES or status.endswith("_failed"):
+            failed += 1
+    return attempts, failed
+
+
+def _summary_failure_sample_metrics(summary: dict[str, Any]) -> dict[str, int | float]:
+    if not isinstance(summary, dict) or not summary:
+        return {"attempts": 0, "failed": 0, "failure_rate": 0.0}
+
+    list_attempts = 0
+    list_failed = 0
+    for key in ("results", "items", "account_results", "task_results"):
+        attempts, failed = _status_list_failure_metrics(summary.get(key))
+        list_attempts += attempts
+        list_failed += failed
+
+    failed_value = _first_summary_int(summary, _SUMMARY_FAILURE_KEYS)
+    failed = max(list_failed, failed_value or 0)
+    if failed <= 0:
+        return {"attempts": list_attempts, "failed": 0, "failure_rate": 0.0}
+
+    attempt_candidates: list[int] = [list_attempts, failed]
+    attempts_value = _first_summary_int(summary, _SUMMARY_ATTEMPT_KEYS)
+    if attempts_value is not None:
+        attempt_candidates.append(attempts_value)
+    success_value = _first_summary_int(summary, _SUMMARY_SUCCESS_KEYS)
+    if success_value is not None:
+        attempt_candidates.append(success_value + failed)
+
+    attempts = max(attempt_candidates)
+    failure_rate = (failed / attempts) if attempts else 0.0
+    return {"attempts": attempts, "failed": failed, "failure_rate": failure_rate}
 
 
 def _download_attempts_from_summary(summary: dict[str, Any]) -> tuple[int, int]:
@@ -1186,20 +1282,84 @@ def _video_localization_daily_download_metrics(
     return {"attempts": attempts, "failed": failed, "failure_rate": failure_rate}
 
 
-def _should_dispatch_failure_alert_for_run(row: dict[str, Any]) -> bool:
+def _failure_sample_metrics_for_run(row: dict[str, Any]) -> dict[str, int | float]:
     task_code = str(row.get("task_code") or "")
-    if task_code != META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE:
-        return True
-    metrics = _video_localization_daily_download_metrics(row)
+    if task_code == META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE:
+        return _video_localization_daily_download_metrics(row)
+    summary = row.get("summary")
+    if not isinstance(summary, dict):
+        summary = _decode_summary(row.get("summary_json"))
+    return _summary_failure_sample_metrics(summary)
+
+
+def _is_sample_failure_alert_worthy(row: dict[str, Any]) -> bool:
+    metrics = _failure_sample_metrics_for_run(row)
     return (
-        int(metrics["attempts"]) > VIDEO_LOCALIZATION_ALERT_MIN_DAILY_ATTEMPTS
-        and float(metrics["failure_rate"]) > VIDEO_LOCALIZATION_ALERT_FAILURE_RATE_THRESHOLD
+        int(metrics["attempts"]) > FAILURE_ALERT_MIN_SAMPLE_ATTEMPTS
+        and float(metrics["failure_rate"]) > FAILURE_ALERT_FAILURE_RATE_THRESHOLD
     )
 
 
-def _should_dispatch_recovery_alert_for_run(row: dict[str, Any]) -> bool:
+def _should_dispatch_failure_alert_for_run(row: dict[str, Any]) -> bool:
     task_code = str(row.get("task_code") or "")
-    return task_code != META_HOT_POSTS_VIDEO_LOCALIZATION_TASK_CODE
+    if not task_code or str(row.get("status") or "") != "failed":
+        return False
+    if _is_sample_failure_alert_worthy(row):
+        return True
+    from appcore import feishu_alerts
+
+    streak = feishu_alerts.consecutive_failure_count(
+        task_code, current_run_id=_non_negative_int(row.get("id")) or None
+    )
+    return streak >= FAILURE_ALERT_MIN_CONSECUTIVE_RUNS
+
+
+def _prior_failure_streak_has_sample_alert(row: dict[str, Any]) -> bool:
+    task_code = str(row.get("task_code") or "")
+    current_run_id = _non_negative_int(row.get("id"))
+    if not task_code or not current_run_id:
+        return False
+    rows = query(
+        """
+        SELECT id, task_code, status, summary_json
+        FROM scheduled_task_runs
+        WHERE task_code = %s
+          AND status IN ('success','failed')
+          AND id < %s
+        ORDER BY id DESC
+        LIMIT 100
+        """,
+        (task_code, current_run_id),
+    )
+    for item in rows or []:
+        status = str(item.get("status") or "").strip()
+        if status == "success":
+            return False
+        candidate = {
+            "id": item.get("id"),
+            "task_code": task_code,
+            "status": status,
+            "summary": _decode_summary(item.get("summary_json")),
+        }
+        if _is_sample_failure_alert_worthy(candidate):
+            return True
+    return False
+
+
+def _should_dispatch_recovery_alert_for_run(
+    row: dict[str, Any],
+    *,
+    prior_failures: int | None = None,
+) -> bool:
+    task_code = str(row.get("task_code") or "")
+    if not task_code:
+        return False
+    prior = _non_negative_int(prior_failures)
+    if prior >= FAILURE_ALERT_MIN_CONSECUTIVE_RUNS:
+        return True
+    if prior <= 0:
+        return False
+    return _prior_failure_streak_has_sample_alert(row)
 
 
 def _decode_json_value(value: Any) -> Any:
