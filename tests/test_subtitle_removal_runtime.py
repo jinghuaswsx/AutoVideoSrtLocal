@@ -956,3 +956,38 @@ def test_vod_scheduler_skips_local_vsr_tasks(monkeypatch):
     scheduler.tick_once()
 
     assert "sr-local-vsr-scheduler" not in task_state._tasks
+
+
+def test_vod_scheduler_skips_niuma_tasks(monkeypatch):
+    from appcore import subtitle_removal_vod_scheduler as scheduler
+
+    state = {
+        "id": "sr-niuma-scheduler",
+        "type": "subtitle_removal",
+        "status": "running",
+        "subtitle_backend": "niuma",
+        "provider_task_id": "niuma-task-1",
+        "steps": {
+            "prepare": "done",
+            "submit": "done",
+            "poll": "running",
+            "download_result": "pending",
+            "upload_result": "pending",
+        },
+    }
+
+    monkeypatch.setattr("config.SUBTITLE_REMOVAL_PROVIDER", "vod")
+    monkeypatch.setattr(
+        scheduler,
+        "db_query",
+        lambda sql, args=(): [{"id": "sr-niuma-scheduler", "user_id": 1, "state_json": json.dumps(state)}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "get_execution",
+        lambda run_id: (_ for _ in ()).throw(AssertionError("Niuma tasks must not use VOD GetExecution")),
+    )
+
+    scheduler.tick_once()
+
+    assert "sr-niuma-scheduler" not in task_state._tasks
