@@ -21,7 +21,7 @@ PROVIDER_CODE = "apimart_image"
 USAGE_LOG_PROVIDER = "apimart"
 
 USD_TO_CNY = Decimal("7.2")
-LOW_BALANCE_USD = Decimal("20")
+LOW_BALANCE_USD = Decimal("1")
 MIN_GAP_USD = Decimal("1.00")
 MIN_GAP_RATIO = Decimal("0.20")
 REQUEST_TIMEOUT_SECONDS = 15

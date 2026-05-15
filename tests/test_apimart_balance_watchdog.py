@@ -74,13 +74,13 @@ def test_evaluate_snapshot_alerts_on_low_remaining_balance():
         current=watchdog.balance_snapshot(
             api_key_balance={
                 "label": "api_key",
-                "remaining_usd": Decimal("19.99"),
+                "remaining_usd": Decimal("0.99"),
                 "used_usd": Decimal("25"),
                 "unlimited_quota": False,
             },
             account_balance={
                 "label": "account",
-                "remaining_usd": Decimal("19.99"),
+                "remaining_usd": Decimal("0.99"),
                 "used_usd": Decimal("25"),
                 "unlimited_quota": False,
             },
@@ -110,7 +110,7 @@ def test_evaluate_snapshot_alerts_on_low_account_balance_even_when_key_quota_is_
             },
             account_balance={
                 "label": "account",
-                "remaining_usd": Decimal("9.99"),
+                "remaining_usd": Decimal("0.99"),
                 "used_usd": Decimal("25"),
                 "unlimited_quota": False,
             },
@@ -125,7 +125,7 @@ def test_evaluate_snapshot_alerts_on_low_account_balance_even_when_key_quota_is_
     assert result["alert"] is True
     assert result["reason"] == "low_balance"
     assert result["low_balance_label"] == "account"
-    assert result["low_balance_remaining_usd"] == Decimal("9.99")
+    assert result["low_balance_remaining_usd"] == Decimal("0.99")
 
 
 def test_evaluate_snapshot_alerts_when_remote_usage_exceeds_local_billing():
