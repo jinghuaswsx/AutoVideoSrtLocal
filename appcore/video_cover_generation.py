@@ -146,6 +146,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
         "local": "本地接口",
         "openrouter": "OPENROUTER",
         "gemini_vertex_adc": "GOOGLE VERTEX ADC",
+        "apimart": "APIMART",
     },
     "models": {
         "local": {
@@ -167,6 +168,11 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "nano_banana_pro": "gemini-3-pro-image-preview",
             "nano_banana_1": "gemini-2.5-flash-image-preview",
         },
+        "apimart": {
+            "apimart_gpt_image_2": "gpt-image-2",
+            "apimart_nano_banana_2": "gemini-3.1-flash-image-preview",
+            "apimart_nano_banana_pro": "gemini-3-pro-image-preview",
+        },
     },
     "model_labels": {
         "gpt_image_2": "GPT-Image-2",
@@ -176,6 +182,9 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
         "nano_banana_2": "Nano Banana 2",
         "nano_banana_pro": "Nano Banana Pro",
         "nano_banana_1": "Nano Banana 1",
+        "apimart_gpt_image_2": "GPT-Image-2（APIMART）",
+        "apimart_nano_banana_2": "Nano Banana 2（APIMART）",
+        "apimart_nano_banana_pro": "Nano Banana Pro（APIMART）",
     },
     "model_aliases": {
         "openrouter": {
@@ -183,6 +192,12 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "gemini-3.1-flash-image-preview": "nano_banana_2",
             "gemini-3-pro-image-preview": "nano_banana_pro",
             "gemini-2.5-flash-image-preview": "nano_banana_1",
+        },
+        "apimart": {
+            "gpt_image_2": "apimart_gpt_image_2",
+            "gpt-image-2": "apimart_gpt_image_2",
+            "gemini-3.1-flash-image-preview": "apimart_nano_banana_2",
+            "gemini-3-pro-image-preview": "apimart_nano_banana_pro",
         },
     },
 }
@@ -1283,6 +1298,17 @@ def generate_cover_image(
             project_id=task_id,
             service="video_cover.generate",
             channel="cloud_adc",
+        )
+    if selection.provider == "apimart":
+        return gemini_image.generate_image(
+            prompt,
+            source_image=source_image,
+            source_mime=source_mime,
+            model=selection.model,
+            user_id=user_id,
+            project_id=task_id,
+            service="video_cover.generate",
+            channel=selection.provider,
         )
     raise VideoCoverGenerationError(f"封面生成失败：不支持的供应商 {selection.provider}")
 

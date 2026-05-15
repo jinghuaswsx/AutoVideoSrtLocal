@@ -15,6 +15,15 @@
 - 除 OpenRouter 外，其他第四步图片通道固定串行，不展示并发选项，后端也不可启用并发。
 - 生成几张图就提交几个并发图片生成请求；最终仍按图片序号稳定展示和保存。
 
+### 2026-05-15 APIMART 补充
+
+后续默认配置还需要把已经接入系统的 APIMART 图片通道开放给文案封面第四步：
+
+- `APIMART`：复用 `appcore.gemini_image.generate_image(channel="apimart")` 和 `llm_provider_configs.apimart_image` 凭据，模型池只开放 `gpt-image-2`、`gemini-3.1-flash-image-preview`、`gemini-3-pro-image-preview`。
+- APIMART 和本地接口、Google Vertex ADC 一样固定串行；只有 OpenRouter 支持并发开关。
+- 文案封面默认配置暂不开放豆包 Seedream 选项；图片翻译模块中既有的豆包 Seedream 集成不受影响。
+- API key 只在服务商接入配置中维护，不能写入代码、测试或设计文档。
+
 ## 目标
 
 1. 第四步模型池新增 `gemini_vertex_adc` 供应商，UI 展示为 `GOOGLE VERTEX ADC`。
@@ -53,7 +62,8 @@
   "providers": {
     "local": "本地接口",
     "openrouter": "OPENROUTER",
-    "gemini_vertex_adc": "GOOGLE VERTEX ADC"
+    "gemini_vertex_adc": "GOOGLE VERTEX ADC",
+    "apimart": "APIMART"
   },
   "models": {
     "openrouter": {
@@ -65,12 +75,17 @@
       "nano_banana_2": "gemini-3.1-flash-image-preview",
       "nano_banana_pro": "gemini-3-pro-image-preview",
       "nano_banana_1": "gemini-2.5-flash-image-preview"
+    },
+    "apimart": {
+      "apimart_gpt_image_2": "gpt-image-2",
+      "apimart_nano_banana_2": "gemini-3.1-flash-image-preview",
+      "apimart_nano_banana_pro": "gemini-3-pro-image-preview"
     }
   }
 }
 ```
 
-OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local` 原有模型继续保留。
+OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local` 原有模型继续保留。APIMART 模型 ID 按 APIMART 图片生成文档保存裸模型名。
 
 ### 默认配置结构
 

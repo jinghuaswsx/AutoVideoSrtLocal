@@ -553,6 +553,11 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     vertex_adc = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
     assert vertex_adc.provider == "gemini_vertex_adc"
     assert vertex_adc.model == "gemini-3.1-flash-image-preview"
+    apimart = resolve_cover_model_selection("apimart", "apimart_gpt_image_2")
+    assert apimart.provider == "apimart"
+    assert apimart.model == "gpt-image-2"
+    apimart_banana = resolve_cover_model_selection("apimart", "apimart_nano_banana_pro")
+    assert apimart_banana.model == "gemini-3-pro-image-preview"
 
     options = video_cover_model_options()
     assert options["steps"]["video_analysis"]["default_provider"] == "gemini_vertex_adc"
@@ -565,6 +570,12 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "google/gemini-3.1-flash-image-preview"
     assert options["steps"]["cover_generation"]["models"]["gemini_vertex_adc"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["providers"]["apimart"] == "APIMART"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_gpt_image_2"] == "gpt-image-2"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_pro"] == "gemini-3-pro-image-preview"
+    assert "doubao" not in options["steps"]["cover_generation"]["providers"]
+    assert "doubao" not in options["steps"]["cover_generation"]["models"]
 
 
 def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
@@ -597,6 +608,54 @@ def test_generate_cover_image_uses_vertex_adc_cloud_channel(monkeypatch):
     assert mime == "image/png"
     assert captured["kwargs"]["channel"] == "cloud_adc"
     assert captured["kwargs"]["model"] == "gemini-3.1-flash-image-preview"
+    assert captured["kwargs"]["service"] == "video_cover.generate"
+
+
+@pytest.mark.parametrize(
+    ("provider", "alias", "expected_channel", "expected_model"),
+    [
+        ("apimart", "apimart_gpt_image_2", "apimart", "gpt-image-2"),
+        ("apimart", "apimart_nano_banana_2", "apimart", "gemini-3.1-flash-image-preview"),
+    ],
+)
+def test_generate_cover_image_uses_apimart_channel(
+    monkeypatch,
+    provider,
+    alias,
+    expected_channel,
+    expected_model,
+):
+    from appcore.video_cover_generation import generate_cover_image, resolve_cover_model_selection
+
+    captured = {}
+
+    def fake_generate_image(prompt, *, source_image, source_mime, **kwargs):
+        captured.update({
+            "prompt": prompt,
+            "source_image": source_image,
+            "source_mime": source_mime,
+            "kwargs": kwargs,
+        })
+        return _png_bytes(), "image/png"
+
+    monkeypatch.setattr("appcore.video_cover_generation.gemini_image.generate_image", fake_generate_image)
+
+    selection = resolve_cover_model_selection(provider, alias)
+    assert selection.provider == provider
+    assert selection.model == expected_model
+    payload, mime = generate_cover_image(
+        "make a cover",
+        source_image=_png_bytes(),
+        source_mime="image/png",
+        selection=selection,
+        user_id=8,
+        task_id="task-1",
+    )
+
+    assert payload.startswith(b"\x89PNG")
+    assert mime == "image/png"
+    assert captured["kwargs"]["channel"] == expected_channel
+    assert captured["kwargs"]["model"] == expected_model
     assert captured["kwargs"]["service"] == "video_cover.generate"
 
 
@@ -996,8 +1055,11 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     assert "execution.value = 'parallel'" in html
     assert "Nano Banana 2" in html
     assert "GOOGLE VERTEX ADC" in html
+    assert "APIMART" in html
     assert "google/gemini-3.1-flash-image-preview" in html
     assert "gemini-3.1-flash-image-preview" in html
+    assert "gpt-image-2" in html
+    assert "doubao-seedream-5-0-260128" not in html
     assert "openai/gpt-5.4-image-2:mid" in html
 
 
@@ -1019,6 +1081,7 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     assert normalize_cover_execution_mode("openrouter", None) == "parallel"
     assert normalize_cover_execution_mode("openrouter", "") == "parallel"
     assert normalize_cover_execution_mode("local", "parallel") == "serial"
+    assert normalize_cover_execution_mode("apimart", "parallel") == "serial"
 
     openrouter = video_cover_settings.normalize_model_defaults({
         "cover_generation": {
@@ -1056,6 +1119,19 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     assert vertex["cover_generation"] == {
         "provider": "gemini_vertex_adc",
         "model_id": "gemini-3-pro-image-preview",
+        "execution_mode": "serial",
+    }
+
+    apimart = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "apimart",
+            "model_id": "gemini-3.1-flash-image-preview",
+            "execution_mode": "parallel",
+        }
+    })
+    assert apimart["cover_generation"] == {
+        "provider": "apimart",
+        "model_id": "gemini-3.1-flash-image-preview",
         "execution_mode": "serial",
     }
 
@@ -1480,7 +1556,7 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'data-copy-ad-copy="${idx}" data-copy-mode="english"' in html
     assert 'data-copy-ad-copy="${idx}" data-copy-mode="chinese"' in html
     assert 'data-copy-ad-copy="${idx}" data-copy-mode="bilingual"' in html
-    assert "copyAdCopyText(btn.dataset.copyAdCopy, btn.dataset.copyMode)" in html
+    assert "copyAdCopyText(copyAdBtn, copyAdBtn.dataset.copyAdCopy, copyAdBtn.dataset.copyMode)" in html
     assert "formattedBilingualCopyText" in html
     assert "copyTextByMode(sets[index], mode)" in html
     assert html.count('<section class="vcd-process-card') == 4
