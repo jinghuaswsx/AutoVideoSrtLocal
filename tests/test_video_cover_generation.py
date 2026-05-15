@@ -163,8 +163,9 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
-    assert "不要在图片中生成任何文字" in calls[0]["prompt"]
-    assert "必须且只能添加一句简短英文 hook" not in calls[0]["prompt"]
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]["prompt"]
+    assert "不要使用固定位置的半透明背景框" in calls[0]["prompt"]
+    assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
     assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
     assert "{product_analysis}" not in calls[0]["prompt"]
     assert "{video_analysis}" not in calls[0]["prompt"]
@@ -256,10 +257,11 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
         "Description 2",
         "Description 3",
     ]
-    assert all(cover["overlay_text"].startswith("Hook ") for cover in result["covers"])
-    assert all(cover["overlay_box"]["width"] <= 1080 for cover in result["covers"])
     assert all(cover["formatted_copy"].startswith("标题: Hook ") for cover in result["covers"])
-    assert "不要在图片中生成任何文字" in calls[0]
+    assert all("overlay_text" not in cover for cover in result["covers"])
+    assert all("overlay_box" not in cover for cover in result["covers"])
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]
+    assert "不要在图片中生成任何文字" not in calls[0]
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
 
 
@@ -444,7 +446,8 @@ def test_generate_video_covers_normalizes_legacy_copy_metadata(tmp_path):
         "文案: Legacy body copy.\n"
         "描述: Legacy Description"
     )
-    assert cover["overlay_text"] == "Legacy Hook"
+    assert "overlay_text" not in cover
+    assert "overlay_box" not in cover
 
 
 def test_resolve_video_cover_model_options_matches_requested_mappings():
@@ -730,13 +733,14 @@ def test_build_platform_prompt_uses_creative_director_inputs():
         ad_copy_sets="- Blend Anywhere\n- Daily Smoothies Made Easy",
     )
 
-    assert "生成一张 9:16 竖版无文字封面背景图" in prompt
+    assert "生成一张 9:16 竖版有文字封面图" in prompt
     assert "product_analysis: <产品核心理解>" in prompt
     assert "hand using the blender in a kitchen" in prompt
     assert "Blend Anywhere" in prompt
     assert "不要做成电商商品主图、海报、影棚产品照，也不要做成截图" in prompt
-    assert "不要在图片中生成任何文字" in prompt
-    assert "画面中必须且只能包含一句简短英文 hook" not in prompt
+    assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in prompt
+    assert "不要使用固定位置的半透明背景框" in prompt
+    assert "不要在图片中生成任何文字" not in prompt
     assert "{product_analysis}" not in prompt
     assert "{video_analysis}" not in prompt
     assert "{ad_copy_sets}" not in prompt
@@ -1724,7 +1728,7 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
                 }
             },
             "image_prompts": [
-                {"index": 1, "prompt": "actual prompt without rendered text", "source_ad_copy_id": 1}
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
             ],
             "covers": [
                 {
@@ -1737,8 +1741,6 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
                         "文案: Add high-visibility warning light to your trunk.\n"
                         "描述: Road Trips Made Safer"
                     ),
-                    "overlay_text": "Don’t Get Stuck Unprepared",
-                    "overlay_box": {"x": 52, "y": 98, "width": 800, "height": 130},
                 }
             ],
         }
@@ -1767,7 +1769,7 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
     assert captured["cover_execution_mode"] == "parallel"
     assert request_payload["request_data"]["execution_mode"] == "parallel"
     assert state["models"]["cover_generation"]["execution_mode"] == "parallel"
-    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt without rendered text"
+    assert request_payload["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
     assert request_payload["request_data"]["ad_copy_sets"]["ad_copy_sets"][0]["english"]["title"] == (
         "Don’t Get Stuck Unprepared"
     )
@@ -1827,7 +1829,7 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
             "inputs": {},
             "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2"}},
             "image_prompts": [
-                {"index": 1, "prompt": "actual prompt without rendered text", "source_ad_copy_id": 1}
+                {"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}
             ],
             "covers": [
                 {
@@ -1840,8 +1842,6 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
                         "文案: Add high-visibility warning light to your trunk.\n"
                         "描述: Road Trips Made Safer"
                     ),
-                    "overlay_text": "Don’t Get Stuck Unprepared",
-                    "overlay_box": {"x": 52, "y": 98, "width": 800, "height": 130},
                 }
             ],
         }
@@ -1852,7 +1852,8 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
 
     assert result["covers"][0]["object_key"] == "artifacts/video_cover/8/task-1/social_reels.png"
     assert "url" not in result["covers"][0]
-    assert state["result"]["covers"][0]["overlay_text"] == "Don’t Get Stuck Unprepared"
+    assert "overlay_text" not in state["result"]["covers"][0]
+    assert "overlay_box" not in state["result"]["covers"][0]
     assert state["step_results"]["cover_generation"]["structured_result"]["covers"][0]["object_key"]
 
 
