@@ -364,3 +364,59 @@ def test_subtitle_removal_provider_rejects_invalid_erase_text_type(monkeypatch):
             source_url="https://tos.example/s.mp4",
             erase_text_type="bogus",
         )
+
+
+def test_subtitle_removal_provider_can_use_niuma_infra_credentials(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": {"taskId": "niuma-task-1"}}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_API_KEY", "GOLDEN_NIUMA", raising=False)
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_BASE_URL", "https://niuma.example/api/openAi", raising=False)
+
+    task_id = provider.submit_task(
+        file_size_mb=2.094,
+        duration_seconds=10.006,
+        resolution="720x1280",
+        video_name="sr-niuma_0_0_720_1280",
+        source_url="https://tos.example/source.mp4",
+        credential_code="niuma_main",
+    )
+
+    assert task_id == "niuma-task-1"
+    assert captured["url"] == "https://niuma.example/api/openAi"
+    assert captured["headers"]["authorization"] == "GOLDEN_NIUMA"
+    assert captured["json"]["biz"] == "aiRemoveSubtitleSubmitTask"
+    assert captured["timeout"] == 30
+
+
+def test_subtitle_removal_provider_niuma_missing_api_key_has_infra_hint(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_API_KEY", "", raising=False)
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_BASE_URL", "https://niuma.example/api/openAi", raising=False)
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="niuma_main.api_key"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/source.mp4",
+            credential_code="niuma_main",
+        )

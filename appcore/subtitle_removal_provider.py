@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import requests
 
+import config
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     require_provider_config,
@@ -13,23 +14,45 @@ class SubtitleRemovalProviderError(RuntimeError):
     pass
 
 
-def _provider_cfg():
+DEFAULT_CREDENTIAL_CODE = "subtitle_removal"
+NIUMA_CREDENTIAL_CODE = "niuma_main"
+
+
+def _normalize_credential_code(credential_code: str | None) -> str:
+    code = (credential_code or DEFAULT_CREDENTIAL_CODE).strip().lower()
+    return code or DEFAULT_CREDENTIAL_CODE
+
+
+def _provider_cfg(credential_code: str = DEFAULT_CREDENTIAL_CODE):
     try:
-        return require_provider_config("subtitle_removal")
+        return require_provider_config(credential_code)
     except ProviderConfigError as exc:
         raise SubtitleRemovalProviderError(str(exc)) from exc
 
 
-def _provider_url() -> str:
-    cfg = _provider_cfg()
+def _provider_url(credential_code: str = DEFAULT_CREDENTIAL_CODE) -> str:
+    if _normalize_credential_code(credential_code) == NIUMA_CREDENTIAL_CODE:
+        return (
+            getattr(config, "NIUMA_ERASE_BASE_URL", "") or SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT
+        ).strip()
+
+    cfg = _provider_cfg(credential_code)
     try:
         return cfg.require_base_url(default=SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT)
     except ProviderConfigError as exc:
         raise SubtitleRemovalProviderError(str(exc)) from exc
 
 
-def _headers() -> dict[str, str]:
-    cfg = _provider_cfg()
+def _headers(credential_code: str = DEFAULT_CREDENTIAL_CODE) -> dict[str, str]:
+    if _normalize_credential_code(credential_code) == NIUMA_CREDENTIAL_CODE:
+        token = (getattr(config, "NIUMA_ERASE_API_KEY", "") or "").strip()
+        if not token:
+            raise SubtitleRemovalProviderError(
+                "缺少基础设施配置 niuma_main.api_key，请在 /settings?tab=infrastructure 填写。"
+            )
+        return {"authorization": token}
+
+    cfg = _provider_cfg(credential_code)
     try:
         token = cfg.require_api_key()
     except ProviderConfigError as exc:
@@ -37,17 +60,20 @@ def _headers() -> dict[str, str]:
     return {"authorization": token}
 
 
-def _notify_url() -> str:
-    cfg = _provider_cfg()
+def _notify_url(credential_code: str = DEFAULT_CREDENTIAL_CODE) -> str:
+    if _normalize_credential_code(credential_code) == NIUMA_CREDENTIAL_CODE:
+        return ""
+
+    cfg = _provider_cfg(credential_code)
     extra = cfg.extra_config or {}
     return (extra.get("notify_url") or extra.get("notifyUrl") or "").strip()
 
 
-def _post(payload: dict) -> dict:
+def _post(payload: dict, *, credential_code: str = DEFAULT_CREDENTIAL_CODE) -> dict:
     try:
         response = requests.post(
-            _provider_url(),
-            headers=_headers(),
+            _provider_url(credential_code),
+            headers=_headers(credential_code),
             json=payload,
             timeout=30,
         )
@@ -73,6 +99,7 @@ def submit_task(
     source_url: str,
     cover_url: str = "",
     erase_text_type: str = "subtitle",
+    credential_code: str = DEFAULT_CREDENTIAL_CODE,
 ) -> str:
     if erase_text_type not in {"subtitle", "text"}:
         raise ValueError(
@@ -86,7 +113,7 @@ def submit_task(
         "videoName": video_name,
         "coverUrl": cover_url,
         "url": source_url,
-        "notifyUrl": _notify_url(),
+        "notifyUrl": _notify_url(credential_code),
     }
     if erase_text_type == "text":
         payload["operation"] = {
@@ -99,7 +126,7 @@ def submit_task(
                 },
             },
         }
-    data = _post(payload)
+    data = _post(payload, credential_code=credential_code)
     payload_result = data.get("data")
     if isinstance(payload_result, dict) and payload_result.get("taskId"):
         return str(payload_result["taskId"])
@@ -110,8 +137,11 @@ def submit_task(
     raise SubtitleRemovalProviderError("Provider submit response missing taskId")
 
 
-def query_progress(task_id: str) -> dict:
-    data = _post({"biz": "aiRemoveSubtitleProgress", "taskId": task_id})
+def query_progress(task_id: str, *, credential_code: str = DEFAULT_CREDENTIAL_CODE) -> dict:
+    data = _post(
+        {"biz": "aiRemoveSubtitleProgress", "taskId": task_id},
+        credential_code=credential_code,
+    )
     payload = data.get("data")
     if not isinstance(payload, list) or not payload:
         raise SubtitleRemovalProviderError("Provider progress response missing data")

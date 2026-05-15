@@ -319,8 +319,10 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert 'data-subtitle-removal-page="upload"' in template
     assert 'data-role="subtitle-backend-tab"' in template
     assert 'value="volc" checked' in template
+    assert 'value="niuma"' in template
     assert 'value="local_vsr"' in template
     assert "火山" in template
+    assert "牛马" in template
     assert "本地 VSR" in template
     assert 'disabled' not in template
     assert "/api/subtitle-removal/upload/bootstrap" in scripts
@@ -522,6 +524,7 @@ def test_subtitle_removal_list_page_exposes_backend_filter_pills(authed_client_n
     body = response.get_data(as_text=True)
     assert 'id="srBackendFilter"' in body
     assert 'data-backend-filter="volc"' in body
+    assert 'data-backend-filter="niuma"' in body
     assert 'data-backend-filter="local_vsr"' in body
     assert 'aria-pressed="false"' in body
     assert ">处理方式<" in body
@@ -541,6 +544,14 @@ def test_subtitle_removal_backend_filter_pills_have_strong_selected_state(authed
     assert ".sr-backend-filter-pill.is-active," in body
     assert "background: var(--primary-color);" in body
     assert "color: #fff;" in body
+
+
+def test_subtitle_removal_scripts_label_niuma_backend_and_keep_erase_type_volc_only():
+    scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'if (value === "niuma") return "牛马";' in scripts
+    assert 'var isVolc = backend === "volc";' in scripts
+    assert 'erase_text_type: subtitleBackend === "volc" ? readUploadEraseType() : ""' in scripts
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():

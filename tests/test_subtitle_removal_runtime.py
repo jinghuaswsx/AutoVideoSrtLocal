@@ -689,6 +689,87 @@ def test_runtime_submit_uses_backup_tos_signed_source_url(monkeypatch, tmp_path)
     )
 
 
+def test_runtime_submit_uses_niuma_credentials_and_video_name(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    task_state.create_subtitle_removal(
+        "sr-niuma-runtime",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-niuma-runtime",
+        status="queued",
+        subtitle_backend="niuma",
+        remove_mode="box",
+        selection_box={"x1": 11, "y1": 22, "x2": 333, "y2": 444},
+        position_payload={"l": 11, "t": 22, "w": 322, "h": 422},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        source_tos_key="uploads/1/sr-niuma-runtime/source.mp4",
+        erase_text_type="text",
+    )
+
+    captured = {}
+
+    def fake_submit_task(**kwargs):
+        captured.update(kwargs)
+        return "niuma-provider-task"
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.submit_task", fake_submit_task)
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_source_storage.tos_clients.generate_signed_download_url",
+        lambda key, expires=None: "https://tos.example/source.mp4",
+    )
+
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner._submit("sr-niuma-runtime")
+
+    assert captured["credential_code"] == "niuma_main"
+    assert captured["video_name"] == "sr-niuma-runtime_11_22_333_444"
+    assert "erase_text_type" not in captured or captured["erase_text_type"] == "subtitle"
+
+
+def test_runtime_poll_uses_niuma_credentials(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    task_state.create_subtitle_removal(
+        "sr-niuma-poll",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-niuma-poll",
+        status="running",
+        subtitle_backend="niuma",
+        provider_task_id="niuma-provider-task",
+    )
+
+    captured = {}
+
+    def fake_query_progress(task_id, *, credential_code="subtitle_removal"):
+        captured["task_id"] = task_id
+        captured["credential_code"] = credential_code
+        return {"taskId": task_id, "status": "success", "resultUrl": "https://niuma.example/result.mp4"}
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.query_progress", fake_query_progress)
+    monkeypatch.setattr(
+        SubtitleRemovalRuntime,
+        "_download_and_finalize_result",
+        lambda self, task_id, progress: captured.setdefault("finalized", (task_id, progress["resultUrl"])),
+    )
+
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner._poll_until_terminal("sr-niuma-poll")
+
+    assert captured["task_id"] == "niuma-provider-task"
+    assert captured["credential_code"] == "niuma_main"
+    assert captured["finalized"] == ("sr-niuma-poll", "https://niuma.example/result.mp4")
+
+
 def test_vod_runtime_submit_stages_public_source_on_demand(monkeypatch, tmp_path):
     from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
 
