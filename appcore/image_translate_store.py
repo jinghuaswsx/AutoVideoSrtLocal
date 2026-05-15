@@ -41,6 +41,21 @@ def list_user_projects(
     )
 
 
+def list_all_projects(
+    *,
+    query_func: QueryFunc = query,
+) -> list[dict]:
+    """List all image translation projects (admin only)."""
+    return query_func(
+        "SELECT id, created_at, status, state_json, user_id "
+        "FROM projects "
+        "WHERE type = %s AND deleted_at IS NULL "
+        "ORDER BY created_at DESC "
+        "LIMIT 100",
+        (IMAGE_TRANSLATE_TYPE,),
+    )
+
+
 def soft_delete_project(
     task_id: str,
     user_id: int,

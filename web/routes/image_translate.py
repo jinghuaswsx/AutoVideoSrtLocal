@@ -1030,10 +1030,17 @@ def api_download_zip(task_id: str):
 def page_list():
     import json as _json
 
-    rows = image_translate_store.list_user_projects(
-        current_user.id,
-        query_func=db_query,
-    )
+    tab = (request.args.get("tab") or "all").strip().lower()
+
+    # 列出所有任务（管理员视角）或仅当前用户的任务
+    if _is_admin_user():
+        rows = image_translate_store.list_all_projects(query_func=db_query)
+    else:
+        rows = image_translate_store.list_user_projects(
+            current_user.id,
+            query_func=db_query,
+        )
+
     _STATUS_LABELS = {
         "queued": "排队中",
         "running": "运行中",
@@ -1041,7 +1048,26 @@ def page_list():
         "error": "失败",
         "interrupted": "中断",
     }
-    history = []
+
+    def _classify_task(row, state):
+        """判断任务类型：
+        - 'normal': 普通图片翻译（不从素材管理创建）
+        - 'product_detail': 商品详情图翻译（从素材管理编辑页创建）
+        - 'video_cover': 视频封面图翻译（从素材管理翻译按钮创建）
+        """
+        ctx = state.get("medias_context") or {}
+        entry = ctx.get("entry") or ""
+        preset = state.get("preset") or ""
+        if entry == "medias_edit_detail" and preset == "detail":
+            return "product_detail"
+        if entry in ("medias_edit_detail", "medias_cover_translate") and preset == "cover":
+            return "video_cover"
+        return "normal"
+
+    history_all = []
+    history_product_detail = []
+    history_video_cover = []
+
     for row in rows or []:
         state = {}
         try:
@@ -1057,7 +1083,8 @@ def page_list():
         channel = (state.get("channel") or "").strip().lower()
         if channel not in its.CHANNELS:
             channel = _safe_image_translate_channel()
-        history.append({
+        task_type = _classify_task(row, state)
+        task_item = {
             "id": row["id"],
             "created_at": row.get("created_at"),
             "status": raw_status,
@@ -1075,14 +1102,31 @@ def page_list():
             "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
             "total": len(items),
             "done": done,
-        })
+            "user_id": row.get("user_id") if _is_admin_user() else None,
+            "task_type": task_type,
+        }
+        history_all.append(task_item)
+        if task_type == "product_detail":
+            history_product_detail.append(task_item)
+        elif task_type == "video_cover":
+            history_video_cover.append(task_item)
+
+    if tab == "product_detail":
+        history = history_product_detail
+    elif tab == "video_cover":
+        history = history_video_cover
+    else:
+        history = history_all
+
     default_channel = _safe_image_translate_channel()
     return render_template(
         "image_translate_list.html",
         history=history,
+        tab=tab,
         gemini_backend=_backend_badge(default_channel),
         image_translate_channels=_image_translate_channels_payload(),
         image_translate_default_channel=default_channel,
+        is_admin=_is_admin_user(),
     )
 
 
