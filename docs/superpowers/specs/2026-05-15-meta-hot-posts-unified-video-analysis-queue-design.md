@@ -16,10 +16,11 @@ Both analyze downloaded local videos with product links. They should now share o
 - Use one scheduled queue task for both analysis modes.
 - Keep task type explicit: `us_copyability` for "美国直接抄分析" and `europe_fit` for "欧洲搬运分析".
 - Process US copyability items before Europe fit items. Europe starts only when no US items are available in the same round.
-- Process at most 10 items per 10-minute round.
+- Process at most 5 items per 10-minute round, below the hard 10-item cap.
 - Use Google Vertex ADC with Gemini 3.1 Pro Preview for both analysis types.
-- Run serially with a conservative 30-second delay between LLM video calls.
+- Run serially with a conservative 90-second delay between LLM video calls.
 - Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
+- Stop the current round early after 2 rate-limit requeues to avoid a quota storm.
 - Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
 - Use takeover singleton behavior: every new 10-minute round marks any previous running queue run failed, resets both analysis types still marked running, starts a new run, and the old worker stops cooperatively before writing stale results.
 
@@ -63,8 +64,9 @@ Register one APScheduler job:
 - task code: `meta_hot_posts_video_analysis_queue_tick`
 - schedule: every 10 minutes
 - max instances: 2, so a new tick can enter and take over a stuck previous tick
-- batch size: 10
-- per-item delay: 30 seconds
+- batch size: 5
+- per-item delay: 90 seconds
+- rate-limit circuit breaker: 2 requeued 429 / quota errors stop the current round
 
 ## Retry And Suspension
 
@@ -74,7 +76,7 @@ Both task types count attempts when an item is marked `running`.
 - Attempts 1-2: non-rate-limit failures remain `failed` and are eligible for another later queue round.
 - Attempt 3: any failure is written as `suspended`. The pending selectors exclude `suspended`, so the video is no longer retried automatically until an operator decides how to handle it.
 
-Queue summaries include `rate_limited_requeued` and `suspended` counters, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real 429 rate and throughput.
+Queue summaries include `rate_limited_requeued`, `suspended`, `rate_limit_circuit_break`, and `stop_reason` counters/flags, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real 429 rate and throughput.
 
 The previous separate scheduled jobs for Europe fit and US copyability are removed from APScheduler registration and from the scheduled task registry as controllable jobs. Manual page actions call the unified queue tick with the same limits instead of starting separate loops.
 
@@ -83,7 +85,8 @@ The previous separate scheduled jobs for Europe fit and US copyability are remov
 Focused tests cover:
 
 - queue ordering: US items first, Europe only after US capacity is exhausted or absent
-- max 10 items per tick and 30-second delay between item executions
+- max 5 items per tick and 90-second delay between item executions
+- stop the tick once 2 items in the round hit 429 / quota requeue
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
 - 429 failures are requeued for a later round

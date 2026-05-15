@@ -567,7 +567,9 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert queue_task["runner"] == "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once"
     assert queue_task["log_table"] == "scheduled_task_runs"
     assert "10" in queue_task["description"]
-    assert "30" in queue_task["description"]
+    assert "5" in queue_task["description"]
+    assert "90" in queue_task["description"]
+    assert "rate-limit" in queue_task["description"]
     assert "Vertex ADC" in queue_task["description"]
     assert "gemini-3.1-pro-preview" in queue_task["description"]
     assert "2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md" in queue_task["description"]

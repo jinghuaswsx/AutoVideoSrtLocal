@@ -317,7 +317,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta hot posts unified video analysis queue",
         "description": (
             "Every 10 minutes, run one unified queue for Meta hot post video analysis. "
-            "Each round processes at most 10 tasks with a 30 second delay between LLM video calls; "
+            "Each round processes at most 5 tasks with a 90 second delay between LLM video calls; "
+            "2 rate-limit requeues stop the current round early; "
             "task_type=us_copyability runs before task_type=europe_fit, and Europe starts only after "
             "US copyability has no remaining capacity in the round. Both modes use Vertex ADC "
             "gemini-3.1-pro-preview. A new round takes over any previous running queue run and resets "

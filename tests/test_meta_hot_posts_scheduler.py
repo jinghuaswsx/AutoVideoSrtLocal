@@ -189,7 +189,7 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_unified_an
     assert len(calls) == 6
 
 
-def test_video_analysis_queue_tick_once_defaults_to_ten_videos_with_30_second_spacing(monkeypatch):
+def test_video_analysis_queue_tick_once_defaults_to_five_videos_with_90_second_spacing(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(scheduler, "_take_over_video_analysis_queue_singleton", lambda: {})
@@ -207,10 +207,10 @@ def test_video_analysis_queue_tick_once_defaults_to_ten_videos_with_30_second_sp
 
     scheduler.video_analysis_queue_tick_once(user_id=9)
 
-    assert captured["limit"] == 10
+    assert captured["limit"] == 5
     assert captured["user_id"] == 9
     assert captured["run_id"] == 42
-    assert captured["per_item_delay_seconds"] == 30
+    assert captured["per_item_delay_seconds"] == 90
 
 
 def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatch):
@@ -262,7 +262,7 @@ def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatc
     assert events[2][0] == "finish"
     assert events[2][2]["status"] == "failed"
     assert events[3] == ("start", scheduler.VIDEO_ANALYSIS_QUEUE_TASK_CODE)
-    assert events[4] == ("process", 10, 44, 30)
+    assert events[4] == ("process", 5, 44, 90)
 
 
 def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):
@@ -510,6 +510,63 @@ def test_process_video_analysis_queue_requeues_429_for_next_round(monkeypatch):
     assert summary["suspended"] == 0
     assert events[1][2]["status_override"] == "pending"
     assert "429" in events[1][2]["error_message"]
+
+
+def test_process_video_analysis_queue_stops_round_after_two_rate_limits(monkeypatch):
+    events = []
+    sleep_calls = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 3)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: [
+            {"analysis_id": 1, "hot_post_id": 10, "local_video_path": "us-a.mp4", "attempts": 0},
+            {"analysis_id": 2, "hot_post_id": 11, "local_video_path": "us-b.mp4", "attempts": 0},
+            {"analysis_id": 3, "hot_post_id": 12, "local_video_path": "us-c.mp4", "attempts": 0},
+        ],
+    )
+    monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
+    monkeypatch.setattr(
+        scheduler.store,
+        "mark_video_copyability_running",
+        lambda analysis_id: events.append(("mark", analysis_id)),
+    )
+
+    def raise_429(row, user_id=None):
+        events.append(("analyze", row["analysis_id"]))
+        raise RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded")
+
+    monkeypatch.setattr(scheduler.video_copyability, "analyze_video_copyability", raise_429)
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_video_copyability_analysis",
+        lambda analysis_id, **kwargs: events.append(("finish", analysis_id, kwargs["status_override"])),
+    )
+
+    summary = scheduler.process_video_analysis_queue(
+        limit=3,
+        user_id=7,
+        run_id=42,
+        per_item_delay_seconds=90,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary["scanned"] == 2
+    assert summary["rate_limited_requeued"] == 2
+    assert summary["rate_limit_circuit_break"] is True
+    assert summary["stop_reason"] == "rate_limited"
+    assert events == [
+        ("mark", 1),
+        ("analyze", 1),
+        ("finish", 1, "pending"),
+        ("mark", 2),
+        ("analyze", 2),
+        ("finish", 2, "pending"),
+    ]
+    assert sleep_calls == [90]
 
 
 def test_process_video_analysis_queue_suspends_after_third_us_attempt(monkeypatch):

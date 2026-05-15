@@ -43,9 +43,10 @@ SCHEDULED_EUROPE_FIT_LIMIT = 30
 SCHEDULED_VIDEO_COPYABILITY_LIMIT = 20
 SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
 FULL_SYNC_MAX_PAGES = 120
-SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 10
-SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS = 30
+SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 5
+SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS = 90
 SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS = 3
+SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD = 2
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -875,6 +876,17 @@ def _record_video_analysis_failure(
         summary[f"{task_type}_rate_limited_requeued"] += 1
 
 
+def _should_stop_video_analysis_queue_for_rate_limit(summary: dict[str, Any]) -> bool:
+    threshold = max(0, int(SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD))
+    if threshold <= 0:
+        return False
+    if int(summary.get("rate_limited_requeued") or 0) < threshold:
+        return False
+    summary["rate_limit_circuit_break"] = True
+    summary["stop_reason"] = "rate_limited"
+    return True
+
+
 def process_video_analysis_queue(
     *,
     limit: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT,
@@ -976,6 +988,8 @@ def process_video_analysis_queue(
                 )
                 summary["done"] += 1
                 summary[f"{task_type}_done"] += 1
+        if _should_stop_video_analysis_queue_for_rate_limit(summary):
+            break
         _sleep_after_item(
             index=index,
             total=total,
