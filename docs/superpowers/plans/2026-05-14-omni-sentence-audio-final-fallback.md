@@ -382,7 +382,7 @@ def test_reconcile_duration_final_short_extra_expand_can_align(monkeypatch):
     assert sentence["text"] == "Final expanded candidate"
     assert sentence["final_fallback_action"] == "ffmpeg_tempo_align"
     assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "aligned"
+    assert sentence["final_rewrite_result"] == "aligned"
     assert sentence["final_extra_expand_before_text"] == "Candidate 2"
     assert sentence["final_extra_expand_after_text"] == "Final expanded candidate"
     assert [call["direction"] for call in rewrite_calls] == ["expand", "expand", "expand"]
@@ -430,7 +430,7 @@ def test_reconcile_duration_final_short_extra_expand_failure_does_not_loop(monke
     assert sentence["final_fallback_action"] == "extra_expand_failed"
     assert sentence["final_fallback_reason"] == "short_after_attempts"
     assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "still_short"
+    assert sentence["final_rewrite_result"] == "still_short"
     assert len(rewrite_calls) == 3
     assert rewrite_calls[-1]["attempt_number"] == 999
 ```
@@ -483,7 +483,7 @@ def _run_final_extra_expand(
     current["active_action"] = "expand"
     current["active_temperature"] = av_translate.rewrite_temperature_for_attempt(999)
     current["active_tts_attempt"] = current.get("tts_regenerate_attempts", 0) + 1
-    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_start")
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_rewrite_start")
     try:
         new_text = av_translate.rewrite_one(
             asr_index=int(current.get("asr_index", position)),
@@ -506,9 +506,9 @@ def _run_final_extra_expand(
         )
     except Exception as exc:
         current["final_fallback_action"] = "extra_expand_failed"
-        current["final_extra_expand_result"] = "rewrite_failed"
+        current["final_rewrite_result"] = "rewrite_failed"
         current["final_extra_expand_error"] = _error_text(exc)
-        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_rewrite_result")
         return
     if isinstance(new_text, dict):
         new_text = str(new_text.get("text") or "")
@@ -535,16 +535,16 @@ def _run_final_extra_expand(
         on_progress=on_progress,
         reason="short_after_attempts",
     ):
-        current["final_extra_expand_result"] = "aligned"
+        current["final_rewrite_result"] = "aligned"
     elif current["duration_ratio"] < MIN_FFMPEG_TEMPO_RATIO:
         current["final_fallback_action"] = "extra_expand_failed"
-        current["final_extra_expand_result"] = "still_short"
+        current["final_rewrite_result"] = "still_short"
         current["status"] = "warning_short"
     else:
         current["final_fallback_action"] = "extra_expand_failed"
-        current["final_extra_expand_result"] = "still_long"
+        current["final_rewrite_result"] = "still_long"
         current["status"] = _warning_status_for_ratio(current["duration_ratio"])
-    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
+    _emit_sentence_progress(on_progress, position=position, current=current, phase="final_rewrite_result")
 ```
 
 After the normal loop applies `best_candidate` and sets `warning_*`, add:
@@ -617,12 +617,12 @@ Append to `test_sentence_reconcile_process_is_rendered_in_tts_duration_log` in `
 
 ```python
     assert "ffmpeg_tempo_align" in script
-    assert "final_extra_expand_start" in script
-    assert "final_extra_expand_result" in script
+    assert "final_rewrite_start" in script
+    assert "final_rewrite_result" in script
     assert "final_clip_fallback" in script
     assert "FFmpeg 对齐" in script
     assert "超长截断" in script
-    assert "二次扩写" in script
+    assert "二次重写" in script
 ```
 
 - [ ] **Step 3: Run tests and verify they fail**
@@ -648,8 +648,8 @@ In `sentenceProgressPhaseLabel` in `web/templates/_task_workbench_scripts.html`,
 
 ```javascript
       ffmpeg_tempo_align: "FFmpeg 对齐",
-      final_extra_expand_start: "二次扩写开始",
-      final_extra_expand_result: "二次扩写结果",
+      final_rewrite_start: "二次重写开始",
+      final_rewrite_result: "二次重写结果",
       final_clip_fallback: "超长截断",
 ```
 
@@ -661,8 +661,8 @@ Add helper after `renderSemanticCoverageChip`:
     const labels = {
       ffmpeg_tempo_align: "FFmpeg 对齐",
       clip_overlong: "超长截断",
-      extra_expand: "二次扩写",
-      extra_expand_failed: "二次扩写未收敛",
+      extra_expand: "二次重写",
+      extra_expand_failed: "二次重写未收敛",
     };
     if (!labels[action]) return "";
     return `<span class="semantic-coverage-chip warning">${escapeHtml(labels[action])}</span>`;
@@ -682,8 +682,8 @@ Add helper after `renderSemanticCoverageChip`:
     }
     const beforeText = sentence.final_extra_expand_before_text || debug.final_extra_expand_before_text || "";
     const afterText = sentence.final_extra_expand_after_text || debug.final_extra_expand_after_text || "";
-    const result = sentence.final_extra_expand_result || debug.final_extra_expand_result || "";
-    return `<div class="duration-round-meta warning">二次扩写：${escapeHtml(result || "--")}${beforeText ? ` · 扩写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 扩写后：${escapeHtml(afterText)}` : ""}</div>`;
+    const result = sentence.final_rewrite_result || debug.final_rewrite_result || "";
+    return `<div class="duration-round-meta warning">二次重写：${escapeHtml(result || "--")}${beforeText ? ` · 重写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 重写后：${escapeHtml(afterText)}` : ""}</div>`;
   }
 ```
 

@@ -3685,6 +3685,7 @@
     const value = String(action || "").toLowerCase();
     if (value === "shorten") return "压缩文案";
     if (value === "expand") return "扩写文案";
+    if (value === "second_rewrite_expand") return "二次重写";
     if (value === "repair_coverage") return "语义修复";
     return action || "--";
   }
@@ -3698,8 +3699,8 @@
       rewrite_attempt: "重翻译 + 音频测量完成",
       rewrite_error: "语句重新翻译失败",
       ffmpeg_tempo_align: "FFmpeg 对齐",
-      final_extra_expand_start: "二次扩写开始",
-      final_extra_expand_result: "二次扩写结果",
+      second_rewrite_start: "二次重写开始",
+      second_rewrite_result: "二次重写结果",
       final_clip_fallback: "超长截断",
       speed_adjust: "速度微调",
       sentence_done: "当前句完成",
@@ -3791,17 +3792,21 @@
 
   function renderSentenceFinalFallbackBadge(sentence = {}, debug = {}) {
     const action = String(sentence.final_fallback_action || debug.final_fallback_action || "");
-    const extraAttempted = Boolean(sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
-    const extraResult = String(sentence.final_extra_expand_result || debug.final_extra_expand_result || "");
+    const secondAttempted = Boolean(sentence.second_rewrite_attempted || debug.second_rewrite_attempted
+      || sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
+    const secondResult = String(sentence.second_rewrite_result || debug.second_rewrite_result
+      || sentence.final_extra_expand_result || debug.final_extra_expand_result || "");
     const labels = {
       ffmpeg_tempo_align: "FFmpeg 对齐",
       clip_overlong: "超长截断",
-      extra_expand: "二次扩写",
-      extra_expand_failed: "二次扩写未收敛",
+      second_rewrite: "二次重写",
+      second_rewrite_failed: "二次重写未收敛",
+      extra_expand: "二次重写",
+      extra_expand_failed: "二次重写未收敛",
     };
     const chips = [];
-    if (extraAttempted) {
-      chips.push(extraResult === "not_selected" ? "二次扩写未采用" : (extraResult === "aligned" ? "二次扩写" : "二次扩写未收敛"));
+    if (secondAttempted) {
+      chips.push(secondResult === "not_selected" ? "二次重写未采用" : (secondResult === "aligned" ? "二次重写" : "二次重写未收敛"));
     }
     if (labels[action]) chips.push(labels[action]);
     return chips.map(label => `<span class="semantic-coverage-chip warning">${escapeHtml(label)}</span>`).join("");
@@ -3809,25 +3814,35 @@
 
   function renderSentenceFinalFallbackDetail(sentence = {}, debug = {}) {
     const action = String(sentence.final_fallback_action || debug.final_fallback_action || "");
-    const extraAttempted = Boolean(sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
-    if (!action && !extraAttempted) return "";
+    const secondAttempted = Boolean(sentence.second_rewrite_attempted || debug.second_rewrite_attempted
+      || sentence.final_extra_expand_attempted || debug.final_extra_expand_attempted);
+    if (!action && !secondAttempted) return "";
     const pre = numberOrNull(sentence.ffmpeg_tempo_pre_duration ?? debug.ffmpeg_tempo_pre_duration);
     const post = numberOrNull(sentence.ffmpeg_tempo_post_duration ?? debug.ffmpeg_tempo_post_duration);
     const ratio = numberOrNull(sentence.ffmpeg_tempo_ratio ?? debug.ffmpeg_tempo_ratio);
     const details = [];
-    if (extraAttempted) {
-      const beforeText = sentence.final_extra_expand_before_text || debug.final_extra_expand_before_text || "";
-      const afterText = sentence.final_extra_expand_after_text || debug.final_extra_expand_after_text || "";
-      const result = sentence.final_extra_expand_result || debug.final_extra_expand_result || "";
-      const selectedRaw = sentence.final_extra_expand_selected ?? debug.final_extra_expand_selected;
+    if (secondAttempted) {
+      const beforeText = sentence.second_rewrite_before_text || debug.second_rewrite_before_text
+        || sentence.final_extra_expand_before_text || debug.final_extra_expand_before_text || "";
+      const afterText = sentence.second_rewrite_after_text || debug.second_rewrite_after_text
+        || sentence.final_extra_expand_after_text || debug.final_extra_expand_after_text || "";
+      const result = sentence.second_rewrite_result || debug.second_rewrite_result
+        || sentence.final_extra_expand_result || debug.final_extra_expand_result || "";
+      const selectedRaw = sentence.second_rewrite_selected ?? debug.second_rewrite_selected
+        ?? sentence.final_extra_expand_selected ?? debug.final_extra_expand_selected;
       const selected = selectedRaw === true || selectedRaw === "true";
-      const target = numberOrNull(sentence.final_extra_expand_target_duration ?? debug.final_extra_expand_target_duration ?? sentence.target_duration ?? debug.target_duration);
-      const duration = numberOrNull(sentence.final_extra_expand_tts_duration ?? debug.final_extra_expand_tts_duration);
-      const delta = numberOrNull(sentence.final_extra_expand_delta_pct ?? debug.final_extra_expand_delta_pct);
+      const target = numberOrNull(sentence.second_rewrite_target_duration ?? debug.second_rewrite_target_duration
+        ?? sentence.final_extra_expand_target_duration ?? debug.final_extra_expand_target_duration
+        ?? sentence.target_duration ?? debug.target_duration);
+      const duration = numberOrNull(sentence.second_rewrite_tts_duration ?? debug.second_rewrite_tts_duration
+        ?? sentence.final_extra_expand_tts_duration ?? debug.final_extra_expand_tts_duration);
+      const delta = numberOrNull(sentence.second_rewrite_delta_pct ?? debug.second_rewrite_delta_pct
+        ?? sentence.final_extra_expand_delta_pct ?? debug.final_extra_expand_delta_pct);
       const computedDelta = delta != null
         ? delta
         : (target && duration != null ? ((duration - target) / target) * 100 : null);
-      const status = sentence.final_extra_expand_status || debug.final_extra_expand_status || "";
+      const status = sentence.second_rewrite_status || debug.second_rewrite_status
+        || sentence.final_extra_expand_status || debug.final_extra_expand_status || "";
       const selectedLabel = selected ? "采用" : "未采用";
       const metrics = [
         `结果 ${result || "--"}`,
@@ -3837,7 +3852,7 @@
         `当前 ${formatAvDuration(duration)}`,
         `偏差 ${formatAvDelta(computedDelta)}`,
       ].filter(Boolean).join(" · ");
-      details.push(`<div class="duration-round-meta warning">二次扩写候选：${escapeHtml(metrics)}${beforeText ? ` · 扩写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 扩写后：${escapeHtml(afterText)}` : ""}</div>`);
+      details.push(`<div class="duration-round-meta warning">二次重写候选：${escapeHtml(metrics)}${beforeText ? ` · 重写前：${escapeHtml(beforeText)}` : ""}${afterText ? ` · 重写后：${escapeHtml(afterText)}` : ""}</div>`);
     }
     if (action === "ffmpeg_tempo_align") {
       details.push(`<div class="duration-round-meta">FFmpeg 对齐：${escapeHtml(formatAvDuration(pre))} → ${escapeHtml(formatAvDuration(post))} · atempo=${escapeHtml(ratio != null ? ratio.toFixed(4) : "--")}</div>`);
@@ -4220,27 +4235,49 @@
 
   function normalizeAvAttempts(sentence, debug) {
     const attempts = (Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : [])).filter(Boolean);
+    // Merge second_rewrite_attempts (new format) into attempts for display
+    const secondAttempts = sentence?.second_rewrite_attempts || debug?.second_rewrite_attempts || [];
+    if (Array.isArray(secondAttempts) && secondAttempts.length) {
+      for (const sra of secondAttempts) {
+        if (sra && !attempts.some(item => item && item.second_rewrite && item.round === sra.round)) {
+          attempts.push(sra);
+        }
+      }
+    }
+    // Backward compat: old final_extra_expand_attempt single record
     const extraAttempt = sentence?.final_extra_expand_attempt || debug?.final_extra_expand_attempt || null;
-    const extraAttempted = Boolean(sentence?.final_extra_expand_attempted || debug?.final_extra_expand_attempted);
-    if (extraAttempt && !attempts.some(item => item && item.final_extra_expand)) {
+    const extraAttempted = Boolean(sentence?.second_rewrite_attempted || debug?.second_rewrite_attempted
+      || sentence?.final_extra_expand_attempted || debug?.final_extra_expand_attempted);
+    if (extraAttempt && !attempts.some(item => item && (item.second_rewrite || item.final_extra_expand))) {
       attempts.push(extraAttempt);
-    } else if (extraAttempted && !attempts.some(item => item && item.final_extra_expand)) {
-      const target = sentence?.final_extra_expand_target_duration ?? debug?.final_extra_expand_target_duration ?? sentence?.target_duration ?? debug?.target_duration;
-      const duration = sentence?.final_extra_expand_tts_duration ?? debug?.final_extra_expand_tts_duration;
-      const selected = sentence?.final_extra_expand_selected ?? debug?.final_extra_expand_selected;
+    } else if (extraAttempted && !secondAttempts.length
+      && !attempts.some(item => item && (item.second_rewrite || item.final_extra_expand))) {
+      const target = sentence?.second_rewrite_target_duration ?? debug?.second_rewrite_target_duration
+        ?? sentence?.final_extra_expand_target_duration ?? debug?.final_extra_expand_target_duration
+        ?? sentence?.target_duration ?? debug?.target_duration;
+      const duration = sentence?.second_rewrite_tts_duration ?? debug?.second_rewrite_tts_duration
+        ?? sentence?.final_extra_expand_tts_duration ?? debug?.final_extra_expand_tts_duration;
+      const selected = sentence?.second_rewrite_selected ?? debug?.second_rewrite_selected
+        ?? sentence?.final_extra_expand_selected ?? debug?.final_extra_expand_selected;
       attempts.push({
         round: 999,
         action: "expand",
-        before_text: sentence?.final_extra_expand_before_text || debug?.final_extra_expand_before_text || "",
-        after_text: sentence?.final_extra_expand_after_text || debug?.final_extra_expand_after_text || "",
+        before_text: sentence?.second_rewrite_before_text || debug?.second_rewrite_before_text
+          || sentence?.final_extra_expand_before_text || debug?.final_extra_expand_before_text || "",
+        after_text: sentence?.second_rewrite_after_text || debug?.second_rewrite_after_text
+          || sentence?.final_extra_expand_after_text || debug?.final_extra_expand_after_text || "",
         target_duration: target,
         tts_duration: duration,
-        duration_ratio: sentence?.final_extra_expand_duration_ratio ?? debug?.final_extra_expand_duration_ratio,
-        delta_pct: sentence?.final_extra_expand_delta_pct ?? debug?.final_extra_expand_delta_pct,
-        status: sentence?.final_extra_expand_status || debug?.final_extra_expand_status || "",
-        reason: sentence?.final_extra_expand_reason || debug?.final_extra_expand_reason || "",
+        duration_ratio: sentence?.second_rewrite_duration_ratio ?? debug?.second_rewrite_duration_ratio
+          ?? sentence?.final_extra_expand_duration_ratio ?? debug?.final_extra_expand_duration_ratio,
+        delta_pct: sentence?.second_rewrite_delta_pct ?? debug?.second_rewrite_delta_pct
+          ?? sentence?.final_extra_expand_delta_pct ?? debug?.final_extra_expand_delta_pct,
+        status: sentence?.second_rewrite_status || debug?.second_rewrite_status
+          || sentence?.final_extra_expand_status || debug?.final_extra_expand_status || "",
+        reason: sentence?.second_rewrite_reason || debug?.second_rewrite_reason
+          || sentence?.final_extra_expand_reason || debug?.final_extra_expand_reason || "",
         selected: selected === true || selected === "true",
-        final_extra_expand: true,
+        second_rewrite: true,
       });
     }
     return attempts;
@@ -4278,7 +4315,7 @@
   function renderAvAttemptsDetail(attempts) {
     const rows = attempts.map((attempt, index) => {
       const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
-      const isFinalExtra = Boolean(attempt.final_extra_expand);
+      const isFinalExtra = Boolean(attempt.second_rewrite || attempt.final_extra_expand);
       const action = attempt.action || attempt.operation || "";
       const status = attempt.status || "";
       const reason = attempt.reason || "";
@@ -4311,7 +4348,7 @@
       const resultMeta = [
         status ? `状态 ${status}` : "",
         reason ? `原因 ${reason}` : "",
-        isFinalExtra ? (selected ? "二次扩写候选采用" : "二次扩写候选未采用") : "",
+        isFinalExtra ? (selected ? "二次重写候选采用" : "二次重写候选未采用") : "",
         selected ? "最佳候选" : "",
       ].filter(Boolean).join(" · ");
       const semanticHtml = renderSemanticCoverageChip(sentenceSemanticCoverageState(attempt, {}), { compact: false });
@@ -4319,8 +4356,8 @@
       return `
         <tr class="${selected ? "is-selected" : ""}">
           <td class="av-attempt-round">
-            <strong>${isFinalExtra ? "二次" : `R${escapeHtml(round)}`}</strong>
-            ${isFinalExtra ? '<span class="av-attempt-pill">二次扩写候选</span>' : ""}
+            <strong>${isFinalExtra ? `二次重写R${escapeHtml(round > 10 ? round - 10 : round)}` : `R${escapeHtml(round)}`}</strong>
+            ${isFinalExtra ? '<span class="av-attempt-pill">二次重写候选</span>' : ""}
             ${selected ? '<span class="av-attempt-pill">最佳候选</span>' : ""}
           </td>
           <td>
