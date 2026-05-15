@@ -205,13 +205,15 @@ def _translate_timeline_chinese(task: dict | None, rows: list[dict]) -> None:
         return
 
     try:
-        content = (result or {}).get("content") or ""
-        if isinstance(content, list):
-            content = "".join(
-                (item.get("text") or "") if isinstance(item, dict) else str(item)
-                for item in content
-            )
-        payload = json.loads(str(content))
+        payload = _json_from_result(result, {})
+        if not payload:
+            content = (result or {}).get("content") or ""
+            if isinstance(content, list):
+                content = "".join(
+                    (item.get("text") or "") if isinstance(item, dict) else str(item)
+                    for item in content
+                )
+            payload = json.loads(str(content))
         items = payload.get("items") or []
     except Exception:
         log.warning("translate_timeline_chinese parse failed", exc_info=True)
@@ -307,6 +309,37 @@ def _compact_sentences(sentences: list[dict]) -> list[dict]:
     return compact
 
 
+def _duration_ratio_for_score(sentence: dict | None) -> float | None:
+    if not isinstance(sentence, dict):
+        return None
+    ratio = _as_float_or_none(sentence.get("duration_ratio"))
+    if ratio is not None:
+        return ratio
+    _start_time, _end_time, target_duration, tts_duration = _timing_snapshot(sentence)
+    if target_duration and tts_duration:
+        return _ratio(target_duration, tts_duration)
+    return None
+
+
+def _score_ceiling_for_duration_ratio(ratio: float | None) -> tuple[int | None, str]:
+    if ratio is None or ratio <= 0:
+        return None, ""
+    drift_pct = abs(ratio - 1.0) * 100.0
+    if drift_pct <= 2.0:
+        return 100, "TTS 时长与目标窗口偏差不超过 2%，允许满分。"
+    if drift_pct <= 5.0:
+        return 96, "TTS 时长与目标窗口有 2%-5% 轻微偏差，除非另有明显问题，否则不应满分。"
+    if drift_pct <= 10.0:
+        return 89, "TTS 时长与目标窗口有 5%-10% 偏差，需要人工关注。"
+    if drift_pct <= 18.0:
+        return 82, "TTS 时长与目标窗口有 10%-18% 明显偏差，通常影响同步体验。"
+    return 70, "TTS 时长与目标窗口偏差超过 18%，高概率影响同步体验。"
+
+
+def _score_ceiling_for_sentence(sentence: dict | None) -> tuple[int | None, str]:
+    return _score_ceiling_for_duration_ratio(_duration_ratio_for_score(sentence))
+
+
 def _scorecard_rows(sentences: list[dict], task: dict | None) -> list[dict]:
     notes_by_asr = _shot_notes_by_asr(task)
     rows: list[dict] = []
@@ -336,6 +369,10 @@ def _scorecard_rows(sentences: list[dict], task: dict | None) -> list[dict]:
             "tts_duration": tts_duration,
             "duration_ratio": _as_float_or_none(sentence.get("duration_ratio")),
         })
+        ceiling, reason = _score_ceiling_for_sentence(sentence)
+        if ceiling is not None:
+            rows[-1]["score_ceiling"] = ceiling
+            rows[-1]["score_ceiling_reason"] = reason
     return rows
 
 
@@ -500,6 +537,8 @@ def _build_assess_messages(
                     "visual_observation 只写该 ASR 时间段配套视频里实际看到的画面：动作、物体、字幕、屏幕文字、镜头变化；"
                     "如果 scorecard_rows 已有可用 visual_observation，可直接校正后沿用。"
                     "sync_score 是这一段音画同步评分，0-100 分，100 表示完全同步。"
+                    "不要把所有段落默认评为 100；100 只能用于时间、语义、画面都高置信完全贴合的段落。"
+                    "如果 scorecard_rows 提供 score_ceiling，sync_score 不得超过该上限，并参考 score_ceiling_reason 扣分。"
                     "diagnosis 用一句中文简要判断这一段音画同步情况。"
                     "recommendation 用一句中文给整改调整意见；没有问题时必须写“无需调整。”。"
                     "看不清或无法对应时，visual_observation 写“画面不清晰/无法确认”，并按不确定性扣分。"
@@ -1289,6 +1328,27 @@ def _sync_score_for_timeline(source: dict | None) -> float | None:
     return _as_float_or_none(score)
 
 
+def _calibrate_timeline_score(row: dict, sentence: dict | None) -> None:
+    ceiling, reason = _score_ceiling_for_sentence(sentence)
+    if ceiling is None:
+        return
+    row["score_ceiling"] = ceiling
+    row["score_ceiling_reason"] = reason
+    score = _as_float_or_none(row.get("sync_score"))
+    if score is None or score <= ceiling or score < 99.5:
+        return
+    row["model_sync_score"] = score
+    row["sync_score"] = float(ceiling)
+    if ceiling >= 90:
+        return
+    note = f"系统校准：{reason}"
+    diagnosis = str(row.get("diagnosis") or "").strip()
+    row["diagnosis"] = f"{diagnosis}（{note}）" if diagnosis else note
+    recommendation = str(row.get("recommendation") or "").strip()
+    if not recommendation or recommendation == "无需调整。":
+        row["recommendation"] = "人工复核这一句的 TTS 时长与画面切点。"
+
+
 def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict | None) -> list[dict]:
     issues_by_asr = _report_issues_for_timeline(report)
     hints_by_asr = _timeline_hints_by_asr(report)
@@ -1370,6 +1430,7 @@ def _build_audit_timeline(report: dict, sentences: list[dict] | None, task: dict
         else:
             row["diagnosis"] = str((hint or {}).get("diagnosis") or "").strip() or "未发现明显同步风险。"
             row["recommendation"] = str((hint or {}).get("recommendation") or "").strip()
+        _calibrate_timeline_score(row, sentence)
         rows.append(row)
 
     for asr_index, issue in issues_by_asr.items():

@@ -782,6 +782,112 @@ def test_scorecard_prompt_skips_asr_chinese_reference_for_chinese_source():
     assert omni_av_sync_audit._needs_target_chinese_reference({"target_lang": "en"}) is True
 
 
+def test_translate_timeline_chinese_reads_text_response_and_fills_target(monkeypatch):
+    from pipeline import omni_av_sync_audit
+
+    rows = [{
+        "asr_index": 0,
+        "asr_text": "Grab the handle and pull.",
+        "target_text": "裾を短くします。",
+    }]
+    invoke_chat = MagicMock(return_value={
+        "text": json.dumps({
+            "items": [
+                {"i": 0, "c": "抓住把手并拉动。"},
+                {"i": 1, "c": "把裤脚改短。"},
+            ],
+        }, ensure_ascii=False),
+    })
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", invoke_chat)
+
+    omni_av_sync_audit._translate_timeline_chinese(
+        {"source_language": "en", "target_lang": "ja"},
+        rows,
+    )
+
+    assert rows[0]["asr_text_zh"] == "抓住把手并拉动。"
+    assert rows[0]["target_text_zh"] == "把裤脚改短。"
+
+
+def test_scorecard_rows_include_duration_score_ceiling():
+    from pipeline import omni_av_sync_audit
+
+    rows = omni_av_sync_audit._scorecard_rows([
+        {
+            "asr_index": 0,
+            "source_text": "Trim the excess.",
+            "text": "余りを切ります。",
+            "target_duration": 2.0,
+            "tts_duration": 2.14,
+            "duration_ratio": 1.07,
+        }
+    ], {"target_lang": "ja"})
+
+    assert rows[0]["score_ceiling"] == 89
+    assert "5%" in rows[0]["score_ceiling_reason"]
+
+
+def test_report_only_caps_overconfident_sync_scores_by_duration_ratio(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(
+        tmp_path,
+        segments=[{
+            "index": 0,
+            "text": "Trim the excess.",
+            "translated": "余りを切ります。",
+            "tts_text": "余りを切ります。",
+            "source_segment_indices": [0],
+            "tts_duration": 2.16,
+            "tts_path": str(tmp_path / "multi-s0.mp3"),
+        }],
+    )
+    task_state.update(
+        task_id,
+        script_segments=[
+            {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Trim the excess."},
+        ],
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面中正在剪掉多余布料。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(side_effect=[
+            {
+                "json": {
+                    "timeline": [{
+                        "asr_index": 0,
+                        "visual_observation": "画面中正在剪掉多余布料。",
+                        "sync_score": 100,
+                        "diagnosis": "语音与动作完全同步。",
+                        "recommendation": "无需调整。",
+                    }],
+                },
+            },
+            {
+                "text": json.dumps({
+                    "items": [
+                        {"i": 0, "c": "剪掉多余部分。"},
+                        {"i": 1, "c": "剪掉多余部分。"},
+                    ],
+                }, ensure_ascii=False),
+            },
+        ]),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    row = task_state.get(task_id)["artifacts"]["av_sync_audit"]["audit_timeline"][0]
+    assert row["model_sync_score"] == 100
+    assert row["sync_score"] == 89
+    assert "系统校准" in row["diagnosis"]
+    assert row["recommendation"] != "无需调整。"
+
+
 def test_multi_report_only_skips_when_normal_segments_missing(monkeypatch, tmp_path):
     from pipeline import omni_av_sync_audit
 
