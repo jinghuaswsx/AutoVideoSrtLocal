@@ -6,6 +6,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from queue import Empty, Queue
 from typing import Any, Callable
 
+from appcore import omni_ffmpeg_tempo_config
 from pipeline import av_translate, tts
 
 MIN_DURATION_RATIO = 0.95
@@ -252,6 +253,7 @@ def _sentence_progress_payload(position: int, current: dict, phase: str) -> dict
         "ffmpeg_tempo_post_duration": current.get("ffmpeg_tempo_post_duration"),
         "ffmpeg_tempo_audio_path": current.get("ffmpeg_tempo_audio_path"),
         "ffmpeg_tempo_failed_reason": current.get("ffmpeg_tempo_failed_reason", ""),
+        "ffmpeg_tempo_skipped_reason": current.get("ffmpeg_tempo_skipped_reason", ""),
         "final_extra_expand_attempted": bool(current.get("final_extra_expand_attempted")),
         "final_extra_expand_result": current.get("final_extra_expand_result", ""),
         "final_extra_expand_before_text": current.get("final_extra_expand_before_text", ""),
@@ -363,12 +365,13 @@ def _try_ffmpeg_tempo_alignment(
     return True
 
 
-def _resolve_near_miss_with_ffmpeg(
+def _resolve_final_overlong_with_ffmpeg(
     *,
     current: dict,
     position: int,
     on_progress: Callable[[dict], None] | None,
     reason: str,
+    ffmpeg_tempo_enabled: bool,
 ) -> bool:
     if _semantic_coverage_issue(current):
         return False
@@ -376,8 +379,23 @@ def _resolve_near_miss_with_ffmpeg(
         float(current.get("target_duration", 0.0) or 0.0),
         float(current.get("tts_duration", 0.0) or 0.0),
     )
-    if not (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO):
+    if not (MAX_DURATION_RATIO < ratio <= MAX_FFMPEG_TEMPO_RATIO):
         return False
+    if not ffmpeg_tempo_enabled:
+        current["status"] = "warning_long"
+        current["speed"] = 1.0
+        current["ffmpeg_tempo_applied"] = False
+        current["ffmpeg_tempo_skipped_reason"] = "disabled"
+        current["final_fallback_reason"] = reason
+        current["best_effort"] = True
+        current["best_effort_reason"] = "ffmpeg_tempo_disabled"
+        _emit_sentence_progress(
+            on_progress,
+            position=position,
+            current=current,
+            phase="ffmpeg_tempo_skipped",
+        )
+        return True
 
     applied = _try_ffmpeg_tempo_alignment(
         current=current,
@@ -388,11 +406,11 @@ def _resolve_near_miss_with_ffmpeg(
     if applied:
         return True
     if current.get("status") != "ok":
-        current["status"] = _warning_status_for_ratio(ratio)
+        current["status"] = "warning_long"
         current["best_effort"] = True
         current["best_effort_reason"] = (
             "ffmpeg_tempo_failed" if current.get("ffmpeg_tempo_failed_reason")
-            else "near_miss_without_alignment"
+            else "final_overlong_without_alignment"
         )
     return True
 
@@ -420,6 +438,7 @@ def _run_final_extra_expand(
     user_id: int | None,
     project_id: str | None,
     on_progress: Callable[[dict], None] | None,
+    ffmpeg_tempo_enabled: bool,
 ) -> None:
     before_text = current.get("text", "")
     current["final_extra_expand_attempted"] = True
@@ -487,21 +506,29 @@ def _run_final_extra_expand(
     current["status"] = status
     current["speed"] = speed
 
-    if _resolve_near_miss_with_ffmpeg(
+    if current["status"] == "ok" and not _semantic_coverage_issue(current):
+        current["final_extra_expand_result"] = "accepted"
+        current["best_effort"] = False
+        current.pop("best_effort_reason", None)
+        _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
+        return
+
+    if _resolve_final_overlong_with_ffmpeg(
         current=current,
         position=position,
         on_progress=on_progress,
-        reason="short_after_attempts",
+        reason="overlong_after_extra_expand",
+        ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
     ):
-        aligned = current.get("ffmpeg_tempo_applied") or current.get("status") in {"ok", "speed_adjusted"}
-        current["final_extra_expand_result"] = "aligned" if aligned else "still_short"
+        aligned = current.get("ffmpeg_tempo_applied") or current.get("status") == "speed_adjusted"
+        current["final_extra_expand_result"] = "aligned" if aligned else "still_long"
         if not aligned:
             current["final_fallback_action"] = "extra_expand_failed"
         _emit_sentence_progress(on_progress, position=position, current=current, phase="final_extra_expand_result")
         return
 
     current["final_fallback_action"] = "extra_expand_failed"
-    if current["duration_ratio"] < MIN_FFMPEG_TEMPO_RATIO:
+    if current["duration_ratio"] < MIN_DURATION_RATIO:
         current["final_extra_expand_result"] = "still_short"
         current["status"] = "warning_short"
     else:
@@ -582,20 +609,14 @@ def _reconcile_one_sentence(
     project_id: str | None,
     max_rewrite_rounds: int,
     max_tts_regenerate_attempts: int,
+    ffmpeg_tempo_enabled: bool,
     on_progress: Callable[[dict], None] | None,
 ) -> dict:
     _emit_sentence_progress(on_progress, position=position, current=current, phase="initial_measure")
     status = current["status"]
     asr_index = int(current.get("asr_index", position))
 
-    if status != "needs_semantic_repair" and _resolve_near_miss_with_ffmpeg(
-        current=current,
-        position=position,
-        on_progress=on_progress,
-        reason="near_miss_ratio",
-    ):
-        pass
-    elif status in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
+    if status in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
         if not text_rewrite_enabled and status != "needs_semantic_repair":
             current["text_rewrite_disabled"] = True
             current["rewrite_skip_reason"] = "shot_char_limit_preserves_initial_translation"
@@ -747,12 +768,6 @@ def _reconcile_one_sentence(
                 if status == "ok":
                     current["selected_attempt_round"] = rewrite_round
                     _mark_selected_attempt(current["attempts"], rewrite_round)
-                    _resolve_near_miss_with_ffmpeg(
-                        current=current,
-                        position=position,
-                        on_progress=on_progress,
-                        reason="near_miss_ratio",
-                    )
                     break
 
             if current["status"] in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
@@ -763,12 +778,13 @@ def _reconcile_one_sentence(
                 current["best_effort"] = True
                 current["best_effort_reason"] = "max_attempts_exhausted"
                 final_ratio = duration_ratio(current["target_duration"], current["tts_duration"])
-                if MIN_FFMPEG_TEMPO_RATIO <= final_ratio <= MAX_FFMPEG_TEMPO_RATIO:
-                    _resolve_near_miss_with_ffmpeg(
+                if MAX_DURATION_RATIO < final_ratio <= MAX_FFMPEG_TEMPO_RATIO:
+                    _resolve_final_overlong_with_ffmpeg(
                         current=current,
                         position=position,
                         on_progress=on_progress,
-                        reason="near_miss_ratio",
+                        reason="overlong_after_attempts",
+                        ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
                     )
                 elif final_ratio > MAX_FFMPEG_TEMPO_RATIO:
                     _mark_clip_overlong_fallback(
@@ -788,6 +804,7 @@ def _reconcile_one_sentence(
                         user_id=user_id,
                         project_id=project_id,
                         on_progress=on_progress,
+                        ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
                     )
 
     _emit_sentence_progress(on_progress, position=position, current=current, phase="sentence_done")
@@ -822,6 +839,7 @@ def reconcile_duration(
     tts_by_index = _tts_segment_map(tts_output)
     av_sentences = list((av_output or {}).get("sentences") or [])
     text_rewrite_enabled = _text_rewrite_enabled_for_task(task)
+    ffmpeg_tempo_enabled = omni_ffmpeg_tempo_config.is_enabled()
     initial_states = [
         _initial_sentence_state(
             position=position,
@@ -857,6 +875,7 @@ def reconcile_duration(
                 project_id=project_id,
                 max_rewrite_rounds=max_rewrite_rounds,
                 max_tts_regenerate_attempts=max_tts_regenerate_attempts,
+                ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
                 on_progress=on_progress,
             )
             for position, current in enumerate(initial_states)
@@ -893,6 +912,7 @@ def reconcile_duration(
                 project_id=project_id,
                 max_rewrite_rounds=max_rewrite_rounds,
                 max_tts_regenerate_attempts=max_tts_regenerate_attempts,
+                ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
                 on_progress=_queue_progress,
             ): position
             for position, current in enumerate(initial_states)

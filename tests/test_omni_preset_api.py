@@ -8,6 +8,8 @@ DAO 用 monkeypatch 完全 stub 掉，专注测：
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -114,6 +116,24 @@ def stub_dao(monkeypatch):
     return dao
 
 
+@pytest.fixture(autouse=True)
+def stub_ffmpeg_tempo_config(monkeypatch):
+    state = {"enabled": False}
+
+    def set_enabled(enabled: bool):
+        state["enabled"] = bool(enabled)
+
+    monkeypatch.setattr(
+        "web.routes.omni_preset_api.omni_ffmpeg_tempo_config",
+        SimpleNamespace(
+            is_enabled=lambda: state["enabled"],
+            set_enabled=set_enabled,
+        ),
+        raising=False,
+    )
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -140,8 +160,9 @@ def test_unauthenticated_get_redirects(monkeypatch):
 
 
 def test_list_returns_visible_presets_plus_default_id_and_capability_groups(
-    authed_client_no_db, stub_dao,
+    authed_client_no_db, stub_dao, stub_ffmpeg_tempo_config,
 ):
+    stub_ffmpeg_tempo_config["enabled"] = True
     stub_dao.create_system_preset("sys1", "", {"x": 1})
     stub_dao.create_user_preset(1, "alice-1", "", {"x": 2})
     stub_dao.set_default(1)
@@ -155,6 +176,7 @@ def test_list_returns_visible_presets_plus_default_id_and_capability_groups(
     # capability_groups 元数据带回（前端表单用）
     assert isinstance(data["capability_groups"], list)
     assert len(data["capability_groups"]) == 9
+    assert data["ffmpeg_tempo_fallback_enabled"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +184,10 @@ def test_list_returns_visible_presets_plus_default_id_and_capability_groups(
 # ---------------------------------------------------------------------------
 
 
-def test_get_default_returns_preset_when_set(authed_client_no_db, stub_dao):
+def test_get_default_returns_preset_when_set(
+    authed_client_no_db, stub_dao, stub_ffmpeg_tempo_config,
+):
+    stub_ffmpeg_tempo_config["enabled"] = True
     pid = stub_dao.create_system_preset("sys", "", {"a": 1})
     stub_dao.set_default(pid)
     resp = authed_client_no_db.get("/api/omni-presets/default")
@@ -170,6 +195,7 @@ def test_get_default_returns_preset_when_set(authed_client_no_db, stub_dao):
     data = resp.get_json()
     assert data["preset"]["id"] == pid
     assert data["preset"]["plugin_config"] == {"a": 1}
+    assert data["ffmpeg_tempo_fallback_enabled"] is True
 
 
 def test_get_default_returns_fallback_config_when_no_preset(
@@ -181,6 +207,7 @@ def test_get_default_returns_fallback_config_when_no_preset(
     assert data["preset"] is None
     # 兜底 plugin_config 是 omni-current 基线
     assert data["fallback_plugin_config"]["asr_post"] == "asr_clean"
+    assert data["ffmpeg_tempo_fallback_enabled"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -374,4 +401,48 @@ def test_normal_user_cannot_set_default(authed_user_client_no_db, stub_dao):
 def test_set_default_rejects_user_preset(authed_client_no_db, stub_dao):
     pid = stub_dao.create_user_preset(1, "u", "", _baseline_cfg())
     resp = authed_client_no_db.post(f"/api/omni-presets/{pid}/set-as-default")
+    assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /api/omni-presets/ffmpeg-tempo-fallback
+# ---------------------------------------------------------------------------
+
+
+def test_admin_can_toggle_ffmpeg_tempo_fallback(
+    authed_client_no_db, stub_ffmpeg_tempo_config,
+):
+    resp = authed_client_no_db.post(
+        "/api/omni-presets/ffmpeg-tempo-fallback",
+        json={"enabled": True},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["ffmpeg_tempo_fallback_enabled"] is True
+    assert stub_ffmpeg_tempo_config["enabled"] is True
+
+    resp = authed_client_no_db.post(
+        "/api/omni-presets/ffmpeg-tempo-fallback",
+        json={"enabled": False},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["ffmpeg_tempo_fallback_enabled"] is False
+    assert stub_ffmpeg_tempo_config["enabled"] is False
+
+
+def test_normal_user_cannot_toggle_ffmpeg_tempo_fallback(
+    authed_user_client_no_db, stub_ffmpeg_tempo_config,
+):
+    resp = authed_user_client_no_db.post(
+        "/api/omni-presets/ffmpeg-tempo-fallback",
+        json={"enabled": True},
+    )
+    assert resp.status_code == 403
+    assert stub_ffmpeg_tempo_config["enabled"] is False
+
+
+def test_toggle_ffmpeg_tempo_fallback_rejects_non_bool(authed_client_no_db):
+    resp = authed_client_no_db.post(
+        "/api/omni-presets/ffmpeg-tempo-fallback",
+        json={"enabled": "true"},
+    )
     assert resp.status_code == 400

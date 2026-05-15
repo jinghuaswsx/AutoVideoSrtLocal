@@ -53,6 +53,13 @@ def test_template_tab_body_has_global_default_dropdown(settings_html):
     assert 'id="omniGlobalDefault"' in settings_html
 
 
+def test_template_tab_body_has_ffmpeg_tempo_fallback_switch(settings_html):
+    assert 'id="omniFfmpegTempoFallbackEnabled"' in settings_html
+    assert 'id="omniFfmpegTempoFallbackStatus"' in settings_html
+    assert "FFmpeg 变速兜底" in settings_html
+    assert "默认关闭" in settings_html
+
+
 def test_template_tab_body_has_system_preset_table(settings_html):
     assert 'id="omniSystemPresetTable"' in settings_html
 
@@ -82,6 +89,11 @@ def test_javascript_calls_set_as_default_endpoint(settings_html):
 def test_javascript_calls_omni_presets_crud(settings_html):
     """全 CRUD 端点都被 JS 触达。"""
     assert "/api/omni-presets" in settings_html
+
+
+def test_javascript_calls_ffmpeg_tempo_fallback_endpoint(settings_html):
+    assert "/api/omni-presets/ffmpeg-tempo-fallback" in settings_html
+    assert "ffmpeg_tempo_fallback_enabled" in settings_html
 
 
 def test_javascript_implements_dependency_locks_in_edit_modal(settings_html):
