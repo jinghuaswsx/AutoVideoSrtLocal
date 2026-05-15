@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 import json as _json_anchor
 from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
 from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
+from appcore.runtime_multi import _JapaneseMultiTranslateAdapter as _JaAdapter
 
 
 class OmniLocalizationAdapter(_BaseAdapter):
@@ -79,6 +80,33 @@ class OmniLocalizationAdapter(_BaseAdapter):
             {"role": "system", "content": prompt},
             {"role": "user", "content": user_content},
         ]
+
+
+class OmniJapaneseLocalizationAdapter(OmniLocalizationAdapter):
+    """Omni rewrite context plus Japanese character-budget TTS hooks."""
+
+    rewrite_unit_label = _JaAdapter.rewrite_unit_label
+    DEFAULT_TTS_UNITS_PER_SECOND = _JaAdapter.DEFAULT_TTS_UNITS_PER_SECOND
+    rewrite_use_case_code = _JaAdapter.rewrite_use_case_code
+
+    def __init__(self, source_language: str, original_asr_text: str):
+        super().__init__(
+            lang="ja",
+            source_language=source_language,
+            original_asr_text=original_asr_text,
+        )
+        self._ja_adapter = _JaAdapter()
+        self.module = self._ja_adapter.module
+        self.build_tts_segments = self._ja_adapter.build_tts_segments
+
+    def count_tts_units(self, text: str) -> int:
+        return self._ja_adapter.count_tts_units(text)
+
+    def build_tts_script_from_localized(self, localized_translation: dict) -> dict:
+        return self._ja_adapter.build_tts_script_from_localized(localized_translation)
+
+    def generate_duration_rewrite(self, **kwargs) -> dict:
+        return self._ja_adapter.generate_duration_rewrite(**kwargs)
 
 
 class OmniTranslateRunner(MultiTranslateRunner):
@@ -547,6 +575,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
         original_asr_text = " ".join(
             (u.get("text") or "").strip() for u in utterances if u.get("text")
         ).strip()
+        if lang == "ja":
+            return OmniJapaneseLocalizationAdapter(
+                source_language=source_language,
+                original_asr_text=original_asr_text,
+            )
         return OmniLocalizationAdapter(
             lang=lang,
             source_language=source_language,
