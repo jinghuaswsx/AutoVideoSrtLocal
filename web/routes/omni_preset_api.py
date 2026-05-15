@@ -25,7 +25,7 @@ import logging
 from flask import Blueprint, Response, request
 from flask_login import current_user, login_required
 
-from appcore import omni_preset_dao
+from appcore import omni_ffmpeg_tempo_config, omni_preset_dao
 from appcore.omni_plugin_config import (
     CAPABILITY_GROUPS,
     DEFAULT_PLUGIN_CONFIG,
@@ -72,6 +72,12 @@ def _bad(message: str, status: int = 400):
     return _json_response({"error": message}, status)
 
 
+def _ffmpeg_tempo_payload() -> dict:
+    return {
+        "ffmpeg_tempo_fallback_enabled": omni_ffmpeg_tempo_config.is_enabled(),
+    }
+
+
 def _can_modify(preset: dict) -> tuple[bool, str | None]:
     """返回 (allowed, reason_when_denied)。"""
     scope = preset.get("scope")
@@ -101,6 +107,7 @@ def list_presets():
             "presets": [_serialize(p) for p in presets],
             "default_preset_id": default_id,
             "capability_groups": CAPABILITY_GROUPS,
+            **_ffmpeg_tempo_payload(),
         }
     )
 
@@ -111,9 +118,25 @@ def get_default():
     preset = omni_preset_dao.get_default()
     if not preset:
         return _json_response(
-            {"preset": None, "fallback_plugin_config": DEFAULT_PLUGIN_CONFIG}
+            {
+                "preset": None,
+                "fallback_plugin_config": DEFAULT_PLUGIN_CONFIG,
+                **_ffmpeg_tempo_payload(),
+            }
         )
-    return _json_response({"preset": _serialize(preset)})
+    return _json_response({"preset": _serialize(preset), **_ffmpeg_tempo_payload()})
+
+
+@bp.route("/ffmpeg-tempo-fallback", methods=["POST"])
+@login_required
+@admin_required
+def update_ffmpeg_tempo_fallback():
+    payload = request.get_json(silent=True) or {}
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        return _bad("enabled 必须是布尔值")
+    omni_ffmpeg_tempo_config.set_enabled(enabled)
+    return _json_response({"ok": True, "ffmpeg_tempo_fallback_enabled": enabled})
 
 
 @bp.route("", methods=["POST"])

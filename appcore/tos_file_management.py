@@ -204,7 +204,7 @@ def upsert_mapping(row: TosFileInventoryRow, scan_run_id: int | None = None) -> 
         "   source_object_keys_json, local_path, local_path_hash, local_exists, "
         "   local_size_bytes, backup_object_key, target_channel_code, target_bucket, "
         "   target_object_key, target_exists, target_size_bytes, sync_status, last_error) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON DUPLICATE KEY UPDATE "
         "  scan_run_id = VALUES(scan_run_id), "
         "  module_code = VALUES(module_code), "

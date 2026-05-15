@@ -7,6 +7,14 @@ import pytest
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, reconcile_duration
 
 
+@pytest.fixture(autouse=True)
+def _disable_ffmpeg_tempo_fallback_switch(monkeypatch):
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.omni_ffmpeg_tempo_config.is_enabled",
+        lambda: False,
+    )
+
+
 @pytest.mark.parametrize(
     ("target", "tts_duration", "expected_status", "speed_range"),
     [
@@ -67,6 +75,10 @@ def _patch_ffmpeg_tempo_success(monkeypatch):
             "new_audio_path": kwargs["output_path"],
         }
 
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.omni_ffmpeg_tempo_config.is_enabled",
+        lambda: True,
+    )
     monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
     return calls
 
@@ -151,14 +163,17 @@ def test_reconcile_duration_emits_queued_progress_for_all_sentences_before_worke
     assert any(record["phase"] == "initial_measure" for record in progress[3:])
 
 
-def test_reconcile_duration_speed_adjustment_does_not_consume_audio_retry(monkeypatch):
+def test_reconcile_duration_initial_ok_long_keeps_audio_without_ffmpeg(monkeypatch):
     regenerate_calls = []
-    align_calls = _patch_ffmpeg_tempo_success(monkeypatch)
 
     def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
         regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
         return output_path
 
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment",
+        lambda **kwargs: pytest.fail("initial ok audio should not be FFmpeg-aligned"),
+    )
     monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
 
     result = reconcile_duration(
@@ -184,24 +199,25 @@ def test_reconcile_duration_speed_adjustment_does_not_consume_audio_retry(monkey
         script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
     )
 
-    assert result[0]["status"] == "speed_adjusted"
+    assert result[0]["status"] == "ok"
+    assert result[0]["tts_duration"] == pytest.approx(5.2)
+    assert result[0]["duration_ratio"] == pytest.approx(1.04)
     assert result[0]["text_rewrite_attempts"] == 0
     assert result[0]["tts_regenerate_attempts"] == 0
-    assert result[0]["speed_adjustment_attempts"] == 1
+    assert result[0]["speed_adjustment_attempts"] == 0
     assert result[0]["max_text_rewrite_attempts"] == 10
     assert result[0]["max_tts_regenerate_attempts"] == 10
-    assert result[0]["final_fallback_action"] == "ffmpeg_tempo_align"
-    assert result[0]["ffmpeg_tempo_ratio"] == pytest.approx(1.04)
+    assert result[0].get("final_fallback_action") is None
+    assert result[0].get("ffmpeg_tempo_applied") is None
     assert regenerate_calls == []
-    assert align_calls[0]["audio_duration"] == pytest.approx(5.2)
 
 
-def test_reconcile_duration_reverts_when_speed_adjustment_is_worse(monkeypatch):
+def test_reconcile_duration_initial_ok_short_keeps_audio_without_ffmpeg(monkeypatch):
     regenerate_calls = []
 
     monkeypatch.setattr(
         "pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment",
-        lambda **kwargs: {"failed_reason": "ffmpeg failed"},
+        lambda **kwargs: pytest.fail("initial short ok audio should not be slowed down"),
     )
 
     def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
@@ -225,7 +241,7 @@ def test_reconcile_duration_reverts_when_speed_adjustment_is_worse(monkeypatch):
                 }
             ]
         },
-        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 5.2}]},
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 4.8}]},
         voice_id="voice-1",
         target_language="en",
         av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
@@ -236,33 +252,35 @@ def test_reconcile_duration_reverts_when_speed_adjustment_is_worse(monkeypatch):
     sentence = result[0]
     assert sentence["status"] == "ok"
     assert sentence["tts_path"] == "/tmp/seg0.mp3"
-    assert sentence["tts_duration"] == pytest.approx(5.2)
-    assert sentence["duration_ratio"] == pytest.approx(1.04)
+    assert sentence["tts_duration"] == pytest.approx(4.8)
+    assert sentence["duration_ratio"] == pytest.approx(0.96)
     assert sentence["speed"] == pytest.approx(1.0)
-    assert sentence["speed_adjustment_attempts"] == 1
-    assert sentence["ffmpeg_tempo_applied"] is False
-    assert sentence["ffmpeg_tempo_failed_reason"] == "ffmpeg failed"
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence.get("ffmpeg_tempo_applied") is None
+    assert sentence.get("ffmpeg_tempo_failed_reason") is None
     assert regenerate_calls == []
 
 
-def test_reconcile_duration_ffmpeg_aligns_near_miss_long_without_rewrite(monkeypatch):
-    align_calls = []
+def test_reconcile_duration_initial_near_miss_long_rewrites_before_ffmpeg(monkeypatch):
+    rewrite_calls = []
+    regenerate_calls = []
     progress = []
 
-    def fake_align(**kwargs):
-        align_calls.append(kwargs)
-        return {
-            "ratio": round(kwargs["audio_duration"] / kwargs["target_duration"], 4),
-            "pre_duration": kwargs["audio_duration"],
-            "post_duration": kwargs["target_duration"],
-            "new_audio_path": kwargs["output_path"],
-        }
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return "Shortened candidate"
 
-    monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
     monkeypatch.setattr(
-        "pipeline.duration_reconcile.av_translate.rewrite_one",
-        lambda **kwargs: pytest.fail("near-miss long audio should not rewrite"),
+        "pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment",
+        lambda **kwargs: pytest.fail("initial overlong near-miss should rewrite before final FFmpeg fallback"),
     )
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 5.0)
 
     result = reconcile_duration(
         task={},
@@ -274,7 +292,7 @@ def test_reconcile_duration_ffmpeg_aligns_near_miss_long_without_rewrite(monkeyp
                     "end_time": 5.0,
                     "target_duration": 5.0,
                     "target_chars_range": (50, 60),
-                    "text": "Already close enough",
+                    "text": "A bit too long",
                     "est_chars": 20,
                 }
             ]
@@ -289,38 +307,38 @@ def test_reconcile_duration_ffmpeg_aligns_near_miss_long_without_rewrite(monkeyp
     )
 
     sentence = result[0]
-    assert sentence["status"] == "speed_adjusted"
+    assert sentence["status"] == "ok"
+    assert sentence["text"] == "Shortened candidate"
     assert sentence["tts_duration"] == pytest.approx(5.0)
     assert sentence["duration_ratio"] == pytest.approx(1.0)
-    assert sentence["tts_path"].endswith(".ffmpeg_tempo_r0_a1.mp3")
-    assert sentence["final_fallback_action"] == "ffmpeg_tempo_align"
-    assert sentence["final_fallback_reason"] == "near_miss_ratio"
-    assert sentence["ffmpeg_tempo_applied"] is True
-    assert sentence["ffmpeg_tempo_ratio"] == pytest.approx(1.09)
-    assert sentence["ffmpeg_tempo_pre_duration"] == pytest.approx(5.45)
-    assert sentence["ffmpeg_tempo_post_duration"] == pytest.approx(5.0)
-    assert sentence["text_rewrite_attempts"] == 0
-    assert align_calls[0]["audio_path"] == "/tmp/seg0.mp3"
-    assert any(event["phase"] == "ffmpeg_tempo_align" for event in progress)
+    assert sentence["text_rewrite_attempts"] == 1
+    assert sentence["tts_regenerate_attempts"] == 1
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence.get("final_fallback_action") is None
+    assert rewrite_calls[0]["direction"] == "shorten"
+    assert regenerate_calls == [{"text": "Shortened candidate", "speed": None}]
+    assert not any(event["phase"] == "ffmpeg_tempo_align" for event in progress)
 
 
-def test_reconcile_duration_ffmpeg_aligns_near_miss_short_without_rewrite(monkeypatch):
-    align_calls = []
+def test_reconcile_duration_initial_near_miss_short_expands_without_ffmpeg(monkeypatch):
+    rewrite_calls = []
+    regenerate_calls = []
 
-    def fake_align(**kwargs):
-        align_calls.append(kwargs)
-        return {
-            "ratio": round(kwargs["audio_duration"] / kwargs["target_duration"], 4),
-            "pre_duration": kwargs["audio_duration"],
-            "post_duration": kwargs["target_duration"],
-            "new_audio_path": kwargs["output_path"],
-        }
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return "Expanded candidate"
 
-    monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
     monkeypatch.setattr(
-        "pipeline.duration_reconcile.av_translate.rewrite_one",
-        lambda **kwargs: pytest.fail("near-miss short audio should not rewrite"),
+        "pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment",
+        lambda **kwargs: pytest.fail("short audio should not be slowed down by FFmpeg"),
     )
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 4.9)
 
     result = reconcile_duration(
         task={},
@@ -332,7 +350,7 @@ def test_reconcile_duration_ffmpeg_aligns_near_miss_short_without_rewrite(monkey
                     "end_time": 5.0,
                     "target_duration": 5.0,
                     "target_chars_range": (50, 60),
-                    "text": "Already close enough",
+                    "text": "Too short",
                     "est_chars": 20,
                 }
             ]
@@ -346,12 +364,137 @@ def test_reconcile_duration_ffmpeg_aligns_near_miss_short_without_rewrite(monkey
     )
 
     sentence = result[0]
+    assert sentence["status"] == "ok"
+    assert sentence["text"] == "Expanded candidate"
+    assert sentence["tts_duration"] == pytest.approx(4.9)
+    assert sentence["duration_ratio"] == pytest.approx(0.98)
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence.get("final_fallback_action") is None
+    assert rewrite_calls[0]["direction"] == "expand"
+    assert regenerate_calls == [{"text": "Expanded candidate", "speed": None}]
+
+
+def test_reconcile_duration_final_overlong_near_miss_uses_ffmpeg_fallback(monkeypatch):
+    align_calls = []
+    progress = []
+
+    def fake_align(**kwargs):
+        align_calls.append(kwargs)
+        return {
+            "ratio": round(kwargs["audio_duration"] / kwargs["target_duration"], 4),
+            "pre_duration": kwargs["audio_duration"],
+            "post_duration": kwargs["target_duration"],
+            "new_audio_path": kwargs["output_path"],
+        }
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.omni_ffmpeg_tempo_config.is_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        lambda **kwargs: f"Still long {kwargs['attempt_number']}",
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 5.4)
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (50, 60),
+                    "text": "Still too long",
+                    "est_chars": 20,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 5.45}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=1,
+        on_progress=progress.append,
+    )
+
+    sentence = result[0]
     assert sentence["status"] == "speed_adjusted"
     assert sentence["tts_duration"] == pytest.approx(5.0)
     assert sentence["duration_ratio"] == pytest.approx(1.0)
+    assert sentence["tts_path"].endswith(".ffmpeg_tempo_r1_a1.mp3")
     assert sentence["final_fallback_action"] == "ffmpeg_tempo_align"
-    assert sentence["ffmpeg_tempo_ratio"] == pytest.approx(0.91)
-    assert align_calls[0]["audio_duration"] == pytest.approx(4.55)
+    assert sentence["final_fallback_reason"] == "overlong_after_attempts"
+    assert sentence["ffmpeg_tempo_applied"] is True
+    assert sentence["ffmpeg_tempo_ratio"] == pytest.approx(1.08)
+    assert sentence["ffmpeg_tempo_pre_duration"] == pytest.approx(5.4)
+    assert sentence["ffmpeg_tempo_post_duration"] == pytest.approx(5.0)
+    assert sentence["text_rewrite_attempts"] == 1
+    assert align_calls[0]["audio_path"].endswith(".rewrite_r1.mp3")
+    assert any(event["phase"] == "ffmpeg_tempo_align" for event in progress)
+
+
+def test_reconcile_duration_skips_final_ffmpeg_when_switch_disabled(monkeypatch):
+    progress = []
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment",
+        lambda **kwargs: pytest.fail("FFmpeg tempo fallback should be globally disabled"),
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        lambda **kwargs: f"Still long {kwargs['attempt_number']}",
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.tts.generate_segment_audio",
+        lambda text, voice_id, output_path, **kwargs: output_path,
+    )
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: 5.4)
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (50, 60),
+                    "text": "Still too long",
+                    "est_chars": 20,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 5.45}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=1,
+        on_progress=progress.append,
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "warning_long"
+    assert sentence["tts_duration"] == pytest.approx(5.4)
+    assert sentence["duration_ratio"] == pytest.approx(1.08)
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence.get("ffmpeg_tempo_applied") is not True
+    assert sentence.get("final_fallback_action") != "ffmpeg_tempo_align"
+    assert sentence["ffmpeg_tempo_skipped_reason"] == "disabled"
+    assert sentence["best_effort_reason"] == "ffmpeg_tempo_disabled"
+    assert not any(event["phase"] == "ffmpeg_tempo_align" for event in progress)
 
 
 def test_reconcile_duration_marks_final_overlong_for_clip_without_extra_rewrite(monkeypatch):
@@ -405,7 +548,7 @@ def test_reconcile_duration_marks_final_overlong_for_clip_without_extra_rewrite(
     assert any(event["phase"] == "final_clip_fallback" for event in progress)
 
 
-def test_reconcile_duration_final_short_extra_expand_can_align(monkeypatch):
+def test_reconcile_duration_final_short_extra_expand_does_not_slow_with_ffmpeg(monkeypatch):
     durations = iter([4.0, 4.45, 4.7])
     rewrite_calls = []
     align_calls = []
@@ -418,12 +561,7 @@ def test_reconcile_duration_final_short_extra_expand_can_align(monkeypatch):
 
     def fake_align(**kwargs):
         align_calls.append(kwargs)
-        return {
-            "ratio": round(kwargs["audio_duration"] / kwargs["target_duration"], 4),
-            "pre_duration": kwargs["audio_duration"],
-            "post_duration": kwargs["target_duration"],
-            "new_audio_path": kwargs["output_path"],
-        }
+        pytest.fail("final short extra expansion should not be FFmpeg-slowed")
 
     monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
     monkeypatch.setattr("pipeline.duration_reconcile._apply_ffmpeg_tempo_alignment", fake_align)
@@ -458,16 +596,18 @@ def test_reconcile_duration_final_short_extra_expand_can_align(monkeypatch):
     )
 
     sentence = result[0]
-    assert sentence["status"] == "speed_adjusted"
+    assert sentence["status"] == "warning_short"
     assert sentence["text"] == "Final expanded candidate"
-    assert sentence["final_fallback_action"] == "ffmpeg_tempo_align"
+    assert sentence["tts_duration"] == pytest.approx(4.7)
+    assert sentence["duration_ratio"] == pytest.approx(0.94)
+    assert sentence["final_fallback_action"] == "extra_expand_failed"
     assert sentence["final_extra_expand_attempted"] is True
-    assert sentence["final_extra_expand_result"] == "aligned"
+    assert sentence["final_extra_expand_result"] == "still_short"
     assert sentence["final_extra_expand_before_text"] == "Candidate 2"
     assert sentence["final_extra_expand_after_text"] == "Final expanded candidate"
     assert [call["direction"] for call in rewrite_calls] == ["expand", "expand", "expand"]
     assert rewrite_calls[-1]["attempt_number"] == 999
-    assert align_calls[0]["audio_duration"] == pytest.approx(4.7)
+    assert align_calls == []
 
 
 def test_reconcile_duration_final_short_extra_expand_failure_does_not_loop(monkeypatch):
@@ -648,6 +788,7 @@ def test_reconcile_duration_runs_ten_attempts_and_keeps_closest_candidate(monkey
     assert sentence["tts_regenerate_attempts"] == 10
     assert sentence["speed_adjustment_attempts"] == 1
     assert sentence["final_fallback_action"] == "ffmpeg_tempo_align"
+    assert sentence["final_fallback_reason"] == "overlong_after_attempts"
     assert sentence["ffmpeg_tempo_pre_duration"] == pytest.approx(5.251)
     assert sentence["selected_attempt_round"] == 10
     assert len(sentence["attempts"]) == 10
@@ -1015,12 +1156,14 @@ def test_reconcile_duration_rewrites_long_shot_char_limit_sentence(monkeypatch):
     assert sentence["text"] == "Se instala fácil"
     assert sentence["text_rewrite_attempts"] == 1
     assert sentence["tts_regenerate_attempts"] == 1
-    assert sentence["status"] == "speed_adjusted"
-    assert sentence["duration_ratio"] == pytest.approx(1.0)
-    assert sentence["ffmpeg_tempo_ratio"] == pytest.approx(round(0.98 / 0.96, 4))
+    assert sentence["status"] == "ok"
+    assert sentence["tts_duration"] == pytest.approx(0.98)
+    assert sentence["duration_ratio"] == pytest.approx(0.98 / 0.96)
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence.get("final_fallback_action") is None
     assert "text_rewrite_disabled" not in sentence
     assert rewrite_calls[0]["direction"] == "shorten"
-    assert align_calls[0]["audio_duration"] == pytest.approx(0.98)
+    assert align_calls == []
 
 
 def test_reconcile_duration_rewrites_short_shot_char_limit_sentence(monkeypatch):
@@ -1082,10 +1225,12 @@ def test_reconcile_duration_rewrites_short_shot_char_limit_sentence(monkeypatch)
     )
 
     sentence = result[0]
-    assert sentence["status"] == "speed_adjusted"
+    assert sentence["status"] == "ok"
     assert sentence["text"] == "El mío siempre está sucio y me cuesta ver cuando pega el sol."
-    assert sentence["duration_ratio"] == pytest.approx(1.0)
-    assert sentence["speed"] == pytest.approx(1.0321)
+    assert sentence["tts_duration"] == pytest.approx(4.5)
+    assert sentence["duration_ratio"] == pytest.approx(4.5 / 4.36)
+    assert sentence["speed"] == pytest.approx(1.0)
+    assert sentence["speed_adjustment_attempts"] == 0
     assert sentence["text_rewrite_attempts"] == 1
     assert sentence["tts_regenerate_attempts"] == 1
     assert "text_rewrite_disabled" not in sentence
@@ -1096,7 +1241,7 @@ def test_reconcile_duration_rewrites_short_shot_char_limit_sentence(monkeypatch)
         "speed": None,
     }
     assert len(regenerate_calls) == 1
-    assert align_calls[0]["audio_duration"] == pytest.approx(4.5)
+    assert align_calls == []
 
 
 def test_reconcile_duration_expands_short_sentence(monkeypatch):
@@ -1140,14 +1285,16 @@ def test_reconcile_duration_expands_short_sentence(monkeypatch):
         script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "原文"}],
     )
 
-    assert result[0]["status"] == "speed_adjusted"
-    assert result[0]["speed"] == pytest.approx(0.98)
+    assert result[0]["status"] == "ok"
+    assert result[0]["tts_duration"] == pytest.approx(4.9)
+    assert result[0]["duration_ratio"] == pytest.approx(0.98)
+    assert result[0]["speed"] == pytest.approx(1.0)
     assert result[0]["text"] == "Expanded rewrite"
     assert result[0]["source_text"] == "原文"
     assert result[0]["localization_notes"] == {"tone": "direct"}
     assert result[0]["attempts"][0]["action"] == "expand"
     assert rewrite_calls[0]["overshoot_sec"] == pytest.approx(0.0)
-    assert align_calls[0]["audio_duration"] == pytest.approx(4.9)
+    assert align_calls == []
 
 
 def test_reconcile_duration_expand_gives_up_without_out_of_range_speed(monkeypatch):
