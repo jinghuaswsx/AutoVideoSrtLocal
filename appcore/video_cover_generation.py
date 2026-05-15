@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageOps
 import requests
 
 from appcore import gemini_image, llm_client, local_media_storage
@@ -25,7 +25,7 @@ from appcore.llm_media_optimizer import (
 )
 from appcore.llm_provider_configs import get_provider_config
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
-from pipeline.ffutil import extract_thumbnail, probe_media_info
+from pipeline.ffutil import extract_frame_at_timestamp, extract_thumbnail, probe_media_info
 
 
 DEFAULT_IMAGE_CHANNEL = "local"
@@ -270,8 +270,8 @@ def video_cover_model_options() -> dict[str, Any]:
         }
     }
 
-CREATIVE_DIRECTOR_PROMPT_TEMPLATE = """请基于上传的产品图片、精选视频帧、产品分析、视频分析和 selected_ad_copy，生成一张 9:16 竖版无文字封面背景图，用于 Facebook Reels / Instagram Reels / TikTok / Shorts。
-请像一位优秀的创意总监一样思考：目标是做出一张适合西方社交媒体、能提升短视频点击率的封面背景。
+CREATIVE_DIRECTOR_PROMPT_TEMPLATE = """请基于上传的产品图片、精选视频帧、cover_brief 和 selected_ad_copy，生成一张 9:16 竖版封面图，用于 Facebook Reels / Instagram Reels / TikTok / Shorts。
+请像一位优秀的创意总监一样思考：目标是做出一张适合西方社交媒体、能提升短视频点击率的完整封面。
 
 核心目标：
 - 画面像真实爆款短视频中最值得停留的一帧。
@@ -282,27 +282,28 @@ CREATIVE_DIRECTOR_PROMPT_TEMPLATE = """请基于上传的产品图片、精选�
 - product_title: {product_title}
 - product_url: {product_url}
 - 商品主图 URL: {main_image_url}
-- reference_image: 上半部分为 product_image_*，下半部分为精选视频帧。
-- product_analysis: {product_analysis}
-- video_analysis: {video_analysis}
+- reference_image: 上半部分为 product_image_*，下半部分为按视频分析关键帧抽取的精选视频帧；如果关键帧不可用，则使用视频首帧兜底。
+- cover_brief: {cover_brief}
 - selected_ad_copy: {ad_copy_sets}
 
 不可妥协的要求：
 1. 产品必须准确。产品的形状、颜色、材质、表面质感、比例和可见功能部件，必须忠实于上传的产品图片。
-2. 使用方式必须可信。根据 product_analysis 展示正确、自然的使用方式；需要手部、身体互动、安装位置或可见结果时必须清楚可见。
+2. 使用方式必须可信。根据 cover_brief 展示正确、自然的使用方式；需要手部、身体互动、安装位置或可见结果时必须清楚可见。
 3. 画面必须具有西方生活方式和社交平台原生感。如果源素材包含亚洲面孔、亚洲室内环境、中文文字或国内电商风格，请自然改写为西方生活方式场景。
-4. 不要在图片中生成任何文字。后端会在最终 PNG 上程序叠加 selected_ad_copy.english.title；你只需要生成干净的无文字背景。
+4. 必须把 selected_ad_copy.english.title 原生嵌入画面，作为最终封面中的唯一可读 hook。
 
-无文字约束：
-- 不要生成任何可读文字、字幕、品牌字样、UI、用户名、评论框、价格、折扣、按钮、标签、贴纸、红圈、箭头、涂鸦或水印。
+唯一文字约束：
+- 画面中必须且只能有一个可读英文 hook：原生嵌入 selected_ad_copy.english.title，并保持英文拼写完全一致。
+- 除 selected_ad_copy.english.title 之外，不要生成任何可读文字、字幕、品牌字样、UI、用户名、评论框、价格、折扣、按钮、标签、贴纸、红圈、箭头、涂鸦或水印。
 - 如果参考视频帧里有字幕、水印或界面残留，请忽略并移除。
-- 画面应预留一块干净区域给后续叠字，优先顶部 18% 或底部 22%，但不要牺牲产品主体和关键动作。
+- 禁止固定位置半透明背景框、整条黑色横幅、模板化标题栏；字体、位置、阴影和局部轻量托底可以随构图自然变化。
+- hook 必须清晰可读，但要像社交平台原生封面的一部分，不要像后期模板压上去的标题条。
 
 视觉方向：
 写实摄影风格，真实 UGC 质感，像 iPhone 15 Pro 拍摄，4K 清晰度，自然光，真实的西方生活方式，构图有吸引力但不过度设计。优先使用特写、中近景或中景，让产品成为主要视觉焦点之一。
 
 最终任务：
-生成一张强有力的 9:16 竖版无文字封面背景图，在产品准确性、正确使用方式、高点击吸引力和可叠字留白之间取得平衡。"""
+生成一张强有力的 9:16 竖版封面图，在产品准确性、正确使用方式、高点击吸引力和唯一英文 hook 可读性之间取得平衡。"""
 
 PRODUCT_ANALYSIS_PROMPT_TEMPLATE = """角色：资深跨境电商产品分析师 + 欧美短视频广告封面策略专家。你的任务是根据用户提供的产品信息，生成可用于「文生图、视频封面生成、广告文案创作」的产品分析报告。
 
@@ -379,12 +380,20 @@ VIDEO_ANALYSIS_PROMPT_TEMPLATE = """角色：欧美短视频广告素材分析�
 - 给出 cover_reference：最适合用作封面的动作瞬间、镜头距离、主体位置、可见结果和留白位置
 - 判断画面是否偏亚洲电商/中文环境/截图感，并说明如何自然改写为欧美生活方式场景
 
+关键帧要求：
+- 必须输出 keyframes 数组，严格 3 帧。
+- 三帧类型固定为 Hero Shot / Front View、Detail Close-up、Usage Scenario。
+- timestamp 使用 MM:SS.mmm；无完美帧时选择最接近者，并在 reason 中说明限制。
+- cover_reference.best_cover_reference_timestamp 必须优先从 keyframes 中选择最适合做封面参考的一帧。
+
 输出要求：
 请仅输出单个合法 JSON 对象，不要 markdown，不要代码块，不要解释文字。
 JSON 字段必须包含：
-- video_text
-- voiceover
-- cover_reference
+- video_analysis：对象，包含 summary、detailed_description、product_identity、product_features、usage_logic、video_text、voiceover
+- keyframes：数组，严格 3 个对象，每个对象包含 timestamp、type、visual_content、reason、use_for_generation
+- cover_reference：对象，包含 best_cover_reference_timestamp、why_best_for_cover、cover_readability、recommended_reference_usage、not_recommended_elements
+- localization_and_adaptation
+- noise_and_risk_notes
 - actions
 - composition
 - authenticity_cues
@@ -528,7 +537,7 @@ ad_copy_sets 是数组，必须包含 5 个元素。
 - usage_note：中文说明这组适合搭配哪类视频画面或封面方向
 
 字段含义必须严格对齐：
-- title：对应业务格式里的“标题”，也是封面图后端叠字使用的唯一文字。
+- title：对应业务格式里的“标题”，也是封面图里由图片模型原生嵌入的唯一可读 hook。
 - message：对应业务格式里的“文案”，不要写得像按钮。
 - description：对应业务格式里的“描述”，是一句短描述/副标题。
 
@@ -710,19 +719,6 @@ def normalize_product_image_jpg(product_image_bytes: bytes) -> bytes:
     return _jpg_bytes(panel)
 
 
-def build_reference_image(product_image_bytes: bytes, frame_path: str) -> bytes:
-    product_image = _open_rgb_image(product_image_bytes)
-    video_frame = _read_image_file(frame_path)
-    width, height = REFERENCE_SIZE
-    half_h = height // 2
-    product_panel = _contain_on_panel(product_image, (width, half_h))
-    frame_panel = _contain_on_panel(video_frame, (width, height - half_h))
-    canvas = Image.new("RGB", REFERENCE_SIZE, (248, 250, 252))
-    canvas.paste(product_panel, (0, 0))
-    canvas.paste(frame_panel, (0, half_h))
-    return _png_bytes(canvas)
-
-
 def normalize_cover_png(image_bytes: bytes) -> tuple[bytes, int, int]:
     image = _open_rgb_image(image_bytes)
     fitted = ImageOps.fit(
@@ -734,134 +730,37 @@ def normalize_cover_png(image_bytes: bytes) -> tuple[bytes, int, int]:
     return _png_bytes(fitted), OUTPUT_SIZE[0], OUTPUT_SIZE[1]
 
 
-OVERLAY_X = 80
-OVERLAY_Y = 120
-OVERLAY_MAX_WIDTH = OUTPUT_SIZE[0] - (OVERLAY_X * 2)
-OVERLAY_MAX_LINES = 3
-OVERLAY_FONT_MAX = 86
-OVERLAY_FONT_MIN = 46
+def _frame_panel(frame_paths: list[str], size: tuple[int, int]) -> Image.Image:
+    width, height = size
+    if not frame_paths:
+        return Image.new("RGB", size, (248, 250, 252))
+    if len(frame_paths) == 1:
+        return _contain_on_panel(_read_image_file(frame_paths[0]), size)
+
+    cols = 1 if len(frame_paths) <= 3 else 2
+    rows = (len(frame_paths) + cols - 1) // cols
+    cell_w = width // cols
+    cell_h = height // rows
+    panel = Image.new("RGB", size, (248, 250, 252))
+    for idx, path in enumerate(frame_paths):
+        row = idx // cols
+        col = idx % cols
+        cell = _contain_on_panel(_read_image_file(path), (cell_w, cell_h))
+        panel.paste(cell, (col * cell_w, row * cell_h))
+    return panel
 
 
-def _load_overlay_font(size: int):
-    candidates = (
-        "DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
-    )
-    for candidate in candidates:
-        try:
-            return ImageFont.truetype(candidate, size=size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-
-def _text_width(draw: ImageDraw.ImageDraw, text: str, font) -> int:
-    if not text:
-        return 0
-    left, _top, right, _bottom = draw.textbbox((0, 0), text, font=font, stroke_width=3)
-    return max(0, int(right - left))
-
-
-def _wrap_overlay_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> list[str]:
-    words = str(text or "").strip().split()
-    if not words:
-        return []
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if not current or _text_width(draw, candidate, font) <= max_width:
-            current = candidate
-            continue
-        lines.append(current)
-        current = word
-    if current:
-        lines.append(current)
-    return lines
-
-
-def _ellipsize_line(draw: ImageDraw.ImageDraw, text: str, font, max_width: int) -> str:
-    suffix = "..."
-    cleaned = str(text or "").strip()
-    if _text_width(draw, cleaned, font) <= max_width:
-        return cleaned
-    while cleaned and _text_width(draw, cleaned.rstrip() + suffix, font) > max_width:
-        cleaned = cleaned[:-1]
-    return (cleaned.rstrip() + suffix) if cleaned else suffix
-
-
-def _fit_overlay_text(draw: ImageDraw.ImageDraw, text: str) -> tuple[list[str], Any, int, int]:
-    for size in range(OVERLAY_FONT_MAX, OVERLAY_FONT_MIN - 1, -4):
-        font = _load_overlay_font(size)
-        lines = _wrap_overlay_text(draw, text, font, OVERLAY_MAX_WIDTH)
-        if len(lines) <= OVERLAY_MAX_LINES:
-            bbox = draw.textbbox((0, 0), "Ag", font=font, stroke_width=3)
-            line_height = max(1, int((bbox[3] - bbox[1]) * 1.18))
-            return lines, font, size, line_height
-    font = _load_overlay_font(OVERLAY_FONT_MIN)
-    lines = _wrap_overlay_text(draw, text, font, OVERLAY_MAX_WIDTH)
-    if len(lines) > OVERLAY_MAX_LINES:
-        lines = lines[:OVERLAY_MAX_LINES - 1] + [" ".join(lines[OVERLAY_MAX_LINES - 1:])]
-    lines = [_ellipsize_line(draw, line, font, OVERLAY_MAX_WIDTH) for line in lines[:OVERLAY_MAX_LINES]]
-    bbox = draw.textbbox((0, 0), "Ag", font=font, stroke_width=3)
-    line_height = max(1, int((bbox[3] - bbox[1]) * 1.18))
-    return lines, font, OVERLAY_FONT_MIN, line_height
-
-
-def apply_title_overlay(image_bytes: bytes, title: str) -> tuple[bytes, dict[str, Any]]:
-    overlay_text = str(title or "").strip()
-    if not overlay_text:
-        return image_bytes, {
-            "overlay_text": "",
-            "overlay_box": {"x": 0, "y": 0, "width": 0, "height": 0},
-            "overlay_font_size": 0,
-            "overlay_lines": [],
-        }
-    base = _open_rgb_image(image_bytes).convert("RGBA")
-    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-    measure = ImageDraw.Draw(base)
-    lines, font, font_size, line_height = _fit_overlay_text(measure, overlay_text)
-    text_width = max((_text_width(measure, line, font) for line in lines), default=0)
-    text_height = line_height * len(lines)
-    pad_x = 28
-    pad_y = 22
-    box = {
-        "x": max(0, OVERLAY_X - pad_x),
-        "y": max(0, OVERLAY_Y - pad_y),
-        "width": min(OUTPUT_SIZE[0] - max(0, OVERLAY_X - pad_x), text_width + pad_x * 2),
-        "height": text_height + pad_y * 2,
-    }
-    draw.rounded_rectangle(
-        (
-            box["x"],
-            box["y"],
-            box["x"] + box["width"],
-            box["y"] + box["height"],
-        ),
-        radius=24,
-        fill=(0, 0, 0, 116),
-    )
-    for idx, line in enumerate(lines):
-        y = OVERLAY_Y + idx * line_height
-        draw.text((OVERLAY_X + 3, y + 3), line, font=font, fill=(0, 0, 0, 135))
-        draw.text(
-            (OVERLAY_X, y),
-            line,
-            font=font,
-            fill=(255, 255, 255, 255),
-            stroke_width=3,
-            stroke_fill=(0, 0, 0, 220),
-        )
-    composed = Image.alpha_composite(base, layer).convert("RGB")
-    meta = {
-        "overlay_text": overlay_text,
-        "overlay_box": box,
-        "overlay_font_size": font_size,
-        "overlay_lines": lines,
-    }
-    return _png_bytes(composed), meta
+def build_reference_image(product_image_bytes: bytes, frame_path: str | list[str]) -> bytes:
+    product_image = _open_rgb_image(product_image_bytes)
+    frame_paths = [frame_path] if isinstance(frame_path, str) else [str(path) for path in frame_path if str(path)]
+    width, height = REFERENCE_SIZE
+    product_h = height // 2 if len(frame_paths) <= 1 else 620
+    product_panel = _contain_on_panel(product_image, (width, product_h))
+    frames_panel = _frame_panel(frame_paths, (width, height - product_h))
+    canvas = Image.new("RGB", REFERENCE_SIZE, (248, 250, 252))
+    canvas.paste(product_panel, (0, 0))
+    canvas.paste(frames_panel, (0, product_h))
+    return _png_bytes(canvas)
 
 
 def build_product_analysis_context(
@@ -946,6 +845,44 @@ def build_ad_copy_prompt(
         .replace("{product_analysis}", product_analysis)
         .replace("{video_analysis}", video_analysis)
         .replace("{current_date}", current_date)
+    )
+
+
+def _clip_for_cover_brief(value: Any, limit: int = 320) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "...[已截断]"
+
+
+def build_cover_brief(
+    *,
+    product_title: str,
+    main_image_url: str = "",
+    product_analysis: str,
+    video_analysis: str,
+    reference_frames: list[dict[str, Any]] | None = None,
+) -> str:
+    frame_lines = []
+    for frame in reference_frames or []:
+        timestamp = str(frame.get("timestamp") or "").strip()
+        frame_type = str(frame.get("type") or frame.get("source") or "").strip()
+        visual = str(frame.get("visual_content") or frame.get("reason") or "").strip()
+        if timestamp or frame_type or visual:
+            frame_lines.append(f"- {timestamp} {frame_type}: {_clip_for_cover_brief(visual, 120)}".strip())
+    if not frame_lines:
+        frame_lines.append("- 未提取到结构化关键帧，参考图使用视频首帧兜底。")
+    return "\n".join(
+        [
+            "<cover_brief>",
+            f"product_title: {product_title}",
+            f"main_image_url: {main_image_url or '未提供'}",
+            f"product_analysis: {_clip_for_cover_brief(product_analysis)}",
+            f"video_analysis: {_clip_for_cover_brief(video_analysis)}",
+            "reference_frames:",
+            *frame_lines,
+            "</cover_brief>",
+        ]
     )
 
 
@@ -1185,13 +1122,20 @@ def build_platform_prompt(
     product_analysis: str,
     video_analysis: str,
     ad_copy_sets: str,
+    reference_frames: list[dict[str, Any]] | None = None,
 ) -> str:
+    cover_brief = build_cover_brief(
+        product_title=product_title,
+        main_image_url=main_image_url,
+        product_analysis=product_analysis,
+        video_analysis=video_analysis,
+        reference_frames=reference_frames,
+    )
     return CREATIVE_DIRECTOR_PROMPT_TEMPLATE.format(
         product_title=product_title,
         product_url=product_url,
         main_image_url=main_image_url,
-        product_analysis=product_analysis,
-        video_analysis=video_analysis,
+        cover_brief=cover_brief,
         ad_copy_sets=ad_copy_sets,
     )
 
@@ -1361,6 +1305,123 @@ def normalize_image_count(value: Any, default: int = 2) -> int:
     return count if count in ALLOWED_IMAGE_COUNTS else default
 
 
+def _json_object_from_text(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    raw = _strip_json_fence(str(value or ""))
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _video_analysis_nested(payload: dict[str, Any]) -> dict[str, Any]:
+    nested = payload.get("video_analysis")
+    return nested if isinstance(nested, dict) else {}
+
+
+def _reference_frame_specs(video_analysis_text: Any) -> list[dict[str, Any]]:
+    payload = _json_object_from_text(video_analysis_text)
+    nested = _video_analysis_nested(payload)
+    keyframes = payload.get("keyframes")
+    if not isinstance(keyframes, list):
+        keyframes = nested.get("keyframes") if isinstance(nested.get("keyframes"), list) else []
+
+    specs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in keyframes:
+        if not isinstance(item, dict):
+            continue
+        timestamp = str(item.get("timestamp") or "").strip()
+        if not timestamp or timestamp in seen:
+            continue
+        seen.add(timestamp)
+        specs.append({
+            "timestamp": timestamp,
+            "type": str(item.get("type") or "").strip(),
+            "source": "keyframes",
+            "visual_content": str(item.get("visual_content") or "").strip(),
+            "reason": str(item.get("reason") or "").strip(),
+        })
+
+    cover_reference = payload.get("cover_reference")
+    if not isinstance(cover_reference, dict):
+        cover_reference = nested.get("cover_reference") if isinstance(nested.get("cover_reference"), dict) else {}
+    best_timestamp = str(
+        (cover_reference or {}).get("best_cover_reference_timestamp")
+        or (cover_reference or {}).get("timestamp")
+        or ""
+    ).strip()
+    if best_timestamp and best_timestamp not in seen:
+        specs.append({
+            "timestamp": best_timestamp,
+            "type": "Best Cover Reference",
+            "source": "cover_reference",
+            "visual_content": "",
+            "reason": str((cover_reference or {}).get("why_best_for_cover") or "").strip(),
+        })
+    return specs[:4]
+
+
+def _extract_reference_frames(
+    *,
+    video_path: str,
+    output_dir: str,
+    specs: list[dict[str, Any]],
+    reference_frame_extractor: Callable[..., str | None],
+) -> list[dict[str, Any]]:
+    frames: list[dict[str, Any]] = []
+    for index, spec in enumerate(specs, start=1):
+        timestamp = str(spec.get("timestamp") or "").strip()
+        if not timestamp:
+            continue
+        try:
+            frame_path = reference_frame_extractor(
+                video_path,
+                output_dir,
+                timestamp=timestamp,
+                index=index,
+            )
+        except Exception:
+            frame_path = None
+        if not frame_path or not Path(frame_path).is_file():
+            continue
+        item = dict(spec)
+        item["path"] = str(frame_path)
+        item["index"] = index
+        frames.append(item)
+    return frames
+
+
+def _reference_frame_public_meta(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    keys = ("index", "timestamp", "type", "source", "visual_content", "reason", "path", "object_key")
+    return [{key: frame.get(key) for key in keys if frame.get(key) not in (None, "")} for frame in frames]
+
+
+def _persist_reference_frame_artifacts(
+    *,
+    user_id: int | None,
+    task_id: str,
+    frames: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    persisted: list[dict[str, Any]] = []
+    for frame in frames:
+        next_frame = dict(frame)
+        frame_path = Path(str(frame.get("path") or ""))
+        if frame_path.is_file():
+            suffix = frame_path.suffix.lower() if frame_path.suffix else ".jpg"
+            filename = f"reference_frame_{int(frame.get('index') or len(persisted) + 1)}{suffix}"
+            key = _object_key(user_id, task_id, filename)
+            local_path = local_media_storage.write_bytes(key, frame_path.read_bytes())
+            next_frame["object_key"] = key
+            next_frame["path"] = str(local_path)
+        persisted.append(next_frame)
+    return persisted
+
+
 def _ad_copy_items(ad_copy_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     try:
         payload = normalize_ad_copy_payload(ad_copy_payload, require_five=False)
@@ -1415,6 +1476,7 @@ def generate_video_covers(
     product_fetch_fn: Callable[[str], Any] = fetch_product_analysis,
     image_fetch_fn: Callable[[str], bytes] = _fetch_product_image,
     thumbnail_extractor: Callable[..., str | None] = extract_thumbnail,
+    reference_frame_extractor: Callable[..., str | None] = extract_frame_at_timestamp,
     image_generate_fn: Callable[..., tuple[bytes, str]] | None = None,
     invoke_generate_fn: Callable[..., dict] = llm_client.invoke_generate,
     ad_copy_invoke_fn: Callable[..., dict] = llm_client.invoke_chat,
@@ -1462,11 +1524,6 @@ def generate_video_covers(
     with tempfile.TemporaryDirectory(prefix="video_cover_") as work_dir:
         normalized_product_image_path = Path(work_dir) / "product_image.jpg"
         normalized_product_image_path.write_bytes(image_bytes)
-        thumbnail_path = thumbnail_extractor(video_path, work_dir, scale="1080:-1")
-        if not thumbnail_path or not Path(thumbnail_path).is_file():
-            raise VideoCoverGenerationError("视频抽帧失败")
-
-        reference_bytes = build_reference_image(image_bytes, thumbnail_path)
         product_analysis = (product_analysis_text or "").strip() or generate_product_analysis(
             product=product,
             product_title=product_title,
@@ -1490,6 +1547,32 @@ def generate_video_covers(
             user_id=user_id,
             task_id=task_id,
             invoke_generate_fn=invoke_generate_fn,
+        )
+        frame_specs = _reference_frame_specs(video_analysis)
+        reference_frames = _extract_reference_frames(
+            video_path=video_path,
+            output_dir=work_dir,
+            specs=frame_specs,
+            reference_frame_extractor=reference_frame_extractor,
+        )
+        if reference_frames:
+            reference_bytes = build_reference_image(raw_image_bytes, [frame["path"] for frame in reference_frames])
+        else:
+            thumbnail_path = thumbnail_extractor(video_path, work_dir, scale="1080:-1")
+            if not thumbnail_path or not Path(thumbnail_path).is_file():
+                raise VideoCoverGenerationError("视频抽帧失败")
+            reference_frames = [{
+                "index": 1,
+                "timestamp": "",
+                "type": "Thumbnail Fallback",
+                "source": "thumbnail_fallback",
+                "path": str(thumbnail_path),
+            }]
+            reference_bytes = build_reference_image(raw_image_bytes, thumbnail_path)
+        reference_frames = _persist_reference_frame_artifacts(
+            user_id=user_id,
+            task_id=task_id,
+            frames=reference_frames,
         )
 
     reference_key = _write_png_artifact(user_id, task_id, "reference.png", reference_bytes)
@@ -1522,7 +1605,10 @@ def generate_video_covers(
                 "main_image_url": main_image_url,
                 "product_url": product_url,
             },
-            "reference": {"object_key": reference_key},
+            "reference": {
+                "object_key": reference_key,
+                "frames": _reference_frame_public_meta(reference_frames),
+            },
             "inputs": {
                 "product_analysis": product_analysis,
                 "video_analysis": video_analysis,
@@ -1572,10 +1658,16 @@ def generate_video_covers(
             product_analysis=product_analysis,
             video_analysis=video_analysis,
             ad_copy_sets=json.dumps(selected_copy_payload, ensure_ascii=False, indent=2),
+            reference_frames=reference_frames,
         )
         if image_count > 1:
             prompt += f"\n\n本次需要生成 {image_count} 张候选封面。当前是第 {index} 张，请基于 selected_ad_copy 做出不同构图或使用瞬间。"
-        image_prompts.append({"index": index, "prompt": prompt, "source_ad_copy_id": copy_item.get("id")})
+        image_prompts.append({
+            "index": index,
+            "prompt": prompt,
+            "source_ad_copy_id": copy_item.get("id"),
+            "reference_frames": _reference_frame_public_meta(reference_frames),
+        })
         cover_jobs.append({"index": index, "prompt": prompt, "copy_item": copy_item})
 
     def build_cover(job: dict[str, Any]) -> dict[str, Any]:
@@ -1598,7 +1690,6 @@ def generate_video_covers(
             raise VideoCoverGenerationError(f"封面生成失败：{exc}") from exc
 
         png, width, height = normalize_cover_png(generated_bytes)
-        png, overlay_meta = apply_title_overlay(png, _cover_hook(copy_item))
         platform = spec.platform if image_count == 1 else f"{spec.platform}_{index}"
         key = _write_png_artifact(user_id, task_id, f"{platform}.png", png)
         return {
@@ -1613,7 +1704,6 @@ def generate_video_covers(
             "copy": copy_item,
             "formatted_copy": format_ad_copy_text(copy_item),
             "prompt": prompt,
-            **overlay_meta,
         }
 
     def record_cover(cover: dict[str, Any]) -> None:

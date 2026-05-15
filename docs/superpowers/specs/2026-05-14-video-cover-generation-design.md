@@ -39,6 +39,14 @@
 - 后端所有创建、自动链路、状态接口和重启接口的缺省 `image_count` 必须一致使用 4，避免前端显示和实际生成数量不一致。
 - 强制重新开始必须把任务中所有中间过程数据清零，从第 1 步重新开始。允许保留的只有项目基础输入和配置快照，例如 `id`、`type`、`status`、`user_id`、`display_name`、`product_url`、`video_path`、`video_filename`、`task_dir`、`thumbnail_path`、`product`、`image_count`、`model_defaults`。视频分析、产品分析、文案创作、封面结果、结构化结果、请求报文、返回报文、耗时、错误和运行中消息都必须清空。
 
+### 2026-05-15 提示词合同与关键帧参考图修订
+
+- `title-cover-prompt` 中的四段提示词是文案封面模块的业务合同来源；代码内置 prompt 必须与其核心合同保持一致，差异必须有对应设计文档说明。
+- 第 4 步以 `docs/superpowers/specs/2026-05-15-video-cover-copy-format-overlay-design.md` 为准：图片模型必须把 `selected_ad_copy.english.title` 原生嵌入画面，作为唯一可读 hook；后端不再做固定位置 PIL 叠字，也不写入 `overlay_text` / `overlay_box` 等叠字元数据。
+- 视频分析返回的 `keyframes` 和 `cover_reference.best_cover_reference_timestamp` 必须进入封面生成链路。封面生成应优先按这些时间点从原视频抽取 Hero / Detail / Usage / best cover reference 帧，再和商品主图合成参考图；如果结构化时间点缺失或抽帧失败，才回退到原有首帧缩略图。
+- 参考图必须记录实际使用的帧元数据，包括 `timestamp`、`type`、`source` 和本地帧路径，写入 `state.result.reference.frames` 和第四步请求快照，便于排查“模型为什么参考了这张图”。
+- 第四步图片 prompt 不应直接拼接冗长的完整视频分析和产品分析全文；应先构造短 `cover_brief`，只包含产品保真、使用约束、欧美本地化、关键帧参考和选中文案，降低模型被长文本噪声带偏的概率。
+
 ## 1.2 过程可视化与结构化结果
 
 - 任务详情页右侧主界面除顶部 4 步大进度条外，只由四张动态高度步骤卡片组成：视频分析、产品分析、文案创作、封面生成。
@@ -98,8 +106,9 @@
 - 产品形状、颜色、材质、比例和功能部件必须忠实于产品图片。
 - 使用方式必须可信，必要时展示手部、身体互动、安装位置或可见结果。
 - 画面要有西方生活方式和社交平台原生感。
-- 画面中必须且只能包含一句简短英文 hook，优先从 `ad_copy_sets` 选择或缩写。
+- 画面中必须且只能包含一句简短英文 hook，内容必须来自当前 `selected_ad_copy.english.title`，并作为唯一可读文字原生嵌入图片。
 - 禁止平台 UI、用户名、假评论框、红圈、箭头、价格/折扣、CTA、多句 hook、海报式排版和重度图形装饰。
+- 禁止固定位置半透明背景框、整条黑色横幅、模板化标题栏；字体、位置、阴影和局部轻量托底允许随构图变化。
 
 1.0 中的上下文构造：
 

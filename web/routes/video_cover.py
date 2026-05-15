@@ -406,6 +406,17 @@ def _structured_video_analysis(raw_response) -> dict:
             },
         )
         return fields or parsed
+    nested = parsed.get("video_analysis")
+    if isinstance(nested, dict):
+        merged = dict(parsed)
+        for key in ("video_text", "voiceover"):
+            if key in nested and key not in merged:
+                merged[key] = nested[key]
+        if "usage_logic" in nested and "actions" not in merged:
+            merged["actions"] = nested["usage_logic"]
+        if parsed.get("keyframes") and "cover_suggestions" not in merged:
+            merged["cover_suggestions"] = {"keyframes": parsed.get("keyframes")}
+        return merged
     return parsed
 
 

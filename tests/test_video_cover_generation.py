@@ -163,9 +163,15 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
-    assert "不要在图片中生成任何文字" in calls[0]["prompt"]
-    assert "必须且只能添加一句简短英文 hook" not in calls[0]["prompt"]
+    assert "原生嵌入 selected_ad_copy.english.title" in calls[0]["prompt"]
+    assert "唯一可读 hook" in calls[0]["prompt"]
+    assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
+    assert "固定位置半透明背景框" in calls[0]["prompt"]
+    assert "整条黑色横幅" in calls[0]["prompt"]
+    assert "模板化标题栏" in calls[0]["prompt"]
     assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
+    assert all("overlay_text" not in cover for cover in result["covers"])
+    assert all("overlay_box" not in cover for cover in result["covers"])
     assert "{product_analysis}" not in calls[0]["prompt"]
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
@@ -256,11 +262,83 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
         "Description 2",
         "Description 3",
     ]
-    assert all(cover["overlay_text"].startswith("Hook ") for cover in result["covers"])
-    assert all(cover["overlay_box"]["width"] <= 1080 for cover in result["covers"])
+    assert all("overlay_text" not in cover for cover in result["covers"])
+    assert all("overlay_box" not in cover for cover in result["covers"])
+    assert all("overlay_font_size" not in cover for cover in result["covers"])
+    assert all("overlay_lines" not in cover for cover in result["covers"])
     assert all(cover["formatted_copy"].startswith("标题: Hook ") for cover in result["covers"])
-    assert "不要在图片中生成任何文字" in calls[0]
+    assert "原生嵌入 selected_ad_copy.english.title" in calls[0]
+    assert "唯一可读 hook" in calls[0]
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
+
+
+def test_generate_video_covers_extracts_structured_keyframes_for_reference(tmp_path):
+    from appcore.video_cover_generation import generate_video_covers
+
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake video")
+    extracted_frames = []
+    thumbnail_calls = []
+    copy_payload = {
+        "ad_copy_sets": [
+            {
+                "id": idx,
+                "angle": f"角度 {idx}",
+                "english": {"title": f"Hook {idx}", "message": f"Body {idx}", "description": f"Desc {idx}"},
+                "chinese_translation": {"title": f"钩子 {idx}", "message": f"正文 {idx}", "description": f"描述 {idx}"},
+                "usage_note": f"画面建议 {idx}",
+            }
+            for idx in range(1, 6)
+        ]
+    }
+    video_analysis = {
+        "video_analysis": {"summary": "手部操作便携搅拌杯"},
+        "keyframes": [
+            {"timestamp": "00:01.200", "type": "Hero Shot / Front View", "visual_content": "产品正面"},
+            {"timestamp": "00:02.500", "type": "Detail Close-up", "visual_content": "刀头细节"},
+            {"timestamp": "00:04.000", "type": "Usage Scenario", "visual_content": "厨房使用"},
+        ],
+        "cover_reference": {
+            "best_cover_reference_timestamp": "00:02.500",
+            "why_best_for_cover": "这一帧同时看清产品和手部位置",
+        },
+    }
+
+    def fake_thumbnail(video_path_arg: str, output_dir: str, scale=None):
+        thumbnail_calls.append({"video_path": video_path_arg, "scale": scale})
+        return str(_jpg_file(Path(output_dir) / "fallback.jpg", color=(160, 160, 160)))
+
+    def fake_reference_frame(video_path_arg: str, output_dir: str, *, timestamp: str, index: int):
+        extracted_frames.append({"video_path": video_path_arg, "timestamp": timestamp, "index": index})
+        return str(_jpg_file(Path(output_dir) / f"reference_{index}.jpg", color=(30 * index, 80, 160)))
+
+    result = generate_video_covers(
+        product_url="https://shop.example/products/blender",
+        video_path=str(video_path),
+        video_filename="demo.mp4",
+        user_id=7,
+        task_id="cover-task-keyframes",
+        product_fetch_fn=lambda url: _FakeProduct(),
+        image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
+        thumbnail_extractor=fake_thumbnail,
+        reference_frame_extractor=fake_reference_frame,
+        image_generate_fn=lambda *args, **kwargs: (_png_bytes(size=(900, 900), color=(30, 160, 210)), "image/png"),
+        product_analysis_text="<产品分析报告>demo</产品分析报告>",
+        video_analysis_text=json.dumps(video_analysis, ensure_ascii=False),
+        ad_copy_payload=copy_payload,
+        image_count=1,
+    )
+
+    assert [item["timestamp"] for item in extracted_frames] == ["00:01.200", "00:02.500", "00:04.000"]
+    assert thumbnail_calls == []
+    assert [frame["timestamp"] for frame in result["reference"]["frames"]] == ["00:01.200", "00:02.500", "00:04.000"]
+    assert [frame["type"] for frame in result["reference"]["frames"]] == [
+        "Hero Shot / Front View",
+        "Detail Close-up",
+        "Usage Scenario",
+    ]
+    assert all(frame["path"] for frame in result["reference"]["frames"])
+    assert "reference_frames" in result["image_prompts"][0]
 
 
 def test_generate_video_covers_parallelizes_openrouter_cover_requests(tmp_path):
@@ -444,7 +522,9 @@ def test_generate_video_covers_normalizes_legacy_copy_metadata(tmp_path):
         "文案: Legacy body copy.\n"
         "描述: Legacy Description"
     )
-    assert cover["overlay_text"] == "Legacy Hook"
+    assert cover["hook"] == "Legacy Hook"
+    assert "overlay_text" not in cover
+    assert "overlay_box" not in cover
 
 
 def test_resolve_video_cover_model_options_matches_requested_mappings():
@@ -730,16 +810,43 @@ def test_build_platform_prompt_uses_creative_director_inputs():
         ad_copy_sets="- Blend Anywhere\n- Daily Smoothies Made Easy",
     )
 
-    assert "生成一张 9:16 竖版无文字封面背景图" in prompt
+    assert "生成一张 9:16 竖版封面图" in prompt
     assert "product_analysis: <产品核心理解>" in prompt
     assert "hand using the blender in a kitchen" in prompt
     assert "Blend Anywhere" in prompt
     assert "不要做成电商商品主图、海报、影棚产品照，也不要做成截图" in prompt
-    assert "不要在图片中生成任何文字" in prompt
-    assert "画面中必须且只能包含一句简短英文 hook" not in prompt
+    assert "原生嵌入 selected_ad_copy.english.title" in prompt
+    assert "唯一可读 hook" in prompt
+    assert "不要在图片中生成任何文字" not in prompt
+    assert "固定位置半透明背景框" in prompt
+    assert "整条黑色横幅" in prompt
+    assert "模板化标题栏" in prompt
     assert "{product_analysis}" not in prompt
     assert "{video_analysis}" not in prompt
     assert "{ad_copy_sets}" not in prompt
+
+
+def test_build_platform_prompt_uses_compact_cover_brief_instead_of_full_analysis():
+    from appcore.video_cover_generation import SOCIAL_REELS_SPEC, build_platform_prompt
+
+    noisy_product = "PRODUCT_SIGNAL " + ("冗长产品分析噪声 " * 260)
+    noisy_video = "VIDEO_SIGNAL " + ("冗长视频分析噪声 " * 260)
+
+    prompt = build_platform_prompt(
+        SOCIAL_REELS_SPEC,
+        product_title="Portable Blender Pro",
+        product_url="https://shop.example/products/blender",
+        main_image_url="https://cdn.example/blender.png",
+        product_analysis=noisy_product,
+        video_analysis=noisy_video,
+        ad_copy_sets='{"selected_ad_copy":{"english":{"title":"Blend Anywhere"}}}',
+    )
+
+    assert "cover_brief" in prompt
+    assert "PRODUCT_SIGNAL" in prompt
+    assert "VIDEO_SIGNAL" in prompt
+    assert prompt.count("冗长产品分析噪声") < 40
+    assert prompt.count("冗长视频分析噪声") < 40
 
 
 def test_generate_video_covers_requires_product_title_and_main_image(tmp_path):
@@ -1737,8 +1844,6 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
                         "文案: Add high-visibility warning light to your trunk.\n"
                         "描述: Road Trips Made Safer"
                     ),
-                    "overlay_text": "Don’t Get Stuck Unprepared",
-                    "overlay_box": {"x": 52, "y": 98, "width": 800, "height": 130},
                 }
             ],
         }
@@ -1774,6 +1879,8 @@ def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path
     assert saved_states[0]["task_id"] == "task-1"
     assert saved_states[0]["status"] == "running"
     assert saved_states[0]["state"]["result"]["covers"][0]["formatted_copy"].startswith("标题: Don’t Get Stuck")
+    assert "overlay_text" not in saved_states[0]["state"]["result"]["covers"][0]
+    assert "overlay_box" not in saved_states[0]["state"]["result"]["covers"][0]
     assert saved_states[0]["state"]["step_messages"]["cover_generation"] == "已生成 1/1 张封面，正在整理结果..."
 
 
@@ -1840,8 +1947,6 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
                         "文案: Add high-visibility warning light to your trunk.\n"
                         "描述: Road Trips Made Safer"
                     ),
-                    "overlay_text": "Don’t Get Stuck Unprepared",
-                    "overlay_box": {"x": 52, "y": 98, "width": 800, "height": 130},
                 }
             ],
         }
@@ -1852,7 +1957,8 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
 
     assert result["covers"][0]["object_key"] == "artifacts/video_cover/8/task-1/social_reels.png"
     assert "url" not in result["covers"][0]
-    assert state["result"]["covers"][0]["overlay_text"] == "Don’t Get Stuck Unprepared"
+    assert "overlay_text" not in state["result"]["covers"][0]
+    assert "overlay_box" not in state["result"]["covers"][0]
     assert state["step_results"]["cover_generation"]["structured_result"]["covers"][0]["object_key"]
 
 
