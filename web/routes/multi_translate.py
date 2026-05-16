@@ -23,6 +23,7 @@ from pipeline.languages.registry import (
     normalize_enabled_target_langs,
 )
 from web import store
+from web.auth import permission_required
 from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
@@ -177,6 +178,7 @@ def _multi_translate_creator_name_expr() -> str:
 
 @bp.route("/multi-translate")
 @login_required
+@permission_required("multi_translate")
 def index():
     recover_all_interrupted_tasks()
 

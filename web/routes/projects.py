@@ -8,8 +8,10 @@ from appcore.av_translate_inputs import (
     list_available_av_target_language_options,
 )
 from appcore import project_state as project_store
+from appcore.permissions import HOME_REDIRECT_ORDER
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from appcore.settings import get_retention_hours
+from web.auth import permission_required
 
 bp = Blueprint("projects", __name__)
 
@@ -30,11 +32,15 @@ def _av_sync_target_lang(state: dict) -> str:
 @bp.route("/")
 @login_required
 def root():
-    return redirect(url_for("medias.index"))
+    for code, path in HOME_REDIRECT_ORDER:
+        if current_user.has_permission(code):
+            return redirect(path)
+    return redirect("/omni-translate")
 
 
 @bp.route("/projects")
 @login_required
+@permission_required("projects")
 def index():
     recover_all_interrupted_tasks()
     rows = project_store.list_translation_projects(current_user.id)
