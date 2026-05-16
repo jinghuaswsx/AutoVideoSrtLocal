@@ -18,7 +18,7 @@ Both analyze downloaded local videos with product links. They should now share o
 - Process US copyability items before Europe fit items. Europe starts only when no US items are available in the same round.
 - Process at most 20 items per 10-minute round.
 - Use Google Vertex ADC with Gemini 3 Flash for both analysis types.
-- Run serially with a 10-second delay between LLM video calls.
+- Run serially with no delay between LLM video calls.
 - Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
 - Stop the current round early after 2 rate-limit requeues to avoid a quota storm.
 - Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
@@ -65,7 +65,7 @@ Register one APScheduler job:
 - schedule: every 10 minutes
 - max instances: 2, so a new tick can enter and take over a stuck previous tick
 - batch size: 20
-- per-item delay: 10 seconds
+- per-item delay: no delay
 - rate-limit circuit breaker: 2 requeued 429 / quota errors stop the current round
 
 ## Retry And Suspension
@@ -85,7 +85,7 @@ The previous separate scheduled jobs for Europe fit and US copyability are remov
 Focused tests cover:
 
 - queue ordering: US items first, Europe only after US capacity is exhausted or absent
-- max 20 items per tick and 10-second delay between item executions
+- max 20 items per tick and no delay between item executions
 - stop the tick once 2 items in the round hit 429 / quota requeue
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
