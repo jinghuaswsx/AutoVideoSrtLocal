@@ -108,7 +108,7 @@
 | 操作 | 系统级 preset | 用户级 preset（自己） | 用户级 preset（别人的） |
 |---|---|---|---|
 | 看 | ✅ 全员 | ✅ | ❌ |
-| 用（创建任务时选中） | ✅ 全员 | ✅ | ❌ |
+| 用（创建任务时选中） | ✅ 仅超级管理员 | ✅ | ❌ |
 | 改 | admin only | ✅ | ❌ |
 | 删 | admin only | ✅ | ❌ |
 | 设全站默认 | admin only | ❌（用户级不能当全站默认） | ❌ |
@@ -193,9 +193,9 @@ CREATE TABLE omni_translate_presets (
 ```
 
 行为规则：
-1. **打开弹窗**：preset 默认选中**全站默认**（admin 在 `/settings` 设的）。
-2. **创建项目时只能选择系统级 preset**：新建任务弹窗不展示 8 组能力点表单，不允许在创建项目时临时点选各步骤，也不提供「另存为」「新建流程」「删除」入口。
-3. **普通用户不看到流程细节**：下拉只显示系统级 preset 名称；具体步骤组合由管理员在 `/settings?tab=omni_preset` 统一维护。
+1. **超级管理员**：打开弹窗时显示 preset 下拉选择器，默认选中全站默认。
+2. **普通管理员和普通用户**：弹窗中不显示处理流程预设字段，全站默认 preset 自动用于新建任务。
+3. **创建项目时只能选择系统级 preset**：新建任务弹窗不展示 8 组能力点表单，不允许在创建项目时临时点选各步骤，也不提供「另存为」「新建流程」「删除」入口。
 4. **「创建任务」**：提交选中系统级 preset 的 `plugin_config` 快照；已有任务仍不回查 preset，preset 后续变更不影响已创建任务。
 
 ### 5.2 admin 设置（`/settings` → 加 tab `Omni Preset`）
@@ -310,7 +310,7 @@ PR1–PR4c 把 omni 的算法搬进了 `OmniProfile`。本次合并后 OmniProfi
 
 ### 7.2 Preset CRUD 单元测试
 
-- 系统级 preset：admin 能 CRUD；普通 user 只能读和选择
+- 系统级 preset：超级管理员能 CRUD、选择和切换；普通 admin 和 user 不可见预设选择器
 - 新建任务弹窗不提供用户级 preset 创建、编辑、删除入口
 - 全站默认：admin 设置后所有 user 看到的弹窗初始 preset 切换
 - 删除当前全站默认：拒绝，必须先选另一个
@@ -323,7 +323,7 @@ PR1–PR4c 把 omni 的算法搬进了 `OmniProfile`。本次合并后 OmniProfi
 
 ### 7.4 UI smoke
 
-- 新建弹窗：默认 preset 加载、切换系统级 preset、提交选中 preset 的 plugin_config 快照；不显示能力点表单、不显示「另存为 / 新建流程 / 删除」
+- 新建弹窗：超级管理员显示 preset 下拉选择器（可切换系统级 preset），其余角色不显示预设选择字段；所有角色都不显示能力点表单、「另存为 / 新建流程 / 删除」
 - `/settings` → `Omni Preset` tab：admin 可见、普通 user 不可见；admin 能 CRUD 系统级 preset + 设全站默认
 - sidebar：`/sentence-translate/` 和 `/translate-lab/` 入口隐藏；老任务直链仍能访问详情页
 

@@ -525,7 +525,8 @@
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
 
-        <!-- Phase 4: 创建项目时只选择已保存的处理流程 -->
+        {% if current_user.is_superadmin %}
+        <!-- Phase 4: 超级管理员可选预设流程 -->
         <div class="modal-field" id="pluginConfigField">
           <label>处理流程预设</label>
           <div class="preset-row">
@@ -534,9 +535,10 @@
             </select>
           </div>
           <div class="modal-hint" style="margin:6px 0 12px;">
-            只能选择系统级 preset；具体流程由管理员在系统设置统一维护。
+            系统级 preset 由管理员在系统设置统一维护。
           </div>
         </div>
+        {% endif %}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -738,7 +740,7 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
 function openUpload() {
   _resetUploadModal();
   document.getElementById('uploadOverlay').classList.add('open');
-  // Phase 4: 首次打开弹窗时加载 preset 列表 + 默认 preset，渲染能力点表单
+  // Phase 4: 首次打开弹窗时加载 preset（超级管理员有 dropdown，其余人静默加载默认）
   if (!__omniPresetState.loaded) {
     _loadOmniPresets();
   }
@@ -824,7 +826,7 @@ function openUpload() {
 })();
 
 // ────────────────────────────────────────────────────────────────────────
-// Phase 4: System preset selector only. Preset management lives in settings.
+// Phase 4: System preset selector (superadmin only). Others auto-use default.
 // ────────────────────────────────────────────────────────────────────────
 var __omniPresetState = {
   presets: [],
@@ -858,7 +860,11 @@ async function _loadOmniPresets() {
       return p.scope === 'system';
     });
     __omniPresetState.defaultId = listData.default_preset_id;
-    _renderPresetDropdown();
+
+    // 只有超级管理员页面上有 #presetSelect 元素，才渲染 dropdown
+    if (sel) {
+      _renderPresetDropdown();
+    }
 
     var initial = null;
     if (defData.preset && defData.preset.scope === 'system') {

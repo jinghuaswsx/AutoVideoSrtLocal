@@ -54,8 +54,9 @@ def test_create_project_modal_has_no_preset_crud_or_step_controls(omni_list_html
 
 
 def test_create_project_modal_tells_admin_manages_presets(omni_list_html):
-    assert "系统级 preset" in omni_list_html
-    assert "管理员在系统设置统一维护" in omni_list_html
+    assert "系统级 preset 由管理员在系统设置统一维护" in omni_list_html
+    # 同时确认外面包了 Jinja conditional，只有超级管理员可见
+    assert "current_user.is_superadmin" in omni_list_html
 
 
 def test_modal_contains_upload_form(omni_list_html):
