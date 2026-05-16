@@ -30,12 +30,8 @@ MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
 ALLOWED_EXT = (".mp4", ".mov", ".webm", ".mkv")
 
 
-def _viewer_role() -> str:
-    return getattr(current_user, "role", "user")
-
-
 def _is_admin() -> bool:
-    return _viewer_role() in ("admin", "superadmin")
+    return getattr(current_user, "is_superadmin", False)
 
 
 def _can_process_raw_video() -> bool:

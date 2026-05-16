@@ -13,7 +13,7 @@ def get_user_task(task_id: str, *, user_id: int, task_store=store) -> dict | Non
 
 
 def is_admin_user(user) -> bool:
-    return getattr(user, "is_admin", False)
+    return getattr(user, "is_superadmin", False)
 
 
 def optional_user_id(user) -> int | None:
