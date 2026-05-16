@@ -798,9 +798,10 @@ def _fetch_next_pending_item() -> dict[str, Any] | None:
     return None
 
 
-def _video_analysis_queue_summary(queued_us: int) -> dict[str, int]:
+def _video_analysis_queue_summary(queued_us: int, queued_eu: int = 0) -> dict[str, int]:
     return {
         "queued_us_copyability": queued_us,
+        "queued_europe_fit": queued_eu,
         "scanned": 0,
         "done": 0,
         "failed": 0,
@@ -893,7 +894,8 @@ def process_video_analysis_queue(
     sleep_fn: SleepFn | None = None,
 ) -> dict[str, Any]:
     queued_us = int(store.ensure_video_copyability_candidates() or 0)
-    summary: dict[str, Any] = _video_analysis_queue_summary(queued_us)
+    queued_eu = int(store.ensure_europe_fit_candidates() or 0)
+    summary: dict[str, Any] = _video_analysis_queue_summary(queued_us, queued_eu)
     billing_user_id = resolve_billing_user_id(user_id)
     round_start = time.monotonic()
     while True:
