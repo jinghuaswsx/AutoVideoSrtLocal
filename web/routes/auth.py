@@ -27,7 +27,10 @@ def login():
                 target_id=row["id"],
                 target_label=row["username"],
             )
-            return redirect(url_for("medias.index"))
+            next_page = request.args.get("next", "")
+            if next_page and next_page.startswith("/") and "\n" not in next_page and "\r" not in next_page:
+                return redirect(next_page)
+            return redirect(url_for("projects.root"))
         system_audit.record_from_request(
             user=None,
             request_obj=request,

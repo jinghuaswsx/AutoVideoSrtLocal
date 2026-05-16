@@ -515,6 +515,15 @@ def create_app() -> Flask:
         if getattr(current_user, "is_admin", False):
             join_room("admin")
 
+    @app.errorhandler(403)
+    def forbidden(e):
+        from flask import redirect, url_for, flash
+        from flask_login import current_user
+        flash("您当前没有权限访问该页面", "warning")
+        if current_user.is_authenticated:
+            return redirect(url_for("projects.root"))
+        return redirect(url_for("auth.login"))
+
     _seed_default_prompts()
 
     return app

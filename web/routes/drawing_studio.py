@@ -3,6 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, redirect
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore.drawing_studio_sso import (
     DrawingStudioSsoConfigError,
     build_drawing_studio_sso_url,
@@ -14,6 +16,7 @@ bp = Blueprint("drawing_studio", __name__, url_prefix="/drawing-studio")
 
 @bp.route("/sso")
 @login_required
+@permission_required("drawing_studio")
 def sso():
     try:
         target = build_drawing_studio_sso_url(

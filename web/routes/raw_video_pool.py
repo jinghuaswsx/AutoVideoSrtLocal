@@ -6,6 +6,8 @@ import os
 from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore import raw_video_pool as rvp_svc
 from web.services.artifact_download import safe_task_file_response
 from web.services.raw_video_pool import (
@@ -50,6 +52,7 @@ def _can_process_raw_video() -> bool:
 
 @bp.route("/", methods=["GET"])
 @login_required
+@permission_required("raw_video_pool")
 def index():
     return render_template(
         "raw_video_pool_list.html",

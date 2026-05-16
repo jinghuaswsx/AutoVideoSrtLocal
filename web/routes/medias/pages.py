@@ -5,6 +5,7 @@ import re
 from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required
 
+from web.auth import permission_required
 from appcore import medias
 from web.services.media_pages import (
     build_admin_required_response,
@@ -44,24 +45,28 @@ def _render_tab_page(active_tab: str):
 
 @bp.route("/")
 @login_required
+@permission_required("medias")
 def index():
     return render_template("medias_list.html", **_medias_page_context())
 
 
 @bp.route("/product")
 @login_required
+@permission_required("medias")
 def product_tab_page():
     return _render_tab_page("products")
 
 
 @bp.route("/video")
 @login_required
+@permission_required("medias")
 def video_tab_page():
     return _render_tab_page("videos")
 
 
 @bp.route("/<product_code>")
 @login_required
+@permission_required("medias")
 def product_detail_page(product_code: str):
     code = (product_code or "").strip().lower()
     if not code:
@@ -86,6 +91,7 @@ def product_detail_page(product_code: str):
 
 @bp.route("/products/<int:pid>/translation-tasks", methods=["GET"])
 @login_required
+@permission_required("medias")
 def translation_tasks_page(pid: int):
     product = medias.get_product(pid)
     if not _routes_module()._can_access_product(product):

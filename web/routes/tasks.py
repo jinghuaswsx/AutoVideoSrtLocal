@@ -7,6 +7,8 @@ from functools import wraps
 from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore import system_audit
 from appcore import tasks as tasks_svc
 from appcore.users import list_translators
@@ -81,6 +83,7 @@ def _audit_task_action(task_id: int, action: str, detail: dict | None = None) ->
 
 @bp.route("/")
 @login_required
+@permission_required("task_center")
 def index():
     return render_template(
         "tasks_list.html",

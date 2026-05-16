@@ -40,7 +40,7 @@ from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
 )
-from web.auth import admin_required
+from web.auth import admin_required, permission_required
 
 log = logging.getLogger(__name__)
 
@@ -341,6 +341,7 @@ def _multi_translate_creator_name_expr() -> str:
 
 @bp.route("/omni-translate")
 @login_required
+@permission_required("omni_translate")
 def index():
     recover_all_interrupted_tasks()
 
@@ -380,6 +381,7 @@ def index():
 
 @bp.route("/omni-translate/<task_id>")
 @login_required
+@permission_required("omni_translate")
 def detail(task_id: str):
     recover_project_if_needed(task_id, "omni_translate")
     row = _query_viewable_project(task_id)

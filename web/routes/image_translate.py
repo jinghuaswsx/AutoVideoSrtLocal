@@ -11,6 +11,8 @@ from datetime import datetime
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore import image_translate_store, local_media_storage, medias, runner_dispatch, task_state
 from appcore.gemini_image import is_valid_image_model, list_image_models
 from appcore import image_translate_settings as its
@@ -1027,6 +1029,7 @@ def api_download_zip(task_id: str):
 
 @bp.route("/image-translate", methods=["GET"])
 @login_required
+@permission_required("image_translate")
 def page_list():
     import json as _json
 

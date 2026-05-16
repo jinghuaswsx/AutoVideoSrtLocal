@@ -2,8 +2,8 @@
 
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
-- 三级角色：superadmin / admin / user
-- 权限项粒度：菜单/页面级 + 任务能力位，共 25 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
+- 四级角色：superadmin / admin / user / translator
+- 权限项粒度：菜单/页面级 + 任务能力位，共 27 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
@@ -14,12 +14,14 @@ from __future__ import annotations
 ROLE_SUPERADMIN = "superadmin"
 ROLE_ADMIN = "admin"
 ROLE_USER = "user"
-ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER)
+ROLE_TRANSLATOR = "translator"
+ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR)
 
 ROLE_LABELS = {
     ROLE_SUPERADMIN: "超级管理员",
     ROLE_ADMIN: "管理员",
     ROLE_USER: "普通用户",
+    ROLE_TRANSLATOR: "翻译用户",
 }
 
 GROUP_BUSINESS = "business"
@@ -60,6 +62,8 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("raw_video_pool",        GROUP_BUSINESS,   "原始素材任务库",   True,  True),
     ("projects",              GROUP_BUSINESS,   "视频翻译",         True,  True),
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
+    ("omni_translate",        GROUP_BUSINESS,   "全能视频翻译",     True,  True),
+    ("drawing_studio",        GROUP_BUSINESS,   "画图工作室",       True,  True),
     # B. 管理类
     ("mk_selection",          GROUP_MANAGEMENT, "选品中心",         True,  False),
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
@@ -91,12 +95,45 @@ def is_valid_role(role: str) -> bool:
     return role in ROLES
 
 
+# 首页跳转优先级：按侧边栏菜单顺序排列，(permission_code, url_path)
+# Root 路由按此顺序找到用户第一个有权限的页面并跳转。
+HOME_REDIRECT_ORDER = [
+    ("medias",           "/medias"),
+    ("pushes",           "/pushes"),
+    ("data_analytics",   "/order-analytics"),
+    ("order_profit",     "/order-profit"),
+    ("product_profit",   "/product-profit"),
+    ("multi_translate",  "/multi-translate"),
+    ("title_translate",  "/title-translate"),
+    ("image_translate",  "/image-translate"),
+    ("drawing_studio",   "/drawing-studio/sso"),
+    ("subtitle_removal", "/subtitle-removal"),
+    ("mk_selection",     "/xuanpin/mk"),
+    ("task_center",      "/tasks/"),
+    ("raw_video_pool",   "/raw-video-pool/"),
+    ("bulk_translate_admin", "/bulk-translate/admin"),
+    ("omni_translate",   "/omni-translate"),
+    ("api_config",       "/settings"),
+    ("ai_billing",       "/my-ai-usage"),
+    ("user_settings",    "/user-settings"),
+    ("user_management",  "/admin/users"),
+    ("system_settings",  "/admin/settings"),
+    ("projects",         "/projects"),
+    ("scheduled_tasks",  "/scheduled-tasks"),
+    ("lab",              "/voice-library"),
+]
+
+_TRANSLATOR_TRUE_PERMISSIONS = {"omni_translate", "user_settings", "can_translate"}
+
+
 def default_permissions_for_role(role: str) -> dict[str, bool]:
     """根据角色返回默认权限模板。superadmin 永远全开。"""
     if role == ROLE_SUPERADMIN:
         return {code: True for code in PERMISSION_CODES}
     if role == ROLE_ADMIN:
         return {code: meta["admin"] for code, meta in PERMISSION_META.items()}
+    if role == ROLE_TRANSLATOR:
+        return {code: code in _TRANSLATOR_TRUE_PERMISSIONS for code in PERMISSION_CODES}
     return {code: meta["user"] for code, meta in PERMISSION_META.items()}
 
 
@@ -116,7 +153,7 @@ def merge_with_defaults(role: str, stored: dict | None) -> dict[str, bool]:
 
 
 def normalize_permissions(role: str, payload: dict | None) -> dict[str, bool]:
-    """把 UI 提交的权限 dict 净化为合法的 17 项布尔。
+    """把 UI 提交的权限 dict 净化为合法的 27 项布尔。
     超管永远全开（payload 被忽略）。其他角色：未提交的 key 用角色默认值补齐。
     """
     if role == ROLE_SUPERADMIN:

@@ -7,6 +7,8 @@ from functools import wraps
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
+from web.auth import permission_required
+
 import config
 from web.services.pushes_responses import (
     build_pushes_payload_response,
@@ -47,6 +49,7 @@ def _product_links_push_error_response(exc: Exception):
 
 @bp.route("/")
 @login_required
+@permission_required("pushes")
 def index():
     return render_template(
         "pushes_list.html",

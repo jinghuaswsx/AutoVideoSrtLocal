@@ -618,9 +618,11 @@
         <span class="nav-icon">▣</span> 文案封面生成
       </a>
       {% endif %}
+      {% if has_permission('drawing_studio') %}
       <a href="{{ url_for('drawing_studio.sso') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/drawing-studio') %}class="active"{% endif %}>
         <span class="nav-icon">🎨</span> 画图工作室
       </a>
+      {% endif %}
       {% if has_permission('subtitle_removal') %}
       <a href="{{ url_for('subtitle_removal.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
         <span class="nav-icon">🧽</span> 字幕移除
@@ -646,9 +648,11 @@
         <span class="nav-icon">🗂️</span> 批量翻译任务管理
       </a>
       {% endif %}
+      {% if has_permission('omni_translate') %}
       <a href="/omni-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/omni-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🌍</span> 全能视频翻译
       </a>
+      {% endif %}
       {% if has_permission('api_config') %}
       <a href="{{ url_for('settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
         <span class="nav-icon">⚙️</span> API 配置

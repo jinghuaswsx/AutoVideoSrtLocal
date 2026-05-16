@@ -3,6 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore import llm_bindings, llm_client, title_translate_settings
 from web.services.title_translate import (
     build_title_translate_empty_model_output_response,
@@ -23,6 +25,7 @@ def _current_model() -> str:
 
 @bp.route("/title-translate", methods=["GET"])
 @login_required
+@permission_required("title_translate")
 def page():
     return render_template("title_translate.html")
 

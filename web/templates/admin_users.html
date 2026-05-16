@@ -26,6 +26,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .role-superadmin { background: #fef3c7; color: #92400e; }
 .role-admin { background: #dbeafe; color: #1e40af; }
 .role-user { background: #f3f4f6; color: #374151; }
+.role-translator { background: #d1fae5; color: #065f46; }
 
 /* Action buttons */
 .btn-perm { padding: 4px 12px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border-main, #e5e7eb); background: var(--bg-card, #fff); color: var(--text-main, #374151); cursor: pointer; }
@@ -95,6 +96,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
       <div><label>角色</label>
         <select name="role">
           <option value="user">普通用户</option>
+          <option value="translator">翻译用户</option>
           <option value="admin">管理员</option>
         </select>
       </div>
@@ -147,6 +149,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
         <label>角色</label>
         <select id="permRole" onchange="onRoleChange()">
           <option value="user">普通用户</option>
+          <option value="translator">翻译用户</option>
           <option value="admin">管理员</option>
           <option value="superadmin" id="optSuperadmin" style="display:none">超级管理员</option>
         </select>

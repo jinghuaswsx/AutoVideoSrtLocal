@@ -3,6 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from web.auth import permission_required
+
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT, resolve_extra, set_key
 
 bp = Blueprint("user_settings", __name__, url_prefix="/user-settings")
@@ -10,6 +12,7 @@ bp = Blueprint("user_settings", __name__, url_prefix="/user-settings")
 
 @bp.route("", methods=["GET", "POST"])
 @login_required
+@permission_required("user_settings")
 def index():
     if request.method == "POST":
         project_root = (

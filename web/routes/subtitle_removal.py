@@ -12,6 +12,8 @@ import config
 from flask import Blueprint, render_template, abort, request, redirect, url_for
 from flask_login import login_required, current_user
 
+from web.auth import permission_required
+
 from appcore import object_keys, subtitle_removal_route_store, subtitle_removal_source_storage, task_state
 from appcore import tos_clients
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
@@ -564,6 +566,7 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
 
 @bp.route("/subtitle-removal")
 @login_required
+@permission_required("subtitle_removal")
 def list_page():
     return render_template("subtitle_removal_list.html")
 

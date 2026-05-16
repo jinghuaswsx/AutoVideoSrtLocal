@@ -14,7 +14,7 @@ from appcore.users import (
     update_role, update_password, update_permissions, reset_permissions_to_role_default,
 )
 from appcore.permissions import (
-    ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN,
+    ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN, ROLE_TRANSLATOR,
     ROLE_LABELS, ROLES, grouped_permissions, PERMISSION_META,
     default_permissions_for_role, normalize_permissions,
 )
@@ -126,7 +126,7 @@ def users():
                 error = "无效的用户 ID"
                 return _render_users_page(error=error, status=400)
             new_role = request.form.get("new_role", "").strip()
-            if new_role not in (ROLE_ADMIN, ROLE_USER):
+            if new_role not in (ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR):
                 error = f"无效的角色: {new_role}"
             else:
                 try:
