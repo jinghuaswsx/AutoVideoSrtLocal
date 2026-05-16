@@ -143,6 +143,7 @@ def import_mk_video(
     mk_video_metadata: dict,
     translator_id: int,
     actor_user_id: int,
+    task_id: int | None = None,
 ) -> dict:
     """入库一条明空视频。
 
@@ -226,6 +227,7 @@ def import_mk_video(
             display_name=(meta.get("product_name") or "")[:255] or None,
             duration_seconds=meta.get("duration_seconds"),
             lang="en",
+            task_id=task_id,
         )
     except Exception as e:
         raise StorageError(f"insert media_item failed: {e}") from e
@@ -246,3 +248,21 @@ def import_mk_video(
         "is_new_product": is_new,
         "duration_ms": duration_ms,
     }
+
+
+def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
+    """Given mk metadata, return {product_id, item_id} if an English item exists."""
+    raw_code = mk_video_metadata.get("product_code") or ""
+    normalized = _normalize_product_code(raw_code)
+    existing = _find_existing_product(normalized)
+    if not existing:
+        return None
+    item = query_one(
+        "SELECT id FROM media_items "
+        "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (existing["id"],),
+    )
+    if not item:
+        return None
+    return {"product_id": existing["id"], "item_id": item["id"]}

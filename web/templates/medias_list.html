@@ -3206,6 +3206,9 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   var fromTask = params.get('from_task');
   if (!fromTask) return;
 
+  // Expose task_id globally so item creation APIs can pick it up
+  window.MEDIAS_TASK_BRIDGE_TASK_ID = parseInt(fromTask, 10) || null;
+
   var productId = parseInt(params.get('product') || '0', 10);
   var lang      = (params.get('lang') || '').toLowerCase().trim();
   var action    = params.get('action') || '';

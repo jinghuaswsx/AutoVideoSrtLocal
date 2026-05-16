@@ -51,6 +51,7 @@
 - 选品/产品链接体系：3 份 `2026-05-09-product-link-*.md`; 顶部国家勾选前置校验 `2026-05-09-product-edit-ad-supported-langs-precheck-design.md`; TABCUT 价格筛选 `2026-05-13-tabcut-video-price-filter-design.md`
 - Shopify Image Localizer：发布/打包/API key/BOM/CDP 门禁必须先读 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
 - 模板/静态资源/订单分析：见 [web/templates/CLAUDE.md](web/templates/CLAUDE.md)、[web/static/CLAUDE.md](web/static/CLAUDE.md)、[appcore/order_analytics/CLAUDE.md](appcore/order_analytics/CLAUDE.md)
+- 任务中心端到端流程：`2026-05-16-task-center-e2e-flow-design.md`（选品→任务→素材→推送全链路补全）
 
 ## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）
 ```bash

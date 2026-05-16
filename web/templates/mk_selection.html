@@ -98,6 +98,8 @@
   font-family: inherit;
 }
 .mki-btn:hover:not(:disabled) { background: var(--oc-accent-hover); }
+.mki-btn--xiao { background: oklch(60% 0.16 160); border-color: oklch(55% 0.15 155); color: #fff; }
+.mki-btn--xiao:hover:not(:disabled) { background: oklch(50% 0.14 155); }
 .mki-btn:disabled, .mki-btn--disabled {
   background: var(--oc-bg-muted); color: var(--oc-fg-muted);
   cursor: not-allowed; border-color: var(--oc-border);
@@ -386,6 +388,19 @@ async function openDetail(mkId, mkName) {
             onclick="mkiHandleClick(this)">
           加入素材库
         </button>
+        <button class="mki-btn mki-btn--xiao"
+            data-mki-filename="${escapeHtml(v.name || '')}"
+            data-mki-mp4-url="${safeVideoUrl}"
+            data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
+            data-mki-cover-url="${safeCoverUrl}"
+            data-mki-product-name="${escapeHtml(item.product_name || '')}"
+            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
+            data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-mk-id="${escapeHtml(item.id || '')}"
+            onclick="mkiXiaoHandleClick(this)">
+          做小语种
+        </button>
       </div>`;
     });
     html += `</div>`;
@@ -571,6 +586,108 @@ async function mkiHandleClick(btn) {
     mkiToast('error', '入库失败：' + e.message);
   }
 }
+
+// ---- 做小语种：一键导入 + 创建任务 ----
+let mkiXiaoResolve = null;
+let mkiXiaoTranslatorsCache = null;
+let mkiXiaoLangsCache = null;
+
+async function mkiXiaoOpenModal() {
+  // Load translators
+  if (!mkiXiaoTranslatorsCache) {
+    try {
+      const r = await fetch('/tasks/api/translators');
+      const data = await r.json();
+      mkiXiaoTranslatorsCache = data.translators || [];
+    } catch (e) { mkiXiaoTranslatorsCache = []; }
+  }
+  if (!mkiXiaoTranslatorsCache.length) {
+    alert('没有可用翻译员');
+    return null;
+  }
+  const sel = document.getElementById('mkiXiaoTranslator');
+  sel.innerHTML = mkiXiaoTranslatorsCache.map(t => '<option value="' + escapeHtml('' + t.id) + '">' + escapeHtml(t.username || '') + '</option>').join('');
+
+  // Load languages
+  if (!mkiXiaoLangsCache) {
+    try {
+      const r = await fetch('/tasks/api/languages');
+      const data = await r.json();
+      mkiXiaoLangsCache = data.languages || [];
+    } catch (e) { mkiXiaoLangsCache = []; }
+  }
+  var langsDiv = document.getElementById('mkiXiaoLangs');
+  langsDiv.innerHTML = mkiXiaoLangsCache.map(function(l) {
+    return '<label style="display:inline-flex; align-items:center; gap:2px; font-size:13px; cursor:pointer; padding:2px 6px; border:1px solid var(--oc-border); border-radius:4px; user-select:none;">'
+      + '<input type="checkbox" value="' + escapeHtml(l) + '" style="margin:0;"> ' + escapeHtml(l) + '</label>';
+  }).join('');
+
+  document.getElementById('mkiXiaoModal').style.display = 'block';
+  return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
+}
+
+function mkiXiaoSelectedCountries() {
+  var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+  var checked = [];
+  for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked.push(cbs[i].value); }
+  return checked;
+}
+
+function mkiXiaoOK() {
+  var translatorId = parseInt(document.getElementById('mkiXiaoTranslator').value);
+  var countries = mkiXiaoSelectedCountries();
+  document.getElementById('mkiXiaoModal').style.display = 'none';
+  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, countries: countries}); mkiXiaoResolve = null; }
+}
+
+function mkiXiaoCancel() {
+  document.getElementById('mkiXiaoModal').style.display = 'none';
+  if (mkiXiaoResolve) { mkiXiaoResolve(null); mkiXiaoResolve = null; }
+}
+
+async function mkiXiaoHandleClick(btn) {
+  var selection = await mkiXiaoOpenModal();
+  if (!selection) return;
+  if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
+
+  var original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '创建中...';
+  try {
+    var meta = {
+      mp4_url: btn.dataset.mkiMp4Url,
+      filename: btn.dataset.mkiFilename,
+      duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
+      cover_url: btn.dataset.mkiCoverUrl || null,
+      product_name: btn.dataset.mkiProductName,
+      product_link: btn.dataset.mkiProductLink || null,
+      main_image: btn.dataset.mkiMainImage || null,
+      product_code: btn.dataset.mkiProductCode,
+      mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null
+    };
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var headers = {'Content-Type': 'application/json'};
+    if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+    var rsp = await fetch('/tasks/api/import-and-create', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({mk_video_metadata: meta, translator_id: selection.translatorId, countries: selection.countries})
+    });
+    if (!rsp.ok) {
+      var err = await rsp.json().catch(function() { return {error: rsp.statusText}; });
+      throw new Error(err.error || err.detail || rsp.statusText);
+    }
+    var data = await rsp.json();
+    btn.textContent = '任务 #' + data.parent_task_id;
+    btn.classList.add('mki-btn--disabled');
+    mkiToast('success', '任务已创建 #' + data.parent_task_id + (data.is_new_product ? '（新建产品）' : ''));
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiToast('error', '创建失败：' + e.message);
+  }
+}
 </script>
 
 <!-- mk-import: Task 10 翻译员选择 modal -->
@@ -582,6 +699,25 @@ async function mkiHandleClick(btn) {
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
       <button class="oc-btn oc-btn--ghost" onclick="mkiTranslatorCancel()">取消</button>
       <button class="oc-btn oc-btn--primary" onclick="mkiTranslatorOK()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 做小语种 modal -->
+<div id="mkiXiaoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:460px; max-width:90vw;">
+    <h3 style="margin:0 0 12px;">做小语种 — 创建翻译任务</h3>
+    <div style="margin-bottom:12px;">
+      <label style="font-weight:600; font-size:13px;">翻译员：</label>
+      <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:32px; margin-top:4px;"></select>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-weight:600; font-size:13px;">目标国家（至少勾选一个）：</label>
+      <div id="mkiXiaoLangs" style="display:flex; flex-wrap:wrap; gap:4px 8px; margin-top:4px;"></div>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="oc-btn oc-btn--ghost" onclick="mkiXiaoCancel()">取消</button>
+      <button class="oc-btn oc-btn--primary" onclick="mkiXiaoOK()">确认创建</button>
     </div>
   </div>
 </div>

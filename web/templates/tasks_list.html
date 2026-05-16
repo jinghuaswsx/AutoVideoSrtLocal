@@ -298,6 +298,30 @@ async function tcOpenDetail(id) {
     const task = (taskResp.items || []).find(t => t.id === id);
     if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
     body.innerHTML = tcRenderDetail(task, eventsResp.events || []);
+    // fetch artifacts for both parent and child tasks
+    fetch('/tasks/api/' + id + '/artifacts')
+      .then(r => r.json())
+      .then(data => {
+        const wrap = document.getElementById('tcArtifactsRows');
+        const panel = document.getElementById('tcArtifactsPanel');
+        if (!wrap || !panel) return;
+        const items = data.items || [];
+        if (!items.length) { wrap.textContent = '暂无产出素材'; panel.style.display = 'block'; return; }
+        panel.style.display = 'block';
+        wrap.innerHTML = items.map(function(it) {
+          const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
+          return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border);">'
+            + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(it.lang || '--') + '</span>'
+            + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
+            + pushedBadge
+            + '<a href="/medias/?from_task=' + (it.task_id || '') + '&product=' + tcEsc(it.product_id || '') + '&lang=' + tcEsc(it.lang || '') + '" target="_blank" rel="noopener" class="tc-btn" style="font-size:10px; height:22px; padding:0 6px;">素材库</a>'
+            + '</div>';
+        }).join('');
+      })
+      .catch(function(e) {
+        const wrap = document.getElementById('tcArtifactsRows');
+        if (wrap) wrap.textContent = '加载失败';
+      });
     if (task.parent_task_id) {
       // child task — fetch readiness
       fetch('/tasks/api/child/' + id + '/readiness')
@@ -350,6 +374,10 @@ function tcRenderDetail(task, events) {
       负责人：${tcEsc(task.assignee_username || '—')}
     </div>
     ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
+    <div id="tcArtifactsPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px; display:none;">
+      <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">产出素材</div>
+      <div id="tcArtifactsRows">暂无</div>
+    </div>
     ${!isParent ? `<div id="tcReadinessPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">
   <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(task.country_code)})</div>
   <div id="tcReadinessRows">加载中...</div>
@@ -387,6 +415,9 @@ function tcDetailButtons(task, isParent) {
     if (TC_IS_ADMIN && ['blocked','assigned','review'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('child', ${id}, 'cancel')">取消</button>`);
     }
+  }
+  if (TC_IS_ADMIN) {
+    btns.push(`<button class="tc-btn" onclick="tcOpenBindModal(${id}, ${!!isParent})">绑定产出物</button>`);
   }
   return btns.join('');
 }
@@ -456,6 +487,84 @@ async function tcSubmitReason() {
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) { alert('失败：' + e.message); }
 }
+// ---- 手动绑定产出物 ----
+let TC_BIND_TASK_ID = null;
+
+async function tcOpenBindModal(taskId, isParent) {
+  TC_BIND_TASK_ID = taskId;
+  const listEl = document.getElementById('tcBindList');
+  listEl.innerHTML = '加载中...';
+  document.getElementById('tcBindModal').style.display = 'block';
+  try {
+    const r = await tcFetchJson('/tasks/api/' + taskId + '/unbound-items');
+    const items = r.items || [];
+    if (!items.length) {
+      listEl.innerHTML = '<div style="color:var(--tc-fg-muted); padding:8px;">没有可绑定的素材</div>';
+      return;
+    }
+    listEl.innerHTML = items.map(function(it) {
+      return '<label style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; border-bottom:1px dashed var(--tc-border);">'
+        + '<input type="checkbox" value="' + tcEsc('' + it.id) + '" style="margin:0;">'
+        + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(it.lang || '--') + '</span>'
+        + '<span style="flex:1; font-size:12px;">' + tcEsc(it.display_name || it.filename || '#' + it.id) + '</span>'
+        + '</label>';
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = '<div style="color:red;">加载失败：' + tcEsc(e.message) + '</div>';
+  }
+}
+
+function tcCloseBind() {
+  document.getElementById('tcBindModal').style.display = 'none';
+  TC_BIND_TASK_ID = null;
+}
+
+async function tcBindSubmit() {
+  var cbs = document.querySelectorAll('#tcBindList input[type=checkbox]:checked');
+  var ids = [];
+  for (var i = 0; i < cbs.length; i++) ids.push(parseInt(cbs[i].value));
+  if (!ids.length) { alert('请至少勾选一个素材'); return; }
+  try {
+    var rsp = await tcFetchJson('/tasks/api/' + TC_BIND_TASK_ID + '/bind-items', {
+      method: 'POST',
+      body: JSON.stringify({item_ids: ids})
+    });
+    alert('已绑定 ' + (rsp.bound || 0) + ' 条素材');
+    tcCloseBind();
+    tcOpenDetail(TC_BIND_TASK_ID);
+  } catch (e) { alert('绑定失败：' + e.message); }
+}
+
+// Auto-open task detail if ?task_id=N is in URL
+(function tcDeepLink() {
+  var params = new URLSearchParams(window.location.search);
+  var dlTaskId = parseInt(params.get('task_id') || '0');
+  if (!dlTaskId) return;
+  var waited = 0;
+  var check = setInterval(function() {
+    waited++;
+    // Wait for table rows to appear (tcRender completed)
+    var rows = document.querySelectorAll('.tc-table tr[data-task-id]');
+    if (rows.length || waited > 15) {
+      clearInterval(check);
+      tcOpenDetail(dlTaskId);
+    }
+  }, 400);
+})();
+
 tcRender();
 </script>
+
+<!-- 手动绑定产出物 modal -->
+<div id="tcBindModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1600;">
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:480px; max-width:90vw; max-height:80vh; overflow-y:auto;">
+    <h3 style="margin:0 0 12px;">绑定产出素材到任务</h3>
+    <p style="font-size:13px; color:var(--tc-fg-muted); margin:0 0 12px;">勾选要关联到该任务的 media_items（仅显示同产品同语种的未绑定素材）。</p>
+    <div id="tcBindList"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="oc-btn oc-btn--ghost" onclick="tcCloseBind()">取消</button>
+      <button class="oc-btn oc-btn--primary" onclick="tcBindSubmit()">确认绑定</button>
+    </div>
+  </div>
+</div>
 {% endblock %}

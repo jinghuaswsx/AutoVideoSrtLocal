@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
+from appcore import mk_import as mk_import_svc
 from appcore.db import execute, get_conn, query_one, query_all
 
 # ---- 状态常量 ----
@@ -300,6 +301,53 @@ def create_parent_task(
         conn.close()
 
 
+def import_and_create_task(
+    *,
+    mk_video_metadata: dict,
+    translator_id: int,
+    countries: list[str],
+    actor_user_id: int,
+) -> dict:
+    """Import a mk video + create parent task + N child tasks in one call.
+
+    If the video is already imported, look up the existing product and create
+    the task from it (skipping the import step).
+
+    Returns:
+        {"parent_task_id": int, "media_product_id": int, "media_item_id": int,
+         "is_new_product": bool}
+    """
+    try:
+        import_result = mk_import_svc.import_mk_video(
+            mk_video_metadata=mk_video_metadata,
+            translator_id=int(translator_id),
+            actor_user_id=int(actor_user_id),
+        )
+        product_id = import_result["media_product_id"]
+        item_id = import_result["media_item_id"]
+        is_new = import_result["is_new_product"]
+    except mk_import_svc.DuplicateError:
+        existing = mk_import_svc.find_existing_product_item_by_meta(mk_video_metadata)
+        if not existing or not existing.get("item_id"):
+            raise
+        product_id = existing["product_id"]
+        item_id = existing["item_id"]
+        is_new = False
+    parent_id = create_parent_task(
+        media_product_id=product_id,
+        media_item_id=item_id,
+        countries=countries,
+        translator_id=int(translator_id),
+        created_by=int(actor_user_id),
+    )
+    return {
+        "parent_task_id": parent_id,
+        "media_product_id": product_id,
+        "media_item_id": item_id,
+        "is_new_product": is_new,
+    }
+
+
 class ConflictError(RuntimeError):
     """Optimistic concurrency violation, e.g., already claimed."""
 
@@ -498,6 +546,79 @@ def get_child_readiness(task_id: int) -> dict:
         "country_code": row["country_code"],
         "media_item_id": item["id"],
     }
+
+
+def list_unbound_items_for_task(task_id: int) -> list[dict]:
+    """List media_items matching this task's product+lang but not yet bound."""
+    row = _row(task_id)
+    if not row:
+        raise StateError("task not found")
+    product_id = row["media_product_id"]
+    if row["parent_task_id"] is not None:
+        lang = (row["country_code"] or "").strip().lower()
+        rows = query_all(
+            "SELECT mi.* FROM media_items mi "
+            "WHERE mi.product_id=%s AND mi.lang=%s AND mi.deleted_at IS NULL "
+            "AND mi.task_id IS NULL "
+            "ORDER BY mi.id DESC",
+            (int(product_id), lang),
+        )
+    else:
+        child_langs = [
+            r["country_code"] for r in query_all(
+                "SELECT DISTINCT country_code FROM tasks WHERE parent_task_id=%s AND country_code IS NOT NULL",
+                (int(task_id),),
+            )
+        ]
+        if not child_langs:
+            return []
+        langs_lower = [c.strip().lower() for c in child_langs]
+        placeholders = ",".join(["%s"] * len(langs_lower))
+        rows = query_all(
+            f"SELECT mi.* FROM media_items mi "
+            f"WHERE mi.product_id=%s AND mi.lang IN ({placeholders}) "
+            f"AND mi.deleted_at IS NULL AND mi.task_id IS NULL "
+            f"ORDER BY mi.lang, mi.id DESC",
+            [int(product_id)] + langs_lower,
+        )
+    return [dict(r) for r in rows]
+
+
+def list_task_artifacts(
+    *, task_id: int, is_parent: bool = False
+) -> list[dict]:
+    """List media_items produced by a task.
+
+    - For child tasks: items with task_id = this child task
+    - For parent tasks: items produced by all child tasks under this parent
+    """
+    if not is_parent:
+        rows = query_all(
+            "SELECT mi.*, p.name AS product_name "
+            "FROM media_items mi JOIN media_products p ON p.id=mi.product_id "
+            "WHERE mi.task_id=%s AND mi.deleted_at IS NULL "
+            "ORDER BY mi.lang, mi.id DESC",
+            (int(task_id),),
+        )
+    else:
+        child_ids = [
+            row["id"]
+            for row in query_all(
+                "SELECT id FROM tasks WHERE parent_task_id=%s",
+                (int(task_id),),
+            )
+        ]
+        if not child_ids:
+            return []
+        placeholders = ",".join(["%s"] * len(child_ids))
+        rows = query_all(
+            f"SELECT mi.*, p.name AS product_name "
+            f"FROM media_items mi JOIN media_products p ON p.id=mi.product_id "
+            f"WHERE mi.task_id IN ({placeholders}) AND mi.deleted_at IS NULL "
+            f"ORDER BY mi.lang, mi.id DESC",
+            child_ids,
+        )
+    return [dict(row) for row in rows]
 
 
 def submit_child(*, task_id: int, actor_user_id: int) -> None:

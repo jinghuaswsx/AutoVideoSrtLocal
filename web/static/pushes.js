@@ -489,7 +489,10 @@
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
       <td>
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
-        <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
+        <div class="item-meta">
+          ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
+          ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
+        </div>
       </td>
       <td><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
       <td class="ready-cell">${renderReadinessText(it.readiness)}</td>

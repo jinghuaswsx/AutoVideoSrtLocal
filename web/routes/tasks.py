@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, request
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
-
+from appcore import mk_import as mk_import_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
 from appcore.users import list_translators
@@ -165,6 +165,48 @@ def api_create_parent():
         },
     )
     return _json_response({"parent_task_id": parent_id})
+
+
+@bp.route("/api/import-and-create", methods=["POST"])
+@login_required
+@admin_required
+def api_import_and_create():
+    payload = request.get_json(silent=True) or {}
+    try:
+        meta = payload["mk_video_metadata"]
+        translator_id = int(payload["translator_id"])
+        countries = payload.get("countries") or []
+    except (KeyError, TypeError, ValueError) as e:
+        return _json_response({"error": f"参数错误: {e}"}, 400)
+    try:
+        result = tasks_svc.import_and_create_task(
+            mk_video_metadata=meta,
+            translator_id=translator_id,
+            countries=countries,
+            actor_user_id=int(current_user.id),
+        )
+    except mk_import_svc.DuplicateError as e:
+        return _json_response({"error": f"视频已入库: {e}"}, 409)
+    except mk_import_svc.DownloadError as e:
+        return _json_response({"error": f"下载失败: {e}"}, 502)
+    except mk_import_svc.StorageError as e:
+        return _json_response({"error": f"存储失败: {e}"}, 500)
+    except mk_import_svc.DBError as e:
+        return _json_response({"error": f"数据库错误: {e}"}, 500)
+    except ValueError as e:
+        return _json_response({"error": str(e)}, 400)
+    _audit_task_action(
+        result["parent_task_id"],
+        "task_import_and_create",
+        {
+            "media_product_id": result["media_product_id"],
+            "media_item_id": result["media_item_id"],
+            "countries": countries,
+            "translator_id": translator_id,
+            "is_new_product": result["is_new_product"],
+        },
+    )
+    return _json_response(result)
 
 
 @bp.route("/api/parent/<int:tid>/claim", methods=["POST"])
@@ -345,3 +387,51 @@ def api_child_readiness(tid: int):
     except tasks_svc.StateError as exc:
         return _json_response({"error": str(exc)}, 404)
     return _json_response(payload)
+
+
+@bp.route("/api/<int:tid>/artifacts", methods=["GET"])
+@login_required
+def api_task_artifacts(tid: int):
+    """返回任务产生的 media_items 列表。"""
+    task = tasks_svc._row(tid)
+    if not task:
+        return _json_response({"error": "task not found"}, 404)
+    is_parent = task["parent_task_id"] is None
+    items = tasks_svc.list_task_artifacts(task_id=tid, is_parent=is_parent)
+    return _json_response({"items": items})
+
+
+@bp.route("/api/<int:tid>/unbound-items", methods=["GET"])
+@login_required
+def api_task_unbound_items(tid: int):
+    """返回可手动绑定到该任务的未关联 media_items。"""
+    try:
+        items = tasks_svc.list_unbound_items_for_task(tid)
+    except tasks_svc.StateError as e:
+        return _json_response({"error": str(e)}, 404)
+    return _json_response({"items": items})
+
+
+@bp.route("/api/<int:tid>/bind-items", methods=["POST"])
+@login_required
+@admin_required
+def api_task_bind_items(tid: int):
+    """手动绑定 media_items 到任务。"""
+    payload = request.get_json(silent=True) or {}
+    item_ids = payload.get("item_ids") or []
+    if not item_ids:
+        return _json_response({"error": "item_ids required"}, 400)
+    try:
+        item_ids = [int(i) for i in item_ids]
+    except (TypeError, ValueError):
+        return _json_response({"error": "item_ids must be integers"}, 400)
+    from appcore import medias as medias_svc
+    task = tasks_svc._row(tid)
+    if not task:
+        return _json_response({"error": "task not found"}, 404)
+    child_id = tid if task["parent_task_id"] is not None else None
+    bound = 0
+    for iid in item_ids:
+        affected = medias_svc.update_item_task_id(iid, child_id)
+        bound += affected
+    return _json_response({"bound": bound})

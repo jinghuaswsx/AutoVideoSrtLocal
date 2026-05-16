@@ -807,7 +807,8 @@ def create_item(product_id: int, user_id: int, filename: str, object_key: str,
                 thumbnail_path: str | None = None, duration_seconds: float | None = None,
                 file_size: int | None = None,
                 cover_object_key: str | None = None,
-                lang: str = "en") -> int:
+                lang: str = "en",
+                task_id: int | None = None) -> int:
     _ensure_video_filename_no_spaces(filename)
     _ensure_video_filename_no_spaces(object_key)
     if display_name:
@@ -815,10 +816,10 @@ def create_item(product_id: int, user_id: int, filename: str, object_key: str,
     return execute(
         "INSERT INTO media_items "
         "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
-        " thumbnail_path, cover_object_key, duration_seconds, file_size) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        " thumbnail_path, cover_object_key, duration_seconds, file_size, task_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (product_id, lang, user_id, filename, display_name or filename, object_key,
-         file_url, thumbnail_path, cover_object_key, duration_seconds, file_size),
+         file_url, thumbnail_path, cover_object_key, duration_seconds, file_size, task_id),
     )
 
 
@@ -826,6 +827,13 @@ def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
     return execute(
         "UPDATE media_items SET cover_object_key=%s WHERE id=%s",
         (cover_object_key, item_id),
+    )
+
+
+def update_item_task_id(item_id: int, task_id: int | None) -> int:
+    return execute(
+        "UPDATE media_items SET task_id=%s WHERE id=%s",
+        (task_id, item_id),
     )
 
 
