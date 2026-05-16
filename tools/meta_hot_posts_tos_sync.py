@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore import infra_credentials
 from appcore.meta_hot_posts import tos_sync
 
 
@@ -17,6 +18,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0, help="0 means sync all localized videos")
     args = parser.parse_args()
 
+    infra_credentials.sync_to_runtime()
     limit = None if args.limit <= 0 else args.limit
     result = tos_sync.sync_localized_videos_to_tos(limit=limit)
     print(json.dumps(result, ensure_ascii=False, indent=2))
