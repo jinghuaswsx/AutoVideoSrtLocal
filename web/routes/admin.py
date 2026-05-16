@@ -14,7 +14,7 @@ from appcore.users import (
     update_role, update_password, update_permissions, reset_permissions_to_role_default,
 )
 from appcore.permissions import (
-    ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN, ROLE_TRANSLATOR,
+    ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN, ROLE_TRANSLATOR, ROLE_ANALYST,
     ROLE_LABELS, ROLES, grouped_permissions, PERMISSION_META,
     default_permissions_for_role, normalize_permissions,
 )
@@ -126,7 +126,7 @@ def users():
                 error = "无效的用户 ID"
                 return _render_users_page(error=error, status=400)
             new_role = request.form.get("new_role", "").strip()
-            if new_role not in (ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR):
+            if new_role not in (ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR, ROLE_ANALYST):
                 error = f"无效的角色: {new_role}"
             else:
                 try:
@@ -185,7 +185,7 @@ def api_update_user_role(user_id: int):
         return admin_flask_response(build_admin_error_response("不能修改超级管理员角色", 403))
     body = request.get_json(silent=True) or {}
     new_role = (body.get("role") or "").strip()
-    if new_role not in (ROLE_ADMIN, ROLE_USER):
+    if new_role not in (ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR, ROLE_ANALYST):
         return admin_flask_response(build_admin_error_response(f"无效的角色: {new_role}", 400))
     try:
         update_role(user_id, new_role)

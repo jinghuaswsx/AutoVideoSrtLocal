@@ -10,7 +10,49 @@ def test_meta_hot_posts_page_requires_login(authed_client_no_db):
 def test_meta_hot_posts_page_requires_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.get("/xuanpin/meta-hot-posts")
 
+    assert resp.status_code == 302
+    assert "/" in resp.headers.get("Location", "")
+
+
+def test_meta_hot_posts_api_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/xuanpin/api/meta-hot-posts")
+
     assert resp.status_code == 403
+    assert "forbidden" in resp.get_data(as_text=True)
+
+
+def test_meta_hot_posts_allows_analyst(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    from web.app import create_app
+
+    fake_user = {
+        "id": 3,
+        "username": "test-analyst",
+        "role": "analyst",
+        "is_active": 1,
+    }
+
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 3 else None)
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "3"
+        session["_fresh"] = True
+
+    # Test analyst can access the page
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+    resp = client.get("/xuanpin/meta-hot-posts")
+    assert resp.status_code == 200
 
 
 def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypatch):

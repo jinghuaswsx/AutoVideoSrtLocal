@@ -15,13 +15,15 @@ ROLE_SUPERADMIN = "superadmin"
 ROLE_ADMIN = "admin"
 ROLE_USER = "user"
 ROLE_TRANSLATOR = "translator"
-ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR)
+ROLE_ANALYST = "analyst"
+ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR, ROLE_ANALYST)
 
 ROLE_LABELS = {
     ROLE_SUPERADMIN: "超级管理员",
     ROLE_ADMIN: "管理员",
     ROLE_USER: "普通用户",
     ROLE_TRANSLATOR: "翻译用户",
+    ROLE_ANALYST: "分析用户",
 }
 
 GROUP_BUSINESS = "business"
@@ -124,6 +126,7 @@ HOME_REDIRECT_ORDER = [
 ]
 
 _TRANSLATOR_TRUE_PERMISSIONS = {"omni_translate", "user_settings", "can_translate"}
+_ANALYST_TRUE_PERMISSIONS = {"mk_selection", "user_settings"}
 
 
 def default_permissions_for_role(role: str) -> dict[str, bool]:
@@ -134,6 +137,8 @@ def default_permissions_for_role(role: str) -> dict[str, bool]:
         return {code: meta["admin"] for code, meta in PERMISSION_META.items()}
     if role == ROLE_TRANSLATOR:
         return {code: code in _TRANSLATOR_TRUE_PERMISSIONS for code in PERMISSION_CODES}
+    if role == ROLE_ANALYST:
+        return {code: code in _ANALYST_TRUE_PERMISSIONS for code in PERMISSION_CODES}
     return {code: meta["user"] for code, meta in PERMISSION_META.items()}
 
 
