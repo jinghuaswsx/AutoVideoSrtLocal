@@ -105,8 +105,26 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         and item.get("local_video_path")
     ):
         item["local_video_url"] = f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
+        # 生成 TOS 视频 URL
+        from appcore import tos_backup_storage
+        import config
+        if config.TOS_BACKUP_ENABLED:
+            try:
+                import os
+                from pathlib import Path
+                # 构建完整本地路径
+                local_path = os.path.join(config.OUTPUT_DIR, item["local_video_path"])
+                # 获取 TOS 对象 key
+                tos_key = tos_backup_storage.backup_object_key_for_local_path(local_path)
+                # 生成签名下载 URL
+                item["tos_video_url"] = tos_backup_storage.generate_signed_download_url(tos_key)
+            except Exception as e:
+                item["tos_video_url"] = ""
+        else:
+            item["tos_video_url"] = ""
     else:
         item["local_video_url"] = ""
+        item["tos_video_url"] = ""
     mark_status = _normalize_mark_status(item.get("mark_status"))
     if not mark_status and _bool_payload(item.get("is_marked")):
         mark_status = MARK_STATUS_BAD

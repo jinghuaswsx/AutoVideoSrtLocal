@@ -17,8 +17,8 @@
 .mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
 .mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
 .mh-subtab.active { background:#0f766e; color:#fff; }
-.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:44px; margin-bottom:10px; padding:8px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
-.mh-tool-title { color:#475569; font-size:13px; font-weight:700; }
+.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:6px; min-height:32px; margin-bottom:6px; padding:4px 8px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-tool-title { color:#475569; font-size:12px; font-weight:700; }
 .mh-tool-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .mh-toolbar { display:grid; grid-template-columns:repeat(auto-fit, minmax(124px, 1fr)); gap:10px; align-items:end; margin-bottom:14px; padding:14px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
 .mh-field label { display:block; margin-bottom:5px; color:var(--mh-muted); font-size:12px; font-weight:700; }
@@ -84,15 +84,168 @@
 .mh-failure-url { color:#0f766e; font-weight:700; word-break:break-all; }
 .mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 @media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 工具行更紧凑 */
+  .mh-tool-row {
+    gap: 4px;
+    min-height: 28px;
+    margin-bottom: 4px;
+    padding: 2px 4px;
+  }
+  .mh-tool-title {
+    display: none; /* 隐藏工具标题，给按钮更多空间 */
+  }
+  /* 主导航横向滚动 */
+  .mh-tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 80px;
+    text-align: center;
+    padding: 0 12px;
+  }
+
+  /* 子导航横向滚动 */
+  .mh-subtabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-subtabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-subtab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 80px;
+  }
+
+  /* 工具按钮区横向滚动 */
+  .mh-tool-buttons {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding: 2px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .mh-tool-buttons::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-tool-buttons .mh-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    border-radius: 4px;
+  }
+
+  /* 卡片网格适配 */
+  .meta-hot-card-grid {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  /* 工具条适配 */
+  .mh-toolbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* 分页器横向滚动 */
+  .mh-pager {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-pager::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-pager button {
+    flex-shrink: 0;
+    min-width: 40px;
+  }
+}
+
+/* 移动端视频源切换开关 */
+.mh-video-source-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--mh-line);
+  border-radius: var(--mh-radius);
+  background: var(--mh-panel);
+}
+.mh-video-source-toggle .label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mh-text);
+}
+.mh-video-source-switch {
+  display: inline-flex;
+  background: var(--mh-line);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+.mh-video-source-option {
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--mh-muted);
+  background: transparent;
+  border: none;
+}
+.mh-video-source-option.active {
+  background: var(--mh-accent);
+  color: #fff;
+}
+@media (max-width: 768px) {
+  .mh-video-source-toggle {
+    display: flex;
+  }
+}
 {% endblock %}
 {% block content %}
 <div class="meta-hot-page">
   <nav class="mh-tabs" aria-label="选品中心类型">
     <a class="mh-tab" href="/xuanpin/mk">明空选品</a>
+    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
+    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
     <a class="mh-tab" href="/xuanpin/today-recommendations">今日推荐</a>
     <a class="mh-tab" href="/xuanpin/new-products">新品选择</a>
-    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
-    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
   </nav>
 
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
@@ -107,6 +260,22 @@
     <div class="mh-tool-buttons">
       <button class="mh-btn secondary" type="button" onclick="showCategoryPrompt()">类目分析提示词</button>
       <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
+      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
+      <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
+      <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
+      <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPostVideos()">分析视频</button>
+      <button class="mh-btn" type="button" onclick="showVideoCopyabilityTop50()">可抄 Top 50</button>
+    </div>
+  </div>
+
+  <!-- 移动端视频源切换开关 -->
+  <div class="mh-video-source-toggle" id="mhVideoSourceToggle">
+    <span class="label">视频源</span>
+    <div class="mh-video-source-switch">
+      <button class="mh-video-source-option active" id="mhSourceLocal" type="button" onclick="setVideoSource('local')">本地</button>
+      <button class="mh-video-source-option" id="mhSourceTOS" type="button" onclick="setVideoSource('tos')">TOS</button>
     </div>
   </div>
 
@@ -200,6 +369,7 @@
 <script>
 let mhPage = 1;
 let mhSubtab = 'library';
+let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 const mhPageSize = 50;
 const qs = id => document.getElementById(id);
 function esc(v) {
@@ -212,7 +382,42 @@ function fmtMoney(min, max, currency) {
   if (max && Number(max) !== Number(min)) return `${prefix}${Number(min).toFixed(2)} - ${prefix}${Number(max).toFixed(2)}`;
   return `${prefix}${Number(min).toFixed(2)}`;
 }
+
+// 视频源切换逻辑
+function setVideoSource(source) {
+  mhVideoSource = source;
+  // 更新按钮状态
+  qs('mhSourceLocal').classList.toggle('active', source === 'local');
+  qs('mhSourceTOS').classList.toggle('active', source === 'tos');
+  // 保存到 localStorage
+  localStorage.setItem('mhVideoSource', source);
+  // 重新加载当前页面以应用新设置
+  if (mhSubtab === 'library') {
+    loadMetaHotPosts(mhPage);
+  } else if (mhSubtab === 'today') {
+    loadTodayNewMaterials(mhPage);
+  } else if (mhSubtab === 'europe') {
+    loadEuropeTopMaterials();
+  } else if (mhSubtab === 'us') {
+    loadUsTopMaterials();
+  }
+}
+
+// 从 localStorage 恢复视频源设置
+function restoreVideoSource() {
+  const saved = localStorage.getItem('mhVideoSource');
+  if (saved === 'tos') {
+    setVideoSource('tos');
+  } else {
+    setVideoSource('local');
+  }
+}
+
 function cardMedia(row) {
+  // 根据视频源设置决定使用哪个 URL
+  if (mhVideoSource === 'tos' && row.tos_video_url) {
+    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video></div>`;
+  }
   if (row.local_video_url) {
     return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.local_video_url)}"></video></div>`;
   }
@@ -555,6 +760,7 @@ async function showFailureRecords() {
     ? data.items.map(renderFailure).join('')
     : '<div class="mh-empty">暂无失败记录</div>';
 }
+restoreVideoSource();
 loadMetaHotPosts(1);
 </script>
 {% endblock %}
