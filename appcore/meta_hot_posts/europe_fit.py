@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -18,6 +19,7 @@ from appcore.meta_hot_posts import video_localization
 USE_CASE_CODE = "meta_hot_posts.europe_fit"
 EUROPE_FIT_PROVIDER = "gemini_vertex_adc"
 EUROPE_FIT_MODEL = "gemini-3-flash-preview"
+EUROPE_FIT_TIMEOUT_SECONDS = 40
 TARGET_MARKETS = ("Germany", "France", "Italy", "Spain")
 RECOMMENDATIONS = {
     "direct_reuse": "direct_reuse",
@@ -245,20 +247,23 @@ def assess_material(
     optimization = media_debug_snapshot(media_input)
     try:
         invoke = invoke_fn or llm_client.invoke_generate
-        response = invoke(
-            USE_CASE_CODE,
-            prompt=build_prompt(row),
-            system=build_system_prompt(),
-            media=[media_input.llm_path],
-            user_id=user_id,
-            project_id=f"meta-hot-post-{row.get('id') or 'unknown'}",
-            response_schema=build_response_schema(),
-            temperature=0.1,
-            max_output_tokens=2048,
-            provider_override=EUROPE_FIT_PROVIDER,
-            model_override=EUROPE_FIT_MODEL,
-            billing_extra={"source": "meta_hot_posts", "target_market": "europe"},
-        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                invoke,
+                USE_CASE_CODE,
+                prompt=build_prompt(row),
+                system=build_system_prompt(),
+                media=[media_input.llm_path],
+                user_id=user_id,
+                project_id=f"meta-hot-post-{row.get('id') or 'unknown'}",
+                response_schema=build_response_schema(),
+                temperature=0.1,
+                max_output_tokens=2048,
+                provider_override=EUROPE_FIT_PROVIDER,
+                model_override=EUROPE_FIT_MODEL,
+                billing_extra={"source": "meta_hot_posts", "target_market": "europe"},
+            )
+            response = future.result(timeout=EUROPE_FIT_TIMEOUT_SECONDS)
     finally:
         cleanup_optimized_media(media_input)
 

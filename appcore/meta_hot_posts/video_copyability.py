@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -18,6 +19,7 @@ VIDEO_COPYABILITY_MODEL = "gemini-3-flash-preview"
 DEFAULT_ANALYSIS_SUBDIR = Path("meta_hot_posts") / "analysis_videos"
 DEFAULT_ANALYSIS_LIMIT = 20
 DEFAULT_ANALYSIS_DELAY_SECONDS = 30
+VIDEO_COPYABILITY_TIMEOUT_SECONDS = 40
 
 RunFn = Callable[..., Any]
 SleepFn = Callable[[float], None]
@@ -215,22 +217,25 @@ def analyze_video_copyability(
         output_dir=output_dir,
     )
     compressed_path = Path(output_dir) / compressed_rel_path
-    response = invoke_fn(
-        VIDEO_COPYABILITY_USE_CASE,
-        prompt=build_prompt(row),
-        system=(
-            "You are a senior US Meta performance creative analyst. "
-            "Judge copyability, ad fit, product match, and compliance risk from the video."
-        ),
-        media=[compressed_path],
-        response_schema=_response_schema(),
-        provider_override=VIDEO_COPYABILITY_PROVIDER,
-        model_override=VIDEO_COPYABILITY_MODEL,
-        temperature=0.2,
-        max_output_tokens=1400,
-        user_id=user_id,
-        billing_extra={"source": "meta_hot_posts_video_copyability"},
-    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            invoke_fn,
+            VIDEO_COPYABILITY_USE_CASE,
+            prompt=build_prompt(row),
+            system=(
+                "You are a senior US Meta performance creative analyst. "
+                "Judge copyability, ad fit, product match, and compliance risk from the video."
+            ),
+            media=[compressed_path],
+            response_schema=_response_schema(),
+            provider_override=VIDEO_COPYABILITY_PROVIDER,
+            model_override=VIDEO_COPYABILITY_MODEL,
+            temperature=0.2,
+            max_output_tokens=1400,
+            user_id=user_id,
+            billing_extra={"source": "meta_hot_posts_video_copyability"},
+        )
+        response = future.result(timeout=VIDEO_COPYABILITY_TIMEOUT_SECONDS)
     result = _parse_response_payload(response)
     result["provider"] = VIDEO_COPYABILITY_PROVIDER
     result["model"] = VIDEO_COPYABILITY_MODEL
