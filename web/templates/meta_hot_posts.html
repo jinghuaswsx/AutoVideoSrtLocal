@@ -85,6 +85,97 @@
 .mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 @media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
 
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 主导航横向滚动 */
+  .mh-tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 80px;
+    text-align: center;
+    padding: 0 12px;
+  }
+
+  /* 子导航横向滚动 */
+  .mh-subtabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-subtabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-subtab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 80px;
+  }
+
+  /* 工具按钮区横向滚动 */
+  .mh-tool-buttons {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    padding: 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-tool-buttons::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-tool-buttons .mh-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* 卡片网格适配 */
+  .meta-hot-card-grid {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  /* 工具条适配 */
+  .mh-toolbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* 分页器横向滚动 */
+  .mh-pager {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-pager::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-pager button {
+    flex-shrink: 0;
+    min-width: 40px;
+  }
+}
+
 /* 移动端视频源切换开关 */
 .mh-video-source-toggle {
   display: none;
@@ -152,6 +243,13 @@
     <div class="mh-tool-buttons">
       <button class="mh-btn secondary" type="button" onclick="showCategoryPrompt()">类目分析提示词</button>
       <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
+      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
+      <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
+      <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
+      <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
+      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPostVideos()">分析视频</button>
+      <button class="mh-btn" type="button" onclick="showVideoCopyabilityTop50()">可抄 Top 50</button>
     </div>
   </div>
 
