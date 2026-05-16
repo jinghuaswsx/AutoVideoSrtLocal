@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
+import config
 from appcore.db import query
 from appcore import local_media_storage
 
@@ -66,6 +68,19 @@ def _add_object_key(
     _add_local_path(grouped, local_path, source, key)
 
 
+def _output_relative_path(value: object) -> Path | None:
+    raw = _clean_text(value).replace("\\", "/")
+    if not raw or raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+        return None
+    root = Path(config.OUTPUT_DIR).resolve()
+    candidate = (root / raw).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
+
+
 def collect_protected_file_refs() -> list[ProtectedFileRef]:
     grouped: dict[str, dict[str, set[str]]] = {}
 
@@ -117,7 +132,9 @@ def collect_protected_file_refs() -> list[ProtectedFileRef]:
         "SELECT local_video_path "
         "FROM meta_hot_posts WHERE local_video_path IS NOT NULL AND local_video_path != ''"
     ):
-        _add_local_path(grouped, (row or {}).get("local_video_path"), "meta_hot_post_video")
+        local_path = _output_relative_path((row or {}).get("local_video_path"))
+        if local_path is not None:
+            _add_local_path(grouped, local_path, "meta_hot_post_video")
 
     return [
         ProtectedFileRef(

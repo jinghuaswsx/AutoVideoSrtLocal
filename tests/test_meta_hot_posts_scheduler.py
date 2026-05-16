@@ -161,6 +161,7 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_unified_an
     video_args, video_kwargs = calls[3]
     queue_args, queue_kwargs = calls[4]
     startup_args, startup_kwargs = calls[5]
+    tos_sync_args, tos_sync_kwargs = calls[6]
     assert sync_args[1] == "meta_hot_posts_sync_tick"
     assert sync_args[3] == "cron"
     assert sync_kwargs["hour"] == 7
@@ -186,7 +187,11 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_unified_an
     assert video_kwargs["misfire_grace_time"] == 60
     assert startup_kwargs["id"] == "meta_hot_posts_video_localization_tick_startup"
     assert startup_kwargs["run_date"] == now + timedelta(seconds=5)
-    assert len(calls) == 6
+    assert tos_sync_args[1] == "meta_hot_posts_tos_video_sync_tick"
+    assert tos_sync_args[3] == "interval"
+    assert tos_sync_kwargs["minutes"] == 10
+    assert tos_sync_kwargs["max_instances"] == 1
+    assert len(calls) == 7
 
 
 def test_video_analysis_queue_tick_once_defaults_to_twenty_videos_with_10_second_spacing(monkeypatch):

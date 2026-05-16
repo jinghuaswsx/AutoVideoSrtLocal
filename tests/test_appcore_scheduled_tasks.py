@@ -594,6 +594,13 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert video_task["log_table"] == "scheduled_task_runs"
     assert "2026-05-14-meta-hot-posts-video-localization-design.md" in video_task["description"]
 
+    tos_video_task = definitions["meta_hot_posts_tos_video_sync_tick"]
+    assert tos_video_task["schedule"]
+    assert tos_video_task["source_type"] == "apscheduler"
+    assert tos_video_task["runner"] == "appcore.meta_hot_posts.tos_sync.run_scheduled_tos_video_sync"
+    assert tos_video_task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-16-meta-hot-posts-tos-video-sync-design.md" in tos_video_task["description"]
+
     queue_task = definitions["meta_hot_posts_video_analysis_queue_tick"]
     assert queue_task["schedule"] == "Every 10 minutes"
     assert queue_task["source_type"] == "apscheduler"

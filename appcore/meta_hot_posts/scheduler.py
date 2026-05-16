@@ -13,6 +13,7 @@ from appcore.meta_hot_posts import (
     message_translation,
     product_analysis,
     store,
+    tos_sync,
     video_copyability,
     video_localization,
 )
@@ -1225,4 +1226,15 @@ def register(scheduler) -> None:
         replace_existing=True,
         misfire_grace_time=60,
         run_date=_now() + timedelta(seconds=SCHEDULED_VIDEO_LOCALIZATION_START_DELAY_SECONDS),
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        tos_sync.TASK_CODE,
+        tos_sync.run_scheduled_tos_video_sync,
+        "interval",
+        minutes=10,
+        id=tos_sync.TASK_CODE,
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )

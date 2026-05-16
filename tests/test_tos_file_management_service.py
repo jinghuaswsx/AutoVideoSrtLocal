@@ -46,6 +46,45 @@ def test_build_inventory_rows_classifies_and_sizes_refs(monkeypatch, tmp_path):
     assert row.sync_status == "synced"
 
 
+def test_build_inventory_rows_classifies_meta_hot_post_videos(monkeypatch, tmp_path):
+    from appcore import tos_file_management as mgr
+    from appcore.tos_backup_references import ProtectedFileRef
+    from appcore.tos_channel_migration import TosChannelConfig
+
+    video = tmp_path / "output" / "meta_hot_posts" / "videos" / "meta_hot_post_20.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"12345")
+    fake_target = TosChannelConfig(
+        code="tos_wj",
+        access_key="ak",
+        secret_key="sk",
+        region="cn-shanghai",
+        bucket="avs-rjc",
+        public_endpoint="tos-cn-shanghai.volces.com",
+        private_endpoint="tos-cn-shanghai.ivolces.com",
+    )
+
+    monkeypatch.setattr(mgr.tos_channel_migration, "load_tos_channel_config", lambda code: fake_target)
+    monkeypatch.setattr(
+        mgr.tos_backup_references,
+        "collect_protected_file_refs",
+        lambda: [ProtectedFileRef(str(video), ("meta_hot_post_video",), ())],
+    )
+    monkeypatch.setattr(
+        mgr.tos_backup_storage,
+        "backup_object_key_for_local_path",
+        lambda local_path: "FILES/prod/opt/autovideosrt/output/meta_hot_posts/videos/meta_hot_post_20.mp4",
+    )
+    monkeypatch.setattr(mgr, "_head_target_object", lambda *args, **kwargs: {"exists": False, "size_bytes": 0})
+
+    row = mgr.build_inventory_rows(target_channel_code="tos_wj")[0]
+
+    assert row.module_code == "meta_hot_posts"
+    assert row.file_type == "video"
+    assert row.source_labels == ("meta_hot_post_video",)
+    assert row.sync_status == "missing_target"
+
+
 def test_summarize_inventory_counts_module_missing_target():
     from appcore import tos_file_management as mgr
 

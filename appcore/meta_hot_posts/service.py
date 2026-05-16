@@ -107,18 +107,18 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         item["local_video_url"] = f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
         # 生成 TOS 视频 URL
         from appcore import tos_backup_storage
+        from appcore.meta_hot_posts import tos_sync
         import config
         if config.TOS_BACKUP_ENABLED:
             try:
-                import os
-                from pathlib import Path
+                tos_key = tos_sync.local_video_backup_object_key(item["local_video_path"])
+                if not tos_key:
+                    raise ValueError("invalid local video path")
                 # 构建完整本地路径
-                local_path = os.path.join(config.OUTPUT_DIR, item["local_video_path"])
                 # 获取 TOS 对象 key
-                tos_key = tos_backup_storage.backup_object_key_for_local_path(local_path)
                 # 生成签名下载 URL
                 item["tos_video_url"] = tos_backup_storage.generate_signed_download_url(tos_key)
-            except Exception as e:
+            except Exception:
                 item["tos_video_url"] = ""
         else:
             item["tos_video_url"] = ""

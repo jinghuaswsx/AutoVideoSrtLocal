@@ -44,6 +44,8 @@ def test_collects_protected_project_and_media_files(monkeypatch, tmp_path):
             ]
         if "FROM media_raw_source_translations" in sql:
             return [{"source": "raw_source_translation_cover", "object_key": "u1/raw/de-cover.jpg"}]
+        if "FROM meta_hot_posts" in sql:
+            return []
         raise AssertionError(sql)
 
     monkeypatch.setattr(refs, "query", fake_query)
@@ -106,3 +108,26 @@ def test_collect_skips_object_keys_that_resolve_outside_media_store(monkeypatch,
     monkeypatch.setattr(refs, "query", fake_query)
 
     assert refs.collect_protected_file_refs() == []
+
+
+def test_collects_meta_hot_post_videos_relative_to_output_dir(monkeypatch, tmp_path):
+    from appcore import tos_backup_references as refs
+
+    output_dir = tmp_path / "output"
+    monkeypatch.setattr(refs.config, "OUTPUT_DIR", str(output_dir))
+
+    def fake_query(sql, args=()):
+        if "FROM meta_hot_posts" in sql:
+            return [{"local_video_path": "meta_hot_posts/videos/meta_hot_post_20.mp4"}]
+        return []
+
+    monkeypatch.setattr(refs, "query", fake_query)
+
+    collected = refs.collect_protected_file_refs()
+
+    assert collected == [
+        refs.ProtectedFileRef(
+            local_path=str(output_dir / "meta_hot_posts" / "videos" / "meta_hot_post_20.mp4"),
+            sources=("meta_hot_post_video",),
+        )
+    ]

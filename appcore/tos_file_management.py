@@ -34,6 +34,7 @@ SOURCE_MODULES = {
     "raw_source_video": ("raw_sources", "原始素材", "video"),
     "raw_source_cover": ("raw_sources", "原始素材", "cover"),
     "raw_source_translation_cover": ("raw_sources", "原始素材翻译封面", "cover"),
+    "meta_hot_post_video": ("meta_hot_posts", "Meta 热帖视频", "video"),
 }
 
 SOURCE_PRIORITY = [
@@ -46,6 +47,7 @@ SOURCE_PRIORITY = [
     "raw_source_video",
     "raw_source_cover",
     "raw_source_translation_cover",
+    "meta_hot_post_video",
 ]
 
 

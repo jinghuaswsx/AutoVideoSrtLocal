@@ -329,6 +329,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "meta_hot_posts_tos_video_sync_tick": {
+        "code": "meta_hot_posts_tos_video_sync_tick",
+        "name": "Meta 热帖视频 TOS 同步",
+        "description": (
+            "每 10 分钟扫描已本地化的 Meta 热帖投放视频，按 OUTPUT_DIR 解析 local_video_path，"
+            "复用 TOS/NAS 备份 reconcile 逻辑把缺失对象上传到 TOS；"
+            "也可通过 tools/meta_hot_posts_tos_sync.py 手工回填。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-16-meta-hot-posts-tos-video-sync-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "meta_hot_posts_tos_video_sync_tick",
+        "runner": "appcore.meta_hot_posts.tos_sync.run_scheduled_tos_video_sync",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_hot_posts_video_analysis_queue_tick": {
         "code": "meta_hot_posts_video_analysis_queue_tick",
         "name": "Meta hot posts unified video analysis queue",
