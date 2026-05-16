@@ -266,6 +266,15 @@
   </div>
   {% endif %}
   {% endif %}
+  {% if is_superadmin() and _force_restart_api %}
+  <label class="vt-toggle" title="开启后任何人通过链接均可查看和操作此项目">
+    <input type="checkbox" id="visibleToAllCb"
+           {% if state.visible_to_all %}checked{% endif %}
+           onchange="toggleVisibleToAll()">
+    <span class="vt-slider"></span>
+    <span class="vt-label">对所有人可见</span>
+  </label>
+  {% endif %}
 </div>
 
 {% if _force_restart_api %}
@@ -505,6 +514,20 @@
         closeModal(false);
       }
     });
+  }
+  async function toggleVisibleToAll() {
+    var cb = document.getElementById('visibleToAllCb');
+    if (!cb) return;
+    var apiBase = {{ _force_restart_api|tojson }};
+    var taskId = {{ project.id|tojson }};
+    try {
+      var resp = await fetch(apiBase + '/' + taskId + '/visible-to-all', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
+        body: JSON.stringify({visible_to_all: cb.checked})
+      });
+      if (!resp.ok) { cb.checked = !cb.checked; }
+    } catch (_) { cb.checked = !cb.checked; }
   }
 })();
 </script>

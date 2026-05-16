@@ -17,7 +17,7 @@ from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state, medias, translation_route_store
 from appcore.audio_loudness import validate_loudness_profile
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
-from appcore.project_state import save_project_state
+from appcore.project_state import save_project_state, update_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
@@ -297,7 +297,9 @@ def _task_belongs_to_current_user(task: dict) -> bool:
 
 
 def _can_view_task(task: dict) -> bool:
-    return _task_belongs_to_current_user(task) or _is_superadmin_user()
+    if _task_belongs_to_current_user(task) or _is_superadmin_user():
+        return True
+    return bool(task.get("visible_to_all"))
 
 
 def _get_viewable_task(task_id: str) -> dict | None:
@@ -1060,6 +1062,21 @@ def delete(task_id):
     )
     store.update(task_id, status="deleted")
     return _json_response({"status": "ok"})
+
+
+@bp.route("/api/omni-translate/<task_id>/visible-to-all", methods=["PUT"])
+@login_required
+def toggle_visible_to_all(task_id: str):
+    if not getattr(current_user, "is_superadmin", False):
+        return _json_response({"error": "仅超级管理员可操作"}, 403)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    value = bool(body.get("visible_to_all", False))
+    update_project_state(task_id, {"visible_to_all": value}, query_one_func=db_query_one)
+    store.update(task_id, visible_to_all=value)
+    return _json_response({"visible_to_all": value})
 
 
 @bp.route("/api/omni-translate/<task_id>/artifact/<name>")
