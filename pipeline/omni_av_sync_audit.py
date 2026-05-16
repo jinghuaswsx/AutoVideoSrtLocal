@@ -5,10 +5,11 @@ import json
 import logging
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Any
 
-from appcore import llm_client, task_state
+from appcore import llm_client, runner_lifecycle, task_state
 from appcore.llm_debug_payloads import (
     build_chat_request_payload,
     build_generate_request_payload,
@@ -42,6 +43,9 @@ _MAX_SAFE_SPEED = 1.05
 _MAX_SUBTITLE_CONTEXT_CHARS = 12000
 _ASSESS_PROVIDER = "openrouter"
 _ASSESS_MODEL = "google/gemini-3-flash-preview"
+_CHINESE_REFERENCE_PROVIDER = "openrouter"
+_CHINESE_REFERENCE_MODEL = "google/gemini-3.1-flash-lite"
+_CHINESE_REFERENCE_MAX_WORKERS = 20
 
 _SEVERITY_LABELS = {
     "low": "低风险",
@@ -152,19 +156,13 @@ def _needs_target_chinese_reference(task: dict | None) -> bool:
     return bool(raw) and not _is_chinese_target_language(task)
 
 
-def _translate_timeline_chinese(task: dict | None, rows: list[dict]) -> None:
-    """Batch-translate ASR and target texts to Chinese as a post-processing step.
-
-    Uses Gemini 3 Flash via ``text_translate.generate``. Translation runs once
-    on the final audit timeline, independently of the assess scoring step.
-    Failures are silent — the timeline stays usable without Chinese references.
-    """
+def _chinese_reference_entries(task: dict | None, rows: list[dict]) -> list[dict]:
     if not rows:
-        return
+        return []
     needs_asr = _needs_asr_chinese_reference(task)
     needs_target = _needs_target_chinese_reference(task)
     if not needs_asr and not needs_target:
-        return
+        return []
 
     entries: list[dict] = []
     for row in rows:
@@ -176,61 +174,101 @@ def _translate_timeline_chinese(task: dict | None, rows: list[dict]) -> None:
             text = str(row.get("target_text") or "").strip()
             if text and not row.get("target_text_zh"):
                 entries.append({"idx": len(entries), "row": row, "field": "target_text_zh", "text": text})
+    return entries
 
-    if not entries:
-        return
 
-    texts_payload = [{"i": e["idx"], "t": e["text"]} for e in entries]
+def _plain_text_from_llm_result(result: dict | None) -> str:
+    if not isinstance(result, dict):
+        return ""
+    text = result.get("text")
+    if not text:
+        text = result.get("content")
+    if isinstance(text, list):
+        text = "".join(
+            (item.get("text") or "") if isinstance(item, dict) else str(item)
+            for item in text
+        )
+    value = str(text or "").strip()
+    if value.startswith("```"):
+        parts = value.split("```")
+        value = parts[1] if len(parts) > 1 else value
+        if value.lstrip().startswith("text"):
+            value = value.lstrip()[4:]
+    return value.strip().strip('"').strip()
+
+
+def _translate_one_timeline_text_chinese(
+    text: str,
+    *,
+    user_id: int | None = None,
+    project_id: str | None = None,
+) -> str:
     messages = [
         {
             "role": "system",
             "content": (
-                "将每条文本翻译成简体中文。输出 JSON 对象，只包含一个键 \"items\"，"
-                "值为数组，每项含 \"i\"（原文序号）和 \"c\"（中文译文）。"
-                "不要输出任何其他内容。"
+                "将用户提供的单条文本翻译成简体中文。只输出中文译文，"
+                "不要输出解释、Markdown 或 JSON。保留数字、单位、品牌名和专有名词。"
+                "如果原文已经是中文，原样返回。"
             ),
         },
-        {"role": "user", "content": json.dumps(texts_payload, ensure_ascii=False)},
+        {"role": "user", "content": text},
     ]
+    result = llm_client.invoke_chat(
+        "text_translate.generate",
+        messages=messages,
+        temperature=0.1,
+        max_tokens=512,
+        user_id=user_id,
+        project_id=project_id,
+        provider_override=_CHINESE_REFERENCE_PROVIDER,
+        model_override=_CHINESE_REFERENCE_MODEL,
+    )
+    return _plain_text_from_llm_result(result)
 
-    try:
-        result = llm_client.invoke_chat(
-            "text_translate.generate",
-            messages=messages,
-            temperature=0.1,
-            max_tokens=2048,
-        )
-    except Exception:
-        log.warning("translate_timeline_chinese failed", exc_info=True)
-        return
 
-    try:
-        payload = _json_from_result(result, {})
-        if not payload:
-            content = (result or {}).get("content") or ""
-            if isinstance(content, list):
-                content = "".join(
-                    (item.get("text") or "") if isinstance(item, dict) else str(item)
-                    for item in content
+def _translate_timeline_chinese(
+    task: dict | None,
+    rows: list[dict],
+    *,
+    user_id: int | None = None,
+    project_id: str | None = None,
+) -> int:
+    """Fill Chinese references for audit rows.
+
+    Each ASR/target text is translated by its own LLM call. This helper is
+    intended for the supplemental background job; failures are per-entry and
+    never make the audit report unusable.
+    """
+    entries = _chinese_reference_entries(task, rows)
+    if not entries:
+        return 0
+
+    translated_count = 0
+    with ThreadPoolExecutor(max_workers=_CHINESE_REFERENCE_MAX_WORKERS) as executor:
+        future_to_entry = {
+            executor.submit(
+                _translate_one_timeline_text_chinese,
+                entry["text"],
+                user_id=user_id,
+                project_id=project_id,
+            ): entry
+            for entry in entries
+        }
+        for future in as_completed(future_to_entry):
+            entry = future_to_entry[future]
+            try:
+                zh = future.result()
+            except Exception:
+                log.warning(
+                    "translate_timeline_chinese entry failed field=%s idx=%s",
+                    entry.get("field"), entry.get("idx"), exc_info=True,
                 )
-            payload = json.loads(str(content))
-        items = payload.get("items") or []
-    except Exception:
-        log.warning("translate_timeline_chinese parse failed", exc_info=True)
-        return
-
-    translated: dict[int, str] = {}
-    for item in items:
-        if isinstance(item, dict):
-            idx = item.get("i")
-            chinese = str(item.get("c") or "").strip()
-            if idx is not None and chinese:
-                translated[idx] = chinese
-
-    for entry in entries:
-        zh = translated.get(entry["idx"])
-        if zh:
-            entry["row"][entry["field"]] = zh
+                continue
+            if zh:
+                entry["row"][entry["field"]] = zh
+                translated_count += 1
+    return translated_count
 
 
 def _json_from_result(result: dict | None, default: dict) -> dict:
@@ -1520,7 +1558,6 @@ def _finalize_report_for_display(report: dict, sentences: list[dict] | None, tas
             for issue in verification.get("accepted_issues") or []
         ]
     report["audit_timeline"] = _build_audit_timeline(report, sentences, task)
-    _translate_timeline_chinese(task, report["audit_timeline"])
     report["human_report"] = _build_human_report(report)
     _attach_readable_report(report)
 
@@ -1567,16 +1604,159 @@ def _ensure_report_preview_items(report: dict) -> None:
     ]
 
 
-def _store_report(task_id: str, report: dict, *, variant: str = "av", sentences: list[dict] | None = None) -> None:
+def _persist_av_sync_report(task_id: str, variant: str, report: dict) -> None:
     task = task_state.get(task_id) or {}
-    _finalize_report_for_display(report, sentences, task)
-    _ensure_report_preview_items(report)
     variants = dict(task.get("variants") or {})
     variant_state = dict(variants.get(variant) or {})
     variant_state["av_sync_audit"] = report
     variants[variant] = variant_state
-    task_state.update(task_id, variants=variants)
-    task_state.set_artifact(task_id, "av_sync_audit", report)
+    artifacts = dict(task.get("artifacts") or {})
+    artifacts["av_sync_audit"] = report
+    task_state.update(task_id, variants=variants, artifacts=artifacts)
+
+
+def _set_chinese_reference_status(
+    report: dict,
+    *,
+    status: str,
+    total: int | None = None,
+    translated: int | None = None,
+    error: str | None = None,
+) -> None:
+    current = dict(report.get("chinese_reference") or {})
+    current.update({
+        "status": status,
+        "provider": _CHINESE_REFERENCE_PROVIDER,
+        "model": _CHINESE_REFERENCE_MODEL,
+        "max_workers": _CHINESE_REFERENCE_MAX_WORKERS,
+    })
+    if total is not None:
+        current["total"] = total
+    if translated is not None:
+        current["translated"] = translated
+    if error:
+        current["error"] = error[:500]
+    elif "error" in current and status in {"queued", "running", "done", "partial", "skipped"}:
+        current.pop("error", None)
+    report["chinese_reference"] = current
+
+
+def _run_timeline_chinese_reference_job(
+    *,
+    task_id: str,
+    variant: str,
+    user_id: int | None,
+) -> None:
+    task = task_state.get(task_id) or {}
+    report = (task.get("artifacts") or {}).get("av_sync_audit")
+    if not isinstance(report, dict):
+        report = ((task.get("variants") or {}).get(variant) or {}).get("av_sync_audit")
+    if not isinstance(report, dict):
+        return
+    rows = report.get("audit_timeline") or []
+    entries = _chinese_reference_entries(task, rows)
+    if not entries:
+        _set_chinese_reference_status(report, status="skipped", total=0, translated=0)
+        _ensure_report_preview_items(report)
+        _persist_av_sync_report(task_id, variant, report)
+        return
+
+    _set_chinese_reference_status(report, status="running", total=len(entries), translated=0)
+    _ensure_report_preview_items(report)
+    _persist_av_sync_report(task_id, variant, report)
+    try:
+        translated = _translate_timeline_chinese(
+            task,
+            rows,
+            user_id=user_id,
+            project_id=task_id,
+        )
+        status = "done" if translated >= len(entries) else "partial"
+        _set_chinese_reference_status(
+            report,
+            status=status,
+            total=len(entries),
+            translated=translated,
+        )
+    except Exception as exc:  # noqa: BLE001 - supplemental data must not break audit display
+        log.warning("[av_sync_audit] chinese reference job failed task=%s", task_id, exc_info=True)
+        _set_chinese_reference_status(
+            report,
+            status="failed",
+            total=len(entries),
+            translated=0,
+            error=str(exc),
+        )
+    _ensure_report_preview_items(report)
+    _persist_av_sync_report(task_id, variant, report)
+
+
+def _prepare_timeline_chinese_reference(task: dict, report: dict) -> tuple[int | None, int]:
+    rows = report.get("audit_timeline") or []
+    entries = _chinese_reference_entries(task, rows)
+    if not entries:
+        _set_chinese_reference_status(report, status="skipped", total=0, translated=0)
+        return None, 0
+    user_id = task.get("_user_id")
+    if user_id is None:
+        _set_chinese_reference_status(report, status="skipped_no_user", total=len(entries), translated=0)
+        return None, len(entries)
+    _set_chinese_reference_status(report, status="queued", total=len(entries), translated=0)
+    return user_id, len(entries)
+
+
+def _start_timeline_chinese_reference(task_id: str, variant: str, report: dict, *, user_id: int, total: int) -> None:
+    try:
+        started = runner_lifecycle.start_tracked_thread(
+            project_type="omni_av_sync_chinese_reference",
+            task_id=task_id,
+            target=_run_timeline_chinese_reference_job,
+            kwargs={"task_id": task_id, "variant": variant, "user_id": user_id},
+            daemon=True,
+            user_id=user_id,
+            runner="pipeline.omni_av_sync_audit._run_timeline_chinese_reference_job",
+            entrypoint="av_sync_audit.chinese_reference",
+            stage="queued",
+            details={
+                "variant": variant,
+                "total": total,
+                "provider": _CHINESE_REFERENCE_PROVIDER,
+                "model": _CHINESE_REFERENCE_MODEL,
+            },
+            interrupt_policy="safe",
+        )
+    except Exception as exc:  # noqa: BLE001 - keep report usable
+        log.warning("[av_sync_audit] failed to queue chinese reference task=%s", task_id, exc_info=True)
+        _set_chinese_reference_status(
+            report,
+            status="failed_to_start",
+            total=total,
+            translated=0,
+            error=str(exc),
+        )
+        _ensure_report_preview_items(report)
+        _persist_av_sync_report(task_id, variant, report)
+        return
+    if not started:
+        _set_chinese_reference_status(report, status="already_running", total=total, translated=0)
+        _ensure_report_preview_items(report)
+        _persist_av_sync_report(task_id, variant, report)
+
+
+def _store_report(task_id: str, report: dict, *, variant: str = "av", sentences: list[dict] | None = None) -> None:
+    task = task_state.get(task_id) or {}
+    _finalize_report_for_display(report, sentences, task)
+    chinese_user_id, chinese_total = _prepare_timeline_chinese_reference(task, report)
+    _ensure_report_preview_items(report)
+    _persist_av_sync_report(task_id, variant, report)
+    if chinese_user_id is not None and chinese_total > 0:
+        _start_timeline_chinese_reference(
+            task_id,
+            variant,
+            report,
+            user_id=chinese_user_id,
+            total=chinese_total,
+        )
 
 
 def _as_float_or_none(value: Any) -> float | None:

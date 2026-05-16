@@ -330,9 +330,8 @@ def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeyp
     assert "sync_score" in assess_call.kwargs["messages"][0]["content"]
     assert "recommendation" in assess_call.kwargs["messages"][0]["content"]
     assert "不要输出总结" in assess_call.kwargs["messages"][0]["content"]
-    assert chat.call_count == 2  # assess + translate
-    translate_call = chat.call_args_list[1]
-    assert translate_call.args[0] == "text_translate.generate"
+    assert chat.call_count == 1  # assess only; Chinese references are supplemental
+    assert report["chinese_reference"]["status"] == "skipped_no_user"
     refs = task["llm_debug_refs"]["av_sync_audit"]
     assert [ref["id"] for ref in refs] == [
         "av_sync_audit.understand",
@@ -388,7 +387,8 @@ def test_multi_report_only_does_not_promote_program_candidate_when_table_is_empt
     assert "program_candidates" not in assess_payload
     assert "duration_delta" not in assess_payload
     assert "duration_ratio" in assess_payload
-    assert chat.call_count == 2  # assess + translate
+    assert chat.call_count == 1  # assess only; Chinese references are supplemental
+    assert report["chinese_reference"]["status"] == "skipped_no_user"
 
 
 def test_multi_report_only_includes_final_subtitle_context_in_assess_prompt(monkeypatch, tmp_path):
@@ -602,9 +602,6 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
                     }],
                 },
             },
-            {
-                "content": '{"items":[{"i":0,"c":"抓住把手并拉动。"},{"i":1,"c":"灯光闪烁。"}]}',
-            },
         ]),
     )
 
@@ -614,7 +611,7 @@ def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monke
     timeline = report["audit_timeline"]
     assert [row["asr_index"] for row in timeline] == [0, 1]
     assert timeline[0]["asr_text"] == "Grab the handle and pull."
-    assert timeline[0]["asr_text_zh"] == "抓住把手并拉动。"
+    assert "asr_text_zh" not in timeline[0]
     assert timeline[0]["target_text"] == "Zieh am Griff."
     assert timeline[0]["visual_observation"] == "画面里是手部特写，用户握住把手向外拉动，屏幕上有 LOCK。"
     assert timeline[0]["sync_score"] == 94
@@ -782,7 +779,7 @@ def test_scorecard_prompt_skips_asr_chinese_reference_for_chinese_source():
     assert omni_av_sync_audit._needs_target_chinese_reference({"target_lang": "en"}) is True
 
 
-def test_translate_timeline_chinese_reads_text_response_and_fills_target(monkeypatch):
+def test_translate_timeline_chinese_translates_each_text_with_openrouter_flash_lite(monkeypatch):
     from pipeline import omni_av_sync_audit
 
     rows = [{
@@ -790,14 +787,16 @@ def test_translate_timeline_chinese_reads_text_response_and_fills_target(monkeyp
         "asr_text": "Grab the handle and pull.",
         "target_text": "裾を短くします。",
     }]
-    invoke_chat = MagicMock(return_value={
-        "text": json.dumps({
-            "items": [
-                {"i": 0, "c": "抓住把手并拉动。"},
-                {"i": 1, "c": "把裤脚改短。"},
-            ],
-        }, ensure_ascii=False),
-    })
+    def fake_invoke_chat(_use_case, **kwargs):
+        source = kwargs["messages"][1]["content"]
+        return {
+            "text": {
+                "Grab the handle and pull.": "抓住把手并拉动。",
+                "裾を短くします。": "把裤脚改短。",
+            }[source],
+        }
+
+    invoke_chat = MagicMock(side_effect=fake_invoke_chat)
     monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", invoke_chat)
 
     omni_av_sync_audit._translate_timeline_chinese(
@@ -805,8 +804,115 @@ def test_translate_timeline_chinese_reads_text_response_and_fills_target(monkeyp
         rows,
     )
 
+    assert invoke_chat.call_count == 2
+    for call in invoke_chat.call_args_list:
+        assert call.args[0] == "text_translate.generate"
+        assert call.kwargs["provider_override"] == "openrouter"
+        assert call.kwargs["model_override"] == "google/gemini-3.1-flash-lite"
+        user_content = call.kwargs["messages"][1]["content"]
+        assert user_content in {"Grab the handle and pull.", "裾を短くします。"}
     assert rows[0]["asr_text_zh"] == "抓住把手并拉动。"
     assert rows[0]["target_text_zh"] == "把裤脚改短。"
+
+
+def test_translate_timeline_chinese_uses_twenty_worker_pool(monkeypatch):
+    from pipeline import omni_av_sync_audit
+
+    rows = [
+        {"asr_index": idx, "asr_text": f"Source {idx}", "target_text": f"Target {idx}"}
+        for idx in range(12)
+    ]
+    captured_workers = []
+
+    class FakeFuture:
+        def __init__(self, value):
+            self._value = value
+
+        def result(self):
+            return self._value
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            captured_workers.append(max_workers)
+            self.futures = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, text, **kwargs):
+            future = FakeFuture(f"中文 {text}")
+            self.futures.append(future)
+            return future
+
+    monkeypatch.setattr(omni_av_sync_audit, "ThreadPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(omni_av_sync_audit, "as_completed", lambda futures: list(futures))
+
+    omni_av_sync_audit._translate_timeline_chinese(
+        {"source_language": "en", "target_lang": "ja"},
+        rows,
+    )
+
+    assert captured_workers == [20]
+    assert rows[0]["asr_text_zh"] == "中文 Source 0"
+    assert rows[0]["target_text_zh"] == "中文 Target 0"
+
+
+def test_store_report_schedules_chinese_reference_without_blocking(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, _video_path = _create_task(tmp_path, mode="report_only", sentences=[])
+    task = task_state.get(task_id)
+    task.update({
+        "_user_id": 9,
+        "_persist_state": False,
+        "source_language": "en",
+        "target_lang": "ja",
+    })
+    invoke_chat = MagicMock(side_effect=AssertionError("supplemental translation must not run inline"))
+    monkeypatch.setattr(omni_av_sync_audit.llm_client, "invoke_chat", invoke_chat)
+
+    started = []
+
+    def fake_start_tracked_thread(**kwargs):
+        saved = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+        assert saved["chinese_reference"]["status"] == "queued"
+        assert saved["audit_timeline"][0]["asr_text"] == "Grab the handle and pull."
+        started.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        omni_av_sync_audit.runner_lifecycle,
+        "start_tracked_thread",
+        fake_start_tracked_thread,
+    )
+
+    report = omni_av_sync_audit._base_report("report_only")
+    report["diagnosis"] = {"issues": [], "timeline": []}
+    sentences = [{
+        "asr_index": 0,
+        "source_text": "Grab the handle and pull.",
+        "text": "裾を短くします。",
+        "start_time": 0.0,
+        "end_time": 2.0,
+    }]
+
+    omni_av_sync_audit._store_report(task_id, report, variant="av", sentences=sentences)
+
+    saved = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    assert saved["audit_timeline"][0]["asr_text"] == "Grab the handle and pull."
+    assert "asr_text_zh" not in saved["audit_timeline"][0]
+    assert saved["chinese_reference"]["status"] == "queued"
+    assert saved["chinese_reference"]["total"] == 2
+    assert invoke_chat.call_count == 0
+    assert len(started) == 1
+    assert started[0]["daemon"] is True
+    assert started[0]["interrupt_policy"] == "safe"
+    assert started[0]["kwargs"]["task_id"] == task_id
+    assert started[0]["kwargs"]["variant"] == "av"
+    assert started[0]["kwargs"]["user_id"] == 9
 
 
 def test_scorecard_rows_include_duration_score_ceiling():
