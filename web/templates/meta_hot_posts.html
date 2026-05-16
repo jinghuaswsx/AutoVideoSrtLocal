@@ -17,8 +17,8 @@
 .mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
 .mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
 .mh-subtab.active { background:#0f766e; color:#fff; }
-.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:44px; margin-bottom:10px; padding:8px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
-.mh-tool-title { color:#475569; font-size:13px; font-weight:700; }
+.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:6px; min-height:32px; margin-bottom:6px; padding:4px 8px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-tool-title { color:#475569; font-size:12px; font-weight:700; }
 .mh-tool-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .mh-toolbar { display:grid; grid-template-columns:repeat(auto-fit, minmax(124px, 1fr)); gap:10px; align-items:end; margin-bottom:14px; padding:14px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
 .mh-field label { display:block; margin-bottom:5px; color:var(--mh-muted); font-size:12px; font-weight:700; }
@@ -87,6 +87,16 @@
 
 /* 移动端适配 */
 @media (max-width: 768px) {
+  /* 工具行更紧凑 */
+  .mh-tool-row {
+    gap: 4px;
+    min-height: 28px;
+    margin-bottom: 4px;
+    padding: 2px 4px;
+  }
+  .mh-tool-title {
+    display: none; /* 隐藏工具标题，给按钮更多空间 */
+  }
   /* 主导航横向滚动 */
   .mh-tabs {
     display: flex;
@@ -132,10 +142,13 @@
     display: flex;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    gap: 8px;
-    padding: 4px;
+    gap: 4px;
+    padding: 2px;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .mh-tool-buttons::-webkit-scrollbar {
     display: none;
@@ -143,6 +156,10 @@
   .mh-tool-buttons .mh-btn {
     flex-shrink: 0;
     white-space: nowrap;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    border-radius: 4px;
   }
 
   /* 卡片网格适配 */
