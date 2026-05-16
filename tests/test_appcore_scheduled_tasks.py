@@ -607,7 +607,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert queue_task["runner"] == "appcore.meta_hot_posts.scheduler.video_analysis_queue_tick_once"
     assert queue_task["log_table"] == "scheduled_task_runs"
     assert "10" in queue_task["description"]
-    assert "20 tasks" in queue_task["description"]
+    assert "22 tasks" in queue_task["description"]
     assert "10 second" in queue_task["description"]
     assert "rate-limit" in queue_task["description"]
     assert "Vertex ADC" in queue_task["description"]

@@ -194,7 +194,7 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_unified_an
     assert len(calls) == 7
 
 
-def test_video_analysis_queue_tick_once_defaults_to_twenty_videos_with_10_second_spacing(monkeypatch):
+def test_video_analysis_queue_tick_once_defaults_to_twenty_two_videos_with_10_second_spacing(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(scheduler, "_take_over_video_analysis_queue_singleton", lambda: {})
@@ -212,7 +212,7 @@ def test_video_analysis_queue_tick_once_defaults_to_twenty_videos_with_10_second
 
     scheduler.video_analysis_queue_tick_once(user_id=9)
 
-    assert captured["limit"] == 20
+    assert captured["limit"] == 22
     assert captured["user_id"] == 9
     assert captured["run_id"] == 42
     assert captured["per_item_delay_seconds"] == 10
@@ -267,7 +267,7 @@ def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatc
     assert events[2][0] == "finish"
     assert events[2][2]["status"] == "failed"
     assert events[3] == ("start", scheduler.VIDEO_ANALYSIS_QUEUE_TASK_CODE)
-    assert events[4] == ("process", 20, 44, 10)
+    assert events[4] == ("process", 22, 44, 10)
 
 
 def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):
