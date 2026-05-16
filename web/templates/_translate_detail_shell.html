@@ -269,8 +269,10 @@
   {% if is_superadmin() and _force_restart_api %}
   <label class="vt-toggle" title="开启后任何人通过链接均可查看和操作此项目">
     <input type="checkbox" id="visibleToAllCb"
+           data-api-base="{{ _force_restart_api }}"
+           data-task-id="{{ project.id }}"
            {% if state.visible_to_all %}checked{% endif %}
-           onchange="toggleVisibleToAll()">
+    >
     <span class="vt-slider"></span>
     <span class="vt-label">对所有人可见</span>
   </label>
@@ -515,19 +517,29 @@
       }
     });
   }
-  async function toggleVisibleToAll() {
-    var cb = document.getElementById('visibleToAllCb');
-    if (!cb) return;
-    var apiBase = {{ _force_restart_api|tojson }};
-    var taskId = {{ project.id|tojson }};
-    try {
-      var resp = await fetch(apiBase + '/' + taskId + '/visible-to-all', {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
-        body: JSON.stringify({visible_to_all: cb.checked})
-      });
-      if (!resp.ok) { cb.checked = !cb.checked; }
-    } catch (_) { cb.checked = !cb.checked; }
+  var visibleToAllCb = document.getElementById('visibleToAllCb');
+  if (visibleToAllCb) {
+    visibleToAllCb.addEventListener('change', async function() {
+      var apiBase = visibleToAllCb.dataset.apiBase || (btn ? btn.dataset.apiBase : '');
+      var taskId = visibleToAllCb.dataset.taskId || (btn ? btn.dataset.taskId : '');
+      var csrfMeta = document.querySelector('meta[name=csrf-token]');
+      var headers = {'Content-Type': 'application/json'};
+      if (csrfMeta && csrfMeta.content) {
+        headers['X-CSRFToken'] = csrfMeta.content;
+      }
+      if (!apiBase || !taskId) {
+        visibleToAllCb.checked = !visibleToAllCb.checked;
+        return;
+      }
+      try {
+        var resp = await fetch(apiBase + '/' + taskId + '/visible-to-all', {
+          method: 'PUT',
+          headers: headers,
+          body: JSON.stringify({visible_to_all: visibleToAllCb.checked})
+        });
+        if (!resp.ok) { visibleToAllCb.checked = !visibleToAllCb.checked; }
+      } catch (_) { visibleToAllCb.checked = !visibleToAllCb.checked; }
+    });
   }
 })();
 </script>
