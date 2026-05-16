@@ -497,13 +497,15 @@ def test_reconcile_duration_skips_final_ffmpeg_when_switch_disabled(monkeypatch)
     assert not any(event["phase"] == "ffmpeg_tempo_align" for event in progress)
 
 
-def test_reconcile_duration_marks_final_overlong_for_clip_without_extra_rewrite(monkeypatch):
-    durations = iter([6.2, 6.1])
+def test_reconcile_duration_overlong_second_rewrite_shorten(monkeypatch):
+    durations = iter([6.2, 6.1] + [5.5] * 10)
     rewrite_calls = []
     progress = []
 
     def fake_rewrite_one(**kwargs):
         rewrite_calls.append(kwargs)
+        if len(rewrite_calls) > 2:
+            return "Shortened candidate"
         return f"Candidate {kwargs['attempt_number']}"
 
     monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
@@ -539,13 +541,17 @@ def test_reconcile_duration_marks_final_overlong_for_clip_without_extra_rewrite(
     )
 
     sentence = result[0]
+    assert sentence["second_rewrite_attempted"] is True
+    assert sentence["final_fallback_action"] == "second_rewrite_failed"
+    assert sentence["final_fallback_reason"] == "overlong_after_second_rewrite"
     assert sentence["status"] == "warning_long"
-    assert sentence["final_fallback_action"] == "clip_overlong"
-    assert sentence["final_fallback_reason"] == "overlong_after_attempts"
+    assert sentence["second_rewrite_result"] == "still_long"
     assert sentence["best_effort"] is True
-    assert sentence["best_effort_reason"] == "max_attempts_exhausted"
-    assert [call["attempt_number"] for call in rewrite_calls] == [1, 2]
-    assert any(event["phase"] == "final_clip_fallback" for event in progress)
+    main_calls = rewrite_calls[:2]
+    second_calls = rewrite_calls[2:]
+    assert [c["attempt_number"] for c in main_calls] == [1, 2]
+    assert all(c["direction"] == "shorten" for c in second_calls)
+    assert len(second_calls) >= 1
 
 
 def test_reconcile_duration_second_rewrite_does_not_slow_with_ffmpeg(monkeypatch):
@@ -1112,7 +1118,7 @@ def test_reconcile_duration_emits_live_rewrite_and_tts_regen_progress(monkeypatc
 
 
 def test_reconcile_duration_rewrite_gives_up(monkeypatch):
-    durations = iter([6.0, 6.0])
+    durations = iter([6.0] * 13)
     regenerate_calls = []
 
     monkeypatch.setattr(
@@ -1160,17 +1166,17 @@ def test_reconcile_duration_rewrite_gives_up(monkeypatch):
     )
 
     assert result[0]["status"] == "warning_long"
-    assert result[0]["rewrite_rounds"] == 2
+    assert result[0]["rewrite_rounds"] == 12
     assert result[0]["speed"] == pytest.approx(1.0)
     assert result[0]["tts_duration"] == pytest.approx(6.0)
     assert result[0]["duration_ratio"] == pytest.approx(1.2)
     assert len(result[0]["attempts"]) == 2
     assert result[0]["attempts"][0]["action"] == "shorten"
     assert result[0]["attempts"][1]["status"] == "needs_rewrite"
-    assert regenerate_calls == [
-        {"text": "Still too long", "speed": None},
-        {"text": "Still too long", "speed": None},
-    ]
+    second_rewrite_attempts = result[0].get("second_rewrite_attempts") or []
+    assert len(second_rewrite_attempts) == 10
+    assert all(a["action"] == "shorten" for a in second_rewrite_attempts)
+    assert len(regenerate_calls) == 12
 
 
 def test_reconcile_duration_rewrites_long_shot_char_limit_sentence(monkeypatch):

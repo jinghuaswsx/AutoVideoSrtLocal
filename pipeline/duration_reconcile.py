@@ -136,6 +136,7 @@ def _second_rewrite_attempt_record(
     after_text: str,
     status: str,
     selected: bool,
+    direction: str = "expand",
 ) -> dict:
     target_duration = float(current.get("target_duration", 0.0) or 0.0)
     tts_duration = float(current.get("tts_duration", 0.0) or 0.0)
@@ -145,7 +146,7 @@ def _second_rewrite_attempt_record(
         "text_attempt": current.get("text_rewrite_attempts"),
         "tts_attempt": current.get("tts_regenerate_attempts"),
         "temperature": current.get("active_temperature"),
-        "action": "expand",
+        "action": direction,
         "before_text": before_text,
         "after_text": after_text,
         "target_duration": target_duration,
@@ -482,6 +483,7 @@ def _run_second_rewrite_loop(
     on_progress: Callable[[dict], None] | None,
     ffmpeg_tempo_enabled: bool,
     max_second_rewrite_rounds: int = 10,
+    direction: str = "expand",
 ) -> None:
     before_text = current.get("text", "")
     before_candidate = _candidate_from_current(
@@ -490,7 +492,8 @@ def _run_second_rewrite_loop(
     )
     current["second_rewrite_attempted"] = True
     current["final_fallback_action"] = "second_rewrite"
-    current["final_fallback_reason"] = "short_after_attempts"
+    is_overlong = direction == "shorten"
+    current["final_fallback_reason"] = "overlong_after_attempts" if is_overlong else "short_after_attempts"
     current["second_rewrite_before_text"] = before_text
 
     best_second_candidate = None
@@ -503,7 +506,7 @@ def _run_second_rewrite_loop(
         round_before_text = current.get("text", "")
 
         current["active_attempt"] = display_round
-        current["active_action"] = "second_rewrite_expand"
+        current["active_action"] = f"second_rewrite_{direction}"
         current["active_temperature"] = av_translate.second_rewrite_temperature_for_attempt(second_round)
         current["active_tts_attempt"] = current.get("tts_regenerate_attempts", 0) + 1
         current["text_rewrite_attempts"] += 1
@@ -514,7 +517,7 @@ def _run_second_rewrite_loop(
                 asr_index=int(current.get("asr_index", position)),
                 prev_text=round_before_text,
                 overshoot_sec=0.0,
-                direction="expand",
+                direction=direction,
                 new_target_chars_range=tuple(current.get("target_chars_range") or (1, 2)),
                 script_segments=script_segments,
                 shot_notes=shot_notes,
@@ -536,7 +539,7 @@ def _run_second_rewrite_loop(
                     "text_attempt": current["text_rewrite_attempts"],
                     "tts_attempt": current["tts_regenerate_attempts"],
                     "temperature": current["active_temperature"],
-                    "action": "expand",
+                    "action": direction,
                     "before_text": round_before_text,
                     "after_text": "",
                     "target_duration": current["target_duration"],
@@ -594,6 +597,7 @@ def _run_second_rewrite_loop(
             after_text=new_text,
             status=status,
             selected=False,
+            direction=direction,
         )
         current.setdefault("second_rewrite_attempts", []).append(second_attempt)
 
@@ -936,10 +940,19 @@ def _reconcile_one_sentence(
                         ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
                     )
                 elif final_ratio > MAX_FFMPEG_TEMPO_RATIO:
-                    _mark_clip_overlong_fallback(
+                    _run_second_rewrite_loop(
                         current=current,
                         position=position,
+                        voice_id=voice_id,
+                        target_language=target_language,
+                        av_inputs=av_inputs,
+                        shot_notes=shot_notes,
+                        script_segments=script_segments,
+                        user_id=user_id,
+                        project_id=project_id,
                         on_progress=on_progress,
+                        ffmpeg_tempo_enabled=ffmpeg_tempo_enabled,
+                        direction="shorten",
                     )
                 else:
                     _run_second_rewrite_loop(
