@@ -32,8 +32,8 @@ def test_is_admin_user_reads_flask_login_user_shape():
 
     from web.services.task_access import is_admin_user
 
-    assert is_admin_user(SimpleNamespace(is_admin=True)) is True
-    assert is_admin_user(SimpleNamespace(is_admin=False)) is False
+    assert is_admin_user(SimpleNamespace(is_superadmin=True)) is True
+    assert is_admin_user(SimpleNamespace(is_superadmin=False)) is False
     assert is_admin_user(SimpleNamespace()) is False
 
 

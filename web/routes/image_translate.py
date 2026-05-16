@@ -132,8 +132,8 @@ def _task_belongs_to_current_user(task: dict) -> bool:
     return str(task.get("_user_id")) == str(getattr(current_user, "id", ""))
 
 
-def _is_admin_user() -> bool:
-    return getattr(current_user, "is_admin", False)
+def _is_superadmin_user() -> bool:
+    return getattr(current_user, "is_superadmin", False)
 
 
 def _get_owned_task(task_id: str) -> dict:
@@ -145,14 +145,14 @@ def _get_owned_task(task_id: str) -> dict:
 
 def _get_retryable_task(task_id: str) -> dict:
     task = _get_existing_image_translate_task(task_id)
-    if not (_task_belongs_to_current_user(task) or _is_admin_user()):
+    if not (_task_belongs_to_current_user(task) or _is_superadmin_user()):
         abort(404)
     return task
 
 
 def _get_viewable_task(task_id: str) -> dict:
     task = _get_existing_image_translate_task(task_id)
-    if not (_task_belongs_to_current_user(task) or _is_admin_user()):
+    if not (_task_belongs_to_current_user(task) or _is_superadmin_user()):
         abort(404)
     return task
 
@@ -1036,7 +1036,7 @@ def page_list():
     tab = (request.args.get("tab") or "all").strip().lower()
 
     # 列出所有任务（管理员视角）或仅当前用户的任务
-    if _is_admin_user():
+    if _is_superadmin_user():
         rows = image_translate_store.list_all_projects(query_func=db_query)
     else:
         rows = image_translate_store.list_user_projects(
@@ -1105,7 +1105,7 @@ def page_list():
             "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
             "total": len(items),
             "done": done,
-            "user_id": row.get("user_id") if _is_admin_user() else None,
+            "user_id": row.get("user_id") if _is_superadmin_user() else None,
             "task_type": task_type,
         }
         history_all.append(task_item)
@@ -1129,7 +1129,7 @@ def page_list():
         gemini_backend=_backend_badge(default_channel),
         image_translate_channels=_image_translate_channels_payload(),
         image_translate_default_channel=default_channel,
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
     )
 
 

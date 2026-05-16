@@ -175,8 +175,8 @@ def _parse_state(row: dict | None) -> dict:
     return state if isinstance(state, dict) else {}
 
 
-def _is_admin_user() -> bool:
-    return getattr(current_user, "is_admin", False)
+def _is_superadmin_user() -> bool:
+    return getattr(current_user, "is_superadmin", False)
 
 
 def _video_cover_creator_name_expr() -> str:
@@ -190,7 +190,7 @@ def _load_user_project(task_id: str) -> tuple[dict | None, dict]:
     row = video_cover_project_store.get_project(
         task_id,
         user_id=int(current_user.id),
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
     )
     return row, _parse_state(row)
 
@@ -859,7 +859,7 @@ def _run_video_cover_chain(task_id: str, *, start_step: str = "video_analysis", 
 def page():
     projects = video_cover_project_store.list_projects(
         user_id=int(current_user.id),
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
         owner_name_expr=_video_cover_creator_name_expr(),
     )
     model_defaults = video_cover_settings.get_model_defaults() if current_user.is_superadmin else {}
@@ -971,7 +971,7 @@ def api_delete_project(task_id: str):
     video_cover_project_store.soft_delete_project(
         task_id,
         user_id=int(current_user.id),
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
     )
     return _json_response({"ok": True})
 

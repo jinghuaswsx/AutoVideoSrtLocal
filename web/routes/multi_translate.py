@@ -130,8 +130,8 @@ def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: st
     return thumb
 
 
-def _is_admin_user() -> bool:
-    return getattr(current_user, "is_admin", False)
+def _is_superadmin_user() -> bool:
+    return getattr(current_user, "is_superadmin", False)
 
 
 def _task_belongs_to_current_user(task: dict) -> bool:
@@ -139,7 +139,7 @@ def _task_belongs_to_current_user(task: dict) -> bool:
 
 
 def _can_view_task(task: dict) -> bool:
-    return _task_belongs_to_current_user(task) or _is_admin_user()
+    return _task_belongs_to_current_user(task) or _is_superadmin_user()
 
 
 def _get_viewable_task(task_id: str) -> dict | None:
@@ -159,7 +159,7 @@ def _query_viewable_project(
         task_id,
         "multi_translate",
         user_id=current_user.id,
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
         columns=columns,
         include_deleted=include_deleted,
         query_one_func=db_query_one,
@@ -192,7 +192,7 @@ def index():
     rows = translation_route_store.list_projects_with_creator(
         user_id=current_user.id,
         project_type="multi_translate",
-        is_admin=_is_admin_user(),
+        is_admin=_is_superadmin_user(),
         owner_name_expr=owner_name_expr,
         target_lang=lang,
         query_func=db_query,
