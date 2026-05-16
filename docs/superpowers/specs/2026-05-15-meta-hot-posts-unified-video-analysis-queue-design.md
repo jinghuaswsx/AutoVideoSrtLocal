@@ -16,7 +16,7 @@ Both analyze downloaded local videos with product links. They should now share o
 - Use one scheduled queue task for both analysis modes.
 - Keep task type explicit: `us_copyability` for "美国直接抄分析" and `europe_fit` for "欧洲搬运分析".
 - Process US copyability items before Europe fit items. Europe starts only when no US items are available in the same round.
-- Process at most 25 items per 10-minute round.
+- Process items continuously within a 560-second window per 10-minute round.
 - Use Google Vertex ADC with Gemini 3 Flash for both analysis types.
 - Run serially with no delay between LLM video calls and a 40-second per-item timeout.
 - Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
@@ -64,7 +64,7 @@ Register one APScheduler job:
 - task code: `meta_hot_posts_video_analysis_queue_tick`
 - schedule: every 10 minutes
 - max instances: 2, so a new tick can enter and take over a stuck previous tick
-- batch size: 25
+- batch model: time-driven, one item at a time within a 560-second window
 - per-item delay: no delay
 - per-item timeout: 40 seconds
 - rate-limit circuit breaker: 2 requeued 429 / quota errors stop the current round
@@ -86,7 +86,7 @@ The previous separate scheduled jobs for Europe fit and US copyability are remov
 Focused tests cover:
 
 - queue ordering: US items first, Europe only after US capacity is exhausted or absent
-- max 20 items per tick and no delay between item executions
+- time-driven loop runs items one-at-a-time within a 560-second window
 - stop the tick once 2 items in the round hit 429 / quota requeue
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
