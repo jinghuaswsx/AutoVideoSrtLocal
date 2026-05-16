@@ -207,6 +207,7 @@ def index():
             state = {}
         row["source_lang"] = state.get("source_language") or "zh"
         row["target_lang"] = state.get("target_lang") or ""
+        row["video_duration"] = state.get("video_duration")
 
     from appcore.settings import get_retention_hours
     return render_template(

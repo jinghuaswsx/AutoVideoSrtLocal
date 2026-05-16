@@ -47,7 +47,8 @@
 .project-card .info { padding: 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 .project-card .filename { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; min-height: 2.8em; }
 .project-card .meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
-.project-card .expire-row { margin-top: 6px; }
+.project-card .expire-row { margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
+.project-card .duration-text { font-size: 11px; color: #9ca3af; }
 .project-card .creator-row {
   font-size: 12px;
   color: #9ca3af;
@@ -388,15 +389,22 @@
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
         </div>
-        {% if p.expires_at %}
-        {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+        {% if p.expires_at or p.video_duration %}
+        {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int if p.expires_at else 0 %}
         <div class="expire-row">
-          {% if hours_left <= 0 %}
-          <span class="expire-tag urgent">已过期</span>
-          {% elif hours_left <= 12 %}
-          <span class="expire-tag warning">剩余 {{ hours_left }}h</span>
-          {% else %}
-          <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+          <span>
+          {% if p.expires_at %}
+            {% if hours_left <= 0 %}
+            <span class="expire-tag urgent">已过期</span>
+            {% elif hours_left <= 12 %}
+            <span class="expire-tag warning">剩余 {{ hours_left }}h</span>
+            {% else %}
+            <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+            {% endif %}
+          {% endif %}
+          </span>
+          {% if p.video_duration %}
+          <span class="duration-text">时长{{ (p.video_duration | float) | round(0) | int }} 秒</span>
           {% endif %}
         </div>
         {% endif %}
@@ -443,6 +451,9 @@
           {% else %}
           <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
           {% endif %}
+          {% endif %}
+          {% if p.video_duration %}
+          <span class="duration-text">时长{{ (p.video_duration | float) | round(0) | int }} 秒</span>
           {% endif %}
         </div>
       </div>
@@ -654,9 +665,9 @@ function _buildProjectName() {
   var langZh = LANG_ZH_NAMES[lang] || '';
   var product = _extractProductFromFilename(file.name);
   var stamp = _formatMMDDHHmm(new Date());
-  if (product) return langZh + product + '-' + stamp;
+  if (product) return langZh + '-' + product + '-' + stamp;
   var stem = file.name.replace(/\.[^.]+$/, '');
-  return stem + '-' + stamp;
+  return langZh + '-' + stem + '-' + stamp;
 }
 
 function _refreshProjectName() {
