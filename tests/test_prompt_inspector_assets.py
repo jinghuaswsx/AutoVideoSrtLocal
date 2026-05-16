@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,3 +169,26 @@ def test_multi_av_sync_audit_renderer_is_table_only():
     assert "renderAuditList" not in table_only_branch
     assert "human_report" not in table_only_branch
     assert "完整审计 JSON" not in table_only_branch
+
+
+def test_av_sync_target_chinese_reference_does_not_hide_japanese_target():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+    js = "\n".join([
+        "const currentTask = { target_lang: 'ja' };",
+        _function_body(scripts, "avSyncTargetChineseReference"),
+        _function_body(scripts, "isAvSyncChineseTarget"),
+        _function_body(scripts, "isMostlyChineseText"),
+        "const row = {",
+        "  target_text: 'ズボンが長くても、お直し代はもう払わないで。',",
+        "  target_text_zh: '裤子太长也不要再付改裤脚的钱了。',",
+        "};",
+        "process.stdout.write(avSyncTargetChineseReference(row, row.target_text));",
+    ])
+    result = subprocess.run(
+        ["node", "-e", js],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+
+    assert result.stdout == "裤子太长也不要再付改裤脚的钱了。"

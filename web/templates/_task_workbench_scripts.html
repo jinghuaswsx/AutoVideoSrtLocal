@@ -1808,6 +1808,7 @@
       || ""
     ).trim().toLowerCase();
     if (lang === "zh" || lang.startsWith("zh-") || lang.startsWith("zh_")) return true;
+    if (lang) return false;
     return isMostlyChineseText(targetText || row?.target_text || "");
   }
 
@@ -1819,6 +1820,7 @@
       || ""
     ).trim().toLowerCase();
     if (lang === "zh" || lang.startsWith("zh-") || lang.startsWith("zh_")) return true;
+    if (lang) return false;
     return isMostlyChineseText(asrText || row?.asr_text || row?.source_text || "");
   }
 
