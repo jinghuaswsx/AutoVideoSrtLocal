@@ -119,3 +119,15 @@ def test_meta_hot_posts_vertex_adc_pro_binding_migration_pins_queue_use_cases():
     assert "'gemini_vertex_adc'" in body
     assert "'gemini-3.1-pro-preview'" in body
     assert "ON DUPLICATE KEY UPDATE" in body
+
+
+def test_meta_hot_posts_vertex_adc_pro_to_flash_migration_updates_queue_use_cases():
+    body = Path("db/migrations/2026_05_15_meta_hot_posts_vertex_adc_pro_to_flash.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "'meta_hot_posts.europe_fit'" in body
+    assert "'meta_hot_posts.video_copyability'" in body
+    assert "'gemini_vertex_adc'" in body
+    assert "'gemini-3-flash-preview'" in body
+    assert "ON DUPLICATE KEY UPDATE" in body

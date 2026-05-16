@@ -189,7 +189,7 @@ def test_register_schedules_daily_sync_analysis_translation_video_and_unified_an
     assert len(calls) == 6
 
 
-def test_video_analysis_queue_tick_once_defaults_to_five_videos_with_90_second_spacing(monkeypatch):
+def test_video_analysis_queue_tick_once_defaults_to_twenty_videos_with_20_second_spacing(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(scheduler, "_take_over_video_analysis_queue_singleton", lambda: {})
@@ -207,10 +207,10 @@ def test_video_analysis_queue_tick_once_defaults_to_five_videos_with_90_second_s
 
     scheduler.video_analysis_queue_tick_once(user_id=9)
 
-    assert captured["limit"] == 5
+    assert captured["limit"] == 20
     assert captured["user_id"] == 9
     assert captured["run_id"] == 42
-    assert captured["per_item_delay_seconds"] == 90
+    assert captured["per_item_delay_seconds"] == 20
 
 
 def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatch):
@@ -262,7 +262,7 @@ def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatc
     assert events[2][0] == "finish"
     assert events[2][2]["status"] == "failed"
     assert events[3] == ("start", scheduler.VIDEO_ANALYSIS_QUEUE_TASK_CODE)
-    assert events[4] == ("process", 5, 44, 90)
+    assert events[4] == ("process", 20, 44, 20)
 
 
 def test_video_localization_tick_once_defaults_to_30_seconds(monkeypatch):
@@ -1022,7 +1022,7 @@ def test_analyze_pending_products_keeps_product_result_when_category_fails(monke
     assert payload["result"]["price_min"] == 19.99
     assert payload["category"]["category"] is None
     assert payload["category"]["provider"] == "openrouter"
-    assert payload["category"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert payload["category"]["model"] == "google/gemini-3.1-flash-lite"
     assert "invalid llm json" in payload["error_message"]
 
 
@@ -1187,7 +1187,7 @@ def test_reanalyze_categories_marks_openrouter_model_even_when_category_call_fai
 
     assert summary == {"scanned": 1, "done": 0, "failed": 1}
     assert finished[0][1]["category"]["provider"] == "openrouter"
-    assert finished[0][1]["category"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert finished[0][1]["category"]["model"] == "google/gemini-3.1-flash-lite"
     assert "openrouter unavailable" in finished[0][1]["error_message"]
 
 

@@ -16,9 +16,9 @@ Both analyze downloaded local videos with product links. They should now share o
 - Use one scheduled queue task for both analysis modes.
 - Keep task type explicit: `us_copyability` for "美国直接抄分析" and `europe_fit` for "欧洲搬运分析".
 - Process US copyability items before Europe fit items. Europe starts only when no US items are available in the same round.
-- Process at most 5 items per 10-minute round, below the hard 10-item cap.
-- Use Google Vertex ADC with Gemini 3.1 Pro Preview for both analysis types.
-- Run serially with a conservative 90-second delay between LLM video calls.
+- Process at most 20 items per 10-minute round.
+- Use Google Vertex ADC with Gemini 3 Flash for both analysis types.
+- Run serially with a 20-second delay between LLM video calls.
 - Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
 - Stop the current round early after 2 rate-limit requeues to avoid a quota storm.
 - Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
@@ -52,7 +52,7 @@ This preserves existing persistence while making scheduling and model throttling
 Both analyzers use:
 
 - provider: `gemini_vertex_adc`
-- model: `gemini-3.1-pro-preview`
+- model: `gemini-3-flash-preview`
 - usage service: `gemini_vertex_adc`
 
 The use case codes remain `meta_hot_posts.video_copyability` and `meta_hot_posts.europe_fit` so billing/reporting can distinguish analysis intent.
@@ -64,8 +64,8 @@ Register one APScheduler job:
 - task code: `meta_hot_posts_video_analysis_queue_tick`
 - schedule: every 10 minutes
 - max instances: 2, so a new tick can enter and take over a stuck previous tick
-- batch size: 5
-- per-item delay: 90 seconds
+- batch size: 20
+- per-item delay: 20 seconds
 - rate-limit circuit breaker: 2 requeued 429 / quota errors stop the current round
 
 ## Retry And Suspension
@@ -85,11 +85,11 @@ The previous separate scheduled jobs for Europe fit and US copyability are remov
 Focused tests cover:
 
 - queue ordering: US items first, Europe only after US capacity is exhausted or absent
-- max 5 items per tick and 90-second delay between item executions
+- max 20 items per tick and 20-second delay between item executions
 - stop the tick once 2 items in the round hit 429 / quota requeue
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
 - 429 failures are requeued for a later round
 - third failed attempts are suspended for both task types
-- both use cases and analyzer overrides use Vertex ADC Gemini 3.1 Pro Preview
+- both use cases and analyzer overrides use Vertex ADC Gemini 3 Flash
 - scheduled task registry and APScheduler registration expose only the unified video analysis queue task

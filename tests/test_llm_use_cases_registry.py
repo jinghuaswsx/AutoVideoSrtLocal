@@ -57,7 +57,7 @@ def test_video_translate_asr_and_tts_defaults():
     assert USE_CASES["video_translate.asr"]["default_provider"] == "doubao_asr"
     assert USE_CASES["video_translate.asr"]["units_type"] == "seconds"
     assert USE_CASES["video_translate.tts_language_check"]["default_provider"] == "openrouter"
-    assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "google/gemini-3.1-flash-lite"
     assert USE_CASES["video_translate.tts_language_check"]["units_type"] == "tokens"
 
 
@@ -82,7 +82,7 @@ def test_omni_av_sync_assess_uses_gemini_3_flash():
 
 def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
-    assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite"
     assert USE_CASES["image_translate.detect"]["usage_log_service"] == "gemini"
     assert USE_CASES["image_translate.detect"]["units_type"] == "images"
     for code in ("image_translate.generate",
@@ -153,7 +153,7 @@ def test_meta_hot_posts_categorize_use_case_is_registered_for_billing():
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
@@ -163,7 +163,7 @@ def test_meta_hot_posts_translate_message_use_case_is_registered_for_billing():
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
@@ -173,7 +173,7 @@ def test_meta_hot_posts_europe_fit_use_case_is_registered_for_billing():
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["default_model"] == "gemini-3-flash-preview"
     assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
 
@@ -183,7 +183,7 @@ def test_meta_hot_posts_video_copyability_use_case_is_registered_for_billing():
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["default_model"] == "gemini-3-flash-preview"
     assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
 
@@ -206,7 +206,7 @@ def test_copywriting_translate_audit_uses_gemini_flash_lite():
     """二次审核走 OpenRouter + Gemini 3.1 Flash-Lite，便宜且足以判断符合/不符合。"""
     uc = USE_CASES["copywriting_translate.audit"]
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
@@ -232,7 +232,7 @@ def test_omni_translate_module_label_exists():
 def test_same_image_use_case_defaults():
     uc = USE_CASES["link_check.same_image"]
     assert uc["default_provider"] == "gemini_aistudio"
-    assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert uc["default_model"] == "gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "gemini"
 
 

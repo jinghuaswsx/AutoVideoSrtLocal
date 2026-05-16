@@ -50,7 +50,7 @@ def test_normalize_response_clamps_score_and_maps_recommendation():
                 "reasoning": "Strong product-market fit.",
             },
             "provider": "gemini_vertex_adc",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3-flash-preview",
         }
     )
 
@@ -59,7 +59,7 @@ def test_normalize_response_clamps_score_and_maps_recommendation():
     assert result["direct_reuse"] is True
     assert result["best_countries"] == ["DE", "FR"]
     assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3-flash-preview"
 
 
 def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):
@@ -104,7 +104,7 @@ def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):
                 "reasoning": "Useful, but text needs localization.",
             },
             "provider": "gemini_vertex_adc",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3-flash-preview",
         }
 
     monkeypatch.setattr(europe_fit, "prepare_video_for_llm", fake_prepare)
@@ -127,7 +127,7 @@ def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):
     assert calls["invoke"][1]["media"] == [str(output_video)]
     assert calls["invoke"][1]["user_id"] == 7
     assert calls["invoke"][1]["provider_override"] == "gemini_vertex_adc"
-    assert calls["invoke"][1]["model_override"] == "gemini-3.1-pro-preview"
+    assert calls["invoke"][1]["model_override"] == "gemini-3-flash-preview"
     assert result["suitability_score"] == 87
     assert result["video_optimization"]["optimized"] is True
     assert cleaned == [str(output_video)]

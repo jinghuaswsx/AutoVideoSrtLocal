@@ -14,7 +14,7 @@ from appcore.meta_hot_posts import store, video_localization
 
 VIDEO_COPYABILITY_USE_CASE = "meta_hot_posts.video_copyability"
 VIDEO_COPYABILITY_PROVIDER = "gemini_vertex_adc"
-VIDEO_COPYABILITY_MODEL = "gemini-3.1-pro-preview"
+VIDEO_COPYABILITY_MODEL = "gemini-3-flash-preview"
 DEFAULT_ANALYSIS_SUBDIR = Path("meta_hot_posts") / "analysis_videos"
 DEFAULT_ANALYSIS_LIMIT = 20
 DEFAULT_ANALYSIS_DELAY_SECONDS = 30

@@ -93,14 +93,14 @@ def test_analyze_video_copyability_invokes_vertex_adc_with_product_and_video(tmp
     use_case_code, kwargs = calls[0]
     assert use_case_code == "meta_hot_posts.video_copyability"
     assert kwargs["provider_override"] == "gemini_vertex_adc"
-    assert kwargs["model_override"] == "gemini-3.1-pro-preview"
+    assert kwargs["model_override"] == "gemini-3-flash-preview"
     assert kwargs["user_id"] == 9
     assert kwargs["media"] == [compressed]
     assert "https://example.com/products/socket" in kwargs["prompt"]
     assert "US Meta ecosystem ads" in kwargs["prompt"]
     assert result["overall_score"] == 91
     assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3-flash-preview"
     assert result["compressed_video_path"] == "meta_hot_posts/analysis_videos/8.mp4"
 
 
