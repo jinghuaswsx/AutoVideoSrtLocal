@@ -535,6 +535,7 @@ function buildParams(page) {
 }
 function switchMetaHotSubtab(tab) {
   mhSubtab = ['today', 'europe', 'us'].includes(tab) ? tab : 'library';
+  location.hash = mhSubtab;
   qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
   qs('mhTodayNewSubtab').classList.toggle('active', mhSubtab === 'today');
   qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
@@ -761,6 +762,15 @@ async function showFailureRecords() {
     : '<div class="mh-empty">暂无失败记录</div>';
 }
 restoreVideoSource();
-loadMetaHotPosts(1);
+// 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us）
+function initMetaHotSubtabFromHash() {
+  const tab = location.hash.replace('#', '') || 'library';
+  switchMetaHotSubtab(tab);
+}
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace('#', '') || 'library';
+  if (tab !== mhSubtab) switchMetaHotSubtab(tab);
+});
+initMetaHotSubtabFromHash();
 </script>
 {% endblock %}
