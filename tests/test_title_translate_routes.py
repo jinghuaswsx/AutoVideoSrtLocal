@@ -23,18 +23,19 @@ def test_workspace_shell_renders_required_dom(authed_client_no_db):
     )
 
 
-def test_dashboard_sidebar_keeps_title_translate_as_standalone_link_after_translation_group(authed_client_no_db):
+def test_dashboard_sidebar_places_title_translate_inside_material_creation_group(authed_client_no_db):
     resp = authed_client_no_db.get("/title-translate")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
+    material_group_idx = html.index("sidebar-material-creation-group")
     video_group_idx = html.index("sidebar-video-translate-group")
     title_idx = html.index('href="/title-translate"')
     settings_group_idx = html.index("sidebar-settings-group")
 
     assert 'href="/fr-translate"' not in html
     assert 'href="/translate-lab"' not in html
-    assert video_group_idx < title_idx < settings_group_idx
+    assert material_group_idx < title_idx < video_group_idx < settings_group_idx
 
 
 def test_static_script_contains_client_hooks():

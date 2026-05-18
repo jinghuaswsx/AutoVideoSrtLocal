@@ -1662,6 +1662,8 @@ def test_layout_groups_requested_sidebar_menus(authed_client_no_db):
     assert body.index("字幕移除", material_group) < body.index("文案封面生成", material_group)
     assert body.index("文案封面生成", material_group) < body.index("画图工作室", material_group)
     assert body.index("画图工作室", material_group) < body.index("文案翻译", material_group)
+    assert body.index("文案翻译", material_group) < body.index("多语言标题翻译", material_group)
+    assert body.index("多语言标题翻译", material_group) < video_group
     assert body.index("视频翻译", video_group) < body.index("多语种视频翻译", video_group)
     assert body.index("多语种视频翻译", video_group) < body.index("全能视频翻译", video_group)
     assert body.index("全能视频翻译", video_group) < body.index("视频翻译传统", video_group)
