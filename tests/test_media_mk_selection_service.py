@@ -331,6 +331,78 @@ def test_build_mk_video_materials_response_searches_mingkong_by_product_handle()
     assert result.payload["items"][1]["video_name"] == "low.mp4"
 
 
+def test_build_mk_video_materials_response_searches_direct_product_code_without_db():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    http_calls = []
+
+    def fail_db_query(*_args, **_kwargs):
+        raise AssertionError("direct product_code search should not require local rankings")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 902,
+                            "product_name": "Direct Widget MK",
+                            "product_links": ["https://shop.example/products/cool-widget-rjc"],
+                            "main_image": "uploads2/direct-main.jpg",
+                            "videos": [
+                                {
+                                    "name": "direct-low.mp4",
+                                    "path": "uploads2/direct-low.mp4",
+                                    "spends": "12",
+                                    "ads_count": 1,
+                                },
+                                {
+                                    "name": "direct-winner.mp4",
+                                    "path": "uploads2/direct-winner.mp4",
+                                    "image_path": "uploads2/direct-winner.jpg",
+                                    "spends": "2.4\u4e07",
+                                    "ads_count": 8,
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    def fake_http_get(url, *, params=None, headers=None, timeout=None):
+        http_calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = build_mk_video_materials_response(
+        {"product_code": "cool-widget-RJC", "max_videos_per_product": "5"},
+        db_query_fn=fail_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fake_http_get,
+    )
+
+    assert result.status_code == 200
+    assert http_calls == [
+        {
+            "url": "https://wedev.example/api/marketing/medias",
+            "params": {"page": 1, "q": "cool-widget", "source": "", "level": "", "show_attention": 0},
+            "headers": {"Authorization": "Bearer synced-token"},
+            "timeout": 20,
+        }
+    ]
+    assert result.payload["stats"]["source_products"] == 0
+    assert result.payload["stats"]["mk_searches"] == 1
+    assert result.payload["stats"]["videos"] == 2
+    assert result.payload["items"][0]["video_name"] == "direct-winner.mp4"
+    assert result.payload["items"][0]["product_handle"] == "cool-widget"
+    assert result.payload["items"][0]["mk_product_id"] == 902
+    assert result.payload["items"][0]["rank_position"] is None
+    assert result.payload["has_more_products"] is False
+
+
 def test_build_mk_video_materials_response_rejects_missing_credentials_without_request():
     from web.services.media_mk_selection import build_mk_video_materials_response
 

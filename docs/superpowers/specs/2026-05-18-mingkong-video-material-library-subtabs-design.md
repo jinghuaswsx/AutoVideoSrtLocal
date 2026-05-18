@@ -29,6 +29,8 @@ The UI must not depend on `dianxiaomi_rankings.mk_product_id` or the old denorma
 - `产品库` shows the existing table unchanged.
 - `视频素材库` shows Mingkong video cards with cover/video preview, product name, rank, sales, 90-day spend, ad count, uploader, upload time, and the existing `加入素材库` / `做小语种` actions where metadata is available.
 
+Every product row in `产品库` also exposes a `素材库` button. Clicking it switches to `视频素材库` and loads card results by searching the Mingkong backend with that row's Shopify product code/handle. This row entry must work even when the ranking row has no stored `mk_product_id`.
+
 The existing product detail modal card renderer remains available for rows that have a direct `mk_product_id`.
 
 ## API
@@ -40,6 +42,7 @@ Query parameters:
 - `page`: product-source page, default `1`.
 - `page_size`: number of Dianxiaomi products to scan, default `24`, max `60`.
 - `keyword`: optional product-name or handle filter.
+- `product_code`: optional direct Mingkong search term for a single product row. When present, search `/api/marketing/medias?q=<product_code>` directly and do not require a local ranking row match.
 - `snapshot`: optional `YYYY-MM-DD`; omitted means latest snapshot.
 - `max_videos_per_product`: default `3`, max `5`.
 

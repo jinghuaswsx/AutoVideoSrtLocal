@@ -122,6 +122,9 @@
 .mk-video-product-line { display:flex; flex-direction:column; gap:2px; min-height:48px; font-size:12px; color:var(--oc-fg-muted); }
 .mk-video-product-line a { color:var(--oc-accent); text-decoration:none; font-weight:700; }
 .mk-video-product-line a:hover { text-decoration:underline; }
+.mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
+.mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
+.mk-material-state { font-size:12px; line-height:1; }
 {% endblock %}
 
 {% block content %}
@@ -198,6 +201,7 @@ let currentMkLibraryTab = 'products';
 let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
 let selectedMkSnapshot = '';
+let activeMkProductCode = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 24;
 
@@ -237,6 +241,33 @@ function safeExternalHref(value) {
   return escapeHtml(url);
 }
 
+function productCodeFromUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  function pickCodeFromPath(path) {
+    const parts = String(path || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    const productIndex = parts.indexOf('products');
+    const code = productIndex >= 0 ? (parts[productIndex + 1] || '') : (parts[parts.length - 1] || '');
+    return String(code || '').replace(/[-_]?rjc$/i, '').trim();
+  }
+  try {
+    return pickCodeFromPath(new URL(raw, window.location.origin).pathname);
+  } catch (_err) {
+    return pickCodeFromPath(raw.split('?')[0].split('#')[0]);
+  }
+}
+
+function renderProductMaterialButton(productCode, rawProductName, linkedHtml) {
+  const code = String(productCode || '').trim();
+  if (!code) {
+    return `<div class="mk-material-cell"><span class="text-muted">--</span></div>`;
+  }
+  return `<div class="mk-material-cell">
+    <button type="button" class="oc-btn oc-btn--ghost mk-product-material-btn" data-mk-material-button data-product-code="${escapeHtml(code)}" data-product-name="${escapeHtml(rawProductName || code)}">素材库</button>
+    <span class="mk-material-state">${linkedHtml}</span>
+  </div>`;
+}
+
 function fmtMkSpendText(raw, parsed) {
   const text = String(raw || '').trim();
   if (text && text !== '0') return text;
@@ -247,6 +278,7 @@ function fmtMkSpendText(raw, parsed) {
 
 function runMkSearch() {
   if (currentMkLibraryTab === 'videos') {
+    activeMkProductCode = '';
     loadMkVideoMaterials(1);
   } else {
     mkVideoMaterialsLoaded = false;
@@ -256,6 +288,7 @@ function runMkSearch() {
 
 function resetMkSearch() {
   document.getElementById('searchInput').value = '';
+  activeMkProductCode = '';
   runMkSearch();
 }
 
@@ -305,6 +338,18 @@ function switchMkLibraryTab(tab) {
   }
 }
 
+function openProductMaterialLibrary(productCode, productName) {
+  const code = String(productCode || '').trim();
+  if (!code) return;
+  activeMkProductCode = code;
+  mkVideoMaterialsLoaded = true;
+  document.getElementById('searchInput').value = code;
+  switchMkLibraryTab('videos');
+  const label = String(productName || code).trim();
+  document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的明空素材...`;
+  loadMkVideoMaterials(1);
+}
+
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
@@ -332,6 +377,7 @@ async function loadData(page) {
     const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
     const safeProductUrl = safeExternalHref(r.product_url);
     const handle = r.product_url ? String(r.product_url).split('/products/')[1] || '' : '';
+    const productCode = productCodeFromUrl(r.product_url);
     const mkProductId = Number(r.mk_product_id) || 0;
     const mkNameArg = escapeHtml(JSON.stringify(r.mk_product_name || ""));
 
@@ -341,7 +387,7 @@ async function loadData(page) {
         <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(rawProductName)}">
           ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" class="oc-link">${escapeHtml(productName)}</a>` : escapeHtml(productName)}
         </div>
-        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(handle)}</div>
+        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(productCode || handle)}</div>
       </td>
       <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
       <td>${escapeHtml(r.store || '--')}</td>
@@ -352,7 +398,7 @@ async function loadData(page) {
       </td>
       <td class="text-right text-mono">${Number(r.mk_video_count || 0)}</td>
       <td class="text-right text-mono">${Number(r.mk_total_ads || 0)}</td>
-      <td>${linked}</td>
+      <td>${renderProductMaterialButton(productCode, rawProductName, linked)}</td>
       <td>
         ${mkProductId ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${mkProductId},${mkNameArg})'>查看素材</button>` : '--'}
       </td>
@@ -376,14 +422,17 @@ async function loadMkVideoMaterials(page) {
   const pager = document.getElementById('mkVideoPager');
   grid.innerHTML = '<div class="oc-empty">加载明空视频素材中...</div>';
   pager.innerHTML = '';
-  status.textContent = '正在从明空素材库读取视频...';
+  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索明空素材...` : '正在从明空素材库读取视频...';
   try {
-    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;
+    const keywordParam = activeMkProductCode ? '' : `&keyword=${encodeURIComponent(kw)}`;
+    const productCodeParam = activeMkProductCode ? `&product_code=${encodeURIComponent(activeMkProductCode)}` : '';
+    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${productCodeParam}${mkSnapshotQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const stats = data.stats || {};
-    status.textContent = `快照 ${data.snapshot || selectedMkSnapshot || '最新'} · 扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
+    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `快照 ${data.snapshot || selectedMkSnapshot || '最新'}`;
+    status.textContent = `${scopeText} · 扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无明空视频素材</div>';
     } else {
@@ -635,6 +684,11 @@ function closeDetail() {
 }
 
 document.addEventListener('click', e => {
+  const materialButton = e.target.closest('[data-mk-material-button]');
+  if (materialButton) {
+    openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '');
+    return;
+  }
   const tab = e.target.closest('.mk-video-tab');
   if (tab) activateMkVideoTab(tab);
 });

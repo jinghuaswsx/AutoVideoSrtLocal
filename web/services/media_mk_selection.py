@@ -214,6 +214,25 @@ def _product_handle(value: str) -> str:
     return _strip_rjc(parts[index + 1])
 
 
+def _normalize_product_code(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    handle = _product_handle(text)
+    if handle:
+        return handle
+    parsed = urlparse(text)
+    path = (parsed.path or text).replace("\\", "/").strip("/")
+    parts = [part for part in path.split("/") if part]
+    if "products" in parts:
+        index = parts.index("products")
+        if index + 1 < len(parts):
+            return _strip_rjc(parts[index + 1])
+    if parts:
+        return _strip_rjc(parts[-1])
+    return _strip_rjc(path)
+
+
 def _link_tail(value: str) -> str:
     return _product_handle(value)
 
@@ -294,6 +313,62 @@ def _select_mk_product(items: list[dict], handle: str) -> tuple[dict | None, lis
     if best is None:
         return None, []
     return best[1], best[2]
+
+
+def _mk_video_material_stats(*, source_products: int = 0) -> dict[str, int]:
+    return {
+        "source_products": source_products,
+        "mk_searches": 0,
+        "mk_no_handle": 0,
+        "mk_no_match": 0,
+        "mk_request_failed": 0,
+        "videos": 0,
+    }
+
+
+def _mk_product_first_link(mk_product: dict, fallback: object = "") -> str:
+    links = mk_product.get("product_links") or []
+    if links:
+        return str(links[0] or "")
+    return str(fallback or "")
+
+
+def _serialize_mk_video_material(row: Mapping[str, object], handle: str, mk_product: dict, video: dict, index: int) -> dict:
+    product_link = _mk_product_first_link(mk_product, row.get("product_url") or "")
+    metadata = dict(video)
+    metadata.update({
+        "mk_id": mk_product.get("id"),
+        "product_name": mk_product.get("product_name") or "",
+        "product_link": product_link,
+        "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
+        "product_code": handle,
+    })
+    return {
+        "id": f"{mk_product.get('id') or handle}-{index}-{hashlib.sha1(str(video.get('path') or '').encode('utf-8')).hexdigest()[:10]}",
+        "product_handle": handle,
+        "rank_position": row.get("rank_position"),
+        "shopify_id": row.get("shopify_id"),
+        "product_name": row.get("product_name") or mk_product.get("product_name") or "",
+        "product_url": row.get("product_url") or product_link,
+        "store": row.get("store") or "",
+        "sales_count": row.get("sales_count") or 0,
+        "order_count": row.get("order_count") or 0,
+        "revenue_main": row.get("revenue_main") or "",
+        "mk_product_id": mk_product.get("id"),
+        "mk_product_name": mk_product.get("product_name") or "",
+        "mk_product_link": product_link,
+        "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
+        "video_name": video.get("name") or "",
+        "video_path": video.get("path") or "",
+        "video_image_path": video.get("image_path") or "",
+        "video_spends": float(video.get("spends") or 0),
+        "video_spends_text": video.get("spends_text") or "",
+        "video_ads_count": int(video.get("ads_count") or 0),
+        "video_author": video.get("author") or "",
+        "video_upload_time": video.get("upload_time") or "",
+        "video_duration_seconds": video.get("duration_seconds") or 0,
+        "mk_video_metadata": metadata,
+    }
 
 
 def build_mk_selection_response(
@@ -426,6 +501,55 @@ def build_mk_video_materials_response(
             },
             400,
         )
+    base_url = (get_base_url_fn() or "https://os.wedev.vip").rstrip("/")
+    direct_product_code = _normalize_product_code(args.get("product_code") or "")
+    if direct_product_code:
+        stats = _mk_video_material_stats()
+        out = []
+        try:
+            stats["mk_searches"] += 1
+            response = http_get_fn(
+                f"{base_url}/api/marketing/medias",
+                params={"page": 1, "q": direct_product_code, "source": "", "level": "", "show_attention": 0},
+                headers=headers,
+                timeout=20,
+            )
+            data = response.json() or {}
+        except Exception:
+            stats["mk_request_failed"] += 1
+            data = {}
+        if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+            return MkSelectionResponse({"error": "明空登录已失效，请重新同步 wedev 凭据"}, 401)
+        products = [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
+        mk_product, videos = _select_mk_product(products, direct_product_code)
+        if not mk_product:
+            stats["mk_no_match"] += 1
+        else:
+            empty_row = {
+                "rank_position": None,
+                "shopify_id": None,
+                "product_name": mk_product.get("product_name") or "",
+                "product_url": _mk_product_first_link(mk_product),
+                "store": "",
+                "sales_count": 0,
+                "order_count": 0,
+                "revenue_main": "",
+            }
+            for index, video in enumerate(videos[:max_videos], start=1):
+                out.append(_serialize_mk_video_material(empty_row, direct_product_code, mk_product, video, index))
+        stats["videos"] = len(out)
+        return MkSelectionResponse(
+            {
+                "items": out,
+                "stats": stats,
+                "page": page_num,
+                "page_size": page_size,
+                "snapshot": None,
+                "total_products": 0,
+                "has_more_products": False,
+            },
+            200,
+        )
     offset = (page_num - 1) * page_size
     snapshot = _resolve_mk_selection_snapshot(args, db_query_fn=db_query_fn)
     keyword = (args.get("keyword") or "").strip()
@@ -455,15 +579,7 @@ def build_mk_video_materials_response(
         params + [page_size, offset],
     )
 
-    base_url = (get_base_url_fn() or "https://os.wedev.vip").rstrip("/")
-    stats = {
-        "source_products": len(rows),
-        "mk_searches": 0,
-        "mk_no_handle": 0,
-        "mk_no_match": 0,
-        "mk_request_failed": 0,
-        "videos": 0,
-    }
+    stats = _mk_video_material_stats(source_products=len(rows))
     out = []
     for row in rows:
         handle = _product_handle(str(row.get("product_url") or ""))
@@ -491,40 +607,7 @@ def build_mk_video_materials_response(
             stats["mk_no_match"] += 1
             continue
         for index, video in enumerate(videos[:max_videos], start=1):
-            metadata = dict(video)
-            metadata.update({
-                "mk_id": mk_product.get("id"),
-                "product_name": mk_product.get("product_name") or "",
-                "product_link": (mk_product.get("product_links") or [row.get("product_url") or ""])[0],
-                "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
-                "product_code": handle,
-            })
-            out.append({
-                "id": f"{mk_product.get('id') or handle}-{index}-{hashlib.sha1(str(video.get('path') or '').encode('utf-8')).hexdigest()[:10]}",
-                "product_handle": handle,
-                "rank_position": row.get("rank_position"),
-                "shopify_id": row.get("shopify_id"),
-                "product_name": row.get("product_name") or "",
-                "product_url": row.get("product_url") or "",
-                "store": row.get("store") or "",
-                "sales_count": row.get("sales_count") or 0,
-                "order_count": row.get("order_count") or 0,
-                "revenue_main": row.get("revenue_main") or "",
-                "mk_product_id": mk_product.get("id"),
-                "mk_product_name": mk_product.get("product_name") or "",
-                "mk_product_link": (mk_product.get("product_links") or [None])[0],
-                "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
-                "video_name": video.get("name") or "",
-                "video_path": video.get("path") or "",
-                "video_image_path": video.get("image_path") or "",
-                "video_spends": float(video.get("spends") or 0),
-                "video_spends_text": video.get("spends_text") or "",
-                "video_ads_count": int(video.get("ads_count") or 0),
-                "video_author": video.get("author") or "",
-                "video_upload_time": video.get("upload_time") or "",
-                "video_duration_seconds": video.get("duration_seconds") or 0,
-                "mk_video_metadata": metadata,
-            })
+            out.append(_serialize_mk_video_material(row, handle, mk_product, video, index))
     stats["videos"] = len(out)
     return MkSelectionResponse(
         {

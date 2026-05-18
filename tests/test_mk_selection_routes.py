@@ -131,6 +131,19 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "loading=\"lazy\"" in template
 
 
+def test_mk_selection_product_rows_include_material_library_button():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function productCodeFromUrl(value)" in template
+    assert "function openProductMaterialLibrary(productCode, productName)" in template
+    assert "data-mk-material-button" in template
+    assert "data-product-code" in template
+    assert "const productCode = productCodeFromUrl(r.product_url);" in template
+    assert "renderProductMaterialButton(productCode, rawProductName, linked)" in template
+    assert "openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '')" in template
+    assert "product_code=${encodeURIComponent(activeMkProductCode)}" in template
+
+
 def test_mk_selection_dynamic_html_escapes_api_fields():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
