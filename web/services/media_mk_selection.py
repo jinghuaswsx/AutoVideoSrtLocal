@@ -214,6 +214,17 @@ def _product_handle(value: str) -> str:
     return _strip_rjc(parts[index + 1])
 
 
+def _raw_product_handle(value: str) -> str:
+    parsed = urlparse(value or "")
+    parts = [part for part in parsed.path.split("/") if part]
+    if "products" not in parts:
+        return ""
+    index = parts.index("products")
+    if index + 1 >= len(parts):
+        return ""
+    return str(parts[index + 1] or "").strip().lower()
+
+
 def _normalize_product_code(value: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -234,7 +245,7 @@ def _normalize_product_code(value: str) -> str:
 
 
 def _link_tail(value: str) -> str:
-    return _product_handle(value)
+    return _raw_product_handle(value)
 
 
 def _float_value(value: object, default: float = 0.0) -> float:
@@ -297,17 +308,30 @@ def _visible_mk_video_rows(item: dict) -> list[dict]:
 
 
 def _select_mk_product(items: list[dict], handle: str) -> tuple[dict | None, list[dict]]:
-    best: tuple[tuple[float, int, int, int, int], dict, list[dict]] | None = None
+    target_handle = str(handle or "").strip().lower()
+    if not target_handle:
+        return None, []
+    best: tuple[tuple[int, int, int, int], dict, list[dict]] | None = None
     for item in items:
         if not isinstance(item, dict):
+            continue
+        result_codes = {
+            str(item.get(key) or "").strip().lower()
+            for key in ("product_code", "code", "handle")
+            if str(item.get(key) or "").strip()
+        }
+        for link in item.get("product_links") or []:
+            code = _link_tail(str(link))
+            if code:
+                result_codes.add(code)
+        if target_handle not in result_codes:
             continue
         videos = _visible_mk_video_rows(item)
         if not videos:
             continue
-        exact = any(_link_tail(str(link)) == handle for link in (item.get("product_links") or []))
         total_spends = sum(float(video.get("spends") or 0) for video in videos)
         total_ads = sum(int(video.get("ads_count") or 0) for video in videos)
-        score = (1 if exact else 0, int(total_spends), total_ads, len(videos), _int_value(item.get("id")))
+        score = (int(total_spends), total_ads, len(videos), _int_value(item.get("id")))
         if best is None or score > best[0]:
             best = (score, item, videos)
     if best is None:
@@ -489,10 +513,18 @@ def build_mk_video_materials_response(
     if "Authorization" not in headers and "Cookie" not in headers:
         return MkSelectionResponse({"error": _MK_CREDENTIALS_MISSING_ERROR}, 500)
 
+    base_url = (get_base_url_fn() or "https://os.wedev.vip").rstrip("/")
+    direct_product_code = _normalize_product_code(args.get("product_code") or "")
     try:
         page_num = _parse_bounded_int(args, "page", default=1, minimum=1)
         page_size = _parse_bounded_int(args, "page_size", default=24, minimum=1, maximum=60)
-        max_videos = _parse_bounded_int(args, "max_videos_per_product", default=3, minimum=1, maximum=5)
+        max_videos = _parse_bounded_int(
+            args,
+            "max_videos_per_product",
+            default=24 if direct_product_code else 3,
+            minimum=1,
+            maximum=100 if direct_product_code else 5,
+        )
     except ValueError as exc:
         return MkSelectionResponse(
             {
@@ -501,8 +533,6 @@ def build_mk_video_materials_response(
             },
             400,
         )
-    base_url = (get_base_url_fn() or "https://os.wedev.vip").rstrip("/")
-    direct_product_code = _normalize_product_code(args.get("product_code") or "")
     if direct_product_code:
         stats = _mk_video_material_stats()
         out = []
