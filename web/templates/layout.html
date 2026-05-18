@@ -550,11 +550,9 @@
       request.path.startswith('/voice-library')
       or request.path.startswith('/prompt-library')
       or request.path.startswith('/copywriting')
-      or request.path.startswith('/text-translate')
       or request.path.startswith('/video-creation')
       or request.path.startswith('/video-review')
       or request.path.startswith('/link-check')
-      or request.path.startswith('/browser-monitor')
       or request.endpoint == 'projects.sentence_translate_page'
       or request.endpoint == 'projects.av_sync_page'
       or request.path.startswith('/order-analytics/orphan-orders')
@@ -588,49 +586,142 @@
         <span class="nav-icon">🚀</span> 推送管理
       </a>
       {% endif %}
+      {% set data_dashboard_href = "" %}
       {% if has_permission('data_analytics') %}
-      <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') and not request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
-        <span class="nav-icon">📊</span> 数据分析
-      </a>
+        {% set data_dashboard_href = "/order-analytics" %}
+      {% elif has_permission('product_profit') %}
+        {% set data_dashboard_href = "/product-profit" %}
+      {% elif has_permission('order_profit') %}
+        {% set data_dashboard_href = "/order-profit" %}
       {% endif %}
-      {% if has_permission('order_profit') %}
-      <a href="/order-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-profit') %}class="active"{% endif %}>
-        <span class="nav-icon">💰</span> 订单利润核算
-      </a>
+      {% set data_dashboard_active =
+        (request.path.startswith('/order-analytics') and not request.path.startswith('/order-analytics/orphan-orders'))
+        or request.path.startswith('/product-profit')
+        or request.path.startswith('/order-profit')
+      %}
+      {% if data_dashboard_href %}
+      <details class="sidebar-group sidebar-data-dashboard-group" {% if data_dashboard_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ data_dashboard_href }}" data-default-target="_blank" {% if data_dashboard_active %}class="active"{% endif %}>
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">数据看板</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          {% if has_permission('data_analytics') %}
+          <a href="/order-analytics" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-analytics') and not request.path.startswith('/order-analytics/orphan-orders') %}class="active"{% endif %}>
+            <span class="nav-icon">📊</span> 数据分析
+          </a>
+          {% endif %}
+          {% if has_permission('product_profit') %}
+          <a href="/product-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/product-profit') %}class="active"{% endif %}>
+            <span class="nav-icon">📈</span> 产品盈亏看板
+          </a>
+          {% endif %}
+          {% if has_permission('order_profit') %}
+          <a href="/order-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/order-profit') %}class="active"{% endif %}>
+            <span class="nav-icon">💰</span> 订单利润核算
+          </a>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
-      {% if has_permission('product_profit') %}
-      <a href="/product-profit" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/product-profit') %}class="active"{% endif %}>
-        <span class="nav-icon">📈</span> 产品盈亏看板
-      </a>
+      {% set material_creation_href = "" %}
+      {% if has_permission('image_translate') %}
+        {% set material_creation_href = url_for('image_translate.page_list') %}
+      {% elif has_permission('subtitle_removal') %}
+        {% set material_creation_href = url_for('subtitle_removal.list_page') %}
+      {% elif current_user.is_admin %}
+        {% set material_creation_href = url_for('video_cover.page') %}
+      {% elif has_permission('drawing_studio') %}
+        {% set material_creation_href = url_for('drawing_studio.sso') %}
+      {% elif has_permission('lab') %}
+        {% set material_creation_href = "/text-translate" %}
       {% endif %}
+      {% set material_creation_active =
+        request.path.startswith('/image-translate')
+        or request.path.startswith('/subtitle-removal')
+        or request.path.startswith('/video-cover')
+        or request.path.startswith('/drawing-studio')
+        or request.path.startswith('/text-translate')
+      %}
+      {% if material_creation_href %}
+      <details class="sidebar-group sidebar-material-creation-group" {% if material_creation_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ material_creation_href }}" data-default-target="_blank" {% if material_creation_active %}class="active"{% endif %}>
+          <span class="nav-icon">🎨</span>
+          <span class="nav-label">素材创作</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          {% if has_permission('image_translate') %}
+          <a href="{{ url_for('image_translate.page_list') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/image-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🖼️</span> 图片翻译
+          </a>
+          {% endif %}
+          {% if has_permission('subtitle_removal') %}
+          <a href="{{ url_for('subtitle_removal.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
+            <span class="nav-icon">🧽</span> 字幕移除
+          </a>
+          {% endif %}
+          {% if current_user.is_admin %}
+          <a href="{{ url_for('video_cover.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-cover') %}class="active"{% endif %}>
+            <span class="nav-icon">▣</span> 文案封面生成
+          </a>
+          {% endif %}
+          {% if has_permission('drawing_studio') %}
+          <a href="{{ url_for('drawing_studio.sso') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/drawing-studio') %}class="active"{% endif %}>
+            <span class="nav-icon">🎨</span> 画图工作室
+          </a>
+          {% endif %}
+          {% if has_permission('lab') %}
+          <a href="/text-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/text-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🌐</span> 文案翻译
+          </a>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
+      {% set video_translate_href = "" %}
       {% if has_permission('multi_translate') %}
-      <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🌐</span> 多语种视频翻译
-      </a>
+        {% set video_translate_href = "/multi-translate" %}
+      {% elif has_permission('omni_translate') %}
+        {% set video_translate_href = "/omni-translate" %}
+      {% elif has_permission('projects') %}
+        {% set video_translate_href = "/projects" %}
+      {% endif %}
+      {% set video_translate_active =
+        request.path.startswith('/multi-translate')
+        or request.path.startswith('/omni-translate')
+        or request.path.startswith('/projects')
+      %}
+      {% if video_translate_href %}
+      <details class="sidebar-group sidebar-video-translate-group" {% if video_translate_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ video_translate_href }}" data-default-target="_blank" {% if video_translate_active %}class="active"{% endif %}>
+          <span class="nav-icon">🎬</span>
+          <span class="nav-label">视频翻译</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          {% if has_permission('multi_translate') %}
+          <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🌐</span> 多语种视频翻译
+          </a>
+          {% endif %}
+          {% if has_permission('omni_translate') %}
+          <a href="/omni-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/omni-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🌍</span> 全能视频翻译
+          </a>
+          {% endif %}
+          {% if has_permission('projects') %}
+          <a href="{{ url_for('projects.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
+            <span class="nav-icon">🎬</span> 视频翻译传统
+          </a>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
       {% if has_permission('title_translate') %}
       <a href="{{ url_for('title_translate.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/title-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🏷️</span> 多语言标题翻译
-      </a>
-      {% endif %}
-      {% if has_permission('image_translate') %}
-      <a href="{{ url_for('image_translate.page_list') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/image-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🖼️</span> 图片翻译
-      </a>
-      {% endif %}
-      {% if current_user.is_admin %}
-      <a href="{{ url_for('video_cover.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-cover') %}class="active"{% endif %}>
-        <span class="nav-icon">▣</span> 文案封面生成
-      </a>
-      {% endif %}
-      {% if has_permission('drawing_studio') %}
-      <a href="{{ url_for('drawing_studio.sso') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/drawing-studio') %}class="active"{% endif %}>
-        <span class="nav-icon">🎨</span> 画图工作室
-      </a>
-      {% endif %}
-      {% if has_permission('subtitle_removal') %}
-      <a href="{{ url_for('subtitle_removal.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
-        <span class="nav-icon">🧽</span> 字幕移除
       </a>
       {% endif %}
       {% if has_permission('mk_selection') %}
@@ -664,50 +755,79 @@
         </div>
       </details>
       {% endif %}
-      {% if has_permission('omni_translate') %}
-      <a href="/omni-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/omni-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🌍</span> 全能视频翻译
-      </a>
-      {% endif %}
-      {% if has_permission('api_config') %}
-      <a href="{{ url_for('settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
-        <span class="nav-icon">⚙️</span> API 配置
-      </a>
-      {% endif %}
-      {% if has_permission('ai_billing') %}
-      <a href="{% if current_user.is_admin %}{{ url_for('admin_ai_billing.admin_ai_usage') }}{% else %}{{ url_for('user_ai_billing.my_ai_usage') }}{% endif %}"
-         target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/ai-usage') or request.path.startswith('/my-ai-usage') %}class="active"{% endif %}>
-        <span class="nav-icon">📘</span> API 账单
-      </a>
-      {% endif %}
-      {% if has_permission('user_settings') %}
-      <a href="{{ url_for('user_settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'user_settings.index' %}class="active"{% endif %}>
-        <span class="nav-icon">⚙️</span> 用户设置
-      </a>
-      {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
       </a>
       {% endif %}
-      {% if has_permission('system_settings') %}
-      <a href="{{ url_for('admin.settings') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.settings' %}class="active"{% endif %}>
-        <span class="nav-icon">⚙️</span> 系统设置
-      </a>
+      {% set settings_href = "" %}
+      {% if has_permission('api_config') %}
+        {% set settings_href = url_for('settings.index') %}
+      {% elif has_permission('ai_billing') %}
+        {% set settings_href = url_for('admin_ai_billing.admin_ai_usage') if current_user.is_admin else url_for('user_ai_billing.my_ai_usage') %}
+      {% elif has_permission('user_settings') %}
+        {% set settings_href = url_for('user_settings.index') %}
+      {% elif has_permission('system_settings') %}
+        {% set settings_href = url_for('admin.settings') %}
+      {% elif has_permission('scheduled_tasks') %}
+        {% set settings_href = url_for('scheduled_tasks.page') %}
+      {% elif has_permission('lab') %}
+        {% set settings_href = url_for('browser_monitor.page') %}
       {% endif %}
-      {% if has_permission('projects') %}
-      <a href="{{ url_for('projects.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
-        <span class="nav-icon">🎬</span> 视频翻译传统
-      </a>
-      {% endif %}
-      {% if has_permission('scheduled_tasks') %}
-      <a href="{{ url_for('scheduled_tasks.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/scheduled-tasks') %}class="active"{% endif %}>
-        <span class="nav-icon">⏱</span> 定时任务
-      </a>
+      {% set settings_active =
+        request.endpoint == 'settings.index'
+        or request.path.startswith('/admin/ai-usage')
+        or request.path.startswith('/my-ai-usage')
+        or request.endpoint == 'user_settings.index'
+        or request.endpoint == 'admin.settings'
+        or request.path.startswith('/scheduled-tasks')
+        or request.path.startswith('/browser-monitor')
+      %}
+      {% if settings_href %}
+      <details class="sidebar-group sidebar-settings-group" {% if settings_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ settings_href }}" data-default-target="_blank" {% if settings_active %}class="active"{% endif %}>
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">设置</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          {% if has_permission('api_config') %}
+          <a href="{{ url_for('settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
+            <span class="nav-icon">⚙️</span> API 配置
+          </a>
+          {% endif %}
+          {% if has_permission('ai_billing') %}
+          <a href="{% if current_user.is_admin %}{{ url_for('admin_ai_billing.admin_ai_usage') }}{% else %}{{ url_for('user_ai_billing.my_ai_usage') }}{% endif %}"
+             target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/ai-usage') or request.path.startswith('/my-ai-usage') %}class="active"{% endif %}>
+            <span class="nav-icon">📘</span> API 账单
+          </a>
+          {% endif %}
+          {% if has_permission('user_settings') %}
+          <a href="{{ url_for('user_settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'user_settings.index' %}class="active"{% endif %}>
+            <span class="nav-icon">⚙️</span> 用户设置
+          </a>
+          {% endif %}
+          {% if has_permission('system_settings') %}
+          <a href="{{ url_for('admin.settings') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.settings' %}class="active"{% endif %}>
+            <span class="nav-icon">⚙️</span> 系统设置
+          </a>
+          {% endif %}
+          {% if has_permission('scheduled_tasks') %}
+          <a href="{{ url_for('scheduled_tasks.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/scheduled-tasks') %}class="active"{% endif %}>
+            <span class="nav-icon">⏱</span> 定时任务
+          </a>
+          {% endif %}
+          {% if has_permission('lab') %}
+          <a href="{{ url_for('browser_monitor.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/browser-monitor') %}class="active"{% endif %}>
+            <span class="nav-icon">▦</span> 浏览器监控
+          </a>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
       {% if has_permission('lab') %}
-      <details class="sidebar-group sidebar-lab-group">
-        <summary {% if lab_active %}class="active"{% endif %}>
+      <details class="sidebar-group sidebar-lab-group" {% if lab_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="/voice-library" data-default-target="_blank" {% if lab_active %}class="active"{% endif %}>
           <span class="nav-icon">🧪</span>
           <span class="nav-label">实验室</span>
           <span class="sidebar-group-caret">⌄</span>
@@ -723,9 +843,6 @@
             <span class="nav-icon">✍️</span>
             <span class="nav-label">文案创作</span>
           </a>
-          <a href="/text-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/text-translate') %}class="active"{% endif %}>
-            <span class="nav-icon">🌐</span> 文案翻译
-          </a>
           <a href="/video-creation" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-creation') %}class="active"{% endif %}>
             <span class="nav-icon">🎥</span> 视频创作
           </a>
@@ -734,9 +851,6 @@
           </a>
           <a href="{{ url_for('link_check.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
             <span class="nav-icon">🔎</span> 链接检查
-          </a>
-          <a href="{{ url_for('browser_monitor.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/browser-monitor') %}class="active"{% endif %}>
-            <span class="nav-icon">▦</span> 浏览器监控
           </a>
           <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' or request.endpoint == 'projects.sentence_translate_page' %}class="active"{% endif %}>
             <span class="nav-icon">🎧</span> 视频翻译音画同步
@@ -817,6 +931,32 @@
   </div>
 
   <script>
+    // ── Sidebar collection headers ──
+    (function() {
+      document.querySelectorAll('[data-sidebar-group-summary]').forEach(function(summary) {
+        summary.addEventListener('click', function(e) {
+          if (e.defaultPrevented) return;
+          if (typeof e.button === 'number' && e.button !== 0) return;
+          e.preventDefault();
+
+          var group = summary.closest('details');
+          if (group) group.open = true;
+
+          var href = summary.getAttribute('data-default-href');
+          if (!href) return;
+          var target = summary.getAttribute('data-default-target') || '_self';
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) target = '_blank';
+
+          if (target === '_blank') {
+            var opened = window.open(href, '_blank', 'noopener,noreferrer');
+            if (opened) opened.opener = null;
+          } else {
+            window.location.href = href;
+          }
+        });
+      });
+    })();
+
     // ── Mobile sidebar drawer ──
     (function() {
       var toggleBtn = document.getElementById('sidebarToggle');
