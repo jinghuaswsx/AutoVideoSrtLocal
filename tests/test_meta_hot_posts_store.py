@@ -450,6 +450,38 @@ def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
     assert params == ()
 
 
+def test_ensure_europe_fit_candidates_default_returns_insert_rowcount(monkeypatch):
+    executed = []
+    closed = []
+
+    class FakeCursor:
+        rowcount = 5
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(store, "get_conn", lambda: FakeConn())
+
+    result = store.ensure_europe_fit_candidates()
+
+    assert result == 5
+    assert executed
+    assert closed == [True]
+
+
 def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_rows():
     calls = []
 

@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, Callable, Mapping
 
-from appcore.db import execute, query
+from appcore.db import execute, get_conn, query
 from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVIDER
 
 
@@ -27,6 +27,16 @@ def _score(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _execute_rowcount(sql: str, args: tuple[Any, ...] = ()) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, args or None)
+            return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def product_url_hash(product_url: str) -> str:
@@ -629,7 +639,7 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> i
     )
 
 
-def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
         INSERT IGNORE INTO meta_hot_post_europe_assessments (post_id, status)
