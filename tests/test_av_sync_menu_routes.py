@@ -166,7 +166,7 @@ def test_dashboard_sidebar_hides_offline_video_translation_entries():
     assert 'href="/fr-translate"' not in template
 
 
-def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
+def test_dashboard_sidebar_menu_links_use_current_page_navigation(authed_client_no_db):
     resp = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=True)
     assert resp.status_code == 200
     parser = _SidebarNavParser()
@@ -174,8 +174,8 @@ def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
 
     assert parser.links
     for link in parser.links:
-        assert link["target"] == "_blank", link.get("href")
-        assert link["rel"] == "noopener noreferrer", link.get("href")
+        assert "target" not in link, link.get("href")
+        assert "rel" not in link, link.get("href")
 
 
 def test_dashboard_sidebar_av_sync_uses_icon_instead_of_av_text(authed_client_no_db):
