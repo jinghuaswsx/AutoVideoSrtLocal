@@ -31,8 +31,9 @@
 2. 新模块固定 `source_language=en`、`target_lang=en`，输入和输出语言都是英文。
 3. 新模块复用 Omni 的成熟流水线能力，但拥有独立路由、project_type、权限、列表页和详情页配置。
 4. 新模块新增语速感知音色匹配策略：先按音色取候选池，再按 preview 语速与原视频 ASR 语速重排。
-5. 管理员后台提供开关：旧推荐逻辑和新推荐逻辑二选一；默认旧逻辑。
-6. 旧的 `/omni-translate`、`/multi-translate`、`/ja-translate` 行为完全不动。
+5. 新模块提供“文案模式”开关：保留原始英文文案只重配 TTS，或重写英文文案并用 Omni 对齐逻辑生成匹配 TTS。
+6. 管理员后台提供音色推荐开关：旧推荐逻辑和新推荐逻辑二选一；默认旧逻辑。
+7. 旧的 `/omni-translate`、`/multi-translate`、`/ja-translate` 行为完全不动。
 
 ## 非目标
 
@@ -58,6 +59,9 @@
 
 - 新建项目上传英文视频。
 - 不显示目标语言选择，固定英文。
+- 显示“文案模式”开关：
+  - `保留原始文案，只重新生成 TTS`
+  - `重写文案，保持原意一致，同时生成匹配 TTS`
 - 可显示说明：本功能只做英文重配音，不做语言翻译。
 - 项目卡片显示时长、状态、创建人、创建时间。
 
@@ -112,7 +116,52 @@ export
 - 创建任务时强制写入 `source_language="en"`、`target_lang="en"`。
 - 前端不允许改目标语言。
 - ASR 文本是事实来源；分镜只用于英文文案适配和画面上下文。
-- `translate` 阶段在本模块内语义为“英文文案适配”，不是语言翻译：允许压缩、扩写、拆句、改写口播节奏，但禁止新增原视频没有的事实。
+- `script_mode="original"` 时，`translate` 阶段不改写文案，只把 ASR 清洗/分段结果组装成英文 TTS 输入。
+- `script_mode="rewrite"` 时，`translate` 阶段在本模块内语义为“英文文案适配”，不是语言翻译：允许压缩、扩写、拆句、改写口播节奏，但禁止新增原视频没有的事实。
+
+### 文案模式
+
+新建任务必须写入：
+
+```json
+{
+  "script_mode": "original | rewrite"
+}
+```
+
+默认值：`original`。这是保守默认，避免用户上传后系统自动改变英文原文。
+
+#### original：保留原始文案，只重新生成 TTS
+
+适用场景：
+
+- 用户认为原视频英文口播已经正确，只希望换声音、重新混音或重新出字幕。
+- 用户希望字幕文字尽量等于原视频 ASR 结果。
+
+行为：
+
+1. ASR 后仍执行清洗/纠错，但不做本土化改写。
+2. `translate` artifact 里保留 step 名称以兼容工作台，但展示文案改为“原文组装”。
+3. TTS 输入文本来自 ASR 清洗后的英文分段。
+4. `sentence_reconcile` 可以为了时长做极小范围的技术性调整，但第一版默认不主动改写文本；如果某句无法塞入目标窗口，使用现有 warning / fallback 机制。
+5. 字幕默认使用最终 TTS 文本；若 TTS 文本未被修改，则字幕等同 ASR 清洗文本。
+
+#### rewrite：重写文案并匹配 TTS
+
+适用场景：
+
+- 原视频语速太快、字幕太挤，需要在保持原意的前提下让新 TTS 更自然。
+- 用户希望使用 Omni 的对齐、分镜上下文和句级收敛能力，产出更像短视频广告口播的英文。
+
+行为：
+
+1. 复用 Omni `shot_decompose + shot_char_limit + sentence_reconcile + sentence_units` 思路。
+2. 以 ASR 英文为事实来源，分镜只提供视觉上下文。
+3. LLM 可压缩、扩写、改写英文表达，但必须保持原意一致，不新增事实。
+4. TTS 使用句级收敛逻辑，尽量贴合原视频节奏。
+5. 字幕跟随最终 TTS 文本和最终音频时间线。
+
+两种模式都继续使用同一套 voice_match；差异只在文案生成和 TTS 输入。
 
 ## 隔离策略
 
@@ -142,6 +191,7 @@ export
 - 不修改 `omni_translate` 的默认 preset、路由创建逻辑和旧 `match_candidates` 行为。
 - 新语速排序只在 `EnglishRedubRunner._step_voice_match` 或其调用的专用函数里生效。
 - 老任务读取旧 state 时不受 `english_redub` 新字段影响。
+- `script_mode` 只影响 `english_redub`，不改变 Omni/Multi 的 translate 或 TTS 策略。
 
 ## 语速感知音色推荐
 
@@ -290,6 +340,8 @@ final_score = timbre_score * 0.75 + speed_score * 0.25
   - `新逻辑：音色 top100 + 语速重排`
 - 保存：写入 `system_settings.english_redub_voice_match_strategy`
 
+文案模式不放在管理员后台作为全站唯一开关；它是每个新建任务的用户选择，写入任务 state。管理员可以后续通过权限或默认值控制是否暴露 rewrite 模式，但第一版不做。
+
 ## 路由与权限
 
 新增权限：
@@ -388,6 +440,9 @@ DELETE /api/english-redub/<task_id>
   - 未登录页面 302。
   - 登录后列表页 200。
   - start 强制写入 `source_language=en`、`target_lang=en`。
+  - start 未传 `script_mode` 时默认为 `original`。
+  - start 传 `script_mode=rewrite` 时写入任务 state。
+  - start 传非法 `script_mode` 时返回 400。
   - confirm/rematch 写权限只允许 owner/admin。
 - `tests/test_permissions.py` 或现有权限测试：新权限默认角色可见。
 
@@ -404,18 +459,20 @@ DELETE /api/english-redub/<task_id>
 
 1. 打开 `/english-redub`，未登录 302，登录后 200。
 2. 上传英文短视频，任务固定显示输入/输出英文。
-3. voice_match 阶段停在声音选择，候选展示语速字段。
-4. 后台关闭策略后重新 rematch，候选回到 legacy 排序。
-5. 后台开启策略后重新 rematch，top10 有 `speed_score/final_score`。
-6. 任务跑到 export，字幕和配音跟随最终音频时间线。
-7. `/omni-translate` 新建和老任务详情行为不变。
+3. 用 `original` 模式创建，TTS 输入与 ASR 清洗文本一致。
+4. 用 `rewrite` 模式创建，TTS 输入为保持原意的英文适配文案。
+5. voice_match 阶段停在声音选择，候选展示语速字段。
+6. 后台关闭策略后重新 rematch，候选回到 legacy 排序。
+7. 后台开启策略后重新 rematch，top10 有 `speed_score/final_score`。
+8. 任务跑到 export，字幕和配音跟随最终音频时间线。
+9. `/omni-translate` 新建和老任务详情行为不变。
 
 ## 实施顺序
 
 1. 写实现计划，拆出路由/runner/UI/语速服务/测试步骤。
 2. 新增 preview 语速缓存服务和纯函数测试。
 3. 新增 speed-aware voice match 专用函数，不改原 `match_candidates` 默认行为。
-4. 新增 EnglishRedubRunner，固定语言和能力配置。
+4. 新增 EnglishRedubRunner，固定语言、能力配置和 `script_mode` 分支。
 5. 新增路由、服务注册、菜单、权限。
 6. 接入设置页开关。
 7. 跑相关 pytest。
