@@ -77,6 +77,10 @@
 .mk-video-pane.active { display:flex; }
 .mk-video-cover-frame img, .mk-video-source { width:100%; height:100%; display:block; background:oklch(22% 0.02 235); }
 .mk-video-cover-frame img { object-fit:cover; }
+.mk-video-play-btn { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:56px; height:56px; border-radius:9999px; border:1px solid rgba(255,255,255,.88); background:rgba(15,23,42,.68); color:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 10px 22px rgba(15,23,42,.28); transition:background .15s ease, transform .15s ease, box-shadow .15s ease; }
+.mk-video-play-btn::before { content:""; display:block; margin-left:4px; border-top:11px solid transparent; border-bottom:11px solid transparent; border-left:17px solid currentColor; }
+.mk-video-play-btn:hover { background:rgba(15,23,42,.82); transform:translate(-50%, -50%) scale(1.04); box-shadow:0 12px 26px rgba(15,23,42,.34); }
+.mk-video-play-btn:focus-visible { outline:3px solid rgba(14,165,233,.55); outline-offset:3px; }
 .mk-video-source { object-fit:contain; border:0; }
 .mk-video-media-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-3); text-align:center; font-size:12px; color:var(--oc-fg-subtle); background:var(--oc-bg-muted); }
 .mk-video-meta-list { display:flex; flex-direction:column; gap:4px; margin-top:var(--oc-sp-2); font-size:12px; color:var(--oc-fg-muted); }
@@ -561,6 +565,9 @@ function renderMkVideoMaterialCard(r) {
   const author = escapeHtml(r.video_author || '--');
   const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
   const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+  const playButtonHtml = videoUrl
+    ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
+    : '';
   const hasYesterdayDelta = Object.prototype.hasOwnProperty.call(r, 'yesterday_spend_delta');
   const yesterdayDelta = Number(r.yesterday_spend_delta || 0);
   const yesterdayDeltaHtml = hasYesterdayDelta
@@ -586,7 +593,7 @@ function renderMkVideoMaterialCard(r) {
       <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
     </div>
     <div class="mk-video-frame">
-      <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+      <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}${playButtonHtml}</div>
       <div class="mk-video-pane" data-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
     </div>
     <div class="mk-video-meta-list">
@@ -696,6 +703,9 @@ async function openDetail(mkId, mkName) {
       const safeCoverUrl = escapeHtml(coverUrl);
       const safeVideoUrl = escapeHtml(videoUrl);
       const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+      const playButtonHtml = videoUrl
+        ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
+        : '';
       const uploadDate = escapeHtml(v.upload_time ? String(v.upload_time).split('T')[0] : '--');
       const author = escapeHtml(v.author || '--');
       const spendText = escapeHtml(fmtMkSpendText(v.spends, spends));
@@ -710,7 +720,7 @@ async function openDetail(mkId, mkName) {
           <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
         </div>
         <div class="mk-video-frame">
-          <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+          <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}${playButtonHtml}</div>
           <div class="mk-video-pane" data-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
         </div>
         <div class="mk-video-meta-list">
@@ -755,7 +765,7 @@ async function openDetail(mkId, mkName) {
   }
 }
 
-function activateMkVideoTab(tab) {
+function activateMkVideoTab(tab, options = {}) {
   if (!tab || tab.disabled) return;
   const card = tab.closest('.mk-video-card');
   if (!card) return;
@@ -772,7 +782,21 @@ function activateMkVideoTab(tab) {
     if (video && src && !video.getAttribute('src')) {
       video.setAttribute('src', src);
     }
+    if (options.play && video && typeof video.play === 'function') {
+      const playResult = video.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {});
+      }
+    }
   }
+}
+
+function playMkVideoFromButton(button) {
+  const card = button?.closest('.mk-video-card');
+  if (!card) return;
+  const videoTab = card.querySelector('.mk-video-tab[data-tab="video"]');
+  if (!videoTab || videoTab.disabled) return;
+  activateMkVideoTab(videoTab, {play: true});
 }
 
 function parseSpends(s) {
@@ -789,6 +813,13 @@ function closeDetail() {
 }
 
 document.addEventListener('click', e => {
+  const playButton = e.target.closest('[data-mk-video-play]');
+  if (playButton) {
+    e.preventDefault();
+    e.stopPropagation();
+    playMkVideoFromButton(playButton);
+    return;
+  }
   const materialButton = e.target.closest('[data-mk-material-button]');
   if (materialButton) {
     openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '');

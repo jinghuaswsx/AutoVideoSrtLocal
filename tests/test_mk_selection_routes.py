@@ -151,10 +151,17 @@ def test_mk_selection_video_cards_include_local_video_preview():
 
     assert "mk-video-source" in template
     assert "data-mk-video-src" in template
+    assert "mk-video-play-btn" in template
+    assert "data-mk-video-play" in template
     assert "activateMkVideoTab" in template
+    assert "function playMkVideoFromButton(button)" in template
+    assert "activateMkVideoTab(videoTab, {play: true})" in template
     assert "/xuanpin/api/mk-video?path=" in template
     assert "controls" in template
     assert "loading=\"lazy\"" in template
+    assert "const playResult = video.play();" in template
+    assert "playResult.catch(() => {})" in template
+    assert "e.stopPropagation();" in template
 
 
 def test_mk_selection_product_rows_include_material_library_button():
