@@ -525,6 +525,85 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
     assert "Nano Banana Pro（高保真）" in body
 
 
+def test_settings_get_renders_meta_hot_posts_translate_model_controls(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all",
+               return_value=[{
+                   "code": "meta_hot_posts.translate_message",
+                   "module": "xuanpin",
+                   "label": "Meta hot posts message translation",
+                   "description": "...",
+                   "provider": "gemini_vertex_adc",
+                   "model": "gemini-3.1-flash-lite",
+                   "extra": {},
+                   "enabled": True,
+                   "is_custom": True,
+                   "updated_at": None,
+                   "updated_by": None,
+               }]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3-pro-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'name="meta_hot_posts_translate_provider"' in body
+    assert 'name="meta_hot_posts_translate_model_key"' in body
+    assert 'value="gemini_vertex_adc" selected' in body
+    assert 'value="openrouter"' in body
+    assert 'value="gemini_3_flash"' in body
+    assert 'value="gemini_31_flash_lite" selected' in body
+    assert "meta_hot_posts.translate_message" in body
+    assert 'data-code="meta_hot_posts.translate_message"' not in body
+
+
+def test_settings_post_providers_saves_meta_hot_posts_translate_binding(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config"), \
+         patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "meta_hot_posts_translate_provider": "openrouter",
+            "meta_hot_posts_translate_model_key": "gemini_3_flash",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_upsert.assert_any_call(
+        "meta_hot_posts.translate_message",
+        provider="openrouter",
+        model="google/gemini-3-flash-preview",
+        updated_by=1,
+    )
+
+
+def test_settings_post_providers_saves_meta_hot_posts_vertex_adc_flash_lite(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config"), \
+         patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "meta_hot_posts_translate_provider": "gemini_vertex_adc",
+            "meta_hot_posts_translate_model_key": "gemini_31_flash_lite",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_upsert.assert_any_call(
+        "meta_hot_posts.translate_message",
+        provider="gemini_vertex_adc",
+        model="gemini-3.1-flash-lite",
+        updated_by=1,
+    )
+
+
 def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",
