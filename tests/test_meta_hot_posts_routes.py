@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from html.parser import HTMLParser
 
 
@@ -183,8 +184,9 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'id="mhPagerBottom"' in body
     assert 'id="mhMarkStatus"' in body
     assert "标注" in body
-    assert '<option value="empty">空</option>' in body
-    assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
+    assert '<option value="empty"' in body
+    assert ">空</option>" in body
+    assert "{param: 'mark_status', inputId: 'mhMarkStatus'}" in body
     assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
     assert "function renderMetaHotPageSummary(data, items, label = '')" in body
     assert "当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材" in body
@@ -243,6 +245,48 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "tos_video_cover_url" in body
     assert "firstFrameUrl" not in body
     assert "#t=0.1" not in body
+
+
+def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+
+    resp = authed_client_no_db.get(
+        "/xuanpin/meta-hot-posts"
+        "?category=Kitchenware"
+        "&mark_status=ok"
+        "&min_price=12.5"
+        "&max_price=99"
+        "&min_interactions=1000"
+        "&min_comments=12"
+        "&created_from=2026-05-01"
+        "&created_to=2026-05-18"
+        "&page=3"
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert '<option value="Kitchenware" selected>厨房用品</option>' in body
+    assert '<option value="ok" selected>行</option>' in body
+    for input_id, value in [
+        ("mhMinPrice", "12.5"),
+        ("mhMaxPrice", "99"),
+        ("mhMinInteractions", "1000"),
+        ("mhMinComments", "12"),
+        ("mhCreatedFrom", "2026-05-01"),
+        ("mhCreatedTo", "2026-05-18"),
+    ]:
+        input_tag = re.search(rf'<input[^>]+id="{input_id}"[^>]*>', body)
+        assert input_tag, input_id
+        assert f'value="{value}"' in input_tag.group(0)
+    assert "let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('page'));" in body
+    assert "function syncMetaHotFiltersToUrl(page)" in body
+    assert "history.replaceState(null, '', url.pathname + url.search + url.hash);" in body
+    assert "switchMetaHotSubtab(tab, {syncUrl: false});" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):

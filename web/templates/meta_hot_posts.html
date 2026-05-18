@@ -274,13 +274,14 @@
     </div>
   </div>
 
+  {% set mh_query = request.args %}
   <section class="mh-toolbar">
     <div class="mh-field">
       <label for="mhCategory">类目</label>
       <select class="mh-select" id="mhCategory">
         <option value="">全部</option>
         {% for category in meta_hot_post_categories %}
-        <option value="{{ category.value }}">{{ category.label }}</option>
+        <option value="{{ category.value }}" {{ 'selected' if mh_query.get('category') == category.value }}>{{ category.label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -288,34 +289,34 @@
       <label for="mhMarkStatus">标注</label>
       <select class="mh-select" id="mhMarkStatus">
         <option value="">全部</option>
-        <option value="empty">空</option>
-        <option value="ok">行</option>
-        <option value="bad">不行</option>
+        <option value="empty" {{ 'selected' if mh_query.get('mark_status') == 'empty' }}>空</option>
+        <option value="ok" {{ 'selected' if mh_query.get('mark_status') == 'ok' }}>行</option>
+        <option value="bad" {{ 'selected' if mh_query.get('mark_status') == 'bad' }}>不行</option>
       </select>
     </div>
     <div class="mh-field">
       <label>价格</label>
       <div class="mh-range">
-        <input class="mh-input" id="mhMinPrice" type="number" min="0" step="0.01" placeholder="最低">
+        <input class="mh-input" id="mhMinPrice" type="number" min="0" step="0.01" placeholder="最低" value="{{ mh_query.get('min_price', '') }}">
         <span>—</span>
-        <input class="mh-input" id="mhMaxPrice" type="number" min="0" step="0.01" placeholder="最高">
+        <input class="mh-input" id="mhMaxPrice" type="number" min="0" step="0.01" placeholder="最高" value="{{ mh_query.get('max_price', '') }}">
       </div>
     </div>
     <div class="mh-field">
       <label for="mhMinInteractions">交互数</label>
-      <input class="mh-input" id="mhMinInteractions" type="number" min="0" placeholder="最低">
+      <input class="mh-input" id="mhMinInteractions" type="number" min="0" placeholder="最低" value="{{ mh_query.get('min_interactions', '') }}">
     </div>
     <div class="mh-field">
       <label for="mhMinComments">评论数</label>
-      <input class="mh-input" id="mhMinComments" type="number" min="0" placeholder="最低">
+      <input class="mh-input" id="mhMinComments" type="number" min="0" placeholder="最低" value="{{ mh_query.get('min_comments', '') }}">
     </div>
     <div class="mh-field">
       <label for="mhCreatedFrom">创建起</label>
-      <input class="mh-input" id="mhCreatedFrom" type="date">
+      <input class="mh-input" id="mhCreatedFrom" type="date" value="{{ mh_query.get('created_from', '') }}">
     </div>
     <div class="mh-field">
       <label for="mhCreatedTo">创建止</label>
-      <input class="mh-input" id="mhCreatedTo" type="date">
+      <input class="mh-input" id="mhCreatedTo" type="date" value="{{ mh_query.get('created_to', '') }}">
     </div>
     <div class="mh-actions">
       <button class="mh-btn" type="button" onclick="loadMetaHotPosts(1)">筛选</button>
@@ -365,12 +366,26 @@
 </div>
 
 <script>
-let mhPage = 1;
+function safeMetaHotPage(value) {
+  const page = Number.parseInt(value || '1', 10);
+  return Number.isFinite(page) && page > 0 ? page : 1;
+}
+let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('page'));
 let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 let mhCardZoomed = false;
 const mhPageSize = 50;
 const qs = id => document.getElementById(id);
+const mhFilterBindings = [
+  {param: 'category', inputId: 'mhCategory'},
+  {param: 'mark_status', inputId: 'mhMarkStatus'},
+  {param: 'min_price', inputId: 'mhMinPrice'},
+  {param: 'max_price', inputId: 'mhMaxPrice'},
+  {param: 'min_interactions', inputId: 'mhMinInteractions'},
+  {param: 'min_comments', inputId: 'mhMinComments'},
+  {param: 'created_from', inputId: 'mhCreatedFrom'},
+  {param: 'created_to', inputId: 'mhCreatedTo'},
+];
 function esc(v) {
   return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
@@ -612,19 +627,32 @@ function renderCard(row) {
     </div>
   </article>`;
 }
+function appendMetaHotFilterParams(params) {
+  mhFilterBindings.forEach(binding => {
+    const input = qs(binding.inputId);
+    if (input && input.value) params.set(binding.param, input.value);
+  });
+}
 function buildParams(page) {
   const params = new URLSearchParams({page, page_size: mhPageSize});
-  if (qs('mhCategory').value) params.set('category', qs('mhCategory').value);
-  if (qs('mhMarkStatus').value) params.set('mark_status', qs('mhMarkStatus').value);
-  if (qs('mhMinPrice').value) params.set('min_price', qs('mhMinPrice').value);
-  if (qs('mhMaxPrice').value) params.set('max_price', qs('mhMaxPrice').value);
-  if (qs('mhMinInteractions').value) params.set('min_interactions', qs('mhMinInteractions').value);
-  if (qs('mhMinComments').value) params.set('min_comments', qs('mhMinComments').value);
-  if (qs('mhCreatedFrom').value) params.set('created_from', qs('mhCreatedFrom').value);
-  if (qs('mhCreatedTo').value) params.set('created_to', qs('mhCreatedTo').value);
+  appendMetaHotFilterParams(params);
   return params;
 }
-function switchMetaHotSubtab(tab) {
+function buildMetaHotPageParams(page) {
+  const params = new URLSearchParams();
+  const safePage = safeMetaHotPage(page);
+  if (safePage > 1) params.set('page', String(safePage));
+  appendMetaHotFilterParams(params);
+  return params;
+}
+function syncMetaHotFiltersToUrl(page) {
+  if (!window.history || !window.history.replaceState) return;
+  const url = new URL(window.location.href);
+  const params = buildMetaHotPageParams(page);
+  url.search = params.toString();
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+function switchMetaHotSubtab(tab, options = {}) {
   mhSubtab = ['today', 'europe', 'us'].includes(tab) ? tab : 'library';
   location.hash = mhSubtab;
   qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
@@ -638,7 +666,7 @@ function switchMetaHotSubtab(tab) {
   } else if (mhSubtab === 'us') {
     loadUsTopMaterials();
   } else {
-    loadMetaHotPosts(mhPage || 1);
+    loadMetaHotPosts(mhPage || 1, options);
   }
 }
 function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
@@ -677,21 +705,22 @@ function renderMetaHotPageSummary(data, items, label = '') {
   const prefix = label ? `${label} · ` : '';
   return `${prefix}当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材`;
 }
-async function loadMetaHotPosts(page = 1) {
+async function loadMetaHotPosts(page = 1, options = {}) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
   qs('mhTodayNewSubtab').classList.remove('active');
   qs('mhEuropeSubtab').classList.remove('active');
   qs('mhUsSubtab').classList.remove('active');
-  mhPage = page;
+  mhPage = safeMetaHotPage(page);
   qs('mhStatus').textContent = 'Loading...';
-  const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(page)}`);
+  if (options.syncUrl !== false) syncMetaHotFiltersToUrl(mhPage);
+  const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(mhPage)}`);
   const data = await res.json();
   qs('mhCount').textContent = data.total ?? 0;
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无结果</div>';
-  mhPage = Number(data.page || page || 1);
+  mhPage = safeMetaHotPage(data.page || page || 1);
   renderMetaHotPager(data);
   qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);
 }
@@ -865,7 +894,7 @@ restoreMetaHotCardZoom();
 // 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us）
 function initMetaHotSubtabFromHash() {
   const tab = location.hash.replace('#', '') || 'library';
-  switchMetaHotSubtab(tab);
+  switchMetaHotSubtab(tab, {syncUrl: false});
 }
 window.addEventListener('hashchange', () => {
   const tab = location.hash.replace('#', '') || 'library';
