@@ -31,9 +31,44 @@ def test_list_video_candidates_applies_filters_and_sort_whitelist():
     assert "c.item_sold_count >= %s" in data_sql
     assert "c.goods_gmv_7d >= %s" in data_sql
     assert "LEFT JOIN tabcut_videos" in data_sql
-    assert "LEFT JOIN tabcut_goods_snapshots" in data_sql
+    assert "LEFT JOIN (" in data_sql
+    assert "FROM tabcut_goods_snapshots" in data_sql
     assert "ORDER BY c.goods_gmv_7d DESC" in data_sql
     assert data_params[:4] == ["US", "Food", 10, 99.5]
+
+
+def test_list_video_candidates_keeps_earliest_candidate_per_video_id():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 1}] if "COUNT" in sql else []
+
+    store.list_video_candidates({}, query_fn=fake_query)
+
+    count_sql = calls[0][0]
+    data_sql = calls[-1][0]
+    assert "c.id = (" in count_sql
+    assert "SELECT MIN(c2.id)" in count_sql
+    assert "c2.video_id = c.video_id" in count_sql
+    assert "c.id = (" in data_sql
+    assert "SELECT MIN(c2.id)" in data_sql
+    assert "c2.video_id = c.video_id" in data_sql
+
+
+def test_list_video_candidates_aggregates_goods_snapshot_join_to_one_row_per_item():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({}, query_fn=fake_query)
+
+    data_sql = calls[-1][0]
+    assert "FROM tabcut_goods_snapshots" in data_sql
+    assert "GROUP BY biz_date, region, item_id" in data_sql
+    assert "LEFT JOIN tabcut_goods_snapshots gs" not in data_sql
 
 
 def test_list_video_candidates_rejects_unknown_sort():

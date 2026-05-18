@@ -5,6 +5,7 @@
 <span class="selection-center-title-note">明空入库新品 AI 评估矩阵 &mdash; 决策上架国家 + 建翻译任务 <span class="oc-count" id="nprCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
   --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
@@ -21,12 +22,6 @@
 }
 .oc { font-family: "Inter Tight","PingFang SC","Microsoft YaHei",sans-serif; color:var(--oc-fg); }
 .oc * { box-sizing:border-box; }
-
-/* Page Tabs */
-.oc-page-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:var(--oc-sp-5); padding:4px; border:1px solid var(--oc-border); border-radius:9999px; background:var(--oc-bg-subtle); }
-.oc-page-tab { display:inline-flex; align-items:center; justify-content:center; min-width:96px; height:34px; padding:0 18px; font-size:14px; font-weight:600; color:var(--oc-fg-muted); text-decoration:none; border-radius:9999px; border:1px solid transparent; transition:color 120ms,background 120ms,border-color 120ms; }
-.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg); }
-.oc-page-tab.active { color:#fff; background:var(--oc-accent); border-color:var(--oc-accent); }
 
 /* Header */
 .oc-header { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
@@ -123,14 +118,8 @@
 {% block content %}
 <div class="oc">
 
-  {# Page Tab 切换栏 #}
-  <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
-    <a class="oc-page-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>
-    <a class="oc-page-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>
-    <a class="oc-page-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>
-    <a class="oc-page-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>
-    <a class="oc-page-tab active" href="/xuanpin/new-products" role="tab" aria-selected="true">新品选择</a>
-  </div>
+  {% set active = "new-products" %}
+  {% include "_xuanpin_tabs.html" %}
 
   <div class="oc-header oc-header--actions">
     <div style="display:flex;gap:8px;">

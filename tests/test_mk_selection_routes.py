@@ -3,6 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _assert_unified_selection_tabs(body: str, active_href: str, active_label: str) -> None:
+    assert '<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">' in body
+    assert f'<a class="xuanpin-tab active" href="{active_href}" role="tab" aria-selected="true">{active_label}</a>' in body
+    assert '<a class="xuanpin-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in body or active_href == "/xuanpin/mk"
+    assert '<a class="xuanpin-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>' in body or active_href == "/xuanpin/meta-hot-posts"
+    assert '<a class="xuanpin-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>' in body or active_href == "/xuanpin/tabcut"
+    assert '<a class="xuanpin-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>' in body or active_href == "/xuanpin/today-recommendations"
+    assert '<a class="xuanpin-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body or active_href == "/xuanpin/new-products"
+
+
 def test_mk_selection_token_has_no_hardcoded_fallback(monkeypatch, tmp_path):
     from web.routes.medias import mk_selection
 
@@ -33,11 +43,17 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert "{% block page_title %}" not in body
     assert '<span class="selection-center-title">选品中心</span>' in body
     assert '<span class="selection-center-title-note">' in body
-    assert "店小秘近7天销量 Top1000" in body
+    assert "店小秘近7天有销量全量归档" in body
     assert '<h1 class="title">选品中心</h1>' not in body
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in body
-    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in body
-    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body
+    _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
+    assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
+    assert 'data-mk-library-tab="products">产品库' in body
+    assert 'data-mk-library-tab="videos">视频素材库' in body
+    assert 'data-mk-library-tab="yesterday-top100">昨天消耗前100' in body
+    assert 'id="snapshotSelect"' in body
+    assert "loadMkSelectionSnapshots" in body
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "明控选品" not in body
 
 
@@ -47,18 +63,22 @@ def test_selection_center_tabs_and_heading_on_related_pages():
 
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in mk_template
     assert '<span class="selection-center-title">选品中心</span>' in mk_template
-    assert "店小秘近7天销量 Top1000" in mk_template
+    assert "店小秘近7天有销量全量归档" in mk_template
     assert '<h1 class="title">选品中心</h1>' not in mk_template
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in mk_template
-    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in mk_template
-    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in mk_template
+    assert '{% set active = "mk" %}' in mk_template
+    assert '{% include "_xuanpin_tabs.html" %}' in mk_template
+    assert "/xuanpin/api/mk-selection/snapshots" in mk_template
+    assert "selectedMkSnapshot" in mk_template
+    assert "oc-page-tabs" not in mk_template
+    assert "oc-page-tab" not in mk_template
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in npr_template
     assert '<span class="selection-center-title">选品中心</span>' in npr_template
     assert "明空入库新品 AI 评估矩阵" in npr_template
     assert '<h1 class="title">选品中心</h1>' not in npr_template
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in npr_template
-    assert '<a class="oc-page-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in npr_template
-    assert '<a class="oc-page-tab active" href="/xuanpin/new-products" role="tab" aria-selected="true">新品选择</a>' in npr_template
+    assert '{% set active = "new-products" %}' in npr_template
+    assert '{% include "_xuanpin_tabs.html" %}' in npr_template
+    assert "oc-page-tabs" not in npr_template
+    assert "oc-page-tab" not in npr_template
     assert "明控选品" not in mk_template
     assert "明控选品" not in npr_template
     assert "新品审核" not in mk_template
@@ -101,6 +121,23 @@ def test_mk_selection_modal_preview_tokens_available_globally():
     assert 'id="detailPanel"' in template
 
 
+def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_logic():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mk-library-tabs { display:flex;" in template
+    assert "width:max-content" in template
+    assert "function normalizeMkLibraryTab(tab)" in template
+    assert "function initMkLibraryTabFromHash()" in template
+    assert "location.hash = currentMkLibraryTab;" in template
+    assert "loadMkLocalMaterialLibrary" in template
+    assert "loadMkYesterdayTop100" in template
+    assert "if (initialTab === 'videos')" in template
+    assert "if (initialTab === 'yesterday-top100')" in template
+    assert "/xuanpin/api/mk-material-library" in template
+    assert "/xuanpin/api/mk-yesterday-top100" in template
+    assert "/xuanpin/api/mk-video-materials" not in template
+
+
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -110,6 +147,19 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "/xuanpin/api/mk-video?path=" in template
     assert "controls" in template
     assert "loading=\"lazy\"" in template
+
+
+def test_mk_selection_product_rows_include_material_library_button():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function productCodeFromUrl(value)" in template
+    assert "function openProductMaterialLibrary(productCode, productName)" in template
+    assert "data-mk-material-button" in template
+    assert "data-product-code" in template
+    assert "const productCode = productCodeFromUrl(r.product_url);" in template
+    assert "renderProductMaterialButton(productCode, rawProductName, linked)" in template
+    assert "openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '')" in template
+    assert "activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}`" in template
 
 
 def test_mk_selection_dynamic_html_escapes_api_fields():
@@ -194,6 +244,7 @@ def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
         "total": 0,
         "page": 1,
         "page_size": 50,
+        "snapshot": "2026-04-23",
     }
 
     route_mod._dianxiaomi_rankings_columns.cache_clear()
@@ -229,6 +280,31 @@ def test_mk_selection_api_delegates_response_building_after_admin_gate(
     assert response.status_code == 200
     assert response.get_json()["items"] == [{"rank": 1}]
     assert captured["keyword"] == "tooth"
+
+
+def test_mk_selection_snapshots_api_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["limit"] = args.get("limit")
+        return MkSelectionResponse(
+            {"items": [{"snapshot": "2026-05-18"}], "default_snapshot": "2026-05-18"},
+            200,
+        )
+
+    monkeypatch.setattr(route_mod, "_build_mk_selection_snapshots_response", fake_build)
+
+    response = authed_client_no_db.get("/medias/api/mk-selection/snapshots?limit=7")
+
+    assert response.status_code == 200
+    assert response.get_json()["items"] == [{"snapshot": "2026-05-18"}]
+    assert captured["limit"] == "7"
 
 
 def test_mk_selection_refresh_delegates_response_building_after_admin_gate(
@@ -276,6 +352,13 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
     )
     monkeypatch.setattr(
         route_mod,
+        "_build_mk_selection_snapshots_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("snapshots builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
         "_build_mk_selection_refresh_response",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("refresh builder should not run for non-admin")
@@ -305,21 +388,23 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
 
     responses = [
         authed_user_client_no_db.get("/medias/api/mk-selection"),
+        authed_user_client_no_db.get("/medias/api/mk-selection/snapshots"),
         authed_user_client_no_db.post("/medias/api/mk-selection/refresh"),
         authed_user_client_no_db.get("/medias/api/mk-detail/3719"),
         authed_user_client_no_db.get("/medias/api/mk-media?path=uploads2/demo.jpg"),
         authed_user_client_no_db.get("/medias/api/mk-video?path=uploads2/demo.mp4"),
     ]
 
-    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403]
+    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403, 403]
     assert [response.get_json() for response in responses] == [
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
     ]
-    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden", "forbidden"]
+    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden", "forbidden", "forbidden"]
 
 
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(

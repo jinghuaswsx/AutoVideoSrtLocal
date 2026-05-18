@@ -36,6 +36,19 @@ def test_tabcut_video_candidate_price_migration_defines_columns_and_index():
     assert "idx_tabcut_video_candidates_price" in sql
 
 
+def test_tabcut_video_candidate_video_id_dedup_migration_keeps_earliest_record():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_05_18_tabcut_video_candidate_video_id_dedup.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "DELETE c" in sql
+    assert "tabcut_video_candidates" in sql
+    assert "MIN(id) AS keep_id" in sql
+    assert "GROUP BY video_id" in sql
+    assert "uniq_tabcut_video_candidate_video_id" in sql
+    assert "UNIQUE KEY" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

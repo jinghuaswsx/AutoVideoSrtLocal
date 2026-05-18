@@ -310,6 +310,94 @@ def test_sync_video_result_reuses_existing_item_for_same_object_key(monkeypatch)
     assert lock_conn.closed is True
 
 
+def test_sync_video_result_binds_created_item_to_task_center_task(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    lock_conn = _FakeLockConn([{"ok": 1}, {"released": 1}])
+    monkeypatch.setattr(mod, "get_conn", lambda: lock_conn, raising=False)
+    monkeypatch.setattr(mod, "query_one", lambda sql, args=None: None, raising=False)
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 1,
+            "display_name": "EN Raw",
+            "duration_seconds": 90.0,
+            "file_size": 1234,
+        },
+    )
+    created = {}
+    monkeypatch.setattr(
+        mod.medias,
+        "create_item",
+        lambda **kwargs: created.update(kwargs) or 701,
+    )
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: 1)
+    monkeypatch.setattr(mod, "mark_auto_translated", lambda *args, **kwargs: 1)
+
+    target_id = mod.sync_video_result(
+        parent_task_id="bt-1",
+        product_id=77,
+        lang="de",
+        source_raw_id=301,
+        video_object_key="1/medias/77/de_result.mp4",
+        cover_object_key="1/medias/77/de_cover.png",
+        task_center_task_id=456,
+    )
+
+    assert target_id == 701
+    assert created["task_id"] == 456
+
+
+def test_sync_video_result_binds_existing_item_to_task_center_task(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    lock_conn = _FakeLockConn([{"ok": 1}, {"released": 1}])
+    monkeypatch.setattr(mod, "get_conn", lambda: lock_conn, raising=False)
+    monkeypatch.setattr(
+        mod,
+        "query_one",
+        lambda sql, args=None: {"id": 701, "cover_object_key": "old_cover.png"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 1,
+            "display_name": "EN Raw",
+        },
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "create_item",
+        lambda **kwargs: pytest.fail("existing media item should be reused"),
+    )
+    executed = []
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: executed.append((sql, args)) or 1)
+    monkeypatch.setattr(mod, "mark_auto_translated", lambda *args, **kwargs: 1)
+
+    target_id = mod.sync_video_result(
+        parent_task_id="bt-1",
+        product_id=77,
+        lang="de",
+        source_raw_id=301,
+        video_object_key="1/medias/77/de_result.mp4",
+        cover_object_key="1/medias/77/de_cover.png",
+        task_center_task_id=456,
+    )
+
+    assert target_id == 701
+    assert executed == [
+        (
+            "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s, task_id=%s WHERE id=%s",
+            (301, "1/medias/77/de_cover.png", 456, 701),
+        )
+    ]
+
+
 def test_sync_video_result_uses_material_filename_rule_for_translated_video(monkeypatch):
     from appcore import bulk_translate_backfill as mod
 

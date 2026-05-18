@@ -787,9 +787,10 @@ def _is_current_video_analysis_queue_run(run_id: int | None) -> bool:
         return False
 
 
-def _video_analysis_queue_items(limit: int) -> tuple[int, list[dict[str, Any]]]:
+def _video_analysis_queue_items(limit: int) -> tuple[int, int, list[dict[str, Any]]]:
     safe_limit = max(1, min(SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, int(limit)))
     queued_us = int(store.ensure_video_copyability_candidates() or 0)
+    queued_europe = int(store.ensure_europe_fit_candidates() or 0)
     items: list[dict[str, Any]] = []
     us_rows = store.next_pending_video_copyability_analyses(limit=safe_limit)
     for row in us_rows[:safe_limit]:
@@ -799,12 +800,13 @@ def _video_analysis_queue_items(limit: int) -> tuple[int, list[dict[str, Any]]]:
         europe_rows = store.next_pending_europe_fit_materials(limit=remaining)
         for row in europe_rows[:remaining]:
             items.append({"task_type": VIDEO_ANALYSIS_TASK_EUROPE_FIT, "row": row})
-    return queued_us, items
+    return queued_us, queued_europe, items
 
 
-def _video_analysis_queue_summary(queued_us: int) -> dict[str, int]:
+def _video_analysis_queue_summary(queued_us: int, queued_europe: int) -> dict[str, int]:
     return {
         "queued_us_copyability": queued_us,
+        "queued_europe_fit": queued_europe,
         "scanned": 0,
         "done": 0,
         "failed": 0,
@@ -896,8 +898,8 @@ def process_video_analysis_queue(
     per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
     sleep_fn: SleepFn | None = None,
 ) -> dict[str, Any]:
-    queued_us, items = _video_analysis_queue_items(limit)
-    summary: dict[str, Any] = _video_analysis_queue_summary(queued_us)
+    queued_us, queued_europe, items = _video_analysis_queue_items(limit)
+    summary: dict[str, Any] = _video_analysis_queue_summary(queued_us, queued_europe)
     total = len(items)
     if total <= 0:
         return summary

@@ -277,6 +277,7 @@ def sync_video_result(
     source_raw_id: int,
     video_object_key: str,
     cover_object_key: str,
+    task_center_task_id: int | None = None,
 ) -> int:
     raw_source = medias.get_raw_source(source_raw_id) or {}
     if not raw_source:
@@ -288,6 +289,14 @@ def sync_video_result(
         raw_source=raw_source,
         fallback_object_key=video_object_key,
     )
+    bound_task_id = None
+    if task_center_task_id not in (None, ""):
+        try:
+            bound_task_id = int(task_center_task_id)
+        except (TypeError, ValueError):
+            bound_task_id = None
+        if bound_task_id is not None and bound_task_id <= 0:
+            bound_task_id = None
     with _acquire_video_sync_lock(
         parent_task_id=parent_task_id,
         product_id=product_id,
@@ -302,10 +311,16 @@ def sync_video_result(
         ) or {}
         target_id = int(existing.get("id") or 0)
         if target_id:
-            execute(
-                "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s WHERE id=%s",
-                (source_raw_id, cover_object_key, target_id),
-            )
+            if bound_task_id is not None:
+                execute(
+                    "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s, task_id=%s WHERE id=%s",
+                    (source_raw_id, cover_object_key, bound_task_id, target_id),
+                )
+            else:
+                execute(
+                    "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s WHERE id=%s",
+                    (source_raw_id, cover_object_key, target_id),
+                )
         else:
             target_id = medias.create_item(
                 product_id=product_id,
@@ -317,6 +332,7 @@ def sync_video_result(
                 duration_seconds=raw_source.get("duration_seconds"),
                 file_size=raw_source.get("file_size"),
                 lang=lang,
+                task_id=bound_task_id,
             )
             execute(
                 "UPDATE media_items SET source_raw_id=%s WHERE id=%s",

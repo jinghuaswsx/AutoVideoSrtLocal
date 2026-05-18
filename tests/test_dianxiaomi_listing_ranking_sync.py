@@ -3,13 +3,18 @@ from __future__ import annotations
 from datetime import date
 
 
-def test_build_listing_payload_locks_single_day_and_sales_sort():
+def test_build_listing_payload_uses_rolling_7_day_window_and_sales_sort():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
-    payload = sync.build_listing_payload(date(2026, 4, 23), page_no=2, page_size=100)
+    payload = sync.build_listing_payload(
+        date(2026, 5, 12),
+        page_no=2,
+        page_size=100,
+        window_days=7,
+    )
 
-    assert payload["beginDate"] == "2026-04-23"
-    assert payload["endDate"] == "2026-04-23"
+    assert payload["beginDate"] == "2026-05-06"
+    assert payload["endDate"] == "2026-05-12"
     assert payload["pageNo"] == 2
     assert payload["pageSize"] == 100
     assert payload["sortType"] == "paidProductCount"
@@ -20,7 +25,7 @@ def test_build_listing_payload_locks_single_day_and_sales_sort():
     assert sync.LISTING_API_URL.endswith("/api/stat/product/statSalesPageListNew.json")
 
 
-def test_select_missing_dates_treats_under_1000_rows_as_incomplete():
+def test_select_missing_dates_uncapped_archive_requires_only_existing_rows():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
     missing = sync.select_missing_dates(
@@ -28,15 +33,14 @@ def test_select_missing_dates_treats_under_1000_rows_as_incomplete():
         end_date=date(2026, 4, 26),
         existing_counts={
             date(2026, 4, 23): 300,
-            date(2026, 4, 24): 1000,
-            "2026-04-25": 999,
+            date(2026, 4, 24): 0,
+            "2026-04-25": 2,
         },
-        target_rows=1000,
+        target_rows=0,
     )
 
     assert [item.isoformat() for item in missing] == [
-        "2026-04-23",
-        "2026-04-25",
+        "2026-04-24",
         "2026-04-26",
     ]
 
@@ -86,7 +90,7 @@ def test_normalize_listing_row_maps_paid_sales_fields():
     }
 
 
-def test_collect_top_rankings_stops_at_requested_row_count():
+def test_collect_top_rankings_fetches_all_pages_and_filters_zero_sales_when_uncapped():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
     calls: list[int] = []
@@ -100,13 +104,13 @@ def test_collect_top_rankings_stops_at_requested_row_count():
                 "page": {
                     "pageNo": page_no,
                     "pageSize": page_size,
-                    "totalSize": 5,
+                    "totalSize": 6,
                     "totalPage": 3,
                     "list": [
                         {
                             "productId": str(start + index + 1),
                             "productName": f"Product {start + index + 1}",
-                            "paidProductCount": 10 - start - index,
+                            "paidProductCount": 0 if start + index + 1 in {2, 4} else 10 - start - index,
                         }
                         for index in range(page_size)
                     ],
@@ -117,15 +121,16 @@ def test_collect_top_rankings_stops_at_requested_row_count():
     rows, stats = sync.collect_top_rankings_for_date(
         date(2026, 4, 23),
         fetch_page=fake_fetch_page,
-        target_rows=3,
+        target_rows=0,
         page_size=2,
     )
 
-    assert calls == [1, 2]
-    assert [row["rank_position"] for row in rows] == [1, 2, 3]
-    assert [row["product_id"] for row in rows] == ["1", "2", "3"]
-    assert stats["pages_fetched"] == 2
-    assert stats["api_total_size"] == 5
+    assert calls == [1, 2, 3]
+    assert [row["rank_position"] for row in rows] == [1, 3, 5, 6]
+    assert [row["product_id"] for row in rows] == ["1", "3", "5", "6"]
+    assert stats["pages_fetched"] == 3
+    assert stats["api_total_size"] == 6
+    assert stats["rows_fetched"] == 4
 
 
 def test_daily_target_date_defaults_to_yesterday():

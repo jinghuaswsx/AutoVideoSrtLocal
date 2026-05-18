@@ -133,19 +133,35 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "dianxiaomi_listing_ranking_sync": {
         "code": "dianxiaomi_listing_ranking_sync",
-        "name": "店小秘 Listing 销量 Top1000",
+        "name": "店小秘 Listing 近7天有销量全量归档",
         "description": (
-            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 天；每一天都按单日 "
-            "beginDate=endDate 锁定榜单，按 paidProductCount 倒序采集 Listing 销量前 1000 名，"
-            "写入 dianxiaomi_rankings；"
-            "回补模式从 2026-04-23 起把不足 1000 条的日期视为缺失。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-12-dianxiaomi-listing-ranking-sync.md"
+            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 个快照日；"
+            "每个 snapshot_date 代表截至当日的近 7 天窗口，按 paidProductCount 倒序全量采集有销量 Listing，"
+            "写入 dianxiaomi_rankings；回补模式不再使用 1000 条阈值。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md"
         ),
         "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-listing-ranking-sync.timer",
         "runner": "tools/dianxiaomi_listing_ranking_sync.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
+    "mingkong_material_daily_snapshot": {
+        "code": "mingkong_material_daily_snapshot",
+        "name": "明空素材每日快照",
+        "description": (
+            "每天 06:00 读取店小秘 Listing 最新可用快照 Top300 产品 code，"
+            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前100。"
+            "Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-mingkong-daily-material-snapshot-top100-design.md"
+        ),
+        "schedule": "每天 06:00（北京时间，跑完前300产品后结束）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-material-daily-snapshot.timer",
+        "runner": "tools/mingkong_material_daily_snapshot.py",
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },

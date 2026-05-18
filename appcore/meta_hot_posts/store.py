@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, Callable, Mapping
 
-from appcore.db import execute, query
+from appcore.db import execute, get_conn, query
 from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVIDER
 
 
@@ -27,6 +27,16 @@ def _score(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _execute_rowcount(sql: str, args: tuple[Any, ...] = ()) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, args or None)
+            return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def product_url_hash(product_url: str) -> str:
@@ -607,7 +617,7 @@ def update_local_video_metadata(
         (_score(local_video_duration_seconds), local_video_cover_path or "", int(post_id)),
     )
 
-def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
         INSERT INTO meta_hot_post_video_copyability_analyses (
@@ -624,6 +634,24 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> i
           wedev_post_id=VALUES(wedev_post_id),
           product_url=VALUES(product_url),
           local_video_path=VALUES(local_video_path)
+        """,
+        (),
+    )
+
+
+def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
+    return execute_fn(
+        """
+        INSERT IGNORE INTO meta_hot_post_europe_assessments (post_id, status)
+        SELECT p.id, 'pending'
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
+        WHERE p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+          AND e.id IS NULL
         """,
         (),
     )

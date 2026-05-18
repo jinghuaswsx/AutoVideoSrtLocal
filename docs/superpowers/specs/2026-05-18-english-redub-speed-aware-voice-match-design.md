@@ -84,6 +84,7 @@
 - `pipeline_kind = english_redub`
 - 返回列表链接指向 `/english-redub`
 - 声音选择卡显示候选的音色相似度和语速匹配信息。
+- 声音选择卡必须提供一个显式的音色下拉选择框，并与候选列表行保持同一选中状态；用户既可以通过下拉框选择音色，也可以继续点击候选列表行选择。
 
 ## 流水线设计
 
@@ -188,6 +189,7 @@ export
 - project_type：`english_redub`
 - 权限 code：`english_redub`
 - API 前缀：`/api/english-redub`
+- schema：`projects.type` ENUM 必须包含 `english_redub`；`db/schema.sql` 与最新 project_type migration 必须保持同一枚举全集。
 
 复用部分：
 
@@ -437,6 +439,7 @@ DELETE /api/english-redub/<task_id>
 3. 英文重配音不是翻译：现有 translate UI 文案可能误导。对策：新模块页面使用“文案适配 / 英文重写”措辞；底层字段名可沿用 `translate` step 以减少改动。
 4. 极短片段无法自然配音：语速推荐只改善声音候选，不能替代句级收敛和 fallback。详情页要保留 warning。
 5. 工作台 hard-coded API：现有模板多处判断 `/api/omni-translate` 和 `/api/multi-translate`，实现时必须系统性补齐 `english_redub`。
+6. DB 枚举漂移：代码写入 `type=english_redub` 前，生产库必须先完成 project_type migration；否则 MySQL 会拒绝更新并导致详情页按 `english_redub` 查询 404。
 
 ## 验证计划
 

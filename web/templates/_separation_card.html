@@ -21,7 +21,7 @@
   var API_BASE = {{ api_base|tojson }};
   var separation = {{ sep|tojson }} || null;
   var selectedLoudnessProfile = {{ (state.loudness_profile or 'standard')|tojson }};
-  var selectedManualBoostPct = Number({{ (state.loudness_manual_boost_pct or 50)|tojson }}) || 50;
+  var selectedManualBoostPct = Number({{ (state.loudness_manual_boost_pct or 100)|tojson }}) || 100;
   var loudnessStepStatus = {{ (state.steps.get('loudness_match', '') if state.steps else '')|tojson }};
   var loudnessProfileSaving = false;
 
@@ -106,7 +106,7 @@
     loudnessProfileSaving = true;
     selectedLoudnessProfile = profile;
     if (profile === "manual_boost") {
-      selectedManualBoostPct = Number(manualPct || selectedManualBoostPct || 50);
+      selectedManualBoostPct = Number(manualPct || selectedManualBoostPct || 100);
     }
     var preview = document.getElementById("preview-loudness_match");
     if (preview) preview.dataset.profileError = "";
@@ -132,7 +132,7 @@
       });
     }).catch(function (err) {
       selectedLoudnessProfile = previousLoudnessProfile || "standard";
-      selectedManualBoostPct = Number(previousManualBoostPct || 50);
+      selectedManualBoostPct = Number(previousManualBoostPct || 100);
       if (preview) {
         preview.dataset.profileError = (err && err.message) ? err.message : "保存响度方案失败";
       }
@@ -152,7 +152,12 @@
     var previousManualBoostPct = selectedManualBoostPct;
     selectedLoudnessProfile = "manual_boost";
     refreshAll();
-    var manualBoostPctLabels = ["+10%", "+20%", "+30%", "+40%", "+50%", "+60%", "+70%", "+80%", "+90%", "+100%"];
+    var manualBoostPctLabels = [
+      "+10%", "+20%", "+30%", "+40%", "+50%",
+      "+60%", "+70%", "+80%", "+90%", "+100%",
+      "+110%", "+120%", "+130%", "+140%", "+150%",
+      "+160%", "+170%", "+180%", "+190%", "+200%"
+    ];
     var options = manualBoostPctLabels.map(function (label) {
       var pct = Number(label.replace("+", "").replace("%", ""));
       var active = pct === Number(selectedManualBoostPct) ? " active" : "";
@@ -171,10 +176,10 @@
         '</div>' +
       '</div>';
     document.body.appendChild(wrap);
-    var pendingPct = Number(selectedManualBoostPct) || 50;
+    var pendingPct = Number(selectedManualBoostPct) || 100;
     function closeWithoutSaving() {
       selectedLoudnessProfile = previousLoudnessProfile || "standard";
-      selectedManualBoostPct = Number(previousManualBoostPct || 50);
+      selectedManualBoostPct = Number(previousManualBoostPct || 100);
       wrap.remove();
       refreshAll();
     }
@@ -278,8 +283,8 @@
     var profileItems = [
       { profile: "standard", label: "标准", hint: "按当前背景音量混入，优先保证配音清晰。" },
       { profile: "clean_background", label: "清除电音", hint: "先压制电子伪影，再保留可用背景音混入成品。" },
-      { profile: "bg_boost", label: "增强背景", hint: "自动提高 BGM/环境音，最高 1.8，避免盖住配音。" },
-      { profile: "manual_boost", label: "手动调整", hint: "按所选比例提高背景音，最高 1.8。" },
+      { profile: "bg_boost", label: "增强背景", hint: "自动提高 BGM/环境音，最高 2.4，避免盖住配音。" },
+      { profile: "manual_boost", label: "手动调整", hint: "按所选比例提高背景音，最高 2.4。" },
     ];
     var buttons = profileItems.map(function (item) {
       var active = selectedLoudnessProfile === item.profile ? " active" : "";
@@ -408,7 +413,7 @@
         if (task) {
           if (Object.prototype.hasOwnProperty.call(task, "separation")) separation = task.separation;
           selectedLoudnessProfile = task.loudness_profile || selectedLoudnessProfile || "standard";
-          selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 50);
+          selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 100);
           loudnessStepStatus = (task.steps && task.steps.loudness_match) || loudnessStepStatus || "";
         }
         refreshAll();

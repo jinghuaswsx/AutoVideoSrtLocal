@@ -88,7 +88,7 @@
 - 产品分析：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。同供应商还可选择 Gemini 3.1 Pro Preview 和 Gemini 3.1 Flash-Lite。
 - 文案创作：默认 `OPENROUTER` / `google/gemini-3-flash-preview`；Google Vertex ADC 对应 `gemini-3-flash-preview`。OpenRouter 文案池还可选择 `anthropic/claude-sonnet-4.6`、`openai/gpt-5.5`、`openai/gpt-5-mini`。
 - 封面生成：默认 `本地接口` / `gpt-image-2`，本地接口默认 base URL 为 `http://172.30.254.14:82/v1`，API key 存放在 `llm_provider_configs.video_cover_local_image`；OpenRouter 可选 OpenAI Image 2 low / mid / high、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。本地接口可选 GPT-Image-2、Nano Banana 2、Nano Banana Pro、Nano Banana 1 兜底。
-- 本地图片生成接口按接口文档使用图生图编辑能力：`POST /images/edits`，请求为 `multipart/form-data`，字段包含 `model`、`prompt`、`n`、`size`，参考图通过 `image` 文件上传；9:16 原始生成尺寸使用 `1024x1536`，响应支持 `b64_json` 或 `url`。
+- 本地图片生成接口按接口文档使用图生图编辑能力：`POST /images/edits`，请求为 `multipart/form-data`，字段包含 `model`、`prompt`、`n`、`size`，参考图通过 `image` 文件上传；9:16 原始生成尺寸使用 TikTok 封面 2K 请求尺寸 `1152x2048`，响应支持 `b64_json` 或 `url`。
 - 这个功能需要基于商品主图和视频画面做图片生成/编辑；视频分析阶段读取上传视频文件，封面生成阶段使用商品主图与精选视频帧组成的 9:16 参考图。
 - 输出后处理强制为平台常用的 `1080x1920` 竖版 PNG，模型原始输出尺寸不直接暴露给用户。
 
@@ -96,6 +96,14 @@
 
 - Meta Reels/Stories 创意按 9:16 竖版设计，关键卖点和产品主体放在安全区域内。
 - TikTok US 按竖版信息流创意设计，标题和产品主体放在中心区域，减少个人主页/信息流裁切风险。
+
+### 2026-05-18 TikTok 封面 2K 请求与文案安全区修订
+
+- 本地图片接口必须按 TikTok 封面 2K 竖版逻辑请求：`size=1152x2048`，保持 9:16，不再使用 `1024x1536` 这类 2:3 请求尺寸。
+- 最终平台验收仍是 `1080x1920`（宽 × 高）9:16，格式为 PNG 或 JPG；后端继续统一保存 `1080x1920` PNG。
+- 生图提示词必须明确：画面为 TikTok / Reels / Shorts 竖版封面，最终可交付尺寸为 `1080x1920`，文案 hook 必须完整落在 9:16 安全区内。
+- hook 左右至少预留安全边距，不得贴边、出血或被裁切；如果标题较长，模型应在安全区内自然换成最多两行，并缩小字号保证完整可读。
+- 参考图和最终图都不得出现平台 UI、安全区辅助线、裁切框或尺寸标注。
 
 ## 提示词合同
 

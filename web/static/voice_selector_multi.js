@@ -44,6 +44,7 @@
   const selectionText = document.getElementById("vs-selection-text");
   const launchBtn = document.getElementById("vs-launch-btn");
   const searchInput = document.getElementById("vs-search");
+  const voiceSelect = document.getElementById("vs-voice-select");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
 
@@ -431,6 +432,10 @@
       candidatesMap.clear();
       (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
       selectedVoiceId = data.selected_voice_id || null;
+      if (selectedVoiceId && !selectedVoiceName) {
+        const selected = allItems.find(v => v.voice_id === selectedVoiceId);
+        selectedVoiceName = selected ? (selected.name || selected.voice_id) : null;
+      }
 
       const n = (data.candidates || []).length;
       const ready = !!data.voice_match_ready;
@@ -499,7 +504,17 @@
     `;
   }
 
-  function render(waitingProgress) {
+  function sortedVoiceRows() {
+    return allItems.map(v => {
+      const rec = candidatesMap.get(v.voice_id);
+      return { v, rec, sim: rec ? rec.similarity : -1 };
+    }).sort((a, b) => {
+      if (a.sim !== b.sim) return b.sim - a.sim;
+      return (a.v.name || "").localeCompare(b.v.name || "");
+    });
+  }
+
+  function filteredVoiceRows() {
     const q = (searchInput.value || "").trim().toLowerCase();
     const gender = activeGender;
     const onlyRec = recommendedOnly.checked;
@@ -514,18 +529,60 @@
       return true;
     };
 
-    const withSort = allItems.map(v => {
-      const rec = candidatesMap.get(v.voice_id);
-      return { v, rec, sim: rec ? rec.similarity : -1 };
-    }).sort((a, b) => {
-      if (a.sim !== b.sim) return b.sim - a.sim;
-      return (a.v.name || "").localeCompare(b.v.name || "");
-    });
-
-    const filtered = withSort.filter(({ v, rec }) => {
+    return sortedVoiceRows().filter(({ v, rec }) => {
       if (onlyRec && !rec) return false;
       return applyFilter(v);
     });
+  }
+
+  function voiceOptionLabel(v, rec) {
+    const name = v.name || v.voice_id || "";
+    if (rec) {
+      return `${(rec.similarity * 100).toFixed(1)}% 相似 · ${name}`;
+    }
+    return name;
+  }
+
+  function syncVoiceSelectOptions(rows, waitingProgress) {
+    if (!voiceSelect) return;
+
+    const selectedRow = selectedVoiceId
+      ? sortedVoiceRows().find(({ v }) => v.voice_id === selectedVoiceId)
+      : null;
+    const optionRows = rows.slice();
+    if (
+      selectedRow &&
+      !optionRows.some(({ v }) => v.voice_id === selectedVoiceId)
+    ) {
+      optionRows.push(selectedRow);
+    }
+
+    voiceSelect.innerHTML = "";
+    const placeholder = new Option(
+      waitingProgress ? "音色库加载中..." : "请选择音色",
+      "",
+    );
+    placeholder.disabled = true;
+    voiceSelect.appendChild(placeholder);
+
+    optionRows.forEach(({ v, rec }) => {
+      if (!v.voice_id) return;
+      const option = new Option(voiceOptionLabel(v, rec), v.voice_id);
+      option.dataset.voiceName = v.name || v.voice_id;
+      voiceSelect.appendChild(option);
+    });
+
+    voiceSelect.disabled = launched || optionRows.length === 0;
+    if (selectedVoiceId && optionRows.some(({ v }) => v.voice_id === selectedVoiceId)) {
+      voiceSelect.value = selectedVoiceId;
+    } else {
+      voiceSelect.value = "";
+    }
+  }
+
+  function render(waitingProgress) {
+    const filtered = filteredVoiceRows();
+    syncVoiceSelectOptions(filtered, waitingProgress);
 
     let html = "";
 
@@ -565,6 +622,13 @@
     selectedVoiceName = voiceName;
     render();
     updateLaunchState();
+  }
+
+  function selectVoiceFromControl() {
+    if (!voiceSelect) return;
+    const option = voiceSelect.selectedOptions && voiceSelect.selectedOptions[0];
+    if (!voiceSelect.value || !option) return;
+    selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
   }
 
   function updateLaunchState() {
@@ -617,6 +681,7 @@
 
   searchInput.addEventListener("input", () => render());
   recommendedOnly.addEventListener("change", () => render());
+  if (voiceSelect) voiceSelect.addEventListener("change", selectVoiceFromControl);
 
   // 性别胶囊：toggle + 触发后端重算 top-10（不重新 embed，走 /rematch）
   async function onGenderPillClick(btn) {

@@ -259,6 +259,68 @@ def test_start_product_translation_creates_starts_and_schedules_task(monkeypatch
     ]
 
 
+def test_start_product_translation_passes_task_center_child_id(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    created = {}
+    monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [])
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang == "de")
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: created.update(kwargs) or "task-task-center",
+    )
+    monkeypatch.setattr(svc.bulk_translate_runtime, "start_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr(svc, "start_bulk_scheduler_background", lambda *args, **kwargs: True)
+
+    result = svc.start_product_translation(
+        user_id=7,
+        user_name="operator",
+        product_id=123,
+        body={
+            "raw_ids": [],
+            "target_langs": ["de"],
+            "content_types": ["copywriting"],
+            "task_center_task_id": "456",
+        },
+        ip="10.0.0.1",
+        user_agent="pytest-UA",
+    )
+
+    assert result.ok is True
+    assert created["task_center_task_id"] == 456
+
+
+def test_start_product_translation_rejects_task_center_id_with_multiple_langs(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [])
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang in {"de", "fr"})
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("create not reached")),
+    )
+
+    result = svc.start_product_translation(
+        user_id=7,
+        user_name="operator",
+        product_id=123,
+        body={
+            "raw_ids": [],
+            "target_langs": ["de", "fr"],
+            "content_types": ["copywriting"],
+            "task_center_task_id": 456,
+        },
+        ip="10.0.0.1",
+        user_agent="pytest-UA",
+    )
+
+    assert result.ok is False
+    assert result.status_code == 400
+    assert result.error == "task_center_task_id requires exactly one target_lang"
+
+
 def test_start_product_translation_keeps_default_content_types(monkeypatch):
     from web.services import media_product_translate as svc
 

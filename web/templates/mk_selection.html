@@ -2,9 +2,10 @@
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
-<span class="selection-center-title-note">店小秘近7天销量 Top1000 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
+<span class="selection-center-title-note">店小秘近7天有销量全量归档 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
   --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
@@ -32,6 +33,7 @@
 .oc-search { display:flex; gap:var(--oc-sp-2); }
 .oc-input { height:38px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:18px; outline:none; }
 .oc-input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
+.oc-select { width:172px; font-size:16px; background:#fff; }
 .oc-btn { height:38px; padding:0 18px; border:none; border-radius:var(--oc-r); font-size:18px; font-weight:500; cursor:pointer; transition:background 120ms; }
 .oc-btn--primary { background:var(--oc-accent); color:#fff; }
 .oc-btn--primary:hover { background:var(--oc-accent-hover); }
@@ -111,53 +113,91 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
-.oc-page-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:var(--oc-sp-5); padding:4px; border:1px solid var(--oc-border); border-radius:9999px; background:var(--oc-bg-subtle); }
-.oc-page-tab { display:inline-flex; align-items:center; justify-content:center; min-width:96px; height:34px; padding:0 18px; font-size:14px; font-weight:600; color:var(--oc-fg-muted); text-decoration:none; border-radius:9999px; border:1px solid transparent; transition:color 120ms,background 120ms,border-color 120ms; }
-.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg); }
-.oc-page-tab.active { color:#fff; background:var(--oc-accent); border-color:var(--oc-accent); }
+.mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
+.mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
+.mk-library-tab.active { background:var(--oc-accent); color:#fff; }
+.mk-library-panel[hidden] { display:none; }
+.mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
+.mk-video-library-grid { min-height:180px; }
+.mk-video-product-line { display:flex; flex-direction:column; gap:2px; min-height:48px; font-size:12px; color:var(--oc-fg-muted); }
+.mk-video-product-line a { color:var(--oc-accent); text-decoration:none; font-weight:700; }
+.mk-video-product-line a:hover { text-decoration:underline; }
+.mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
+.mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
+.mk-material-state { font-size:12px; line-height:1; }
+@media (max-width: 768px) {
+  .mk-library-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; -ms-overflow-style:none; }
+  .mk-library-tabs::-webkit-scrollbar { display:none; }
+  .mk-library-tab { flex-shrink:0; min-width:80px; white-space:nowrap; }
+}
 {% endblock %}
 
 {% block content %}
 <div class="oc">
-  <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
-    <a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>
-    <a class="oc-page-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>
-    <a class="oc-page-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>
-    <a class="oc-page-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>
-    <a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>
+  {% set active = "mk" %}
+  {% include "_xuanpin_tabs.html" %}
+  <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
+    <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top100')" data-mk-library-tab="yesterday-top100">昨天消耗前100</button>
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
+      <select id="snapshotSelect" class="oc-input oc-select" aria-label="历史快照" onchange="onMkSnapshotChange()">
+        <option value="">最新快照</option>
+      </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
-      <button class="oc-btn oc-btn--primary" onclick="loadData(1)">搜索</button>
-      <button class="oc-btn oc-btn--ghost" onclick="document.getElementById('searchInput').value='';loadData(1)">重置</button>
+      <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
+      <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
   </div>
 
-  <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
-    <table class="oc-table" id="mainTable">
-      <thead>
-        <tr>
-          <th style="width:50px">#</th>
-          <th style="width:220px; text-align:left;">产品名称</th>
-          <th style="width:180px; text-align:left;">中文产品名</th>
-          <th style="width:100px">店铺</th>
-          <th style="width:90px" class="text-right">付款销量</th>
-          <th style="width:110px" class="text-right">销售额</th>
-          <th style="width:110px" class="text-right">明空消耗</th>
-          <th style="width:80px" class="text-right">视频数</th>
-          <th style="width:80px" class="text-right">广告数</th>
-          <th style="width:100px">素材库</th>
-          <th style="width:100px">操作</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody">
-        <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <section id="mkProductsPanel" class="mk-library-panel">
+    <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
+      <table class="oc-table" id="mainTable">
+        <thead>
+          <tr>
+            <th style="width:50px">#</th>
+            <th style="width:220px; text-align:left;">产品名称</th>
+            <th style="width:180px; text-align:left;">中文产品名</th>
+            <th style="width:100px">店铺</th>
+            <th style="width:90px" class="text-right">付款销量</th>
+            <th style="width:110px" class="text-right">销售额</th>
+            <th style="width:110px" class="text-right">明空消耗</th>
+            <th style="width:80px" class="text-right">视频数</th>
+            <th style="width:80px" class="text-right">广告数</th>
+            <th style="width:100px">素材库</th>
+            <th style="width:100px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-  <div class="oc-pager" id="pager"></div>
+    <div class="oc-pager" id="pager"></div>
+  </section>
+
+  <section id="mkVideosPanel" class="mk-library-panel" hidden>
+    <div class="mk-video-library-head">
+      <span id="mkVideoLibraryStatus">切换到视频素材库后加载本地素材快照</span>
+    </div>
+    <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
+      <div class="oc-empty">加载中...</div>
+    </div>
+    <div class="oc-pager" id="mkVideoPager"></div>
+  </section>
+
+  <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
+    <div class="mk-video-library-head">
+      <span id="mkYesterdayTop100Status">切换到昨天消耗前100后加载本地归档</span>
+    </div>
+    <div class="mk-video-grid mk-video-library-grid" id="mkYesterdayTop100Grid">
+      <div class="oc-empty">加载中...</div>
+    </div>
+    <div class="oc-pager" id="mkYesterdayTop100Pager"></div>
+  </section>
 </div>
 
 <!-- 素材详情居中弹窗 -->
@@ -173,7 +213,16 @@
 <script>
 const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
+let currentMkLibraryTab = 'products';
+let mkProductsLoaded = false;
+let mkVideoPage = 1;
+let mkVideoMaterialsLoaded = false;
+let mkYesterdayTop100Page = 1;
+let mkYesterdayTop100Loaded = false;
+let selectedMkSnapshot = '';
+let activeMkProductCode = '';
 const PAGE_SIZE = 50;
+const MK_VIDEO_PAGE_SIZE = 24;
 
 function fmtMoney(v) {
   if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
@@ -211,6 +260,33 @@ function safeExternalHref(value) {
   return escapeHtml(url);
 }
 
+function productCodeFromUrl(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  function pickCodeFromPath(path) {
+    const parts = String(path || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    const productIndex = parts.indexOf('products');
+    const code = productIndex >= 0 ? (parts[productIndex + 1] || '') : (parts[parts.length - 1] || '');
+    return String(code || '').replace(/[-_]?rjc$/i, '').trim();
+  }
+  try {
+    return pickCodeFromPath(new URL(raw, window.location.origin).pathname);
+  } catch (_err) {
+    return pickCodeFromPath(raw.split('?')[0].split('#')[0]);
+  }
+}
+
+function renderProductMaterialButton(productCode, rawProductName, linkedHtml) {
+  const code = String(productCode || '').trim();
+  if (!code) {
+    return `<div class="mk-material-cell"><span class="text-muted">--</span></div>`;
+  }
+  return `<div class="mk-material-cell">
+    <button type="button" class="oc-btn oc-btn--ghost mk-product-material-btn" data-mk-material-button data-product-code="${escapeHtml(code)}" data-product-name="${escapeHtml(rawProductName || code)}">素材库</button>
+    <span class="mk-material-state">${linkedHtml}</span>
+  </div>`;
+}
+
 function fmtMkSpendText(raw, parsed) {
   const text = String(raw || '').trim();
   if (text && text !== '0') return text;
@@ -219,13 +295,117 @@ function fmtMkSpendText(raw, parsed) {
   return String(Math.round(parsed || 0));
 }
 
+function runMkSearch() {
+  mkProductsLoaded = false;
+  mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
+  if (currentMkLibraryTab === 'videos') {
+    activeMkProductCode = '';
+    loadMkLocalMaterialLibrary(1);
+  } else if (currentMkLibraryTab === 'yesterday-top100') {
+    loadMkYesterdayTop100(1);
+  } else {
+    loadData(1);
+  }
+}
+
+function resetMkSearch() {
+  document.getElementById('searchInput').value = '';
+  activeMkProductCode = '';
+  runMkSearch();
+}
+
+function mkSnapshotQueryParam() {
+  return selectedMkSnapshot ? `&snapshot=${encodeURIComponent(selectedMkSnapshot)}` : '';
+}
+
+async function loadMkSelectionSnapshots() {
+  const select = document.getElementById('snapshotSelect');
+  try {
+    const resp = await fetch('/xuanpin/api/mk-selection/snapshots?limit=60');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '快照加载失败');
+    const items = data.items || [];
+    selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    select.innerHTML = items.length
+      ? items.map(item => {
+          const snapshot = String(item.snapshot || '');
+          const count = Number(item.listing_count || 0).toLocaleString();
+          return `<option value="${escapeHtml(snapshot)}">${escapeHtml(snapshot)} · ${count}</option>`;
+        }).join('')
+      : '<option value="">最新快照</option>';
+    select.value = selectedMkSnapshot;
+  } catch (e) {
+    selectedMkSnapshot = '';
+    select.innerHTML = '<option value="">最新快照</option>';
+  }
+}
+
+function onMkSnapshotChange() {
+  selectedMkSnapshot = document.getElementById('snapshotSelect').value || '';
+  mkProductsLoaded = false;
+  mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
+  runMkSearch();
+}
+
+function normalizeMkLibraryTab(tab) {
+  return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'products';
+}
+
+function applyMkLibraryTabState() {
+  document.querySelectorAll('.mk-library-tab').forEach(btn => {
+    const active = btn.dataset.mkLibraryTab === currentMkLibraryTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
+  document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
+  document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top100';
+}
+
+function switchMkLibraryTab(tab, options = {}) {
+  currentMkLibraryTab = normalizeMkLibraryTab(tab);
+  if (options.updateHash !== false) {
+    location.hash = currentMkLibraryTab;
+  }
+  applyMkLibraryTabState();
+  if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
+    loadMkLocalMaterialLibrary(1);
+  } else if (currentMkLibraryTab === 'yesterday-top100' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
+    loadMkYesterdayTop100(1);
+  } else if (currentMkLibraryTab === 'products' && (!mkProductsLoaded || options.forceLoad)) {
+    loadData(1);
+  }
+}
+
+function initMkLibraryTabFromHash() {
+  currentMkLibraryTab = normalizeMkLibraryTab(location.hash.replace('#', ''));
+  applyMkLibraryTabState();
+  return currentMkLibraryTab;
+}
+
+function openProductMaterialLibrary(productCode, productName) {
+  const code = String(productCode || '').trim();
+  if (!code) return;
+  activeMkProductCode = code;
+  mkVideoMaterialsLoaded = true;
+  document.getElementById('searchInput').value = code;
+  switchMkLibraryTab('videos');
+  const label = String(productName || code).trim();
+  document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的本地素材快照...`;
+  loadMkLocalMaterialLibrary(1);
+}
+
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
-  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;
 
   const resp = await fetch(url);
   const data = await resp.json();
+  mkProductsLoaded = true;
+  if (data.snapshot) selectedMkSnapshot = String(data.snapshot);
 
   document.getElementById('totalCount').textContent = data.total + ' 条';
 
@@ -245,6 +425,7 @@ async function loadData(page) {
     const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
     const safeProductUrl = safeExternalHref(r.product_url);
     const handle = r.product_url ? String(r.product_url).split('/products/')[1] || '' : '';
+    const productCode = productCodeFromUrl(r.product_url);
     const mkProductId = Number(r.mk_product_id) || 0;
     const mkNameArg = escapeHtml(JSON.stringify(r.mk_product_name || ""));
 
@@ -254,7 +435,7 @@ async function loadData(page) {
         <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(rawProductName)}">
           ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" class="oc-link">${escapeHtml(productName)}</a>` : escapeHtml(productName)}
         </div>
-        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(handle)}</div>
+        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(productCode || handle)}</div>
       </td>
       <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
       <td>${escapeHtml(r.store || '--')}</td>
@@ -265,7 +446,7 @@ async function loadData(page) {
       </td>
       <td class="text-right text-mono">${Number(r.mk_video_count || 0)}</td>
       <td class="text-right text-mono">${Number(r.mk_total_ads || 0)}</td>
-      <td>${linked}</td>
+      <td>${renderProductMaterialButton(productCode, rawProductName, linked)}</td>
       <td>
         ${mkProductId ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${mkProductId},${mkNameArg})'>查看素材</button>` : '--'}
       </td>
@@ -278,6 +459,157 @@ async function loadData(page) {
   pagerHtml += ` <span>${page} / ${totalPages}</span> `;
   pagerHtml += `<button onclick="loadData(${page+1})" ${page>=totalPages?'disabled':''}>下一页</button>`;
   document.getElementById('pager').innerHTML = pagerHtml;
+}
+
+async function loadMkLocalMaterialLibrary(page) {
+  mkVideoPage = page;
+  mkVideoMaterialsLoaded = true;
+  const kw = document.getElementById('searchInput').value.trim();
+  const grid = document.getElementById('mkVideoMaterialGrid');
+  const status = document.getElementById('mkVideoLibraryStatus');
+  const pager = document.getElementById('mkVideoPager');
+  grid.innerHTML = '<div class="oc-empty">加载本地视频素材快照中...</div>';
+  pager.innerHTML = '';
+  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
+  try {
+    const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
+    const total = Number(data.total || 0);
+    document.getElementById('totalCount').textContent = total + ' 条';
+    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${data.snapshot || '最新'}`;
+    status.textContent = `${scopeText} · 视频 ${total} 条`;
+    if (!data.items || !data.items.length) {
+      grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
+    } else {
+      grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
+      mkiCheckRenderedButtons();
+    }
+    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
+    let pagerHtml = `<button onclick="loadMkLocalMaterialLibrary(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
+    pagerHtml += `<button onclick="loadMkLocalMaterialLibrary(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
+    pager.innerHTML = pagerHtml;
+  } catch (e) {
+    status.textContent = '本地视频素材加载失败';
+    grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadMkYesterdayTop100(page) {
+  mkYesterdayTop100Page = page;
+  mkYesterdayTop100Loaded = true;
+  const grid = document.getElementById('mkYesterdayTop100Grid');
+  const status = document.getElementById('mkYesterdayTop100Status');
+  const pager = document.getElementById('mkYesterdayTop100Pager');
+  grid.innerHTML = '<div class="oc-empty">加载昨天消耗前100中...</div>';
+  pager.innerHTML = '';
+  status.textContent = '正在读取昨天消耗前100归档...';
+  try {
+    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
+    const total = Number(data.total || 0);
+    document.getElementById('totalCount').textContent = total + ' 条';
+    const previousText = data.previous_snapshot ? ` · 对比 ${data.previous_snapshot}` : '';
+    status.textContent = `快照 ${data.snapshot || '最新'}${previousText} · 昨天消耗前100`;
+    if (!data.items || !data.items.length) {
+      grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前100归档</div>';
+    } else {
+      grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
+      mkiCheckRenderedButtons();
+    }
+    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
+    let pagerHtml = `<button onclick="loadMkYesterdayTop100(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
+    pagerHtml += `<button onclick="loadMkYesterdayTop100(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
+    pager.innerHTML = pagerHtml;
+  } catch (e) {
+    status.textContent = '昨天消耗前100加载失败';
+    grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderMkVideoMaterialCard(r) {
+  const spends = Number(r.video_spends || 0);
+  const heat = heatLevel(spends);
+  const coverPath = normalizeMkMediaPath(r.video_image_path);
+  const coverUrl = coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
+  const videoPath = normalizeMkMediaPath(r.video_path);
+  const videoUrl = videoPath ? '/xuanpin/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
+  const videoName = escapeHtml(r.video_name || '未命名素材');
+  const safeCoverUrl = escapeHtml(coverUrl);
+  const safeVideoUrl = escapeHtml(videoUrl);
+  const safeProductUrl = safeExternalHref(r.product_url || r.mk_product_link || '');
+  const safeProductName = escapeHtml(r.mk_product_name || r.product_name || '--');
+  const productHandle = escapeHtml(r.product_handle || r.product_code || '');
+  const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
+  const author = escapeHtml(r.video_author || '--');
+  const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
+  const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+  const hasYesterdayDelta = Object.prototype.hasOwnProperty.call(r, 'yesterday_spend_delta');
+  const yesterdayDelta = Number(r.yesterday_spend_delta || 0);
+  const yesterdayDeltaHtml = hasYesterdayDelta
+    ? `<span class="mk-video-summary-item"><span class="label">昨天消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
+    : '';
+  const newTop100Html = r.is_new_top100_entry
+    ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top100</span></span></span>'
+    : '';
+  return `<div class="mk-video-card">
+    <div class="mk-video-product-line">
+      ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong title="${safeProductName}">${safeProductName}</strong>`}
+      <span>#${escapeHtml(r.rank_position || '--')} · ${productHandle} · 销量 ${Number(r.sales_count || 0)}</span>
+    </div>
+    <div class="mk-video-card-title" title="${videoName}">${videoName}</div>
+    <div class="mk-video-summary-row">
+      <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
+      <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
+      ${yesterdayDeltaHtml}
+      ${newTop100Html}
+    </div>
+    <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+      <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
+      <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+    </div>
+    <div class="mk-video-frame">
+      <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+      <div class="mk-video-pane" data-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
+    </div>
+    <div class="mk-video-meta-list">
+      <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${Number(r.video_ads_count || 0)}</span></div>
+      <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
+      <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
+    </div>
+    <button class="mki-btn mki-btn--add"
+        data-mki-filename="${escapeHtml(r.video_name || '')}"
+        data-mki-mp4-url="${safeVideoUrl}"
+        data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-cover-url="${safeCoverUrl}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-product-code="${productHandle}"
+        data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        onclick="mkiHandleClick(this)">
+      加入素材库
+    </button>
+    <button class="mki-btn mki-btn--xiao"
+        data-mki-filename="${escapeHtml(r.video_name || '')}"
+        data-mki-mp4-url="${safeVideoUrl}"
+        data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-cover-url="${safeCoverUrl}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-product-code="${productHandle}"
+        data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        onclick="mkiXiaoHandleClick(this)">
+      做小语种
+    </button>
+  </div>`;
 }
 
 async function openDetail(mkId, mkName) {
@@ -445,18 +777,33 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
-document.getElementById('detailContent').addEventListener('click', e => {
+document.addEventListener('click', e => {
+  const materialButton = e.target.closest('[data-mk-material-button]');
+  if (materialButton) {
+    openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '');
+    return;
+  }
   const tab = e.target.closest('.mk-video-tab');
   if (tab) activateMkVideoTab(tab);
 });
 
 // Enter 搜索
 document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') loadData(1);
+  if (e.key === 'Enter') runMkSearch();
 });
 
 // 初始加载
-loadData(1);
+(async function initMkSelection() {
+  const initialTab = initMkLibraryTabFromHash();
+  await loadMkSelectionSnapshots();
+  if (initialTab === 'videos') {
+    loadMkLocalMaterialLibrary(1);
+  } else if (initialTab === 'yesterday-top100') {
+    loadMkYesterdayTop100(1);
+  } else {
+    loadData(1);
+  }
+})();
 
 // mk-import: Task 9 — page-load + post-render batch check
 let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names
@@ -592,6 +939,13 @@ let mkiXiaoResolve = null;
 let mkiXiaoTranslatorsCache = null;
 let mkiXiaoLangsCache = null;
 
+function mkiXiaoLangCode(lang) {
+  if (lang && typeof lang === 'object') {
+    return String(lang.code || '').trim().toUpperCase();
+  }
+  return String(lang || '').trim().toUpperCase();
+}
+
 async function mkiXiaoOpenModal() {
   // Load translators
   if (!mkiXiaoTranslatorsCache) {
@@ -618,8 +972,10 @@ async function mkiXiaoOpenModal() {
   }
   var langsDiv = document.getElementById('mkiXiaoLangs');
   langsDiv.innerHTML = mkiXiaoLangsCache.map(function(l) {
+    var code = mkiXiaoLangCode(l);
+    if (!code) return '';
     return '<label style="display:inline-flex; align-items:center; gap:2px; font-size:13px; cursor:pointer; padding:2px 6px; border:1px solid var(--oc-border); border-radius:4px; user-select:none;">'
-      + '<input type="checkbox" value="' + escapeHtml(l) + '" style="margin:0;"> ' + escapeHtml(l) + '</label>';
+      + '<input type="checkbox" value="' + escapeHtml(code) + '" style="margin:0;"> ' + escapeHtml(code) + '</label>';
   }).join('');
 
   document.getElementById('mkiXiaoModal').style.display = 'block';

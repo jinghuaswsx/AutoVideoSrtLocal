@@ -1,0 +1,11 @@
+[Unit]
+Description=AutoVideoSrt Mingkong daily material snapshot and yesterday Top100
+After=network-online.target mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/venv/bin/python tools/mingkong_material_daily_snapshot.py
+TimeoutStartSec=21600

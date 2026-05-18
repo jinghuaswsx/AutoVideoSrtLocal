@@ -5,6 +5,7 @@
 <span class="selection-center-title-note">今日推荐 <span class="tr-count">{{ recommendations|length }}</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --tr-bg:#f8fafc; --tr-panel:#fff; --tr-line:#dbe3ef; --tr-line-strong:#c6d3e1;
   --tr-text:#1f2937; --tr-muted:#64748b; --tr-subtle:#94a3b8;
@@ -12,9 +13,6 @@
   --tr-danger:#b42318; --tr-danger-bg:#fff1f0; --tr-radius:8px;
 }
 .tr-page { color:var(--tr-text); }
-.tr-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--tr-line); border-radius:999px; background:#f6f8fb; }
-.tr-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
-.tr-tab.active { background:var(--tr-accent); color:#fff; }
 .tr-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; padding:12px 14px; border:1px solid var(--tr-line); border-radius:var(--tr-radius); background:var(--tr-panel); }
 .tr-toolbar-left, .tr-toolbar-right { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .tr-meta { color:var(--tr-muted); font-size:13px; }
@@ -53,13 +51,8 @@
 {% endblock %}
 {% block content %}
 <div class="tr-page">
-  <nav class="tr-tabs" aria-label="选品中心类型">
-    <a class="tr-tab" href="/xuanpin/mk">明空选品</a>
-    <a class="tr-tab" href="/xuanpin/meta-hot-posts">Meta热帖</a>
-    <a class="tr-tab" href="/xuanpin/tabcut">TABCUT</a>
-    <a class="tr-tab active" href="/xuanpin/today-recommendations">今日推荐</a>
-    <a class="tr-tab" href="/xuanpin/new-products">新品选择</a>
-  </nav>
+  {% set active = "today-recommendations" %}
+  {% include "_xuanpin_tabs.html" %}
 
   <section class="tr-toolbar">
     <div class="tr-toolbar-left">

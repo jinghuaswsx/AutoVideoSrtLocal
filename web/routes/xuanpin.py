@@ -56,6 +56,12 @@ def _meta_hot_posts():
     return service
 
 
+def _mingkong_materials():
+    from appcore import mingkong_materials as service
+
+    return service
+
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
@@ -121,10 +127,49 @@ def api_mk_selection():
     return _medias_routes().api_mk_selection()
 
 
+@bp.route("/api/mk-selection/snapshots", methods=["GET"])
+@login_required
+def api_mk_selection_snapshots():
+    return _medias_routes().api_mk_selection_snapshots()
+
+
 @bp.route("/api/mk-selection/refresh", methods=["POST"])
 @login_required
 def api_mk_selection_refresh():
     return _medias_routes().api_mk_selection_refresh()
+
+
+@bp.route("/api/mk-video-materials", methods=["GET"])
+@login_required
+def api_mk_video_materials():
+    return _medias_routes().api_mk_video_materials()
+
+
+@bp.route("/api/mk-material-library", methods=["GET"])
+@login_required
+def api_mk_material_library():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_materials().list_material_library(
+        snapshot_date=(request.args.get("snapshot") or "").strip() or None,
+        keyword=(request.args.get("keyword") or "").strip(),
+        page=request.args.get("page") or 1,
+        page_size=request.args.get("page_size") or 100,
+    )
+    return jsonify(result)
+
+
+@bp.route("/api/mk-yesterday-top100", methods=["GET"])
+@login_required
+def api_mk_yesterday_top100():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_materials().list_yesterday_top100(
+        snapshot_date=(request.args.get("snapshot") or "").strip() or None,
+        page=request.args.get("page") or 1,
+        page_size=request.args.get("page_size") or 100,
+    )
+    return jsonify(result)
 
 
 @bp.route("/api/mk-media", methods=["GET"])

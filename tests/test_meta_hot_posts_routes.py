@@ -181,6 +181,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert '<option value="empty">空</option>' in body
     assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
     assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
+    assert "function renderMetaHotPageSummary(data, items, label = '')" in body
+    assert "当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材" in body
+    assert "qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);" in body
+    assert "qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');" in body
+    assert "qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;" in body
+    assert "qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;" in body
     assert "首页" in body
     assert "上一页" in body
     assert "下一页" in body

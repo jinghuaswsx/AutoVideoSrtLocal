@@ -81,7 +81,16 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
     offset = (page - 1) * page_size
     sort_column = VIDEO_SORTS.get(str(args.get("sort") or "play_count"), "c.play_count")
-    where = ["c.region = %s"]
+    where = [
+        "c.region = %s",
+        """
+        c.id = (
+            SELECT MIN(c2.id)
+            FROM tabcut_video_candidates c2
+            WHERE c2.video_id = c.video_id
+        )
+        """,
+    ]
     params: list[Any] = [str(args.get("region") or "US")]
 
     for arg_name, column in [
@@ -186,9 +195,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
                v.author_avatar_url, v.video_duration_ms, v.create_time,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
-               gs.price_min AS primary_item_price_min,
-               gs.price_max AS primary_item_price_max,
-               COALESCE(gs.sold_count_7d, gs.sold_count_period) AS primary_item_sold_count
+               gs.primary_item_sold_count AS primary_item_sold_count
         FROM tabcut_video_candidates c
         LEFT JOIN (
             SELECT biz_date, region, video_id,
@@ -203,8 +210,14 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
             AND vs.video_id = c.video_id
         LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
         LEFT JOIN tabcut_goods g ON g.item_id = c.primary_item_id
-        LEFT JOIN tabcut_goods_snapshots gs
-               ON gs.biz_date = c.biz_date
+        LEFT JOIN (
+            SELECT biz_date, region, item_id,
+                   MIN(price_min) AS price_min,
+                   MAX(price_max) AS price_max,
+                   MAX(COALESCE(sold_count_7d, sold_count_period)) AS primary_item_sold_count
+            FROM tabcut_goods_snapshots
+            GROUP BY biz_date, region, item_id
+        ) gs ON gs.biz_date = c.biz_date
               AND gs.region = c.region
               AND gs.item_id = c.primary_item_id
         WHERE {where_sql}

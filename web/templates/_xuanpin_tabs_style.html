@@ -1,0 +1,9 @@
+.xuanpin-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:18px; padding:4px; border:1px solid #dbe3ef; border-radius:999px; background:#f6f8fb; }
+.xuanpin-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; transition:background-color 120ms, color 120ms; }
+.xuanpin-tab:hover { color:#1f2937; background:#fff; }
+.xuanpin-tab.active { background:#0f766e; color:#fff; }
+@media (max-width: 768px) {
+  .xuanpin-tabs { display:flex; overflow-x:auto; -webkit-overflow-scrolling:touch; gap:4px; padding:8px; scrollbar-width:none; -ms-overflow-style:none; }
+  .xuanpin-tabs::-webkit-scrollbar { display:none; }
+  .xuanpin-tab { flex-shrink:0; min-width:80px; padding:0 12px; white-space:nowrap; }
+}

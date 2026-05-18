@@ -5,15 +5,13 @@
 <span class="selection-center-title-note">Meta热帖 <span class="mh-count" id="mhCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
   --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
   --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
 }
 .meta-hot-page { color:var(--mh-text); }
-.mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
-.mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
-.mh-tab.active { background:var(--mh-accent); color:#fff; }
 .mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
 .mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
 .mh-subtab.active { background:#0f766e; color:#fff; }
@@ -111,27 +109,6 @@
   .mh-tool-title {
     display: none; /* 隐藏工具标题，给按钮更多空间 */
   }
-  /* 主导航横向滚动 */
-  .mh-tabs {
-    display: flex;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 4px;
-    padding: 8px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .mh-tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .mh-tab {
-    flex-shrink: 0;
-    white-space: nowrap;
-    min-width: 80px;
-    text-align: center;
-    padding: 0 12px;
-  }
-
   /* 子导航横向滚动 */
   .mh-subtabs {
     display: flex;
@@ -254,13 +231,8 @@
 {% endblock %}
 {% block content %}
 <div class="meta-hot-page">
-  <nav class="mh-tabs" aria-label="选品中心类型">
-    <a class="mh-tab" href="/xuanpin/mk">明空选品</a>
-    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
-    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
-    <a class="mh-tab" href="/xuanpin/today-recommendations">今日推荐</a>
-    <a class="mh-tab" href="/xuanpin/new-products">新品选择</a>
-  </nav>
+  {% set active = "meta-hot-posts" %}
+  {% include "_xuanpin_tabs.html" %}
 
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
     <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>
@@ -660,6 +632,14 @@ function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
     qs(id).innerHTML = buttons.join('');
   });
 }
+function renderMetaHotPageSummary(data, items, label = '') {
+  const currentCount = Array.isArray(items) ? items.length : 0;
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const prefix = label ? `${label} · ` : '';
+  return `${prefix}当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材`;
+}
 async function loadMetaHotPosts(page = 1) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
@@ -676,7 +656,7 @@ async function loadMetaHotPosts(page = 1) {
     : '<div class="mh-empty">暂无结果</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data);
-  qs('mhStatus').textContent = `Page ${mhPage}`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);
 }
 async function loadTodayNewMaterials(page = 1) {
   mhSubtab = 'today';
@@ -694,7 +674,7 @@ async function loadTodayNewMaterials(page = 1) {
     : '<div class="mh-empty">今日暂无新抓到的帖子</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data, 'loadTodayNewMaterials');
-  qs('mhStatus').textContent = `今日新增 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');
 }
 async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
@@ -710,7 +690,7 @@ async function loadEuropeTopMaterials() {
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无欧洲评估结果</div>';
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
-  qs('mhStatus').textContent = '欧洲Top50';
+  qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 async function loadUsTopMaterials() {
   mhSubtab = 'us';
@@ -726,7 +706,7 @@ async function loadUsTopMaterials() {
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
-  qs('mhStatus').textContent = `美国Top50 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');

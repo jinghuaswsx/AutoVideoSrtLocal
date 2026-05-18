@@ -1,0 +1,12 @@
+{% set xuanpin_tabs = [
+  ("mk", "/xuanpin/mk", "明空选品"),
+  ("meta-hot-posts", "/xuanpin/meta-hot-posts", "Meta热帖"),
+  ("tabcut", "/xuanpin/tabcut", "TABCUT"),
+  ("today-recommendations", "/xuanpin/today-recommendations", "今日推荐"),
+  ("new-products", "/xuanpin/new-products", "新品选择"),
+] %}
+<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">
+  {% for key, href, label in xuanpin_tabs %}
+  <a class="xuanpin-tab{% if active == key %} active{% endif %}" href="{{ href }}" role="tab" aria-selected="{{ 'true' if active == key else 'false' }}">{{ label }}</a>
+  {% endfor %}
+</nav>
