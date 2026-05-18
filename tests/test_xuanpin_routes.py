@@ -99,7 +99,9 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'aria-label="明空选品库类型"' in body
     assert "产品库" in body
     assert "视频素材库" in body
-    assert "/xuanpin/api/mk-video-materials" in body
+    assert "昨天消耗前100" in body
+    assert "/xuanpin/api/mk-material-library" in body
+    assert "/xuanpin/api/mk-yesterday-top100" in body
 
 
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
