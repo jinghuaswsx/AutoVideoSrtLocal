@@ -169,6 +169,7 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     source_message = str(item.get("message_html") or "")
     translated_message = str(item.get("message_zh_html") or "").strip()
     item["message_source_html"] = source_message
+    item["message_is_translated"] = bool(translated_message)
     if translated_message:
         item["message_html"] = translated_message
     if (

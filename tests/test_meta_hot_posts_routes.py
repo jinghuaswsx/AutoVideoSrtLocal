@@ -75,6 +75,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "商品分析失败记录" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
+    assert 'onclick="refreshMetaHotPosts()"' not in body
+    assert 'onclick="analyzeMetaHotPosts()"' not in body
+    assert 'onclick="translateMetaHotPostMessages()"' not in body
+    assert 'onclick="localizeMetaHotPostVideos()"' not in body
+    assert 'onclick="assessEuropeFitMaterials()"' not in body
+    assert 'onclick="analyzeMetaHotPostVideos()"' not in body
+    assert 'onclick="showVideoCopyabilityTop50()"' not in body
     assert "const mhPageSize = 50;" in body
     assert 'id="mhPagerTop"' in body
     assert 'id="mhPagerBottom"' in body
@@ -96,13 +103,15 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "不行" in body
     assert "function toggleMetaHotPostMark" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/mark" in body
-    assert "翻译文案" in body
-    assert "function translateMetaHotPostMessages" in body
+    assert "翻译文案</button>" not in body
+    assert "显示原文案" in body
+    assert "显示翻译文案" in body
+    assert "function renderMessageBlock(row)" in body
+    assert "function toggleMetaHotPostSourceMessage(event)" in body
+    assert "row.message_source_html" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
-    assert "function localizeMetaHotPostVideos" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
-    assert "可抄 Top 50" in body
-    assert "function showVideoCopyabilityTop50" in body
+    assert "可抄 Top 50</button>" not in body
     assert "/xuanpin/api/meta-hot-posts/video-copyability/top50" in body
     assert "/xuanpin/api/meta-hot-posts/analyze-videos" in body
     assert "row.local_video_url" in body

@@ -85,6 +85,7 @@ def test_build_list_response_prefers_translated_chinese_message(monkeypatch):
     item = payload["items"][0]
     assert item["message_html"] == "深度清洁，无需化学剂。"
     assert item["message_source_html"] == "<p>Deep Clean. Zero Chemicals.</p>"
+    assert item["message_is_translated"] is True
     assert item["message_zh_status"] == "done"
 
 
@@ -131,6 +132,8 @@ def test_build_translate_response_runs_message_translation_tick(monkeypatch):
 
 
 def test_build_europe_fit_response_runs_unified_video_queue_with_current_user(monkeypatch):
+    from appcore.meta_hot_posts import scheduler
+
     captured = {}
 
     def fake_video_analysis_queue_tick_once(**kwargs):
@@ -147,10 +150,12 @@ def test_build_europe_fit_response_runs_unified_video_queue_with_current_user(mo
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert result.payload["result"] == {"scanned": 3, "done": 3, "failed": 0}
-    assert captured == {"limit": 10, "user_id": 7}
+    assert captured == {"limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, "user_id": 7}
 
 
 def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
+    from appcore.meta_hot_posts import scheduler
+
     captured = {}
 
     def fake_video_analysis_queue_tick_once(**kwargs):
@@ -167,7 +172,7 @@ def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert result.payload["result"] == {"scanned": 2, "done": 2, "failed": 0}
-    assert captured == {"limit": 10, "user_id": 7}
+    assert captured == {"limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, "user_id": 7}
 
 
 def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):

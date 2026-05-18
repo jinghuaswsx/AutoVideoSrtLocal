@@ -168,6 +168,18 @@ def test_meta_hot_posts_translate_message_use_case_is_registered_for_billing():
     assert uc["units_type"] == "tokens"
 
 
+def test_copy_translation_use_cases_default_to_openrouter_flash_lite():
+    for code in (
+        "meta_hot_posts.translate_message",
+        "title_translate.generate",
+        "copywriting_translate.generate",
+    ):
+        uc = USE_CASES[code]
+        assert uc["default_provider"] == "openrouter"
+        assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+        assert uc["usage_log_service"] == "openrouter"
+
+
 def test_meta_hot_posts_europe_fit_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.europe_fit"]
 

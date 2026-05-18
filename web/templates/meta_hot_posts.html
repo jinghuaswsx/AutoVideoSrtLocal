@@ -65,7 +65,10 @@
 .mh-play-button.center { left:50%; top:50%; width:58px; height:58px; border-radius:999px; transform:translate(-50%, -50%); }
 .mh-play-button.bottom { right:8px; bottom:8px; width:34px; height:24px; border-radius:5px; }
 .mh-play-button.bottom::before { border-top-width:7px; border-bottom-width:7px; border-left-width:10px; }
+.mh-message-wrap { display:grid; gap:8px; margin-bottom:2px; }
 .mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
+.mh-message-toggle { justify-self:start; height:28px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:5px; background:#fff; color:#334155; font-size:12px; font-weight:700; cursor:pointer; }
+.mh-message-toggle:hover { border-color:var(--mh-accent); color:var(--mh-accent); }
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
@@ -271,13 +274,6 @@
     <div class="mh-tool-buttons">
       <button class="mh-btn secondary" type="button" onclick="showCategoryPrompt()">类目分析提示词</button>
       <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
-      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
-      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
-      <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
-      <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
-      <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
-      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPostVideos()">分析视频</button>
-      <button class="mh-btn" type="button" onclick="showVideoCopyabilityTop50()">可抄 Top 50</button>
     </div>
   </div>
 
@@ -548,6 +544,30 @@ function copyabilityBlock(row) {
     <div class="mh-copy-summary">${esc(data.summary || '')}</div>
   </div>`;
 }
+function renderMessageBlock(row) {
+  const translated = row.message_html || '';
+  const original = row.message_source_html || '';
+  const canToggleOriginal = Boolean(row.message_is_translated && original);
+  const attrs = canToggleOriginal
+    ? ` data-message-showing="translated" data-message-translated="${esc(translated)}" data-message-original="${esc(original)}"`
+    : '';
+  const toggle = canToggleOriginal
+    ? '<button class="mh-message-toggle" type="button" onclick="toggleMetaHotPostSourceMessage(event)">显示原文案</button>'
+    : '';
+  return `<div class="mh-message-wrap"${attrs}><div class="mh-message">${translated}</div>${toggle}</div>`;
+}
+function toggleMetaHotPostSourceMessage(event) {
+  const button = event.currentTarget;
+  const wrap = button && button.closest ? button.closest('.mh-message-wrap') : null;
+  const message = wrap ? wrap.querySelector('.mh-message') : null;
+  if (!wrap || !message) return;
+  const showingOriginal = wrap.dataset.messageShowing === 'original';
+  message.innerHTML = showingOriginal
+    ? (wrap.dataset.messageTranslated || '')
+    : (wrap.dataset.messageOriginal || '');
+  wrap.dataset.messageShowing = showingOriginal ? 'translated' : 'original';
+  button.textContent = showingOriginal ? '显示原文案' : '显示翻译文案';
+}
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
@@ -565,7 +585,7 @@ function renderCard(row) {
       <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
       <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
       ${cardMedia(row)}
-      <div class="mh-message">${row.message_html || ''}</div>
+      ${renderMessageBlock(row)}
       ${copyabilityBlock(row)}
       <div class="mh-analysis">
         <div class="mh-product">${productImg}<div>
