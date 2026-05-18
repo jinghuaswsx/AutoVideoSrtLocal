@@ -228,6 +228,85 @@ def test_embed_missing_invokes_on_progress(tmp_path, monkeypatch):
     ]
 
 
+def test_preview_rate_provider_routes_english_to_doubao_and_others_to_scribe():
+    from pipeline.voice_library_sync import (
+        _build_preview_rate_adapter,
+        _preview_rate_provider_code,
+        _preview_rate_source_code,
+    )
+
+    assert _preview_rate_provider_code("en") == "doubao_asr"
+    assert _preview_rate_provider_code("de") == "elevenlabs_tts"
+    assert _preview_rate_provider_code("fr") == "elevenlabs_tts"
+    assert _preview_rate_source_code("en") == "doubao_asr"
+    assert _preview_rate_source_code("de") == "elevenlabs_scribe"
+    assert _build_preview_rate_adapter("de").display_name == "ElevenLabs Scribe"
+
+
+def test_compute_missing_preview_speech_rates_downloads_asr_and_upserts(tmp_path, monkeypatch):
+    from pipeline import voice_library_sync
+
+    targets = [{
+        "voice_id": "voice-en",
+        "language": "en",
+        "preview_url": "https://example.com/a.mp3",
+        "preview_url_hash": "hash-a",
+    }]
+    upserts = []
+    used = {}
+
+    class FakeAdapter:
+        provider_code = "doubao_asr"
+
+        def transcribe(self, path, language=None):
+            used["path"] = str(path)
+            used["language"] = language
+            return [{
+                "text": "fast preview sample",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "words": [
+                    {"word": "fast", "start": 0.0, "end": 0.2},
+                    {"word": "preview", "start": 0.25, "end": 0.55},
+                    {"word": "sample", "start": 0.6, "end": 1.0},
+                ],
+            }]
+
+    monkeypatch.setattr(
+        voice_library_sync,
+        "_list_preview_rate_targets",
+        lambda *, language=None, voice_ids=None, limit=None: targets,
+    )
+    monkeypatch.setattr(
+        voice_library_sync,
+        "_download_preview",
+        lambda url, dest: dest.write_bytes(b"mp3") or str(dest),
+    )
+    monkeypatch.setattr(
+        voice_library_sync,
+        "_build_preview_rate_adapter",
+        lambda language: FakeAdapter(),
+    )
+    monkeypatch.setattr(
+        voice_library_sync.voice_preview_speech_rate,
+        "upsert_rate",
+        lambda **kwargs: upserts.append(kwargs),
+    )
+
+    count = voice_library_sync.compute_missing_preview_speech_rates(
+        cache_dir=str(tmp_path),
+        language="en",
+        limit=1,
+    )
+
+    assert count == 1
+    assert used["language"] == "en"
+    assert upserts[0]["voice_id"] == "voice-en"
+    assert upserts[0]["preview_url_hash"] == "hash-a"
+    assert upserts[0]["words_per_second"] == 3.0
+    assert upserts[0]["source"] == "preview_asr:doubao_asr"
+
+
 def test_upsert_voice_writes_use_case_from_top_level():
     from pipeline.voice_library_sync import upsert_voice
     captured = {}

@@ -48,3 +48,13 @@ def test_voice_selector_multi_exposes_explicit_voice_select_control():
     assert "function syncVoiceSelectOptions(" in SCRIPT
     assert "function selectVoiceFromControl()" in SCRIPT
     assert 'voiceSelect.addEventListener("change", selectVoiceFromControl);' in SCRIPT
+
+
+def test_voice_selector_multi_renders_speed_metadata():
+    assert "function voiceSpeedMetaHtml(rec)" in SCRIPT
+    assert "preview_words_per_second" in SCRIPT
+    assert "speed_match_score" in SCRIPT
+    assert "combined_score" in SCRIPT
+    assert "语速未维护，已按音色排序" in SCRIPT
+    assert "语速匹配" in SCRIPT
+    assert ".vs-row-speed" in TEMPLATE

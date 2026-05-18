@@ -162,6 +162,7 @@ def _set(**updates) -> None:
 def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
     from pipeline.voice_library_sync import (
         sync_all_shared_voices,
+        compute_missing_preview_speech_rates,
         embed_missing_voices,
         upsert_library_stats,
     )
@@ -200,6 +201,15 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
         cache_dir = os.path.join("uploads", "voice_preview_cache")
         embed_missing_voices(
             cache_dir, on_progress=on_progress, language=language,
+        )
+
+        def on_rate_progress(done, total, voice_id, ok):
+            _set(phase="preview_rate", done=done, total=total)
+
+        compute_missing_preview_speech_rates(
+            cache_dir=os.path.join("uploads", "voice_preview_rate_cache"),
+            language=language,
+            on_progress=on_rate_progress,
         )
 
         _set(status="done", phase="done")

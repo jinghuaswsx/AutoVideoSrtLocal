@@ -481,7 +481,7 @@
   }
 
   function rowHtml(v, opts) {
-    const { badge, pinClass, isSelected } = opts;
+    const { badge, pinClass, isSelected, rec } = opts;
     const classes = ["vs-row"];
     if (pinClass) classes.push(pinClass);
     if (isSelected) classes.push("selected");
@@ -491,15 +491,48 @@
     const preview = previewUrl
       ? `<audio controls preload="none" src="${escapeHtml(previewUrl)}"></audio>`
       : "";
+    const speedMeta = voiceSpeedMetaHtml(rec);
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
            data-voice-name="${escapeHtml(v.name || '')}">
         <div class="vs-row-main">
           <div class="vs-row-name">${badge || ""}${escapeHtml(v.name || v.voice_id)}</div>
           <div class="vs-row-meta">${meta}</div>
+          ${speedMeta}
         </div>
         ${preview}
         <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
+      </div>
+    `;
+  }
+
+  function fmtRate(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n.toFixed(2) : null;
+  }
+
+  function fmtScore(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${(n * 100).toFixed(0)}%` : null;
+  }
+
+  function voiceSpeedMetaHtml(rec) {
+    if (!rec) return "";
+    const status = String(rec.voice_speed_status || "");
+    const sourceRate = fmtRate(rec.source_words_per_second);
+    const previewRate = fmtRate(rec.preview_words_per_second);
+    const speedScore = fmtScore(rec.speed_match_score);
+    const combinedScore = fmtScore(rec.combined_score);
+    if (!previewRate || status === "missing_preview_rate") {
+      const sourceText = sourceRate ? `原视频 ${escapeHtml(sourceRate)} 词/秒 · ` : "";
+      return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，已按音色排序</div>`;
+    }
+    return `
+      <div class="vs-row-speed">
+        ${sourceRate ? `<span>原视频 ${escapeHtml(sourceRate)} 词/秒</span>` : ""}
+        <span>Preview ${escapeHtml(previewRate)} 词/秒</span>
+        ${speedScore ? `<span>语速匹配 ${escapeHtml(speedScore)}</span>` : ""}
+        ${combinedScore ? `<span>综合 ${escapeHtml(combinedScore)}</span>` : ""}
       </div>
     `;
   }
@@ -595,7 +628,7 @@
         ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
         : "";
       html += rowHtml(v, {
-        badge, pinClass: classes.join(" "), isSelected,
+        badge, pinClass: classes.join(" "), isSelected, rec,
       });
     });
 

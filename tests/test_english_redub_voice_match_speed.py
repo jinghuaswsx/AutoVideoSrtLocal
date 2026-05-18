@@ -53,7 +53,7 @@ def test_rank_speed_aware_keeps_similarity_floor():
     assert ranked[0]["combined_score"] > ranked[1]["combined_score"]
 
 
-def test_speed_aware_match_falls_back_to_timbre_when_no_preview_rates(monkeypatch):
+def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypatch):
     from pipeline import voice_match_speed
 
     candidates = [
@@ -70,6 +70,12 @@ def test_speed_aware_match_falls_back_to_timbre_when_no_preview_rates(monkeypatc
         "get_rates_for_voices",
         lambda *, language, voice_ids: {},
     )
+    lazy_calls = []
+    monkeypatch.setattr(
+        voice_match_speed.voice_library_sync,
+        "compute_missing_preview_speech_rates",
+        lambda **kwargs: lazy_calls.append(kwargs) or 0,
+    )
 
     ranked = voice_match_speed.match_candidates_speed_aware(
         np.array([1.0, 0.0], dtype=np.float32),
@@ -77,7 +83,15 @@ def test_speed_aware_match_falls_back_to_timbre_when_no_preview_rates(monkeypatc
         source_utterances=[{"text": "hello world", "start_time": 0, "end_time": 1}],
     )
 
-    assert ranked == candidates
+    assert [row["voice_id"] for row in ranked] == ["a", "b"]
+    assert lazy_calls[0]["language"] == "en"
+    assert lazy_calls[0]["voice_ids"] == ["a", "b"]
+    assert ranked[0]["source_words_per_second"] == 2.0
+    assert ranked[0]["preview_words_per_second"] is None
+    assert ranked[0]["speed_match_score"] is None
+    assert ranked[0]["combined_score"] == ranked[0]["similarity"]
+    assert ranked[0]["voice_speed_status"] == "missing_preview_rate"
+    assert ranked[0]["voice_match_strategy_effective"] == "legacy_fallback"
 
 
 def test_preview_rate_dao_maps_voice_ids(monkeypatch):

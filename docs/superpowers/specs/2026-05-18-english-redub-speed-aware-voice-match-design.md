@@ -285,15 +285,18 @@ CREATE TABLE IF NOT EXISTS voice_preview_speech_rate (
 
 - 输入：`elevenlabs_voices` 或 `elevenlabs_voice_variants` 的 `preview_url`。
 - 下载 preview 到缓存目录。
-- 用现有 ASR adapter 或轻量英文 ASR 识别 preview。
+- 用现有 ASR adapter 识别 preview：英文 `en` 强制走豆包 ASR，其他语言走 ElevenLabs Scribe。
 - 计算 `words_per_second` / `chars_per_second`。
 - 写入 `voice_preview_speech_rate`。
+- 声音库同步任务在完成 metadata sync 和 embedding 补算后，继续补算当前语言缺失的 preview 语速。
+- 英配 `voice_match` 在 `timbre_speed` 策略下会对候选池缺失的 preview 语速做小批量懒加载补算；仍缺失时候选保留音色排序，但必须携带 `voice_speed_status="missing_preview_rate"` 供前端说明。
 
 失败策略：
 
 - 单条失败不中断推荐。
 - 候选缺 preview rate 时保留原音色排序，`speed_score=null`。
 - 如果 top100 中有效 preview rate 少于阈值（例如 10 条），整体退回 legacy 排序，并记录 `voice_match_strategy_effective="legacy_fallback"`.
+- 前端候选卡必须展示语速参与情况：有缓存时显示原视频语速、preview 语速、语速匹配分和综合分；无缓存时显示“语速未维护，已按音色排序”。
 
 ### 打分
 

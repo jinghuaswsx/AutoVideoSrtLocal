@@ -229,6 +229,54 @@ def test_summarize_prefers_voice_variants_when_available(monkeypatch):
     assert out[0]["target_total"] == 521
 
 
+def test_run_sync_computes_preview_speech_rates_after_embedding(monkeypatch):
+    from pipeline import voice_library_sync
+
+    emitted = []
+    preview_calls = []
+    vlst._CURRENT["task"] = {
+        "sync_id": "sync_1",
+        "language": "en",
+        "phase": "pull_metadata",
+        "done": 0,
+        "total": 0,
+        "status": "running",
+        "error": None,
+    }
+
+    monkeypatch.setattr(vlst, "_emit", lambda event, payload: emitted.append((event, dict(payload))))
+    monkeypatch.setattr(vlst, "summarize", lambda: [])
+    monkeypatch.setattr(
+        voice_library_sync,
+        "sync_all_shared_voices",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        voice_library_sync,
+        "embed_missing_voices",
+        lambda cache_dir, on_progress, language: on_progress(1, 1, "v1", True) or 1,
+    )
+
+    def fake_preview_rates(**kwargs):
+        preview_calls.append(kwargs)
+        kwargs["on_progress"](1, 1, "v1", True)
+        return 1
+
+    monkeypatch.setattr(
+        voice_library_sync,
+        "compute_missing_preview_speech_rates",
+        fake_preview_rates,
+    )
+    monkeypatch.setattr(voice_library_sync, "upsert_library_stats", lambda *args, **kwargs: None)
+
+    vlst._run_sync_sync("sync_1", "en", "api-key")
+
+    assert preview_calls[0]["language"] == "en"
+    assert preview_calls[0]["cache_dir"].endswith("voice_preview_rate_cache")
+    assert any(payload.get("phase") == "preview_rate" for _event, payload in emitted)
+    assert vlst.get_current()["status"] == "done"
+
+
 def test_max_voices_per_language_constant():
     from appcore.voice_library_sync_task import MAX_VOICES_PER_LANGUAGE
     assert MAX_VOICES_PER_LANGUAGE == 1000

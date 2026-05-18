@@ -228,6 +228,20 @@
   .vs-row-main { flex: 1; min-width: 0; }
   .vs-row-name { font-weight: 600; font-size: 14px; }
   .vs-row-meta { font-size: 12px; color: var(--text-user-badge); margin-top: 2px; }
+  .vs-row-speed {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 6px; font-size: 11px; color: var(--text-user-badge);
+  }
+  .vs-row-speed span,
+  .vs-row-speed-missing {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px; border-radius: 999px;
+    background: var(--bg-muted, #f1f5f9);
+  }
+  .vs-row-speed-missing {
+    color: oklch(48% 0.08 70);
+    background: oklch(96% 0.03 80);
+  }
   .vs-row-sim {
     display: inline-block; padding: 2px 8px; border-radius: 999px;
     font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;

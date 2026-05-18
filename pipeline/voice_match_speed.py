@@ -9,10 +9,11 @@ from typing import Iterable
 import numpy as np
 
 from appcore import voice_preview_speech_rate
-from pipeline import voice_match
+from pipeline import voice_library_sync, voice_match
 
 DEFAULT_CANDIDATE_POOL_SIZE = 100
 DEFAULT_RESULT_TOP_K = 10
+DEFAULT_LAZY_PREVIEW_RATE_LIMIT = 10
 TIMBRE_WEIGHT = 0.75
 SPEED_WEIGHT = 0.25
 MIN_SIMILARITY_DELTA = 0.08
@@ -144,6 +145,8 @@ def rank_speed_aware_candidates(
         row["preview_words_per_second"] = preview_rates.get(voice_id)
         row["speed_match_score"] = speed_score
         row["combined_score"] = combined
+        row["voice_speed_status"] = "speed_ranked" if speed_score is not None else "missing_preview_rate"
+        row["voice_match_strategy_effective"] = "timbre_speed" if speed_score is not None else "legacy_fallback"
         ranked.append(row)
     ranked.sort(
         key=lambda row: (
@@ -155,6 +158,22 @@ def rank_speed_aware_candidates(
     return ranked[:top_k]
 
 
+def _annotate_timbre_fallback(candidates: list[dict], source_rate: dict, reason: str, *, top_k: int) -> list[dict]:
+    source_wps = float(source_rate.get("source_words_per_second") or 0.0) or None
+    rows: list[dict] = []
+    for candidate in candidates[:top_k]:
+        row = dict(candidate)
+        row["similarity"] = float(row.get("similarity") or 0.0)
+        row["source_words_per_second"] = source_wps
+        row["preview_words_per_second"] = None
+        row["speed_match_score"] = None
+        row["combined_score"] = row["similarity"]
+        row["voice_speed_status"] = reason
+        row["voice_match_strategy_effective"] = "legacy_fallback"
+        rows.append(row)
+    return rows
+
+
 def match_candidates_speed_aware(
     query_embedding: np.ndarray,
     *,
@@ -163,6 +182,7 @@ def match_candidates_speed_aware(
     gender: str | None = None,
     top_k: int = DEFAULT_RESULT_TOP_K,
     candidate_pool_size: int = DEFAULT_CANDIDATE_POOL_SIZE,
+    lazy_preview_rate_limit: int = DEFAULT_LAZY_PREVIEW_RATE_LIMIT,
     exclude_voice_ids: Iterable[str] | None = None,
 ) -> list[dict]:
     candidates = voice_match.match_candidates(
@@ -175,19 +195,43 @@ def match_candidates_speed_aware(
     if not candidates:
         return []
     source_rate = compute_source_speech_rate(source_utterances)
+    voice_ids = [
+        str(candidate.get("voice_id") or "").strip()
+        for candidate in candidates
+        if candidate.get("voice_id")
+    ]
     preview_rates = voice_preview_speech_rate.get_rates_for_voices(
         language=language,
-        voice_ids=[
-            str(candidate.get("voice_id") or "").strip()
-            for candidate in candidates
-            if candidate.get("voice_id")
-        ],
+        voice_ids=voice_ids,
     )
-    if (
-        not preview_rates
-        or float(source_rate.get("source_words_per_second") or 0.0) <= 0
-    ):
-        return candidates[:top_k]
+    source_wps = float(source_rate.get("source_words_per_second") or 0.0)
+    if source_wps <= 0:
+        return _annotate_timbre_fallback(
+            candidates,
+            source_rate,
+            "source_rate_unavailable",
+            top_k=top_k,
+        )
+    if not preview_rates and lazy_preview_rate_limit > 0:
+        try:
+            voice_library_sync.compute_missing_preview_speech_rates(
+                language=language,
+                voice_ids=voice_ids[:lazy_preview_rate_limit],
+                limit=lazy_preview_rate_limit,
+            )
+            preview_rates = voice_preview_speech_rate.get_rates_for_voices(
+                language=language,
+                voice_ids=voice_ids,
+            )
+        except Exception:
+            preview_rates = {}
+    if not preview_rates:
+        return _annotate_timbre_fallback(
+            candidates,
+            source_rate,
+            "missing_preview_rate",
+            top_k=top_k,
+        )
     return rank_speed_aware_candidates(
         candidates,
         source_rate,
