@@ -617,7 +617,7 @@ def update_local_video_metadata(
         (_score(local_video_duration_seconds), local_video_cover_path or "", int(post_id)),
     )
 
-def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
         INSERT INTO meta_hot_post_video_copyability_analyses (
