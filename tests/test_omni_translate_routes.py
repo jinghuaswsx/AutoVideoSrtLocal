@@ -241,20 +241,20 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
-            json={"profile": "manual_boost", "manual_boost_pct": 50},
+            json={"profile": "manual_boost", "manual_boost_pct": 200},
         )
 
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["profile"] == "manual_boost"
-    assert body["manual_boost_pct"] == 50
+    assert body["manual_boost_pct"] == 200
     assert body["applied_profile"] == "standard"
     assert body["applied_manual_boost_pct"] is None
     assert body["needs_resume"] is True
     mock_store.update.assert_called_once_with(
         "t-1",
         loudness_profile="manual_boost",
-        loudness_manual_boost_pct=50,
+        loudness_manual_boost_pct=200,
     )
     mock_runner.resume.assert_not_called()
     mock_runner.start.assert_not_called()
@@ -443,7 +443,7 @@ def test_loudness_profile_route_allows_visible_project_user_with_permission(auth
     )
 
 
-@pytest.mark.parametrize("pct", [0, 5, 55, 101, "abc", None])
+@pytest.mark.parametrize("pct", [0, 5, 55, 101, 210, "abc", None])
 def test_loudness_profile_route_rejects_invalid_manual_pct(
     authed_client_no_db, pct,
 ):

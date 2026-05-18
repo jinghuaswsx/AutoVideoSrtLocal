@@ -41,9 +41,9 @@ LOUDNESS_PROFILES = {
     LOUDNESS_PROFILE_CLEAN_BACKGROUND,
 }
 
-BOOST_TARGET_GAP_LU = 10.0
-BOOST_MAX_BACKGROUND_VOLUME = 1.8
-DEFAULT_MANUAL_BOOST_PCT = 50
+BOOST_TARGET_GAP_LU = 7.0
+BOOST_MAX_BACKGROUND_VOLUME = 2.4
+DEFAULT_MANUAL_BOOST_PCT = 100
 BACKGROUND_CLEANUP_MODE_DE_ELECTRIC = "de_electric"
 DE_ELECTRIC_BACKGROUND_FILTER = (
     "highpass=f=80,"
@@ -90,11 +90,11 @@ def validate_loudness_profile(
         isinstance(manual_boost_pct, bool)
         or not isinstance(manual_boost_pct, int)
         or manual_boost_pct < 10
-        or manual_boost_pct > 100
+        or manual_boost_pct > 200
         or manual_boost_pct % 10 != 0
     ):
         raise ValueError(
-            "manual_boost_pct must be an integer multiple of 10 from 10 to 100"
+            "manual_boost_pct must be an integer multiple of 10 from 10 to 200"
         )
     return normalized_profile, manual_boost_pct
 

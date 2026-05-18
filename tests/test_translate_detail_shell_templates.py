@@ -209,6 +209,8 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "font-family: inherit;" in separation
     assert "+10%" in separation
     assert "+100%" in separation
+    assert "+200%" in separation
+    assert "最高 2.4" in separation
     assert "loudnessStepStatus" in separation
     assert "state.steps.get('loudness_match', '')" in separation
     assert 'task.steps.loudness_match' in separation
