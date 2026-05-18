@@ -3,7 +3,7 @@ import re
 
 
 SCHEMA_PATH = Path("db/schema.sql")
-MIGRATION_PATH = Path("db/migrations/2026_05_14_add_video_cover_project_type.sql")
+MIGRATION_PATH = Path("db/migrations/2026_05_18_add_english_redub_project_type.sql")
 
 SCHEMA_PROJECTS_TYPE_PATTERN = (
     r"CREATE TABLE IF NOT EXISTS projects\s*\(.*?\btype\s+ENUM\((.*?)\)\s+"
@@ -32,6 +32,7 @@ EXPECTED_PROJECT_TYPES = {
     "ja_translate",
     "omni_translate",
     "video_cover",
+    "english_redub",
 }
 
 
