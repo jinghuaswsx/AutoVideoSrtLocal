@@ -353,6 +353,48 @@ def api_meta_hot_posts_video_copyability_top50():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/<int:post_id>/ai-analysis/<mode>/request-preview", methods=["GET"])
+@login_required
+def api_meta_hot_posts_ai_analysis_request_preview(post_id: int, mode: str):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_ai_analysis_request_preview_response(post_id, mode)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/ai-analysis/<mode>/request-payload", methods=["GET"])
+@login_required
+def api_meta_hot_posts_ai_analysis_request_payload(post_id: int, mode: str):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_ai_analysis_request_payload_response(post_id, mode)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/ai-analysis/<mode>/result", methods=["GET"])
+@login_required
+def api_meta_hot_posts_ai_analysis_result(post_id: int, mode: str):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_ai_analysis_result_response(post_id, mode)
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/ai-analysis/<mode>", methods=["POST"])
+@login_required
+def api_meta_hot_posts_ai_analysis_run(post_id: int, mode: str):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    result = _meta_hot_posts().build_ai_analysis_run_response(
+        post_id,
+        mode,
+        payload,
+        user_id=getattr(current_user, "id", None),
+    )
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/meta-hot-posts/<int:post_id>/local-video", methods=["GET"])
 @login_required
 def api_meta_hot_posts_local_video(post_id: int):

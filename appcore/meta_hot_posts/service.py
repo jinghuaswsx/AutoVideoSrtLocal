@@ -4,7 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from appcore.meta_hot_posts import categories, product_analysis, store, video_localization
+from appcore.meta_hot_posts import (
+    categories,
+    europe_fit,
+    product_analysis,
+    store,
+    video_copyability,
+    video_localization,
+)
 
 MARK_STATUS_OK = "ok"
 MARK_STATUS_BAD = "bad"
@@ -111,7 +118,6 @@ def _pop_video_copyability_payload(
     has_payload = any(
         values.get(name) not in (None, "")
         for name in (
-            "analysis_id",
             "overall_score",
             "copyability_score",
             "meta_us_ad_fit_score",
@@ -291,6 +297,9 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["europe_fit_video_optimization"] = _decode_json_dict(
         item.pop("europe_fit_video_optimization_json", None)
     )
+    item["europe_fit_raw_response"] = _decode_json_dict(
+        item.pop("europe_fit_llm_response_json", None)
+    )
     if "europe_fit_direct_reuse" in item:
         item["europe_fit_direct_reuse"] = _bool_payload(item.get("europe_fit_direct_reuse"))
     video_copyability = _pop_video_copyability_payload(item, prefixed=True)
@@ -385,6 +394,421 @@ def build_mark_response(
     return MetaHotPostsResponse(
         {"ok": True, "id": int(post_id), "mark_status": mark_status, "is_marked": bool(mark_status)}
     )
+
+
+AI_ANALYSIS_MODE_US_COPYABILITY = "us_copyability"
+AI_ANALYSIS_MODE_EUROPE_TRANSLATION = "europe_translation"
+
+
+def _normalize_ai_analysis_mode(mode: str) -> str | None:
+    normalized = str(mode or "").strip().lower().replace("-", "_")
+    if normalized in {AI_ANALYSIS_MODE_US_COPYABILITY, "us", "video_copyability"}:
+        return AI_ANALYSIS_MODE_US_COPYABILITY
+    if normalized in {AI_ANALYSIS_MODE_EUROPE_TRANSLATION, "europe_fit", "europe"}:
+        return AI_ANALYSIS_MODE_EUROPE_TRANSLATION
+    return None
+
+
+def _ai_analysis_mode_meta(mode: str) -> dict[str, Any] | None:
+    normalized = _normalize_ai_analysis_mode(mode)
+    if normalized == AI_ANALYSIS_MODE_US_COPYABILITY:
+        return {
+            "mode": normalized,
+            "label": "美国操作分析",
+            "use_case": video_copyability.VIDEO_COPYABILITY_USE_CASE,
+            "provider": video_copyability.VIDEO_COPYABILITY_PROVIDER,
+            "model": video_copyability.VIDEO_COPYABILITY_MODEL,
+            "system": video_copyability.build_system_prompt(),
+            "schema": video_copyability.build_response_schema(),
+            "temperature": 0.2,
+            "max_output_tokens": 1400,
+        }
+    if normalized == AI_ANALYSIS_MODE_EUROPE_TRANSLATION:
+        return {
+            "mode": normalized,
+            "label": "欧洲翻译分析",
+            "use_case": europe_fit.USE_CASE_CODE,
+            "provider": europe_fit.EUROPE_FIT_PROVIDER,
+            "model": europe_fit.EUROPE_FIT_MODEL,
+            "system": europe_fit.build_system_prompt(),
+            "schema": europe_fit.build_response_schema(),
+            "temperature": 0.1,
+            "max_output_tokens": 2048,
+        }
+    return None
+
+
+def _get_ai_analysis_row(post_id: int) -> dict[str, Any] | None:
+    return store.get_hot_post_ai_analysis_row(int(post_id))
+
+
+def _hydrate_ai_analysis_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item.setdefault("sku_prices_json", "[]")
+    return _hydrate_item(item)
+
+
+def _has_ai_analysis_result(row: Mapping[str, Any], mode: str) -> bool:
+    normalized = _normalize_ai_analysis_mode(mode)
+    if normalized == AI_ANALYSIS_MODE_US_COPYABILITY:
+        return str(row.get("video_copyability_status") or "").lower() == "done" and any(
+            row.get(key) not in (None, "")
+            for key in (
+                "video_copyability_overall_score",
+                "video_copyability_summary",
+                "video_copyability_analysis_json",
+            )
+        )
+    if normalized == AI_ANALYSIS_MODE_EUROPE_TRANSLATION:
+        return str(row.get("europe_fit_status") or "").lower() == "done" and any(
+            row.get(key) not in (None, "")
+            for key in (
+                "europe_fit_score",
+                "europe_fit_reasoning",
+                "europe_fit_llm_response_json",
+            )
+        )
+    return False
+
+
+def _ai_analysis_prompt(mode: str, row: Mapping[str, Any]) -> str:
+    normalized = _normalize_ai_analysis_mode(mode)
+    analysis_row = dict(row)
+    analysis_row["hot_post_id"] = analysis_row.get("hot_post_id") or analysis_row.get("id")
+    if normalized == AI_ANALYSIS_MODE_US_COPYABILITY:
+        return video_copyability.build_prompt(analysis_row)
+    if normalized == AI_ANALYSIS_MODE_EUROPE_TRANSLATION:
+        return europe_fit.build_prompt(analysis_row)
+    return ""
+
+
+def _build_ai_analysis_request_payload(
+    post_id: int,
+    mode: str,
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    meta = _ai_analysis_mode_meta(mode)
+    if not meta:
+        return {}
+    item = _hydrate_ai_analysis_row(row)
+    video_url = item.get("local_video_url") or item.get("tos_video_url") or item.get("video_url") or ""
+    media = [
+        {
+            "role": "product_main_image",
+            "type": "image",
+            "url": item.get("product_main_image_url") or item.get("image_url") or "",
+            "sent_to_llm": False,
+        },
+        {
+            "role": "video",
+            "type": "video",
+            "url": video_url,
+            "cover_url": item.get("local_video_cover_url") or item.get("tos_video_cover_url") or item.get("image_url") or "",
+            "source_path": item.get("local_video_path") or "",
+            "sent_to_llm": True,
+        },
+    ]
+    request_payload = {
+        "use_case": meta["use_case"],
+        "prompt": _ai_analysis_prompt(meta["mode"], row),
+        "system": meta["system"],
+        "media": [
+            {
+                "role": "video",
+                "type": "video",
+                "path": item.get("local_video_path") or "",
+                "runtime_note": "The analyzer prepares/compresses this local video before sending it to the LLM.",
+            }
+        ],
+        "response_schema": meta["schema"],
+        "provider_override": meta["provider"],
+        "model_override": meta["model"],
+        "temperature": meta["temperature"],
+        "max_output_tokens": meta["max_output_tokens"],
+        "project_id": f"meta-hot-post-{post_id}",
+    }
+    return {
+        "mode": meta["mode"],
+        "label": meta["label"],
+        "use_case": meta["use_case"],
+        "provider": meta["provider"],
+        "model": meta["model"],
+        "product": {
+            "title": item.get("product_title") or "",
+            "url": item.get("product_url") or "",
+            "main_image_url": item.get("product_main_image_url") or item.get("image_url") or "",
+            "category": item.get("category_l1") or "",
+            "category_label": item.get("category_l1_zh") or item.get("category_l1") or "",
+            "price_min": item.get("price_min"),
+            "price_max": item.get("price_max"),
+            "currency": item.get("currency") or "",
+        },
+        "post": {
+            "id": item.get("id"),
+            "post_url": item.get("post_url") or "",
+            "ad_library_url": item.get("ad_library_url") or "",
+            "message_html": item.get("message_html") or "",
+            "message_source_html": item.get("message_source_html") or "",
+            "latest_likes": item.get("latest_likes"),
+            "latest_comments": item.get("latest_comments"),
+            "latest_shares": item.get("latest_shares"),
+            "sync_period_likes": item.get("sync_period_likes"),
+            "sync_period_hours": item.get("sync_period_hours"),
+        },
+        "media": media,
+        "prompts": {
+            "system": meta["system"],
+            "user": request_payload["prompt"],
+        },
+        "response_schema": meta["schema"],
+        "request": request_payload,
+        "has_result": _has_ai_analysis_result(row, meta["mode"]),
+        "full_payload_url": f"/xuanpin/api/meta-hot-posts/{int(post_id)}/ai-analysis/{meta['mode']}/request-payload",
+    }
+
+
+def build_ai_analysis_request_preview_response(post_id: int, mode: str) -> MetaHotPostsResponse:
+    meta = _ai_analysis_mode_meta(mode)
+    if not meta:
+        return MetaHotPostsResponse({"error": "invalid_mode"}, 400)
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    return MetaHotPostsResponse(
+        {"ok": True, "payload": _build_ai_analysis_request_payload(post_id, meta["mode"], row)}
+    )
+
+
+def build_ai_analysis_request_payload_response(post_id: int, mode: str) -> MetaHotPostsResponse:
+    return build_ai_analysis_request_preview_response(post_id, mode)
+
+
+def _build_ai_analysis_result_payload(
+    post_id: int,
+    mode: str,
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    meta = _ai_analysis_mode_meta(mode)
+    item = _hydrate_ai_analysis_row(row)
+    if not meta or not _has_ai_analysis_result(row, meta["mode"]):
+        return {
+            "ok": True,
+            "mode": meta["mode"] if meta else mode,
+            "has_result": False,
+            "item": item,
+        }
+    if meta["mode"] == AI_ANALYSIS_MODE_US_COPYABILITY:
+        result = item.get("video_copyability") or {}
+        raw_response = result.get("raw") or {}
+    else:
+        result = {
+            "suitability_score": item.get("europe_fit_score"),
+            "recommendation": item.get("europe_fit_recommendation"),
+            "direct_reuse": item.get("europe_fit_direct_reuse"),
+            "best_countries": item.get("europe_fit_best_countries") or [],
+            "country_scores": item.get("europe_fit_country_scores") or {},
+            "strengths": item.get("europe_fit_strengths") or [],
+            "risks": item.get("europe_fit_risks") or [],
+            "required_changes": item.get("europe_fit_required_changes") or [],
+            "reasoning": item.get("europe_fit_reasoning") or "",
+            "provider": item.get("europe_fit_provider") or "",
+            "model": item.get("europe_fit_model") or "",
+            "assessed_at": item.get("europe_fit_assessed_at") or "",
+            "video_optimization": item.get("europe_fit_video_optimization") or {},
+        }
+        raw_response = item.get("europe_fit_raw_response") or {}
+        if isinstance(raw_response.get("json"), Mapping):
+            result.update(
+                {
+                    key: raw_response["json"].get(key)
+                    for key in (
+                        "translation_fit_score",
+                        "best_language_markets",
+                        "source_language_detected",
+                        "speech_dependency",
+                        "on_screen_text_dependency",
+                        "needs_subtitle_translation",
+                        "needs_voiceover_or_dubbing",
+                        "needs_screen_text_replacement",
+                        "localization_difficulty",
+                        "country_localization_notes",
+                    )
+                    if key in raw_response["json"]
+                }
+            )
+    return {
+        "ok": True,
+        "mode": meta["mode"],
+        "label": meta["label"],
+        "has_result": True,
+        "result": result,
+        "raw_response": raw_response,
+        "item": item,
+    }
+
+
+def build_ai_analysis_result_response(post_id: int, mode: str) -> MetaHotPostsResponse:
+    meta = _ai_analysis_mode_meta(mode)
+    if not meta:
+        return MetaHotPostsResponse({"error": "invalid_mode"}, 400)
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    return MetaHotPostsResponse(_build_ai_analysis_result_payload(post_id, meta["mode"], row))
+
+
+def _analysis_attempts_after_mark(state: Mapping[str, Any] | None) -> int:
+    try:
+        return int((state or {}).get("attempts") or 0) + 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _status_after_failed_manual_attempt(state: Mapping[str, Any] | None) -> str:
+    return "suspended" if _analysis_attempts_after_mark(state) >= 3 else "failed"
+
+
+def _analysis_row_for_analyzer(row: Mapping[str, Any], *, post_id: int) -> dict[str, Any]:
+    analysis_row = dict(row)
+    analysis_row.setdefault("id", int(post_id))
+    analysis_row["hot_post_id"] = int(post_id)
+    return analysis_row
+
+
+def _is_rate_limited_exception(exc: Exception) -> bool:
+    from appcore.meta_hot_posts import scheduler
+
+    return scheduler._is_rate_limited_error(exc)
+
+
+def _run_single_us_copyability(post_id: int, row: Mapping[str, Any], *, user_id: int | None) -> None:
+    from appcore.meta_hot_posts import scheduler
+
+    before_state = store.get_video_copyability_analysis_state(post_id)
+    store.ensure_video_copyability_candidate_for_post(post_id)
+    state = store.get_video_copyability_analysis_state(post_id)
+    if not state:
+        raise ValueError("video copyability candidate is not available")
+    analysis_id = int(state["id"])
+    store.mark_video_copyability_running(analysis_id)
+    try:
+        result = video_copyability.analyze_video_copyability(
+            _analysis_row_for_analyzer(row, post_id=post_id),
+            user_id=scheduler.resolve_billing_user_id(user_id),
+        )
+    except Exception as exc:
+        if _is_rate_limited_exception(exc):
+            if before_state:
+                store.restore_video_copyability_analysis_state(
+                    analysis_id,
+                    status=str(before_state.get("status") or "pending"),
+                    attempts=int(before_state.get("attempts") or 0),
+                    last_error=before_state.get("last_error"),
+                )
+            else:
+                store.delete_video_copyability_analysis_for_post(post_id)
+            raise
+        store.finish_video_copyability_analysis(
+            analysis_id,
+            result={},
+            error_message=str(exc)[:1000],
+            status_override=_status_after_failed_manual_attempt(state),
+        )
+        raise
+    store.finish_video_copyability_analysis(
+        analysis_id,
+        result=result,
+        error_message=None,
+    )
+
+
+def _run_single_europe_translation(post_id: int, row: Mapping[str, Any], *, user_id: int | None) -> None:
+    from appcore.meta_hot_posts import scheduler
+
+    before_state = store.get_europe_fit_assessment_state(post_id)
+    store.ensure_europe_fit_candidate_for_post(post_id)
+    state = store.get_europe_fit_assessment_state(post_id)
+    if not state:
+        raise ValueError("Europe translation candidate is not available")
+    store.mark_europe_fit_running(post_id)
+    try:
+        result = europe_fit.assess_material(
+            _analysis_row_for_analyzer(row, post_id=post_id),
+            user_id=scheduler.resolve_billing_user_id(user_id),
+        )
+    except Exception as exc:
+        if _is_rate_limited_exception(exc):
+            if before_state:
+                store.restore_europe_fit_assessment_state(
+                    post_id,
+                    status=str(before_state.get("status") or "pending"),
+                    attempts=int(before_state.get("attempts") or 0),
+                    last_error=before_state.get("last_error"),
+                )
+            else:
+                store.delete_europe_fit_assessment_for_post(post_id)
+            raise
+        store.finish_europe_fit_assessment(
+            post_id,
+            status=_status_after_failed_manual_attempt(state),
+            result={},
+            video_optimization={},
+            error_message=str(exc)[:1000],
+        )
+        raise
+    store.finish_europe_fit_assessment(
+        post_id,
+        status="done",
+        result=result,
+        video_optimization=result.get("video_optimization") or {},
+        error_message=None,
+    )
+
+
+def build_ai_analysis_run_response(
+    post_id: int,
+    mode: str,
+    payload: Mapping[str, Any] | None = None,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    meta = _ai_analysis_mode_meta(mode)
+    if not meta:
+        return MetaHotPostsResponse({"error": "invalid_mode"}, 400)
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    force = _bool_payload((payload or {}).get("force"))
+    if not force and _has_ai_analysis_result(row, meta["mode"]):
+        result = _build_ai_analysis_result_payload(post_id, meta["mode"], row)
+        result["cached"] = True
+        return MetaHotPostsResponse(result)
+    try:
+        if meta["mode"] == AI_ANALYSIS_MODE_US_COPYABILITY:
+            _run_single_us_copyability(post_id, row, user_id=user_id)
+        else:
+            _run_single_europe_translation(post_id, row, user_id=user_id)
+    except Exception as exc:
+        if _is_rate_limited_exception(exc):
+            return MetaHotPostsResponse(
+                {
+                    "ok": False,
+                    "mode": meta["mode"],
+                    "error": str(exc)[:1000],
+                    "rate_limited": True,
+                },
+                429,
+            )
+        return MetaHotPostsResponse(
+            {"ok": False, "mode": meta["mode"], "error": str(exc)[:1000]},
+            500,
+        )
+    refreshed = _get_ai_analysis_row(post_id)
+    if not refreshed:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    result = _build_ai_analysis_result_payload(post_id, meta["mode"], refreshed)
+    result["cached"] = False
+    return MetaHotPostsResponse(result)
 
 
 def build_refresh_response() -> MetaHotPostsResponse:

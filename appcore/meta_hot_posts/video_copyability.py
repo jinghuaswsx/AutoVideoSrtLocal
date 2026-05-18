@@ -98,7 +98,7 @@ def compress_video_for_analysis(
     return _relative_to_output(target, output_dir=root)
 
 
-def _response_schema() -> dict[str, Any]:
+def build_response_schema() -> dict[str, Any]:
     score = {"type": "number", "minimum": 0, "maximum": 100}
     return {
         "type": "object",
@@ -124,6 +124,17 @@ def _response_schema() -> dict[str, Any]:
             "summary",
         ],
     }
+
+
+def _response_schema() -> dict[str, Any]:
+    return build_response_schema()
+
+
+def build_system_prompt() -> str:
+    return (
+        "You are a senior US Meta performance creative analyst. "
+        "Judge copyability, ad fit, product match, and compliance risk from the video."
+    )
 
 
 def _clean_html_text(value: Any) -> str:
@@ -222,12 +233,9 @@ def analyze_video_copyability(
             invoke_fn,
             VIDEO_COPYABILITY_USE_CASE,
             prompt=build_prompt(row),
-            system=(
-                "You are a senior US Meta performance creative analyst. "
-                "Judge copyability, ad fit, product match, and compliance risk from the video."
-            ),
+            system=build_system_prompt(),
             media=[compressed_path],
-            response_schema=_response_schema(),
+            response_schema=build_response_schema(),
             provider_override=VIDEO_COPYABILITY_PROVIDER,
             model_override=VIDEO_COPYABILITY_MODEL,
             temperature=0.2,

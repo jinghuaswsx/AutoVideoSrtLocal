@@ -4,7 +4,7 @@ from appcore.llm_media_optimizer import OptimizedMedia
 from appcore.meta_hot_posts import europe_fit
 
 
-def test_build_prompt_contains_product_video_and_european_markets():
+def test_build_prompt_contains_product_video_and_european_translation_markets():
     prompt = europe_fit.build_prompt(
         {
             "product_url": "https://example.com/products/socket",
@@ -15,16 +15,25 @@ def test_build_prompt_contains_product_video_and_european_markets():
             "latest_likes": 12000,
             "latest_comments": 330,
             "sync_period_likes": 2400,
+            "message_html": "<p>Turn any corner into a power station.</p>",
+            "message_zh_html": "把任何角落变成电源站。",
         }
     )
 
     assert "https://example.com/products/socket" in prompt
     assert "Flexible Socket Extender" in prompt
     assert "Germany" in prompt
+    assert "German" in prompt
     assert "France" in prompt
+    assert "French" in prompt
     assert "Italy" in prompt
+    assert "Italian" in prompt
     assert "Spain" in prompt
-    assert "directly moved" in prompt
+    assert "Spanish" in prompt
+    assert "translate" in prompt.lower()
+    assert "localized" in prompt.lower()
+    assert "Post copy" in prompt
+    assert "把任何角落变成电源站" in prompt
 
 
 def test_system_prompt_ignores_video_clarity_after_review_compression():
@@ -33,6 +42,29 @@ def test_system_prompt_ignores_video_clarity_after_review_compression():
     assert "visual clarity" not in prompt
     assert "clarity" not in prompt.lower()
     assert "visible product demo" in prompt
+    assert "translated and localized" in prompt
+    assert "voiceover" in prompt
+
+
+def test_response_schema_includes_translation_localization_fields():
+    schema = europe_fit.build_response_schema()
+    properties = schema["properties"]
+
+    assert "translation_fit_score" in properties
+    assert "best_language_markets" in properties
+    assert "source_language_detected" in properties
+    assert "speech_dependency" in properties
+    assert "on_screen_text_dependency" in properties
+    assert "needs_subtitle_translation" in properties
+    assert "needs_voiceover_or_dubbing" in properties
+    assert "needs_screen_text_replacement" in properties
+    assert "localization_difficulty" in properties
+    assert "country_localization_notes" in properties
+    assert properties["recommendation"]["enum"] == [
+        "translate_and_launch",
+        "adapt_before_translation",
+        "not_recommended",
+    ]
 
 
 def test_normalize_response_clamps_score_and_maps_recommendation():
@@ -60,6 +92,55 @@ def test_normalize_response_clamps_score_and_maps_recommendation():
     assert result["best_countries"] == ["DE", "FR"]
     assert result["provider"] == "gemini_vertex_adc"
     assert result["model"] == "gemini-3-flash-preview"
+
+
+def test_normalize_response_preserves_translation_localization_fields():
+    result = europe_fit.normalize_assessment_response(
+        {
+            "json": {
+                "suitability_score": 86,
+                "translation_fit_score": 91,
+                "recommendation": "translate_and_launch",
+                "direct_reuse": False,
+                "best_countries": ["Germany", "France"],
+                "best_language_markets": [
+                    {"country": "Germany", "language": "German", "score": 92},
+                    {"country": "France", "language": "French", "score": 88},
+                ],
+                "country_scores": {"Germany": 86},
+                "source_language_detected": "English",
+                "speech_dependency": "medium",
+                "on_screen_text_dependency": "high",
+                "needs_subtitle_translation": True,
+                "needs_voiceover_or_dubbing": False,
+                "needs_screen_text_replacement": True,
+                "localization_difficulty": "medium",
+                "country_localization_notes": {
+                    "Germany": ["Translate overlay text"],
+                    "France": ["Use local CTA"],
+                },
+                "strengths": ["visual demo"],
+                "risks": ["English overlay"],
+                "required_changes": ["Replace screen text"],
+                "reasoning": "Good once localized.",
+            },
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3-flash-preview",
+        }
+    )
+
+    assert result["recommendation"] == "translate_and_launch"
+    assert result["direct_reuse"] is True
+    assert result["translation_fit_score"] == 91
+    assert result["best_language_markets"][0]["language"] == "German"
+    assert result["source_language_detected"] == "English"
+    assert result["speech_dependency"] == "medium"
+    assert result["on_screen_text_dependency"] == "high"
+    assert result["needs_subtitle_translation"] is True
+    assert result["needs_voiceover_or_dubbing"] is False
+    assert result["needs_screen_text_replacement"] is True
+    assert result["localization_difficulty"] == "medium"
+    assert result["country_localization_notes"]["Germany"] == ["Translate overlay text"]
 
 
 def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):

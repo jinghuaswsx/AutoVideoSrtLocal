@@ -71,6 +71,8 @@
 .mh-message-toggle:hover { border-color:var(--mh-accent); color:var(--mh-accent); }
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
+button.mh-link-btn { cursor:pointer; }
+.mh-ai-link { border-color:#99f6e4; color:#0f766e; font-weight:800; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
 .mh-europe-panel { margin-top:10px; padding:10px; border:1px solid #bbf7d0; border-radius:6px; background:#f0fdf4; }
 .mh-europe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:13px; font-weight:800; color:#166534; }
@@ -92,6 +94,22 @@
 .mh-modal-head h3 { margin:0; font-size:16px; }
 .mh-modal-body { max-height:calc(86vh - 58px); overflow:auto; padding:14px 16px; }
 .mh-pre { margin:0 0 12px; padding:12px; border:1px solid #e2e8f0; border-radius:6px; background:#0f172a; color:#e2e8f0; white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.55; }
+.mh-modal-actions { display:flex; align-items:center; gap:8px; }
+.mh-ai-tabs { display:flex; gap:6px; margin-bottom:12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#f8fafc; }
+.mh-ai-tab { height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
+.mh-ai-tab.active { background:var(--mh-accent); color:#fff; }
+.mh-ai-panel[hidden] { display:none; }
+.mh-ai-grid { display:grid; grid-template-columns:minmax(220px, 300px) minmax(0, 1fr); gap:14px; align-items:start; }
+.mh-ai-media { display:grid; gap:10px; }
+.mh-ai-image { width:100%; aspect-ratio:1/1; border:1px solid #e2e8f0; border-radius:6px; object-fit:cover; background:#e2e8f0; }
+.mh-ai-video { width:100%; max-height:420px; border:1px solid #e2e8f0; border-radius:6px; background:#0f172a; }
+.mh-ai-kv { display:grid; grid-template-columns:120px minmax(0, 1fr); gap:6px 10px; margin-bottom:12px; color:#334155; font-size:13px; }
+.mh-ai-kv b { color:#64748b; }
+.mh-ai-section { margin-bottom:12px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-ai-section h4 { margin:0 0 8px; font-size:13px; color:#334155; }
+.mh-ai-chip-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.mh-ai-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-ai-error { color:#b91c1c; font-size:13px; white-space:pre-wrap; word-break:break-word; }
 .mh-category-list { display:flex; gap:6px; flex-wrap:wrap; }
 .mh-failure-list { display:grid; gap:10px; }
 .mh-failure-item { padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
@@ -363,6 +381,26 @@
       </div>
     </div>
   </div>
+
+  <div class="mh-modal" id="mhAiAnalysisModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3 id="mhAiAnalysisTitle">AI 分析</h3>
+        <div class="mh-modal-actions">
+          <button class="mh-btn secondary" id="mhAiForceButton" type="button" onclick="forceMetaHotAiAnalysis()">强制重新分析</button>
+          <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhAiAnalysisModal')">关闭</button>
+        </div>
+      </div>
+      <div class="mh-modal-body">
+        <div class="mh-ai-tabs" role="tablist" aria-label="AI 分析数据">
+          <button class="mh-ai-tab active" id="mhAiRequestTab" type="button" onclick="switchMetaHotAiTab('request')">请求数据</button>
+          <button class="mh-ai-tab" id="mhAiResultTab" type="button" onclick="switchMetaHotAiTab('result')">结果数据</button>
+        </div>
+        <div class="mh-ai-panel" id="mhAiRequestPanel">Loading...</div>
+        <div class="mh-ai-panel" id="mhAiResultPanel" hidden>暂无结果</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -374,7 +412,13 @@ let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('pa
 let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 let mhCardZoomed = false;
+let mhItemsById = new Map();
+let mhAiState = {postId: null, mode: null, request: null, result: null};
 const mhPageSize = 50;
+const MH_AI_MODES = {
+  us_copyability: {label: '美国操作分析'},
+  europe_translation: {label: '欧洲翻译分析'}
+};
 const qs = id => document.getElementById(id);
 const mhFilterBindings = [
   {param: 'category', inputId: 'mhCategory'},
@@ -535,6 +579,8 @@ function listItems(items) {
   return (items || []).filter(Boolean).slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('');
 }
 function recommendationLabel(value) {
+  if (value === 'translate_and_launch') return '翻译后可投';
+  if (value === 'adapt_before_translation') return '先改素材再翻译';
   if (value === 'direct_reuse') return '可直接搬运';
   if (value === 'adapt_before_use') return '本土化后投放';
   if (value === 'not_recommended') return '不建议';
@@ -595,7 +641,8 @@ function toggleMetaHotPostSourceMessage(event) {
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
-  return `<article class="mh-card">
+  const postId = Number(row.id || 0);
+  return `<article class="mh-card" data-post-id="${postId}">
     <div class="mh-card-head">
       <div class="mh-card-title">帖子</div>
       <div class="mh-card-side">
@@ -621,6 +668,8 @@ function renderCard(row) {
       ${renderEuropeFitPanel(row)}
     </div>
     <div class="mh-links">
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">美国操作分析</button>
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">欧洲翻译分析</button>
       ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
       ${row.ad_library_url ? `<a class="mh-link-btn" href="${esc(row.ad_library_url)}" target="_blank" rel="noopener noreferrer">去主页广告</a>` : ''}
       ${row.product_url ? `<a class="mh-link-btn" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">去商品页</a>` : ''}
@@ -632,6 +681,18 @@ function appendMetaHotFilterParams(params) {
     const input = qs(binding.inputId);
     if (input && input.value) params.set(binding.param, input.value);
   });
+}
+function cacheMetaHotItems(items) {
+  mhItemsById = new Map();
+  (items || []).forEach(item => {
+    if (item && item.id) mhItemsById.set(Number(item.id), item);
+  });
+}
+function updateMetaHotCard(item) {
+  if (!item || !item.id) return;
+  mhItemsById.set(Number(item.id), item);
+  const card = document.querySelector(`.mh-card[data-post-id="${Number(item.id)}"]`);
+  if (card) card.outerHTML = renderCard(item);
 }
 function buildParams(page) {
   const params = new URLSearchParams({page, page_size: mhPageSize});
@@ -716,6 +777,7 @@ async function loadMetaHotPosts(page = 1, options = {}) {
   if (options.syncUrl !== false) syncMetaHotFiltersToUrl(mhPage);
   const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(mhPage)}`);
   const data = await res.json();
+  cacheMetaHotItems(data.items || []);
   qs('mhCount').textContent = data.total ?? 0;
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
@@ -734,6 +796,7 @@ async function loadTodayNewMaterials(page = 1) {
   qs('mhStatus').textContent = 'Loading today new...';
   const res = await fetch(`/xuanpin/api/meta-hot-posts/today-new?page=${page}&page_size=${mhPageSize}`);
   const data = await res.json();
+  cacheMetaHotItems(data.items || []);
   qs('mhCount').textContent = data.total ?? 0;
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
@@ -751,6 +814,7 @@ async function loadEuropeTopMaterials() {
   qs('mhStatus').textContent = 'Loading Europe Top50...';
   const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');
   const data = await res.json();
+  cacheMetaHotItems(data.items || []);
   qs('mhCount').textContent = data.total ?? 0;
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
@@ -768,6 +832,7 @@ async function loadUsTopMaterials() {
   qs('mhPagerBottom').innerHTML = '';
   const res = await fetch('/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50');
   const data = await res.json();
+  cacheMetaHotItems(data.items || []);
   qs('mhCount').textContent = data.total ?? 0;
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
@@ -856,6 +921,166 @@ async function toggleMetaHotPostMark(event, postId, requestedStatus) {
     qs('mhStatus').textContent = '标注失败';
   } finally {
     setMetaHotMarkDisabled(postId, false);
+  }
+}
+function metaHotAiEndpoint(postId, mode) {
+  return `/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}`;
+}
+function switchMetaHotAiTab(tab) {
+  const isResult = tab === 'result';
+  qs('mhAiRequestTab').classList.toggle('active', !isResult);
+  qs('mhAiResultTab').classList.toggle('active', isResult);
+  qs('mhAiRequestPanel').hidden = isResult;
+  qs('mhAiResultPanel').hidden = !isResult;
+}
+function renderAiJsonBlock(payload) {
+  return `<pre class="mh-pre">${esc(JSON.stringify(payload || {}, null, 2))}</pre>`;
+}
+function renderAiRequestPreview(payload) {
+  if (!payload) return '<div class="mh-empty">暂无请求数据</div>';
+  const product = payload.product || {};
+  const post = payload.post || {};
+  const image = (payload.media || []).find(item => item.role === 'product_main_image') || {};
+  const video = (payload.media || []).find(item => item.role === 'video') || {};
+  const imageHtml = image.url
+    ? `<img class="mh-ai-image" src="${esc(image.url)}" alt="" loading="lazy">`
+    : '<div class="mh-ai-image"></div>';
+  const videoHtml = video.url
+    ? `<video class="mh-ai-video" controls preload="metadata" playsinline src="${esc(video.url)}" poster="${esc(video.cover_url || '')}"></video>`
+    : '<div class="mh-ai-section">暂无可展示视频</div>';
+  return `<div class="mh-ai-grid">
+    <div class="mh-ai-media">
+      ${imageHtml}
+      ${videoHtml}
+    </div>
+    <div>
+      <div class="mh-ai-kv">
+        <b>分析类型</b><span>${esc(payload.label || payload.mode || '')}</span>
+        <b>Use case</b><span>${esc(payload.use_case || '')}</span>
+        <b>模型</b><span>${esc((payload.provider || '') + ' / ' + (payload.model || ''))}</span>
+        <b>商品标题</b><span>${esc(product.title || '-')}</span>
+        <b>商品链接</b><span>${product.url ? `<a href="${esc(product.url)}" target="_blank" rel="noopener noreferrer">${esc(product.url)}</a>` : '-'}</span>
+        <b>帖子链接</b><span>${post.post_url ? `<a href="${esc(post.post_url)}" target="_blank" rel="noopener noreferrer">${esc(post.post_url)}</a>` : '-'}</span>
+      </div>
+      <div class="mh-ai-section">
+        <h4>System Prompt</h4>
+        <pre class="mh-pre">${esc((payload.prompts || {}).system || '')}</pre>
+      </div>
+      <div class="mh-ai-section">
+        <h4>User Prompt</h4>
+        <pre class="mh-pre">${esc((payload.prompts || {}).user || '')}</pre>
+      </div>
+      <div class="mh-ai-section">
+        <h4>请求报文结构</h4>
+        <button class="mh-btn secondary" type="button" onclick="openMetaHotAiFullPayload()">完整请求报文</button>
+        ${renderAiJsonBlock(payload.request || {})}
+      </div>
+      <div class="mh-ai-section">
+        <h4>Response Schema</h4>
+        ${renderAiJsonBlock(payload.response_schema || {})}
+      </div>
+    </div>
+  </div>`;
+}
+function renderMetaHotAiResult(payload) {
+  if (!payload || !payload.has_result) return '<div class="mh-empty">暂无结果</div>';
+  const result = payload.result || {};
+  const chips = [];
+  ['overall_score','copyability_score','meta_us_ad_fit_score','suitability_score','translation_fit_score','recommendation','localization_difficulty'].forEach(key => {
+    if (result[key] !== undefined && result[key] !== null && result[key] !== '') chips.push(`<span class="mh-ai-chip">${esc(key)}: ${esc(result[key])}</span>`);
+  });
+  const list = (label, items) => Array.isArray(items) && items.length
+    ? `<div class="mh-ai-section"><h4>${label}</h4><ul class="mh-europe-list">${items.slice(0, 8).map(item => `<li>${esc(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul></div>`
+    : '';
+  return `<div>
+    <div class="mh-ai-chip-list">${chips.join('')}</div>
+    ${result.summary ? `<div class="mh-ai-section"><h4>摘要</h4><div>${esc(result.summary)}</div></div>` : ''}
+    ${result.reasoning ? `<div class="mh-ai-section"><h4>判断理由</h4><div>${esc(result.reasoning)}</div></div>` : ''}
+    ${list('优势', result.strengths)}
+    ${list('风险', result.risks || result.risk_notes)}
+    ${list('需要调整', result.required_changes || result.copy_notes)}
+    ${list('适合语言市场', result.best_language_markets)}
+    <div class="mh-ai-section">
+      <h4>完整返回报文</h4>
+      ${renderAiJsonBlock(payload.raw_response || result.raw || result)}
+    </div>
+  </div>`;
+}
+async function fetchMetaHotAiJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data.error || `HTTP ${res.status}`);
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  return data;
+}
+async function loadMetaHotAiResult(postId, mode) {
+  const data = await fetchMetaHotAiJson(`${metaHotAiEndpoint(postId, mode)}/result`);
+  mhAiState.result = data;
+  if (data.item) updateMetaHotCard(data.item);
+  qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+  switchMetaHotAiTab('result');
+}
+async function runMetaHotAiAnalysis(force = false) {
+  const {postId, mode} = mhAiState;
+  if (!postId || !mode) return;
+  qs('mhAiForceButton').disabled = true;
+  qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">分析中...</div>';
+  try {
+    const data = await fetchMetaHotAiJson(metaHotAiEndpoint(postId, mode), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({force: Boolean(force)})
+    });
+    mhAiState.result = data;
+    if (data.item) updateMetaHotCard(data.item);
+    qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+    switchMetaHotAiTab('result');
+    qs('mhStatus').textContent = `${MH_AI_MODES[mode]?.label || 'AI分析'}完成`;
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-error">分析失败：${esc(err.message || err)}</div>`;
+    qs('mhStatus').textContent = 'AI 分析失败';
+  } finally {
+    qs('mhAiForceButton').disabled = false;
+  }
+}
+async function openMetaHotAiAnalysis(postId, mode) {
+  mhAiState = {postId, mode, request: null, result: null};
+  qs('mhAiAnalysisTitle').textContent = MH_AI_MODES[mode]?.label || 'AI 分析';
+  qs('mhAiAnalysisModal').hidden = false;
+  switchMetaHotAiTab('request');
+  qs('mhAiRequestPanel').innerHTML = '<div class="mh-empty">Loading...</div>';
+  qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">暂无结果</div>';
+  try {
+    const data = await fetchMetaHotAiJson(`${metaHotAiEndpoint(postId, mode)}/request-preview`);
+    mhAiState.request = data.payload || null;
+    qs('mhAiRequestPanel').innerHTML = renderAiRequestPreview(mhAiState.request);
+    if (mhAiState.request && mhAiState.request.has_result) {
+      await loadMetaHotAiResult(postId, mode);
+      return;
+    }
+    await runMetaHotAiAnalysis(false);
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML = `<div class="mh-ai-error">加载失败：${esc(err.message || err)}</div>`;
+  }
+}
+async function forceMetaHotAiAnalysis() {
+  if (!mhAiState.postId || !mhAiState.mode) return;
+  switchMetaHotAiTab('request');
+  await runMetaHotAiAnalysis(true);
+}
+async function openMetaHotAiFullPayload() {
+  const request = mhAiState.request || {};
+  const url = request.full_payload_url || (mhAiState.postId && mhAiState.mode ? `${metaHotAiEndpoint(mhAiState.postId, mhAiState.mode)}/request-payload` : '');
+  if (!url) return;
+  try {
+    const data = await fetchMetaHotAiJson(url);
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-section"><h4>完整请求报文</h4>${renderAiJsonBlock(data.payload || data)}</div>`;
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-error">完整报文加载失败：${esc(err.message || err)}</div>`;
   }
 }
 function closeMetaHotModal(id) {

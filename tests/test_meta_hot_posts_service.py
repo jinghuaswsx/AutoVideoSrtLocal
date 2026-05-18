@@ -79,6 +79,187 @@ def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
     assert copyability["raw"] == {"hook": "clear"}
 
 
+def test_build_ai_analysis_request_preview_for_europe_translation(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "product_url": "https://example.com/products/socket",
+            "product_title": "Flexible Socket Extender",
+            "product_main_image_url": "https://cdn.example/socket.jpg",
+            "local_video_status": "downloaded",
+            "local_video_path": "meta_hot_posts/videos/7.mp4",
+            "local_video_cover_path": "meta_hot_posts/video_covers/7/thumbnail.jpg",
+            "message_html": "<p>Power every corner.</p>",
+            "message_zh_html": "每个角落都能供电。",
+            "sku_prices_json": "[]",
+        },
+    )
+
+    result = service.build_ai_analysis_request_preview_response(7, "europe_translation")
+
+    payload = result.payload["payload"]
+    assert result.status_code == 200
+    assert payload["mode"] == "europe_translation"
+    assert payload["use_case"] == "meta_hot_posts.europe_fit"
+    assert payload["product"]["title"] == "Flexible Socket Extender"
+    assert payload["media"][0]["role"] == "product_main_image"
+    assert payload["media"][0]["url"] == "https://cdn.example/socket.jpg"
+    assert payload["media"][1]["role"] == "video"
+    assert payload["media"][1]["url"] == "/xuanpin/api/meta-hot-posts/7/local-video"
+    assert "每个角落都能供电" in payload["prompts"]["user"]
+    assert "translation_fit_score" in payload["response_schema"]["properties"]
+    assert payload["full_payload_url"].endswith("/ai-analysis/europe_translation/request-payload")
+
+
+def test_build_ai_analysis_run_short_circuits_existing_result(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "sku_prices_json": "[]",
+            "video_copyability_analysis_id": 8,
+            "video_copyability_status": "done",
+            "video_copyability_overall_score": 91,
+            "video_copyability_summary": "Strong hook.",
+            "video_copyability_analysis_json": '{"overall_score":91}',
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.video_copyability.analyze_video_copyability",
+        lambda *args, **kwargs: calls.append(args) or {"overall_score": 1},
+    )
+
+    result = service.build_ai_analysis_run_response(7, "us_copyability", {"force": False}, user_id=3)
+
+    assert result.status_code == 200
+    assert result.payload["cached"] is True
+    assert result.payload["has_result"] is True
+    assert result.payload["result"]["summary"] == "Strong hook."
+    assert calls == []
+
+
+def test_build_ai_analysis_run_restores_state_on_rate_limit(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "hot_post_id": post_id,
+            "product_url": "https://example.com/products/socket",
+            "local_video_status": "downloaded",
+            "local_video_path": "meta_hot_posts/videos/7.mp4",
+            "sku_prices_json": "[]",
+        },
+    )
+    monkeypatch.setattr(service.store, "get_video_copyability_analysis_state", lambda post_id: None)
+    monkeypatch.setattr(
+        service.store,
+        "ensure_video_copyability_candidate_for_post",
+        lambda post_id: calls.append(("ensure_us", post_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "get_video_copyability_analysis_state",
+        lambda post_id: {"id": 9, "status": "pending", "attempts": 0, "last_error": None},
+    )
+    monkeypatch.setattr(
+        service.store,
+        "mark_video_copyability_running",
+        lambda analysis_id: calls.append(("running", analysis_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "restore_video_copyability_analysis_state",
+        lambda analysis_id, **kwargs: calls.append(("restore", analysis_id, kwargs)) or 1,
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.scheduler.resolve_billing_user_id",
+        lambda user_id=None: user_id or 1,
+    )
+
+    def raise_rate_limit(*args, **kwargs):
+        raise RuntimeError("429 rate limit exceeded")
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.video_copyability.analyze_video_copyability",
+        raise_rate_limit,
+    )
+
+    result = service.build_ai_analysis_run_response(7, "us_copyability", {"force": True}, user_id=3)
+
+    assert result.status_code == 429
+    assert result.payload["rate_limited"] is True
+    assert ("restore", 9, {"status": "pending", "attempts": 0, "last_error": None}) in calls
+
+
+def test_build_ai_analysis_run_deletes_new_manual_candidate_on_rate_limit(monkeypatch):
+    calls = []
+    state_calls = iter(
+        [
+            None,
+            {"id": 9, "status": "pending", "attempts": 0, "last_error": None},
+        ]
+    )
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "hot_post_id": post_id,
+            "product_url": "https://example.com/products/socket",
+            "local_video_status": "downloaded",
+            "local_video_path": "meta_hot_posts/videos/7.mp4",
+            "sku_prices_json": "[]",
+        },
+    )
+    monkeypatch.setattr(
+        service.store,
+        "get_video_copyability_analysis_state",
+        lambda post_id: next(state_calls),
+    )
+    monkeypatch.setattr(
+        service.store,
+        "ensure_video_copyability_candidate_for_post",
+        lambda post_id: calls.append(("ensure_us", post_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "mark_video_copyability_running",
+        lambda analysis_id: calls.append(("running", analysis_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "delete_video_copyability_analysis_for_post",
+        lambda post_id: calls.append(("delete_us", post_id)) or 1,
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.scheduler.resolve_billing_user_id",
+        lambda user_id=None: user_id or 1,
+    )
+
+    def raise_rate_limit(*args, **kwargs):
+        raise RuntimeError("429 quota exhausted")
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.video_copyability.analyze_video_copyability",
+        raise_rate_limit,
+    )
+
+    result = service.build_ai_analysis_run_response(7, "us_copyability", {"force": True}, user_id=3)
+
+    assert result.status_code == 429
+    assert result.payload["rate_limited"] is True
+    assert ("delete_us", 7) in calls
+
+
 def test_build_today_new_response_hydrates_first_seen_items(monkeypatch):
     monkeypatch.setattr(
         service.store,

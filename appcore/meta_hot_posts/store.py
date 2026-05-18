@@ -603,6 +603,76 @@ def get_hot_post_local_video(
     return rows[0] if rows else None
 
 
+def get_hot_post_ai_analysis_row(
+    post_id: int,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
+               p.post_url, p.ad_library_url, p.product_url, p.creation_time,
+               p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               p.video_url, p.image_url, p.invisible, p.invisible_region,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
+               a.status AS analysis_status,
+               a.product_title, a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.status AS video_copyability_status,
+               va.attempts AS video_copyability_attempts,
+               va.last_error AS video_copyability_last_error,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.compressed_video_path AS video_copyability_compressed_video_path,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at,
+               e.status AS europe_fit_status,
+               e.attempts AS europe_fit_attempts,
+               e.last_error AS europe_fit_last_error,
+               e.suitability_score AS europe_fit_score,
+               e.recommendation AS europe_fit_recommendation,
+               e.direct_reuse AS europe_fit_direct_reuse,
+               e.best_countries_json AS europe_fit_best_countries_json,
+               e.country_scores_json AS europe_fit_country_scores_json,
+               e.strengths_json AS europe_fit_strengths_json,
+               e.risks_json AS europe_fit_risks_json,
+               e.required_changes_json AS europe_fit_required_changes_json,
+               e.reasoning AS europe_fit_reasoning,
+               e.llm_provider AS europe_fit_provider,
+               e.llm_model AS europe_fit_model,
+               e.llm_response_json AS europe_fit_llm_response_json,
+               e.video_optimization_json AS europe_fit_video_optimization_json,
+               e.assessed_at AS europe_fit_assessed_at
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va ON va.hot_post_id = p.id
+        LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
+        WHERE p.id=%s
+        LIMIT 1
+        """,
+        (int(post_id),),
+    )
+    return rows[0] if rows else None
+
+
 def list_local_videos_missing_metadata(
     *,
     limit: int | None = 100,
@@ -667,6 +737,33 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = _execute_rowc
     )
 
 
+def ensure_video_copyability_candidate_for_post(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = _execute_rowcount,
+) -> int:
+    return execute_fn(
+        """
+        INSERT INTO meta_hot_post_video_copyability_analyses (
+          hot_post_id, wedev_post_id, product_url, local_video_path, status
+        )
+        SELECT p.id, p.wedev_post_id, p.product_url, p.local_video_path, 'pending'
+        FROM meta_hot_posts p
+        WHERE p.id = %s
+          AND p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+        ON DUPLICATE KEY UPDATE
+          wedev_post_id=VALUES(wedev_post_id),
+          product_url=VALUES(product_url),
+          local_video_path=VALUES(local_video_path)
+        """,
+        (int(post_id),),
+    )
+
+
 def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
@@ -682,6 +779,83 @@ def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -
           AND e.id IS NULL
         """,
         (),
+    )
+
+
+def ensure_europe_fit_candidate_for_post(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = _execute_rowcount,
+) -> int:
+    return execute_fn(
+        """
+        INSERT IGNORE INTO meta_hot_post_europe_assessments (post_id, status)
+        SELECT p.id, 'pending'
+        FROM meta_hot_posts p
+        WHERE p.id = %s
+          AND p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+        """,
+        (int(post_id),),
+    )
+
+
+def get_video_copyability_analysis_state(
+    post_id: int,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT id, hot_post_id, status, attempts, last_error
+        FROM meta_hot_post_video_copyability_analyses
+        WHERE hot_post_id=%s
+        LIMIT 1
+        """,
+        (int(post_id),),
+    )
+    return rows[0] if rows else None
+
+
+def get_europe_fit_assessment_state(
+    post_id: int,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT id, post_id, status, attempts, last_error
+        FROM meta_hot_post_europe_assessments
+        WHERE post_id=%s
+        LIMIT 1
+        """,
+        (int(post_id),),
+    )
+    return rows[0] if rows else None
+
+
+def delete_video_copyability_analysis_for_post(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        "DELETE FROM meta_hot_post_video_copyability_analyses WHERE hot_post_id=%s",
+        (int(post_id),),
+    )
+
+
+def delete_europe_fit_assessment_for_post(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        "DELETE FROM meta_hot_post_europe_assessments WHERE post_id=%s",
+        (int(post_id),),
     )
 
 

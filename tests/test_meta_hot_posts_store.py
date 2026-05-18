@@ -469,6 +469,60 @@ def test_ensure_video_copyability_candidates_default_returns_rowcount(monkeypatc
     assert closed == [True]
 
 
+def test_ensure_video_copyability_candidate_for_post_inserts_single_downloaded_product_video():
+    calls = []
+
+    result = store.ensure_video_copyability_candidate_for_post(
+        7,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "INSERT INTO meta_hot_post_video_copyability_analyses" in sql
+    assert "WHERE p.id = %s" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert params == (7,)
+
+
+def test_get_hot_post_ai_analysis_row_selects_card_context_and_both_ai_results():
+    calls = []
+
+    row = store.get_hot_post_ai_analysis_row(
+        7,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 7}],
+    )
+
+    sql, params = calls[0]
+    assert row == {"id": 7}
+    assert "FROM meta_hot_posts p" in sql
+    assert "LEFT JOIN meta_hot_post_product_analyses a" in sql
+    assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e" in sql
+    assert "va.status AS video_copyability_status" in sql
+    assert "e.llm_response_json AS europe_fit_llm_response_json" in sql
+    assert "WHERE p.id=%s" in sql
+    assert params == (7,)
+
+
+def test_get_video_copyability_analysis_state_returns_attempt_state():
+    calls = []
+
+    row = store.get_video_copyability_analysis_state(
+        7,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 9, "attempts": 2}],
+    )
+
+    sql, params = calls[0]
+    assert row["id"] == 9
+    assert "FROM meta_hot_post_video_copyability_analyses" in sql
+    assert "WHERE hot_post_id=%s" in sql
+    assert "status" in sql
+    assert "attempts" in sql
+    assert params == (7,)
+
+
 def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
     calls = []
 
@@ -519,6 +573,40 @@ def test_ensure_europe_fit_candidates_default_returns_insert_rowcount(monkeypatc
     assert result == 5
     assert executed
     assert closed == [True]
+
+
+def test_ensure_europe_fit_candidate_for_post_inserts_single_downloaded_product_video():
+    calls = []
+
+    result = store.ensure_europe_fit_candidate_for_post(
+        7,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "INSERT IGNORE INTO meta_hot_post_europe_assessments" in sql
+    assert "WHERE p.id = %s" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "p.product_url IS NOT NULL" in sql
+    assert params == (7,)
+
+
+def test_get_europe_fit_assessment_state_returns_attempt_state():
+    calls = []
+
+    row = store.get_europe_fit_assessment_state(
+        7,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"post_id": 7, "attempts": 2}],
+    )
+
+    sql, params = calls[0]
+    assert row["post_id"] == 7
+    assert "FROM meta_hot_post_europe_assessments" in sql
+    assert "WHERE post_id=%s" in sql
+    assert "status" in sql
+    assert "attempts" in sql
+    assert params == (7,)
 
 
 def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_rows():

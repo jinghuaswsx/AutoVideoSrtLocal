@@ -170,6 +170,16 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "localStorage.setItem('mhCardZoomed'" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body
+    assert "美国操作分析" in body
+    assert "欧洲翻译分析" in body
+    assert 'id="mhAiAnalysisModal"' in body
+    assert "请求数据" in body
+    assert "结果数据" in body
+    assert "强制重新分析" in body
+    assert "openMetaHotAiAnalysis" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}" in body
+    assert "request-preview" in body
+    assert "request-payload" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
     assert 'onclick="refreshMetaHotPosts()"' not in body
@@ -438,6 +448,43 @@ def test_meta_hot_posts_video_copyability_top50_api_delegates_to_service(authed_
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"analysis_id": 1}]
+
+
+def test_meta_hot_posts_ai_analysis_request_preview_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(post_id, mode):
+        captured["args"] = (post_id, mode)
+        return type("Resp", (), {"payload": {"payload": {"mode": mode}}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_ai_analysis_request_preview_response", fake_response)
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/7/ai-analysis/europe_translation/request-preview")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["payload"]["mode"] == "europe_translation"
+    assert captured["args"] == (7, "europe_translation")
+
+
+def test_meta_hot_posts_ai_analysis_run_api_passes_current_user(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(post_id, mode, payload, user_id=None):
+        captured["args"] = (post_id, mode, payload, user_id)
+        return type("Resp", (), {"payload": {"ok": True}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_ai_analysis_run_response", fake_response)
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/7/ai-analysis/us_copyability",
+        json={"force": True},
+    )
+
+    assert resp.status_code == 200
+    assert captured["args"][0] == 7
+    assert captured["args"][1] == "us_copyability"
+    assert captured["args"][2]["force"] is True
+    assert captured["args"][3]
 
 
 def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):
