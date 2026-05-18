@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import logging
 import time
-from concurrent.futures import FIRST_COMPLETED, Future, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    Future,
+    ThreadPoolExecutor,
+    TimeoutError as FutureTimeoutError,
+    wait,
+)
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
@@ -46,9 +52,10 @@ SCHEDULED_VIDEO_COPYABILITY_DELAY_SECONDS = 20
 FULL_SYNC_MAX_PAGES = 120
 SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS = 0
 SCHEDULED_VIDEO_ANALYSIS_QUEUE_MAX_DURATION_SECONDS = 560
+SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 10
 SCHEDULED_VIDEO_ANALYSIS_PER_ITEM_TIMEOUT_SECONDS = 40
 SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS = 3
-SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD = 2
+SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD = 1
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -806,16 +813,22 @@ def _video_analysis_queue_summary(queued_us: int, queued_eu: int = 0) -> dict[st
         "done": 0,
         "failed": 0,
         "suspended": 0,
+        "timed_out": 0,
+        "rate_limited": 0,
         "rate_limited_requeued": 0,
         "us_copyability_scanned": 0,
         "us_copyability_done": 0,
         "us_copyability_failed": 0,
         "us_copyability_suspended": 0,
+        "us_copyability_timed_out": 0,
+        "us_copyability_rate_limited": 0,
         "us_copyability_rate_limited_requeued": 0,
         "europe_fit_scanned": 0,
         "europe_fit_done": 0,
         "europe_fit_failed": 0,
         "europe_fit_suspended": 0,
+        "europe_fit_timed_out": 0,
+        "europe_fit_rate_limited": 0,
         "europe_fit_rate_limited_requeued": 0,
     }
 
@@ -840,6 +853,57 @@ def _is_rate_limited_error(exc: Exception) -> bool:
     )
 
 
+class VideoAnalysisItemTimeout(TimeoutError):
+    pass
+
+
+def _run_video_analysis_item_with_timeout(
+    fn: Callable[[], dict[str, Any]],
+    *,
+    timeout_seconds: float | int | str | None,
+) -> dict[str, Any]:
+    timeout = _coerce_delay_seconds(timeout_seconds)
+    if timeout <= 0:
+        return fn()
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="meta-hot-post-video-analysis")
+    future = executor.submit(fn)
+    try:
+        result = future.result(timeout=timeout)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise VideoAnalysisItemTimeout(f"video analysis item timed out after {timeout:g}s") from exc
+    except BaseException:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=False, cancel_futures=True)
+        return result
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value if value is not None else default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _video_copyability_original_state(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": str(row.get("analysis_status") or row.get("status") or "pending"),
+        "attempts": max(0, _safe_int(row.get("attempts"))),
+        "last_error": row.get("last_error"),
+    }
+
+
+def _europe_fit_original_state(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": str(row.get("europe_fit_status") or row.get("status") or "pending"),
+        "attempts": max(0, _safe_int(row.get("europe_fit_attempts", row.get("attempts")))),
+        "last_error": row.get("europe_fit_last_error", row.get("last_error")),
+    }
+
+
 def _attempt_number(row: dict[str, Any], *keys: str) -> int:
     for key in keys:
         try:
@@ -849,12 +913,10 @@ def _attempt_number(row: dict[str, Any], *keys: str) -> int:
     return 1
 
 
-def _failure_status_for_attempt(exc: Exception, attempt_number: int) -> tuple[str, bool]:
+def _failure_status_for_attempt(attempt_number: int) -> str:
     if attempt_number >= SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS:
-        return "suspended", False
-    if _is_rate_limited_error(exc):
-        return "pending", True
-    return "failed", False
+        return "suspended"
+    return "failed"
 
 
 def _record_video_analysis_failure(
@@ -862,23 +924,27 @@ def _record_video_analysis_failure(
     *,
     task_type: str,
     status: str,
-    rate_limited_requeued: bool,
+    rate_limited: bool = False,
+    timed_out: bool = False,
 ) -> None:
     summary["failed"] += 1
     summary[f"{task_type}_failed"] += 1
     if status == "suspended":
         summary["suspended"] += 1
         summary[f"{task_type}_suspended"] += 1
-    if rate_limited_requeued:
-        summary["rate_limited_requeued"] += 1
-        summary[f"{task_type}_rate_limited_requeued"] += 1
+    if timed_out:
+        summary["timed_out"] += 1
+        summary[f"{task_type}_timed_out"] += 1
+    if rate_limited:
+        summary["rate_limited"] += 1
+        summary[f"{task_type}_rate_limited"] += 1
 
 
 def _should_stop_video_analysis_queue_for_rate_limit(summary: dict[str, Any]) -> bool:
     threshold = max(0, int(SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD))
     if threshold <= 0:
         return False
-    if int(summary.get("rate_limited_requeued") or 0) < threshold:
+    if int(summary.get("rate_limited") or 0) < threshold:
         return False
     summary["rate_limit_circuit_break"] = True
     summary["stop_reason"] = "rate_limited"
@@ -888,19 +954,23 @@ def _should_stop_video_analysis_queue_for_rate_limit(summary: dict[str, Any]) ->
 def process_video_analysis_queue(
     *,
     max_duration_seconds: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_MAX_DURATION_SECONDS,
+    limit: int | None = None,
     user_id: int | None = None,
     run_id: int | None = None,
     per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
+    per_item_timeout_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_PER_ITEM_TIMEOUT_SECONDS,
     sleep_fn: SleepFn | None = None,
 ) -> dict[str, Any]:
     queued_us = int(store.ensure_video_copyability_candidates() or 0)
     queued_eu = int(store.ensure_europe_fit_candidates() or 0)
     summary: dict[str, Any] = _video_analysis_queue_summary(queued_us, queued_eu)
-    billing_user_id = resolve_billing_user_id(user_id)
+    billing_user_id: int | None = None
     round_start = time.monotonic()
+    processed = 0
+    safe_limit = max(1, int(limit)) if limit is not None else None
     while True:
-        if not _is_current_video_analysis_queue_run(run_id):
-            _mark_video_analysis_queue_superseded(summary)
+        if safe_limit is not None and processed >= safe_limit:
+            summary["stop_reason"] = "limit_reached"
             break
         elapsed = time.monotonic() - round_start
         if elapsed >= max_duration_seconds:
@@ -911,32 +981,68 @@ def process_video_analysis_queue(
         if item is None:
             summary["stop_reason"] = "no_more_items"
             break
+        if not _is_current_video_analysis_queue_run(run_id):
+            _mark_video_analysis_queue_superseded(summary)
+            break
+        if billing_user_id is None:
+            billing_user_id = resolve_billing_user_id(user_id)
         task_type = str(item["task_type"])
         row = dict(item["row"])
         summary["scanned"] += 1
         summary[f"{task_type}_scanned"] += 1
+        processed += 1
         if task_type == VIDEO_ANALYSIS_TASK_US_COPYABILITY:
             analysis_id = int(row["analysis_id"])
             attempt_number = _attempt_number(row, "attempts")
+            original_state = _video_copyability_original_state(row)
             store.mark_video_copyability_running(analysis_id)
+            if not _is_current_video_analysis_queue_run(run_id):
+                _mark_video_analysis_queue_superseded(summary)
+                break
             try:
-                result = video_copyability.analyze_video_copyability(row, user_id=billing_user_id)
-            except Exception as exc:
-                log.warning("meta hot post US copyability analysis failed id=%s: %s", analysis_id, exc)
-                status_override, rate_limited_requeued = _failure_status_for_attempt(exc, attempt_number)
-                store.finish_video_copyability_analysis(
-                    analysis_id,
-                    result={},
-                    error_message=str(exc)[:1000],
-                    status_override=status_override,
+                result = _run_video_analysis_item_with_timeout(
+                    lambda: video_copyability.analyze_video_copyability(row, user_id=billing_user_id),
+                    timeout_seconds=per_item_timeout_seconds,
                 )
+            except VideoAnalysisItemTimeout as exc:
+                log.warning("meta hot post US copyability analysis timed out id=%s: %s", analysis_id, exc)
+                store.restore_video_copyability_analysis_state(analysis_id, **original_state)
                 _record_video_analysis_failure(
                     summary,
                     task_type=task_type,
-                    status=status_override,
-                    rate_limited_requeued=rate_limited_requeued,
+                    status=original_state["status"],
+                    timed_out=True,
                 )
+            except Exception as exc:
+                log.warning("meta hot post US copyability analysis failed id=%s: %s", analysis_id, exc)
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                if _is_rate_limited_error(exc):
+                    store.restore_video_copyability_analysis_state(analysis_id, **original_state)
+                    _record_video_analysis_failure(
+                        summary,
+                        task_type=task_type,
+                        status=original_state["status"],
+                        rate_limited=True,
+                    )
+                else:
+                    status_override = _failure_status_for_attempt(attempt_number)
+                    store.finish_video_copyability_analysis(
+                        analysis_id,
+                        result={},
+                        error_message=str(exc)[:1000],
+                        status_override=status_override,
+                    )
+                    _record_video_analysis_failure(
+                        summary,
+                        task_type=task_type,
+                        status=status_override,
+                    )
             else:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
                 store.finish_video_copyability_analysis(
                     analysis_id,
                     result=result,
@@ -947,26 +1053,56 @@ def process_video_analysis_queue(
         else:
             post_id = int(row["id"])
             attempt_number = _attempt_number(row, "europe_fit_attempts", "attempts")
+            original_state = _europe_fit_original_state(row)
             store.mark_europe_fit_running(post_id)
+            if not _is_current_video_analysis_queue_run(run_id):
+                _mark_video_analysis_queue_superseded(summary)
+                break
             try:
-                result = europe_fit.assess_material(row, user_id=billing_user_id)
-            except Exception as exc:
-                log.warning("meta hot post Europe fit assessment failed id=%s: %s", post_id, exc)
-                status, rate_limited_requeued = _failure_status_for_attempt(exc, attempt_number)
-                store.finish_europe_fit_assessment(
-                    post_id,
-                    status=status,
-                    result={},
-                    video_optimization={},
-                    error_message=str(exc)[:1000],
+                result = _run_video_analysis_item_with_timeout(
+                    lambda: europe_fit.assess_material(row, user_id=billing_user_id),
+                    timeout_seconds=per_item_timeout_seconds,
                 )
+            except VideoAnalysisItemTimeout as exc:
+                log.warning("meta hot post Europe fit assessment timed out id=%s: %s", post_id, exc)
+                store.restore_europe_fit_assessment_state(post_id, **original_state)
                 _record_video_analysis_failure(
                     summary,
                     task_type=task_type,
-                    status=status,
-                    rate_limited_requeued=rate_limited_requeued,
+                    status=original_state["status"],
+                    timed_out=True,
                 )
+            except Exception as exc:
+                log.warning("meta hot post Europe fit assessment failed id=%s: %s", post_id, exc)
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
+                if _is_rate_limited_error(exc):
+                    store.restore_europe_fit_assessment_state(post_id, **original_state)
+                    _record_video_analysis_failure(
+                        summary,
+                        task_type=task_type,
+                        status=original_state["status"],
+                        rate_limited=True,
+                    )
+                else:
+                    status = _failure_status_for_attempt(attempt_number)
+                    store.finish_europe_fit_assessment(
+                        post_id,
+                        status=status,
+                        result={},
+                        video_optimization={},
+                        error_message=str(exc)[:1000],
+                    )
+                    _record_video_analysis_failure(
+                        summary,
+                        task_type=task_type,
+                        status=status,
+                    )
             else:
+                if not _is_current_video_analysis_queue_run(run_id):
+                    _mark_video_analysis_queue_superseded(summary)
+                    break
                 store.finish_europe_fit_assessment(
                     post_id,
                     status="done",
@@ -978,6 +1114,9 @@ def process_video_analysis_queue(
                 summary[f"{task_type}_done"] += 1
         if _should_stop_video_analysis_queue_for_rate_limit(summary):
             break
+        if safe_limit is not None and processed >= safe_limit:
+            summary["stop_reason"] = "limit_reached"
+            break
         if _coerce_delay_seconds(per_item_delay_seconds) > 0:
             (sleep_fn or time.sleep)(_coerce_delay_seconds(per_item_delay_seconds))
     return summary
@@ -986,8 +1125,10 @@ def process_video_analysis_queue(
 def video_analysis_queue_tick_once(
     *,
     max_duration_seconds: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_MAX_DURATION_SECONDS,
+    limit: int | None = None,
     user_id: int | None = None,
     per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
+    per_item_timeout_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_PER_ITEM_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     guard_summary = _take_over_video_analysis_queue_singleton()
     run_id = None
@@ -998,9 +1139,11 @@ def video_analysis_queue_tick_once(
     try:
         summary = process_video_analysis_queue(
             max_duration_seconds=max_duration_seconds,
+            limit=limit,
             user_id=user_id,
             run_id=run_id,
             per_item_delay_seconds=per_item_delay_seconds,
+            per_item_timeout_seconds=per_item_timeout_seconds,
         )
     except Exception as exc:
         if run_id:

@@ -391,6 +391,8 @@ def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_r
     assert "JOIN meta_hot_posts p ON p.id = va.hot_post_id" in sql
     assert "LEFT JOIN meta_hot_post_product_analyses pa" in sql
     assert "va.status IN ('pending', 'failed')" in sql
+    assert "va.status AS analysis_status" in sql
+    assert "va.last_error" in sql
     assert "p.local_video_status = 'downloaded'" in sql
     assert "va.attempts < %s" in sql
     assert params == (3, 100)
@@ -462,6 +464,27 @@ def test_finish_video_copyability_can_suspend_after_attempt_limit():
     assert params[-1] == 78
 
 
+def test_restore_video_copyability_analysis_state_only_updates_running_row():
+    calls = []
+
+    store.restore_video_copyability_analysis_state(
+        78,
+        status="failed",
+        attempts=2,
+        last_error="old failure",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in sql
+    assert "status=%s" in sql
+    assert "attempts=%s" in sql
+    assert "last_error=%s" in sql
+    assert "WHERE id=%s" in sql
+    assert "AND status='running'" in sql
+    assert params == ("failed", 2, "old failure", 78)
+
+
 def test_reset_running_video_copyability_analyses_requeues_for_takeover():
     calls = []
 
@@ -510,6 +533,9 @@ def test_next_pending_europe_fit_materials_selects_downloaded_video_rows():
     assert "FROM meta_hot_posts p" in sql
     assert "LEFT JOIN meta_hot_post_product_analyses a" in sql
     assert "LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id" in sql
+    assert "e.status AS europe_fit_status" in sql
+    assert "e.attempts AS europe_fit_attempts" in sql
+    assert "e.last_error AS europe_fit_last_error" in sql
     assert "p.local_video_status = 'downloaded'" in sql
     assert "p.local_video_path IS NOT NULL" in sql
     assert "p.product_url IS NOT NULL" in sql
@@ -577,6 +603,27 @@ def test_europe_fit_status_transitions_are_recorded():
     assert failure_params[0] == "failed"
     assert failure_params[1] == "local video missing"
     assert failure_params[-1] == 78
+
+
+def test_restore_europe_fit_assessment_state_only_updates_running_row():
+    calls = []
+
+    store.restore_europe_fit_assessment_state(
+        78,
+        status="failed",
+        attempts=1,
+        last_error="old europe failure",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE meta_hot_post_europe_assessments" in sql
+    assert "status=%s" in sql
+    assert "attempts=%s" in sql
+    assert "last_error=%s" in sql
+    assert "WHERE post_id=%s" in sql
+    assert "AND status='running'" in sql
+    assert params == ("failed", 1, "old europe failure", 78)
 
 
 def test_reset_running_europe_fit_assessments_requeues_for_takeover():

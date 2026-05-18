@@ -603,7 +603,9 @@ def next_pending_video_copyability_analyses(
                va.product_url,
                va.local_video_path,
                va.compressed_video_path,
+               va.status AS analysis_status,
                va.attempts,
+               va.last_error,
                p.post_url,
                p.ad_library_url,
                p.video_url,
@@ -709,6 +711,35 @@ def finish_video_copyability_analysis(
             str(payload.get("compressed_video_path") or "")[:2048] or None,
             _json(payload),
             status,
+            int(analysis_id),
+        ),
+    )
+
+
+def restore_video_copyability_analysis_state(
+    analysis_id: int,
+    *,
+    status: str,
+    attempts: int,
+    last_error: str | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    safe_status = str(status or "pending").strip() or "pending"
+    if safe_status not in {"pending", "failed", "running", "done", "suspended"}:
+        safe_status = "pending"
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status=%s,
+            attempts=%s,
+            last_error=%s
+        WHERE id=%s
+          AND status='running'
+        """,
+        (
+            safe_status,
+            max(0, int(attempts or 0)),
+            str(last_error)[:1000] if last_error else None,
             int(analysis_id),
         ),
     )
@@ -829,7 +860,9 @@ def next_pending_europe_fit_materials(
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
-               e.status AS europe_fit_status, e.attempts AS europe_fit_attempts
+               e.status AS europe_fit_status,
+               e.attempts AS europe_fit_attempts,
+               e.last_error AS europe_fit_last_error
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
@@ -913,6 +946,35 @@ def finish_europe_fit_assessment(
             _json(result.get("raw_response") or result),
             _json(video_optimization or result.get("video_optimization") or {}),
             status,
+            int(post_id),
+        ),
+    )
+
+
+def restore_europe_fit_assessment_state(
+    post_id: int,
+    *,
+    status: str,
+    attempts: int,
+    last_error: str | None = None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    safe_status = str(status or "pending").strip() or "pending"
+    if safe_status not in {"pending", "failed", "running", "done", "suspended"}:
+        safe_status = "pending"
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET status=%s,
+            attempts=%s,
+            last_error=%s
+        WHERE post_id=%s
+          AND status='running'
+        """,
+        (
+            safe_status,
+            max(0, int(attempts or 0)),
+            str(last_error)[:1000] if last_error else None,
             int(post_id),
         ),
     )

@@ -18,9 +18,9 @@ Both analyze downloaded local videos with product links. They should now share o
 - Process US copyability items before Europe fit items. Europe starts only when no US items are available in the same round.
 - Process items continuously within a 560-second window per 10-minute round.
 - Use Google Vertex ADC with Gemini 3 Flash for both analysis types.
-- Run serially with no delay between LLM video calls and a 40-second per-item timeout.
-- Requeue 429 / rate-limit failures for the next scheduled round once there are remaining attempts.
-- Stop the current round early after 2 rate-limit requeues to avoid a quota storm.
+- Run serially with no delay between LLM video calls and a 40-second hard per-item timeout.
+- The 40-second timeout means the queue stops waiting for the current item's worker and moves on; it must not block on the underlying provider call after timeout.
+- Stop the current round immediately on any 429 / quota / rate-limit response to avoid a quota storm.
 - Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
 - Use takeover singleton behavior: every new 10-minute round marks any previous running queue run failed, resets both analysis types still marked running, starts a new run, and the old worker stops cooperatively before writing stale results.
 
@@ -67,17 +67,21 @@ Register one APScheduler job:
 - batch model: time-driven, one item at a time within a 560-second window
 - per-item delay: no delay
 - per-item timeout: 40 seconds
-- rate-limit circuit breaker: 2 requeued 429 / quota errors stop the current round
+- rate-limit circuit breaker: the first 429 / quota error stops the current round
+
+The per-item timeout applies to the whole item worker, including video preparation and the LLM request. The queue must not call the row-specific finish method for the timed-out item, because the worker may still finish later and must not overwrite the persisted analysis row. A timed-out item therefore keeps its pre-run status and attempt count.
 
 ## Retry And Suspension
 
-Both task types count attempts when an item is marked `running`.
+Both task types keep row status unchanged until the item succeeds or fails before the timeout.
 
-- Attempts 1-2: any 429 / quota / rate-limit error is written back as `pending` with the error text, so the item is retried by a later queue round instead of immediately hammering the same quota window.
-- Attempts 1-2: non-rate-limit failures remain `failed` and are eligible for another later queue round.
-- Attempt 3: any failure is written as `suspended`. The pending selectors exclude `suspended`, so the video is no longer retried automatically until an operator decides how to handle it.
+- Before invoking an analyzer, the queue records the row's original status and attempt count.
+- If the item succeeds before timeout, the queue writes the normal `done` result.
+- If the item fails before timeout with a non-rate-limit error, the queue may write `failed` / `suspended` using the existing attempt policy.
+- If the item times out, the queue restores the row to its original status and attempt count and records timeout only in the scheduled-task summary.
+- If the item fails with 429 / quota / rate-limit, the queue restores the row to its original status and attempt count, records the rate-limit stop in the scheduled-task summary, and ends the current round immediately.
 
-Queue summaries include `rate_limited_requeued`, `suspended`, `rate_limit_circuit_break`, and `stop_reason` counters/flags, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real 429 rate and throughput.
+Queue summaries include `timed_out`, `rate_limited`, `suspended`, `rate_limit_circuit_break`, and `stop_reason` counters/flags, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real timeout and 429 rates.
 
 The previous separate scheduled jobs for Europe fit and US copyability are removed from APScheduler registration and from the scheduled task registry as controllable jobs. Manual page actions call the unified queue tick with the same limits instead of starting separate loops.
 
@@ -87,10 +91,10 @@ Focused tests cover:
 
 - queue ordering: US items first, Europe only after US capacity is exhausted or absent
 - time-driven loop runs items one-at-a-time within a 560-second window
-- stop the tick once 2 items in the round hit 429 / quota requeue
+- stop the tick immediately when any item hits 429 / quota / rate-limit
 - takeover reset of both running US and Europe analysis rows
 - cooperative stop when a newer queue run supersedes the current run
-- 429 failures are requeued for a later round
+- timed-out and rate-limited items restore their pre-run status and attempt count instead of writing a row finish
 - third failed attempts are suspended for both task types
 - both use cases and analyzer overrides use Vertex ADC Gemini 3 Flash
 - scheduled task registry and APScheduler registration expose only the unified video analysis queue task

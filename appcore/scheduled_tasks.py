@@ -351,8 +351,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta hot posts unified video analysis queue",
         "description": (
             "Every 10 minutes, run one unified queue for Meta hot post video analysis. "
-            "Each round processes items one-at-a-time within a 560-second window with a 40-second per-item timeout; "
-            "2 rate-limit requeues stop the current round early; "
+            "Each round processes items one-at-a-time within a 560-second window with a 40-second hard per-item timeout; "
+            "the first rate-limit response stops the current round early without changing that row's saved status; "
             "task_type=us_copyability runs before task_type=europe_fit, and Europe starts only after "
             "US copyability has no remaining capacity in the round. Both modes use Vertex ADC "
             "gemini-3-flash-preview. A new round takes over any previous running queue run and resets "
