@@ -23,6 +23,7 @@ Both analyze downloaded local videos with product links. They should now share o
 - Stop the current round early after 2 rate-limit requeues to avoid a quota storm.
 - Analyze each downloaded local video at most three times; after the third failed attempt, set the analysis row to `suspended` so operators can inspect it later.
 - Use takeover singleton behavior: every new 10-minute round marks any previous running queue run failed, resets both analysis types still marked running, starts a new run, and the old worker stops cooperatively before writing stale results.
+- At the start of every 10-minute queue tick, rebuild the analysis queues before selecting work: add every downloaded hot post that still has a product link and a local video path into the US copyability queue and the Europe fit queue when its task row is missing.
 
 ## Non-goals
 
@@ -39,9 +40,15 @@ Each queue item has:
 - `task_type`: `us_copyability` or `europe_fit`.
 - `row`: the existing row selected by the task-specific store query.
 
+Every scheduled tick begins with queue reconciliation:
+
+1. Ensure downloaded hot posts with product links exist in `meta_hot_post_video_copyability_analyses`.
+2. Ensure downloaded hot posts with product links exist in `meta_hot_post_europe_assessments`.
+3. Only after both queue tables are reconciled, select the current round of work.
+
 Queue selection fills a round in this order:
 
-1. Ensure and select pending US copyability rows up to the remaining round capacity.
+1. Select pending US copyability rows up to the remaining round capacity.
 2. If capacity remains and no more US rows were selected, select pending Europe fit rows up to the remaining capacity.
 3. If neither type returns rows, the run succeeds with zero scanned items.
 

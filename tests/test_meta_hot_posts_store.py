@@ -430,6 +430,25 @@ def test_ensure_video_copyability_candidates_inserts_downloaded_product_videos()
     assert params == ()
 
 
+def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
+    calls = []
+
+    result = store.ensure_europe_fit_candidates(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 9,
+    )
+
+    sql, params = calls[0]
+    assert result == 9
+    assert "INSERT INTO meta_hot_post_europe_assessments" in sql
+    assert "SELECT p.id, 'pending'" in sql
+    assert "FROM meta_hot_posts p" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "p.local_video_path IS NOT NULL" in sql
+    assert "p.product_url IS NOT NULL" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert params == ()
+
+
 def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_rows():
     calls = []
 
@@ -750,8 +769,8 @@ def test_next_category_reanalysis_candidates_selects_done_rows_with_titles():
     assert "category failed:%%" not in sql
     assert "category_l1 = 'Other'" in sql
     assert params == (
-        "openrouter",
-        "google/gemini-3.1-flash-lite-preview",
+        store.CATEGORY_PROVIDER,
+        store.CATEGORY_MODEL,
         "category failed:%",
         "category failed:%",
         100,
@@ -772,7 +791,7 @@ def test_next_category_reanalysis_candidates_include_all_skips_current_openroute
     assert "COALESCE(llm_model, '') <> %s" in sql
     assert "AND (last_error LIKE %s" not in sql
     assert "category failed:%%" not in sql
-    assert params == ("openrouter", "google/gemini-3.1-flash-lite-preview", "category failed:%", 80)
+    assert params == (store.CATEGORY_PROVIDER, store.CATEGORY_MODEL, "category failed:%", 80)
 
 
 def test_next_category_reanalysis_candidates_excludes_current_openrouter_failures():
@@ -789,8 +808,8 @@ def test_next_category_reanalysis_candidates_excludes_current_openrouter_failure
         "AND (last_error LIKE %s"
     ) in " ".join(sql.split())
     assert params == (
-        "openrouter",
-        "google/gemini-3.1-flash-lite-preview",
+        store.CATEGORY_PROVIDER,
+        store.CATEGORY_MODEL,
         "category failed:%",
         "category failed:%",
         100,

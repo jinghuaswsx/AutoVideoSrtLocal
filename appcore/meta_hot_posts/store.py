@@ -629,6 +629,24 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> i
     )
 
 
+def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+    return execute_fn(
+        """
+        INSERT INTO meta_hot_post_europe_assessments (post_id, status)
+        SELECT p.id, 'pending'
+        FROM meta_hot_posts p
+        WHERE p.local_video_status = 'downloaded'
+          AND p.local_video_path IS NOT NULL
+          AND TRIM(p.local_video_path) <> ''
+          AND p.product_url IS NOT NULL
+          AND TRIM(p.product_url) <> ''
+        ON DUPLICATE KEY UPDATE
+          updated_at=updated_at
+        """,
+        (),
+    )
+
+
 def next_pending_video_copyability_analyses(
     *,
     limit: int = 1,

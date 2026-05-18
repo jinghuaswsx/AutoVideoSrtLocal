@@ -370,6 +370,11 @@ def test_process_video_analysis_queue_runs_us_before_europe_with_shared_delay(mo
     )
     monkeypatch.setattr(
         scheduler.store,
+        "ensure_europe_fit_candidates",
+        lambda: events.append(("ensure_europe",)) or 1,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
         "next_pending_video_copyability_analyses",
         lambda limit: events.append(("select_us", limit))
         or [
@@ -425,13 +430,14 @@ def test_process_video_analysis_queue_runs_us_before_europe_with_shared_delay(mo
     )
 
     assert summary["queued_us_copyability"] == 2
+    assert summary["queued_europe_fit"] == 1
     assert summary["scanned"] == 3
     assert summary["done"] == 3
     assert summary["failed"] == 0
     assert summary["us_copyability_done"] == 2
     assert summary["europe_fit_done"] == 1
-    assert events[:3] == [("ensure_us",), ("select_us", 3), ("select_europe", 1)]
-    assert [event[0] for event in events[3:]] == [
+    assert events[:4] == [("ensure_us",), ("ensure_europe",), ("select_us", 3), ("select_europe", 1)]
+    assert [event[0] for event in events[4:]] == [
         "mark_us",
         "analyze_us",
         "finish_us",
@@ -445,12 +451,53 @@ def test_process_video_analysis_queue_runs_us_before_europe_with_shared_delay(mo
     assert sleep_calls == [30, 30]
 
 
+def test_video_analysis_queue_rebuilds_both_queues_before_selecting_items(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(
+        scheduler.store,
+        "ensure_video_copyability_candidates",
+        lambda: events.append(("ensure_us",)) or 7,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "ensure_europe_fit_candidates",
+        lambda: events.append(("ensure_europe",)) or 11,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: events.append(("select_us", limit))
+        or [
+            {"analysis_id": 1, "hot_post_id": 10},
+            {"analysis_id": 2, "hot_post_id": 11},
+            {"analysis_id": 3, "hot_post_id": 12},
+        ],
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: (_ for _ in ()).throw(AssertionError("US capacity should fill this round")),
+    )
+
+    queued_us, queued_europe, items = scheduler._video_analysis_queue_items(2)
+
+    assert queued_us == 7
+    assert queued_europe == 11
+    assert [item["task_type"] for item in items] == [
+        scheduler.VIDEO_ANALYSIS_TASK_US_COPYABILITY,
+        scheduler.VIDEO_ANALYSIS_TASK_US_COPYABILITY,
+    ]
+    assert events == [("ensure_us",), ("ensure_europe",), ("select_us", 2)]
+
+
 def test_process_video_analysis_queue_stops_when_run_is_superseded(monkeypatch):
     events = []
     latest_calls = []
 
     monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
     monkeypatch.setattr(
         scheduler.store,
         "next_pending_video_copyability_analyses",
@@ -490,6 +537,7 @@ def test_process_video_analysis_queue_requeues_429_for_next_round(monkeypatch):
     monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 1)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
     monkeypatch.setattr(
         scheduler.store,
         "next_pending_video_copyability_analyses",
@@ -524,6 +572,7 @@ def test_process_video_analysis_queue_stops_round_after_two_rate_limits(monkeypa
     monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 3)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
     monkeypatch.setattr(
         scheduler.store,
         "next_pending_video_copyability_analyses",
@@ -580,6 +629,7 @@ def test_process_video_analysis_queue_suspends_after_third_us_attempt(monkeypatc
     monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 1)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
     monkeypatch.setattr(
         scheduler.store,
         "next_pending_video_copyability_analyses",
@@ -612,6 +662,7 @@ def test_process_video_analysis_queue_suspends_after_third_europe_attempt(monkey
     monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 1)
     monkeypatch.setattr(scheduler.store, "next_pending_video_copyability_analyses", lambda limit: [])
     monkeypatch.setattr(
         scheduler.store,
@@ -645,6 +696,7 @@ def test_process_video_analysis_queue_idles_without_billing_user_when_empty(monk
         lambda user_id=None: (_ for _ in ()).throw(AssertionError("empty queue should idle")),
     )
     monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
     monkeypatch.setattr(scheduler.store, "next_pending_video_copyability_analyses", lambda limit: [])
     monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
 
@@ -654,6 +706,7 @@ def test_process_video_analysis_queue_idles_without_billing_user_when_empty(monk
     assert summary["done"] == 0
     assert summary["failed"] == 0
     assert summary["queued_us_copyability"] == 0
+    assert summary["queued_europe_fit"] == 0
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
