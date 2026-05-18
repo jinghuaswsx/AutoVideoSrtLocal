@@ -21,6 +21,7 @@ from flask_login import current_user, login_required
 from appcore import (
     asr_routing_config,
     browser_login_credentials,
+    english_redub_settings,
     feishu_alerts,
     infra_credentials,
     llm_bindings,
@@ -226,6 +227,8 @@ def index():
             _handle_browser_credentials_post()
         elif tab == "audio_separation":
             _handle_audio_separation_post()
+        elif tab == "omni_preset":
+            _handle_omni_preset_post()
         else:
             _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
@@ -344,6 +347,7 @@ def index():
         asr_stage_labels=asr_routing_config.STAGE_LABELS,
         asr_routing_provider_options=asr_routing_config.list_available_providers(),
         audio_separation=audio_separation_view,
+        english_redub_voice_match_strategy=english_redub_settings.get_voice_match_strategy(),
     )
 
 
@@ -574,6 +578,13 @@ def _handle_audio_separation_post() -> None:
     _settings.set_setting(SETTING_SEPARATION_GOAL, separation_goal)
     _settings.set_setting(SETTING_TASK_TIMEOUT, str(int(timeout)))
     _settings.set_setting(SETTING_BACKGROUND_VOLUME, f"{bg:.2f}")
+
+
+def _handle_omni_preset_post() -> None:
+    """Omni preset tab also hosts isolated English redub runtime switches."""
+    english_redub_settings.set_voice_match_strategy(
+        request.form.get("english_redub_voice_match_strategy")
+    )
 
 
 def _handle_push_post() -> None:

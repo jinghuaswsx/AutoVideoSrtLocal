@@ -45,6 +45,15 @@
 
 ## 用户可见行为
 
+### 实现备注
+
+2026-05-18 首版执行口径：
+
+- 新建项目时提供任务级 `script_mode` 开关，默认 `original`。
+- `original` 模式禁用句级时长收敛里的文本改写，只保留原英文 ASR 清洗/分段文本进入 TTS。
+- `rewrite` 模式继续走 Omni 的分镜、对齐和句级收敛逻辑。
+- 后台 `english_redub_voice_match_strategy` 只控制英语重配音的音色推荐排序，不影响 Omni / Multi。
+
 ### 菜单
 
 侧边栏视频翻译相关入口新增：

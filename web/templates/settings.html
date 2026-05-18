@@ -1225,6 +1225,24 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   .omni-preset-modal .cap-option.is-disabled input { cursor: not-allowed; }
 </style>
 
+<form method="post" class="settings-card" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="omni_preset">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h2>英语视频重新配音</h2>
+      <div class="step-desc">只影响 <code>/english-redub</code> 的推荐音色排序；Omni / Multi 原有音色匹配不变。</div>
+    </div>
+    <button class="btn btn-primary btn-sm" type="submit">保存</button>
+  </div>
+  <label for="englishRedubVoiceMatchStrategy">音色推荐策略</label>
+  <select id="englishRedubVoiceMatchStrategy" name="english_redub_voice_match_strategy">
+    <option value="legacy" {{ 'selected' if english_redub_voice_match_strategy == 'legacy' }}>旧音色匹配</option>
+    <option value="timbre_speed" {{ 'selected' if english_redub_voice_match_strategy == 'timbre_speed' }}>音色 + 语速匹配</option>
+  </select>
+  <p class="hint">默认使用旧音色匹配；开启新策略后先取音色相近候选，再按声音 preview 语速和原视频 ASR 语速重排。</p>
+</form>
+
 <div class="settings-card" id="omniPresetTabRoot">
   <p style="color:var(--settings-fg-muted);font-size:13px;margin:0 0 16px;">
     Omni 实验版（<a href="/omni-translate" style="color:oklch(56% 0.16 230);">/omni-translate</a>）的能力点 preset 管理。

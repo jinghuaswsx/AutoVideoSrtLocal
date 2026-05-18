@@ -691,6 +691,8 @@
       {% set video_translate_href = "" %}
       {% if has_permission('multi_translate') %}
         {% set video_translate_href = "/multi-translate" %}
+      {% elif has_permission('english_redub') %}
+        {% set video_translate_href = "/english-redub" %}
       {% elif has_permission('omni_translate') %}
         {% set video_translate_href = "/omni-translate" %}
       {% elif has_permission('projects') %}
@@ -698,6 +700,7 @@
       {% endif %}
       {% set video_translate_active =
         request.path.startswith('/multi-translate')
+        or request.path.startswith('/english-redub')
         or request.path.startswith('/omni-translate')
         or request.path.startswith('/projects')
       %}
@@ -712,6 +715,11 @@
           {% if has_permission('multi_translate') %}
           <a href="/multi-translate" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
             <span class="nav-icon">🌐</span> 多语种视频翻译
+          </a>
+          {% endif %}
+          {% if has_permission('english_redub') %}
+          <a href="/english-redub" {% if request.path.startswith('/english-redub') %}class="active"{% endif %}>
+            <span class="nav-icon">🎙️</span> 英语视频重新配音
           </a>
           {% endif %}
           {% if has_permission('omni_translate') %}

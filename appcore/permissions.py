@@ -56,6 +56,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     # A. 业务功能（普通用户也用）
     ("medias",                GROUP_BUSINESS,   "素材管理",         True,  True),
     ("multi_translate",       GROUP_BUSINESS,   "多语种视频翻译",   True,  True),
+    ("english_redub",         GROUP_BUSINESS,   "英语视频重新配音", True,  True),
     ("title_translate",       GROUP_BUSINESS,   "多语言标题翻译",   True,  True),
     ("image_translate",       GROUP_BUSINESS,   "图片翻译",         True,  True),
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
@@ -107,6 +108,7 @@ HOME_REDIRECT_ORDER = [
     ("order_profit",     "/order-profit"),
     ("product_profit",   "/product-profit"),
     ("multi_translate",  "/multi-translate"),
+    ("english_redub",    "/english-redub"),
     ("title_translate",  "/title-translate"),
     ("image_translate",  "/image-translate"),
     ("drawing_studio",   "/drawing-studio/sso"),
@@ -127,7 +129,12 @@ HOME_REDIRECT_ORDER = [
     ("lab",              "/voice-library"),
 ]
 
-_TRANSLATOR_TRUE_PERMISSIONS = {"omni_translate", "user_settings", "can_translate"}
+_TRANSLATOR_TRUE_PERMISSIONS = {
+    "omni_translate",
+    "english_redub",
+    "user_settings",
+    "can_translate",
+}
 _ANALYST_TRUE_PERMISSIONS = {"meta_hot_posts", "user_settings"}
 
 

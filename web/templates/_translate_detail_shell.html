@@ -189,7 +189,10 @@
 {% set detail_back_href = '/sentence_translate' %}
 {% set detail_back_label = '← 返回视频翻译音画同步' %}
 {% elif detail_mode == 'multi' %}
-{% if request.path.startswith('/omni-translate') %}
+{% if pipeline_kind|default('') == 'english_redub' or request.path.startswith('/english-redub') %}
+{% set detail_back_href = '/english-redub' %}
+{% set detail_back_label = '← 返回英语视频重新配音列表' %}
+{% elif request.path.startswith('/omni-translate') %}
 {% set detail_back_href = '/omni-translate' %}
 {% set detail_back_label = '← 返回全能视频翻译列表' %}
 {% else %}
@@ -209,7 +212,9 @@
 </div>
 {% else %}
 {% set _force_restart_api = '' %}
-{% if request.path.startswith('/omni-translate') %}
+{% if pipeline_kind|default('') == 'english_redub' or request.path.startswith('/english-redub') %}
+  {% set _force_restart_api = '/api/english-redub' %}
+{% elif request.path.startswith('/omni-translate') %}
   {% set _force_restart_api = '/api/omni-translate' %}
 {% elif request.path.startswith('/multi-translate') %}
   {% set _force_restart_api = '/api/multi-translate' %}

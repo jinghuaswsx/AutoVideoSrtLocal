@@ -477,6 +477,23 @@
           <span class="warning-icon">⚠️</span>
           <span>先选择目标语言</span>
         </div>
+        {% if module_kind == 'english_redub' %}
+        <div class="modal-field">
+          <label>文案模式</label>
+          <div class="modal-lang-pills" role="radiogroup" aria-label="文案模式">
+            <label class="modal-lang-pill active" style="display:inline-flex;align-items:center;gap:6px;">
+              <input type="radio" name="script_mode" value="original" checked>
+              保留原始文案，只重新生成 TTS
+            </label>
+            <label class="modal-lang-pill" style="display:inline-flex;align-items:center;gap:6px;">
+              <input type="radio" name="script_mode" value="rewrite">
+              重写文案，保持原意一致
+            </label>
+          </div>
+          <div class="modal-hint" style="margin:6px 0 0;">默认保留原英文文案；重写模式会用 Omni 对齐逻辑适配语速。</div>
+          <input type="hidden" id="targetLangSelect" name="target_lang" value="en">
+        </div>
+        {% else %}
         <div class="modal-field">
           <label>目标语言</label>
           <div class="modal-lang-pills" id="modalLangPills" role="radiogroup" aria-label="目标语言">
@@ -487,6 +504,7 @@
           </div>
           <input type="hidden" id="targetLangSelect" name="target_lang" value="">
         </div>
+        {% endif %}
         {% if module_kind == 'av_sync' %}
         <div class="modal-field">
           <label for="targetMarketSelect">目标市场</label>
@@ -524,6 +542,9 @@
           <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
           <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
         </div>
+        {% if module_kind == 'english_redub' %}
+          <input type="hidden" id="sourceLanguageSelect" name="source_language" value="en">
+        {% else %}
         <div class="modal-field" id="sourceLanguageField">
           <label>源语言</label>
           <div class="modal-lang-pills" id="modalSourceLangPills" role="radiogroup" aria-label="源语言">
@@ -535,6 +556,7 @@
           <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
+        {% endif %}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -546,6 +568,9 @@
 {% endblock %}
 {% block scripts %}
 <script>
+var MODULE_KIND = {{ module_kind|tojson }};
+var IS_ENGLISH_REDUB = MODULE_KIND === 'english_redub';
+
 function switchView(mode) {
   var grid = document.getElementById('gridView');
   var list = document.getElementById('listView');
@@ -656,6 +681,10 @@ function _resetUploadModal() {
   var srcPills = document.querySelectorAll('#modalSourceLangPills .modal-lang-pill');
   srcPills.forEach(function(b) { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
   document.getElementById('sourceLanguageSelect').value = '';
+  if (IS_ENGLISH_REDUB) {
+    document.getElementById('targetLangSelect').value = 'en';
+    document.getElementById('sourceLanguageSelect').value = 'en';
+  }
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');
   if (warning) warning.classList.remove('shake');
