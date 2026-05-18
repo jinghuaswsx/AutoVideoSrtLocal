@@ -43,12 +43,14 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert "{% block page_title %}" not in body
     assert '<span class="selection-center-title">选品中心</span>' in body
     assert '<span class="selection-center-title-note">' in body
-    assert "店小秘近7天销量 Top1000" in body
+    assert "店小秘近7天有销量全量归档" in body
     assert '<h1 class="title">选品中心</h1>' not in body
     _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
     assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
     assert 'data-mk-library-tab="products">产品库' in body
     assert 'data-mk-library-tab="videos">视频素材库' in body
+    assert 'id="snapshotSelect"' in body
+    assert "loadMkSelectionSnapshots" in body
     assert "oc-page-tabs" not in body
     assert "oc-page-tab" not in body
     assert "明控选品" not in body
@@ -60,10 +62,12 @@ def test_selection_center_tabs_and_heading_on_related_pages():
 
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in mk_template
     assert '<span class="selection-center-title">选品中心</span>' in mk_template
-    assert "店小秘近7天销量 Top1000" in mk_template
+    assert "店小秘近7天有销量全量归档" in mk_template
     assert '<h1 class="title">选品中心</h1>' not in mk_template
     assert '{% set active = "mk" %}' in mk_template
     assert '{% include "_xuanpin_tabs.html" %}' in mk_template
+    assert "/xuanpin/api/mk-selection/snapshots" in mk_template
+    assert "selectedMkSnapshot" in mk_template
     assert "oc-page-tabs" not in mk_template
     assert "oc-page-tab" not in mk_template
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in npr_template
@@ -209,6 +213,7 @@ def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
         "total": 0,
         "page": 1,
         "page_size": 50,
+        "snapshot": "2026-04-23",
     }
 
     route_mod._dianxiaomi_rankings_columns.cache_clear()
@@ -244,6 +249,31 @@ def test_mk_selection_api_delegates_response_building_after_admin_gate(
     assert response.status_code == 200
     assert response.get_json()["items"] == [{"rank": 1}]
     assert captured["keyword"] == "tooth"
+
+
+def test_mk_selection_snapshots_api_delegates_response_building_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["limit"] = args.get("limit")
+        return MkSelectionResponse(
+            {"items": [{"snapshot": "2026-05-18"}], "default_snapshot": "2026-05-18"},
+            200,
+        )
+
+    monkeypatch.setattr(route_mod, "_build_mk_selection_snapshots_response", fake_build)
+
+    response = authed_client_no_db.get("/medias/api/mk-selection/snapshots?limit=7")
+
+    assert response.status_code == 200
+    assert response.get_json()["items"] == [{"snapshot": "2026-05-18"}]
+    assert captured["limit"] == "7"
 
 
 def test_mk_selection_refresh_delegates_response_building_after_admin_gate(
@@ -291,6 +321,13 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
     )
     monkeypatch.setattr(
         route_mod,
+        "_build_mk_selection_snapshots_response",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("snapshots builder should not run for non-admin")
+        ),
+    )
+    monkeypatch.setattr(
+        route_mod,
         "_build_mk_selection_refresh_response",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("refresh builder should not run for non-admin")
@@ -320,21 +357,23 @@ def test_mk_selection_admin_only_routes_delegate_forbidden_response(
 
     responses = [
         authed_user_client_no_db.get("/medias/api/mk-selection"),
+        authed_user_client_no_db.get("/medias/api/mk-selection/snapshots"),
         authed_user_client_no_db.post("/medias/api/mk-selection/refresh"),
         authed_user_client_no_db.get("/medias/api/mk-detail/3719"),
         authed_user_client_no_db.get("/medias/api/mk-media?path=uploads2/demo.jpg"),
         authed_user_client_no_db.get("/medias/api/mk-video?path=uploads2/demo.mp4"),
     ]
 
-    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403]
+    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403, 403]
     assert [response.get_json() for response in responses] == [
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
         {"error": "forbidden-from-builder"},
+        {"error": "forbidden-from-builder"},
     ]
-    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden", "forbidden"]
+    assert calls == ["forbidden", "forbidden", "forbidden", "forbidden", "forbidden", "forbidden"]
 
 
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(

@@ -133,13 +133,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "dianxiaomi_listing_ranking_sync": {
         "code": "dianxiaomi_listing_ranking_sync",
-        "name": "店小秘 Listing 销量 Top1000",
+        "name": "店小秘 Listing 近7天有销量全量归档",
         "description": (
-            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 天；每一天都按单日 "
-            "beginDate=endDate 锁定榜单，按 paidProductCount 倒序采集 Listing 销量前 1000 名，"
-            "写入 dianxiaomi_rankings；"
-            "回补模式从 2026-04-23 起把不足 1000 条的日期视为缺失。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-12-dianxiaomi-listing-ranking-sync.md"
+            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 个快照日；"
+            "每个 snapshot_date 代表截至当日的近 7 天窗口，按 paidProductCount 倒序全量采集有销量 Listing，"
+            "写入 dianxiaomi_rankings；回补模式不再使用 1000 条阈值。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md"
         ),
         "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
         "source_type": "systemd",

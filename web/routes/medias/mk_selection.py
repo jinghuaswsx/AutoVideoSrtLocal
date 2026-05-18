@@ -25,6 +25,7 @@ from web.services.media_mk_selection import (
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
+    build_mk_selection_snapshots_response as _build_mk_selection_snapshots_response_impl,
     build_mk_video_materials_response as _build_mk_video_materials_response_impl,
     build_mk_video_cache_object_key as _build_mk_video_cache_object_key_impl,
     guess_mk_video_type as _guess_mk_video_type_impl,
@@ -59,6 +60,13 @@ def _build_mk_selection_response(args):
     return _build_mk_selection_response_impl(
         args,
         ranking_columns_fn=_dianxiaomi_rankings_columns,
+        db_query_fn=db_query,
+    )
+
+
+def _build_mk_selection_snapshots_response(args):
+    return _build_mk_selection_snapshots_response_impl(
+        args,
         db_query_fn=db_query,
     )
 
@@ -112,10 +120,20 @@ def _build_mk_video_proxy_response(media_path: str, guessed_type: str):
 @bp.route("/api/mk-selection", methods=["GET"])
 @login_required
 def api_mk_selection():
+    """返回店小秘近 7 天有销量全量归档 + 明空消耗数据。"""
     if not _is_admin():
         return _routes()._mk_admin_required_response()
-    """返回店小秘 Top1000 + 明空消耗数据，按 90 天消耗降序。"""
     result = _routes()._build_mk_selection_response(request.args)
+    return _routes()._build_mk_json_flask_response(result)
+
+
+@bp.route("/api/mk-selection/snapshots", methods=["GET"])
+@login_required
+def api_mk_selection_snapshots():
+    """返回可选择的店小秘 Listing 历史快照日期。"""
+    if not _is_admin():
+        return _routes()._mk_admin_required_response()
+    result = _routes()._build_mk_selection_snapshots_response(request.args)
     return _routes()._build_mk_json_flask_response(result)
 
 

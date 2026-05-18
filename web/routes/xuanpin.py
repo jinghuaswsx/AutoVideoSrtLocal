@@ -121,6 +121,12 @@ def api_mk_selection():
     return _medias_routes().api_mk_selection()
 
 
+@bp.route("/api/mk-selection/snapshots", methods=["GET"])
+@login_required
+def api_mk_selection_snapshots():
+    return _medias_routes().api_mk_selection_snapshots()
+
+
 @bp.route("/api/mk-selection/refresh", methods=["POST"])
 @login_required
 def api_mk_selection_refresh():

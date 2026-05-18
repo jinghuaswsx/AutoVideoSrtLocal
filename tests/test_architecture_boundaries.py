@@ -2823,6 +2823,7 @@ def test_mk_selection_admin_required_response_lives_outside_route_module():
     module = ast.parse(module_source)
     route_names = {
         "api_mk_selection",
+        "api_mk_selection_snapshots",
         "api_mk_selection_refresh",
         "api_mk_media_proxy",
         "api_mk_video_proxy",

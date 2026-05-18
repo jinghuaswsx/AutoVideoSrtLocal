@@ -2,7 +2,7 @@
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
-<span class="selection-center-title-note">店小秘近7天销量 Top1000 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
+<span class="selection-center-title-note">店小秘近7天有销量全量归档 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
 {% include "_xuanpin_tabs_style.html" %}
@@ -33,6 +33,7 @@
 .oc-search { display:flex; gap:var(--oc-sp-2); }
 .oc-input { height:38px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:18px; outline:none; }
 .oc-input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
+.oc-select { width:172px; font-size:16px; background:#fff; }
 .oc-btn { height:38px; padding:0 18px; border:none; border-radius:var(--oc-r); font-size:18px; font-weight:500; cursor:pointer; transition:background 120ms; }
 .oc-btn--primary { background:var(--oc-accent); color:#fff; }
 .oc-btn--primary:hover { background:var(--oc-accent-hover); }
@@ -133,6 +134,9 @@
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
+      <select id="snapshotSelect" class="oc-input oc-select" aria-label="历史快照" onchange="onMkSnapshotChange()">
+        <option value="">最新快照</option>
+      </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
@@ -193,6 +197,7 @@ let currentPage = 1;
 let currentMkLibraryTab = 'products';
 let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
+let selectedMkSnapshot = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 24;
 
@@ -244,12 +249,45 @@ function runMkSearch() {
   if (currentMkLibraryTab === 'videos') {
     loadMkVideoMaterials(1);
   } else {
+    mkVideoMaterialsLoaded = false;
     loadData(1);
   }
 }
 
 function resetMkSearch() {
   document.getElementById('searchInput').value = '';
+  runMkSearch();
+}
+
+function mkSnapshotQueryParam() {
+  return selectedMkSnapshot ? `&snapshot=${encodeURIComponent(selectedMkSnapshot)}` : '';
+}
+
+async function loadMkSelectionSnapshots() {
+  const select = document.getElementById('snapshotSelect');
+  try {
+    const resp = await fetch('/xuanpin/api/mk-selection/snapshots?limit=60');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '快照加载失败');
+    const items = data.items || [];
+    selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    select.innerHTML = items.length
+      ? items.map(item => {
+          const snapshot = String(item.snapshot || '');
+          const count = Number(item.listing_count || 0).toLocaleString();
+          return `<option value="${escapeHtml(snapshot)}">${escapeHtml(snapshot)} · ${count}</option>`;
+        }).join('')
+      : '<option value="">最新快照</option>';
+    select.value = selectedMkSnapshot;
+  } catch (e) {
+    selectedMkSnapshot = '';
+    select.innerHTML = '<option value="">最新快照</option>';
+  }
+}
+
+function onMkSnapshotChange() {
+  selectedMkSnapshot = document.getElementById('snapshotSelect').value || '';
+  mkVideoMaterialsLoaded = false;
   runMkSearch();
 }
 
@@ -270,10 +308,11 @@ function switchMkLibraryTab(tab) {
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
-  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;
 
   const resp = await fetch(url);
   const data = await resp.json();
+  if (data.snapshot) selectedMkSnapshot = String(data.snapshot);
 
   document.getElementById('totalCount').textContent = data.total + ' 条';
 
@@ -339,12 +378,12 @@ async function loadMkVideoMaterials(page) {
   pager.innerHTML = '';
   status.textContent = '正在从明空素材库读取视频...';
   try {
-    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const stats = data.stats || {};
-    status.textContent = `扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
+    status.textContent = `快照 ${data.snapshot || selectedMkSnapshot || '最新'} · 扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无明空视频素材</div>';
     } else {
@@ -606,7 +645,10 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 });
 
 // 初始加载
-loadData(1);
+(async function initMkSelection() {
+  await loadMkSelectionSnapshots();
+  loadData(1);
+})();
 
 // mk-import: Task 9 — page-load + post-render batch check
 let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names

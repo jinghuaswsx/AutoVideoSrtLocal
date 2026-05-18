@@ -1,6 +1,6 @@
-"""Collect Dianxiaomi Listing sales Top1000 ranking for Mingkong selection.
+"""Collect Dianxiaomi Listing full recent-sales archive for Mingkong selection.
 
-Spec: docs/superpowers/specs/2026-05-12-dianxiaomi-listing-ranking-sync.md
+Spec: docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from tools.shopifyid_dianxiaomi_sync import _connect_existing_browser_context
 
 
 TASK_CODE = "dianxiaomi_listing_ranking_sync"
-TASK_NAME = "店小秘 Listing 销量 Top1000"
+TASK_NAME = "店小秘 Listing 近7天有销量全量归档"
 
 DXM02_BROWSER_CDP_URL = "http://127.0.0.1:9223"
 DXM02_BROWSER_SERVICE_NAME = "autovideosrt-dxm02-mk-vnc.service"
@@ -31,9 +31,10 @@ LISTING_PAGE_URL = "https://www.dianxiaomi.com/web/stat/salesStatistics"
 LISTING_API_URL = "https://www.dianxiaomi.com/api/stat/product/statSalesPageListNew.json"
 
 DEFAULT_START_DATE = date(2026, 4, 23)
-DEFAULT_TARGET_ROWS = 1000
+DEFAULT_TARGET_ROWS = 0
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_DAILY_OFFSET_DAYS = 1
+DEFAULT_SNAPSHOT_WINDOW_DAYS = 7
 OUTPUT_DIR = REPO_ROOT / "output" / "dianxiaomi_listing_ranking_sync"
 
 
@@ -81,10 +82,13 @@ def build_listing_payload(
     *,
     page_no: int,
     page_size: int = DEFAULT_PAGE_SIZE,
+    window_days: int = DEFAULT_SNAPSHOT_WINDOW_DAYS,
     sort_type: str = "paidProductCount",
     is_desc: str = "1",
 ) -> dict[str, Any]:
-    day = _date_text(snapshot_date)
+    end_date = parse_yyyy_mm_dd(snapshot_date)
+    safe_window_days = max(1, int(window_days or DEFAULT_SNAPSHOT_WINDOW_DAYS))
+    begin_date = end_date - timedelta(days=safe_window_days - 1)
     return {
         "shopIds": "all",
         "shopGroupId": "",
@@ -92,8 +96,8 @@ def build_listing_payload(
         "isDesc": is_desc,
         "pageNo": int(page_no),
         "pageSize": int(page_size),
-        "beginDate": day,
-        "endDate": day,
+        "beginDate": begin_date.isoformat(),
+        "endDate": end_date.isoformat(),
         "searchType": "productId",
         "searchValue": "",
         "searchCondition": "2",
@@ -213,9 +217,10 @@ def collect_top_rankings_for_date(
     pages_fetched = 0
     api_total_size = 0
     api_total_page = 0
-    max_pages = max(1, (int(target_rows) + int(page_size) - 1) // int(page_size))
+    limit = max(0, int(target_rows or 0))
+    page_no = 1
 
-    for page_no in range(1, max_pages + 1):
+    while True:
         payload = fetch_page(snapshot_date, page_no, page_size)
         page = extract_listing_page(payload)
         pages_fetched += 1
@@ -230,23 +235,27 @@ def collect_top_rankings_for_date(
                 snapshot_date=snapshot_date,
                 rank_position=rank_position,
             )
-            if normalized["product_id"]:
+            if normalized["product_id"] and int(normalized.get("sales_count") or 0) > 0:
                 rows.append(normalized)
-            if len(rows) >= target_rows:
+            if limit and len(rows) >= limit:
                 break
 
-        if len(rows) >= target_rows:
+        if limit and len(rows) >= limit:
             break
         if not page["items"]:
             break
         if api_total_page and page_no >= api_total_page:
             break
+        if not api_total_page and len(page["items"]) < int(page_size):
+            break
+        page_no += 1
 
-    return rows[:target_rows], {
+    out_rows = rows[:limit] if limit else rows
+    return out_rows, {
         "pages_fetched": pages_fetched,
         "api_total_size": api_total_size,
         "api_total_page": api_total_page,
-        "rows_fetched": len(rows[:target_rows]),
+        "rows_fetched": len(out_rows),
     }
 
 
@@ -261,10 +270,11 @@ def select_missing_dates(
         parse_yyyy_mm_dd(key): int(value or 0)
         for key, value in existing_counts.items()
     }
+    target = max(0, int(target_rows or 0))
     return [
         day
         for day in _iter_dates(start_date, end_date)
-        if normalized_counts.get(day, 0) < target_rows
+        if (normalized_counts.get(day, 0) <= 0 if target == 0 else normalized_counts.get(day, 0) < target)
     ]
 
 
@@ -331,13 +341,10 @@ def _match_media_product_id(cursor, row: Mapping[str, Any]) -> int | None:
 def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[str, int]:
     conn = get_conn()
     matched = 0
+    product_ids = sorted({str(row.get("product_id") or "").strip() for row in rows if row.get("product_id")})
     try:
         conn.begin()
         with conn.cursor() as cursor:
-            cursor.execute(
-                "DELETE FROM dianxiaomi_rankings WHERE snapshot_date = %s",
-                (snapshot_date,),
-            )
             for row in rows:
                 media_product_id = _match_media_product_id(cursor, row)
                 if media_product_id:
@@ -387,6 +394,20 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         row["rank_position"],
                     ),
                 )
+            if product_ids:
+                placeholders = ", ".join(["%s"] * len(product_ids))
+                cursor.execute(
+                    f"""
+                    DELETE FROM dianxiaomi_rankings
+                    WHERE snapshot_date = %s AND product_id NOT IN ({placeholders})
+                    """,
+                    [snapshot_date, *product_ids],
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM dianxiaomi_rankings WHERE snapshot_date = %s",
+                    (snapshot_date,),
+                )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -424,12 +445,13 @@ def _parse_response_text(*, ok: bool, status: int | None, text: str) -> dict[str
     return payload
 
 
-def _build_context_fetcher(context, *, timeout_ms: int) -> ListingFetchPage:
+def _build_context_fetcher(context, *, timeout_ms: int, window_days: int) -> ListingFetchPage:
     def _fetch(snapshot_date: date, page_no: int, page_size: int) -> dict[str, Any]:
         payload = build_listing_payload(
             snapshot_date,
             page_no=page_no,
             page_size=page_size,
+            window_days=window_days,
         )
         response = context.request.post(
             LISTING_API_URL,
@@ -529,6 +551,8 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         **base_summary,
         "target_rows": int(args.target_rows),
         "page_size": int(args.page_size),
+        "snapshot_window_days": int(args.snapshot_window_days),
+        "uncapped": int(args.target_rows) <= 0,
         "selected_dates": [item.isoformat() for item in selected_dates],
         "fetched_days": 0,
         "pages_fetched": 0,
@@ -555,7 +579,11 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(LISTING_PAGE_URL, wait_until="domcontentloaded", timeout=args.timeout_seconds * 1000)
         page.wait_for_timeout(1000)
-        fetch_page = _build_context_fetcher(context, timeout_ms=args.timeout_seconds * 1000)
+        fetch_page = _build_context_fetcher(
+            context,
+            timeout_ms=args.timeout_seconds * 1000,
+            window_days=args.snapshot_window_days,
+        )
 
         for snapshot_date in selected_dates:
             rows, fetch_stats = collect_top_rankings_for_date(
@@ -578,7 +606,7 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
             summary["rows_fetched"] += int(fetch_stats["rows_fetched"])
             summary["rows_stored"] += int(persist_stats["stored_rows"])
             summary["matched_media_products"] += int(persist_stats["matched_media_products"])
-            if len(rows) < args.target_rows:
+            if int(args.target_rows) > 0 and len(rows) < args.target_rows:
                 summary["incomplete_dates"].append({
                     "date": snapshot_date.isoformat(),
                     "rows": len(rows),
@@ -590,7 +618,7 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Collect Dianxiaomi Listing sales ranking into dianxiaomi_rankings.")
+    parser = argparse.ArgumentParser(description="Collect Dianxiaomi Listing recent-sales archive into dianxiaomi_rankings.")
     parser.add_argument("--mode", choices=("backfill", "daily", "date", "rolling"), default="backfill")
     parser.add_argument("--start-date", default=DEFAULT_START_DATE.isoformat())
     parser.add_argument("--end-date", default=date.today().isoformat())
@@ -598,8 +626,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--daily-offset-days", type=int, default=DEFAULT_DAILY_OFFSET_DAYS)
     parser.add_argument("--rolling-days", type=int, default=7)
     parser.add_argument("--max-days-per-run", type=int, default=1)
-    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS)
+    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Manual safety cap; 0 means uncapped.")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
+    parser.add_argument("--snapshot-window-days", type=int, default=DEFAULT_SNAPSHOT_WINDOW_DAYS)
     parser.add_argument(
         "--browser-cdp-url",
         default=os.environ.get("DXM_LISTING_BROWSER_CDP_URL", DXM02_BROWSER_CDP_URL),

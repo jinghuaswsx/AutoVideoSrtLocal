@@ -14,13 +14,13 @@ This is not the local translated material library under `素材管理 -> 视频�
 
 The video material library uses existing wedev credentials and the Mingkong marketing media API:
 
-1. Read the latest `dianxiaomi_rankings` snapshot.
+1. Read the selected `dianxiaomi_rankings` snapshot, defaulting to the latest available date.
 2. Derive the Shopify handle from each product URL.
 3. Query `GET /api/marketing/medias?q=<handle>` with the synced wedev credentials.
 4. Pick the best matching Mingkong product by exact product link tail first, then by visible video spend, ad count, and newer Mingkong id.
 5. Flatten visible videos into cards, sorted per product by spend and ad count.
 
-The UI must not depend on `dianxiaomi_rankings.mk_product_id` or the old denormalized Mingkong spend columns, because the current Top1000 ranking sync does not populate those fields.
+The UI must not depend on `dianxiaomi_rankings.mk_product_id` or the old denormalized Mingkong spend columns. The Dianxiaomi full-listing archive owns raw Listing sales rows only; Mingkong matching and spend data are enrichment state.
 
 ## UI
 
@@ -40,6 +40,7 @@ Query parameters:
 - `page`: product-source page, default `1`.
 - `page_size`: number of Dianxiaomi products to scan, default `24`, max `60`.
 - `keyword`: optional product-name or handle filter.
+- `snapshot`: optional `YYYY-MM-DD`; omitted means latest snapshot.
 - `max_videos_per_product`: default `3`, max `5`.
 
 Response:

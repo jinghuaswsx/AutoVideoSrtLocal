@@ -145,6 +145,53 @@ def _resolve_mk_selection_snapshot(
     return str(value)[:10]
 
 
+def _snapshot_text(value: object) -> str:
+    return str(value or "")[:10]
+
+
+def build_mk_selection_snapshots_response(
+    args: Mapping[str, str],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> MkSelectionResponse:
+    try:
+        limit = _parse_bounded_int(args, "limit", default=30, minimum=1, maximum=365)
+    except ValueError as exc:
+        return MkSelectionResponse(
+            {
+                "error": "invalid_pagination",
+                "message": f"{exc.args[0]} must be an integer",
+            },
+            400,
+        )
+
+    rows = db_query_fn(
+        """
+        SELECT snapshot_date, COUNT(*) AS listing_count
+        FROM dianxiaomi_rankings
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date DESC
+        LIMIT %s
+        """,
+        [limit],
+    )
+    items = [
+        {
+            "snapshot": _snapshot_text(row.get("snapshot_date")),
+            "listing_count": _int_value(row.get("listing_count")),
+        }
+        for row in rows
+        if _snapshot_text(row.get("snapshot_date"))
+    ]
+    return MkSelectionResponse(
+        {
+            "items": items,
+            "default_snapshot": items[0]["snapshot"] if items else "",
+        },
+        200,
+    )
+
+
 def _trim_text(value: object, limit: int) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
@@ -344,7 +391,13 @@ def build_mk_selection_response(
         })
 
     return MkSelectionResponse(
-        {"items": items, "total": total, "page": page_num, "page_size": page_size},
+        {
+            "items": items,
+            "total": total,
+            "page": page_num,
+            "page_size": page_size,
+            "snapshot": snapshot,
+        },
         200,
     )
 

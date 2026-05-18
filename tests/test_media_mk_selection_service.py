@@ -128,8 +128,37 @@ def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_c
         "total": 0,
         "page": 1,
         "page_size": 50,
+        "snapshot": "2026-04-23",
     }
     assert len(calls) == 3
+
+
+def test_build_mk_selection_snapshots_response_lists_recent_archive_dates():
+    from datetime import date
+    from web.services.media_mk_selection import build_mk_selection_snapshots_response
+
+    def fake_db_query(sql, args=()):
+        assert "FROM dianxiaomi_rankings" in sql
+        assert "GROUP BY snapshot_date" in sql
+        assert args == [30]
+        return [
+            {"snapshot_date": date(2026, 5, 18), "listing_count": 1534},
+            {"snapshot_date": "2026-05-17", "listing_count": 1498},
+        ]
+
+    result = build_mk_selection_snapshots_response(
+        {},
+        db_query_fn=fake_db_query,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "items": [
+            {"snapshot": "2026-05-18", "listing_count": 1534},
+            {"snapshot": "2026-05-17", "listing_count": 1498},
+        ],
+        "default_snapshot": "2026-05-18",
+    }
 
 
 def test_build_mk_selection_response_defaults_to_latest_snapshot():
@@ -170,6 +199,7 @@ def test_build_mk_selection_response_defaults_to_latest_snapshot():
 
     assert result.status_code == 200
     assert result.payload["total"] == 0
+    assert result.payload["snapshot"] == "2026-05-11"
 
 
 def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query():

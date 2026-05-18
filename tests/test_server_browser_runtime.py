@@ -243,6 +243,7 @@ def test_dianxiaomi_listing_ranking_sync_timer_uses_dxm02_at_1240_for_recent_7_d
     assert "--mode rolling" in service
     assert "--rolling-days 7" in service
     assert "--daily-offset-days 0" in service
+    assert "--target-rows 1000" not in service
     assert "OnCalendar=*-*-* 12:40:00" in timer
     assert "Persistent=true" in timer
 
