@@ -168,12 +168,16 @@ def list_projects_with_creator(
     is_admin: bool,
     owner_name_expr: str,
     target_lang: str = "",
+    filter_user_id: int | None = None,
     query_func=query,
 ) -> list[dict]:
     project_type = _validate_project_type(project_type)
     if is_admin:
         scope_sql = f"p.type = '{project_type}' AND p.deleted_at IS NULL"
         scope_args: tuple = ()
+        if filter_user_id is not None:
+            scope_sql += " AND p.user_id = %s"
+            scope_args = (filter_user_id,)
     else:
         scope_sql = f"p.user_id = %s AND p.type = '{project_type}' AND p.deleted_at IS NULL"
         scope_args = (user_id,)
@@ -192,6 +196,25 @@ def list_projects_with_creator(
         args = (*scope_args, target_lang)
     sql += "ORDER BY p.created_at DESC"
     return query_func(sql, args)
+
+
+def list_project_creators(
+    *,
+    project_type: str,
+    owner_name_expr: str,
+    query_func=query,
+) -> list[dict]:
+    project_type = _validate_project_type(project_type)
+    return query_func(
+        "SELECT DISTINCT p.user_id AS id, "
+        f"COALESCE({owner_name_expr}, CONCAT('用户 #', p.user_id)) AS display_name "
+        "FROM projects p "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE p.type = '{project_type}' AND p.deleted_at IS NULL "
+        "AND p.user_id IS NOT NULL "
+        "ORDER BY display_name ASC, p.user_id ASC",
+        (),
+    )
 
 
 def list_projects_with_state(

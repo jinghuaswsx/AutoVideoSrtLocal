@@ -70,6 +70,53 @@ def test_build_plugin_config_annotation_marks_custom_config():
     assert "响度匹配关闭" in annotation["summary"]
 
 
+def test_superadmin_list_filters_omni_translate_projects_by_user_id(authed_client_no_db):
+    with patch("web.routes.omni_translate.db_query", side_effect=[[], []]) as m_q, \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate._is_superadmin_user", return_value=True), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237&lang=de")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args_list[-1].args[0].lower()
+    args = m_q.call_args_list[-1].args[1]
+    assert "p.user_id = %s" in sql
+    assert args == (237, "de")
+
+
+def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):
+    creators = [
+        {"id": 237, "display_name": "顾倩"},
+        {"id": 238, "display_name": "translator238"},
+    ]
+    with patch("web.routes.omni_translate.db_query", side_effect=[creators, []]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate._is_superadmin_user", return_value=True), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'id="creatorFilter"' in html
+    assert '<option value="237" selected>顾倩</option>' in html
+    assert 'value="238"' in html
+    assert ">translator238</option>" in html
+
+
+def test_non_superadmin_omni_translate_ignores_user_filter(authed_client_no_db):
+    with patch("web.routes.omni_translate.db_query", return_value=[]) as m_q, \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args.args[0].lower()
+    args = m_q.call_args.args[1]
+    assert "p.user_id = %s" in sql
+    assert args == (1,)
+    assert b'id="creatorFilter"' not in resp.data
+
+
 def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
     authed_client_no_db, tmp_path, monkeypatch,
 ):

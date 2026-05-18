@@ -256,6 +256,98 @@ def test_list_projects_with_creator_omits_user_scope_for_admin():
     ]
 
 
+def test_list_projects_with_creator_admin_can_filter_by_creator_and_lang():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "multi-1"}]
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="multi_translate",
+        is_admin=True,
+        owner_name_expr="u.username",
+        target_lang="de",
+        filter_user_id=237,
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": "multi-1"}]
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.type = 'multi_translate' AND p.deleted_at IS NULL AND p.user_id = %s "
+            "  AND JSON_EXTRACT(p.state_json, '$.target_lang') = %s "
+            "ORDER BY p.created_at DESC",
+            (237, "de"),
+        )
+    ]
+
+
+def test_list_projects_with_creator_normal_user_ignores_creator_filter():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return []
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="multi_translate",
+        is_admin=False,
+        owner_name_expr="u.username",
+        filter_user_id=237,
+        query_func=fake_query,
+    )
+
+    assert rows == []
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.user_id = %s AND p.type = 'multi_translate' AND p.deleted_at IS NULL "
+            "ORDER BY p.created_at DESC",
+            (7,),
+        )
+    ]
+
+
+def test_list_project_creators_uses_owner_display_name_expr():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": 237, "display_name": "顾倩"}]
+
+    rows = store.list_project_creators(
+        project_type="omni_translate",
+        owner_name_expr="u.username",
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": 237, "display_name": "顾倩"}]
+    assert calls == [
+        (
+            "SELECT DISTINCT p.user_id AS id, "
+            "COALESCE(u.username, CONCAT('用户 #', p.user_id)) AS display_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.type = 'omni_translate' AND p.deleted_at IS NULL "
+            "AND p.user_id IS NOT NULL "
+            "ORDER BY display_name ASC, p.user_id ASC",
+            (),
+        )
+    ]
+
+
 def test_list_projects_with_state_scopes_user_type_and_active_rows():
     calls = []
 
