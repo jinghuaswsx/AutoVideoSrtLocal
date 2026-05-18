@@ -223,7 +223,6 @@ class EnglishRedubRunner(OmniTranslateRunner):
                 "est_chars": len(text),
                 "source_text": text,
                 "shot_context": list(segment.get("shot_context") or []),
-                "preserve_text": True,
             })
 
         localized_translation = {

@@ -128,7 +128,7 @@ export
 - 创建任务时强制写入 `source_language="en"`、`target_lang="en"`。
 - 前端不允许改目标语言。
 - ASR 文本是事实来源；分镜只用于英文文案适配和画面上下文。
-- `script_mode="original"` 时，`translate` 阶段不改写文案，只把 ASR 清洗/分段结果组装成英文 TTS 输入。
+- `script_mode="original"` 时，`translate` 阶段不改写文案，只把 ASR 清洗/分段结果组装成英文 TTS 初始输入；语音生成阶段仍复刻 Omni 的 `sentence_reconcile` 收敛逻辑。
 - `script_mode="rewrite"` 时，`translate` 阶段在本模块内语义为“英文文案适配”，不是语言翻译：允许压缩、扩写、拆句、改写口播节奏，但禁止新增原视频没有的事实。
 
 ### 文案模式
@@ -141,22 +141,22 @@ export
 }
 ```
 
-默认值：`original`。这是保守默认，避免用户上传后系统自动改变英文原文。
+默认值：`original`。这是保守默认，避免 `translate` 阶段主动本土化改写英文原文；TTS 阶段仍可为了句级时长收敛做必要调整。
 
-#### original：保留原始文案，只重新生成 TTS
+#### original：以原始文案为输入，重新生成并收敛 TTS
 
 适用场景：
 
 - 用户认为原视频英文口播已经正确，只希望换声音、重新混音或重新出字幕。
-- 用户希望字幕文字尽量等于原视频 ASR 结果。
+- 用户希望优先沿用原视频 ASR 结果，但接受为贴合原视频时长做必要的技术性文本收敛。
 
 行为：
 
 1. ASR 后仍执行清洗/纠错，但不做本土化改写。
 2. `translate` artifact 里保留 step 名称以兼容工作台，但展示文案改为“原文组装”。
-3. TTS 输入文本来自 ASR 清洗后的英文分段。
-4. `sentence_reconcile` 可以为了时长做极小范围的技术性调整，但第一版默认不主动改写文本；如果某句无法塞入目标窗口，使用现有 warning / fallback 机制。
-5. 字幕默认使用最终 TTS 文本；若 TTS 文本未被修改，则字幕等同 ASR 清洗文本。
+3. TTS 初始输入文本来自 ASR 清洗后的英文分段。
+4. 语音生成必须复刻 Omni 的 `sentence_reconcile` 收敛逻辑：允许为了贴合原视频句级窗口执行文本重写、候选生成、best-pick、变速兜底和最终 fallback。
+5. 字幕默认使用最终 TTS 文本；若收敛过程未修改文本，则字幕等同 ASR 清洗文本。
 
 #### rewrite：重写文案并匹配 TTS
 

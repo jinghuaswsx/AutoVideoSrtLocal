@@ -65,6 +65,7 @@ def test_original_translate_builds_av_sentences(monkeypatch):
     assert updates["source_full_text"] == "Hello world"
     assert updates["variants"]["av"]["sentences"][0]["text"] == "Hello world"
     assert updates["variants"]["av"]["sentences"][0]["target_duration"] == 1.5
+    assert "preserve_text" not in updates["variants"]["av"]["sentences"][0]
 
 
 def test_get_pipeline_steps_dispatches_original_translate(monkeypatch):
@@ -97,13 +98,13 @@ def test_get_pipeline_steps_dispatches_original_translate(monkeypatch):
     assert names[-1] == "export"
 
 
-def test_original_script_mode_disables_duration_text_rewrite():
+def test_original_script_mode_uses_omni_duration_text_rewrite():
     from pipeline.duration_reconcile import _text_rewrite_enabled_for_task
 
     assert _text_rewrite_enabled_for_task({
         "type": "english_redub",
         "script_mode": "original",
-    }) is False
+    }) is True
     assert _text_rewrite_enabled_for_task({
         "type": "english_redub",
         "script_mode": "rewrite",
@@ -112,3 +113,22 @@ def test_original_script_mode_disables_duration_text_rewrite():
         "type": "omni_translate",
         "script_mode": "original",
     }) is True
+
+
+def test_english_redub_sentence_reconcile_uses_speech_shot_alignment_gate():
+    from appcore.tts_strategies.sentence_reconcile import _should_run_speech_shot_alignment
+
+    assert _should_run_speech_shot_alignment({
+        "type": "english_redub",
+        "plugin_config": {
+            "shot_decompose": True,
+            "tts_strategy": "sentence_reconcile",
+        },
+    }) is True
+    assert _should_run_speech_shot_alignment({
+        "type": "english_redub",
+        "plugin_config": {
+            "shot_decompose": False,
+            "tts_strategy": "sentence_reconcile",
+        },
+    }) is False

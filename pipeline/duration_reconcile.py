@@ -215,12 +215,6 @@ def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
 
 
 def _text_rewrite_enabled_for_task(task: dict | None) -> bool:
-    if (
-        isinstance(task, dict)
-        and task.get("type") == "english_redub"
-        and str(task.get("script_mode") or "original").strip().lower() == "original"
-    ):
-        return False
     return True
 
 
