@@ -1160,7 +1160,7 @@ def _json_safe(value):
 
 def _cover_provider_config_code(provider: str) -> str:
     normalized = (provider or "").strip()
-    if normalized == "local":
+    if normalized in {"", "local"}:
         return "video_cover_local_image"
     if normalized == "openrouter":
         return "openrouter_image"
@@ -1170,7 +1170,7 @@ def _cover_provider_config_code(provider: str) -> str:
         return "gemini_aistudio_image"
     if normalized == "gemini_vertex_adc":
         return "gemini_vertex_adc_image"
-    return "video_cover_local_image"
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
 
 
 def _step_debug_request(state: dict, step: str) -> dict:
@@ -1187,26 +1187,32 @@ def _prompt_index_from_request(default: int = 1) -> int:
     raw = request.args.get("prompt_index")
     if raw is None or raw == "":
         return default
+    return _parse_prompt_index(raw)
+
+
+def _parse_prompt_index(value) -> int:
     try:
-        value = int(raw)
+        parsed = int(value)
     except (TypeError, ValueError) as exc:
         raise VideoCoverGenerationError("prompt_index 非法") from exc
-    if value < 1:
+    if parsed < 1:
         raise VideoCoverGenerationError("prompt_index 非法")
-    return value
+    return parsed
 
 
 def _cover_prompt_row(request_payload: dict, prompt_index: int) -> dict:
     prompts = request_payload.get("image_prompts")
     if not isinstance(prompts, list):
         prompts = []
+    if not prompts:
+        return {"index": prompt_index, "prompt": str(request_payload.get("prompt") or "")}
     for item in prompts:
-        if isinstance(item, dict) and int(item.get("index") or 0) == prompt_index:
+        if not isinstance(item, dict):
+            continue
+        item_index = _parse_prompt_index(item.get("index"))
+        if item_index == prompt_index:
             return item
-    first = prompts[0] if prompts and isinstance(prompts[0], dict) else {}
-    if first:
-        return first
-    return {"index": prompt_index, "prompt": str(request_payload.get("prompt") or "")}
+    raise VideoCoverGenerationError(f"prompt_index {prompt_index} 不存在")
 
 
 def _cover_reference_object_key(state: dict) -> str:
@@ -1224,7 +1230,7 @@ def _provider_config_values(provider: str) -> tuple[str, str]:
 
 def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str]:
     normalized = (provider or "").strip()
-    if normalized == "local":
+    if normalized in {"", "local"}:
         api_base = base_url or "http://172.30.254.14:82/v1"
         return f"{api_base.rstrip('/')}/images/edits", "multipart/form-data"
     if normalized == "openrouter":
@@ -1233,65 +1239,153 @@ def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str
     if normalized == "apimart":
         api_base = base_url or "https://api.apimart.ai"
         return f"{api_base.rstrip('/')}/v1/images/generations", "application/json"
-    return base_url, "application/json"
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
+
+
+def _reference_image_summary(object_key: str) -> dict:
+    return {
+        "object_key": object_key,
+        "content_type": "image/png",
+        "data_url": "data:image/png;base64,<reference image bytes>",
+    }
+
+
+def _base_cover_request_parts(request_payload: dict, prompt_index: int) -> tuple[str, str, str, str, list]:
+    provider = str(request_payload.get("provider") or "local").strip() or "local"
+    model = str(request_payload.get("model") or request_payload.get("model_id") or "gpt-image-2").strip() or "gpt-image-2"
+    prompt_row = _cover_prompt_row(request_payload, prompt_index)
+    prompt = str(prompt_row.get("prompt") or request_payload.get("prompt") or "")
+    image_prompts = request_payload.get("image_prompts")
+    if not isinstance(image_prompts, list):
+        image_prompts = []
+    return provider, model, prompt, str(prompt_row.get("index") or prompt_index), image_prompts
 
 
 def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: int) -> tuple[dict, dict]:
-    provider = str(request_payload.get("provider") or "local").strip() or "local"
-    model = str(request_payload.get("model") or request_payload.get("model_id") or "gpt-image-2").strip() or "gpt-image-2"
+    provider, model, prompt, resolved_prompt_index_raw, image_prompts = _base_cover_request_parts(request_payload, prompt_index)
     api_key, base_url = _provider_config_values(provider)
-    if not api_key:
+    if provider in {"local", "openrouter", "apimart", "gemini_aistudio"} and not api_key:
         raise VideoCoverGenerationError(f"缺少供应商配置 {_cover_provider_config_code(provider)}.api_key")
-    url, content_type = _cover_full_request_endpoint(provider, base_url)
-    if not url:
-        raise VideoCoverGenerationError(f"缺少供应商配置 {_cover_provider_config_code(provider)}.base_url")
-
-    prompt_row = _cover_prompt_row(request_payload, prompt_index)
-    prompt = str(prompt_row.get("prompt") or request_payload.get("prompt") or "")
     object_key = _cover_reference_object_key(state)
     if not object_key:
         raise VideoCoverGenerationError("缺少 reference image")
 
-    image_prompts = request_payload.get("image_prompts")
-    if not isinstance(image_prompts, list):
-        image_prompts = []
     prompt_indexes = [
-        int(item.get("index") or idx + 1)
+        _parse_prompt_index(item.get("index") or idx + 1)
         for idx, item in enumerate(image_prompts)
         if isinstance(item, dict)
     ]
-    resolved_prompt_index = int(prompt_row.get("index") or prompt_index)
+    resolved_prompt_index = _parse_prompt_index(resolved_prompt_index_raw)
 
-    full_request = {
-        "method": "POST",
-        "url": url,
-        "headers": {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": content_type,
-        },
-        "api_key": api_key,
-        "body": {
-            "model": model,
-            "prompt": prompt,
-            "n": "1",
-            "size": "1024x1536",
-        },
-        "files": [{
-            "field": "image",
-            "filename": "reference.png",
-            "content_type": "image/png",
-            "source": object_key,
-        }],
-        "image_prompts": image_prompts,
-    }
     replay = {
-        "supported": True,
-        "default_url": url,
-        "default_api_key": api_key,
+        "supported": provider == "local",
         "prompt_index": resolved_prompt_index,
         "prompt_indexes": prompt_indexes or [prompt_index],
     }
-    return full_request, replay
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    if provider == "local":
+        url, content_type = _cover_full_request_endpoint(provider, base_url)
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": content_type,
+            },
+            "api_key": api_key,
+            "body": {
+                "model": model,
+                "prompt": prompt,
+                "n": "1",
+                "size": "1024x1536",
+            },
+            "files": [{
+                "field": "image",
+                "filename": "reference.png",
+                "content_type": "image/png",
+                "source": object_key,
+            }],
+            "image_prompts": image_prompts,
+        }
+        replay.update({
+            "default_url": url,
+            "default_api_key": api_key,
+        })
+        return full_request, replay
+
+    if provider == "openrouter":
+        url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {**headers, "Content-Type": "application/json"},
+            "api_key": api_key,
+            "body": {
+                "model": model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,<reference image bytes>",
+                                "reference_image_object_key": object_key,
+                            },
+                        },
+                    ],
+                }],
+                "modalities": ["image", "text"],
+                "extra_body": {"usage": {"include": True}},
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    if provider == "apimart":
+        url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {**headers, "Content-Type": "application/json"},
+            "api_key": api_key,
+            "body": {
+                "model": model,
+                "prompt": prompt,
+                "n": 1,
+                "size": str(request_payload.get("size") or "auto"),
+                "resolution": str(request_payload.get("resolution") or "1k"),
+                "image_urls": ["data:image/png;base64,<reference image bytes>"],
+                "reference_image_object_key": object_key,
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    if provider in {"gemini_aistudio", "gemini_vertex_adc"}:
+        full_request = {
+            "method": "SDK",
+            "url": provider,
+            "headers": headers,
+            "api_key": api_key,
+            "body": {
+                "provider": provider,
+                "model": model,
+                "prompt": prompt,
+                "source_image": _reference_image_summary(object_key),
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
 
 
 def _build_text_full_request(request_payload: dict) -> dict:
@@ -1347,18 +1441,30 @@ def _build_step_debug_payload(task_id: str, state: dict, step: str, prompt_index
     }
 
 
+def _debug_payload_json_response(payload: dict, status: int = 200):
+    response = _json_response(payload, status)
+    if isinstance(response, tuple):
+        body, status_code = response
+        body.headers["Cache-Control"] = "no-store"
+        body.headers["Pragma"] = "no-cache"
+        return body, status_code
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @bp.route("/video-cover/api/<task_id>/debug-payload/<step>", methods=["GET"])
 @login_required
 @admin_required
 def api_debug_payload(task_id: str, step: str):
     row, state = _load_user_project(task_id)
     if not row:
-        return _json_response({"ok": False, "error": "not found"}, 404)
+        return _debug_payload_json_response({"ok": False, "error": "not found"}, 404)
     try:
         payload = _build_step_debug_payload(task_id, state, step, _prompt_index_from_request())
     except VideoCoverGenerationError as exc:
-        return _json_response({"ok": False, "error": str(exc)}, 400)
-    return _json_response({"ok": True, "data": _json_safe(payload)})
+        return _debug_payload_json_response({"ok": False, "error": str(exc)}, 400)
+    return _debug_payload_json_response({"ok": True, "data": _json_safe(payload)})
 
 
 @bp.route("/video-cover/api/<task_id>/run/<step>", methods=["POST"])

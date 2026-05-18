@@ -2316,6 +2316,123 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(authed_clien
     assert data["replay"]["supported"] is False
 
 
+def _debug_cover_state(provider="local", model="gpt-image-2"):
+    return {
+        "id": "task-1",
+        "type": "video_cover",
+        "product": {
+            "title": "Bug-Proof Car Sunshade Screen",
+            "main_image_url": "https://cdn.example/product.jpg",
+        },
+        "image_count": 1,
+        "step_requests": {
+            "cover_generation": {
+                "provider": provider,
+                "model": model,
+                "request_data": {"image_count": 1},
+                "image_prompts": [{"index": 1, "prompt": "debug prompt text"}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"raw_marker": True},
+                "structured_result": {"covers": [{"index": 1, "hook": "structured hook"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "covers": [{"platform": "social_reels", "index": 1, "hook": "result hook"}],
+        },
+    }
+
+
+def test_video_cover_debug_payload_response_disables_cache(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["Pragma"] == "no-cache"
+
+
+def test_video_cover_debug_payload_rejects_missing_prompt_index(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
+def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state(provider="openrouter", model="openai/gpt-5.4-image-2:high")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    def fake_get_provider_config(code):
+        assert code == "openrouter_image"
+        return _FakeProviderConfig(api_key="sk-openrouter-test", base_url="https://openrouter.test/api/v1")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["full_request"]["method"] == "POST"
+    assert data["full_request"]["url"] == "https://openrouter.test/api/v1/chat/completions"
+    assert data["full_request"]["headers"]["Content-Type"] == "application/json"
+    assert data["full_request"]["body"]["model"] == "openai/gpt-5.4-image-2:high"
+    assert data["full_request"]["body"]["modalities"] == ["image", "text"]
+    assert data["full_request"]["body"]["extra_body"]["usage"] == {"include": True}
+    content = data["full_request"]["body"]["messages"][0]["content"]
+    assert content[0] == {"type": "text", "text": "debug prompt text"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["reference_image_object_key"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["full_request"]["files"] == []
+    assert data["replay"]["supported"] is False
+
+
+def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state(provider="gemini_aistudio", model="gemini-3-pro-image-preview")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    def fake_get_provider_config(code):
+        assert code == "gemini_aistudio_image"
+        return _FakeProviderConfig(api_key="sk-gemini-test", base_url="")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["full_request"]["method"] == "SDK"
+    assert data["full_request"]["url"] == "gemini_aistudio"
+    assert data["full_request"]["body"]["model"] == "gemini-3-pro-image-preview"
+    assert data["full_request"]["body"]["prompt"] == "debug prompt text"
+    assert data["full_request"]["body"]["source_image"]["object_key"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["replay"]["supported"] is False
+
+
 def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import video_cover
 
