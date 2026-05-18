@@ -12,9 +12,13 @@ from appcore.meta_hot_posts import store
 
 MIN_DOWNLOAD_DELAY_SECONDS = 30.0
 DEFAULT_CACHE_SUBDIR = Path("meta_hot_posts") / "videos"
+DEFAULT_COVER_SUBDIR = Path("meta_hot_posts") / "video_covers"
+DEFAULT_COVER_SCALE = "480:-2"
 
 RunFn = Callable[..., Any]
 SleepFn = Callable[[float], None]
+DurationFn = Callable[[Path], float | int | None]
+CoverFn = Callable[..., str | None]
 
 
 def default_cache_root(*, output_dir: str | Path = OUTPUT_DIR) -> Path:
@@ -33,7 +37,7 @@ def _relative_to_output(path: Path, *, output_dir: str | Path) -> str:
     return rel.as_posix()
 
 
-def resolve_local_video_path(
+def resolve_output_relative_file_path(
     relative_path: str | None,
     *,
     output_dir: str | Path = OUTPUT_DIR,
@@ -50,6 +54,84 @@ def resolve_local_video_path(
     if not candidate.is_file():
         return None
     return candidate
+
+
+def resolve_local_video_path(
+    relative_path: str | None,
+    *,
+    output_dir: str | Path = OUTPUT_DIR,
+) -> Path | None:
+    return resolve_output_relative_file_path(relative_path, output_dir=output_dir)
+
+
+def _duration_seconds(value: Any) -> float | None:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return None
+    return duration if duration > 0 else None
+
+
+def probe_local_video_duration_seconds(video_path: Path) -> float | None:
+    from pipeline.ffutil import get_media_duration
+
+    return _duration_seconds(get_media_duration(str(video_path)))
+
+
+def extract_local_video_cover_path(
+    video_path: Path,
+    *,
+    row: Mapping[str, Any],
+    output_dir: str | Path = OUTPUT_DIR,
+    scale: str | None = DEFAULT_COVER_SCALE,
+) -> str | None:
+    from pipeline.ffutil import extract_thumbnail
+
+    output_root = Path(output_dir)
+    cover_root = output_root / DEFAULT_COVER_SUBDIR / _safe_post_id(row)
+    cover_root.mkdir(parents=True, exist_ok=True)
+    extracted = extract_thumbnail(str(video_path), str(cover_root), scale=scale)
+    if not extracted:
+        return None
+    cover_path = Path(extracted)
+    if not cover_path.is_file():
+        return None
+    return _relative_to_output(cover_path, output_dir=output_root)
+
+
+def _normalize_relative_file_path(value: str | Path | None, *, output_dir: str | Path) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.is_absolute():
+        try:
+            return _relative_to_output(path, output_dir=output_dir)
+        except ValueError:
+            return None
+    resolved = resolve_output_relative_file_path(raw, output_dir=output_dir)
+    return raw.replace("\\", "/") if resolved is not None else None
+
+
+def _build_local_video_metadata(
+    row: Mapping[str, Any],
+    *,
+    local_video_path: str,
+    output_dir: str | Path,
+    duration_fn: DurationFn,
+    cover_fn: CoverFn,
+) -> tuple[float, str]:
+    video_path = resolve_local_video_path(local_video_path, output_dir=output_dir)
+    if video_path is None:
+        raise RuntimeError("downloaded video file is missing")
+    duration = _duration_seconds(duration_fn(video_path))
+    if duration is None:
+        raise RuntimeError("video duration unavailable")
+    cover = cover_fn(video_path, row=row, output_dir=output_dir)
+    cover_path = _normalize_relative_file_path(cover, output_dir=output_dir)
+    if not cover_path:
+        raise RuntimeError("video cover extraction failed")
+    return duration, cover_path
 
 
 def download_with_ytdlp(
@@ -124,6 +206,8 @@ def download_hot_post_videos(
     cache_root: str | Path | None = None,
     output_dir: str | Path = OUTPUT_DIR,
     download_fn: Callable[..., str] = download_with_ytdlp,
+    duration_fn: DurationFn = probe_local_video_duration_seconds,
+    cover_fn: CoverFn = extract_local_video_cover_path,
     sleep_fn: SleepFn | None = None,
 ) -> dict[str, int]:
     rows = store.next_pending_local_videos(limit=limit, max_attempts=max_attempts)
@@ -139,10 +223,19 @@ def download_hot_post_videos(
         store.mark_local_video_downloading(post_id)
         try:
             local_path = download_fn(row, cache_root=root, output_dir=output_dir)
+            duration_seconds, cover_path = _build_local_video_metadata(
+                row,
+                local_video_path=local_path,
+                output_dir=output_dir,
+                duration_fn=duration_fn,
+                cover_fn=cover_fn,
+            )
         except Exception as exc:
             store.finish_local_video_download(
                 post_id,
                 local_video_path=None,
+                local_video_duration_seconds=None,
+                local_video_cover_path=None,
                 error_message=str(exc)[:1000],
                 max_attempts=max_attempts,
             )
@@ -151,9 +244,68 @@ def download_hot_post_videos(
             store.finish_local_video_download(
                 post_id,
                 local_video_path=local_path,
+                local_video_duration_seconds=duration_seconds,
+                local_video_cover_path=cover_path,
                 error_message=None,
             )
             summary["downloaded"] += 1
         if index < total - 1:
             sleeper(delay)
     return summary
+
+
+def backfill_local_video_metadata(
+    *,
+    limit: int | None = None,
+    output_dir: str | Path = OUTPUT_DIR,
+    duration_fn: DurationFn = probe_local_video_duration_seconds,
+    cover_fn: CoverFn = extract_local_video_cover_path,
+) -> dict[str, int]:
+    rows = store.list_local_videos_missing_metadata(limit=limit)
+    summary = {"scanned": 0, "updated": 0, "missing": 0, "failed": 0}
+    for row in rows:
+        summary["scanned"] += 1
+        post_id = int(row["id"])
+        local_path = str(row.get("local_video_path") or "")
+        video_path = resolve_local_video_path(local_path, output_dir=output_dir)
+        if video_path is None:
+            summary["missing"] += 1
+            continue
+
+        duration = _duration_seconds(row.get("local_video_duration_seconds"))
+        if duration is None:
+            duration = _duration_seconds(duration_fn(video_path))
+        if duration is None:
+            summary["failed"] += 1
+            continue
+
+        cover_path = _normalize_relative_file_path(row.get("local_video_cover_path"), output_dir=output_dir)
+        if not cover_path:
+            cover_path = _normalize_relative_file_path(
+                cover_fn(video_path, row=row, output_dir=output_dir),
+                output_dir=output_dir,
+            )
+        if not cover_path:
+            summary["failed"] += 1
+            continue
+
+        store.update_local_video_metadata(
+            post_id,
+            local_video_duration_seconds=duration,
+            local_video_cover_path=cover_path,
+        )
+        summary["updated"] += 1
+    return summary
+
+
+def backfill_local_video_durations(
+    *,
+    limit: int | None = None,
+    output_dir: str | Path = OUTPUT_DIR,
+    duration_fn: DurationFn = probe_local_video_duration_seconds,
+) -> dict[str, int]:
+    return backfill_local_video_metadata(
+        limit=limit,
+        output_dir=output_dir,
+        duration_fn=duration_fn,
+    )

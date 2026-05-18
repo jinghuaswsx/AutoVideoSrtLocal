@@ -121,6 +121,16 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
     assert "JSON.stringify({limit:10})" in body
     assert "renderEuropeFitPanel" in body
+    assert "function formatVideoDuration" in body
+    assert "function loadMetaHotPostVideo" in body
+    assert "function renderVideoShell" in body
+    assert "mh-video-duration-badge" in body
+    assert "mh-play-button bottom" in body
+    assert "data-video-html" in body
+    assert "local_video_cover_url" in body
+    assert "tos_video_cover_url" in body
+    assert "firstFrameUrl" not in body
+    assert "#t=0.1" not in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -301,6 +311,23 @@ def test_meta_hot_posts_local_video_route_returns_404_when_missing(authed_client
 
     assert resp.status_code == 404
     assert resp.get_json()["error"] == "not_found"
+
+
+def test_meta_hot_posts_local_video_cover_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):
+    cover = tmp_path / "output" / "meta_hot_posts" / "video_covers" / "5" / "thumbnail.jpg"
+    cover.parent.mkdir(parents=True)
+    cover.write_bytes(b"jpeg")
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.resolve_local_video_cover_response",
+        lambda post_id: type("Resolved", (), {"path": cover, "status_code": 200, "error": None})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/5/local-video-cover")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "image/jpeg"
+    assert resp.get_data() == b"jpeg"
 
 
 def test_meta_hot_posts_mark_api_passes_current_user_and_status(authed_client_no_db, monkeypatch):

@@ -22,14 +22,31 @@ def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, mo
     monkeypatch.setattr(
         store,
         "finish_local_video_download",
-        lambda post_id, local_video_path=None, error_message=None: events.append(
-            ("finish", post_id, local_video_path, error_message)
+        lambda post_id, local_video_path=None, local_video_duration_seconds=None,
+        local_video_cover_path=None, error_message=None: events.append(
+            (
+                "finish",
+                post_id,
+                local_video_path,
+                local_video_duration_seconds,
+                local_video_cover_path,
+                error_message,
+            )
         ),
     )
 
     def fake_download(row, *, cache_root, output_dir):
         events.append(("download", row["id"], str(cache_root), str(output_dir)))
+        path = Path(output_dir) / "meta_hot_posts" / "videos" / f"{row['id']}.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"video")
         return f"meta_hot_posts/videos/{row['id']}.mp4"
+
+    def fake_cover(path, row=None, output_dir=None):
+        cover = Path(output_dir) / "meta_hot_posts" / "video_covers" / str(row["id"]) / "thumbnail.jpg"
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        cover.write_bytes(b"cover")
+        return f"meta_hot_posts/video_covers/{row['id']}/thumbnail.jpg"
 
     result = video_localization.download_hot_post_videos(
         limit=2,
@@ -37,6 +54,8 @@ def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, mo
         cache_root=tmp_path / "videos",
         output_dir=tmp_path,
         download_fn=fake_download,
+        duration_fn=lambda path: 22.4 if str(path).endswith("1.mp4") else 63.2,
+        cover_fn=fake_cover,
         sleep_fn=sleeps.append,
     )
 
@@ -44,10 +63,10 @@ def test_download_hot_post_videos_is_serial_and_waits_between_items(tmp_path, mo
     assert events == [
         ("running", 1),
         ("download", 1, str(tmp_path / "videos"), str(tmp_path)),
-        ("finish", 1, "meta_hot_posts/videos/1.mp4", None),
+        ("finish", 1, "meta_hot_posts/videos/1.mp4", 22.4, "meta_hot_posts/video_covers/1/thumbnail.jpg", None),
         ("running", 2),
         ("download", 2, str(tmp_path / "videos"), str(tmp_path)),
-        ("finish", 2, "meta_hot_posts/videos/2.mp4", None),
+        ("finish", 2, "meta_hot_posts/videos/2.mp4", 63.2, "meta_hot_posts/video_covers/2/thumbnail.jpg", None),
     ]
     assert sleeps == [30.0]
 
@@ -67,28 +86,99 @@ def test_download_hot_post_videos_records_failure_and_still_waits_before_next(tm
     monkeypatch.setattr(
         store,
         "finish_local_video_download",
-        lambda post_id, local_video_path=None, error_message=None, max_attempts=5: finishes.append(
-            (post_id, local_video_path, error_message)
+        lambda post_id, local_video_path=None, local_video_duration_seconds=None,
+        local_video_cover_path=None, error_message=None, max_attempts=5: finishes.append(
+            (post_id, local_video_path, local_video_duration_seconds, local_video_cover_path, error_message)
         ),
     )
 
     def fake_download(row, *, cache_root, output_dir):
         if row["id"] == 1:
             raise RuntimeError("facebook throttled")
+        path = Path(output_dir) / "meta_hot_posts" / "videos" / "2.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"video")
         return "meta_hot_posts/videos/2.mp4"
+
+    def fake_cover(path, row=None, output_dir=None):
+        cover = Path(output_dir) / "meta_hot_posts" / "video_covers" / "2" / "thumbnail.jpg"
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        cover.write_bytes(b"cover")
+        return "meta_hot_posts/video_covers/2/thumbnail.jpg"
 
     result = video_localization.download_hot_post_videos(
         limit=2,
         cache_root=tmp_path / "videos",
         output_dir=tmp_path,
         download_fn=fake_download,
+        duration_fn=lambda path: 18.0,
+        cover_fn=fake_cover,
         sleep_fn=sleeps.append,
     )
 
     assert result == {"scanned": 2, "downloaded": 1, "failed": 1}
-    assert finishes[0] == (1, None, "facebook throttled")
-    assert finishes[1] == (2, "meta_hot_posts/videos/2.mp4", None)
+    assert finishes[0] == (1, None, None, None, "facebook throttled")
+    assert finishes[1] == (2, "meta_hot_posts/videos/2.mp4", 18.0, "meta_hot_posts/video_covers/2/thumbnail.jpg", None)
     assert sleeps == [30.0]
+
+
+def test_backfill_local_video_metadata_updates_existing_downloaded_rows(tmp_path, monkeypatch):
+    from appcore.meta_hot_posts import store, video_localization
+
+    video = tmp_path / "output" / "meta_hot_posts" / "videos" / "5.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    rows = [{"id": 5, "local_video_path": "meta_hot_posts/videos/5.mp4"}]
+    updates = []
+
+    monkeypatch.setattr(store, "list_local_videos_missing_metadata", lambda limit: rows)
+    monkeypatch.setattr(
+        store,
+        "update_local_video_metadata",
+        lambda post_id, local_video_duration_seconds, local_video_cover_path: updates.append(
+            (post_id, local_video_duration_seconds, local_video_cover_path)
+        ),
+    )
+
+    def fake_cover(path, row=None, output_dir=None):
+        cover = Path(output_dir) / "meta_hot_posts" / "video_covers" / "5" / "thumbnail.jpg"
+        cover.parent.mkdir(parents=True, exist_ok=True)
+        cover.write_bytes(b"cover")
+        return "meta_hot_posts/video_covers/5/thumbnail.jpg"
+
+    result = video_localization.backfill_local_video_metadata(
+        limit=10,
+        output_dir=tmp_path / "output",
+        duration_fn=lambda path: 45.7,
+        cover_fn=fake_cover,
+    )
+
+    assert result == {"scanned": 1, "updated": 1, "missing": 0, "failed": 0}
+    assert updates == [(5, 45.7, "meta_hot_posts/video_covers/5/thumbnail.jpg")]
+
+
+def test_backfill_local_video_metadata_reports_missing_existing_files(tmp_path, monkeypatch):
+    from appcore.meta_hot_posts import store, video_localization
+
+    monkeypatch.setattr(
+        store,
+        "list_local_videos_missing_metadata",
+        lambda limit: [{"id": 7, "local_video_path": "meta_hot_posts/videos/missing.mp4"}],
+    )
+    monkeypatch.setattr(
+        store,
+        "update_local_video_metadata",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not update")),
+    )
+
+    result = video_localization.backfill_local_video_metadata(
+        limit=10,
+        output_dir=tmp_path / "output",
+        duration_fn=lambda path: 10.0,
+        cover_fn=lambda path, row=None, output_dir=None: "meta_hot_posts/video_covers/7/thumbnail.jpg",
+    )
+
+    assert result == {"scanned": 1, "updated": 0, "missing": 1, "failed": 0}
 
 
 def test_download_hot_post_videos_defaults_to_five_attempts(monkeypatch):

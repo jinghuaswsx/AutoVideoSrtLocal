@@ -69,6 +69,71 @@ def _decode_json_dict(value: Any) -> dict[str, Any]:
     return _decode_json_object(value)
 
 
+def _duration_number(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if ":" in text:
+            parts = text.split(":")
+            try:
+                total = 0.0
+                for part in parts:
+                    total = total * 60 + float(part)
+                return total
+            except ValueError:
+                return None
+        value = text
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return None
+    return duration if duration > 0 else None
+
+
+def _extract_video_duration_seconds(payload: Mapping[str, Any] | None) -> int | None:
+    if not payload:
+        return None
+    second_keys = (
+        "video_duration_seconds",
+        "duration_seconds",
+        "videoDurationSeconds",
+        "durationSeconds",
+        "video_duration",
+        "duration",
+        "videoLength",
+        "length",
+    )
+    millisecond_keys = (
+        "video_duration_ms",
+        "duration_ms",
+        "videoDuration",
+        "videoDurationMs",
+        "video_length_ms",
+        "videoLengthMs",
+    )
+    for key in second_keys:
+        duration = _duration_number(payload.get(key))
+        if duration is not None:
+            return int(round(duration))
+    for key in millisecond_keys:
+        duration = _duration_number(payload.get(key))
+        if duration is not None:
+            return int(round(duration / 1000))
+    for key in ("video_meta", "video_info", "videoData", "media"):
+        nested = payload.get(key)
+        if isinstance(nested, Mapping):
+            duration = _extract_video_duration_seconds(nested)
+            if duration is not None:
+                return duration
+    video = payload.get("video")
+    if isinstance(video, Mapping):
+        return _extract_video_duration_seconds(video)
+    return None
+
+
 def _bool_payload(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -90,9 +155,16 @@ def _normalize_mark_status(value: Any) -> str | None:
 
 def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(row)
+    raw_json = _decode_json_object(item.pop("raw_json", None))
     item["sku_prices"] = _decode_sku_json(item.pop("sku_prices_json", None))
     item["sku_count"] = len(item["sku_prices"])
     item.setdefault("analysis_status", "pending")
+    persisted_duration = _duration_number(item.get("local_video_duration_seconds"))
+    item["video_duration_seconds"] = (
+        int(round(persisted_duration))
+        if persisted_duration is not None
+        else _extract_video_duration_seconds(raw_json)
+    )
     item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
     source_message = str(item.get("message_html") or "")
     translated_message = str(item.get("message_zh_html") or "").strip()
@@ -105,26 +177,41 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         and item.get("local_video_path")
     ):
         item["local_video_url"] = f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
-        # 生成 TOS 视频 URL
+        item["local_video_cover_url"] = (
+            f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video-cover"
+            if item.get("local_video_cover_path")
+            else ""
+        )
         from appcore import tos_backup_storage
         from appcore.meta_hot_posts import tos_sync
         import config
         if config.TOS_BACKUP_ENABLED:
             try:
-                tos_key = tos_sync.local_video_backup_object_key(item["local_video_path"])
+                tos_key = tos_sync.backup_object_key_for_relative_path(item["local_video_path"])
                 if not tos_key:
                     raise ValueError("invalid local video path")
-                # 构建完整本地路径
-                # 获取 TOS 对象 key
-                # 生成签名下载 URL
                 item["tos_video_url"] = tos_backup_storage.generate_signed_download_url(tos_key)
             except Exception:
                 item["tos_video_url"] = ""
+            try:
+                cover_key = tos_sync.backup_object_key_for_relative_path(
+                    item.get("local_video_cover_path")
+                )
+                item["tos_video_cover_url"] = (
+                    tos_backup_storage.generate_signed_download_url(cover_key)
+                    if cover_key
+                    else ""
+                )
+            except Exception:
+                item["tos_video_cover_url"] = ""
         else:
             item["tos_video_url"] = ""
+            item["tos_video_cover_url"] = ""
     else:
         item["local_video_url"] = ""
+        item["local_video_cover_url"] = ""
         item["tos_video_url"] = ""
+        item["tos_video_cover_url"] = ""
     mark_status = _normalize_mark_status(item.get("mark_status"))
     if not mark_status and _bool_payload(item.get("is_marked")):
         mark_status = MARK_STATUS_BAD
@@ -427,6 +514,20 @@ def resolve_local_video_response(post_id: int) -> LocalVideoResponse:
     if row.get("local_video_status") != "downloaded" or not row.get("local_video_path"):
         return LocalVideoResponse(None, 404, "not_downloaded")
     path = video_localization.resolve_local_video_path(str(row.get("local_video_path") or ""))
+    if path is None:
+        return LocalVideoResponse(None, 404, "not_found")
+    return LocalVideoResponse(path, 200, None)
+
+
+def resolve_local_video_cover_response(post_id: int) -> LocalVideoResponse:
+    row = store.get_hot_post_local_video(post_id)
+    if not row:
+        return LocalVideoResponse(None, 404, "not_found")
+    if row.get("local_video_status") != "downloaded" or not row.get("local_video_cover_path"):
+        return LocalVideoResponse(None, 404, "not_found")
+    path = video_localization.resolve_output_relative_file_path(
+        str(row.get("local_video_cover_path") or "")
+    )
     if path is None:
         return LocalVideoResponse(None, 404, "not_found")
     return LocalVideoResponse(path, 200, None)

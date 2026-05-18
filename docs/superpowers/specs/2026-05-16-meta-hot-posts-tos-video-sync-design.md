@@ -1,10 +1,11 @@
 # Meta Hot Posts TOS Video Sync Design
 
-Last updated: 2026-05-16
+Last updated: 2026-05-18
 
 ## Background
 
-Meta hot-post video localization stores downloaded MP4 paths in `meta_hot_posts.local_video_path`.
+Meta hot-post video localization stores downloaded MP4 paths in `meta_hot_posts.local_video_path`
+and first-frame cover paths in `meta_hot_posts.local_video_cover_path`.
 Those paths are relative to `config.OUTPUT_DIR`, for example `meta_hot_posts/videos/meta_hot_post_20.mp4`.
 The mobile Meta hot-post page can switch video playback from the protected local route to a TOS signed URL.
 
@@ -18,10 +19,10 @@ TOS/NAS backup code looked for `meta_hot_posts/videos/...` under the app working
 - Resolve Meta hot-post `local_video_path` values against `config.OUTPUT_DIR` before handing them to the
   shared protected-file backup logic.
 - Keep the TOS object key generation shared through `appcore.tos_backup_storage.backup_object_key_for_local_path`.
-- Add a dedicated APScheduler task that incrementally reconciles localized Meta hot-post videos to TOS.
+- Add a dedicated APScheduler task that incrementally reconciles localized Meta hot-post videos and covers to TOS.
 - Add a manual script so operators can backfill the current localized-video backlog to TOS using the same
   reconcile semantics as `tos_backup`.
-- Surface Meta hot-post videos as their own module in TOS file management scans.
+- Surface Meta hot-post videos and covers in TOS file management scans.
 
 ## Non-goals
 
@@ -37,7 +38,8 @@ The dedicated sync selects rows where:
 - `local_video_status = 'downloaded'`
 - `local_video_path` is non-empty
 
-For each row, it safely resolves the relative path under `config.OUTPUT_DIR` and calls
+For each row, it safely resolves `local_video_path` and, when present, `local_video_cover_path`
+under `config.OUTPUT_DIR` and calls
 `tos_backup_storage.reconcile_local_file(path)`.
 
 The summary follows existing backup conventions:

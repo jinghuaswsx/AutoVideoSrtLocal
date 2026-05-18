@@ -1,6 +1,6 @@
 # Meta Hot Posts Video Localization Design
 
-Last updated: 2026-05-15
+Last updated: 2026-05-18
 
 ## Background
 
@@ -12,6 +12,8 @@ This design adds a conservative local cache for hot-post videos. It follows the 
 
 - Download every hot-post video that has `video_url` and no local cached video yet.
 - Render cards with the local MP4 first when available.
+- Persist local-video duration and first-frame cover metadata during localization so list pages only load ready image covers.
+- Provide a script to backfill duration and cover metadata for videos already downloaded before this change.
 - Keep Facebook iframe fallback for videos that are not downloaded, failed, or not yet processed.
 - Avoid triggering upstream rate limits by using one worker, no concurrency, and a minimum 30 second pause after each video attempt.
 - Make the job resumable and auditable through persisted status fields.
@@ -21,13 +23,15 @@ This design adds a conservative local cache for hot-post videos. It follows the 
 - Do not bypass Facebook or wedev authentication, permissions, geo restrictions, or platform controls.
 - Do not add parallel downloading.
 - Do not auto-retry aggressively. Failed rows stay visible with a reason and can be retried later.
-- Do not upload these videos to TOS in this change; the first safe step is local filesystem storage.
+- Do not compute video duration or first-frame covers during page rendering.
 
 ## Data Model
 
 `meta_hot_posts` gains local-video cache fields:
 
 - `local_video_path`: relative path under the configured local cache root.
+- `local_video_duration_seconds`: ffprobe-derived local video duration in seconds.
+- `local_video_cover_path`: relative path under `OUTPUT_DIR` for the first-frame JPEG cover.
 - `local_video_status`: `pending`, `downloading`, `downloaded`, `failed`, or `unavailable`.
 - `local_video_error`: last failure or skip reason.
 - `local_video_downloaded_at`: timestamp for successful downloads.
@@ -43,10 +47,13 @@ The downloader selects a small batch ordered by newest/most useful rows, then pr
 2. Use `yt-dlp` as the extraction engine because hot-post `video_url` values are often Facebook Reel/page URLs, not direct MP4 links.
 3. Save the video as an MP4 under `output/meta_hot_posts/videos/`.
 4. Verify the output file exists and is non-empty.
-5. Mark success with the relative local path, or mark failure/skipped with a bounded error message.
-6. Sleep at least 30 seconds before the next row, regardless of success or failure.
+5. Probe the downloaded local file for duration and extract its first frame to `output/meta_hot_posts/video_covers/`.
+6. Mark success with the relative local video path, duration, and local cover path, or mark failure/skipped with a bounded error message.
+7. Sleep at least 30 seconds before the next row, regardless of success or failure.
 
 The default command is intentionally serial. Operators can run a limited batch repeatedly until there are no pending videos.
+
+Existing downloaded rows are backfilled by `tools/meta_hot_posts_local_video_metadata_backfill.py`. The script scans `local_video_status='downloaded'` rows missing either `local_video_duration_seconds` or `local_video_cover_path`, resolves the local MP4 under `OUTPUT_DIR`, probes duration, extracts the first-frame cover, and writes the metadata without touching online-only videos.
 
 ## Singleton Takeover
 
@@ -69,14 +76,20 @@ Feishu and the Web scheduled-task alert banner only surface this task when the c
 
 ## Rendering
 
-The list API includes `local_video_url` and cache status fields. The card media renderer uses this order:
+The list API includes `local_video_url`, `local_video_cover_url`, `video_duration_seconds`, TOS URL fields, and cache status fields. The card media renderer initially loads only a persisted image cover:
+
+1. Persisted local/TOS cover image when available.
+2. Existing post image fallback.
+3. Empty media box.
+
+Clicking the play affordance then loads the actual video playback surface:
 
 1. Local MP4 via a protected Flask route.
-2. Existing Facebook iframe fallback.
-3. Image fallback.
+2. TOS signed MP4 when the page is switched to the TOS source and the object is available.
+3. Existing Facebook iframe fallback.
 4. Empty media box.
 
-The local media route only serves files resolved inside the hot-post video cache directory and supports normal browser video playback.
+The local media routes only serve files resolved inside `OUTPUT_DIR` and support normal browser video and image delivery.
 
 ## Safety
 
@@ -85,11 +98,12 @@ The local media route only serves files resolved inside the hot-post video cache
 - The downloader itself never starts parallel downloads.
 - The minimum per-item delay is clamped to 30 seconds.
 - Existing downloaded files are not fetched again unless explicitly reset later.
+- Existing downloaded files missing metadata are handled by the explicit backfill script instead of page-time probing.
 - Failed attempts are recorded and capped by a max-attempts filter.
 - Paths are stored relative to a known cache root and served through safe path resolution.
 
 ## Verification
 
-- Unit tests cover selection fields, status transitions, delay clamping, failure handling, and card rendering preference.
-- Route tests cover local-video route safety and missing-file behavior.
+- Unit tests cover selection fields, status transitions, delay clamping, metadata extraction, backfill behavior, failure handling, and card rendering preference.
+- Route tests cover local-video and local-cover route safety and missing-file behavior.
 - Manual verification can run a tiny batch such as one item, then inspect the card preview.

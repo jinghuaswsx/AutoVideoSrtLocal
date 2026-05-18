@@ -33,11 +33,15 @@ def resolve_output_relative_path(
     return candidate
 
 
-def local_video_backup_object_key(relative_path: str | None) -> str:
+def backup_object_key_for_relative_path(relative_path: str | None) -> str:
     path = resolve_output_relative_path(relative_path)
     if path is None:
         return ""
     return tos_backup_storage.backup_object_key_for_local_path(path)
+
+
+def local_video_backup_object_key(relative_path: str | None) -> str:
+    return backup_object_key_for_relative_path(relative_path)
 
 
 def _candidate_rows(
@@ -47,7 +51,7 @@ def _candidate_rows(
 ) -> list[dict[str, Any]]:
     safe_limit = int(limit or 0)
     sql = """
-        SELECT id, local_video_path
+        SELECT id, local_video_path, local_video_cover_path
         FROM meta_hot_posts
         WHERE local_video_status = 'downloaded'
           AND local_video_path IS NOT NULL
@@ -59,9 +63,17 @@ def _candidate_rows(
     return query_fn(sql, ())
 
 
-def _failed_error(row: dict[str, Any], local_path: str, object_key: str, error: str) -> dict[str, Any]:
+def _failed_error(
+    row: dict[str, Any],
+    local_path: str,
+    object_key: str,
+    error: str,
+    *,
+    field: str,
+) -> dict[str, Any]:
     return {
         "id": row.get("id"),
+        "field": field,
         "local_path": local_path,
         "object_key": object_key,
         "error": error,
@@ -87,31 +99,36 @@ def sync_localized_videos_to_tos(
     rows = _candidate_rows(limit=limit, query_fn=query_fn)
     actions: Counter[str] = Counter()
     errors: list[dict[str, Any]] = []
+    files_checked = 0
 
     for row in rows:
-        relative_path = str(row.get("local_video_path") or "")
-        path = resolve_output_relative_path(relative_path)
-        if path is None:
-            actions["failed"] += 1
-            errors.append(_failed_error(row, relative_path, "", "invalid local_video_path"))
-            continue
-        object_key = tos_backup_storage.backup_object_key_for_local_path(path)
-        if not path.is_file():
-            actions["failed"] += 1
-            errors.append(_failed_error(row, str(path), object_key, "local file missing"))
-            continue
-        try:
-            result = reconcile_fn(path)
-        except Exception as exc:
-            actions["failed"] += 1
-            errors.append(_failed_error(row, str(path), object_key, str(exc)))
-            continue
-        actions[result.action] += 1
-        if result.action == "failed":
-            errors.append(_failed_error(row, result.local_path, result.object_key, result.error))
+        for field in ("local_video_path", "local_video_cover_path"):
+            relative_path = str(row.get(field) or "")
+            if not relative_path:
+                continue
+            files_checked += 1
+            path = resolve_output_relative_path(relative_path)
+            if path is None:
+                actions["failed"] += 1
+                errors.append(_failed_error(row, relative_path, "", f"invalid {field}", field=field))
+                continue
+            object_key = tos_backup_storage.backup_object_key_for_local_path(path)
+            if not path.is_file():
+                actions["failed"] += 1
+                errors.append(_failed_error(row, str(path), object_key, "local file missing", field=field))
+                continue
+            try:
+                result = reconcile_fn(path)
+            except Exception as exc:
+                actions["failed"] += 1
+                errors.append(_failed_error(row, str(path), object_key, str(exc), field=field))
+                continue
+            actions[result.action] += 1
+            if result.action == "failed":
+                errors.append(_failed_error(row, result.local_path, result.object_key, result.error, field=field))
 
     return {
-        "files_checked": len(rows),
+        "files_checked": files_checked,
         "actions": dict(actions),
         "failed": int(actions.get("failed", 0)),
         "errors": errors[:20],

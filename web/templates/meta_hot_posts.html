@@ -52,8 +52,19 @@
 .mh-metric b { color:#334155; }
 .mh-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .mh-ratio { color:var(--mh-danger); font-weight:800; }
-.mh-media { width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; }
+.mh-media { position:relative; width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; border-radius:6px; }
 .mh-media img, .mh-media iframe, .mh-media video { width:100%; height:100%; border:0; object-fit:cover; display:block; }
+.mh-video-shell { position:relative; width:100%; height:100%; cursor:pointer; background:#dbe3ee; outline:none; }
+.mh-video-shell:focus-visible { box-shadow:0 0 0 3px rgba(15,118,110,.24) inset; }
+.mh-video-cover { width:100%; height:100%; object-fit:cover; display:block; background:#dbe3ee; pointer-events:none; }
+.mh-video-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:100%; color:#64748b; font-size:13px; font-weight:800; }
+.mh-video-badges { position:absolute; left:8px; bottom:8px; z-index:2; display:flex; align-items:center; gap:5px; }
+.mh-video-duration-badge { min-width:34px; min-height:20px; padding:0 7px; border:1px solid rgba(220,38,38,.38); border-radius:4px; background:#fee2e2; color:var(--mh-danger); font-size:12px; font-weight:900; line-height:20px; text-align:center; box-shadow:0 1px 3px rgba(15,23,42,.16); }
+.mh-play-button { position:absolute; z-index:3; display:flex; align-items:center; justify-content:center; border:0; background:rgba(15,23,42,.72); box-shadow:0 2px 10px rgba(15,23,42,.25); pointer-events:none; }
+.mh-play-button::before { content:""; width:0; height:0; margin-left:3px; border-top:11px solid transparent; border-bottom:11px solid transparent; border-left:16px solid #fff; }
+.mh-play-button.center { left:50%; top:50%; width:58px; height:58px; border-radius:999px; transform:translate(-50%, -50%); }
+.mh-play-button.bottom { right:8px; bottom:8px; width:34px; height:24px; border-radius:5px; }
+.mh-play-button.bottom::before { border-top-width:7px; border-bottom-width:7px; border-left-width:10px; }
 .mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
@@ -382,6 +393,68 @@ function fmtMoney(min, max, currency) {
   if (max && Number(max) !== Number(min)) return `${prefix}${Number(min).toFixed(2)} - ${prefix}${Number(max).toFixed(2)}`;
   return `${prefix}${Number(min).toFixed(2)}`;
 }
+function videoDurationSeconds(row) {
+  const seconds = row.video_duration_seconds ?? row.duration_seconds ?? row.video_duration;
+  const parsedSeconds = Number(seconds || 0);
+  if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) return parsedSeconds;
+  const milliseconds = row.video_duration_ms ?? row.videoDuration ?? row.duration_ms;
+  const parsedMilliseconds = Number(milliseconds || 0);
+  return Number.isFinite(parsedMilliseconds) && parsedMilliseconds > 0 ? parsedMilliseconds / 1000 : 0;
+}
+function formatVideoDuration(value) {
+  const seconds = Math.round(Number(value || 0));
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = String(seconds % 60).padStart(2, '0');
+  if (minutes < 60) return `${minutes}:${rest}`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}:${String(minutes % 60).padStart(2, '0')}:${rest}`;
+}
+function playbackVideoHtml(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video>`;
+  }
+  if (row.local_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.local_video_url)}"></video>`;
+  }
+  if (row.video_url) {
+    const src = row.invisible && row.invisible_region === 'usa'
+      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
+      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
+    return `<iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>`;
+  }
+  return '';
+}
+function previewCoverUrl(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_cover_url) return row.tos_video_cover_url;
+  return row.local_video_cover_url || row.tos_video_cover_url || row.image_url || '';
+}
+function renderVideoShell(row, videoHtml) {
+  const coverUrl = previewCoverUrl(row);
+  const duration = formatVideoDuration(videoDurationSeconds(row));
+  const cover = coverUrl
+    ? `<img class="mh-video-cover" src="${esc(coverUrl)}" alt="" loading="lazy">`
+    : '<span class="mh-video-placeholder">Video</span>';
+  const durationBadge = duration ? `<span class="mh-video-duration-badge">${esc(duration)}</span>` : '';
+  return `<div class="mh-video-shell" role="button" tabindex="0" data-video-html="${esc(videoHtml)}" onclick="loadMetaHotPostVideo(event)" onkeydown="handleMetaHotPostVideoKey(event)">
+    ${cover}
+    <span class="mh-play-button center" aria-hidden="true"></span>
+    <span class="mh-play-button bottom" aria-hidden="true"></span>
+    <span class="mh-video-badges">${durationBadge}</span>
+  </div>`;
+}
+function loadMetaHotPostVideo(event) {
+  const shell = event.currentTarget;
+  const media = shell && shell.closest ? shell.closest('.mh-media') : null;
+  const videoHtml = shell && shell.dataset ? shell.dataset.videoHtml : '';
+  if (media && videoHtml) media.innerHTML = videoHtml;
+}
+function handleMetaHotPostVideoKey(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  loadMetaHotPostVideo(event);
+}
 
 // 视频源切换逻辑
 function setVideoSource(source) {
@@ -414,19 +487,8 @@ function restoreVideoSource() {
 }
 
 function cardMedia(row) {
-  // 根据视频源设置决定使用哪个 URL
-  if (mhVideoSource === 'tos' && row.tos_video_url) {
-    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video></div>`;
-  }
-  if (row.local_video_url) {
-    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.local_video_url)}"></video></div>`;
-  }
-  if (row.video_url) {
-    const src = row.invisible && row.invisible_region === 'usa'
-      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
-      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
-    return `<div class="mh-media"><iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe></div>`;
-  }
+  const videoHtml = playbackVideoHtml(row);
+  if (videoHtml) return `<div class="mh-media">${renderVideoShell(row, videoHtml)}</div>`;
   if (row.image_url) return `<div class="mh-media"><img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
   return `<div class="mh-media"></div>`;
 }

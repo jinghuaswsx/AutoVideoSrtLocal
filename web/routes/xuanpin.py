@@ -308,6 +308,17 @@ def api_meta_hot_posts_local_video(post_id: int):
     return send_file(str(result.path), mimetype="video/mp4", conditional=True)
 
 
+@bp.route("/api/meta-hot-posts/<int:post_id>/local-video-cover", methods=["GET"])
+@login_required
+def api_meta_hot_posts_local_video_cover(post_id: int):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().resolve_local_video_cover_response(post_id)
+    if result.path is None:
+        return jsonify({"error": result.error or "not_found"}), result.status_code
+    return send_file(str(result.path), mimetype="image/jpeg", conditional=True)
+
+
 @bp.route("/api/new-products/list", methods=["GET"])
 @login_required
 def api_new_products_list():

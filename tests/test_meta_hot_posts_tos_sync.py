@@ -9,12 +9,22 @@ def test_sync_localized_videos_reconciles_output_relative_paths(monkeypatch, tmp
     video = output_dir / "meta_hot_posts" / "videos" / "meta_hot_post_20.mp4"
     video.parent.mkdir(parents=True)
     video.write_bytes(b"video")
+    cover = output_dir / "meta_hot_posts" / "video_covers" / "20" / "thumbnail.jpg"
+    cover.parent.mkdir(parents=True)
+    cover.write_bytes(b"cover")
     calls = []
 
     def fake_query(sql, params=()):
         assert "FROM meta_hot_posts" in sql
         assert params == (10,)
-        return [{"id": 20, "local_video_path": "meta_hot_posts/videos/meta_hot_post_20.mp4"}]
+        assert "local_video_cover_path" in sql
+        return [
+            {
+                "id": 20,
+                "local_video_path": "meta_hot_posts/videos/meta_hot_post_20.mp4",
+                "local_video_cover_path": "meta_hot_posts/video_covers/20/thumbnail.jpg",
+            }
+        ]
 
     def fake_reconcile(local_path):
         calls.append(Path(local_path))
@@ -35,9 +45,9 @@ def test_sync_localized_videos_reconciles_output_relative_paths(monkeypatch, tmp
         reconcile_fn=fake_reconcile,
     )
 
-    assert calls == [video]
-    assert summary["files_checked"] == 1
-    assert summary["actions"] == {"uploaded": 1}
+    assert calls == [video, cover]
+    assert summary["files_checked"] == 2
+    assert summary["actions"] == {"uploaded": 2}
     assert summary["failed"] == 0
     assert summary["errors"] == []
 
