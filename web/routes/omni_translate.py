@@ -331,6 +331,7 @@ def _query_viewable_project(
         is_admin=_is_admin_user(),
         columns=columns,
         include_deleted=include_deleted,
+        include_visible_to_all=True,
         query_one_func=db_query_one,
     )
 
@@ -364,6 +365,7 @@ def index():
         is_admin=_is_superadmin_user(),
         owner_name_expr=owner_name_expr,
         target_lang=lang,
+        include_visible_to_all=True,
         query_func=db_query,
     )
     for row in rows:
@@ -907,9 +909,8 @@ RESUMABLE_STEPS = [
 
 @bp.route("/api/omni-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
+@permission_required("omni_translate")
 def set_loudness_profile(task_id):
-    if not _is_admin_user():
-        return _json_response({"error": "仅管理员可操作"}, 403)
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
     if not task:

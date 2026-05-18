@@ -194,6 +194,34 @@ def test_get_viewable_project_scopes_normal_user():
     ]
 
 
+def test_get_viewable_project_can_include_visible_to_all_for_normal_user():
+    calls = []
+
+    def fake_query_one(sql, args):
+        calls.append((sql, args))
+        return {"state_json": "{}"}
+
+    row = store.get_viewable_project(
+        "omni-1",
+        "omni_translate",
+        user_id=7,
+        is_admin=False,
+        columns="state_json",
+        include_visible_to_all=True,
+        query_one_func=fake_query_one,
+    )
+
+    assert row == {"state_json": "{}"}
+    assert calls == [
+        (
+            "SELECT state_json FROM projects WHERE id = %s "
+            "AND (user_id = %s OR JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.visible_to_all')) = 'true') "
+            "AND type = %s",
+            ("omni-1", 7, "omni_translate"),
+        )
+    ]
+
+
 def test_list_projects_with_creator_scopes_user_and_lang_filter():
     calls = []
 
@@ -252,6 +280,38 @@ def test_list_projects_with_creator_omits_user_scope_for_admin():
             "WHERE p.type = 'omni_translate' AND p.deleted_at IS NULL "
             "ORDER BY p.created_at DESC",
             (),
+        )
+    ]
+
+
+def test_list_projects_with_creator_can_include_visible_to_all_for_normal_user():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "omni-1"}]
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="omni_translate",
+        is_admin=False,
+        owner_name_expr="u.username",
+        include_visible_to_all=True,
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": "omni-1"}]
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE (p.user_id = %s OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.visible_to_all')) = 'true') "
+            "AND p.type = 'omni_translate' AND p.deleted_at IS NULL "
+            "ORDER BY p.created_at DESC",
+            (7,),
         )
     ]
 
