@@ -5,15 +5,13 @@
 <span class="selection-center-title-note">Meta热帖 <span class="mh-count" id="mhCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
   --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
   --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
 }
 .meta-hot-page { color:var(--mh-text); }
-.mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
-.mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
-.mh-tab.active { background:var(--mh-accent); color:#fff; }
 .mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
 .mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
 .mh-subtab.active { background:#0f766e; color:#fff; }
@@ -111,27 +109,6 @@
   .mh-tool-title {
     display: none; /* 隐藏工具标题，给按钮更多空间 */
   }
-  /* 主导航横向滚动 */
-  .mh-tabs {
-    display: flex;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 4px;
-    padding: 8px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .mh-tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .mh-tab {
-    flex-shrink: 0;
-    white-space: nowrap;
-    min-width: 80px;
-    text-align: center;
-    padding: 0 12px;
-  }
-
   /* 子导航横向滚动 */
   .mh-subtabs {
     display: flex;
@@ -254,13 +231,8 @@
 {% endblock %}
 {% block content %}
 <div class="meta-hot-page">
-  <nav class="mh-tabs" aria-label="选品中心类型">
-    <a class="mh-tab" href="/xuanpin/mk">明空选品</a>
-    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
-    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
-    <a class="mh-tab" href="/xuanpin/today-recommendations">今日推荐</a>
-    <a class="mh-tab" href="/xuanpin/new-products">新品选择</a>
-  </nav>
+  {% set active = "meta-hot-posts" %}
+  {% include "_xuanpin_tabs.html" %}
 
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
     <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>

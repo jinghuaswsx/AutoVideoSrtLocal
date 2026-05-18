@@ -3,6 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _assert_unified_selection_tabs(body: str, active_href: str, active_label: str) -> None:
+    assert '<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">' in body
+    assert f'<a class="xuanpin-tab active" href="{active_href}" role="tab" aria-selected="true">{active_label}</a>' in body
+    assert '<a class="xuanpin-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in body or active_href == "/xuanpin/mk"
+    assert '<a class="xuanpin-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>' in body or active_href == "/xuanpin/meta-hot-posts"
+    assert '<a class="xuanpin-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>' in body or active_href == "/xuanpin/tabcut"
+    assert '<a class="xuanpin-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>' in body or active_href == "/xuanpin/today-recommendations"
+    assert '<a class="xuanpin-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body or active_href == "/xuanpin/new-products"
+
+
 def test_mk_selection_token_has_no_hardcoded_fallback(monkeypatch, tmp_path):
     from web.routes.medias import mk_selection
 
@@ -35,9 +45,9 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert '<span class="selection-center-title-note">' in body
     assert "店小秘近7天销量 Top1000" in body
     assert '<h1 class="title">选品中心</h1>' not in body
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in body
-    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in body
-    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body
+    _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "明控选品" not in body
 
 
@@ -49,16 +59,18 @@ def test_selection_center_tabs_and_heading_on_related_pages():
     assert '<span class="selection-center-title">选品中心</span>' in mk_template
     assert "店小秘近7天销量 Top1000" in mk_template
     assert '<h1 class="title">选品中心</h1>' not in mk_template
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in mk_template
-    assert '<a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>' in mk_template
-    assert '<a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in mk_template
+    assert '{% set active = "mk" %}' in mk_template
+    assert '{% include "_xuanpin_tabs.html" %}' in mk_template
+    assert "oc-page-tabs" not in mk_template
+    assert "oc-page-tab" not in mk_template
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in npr_template
     assert '<span class="selection-center-title">选品中心</span>' in npr_template
     assert "明空入库新品 AI 评估矩阵" in npr_template
     assert '<h1 class="title">选品中心</h1>' not in npr_template
-    assert '<div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">' in npr_template
-    assert '<a class="oc-page-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in npr_template
-    assert '<a class="oc-page-tab active" href="/xuanpin/new-products" role="tab" aria-selected="true">新品选择</a>' in npr_template
+    assert '{% set active = "new-products" %}' in npr_template
+    assert '{% include "_xuanpin_tabs.html" %}' in npr_template
+    assert "oc-page-tabs" not in npr_template
+    assert "oc-page-tab" not in npr_template
     assert "明控选品" not in mk_template
     assert "明控选品" not in npr_template
     assert "新品审核" not in mk_template

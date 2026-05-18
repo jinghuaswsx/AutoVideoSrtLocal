@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 
+def _assert_unified_xuanpin_tabs(body: str, active_href: str, active_label: str) -> None:
+    assert '<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">' in body
+    assert f'<a class="xuanpin-tab active" href="{active_href}" role="tab" aria-selected="true">{active_label}</a>' in body
+    assert 'href="/xuanpin/mk"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
+    assert 'href="/xuanpin/tabcut"' in body
+    assert 'href="/xuanpin/today-recommendations"' in body
+    assert 'href="/xuanpin/new-products"' in body
+
+
 def _patch_new_product_review_list_deps(monkeypatch):
     monkeypatch.setattr(
         "appcore.new_product_review.list_pending",
@@ -81,11 +91,9 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/tabcut"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/mk", "明空选品")
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "/xuanpin/api/mk-selection" in body
 
 
@@ -94,11 +102,9 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/tabcut"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/tabcut", "TABCUT")
+    assert "tabcut-tabs" not in body
+    assert "tabcut-tab-link" not in body
     assert "/xuanpin/api/tabcut/videos" in body
     assert "/xuanpin/api/tabcut/goods" in body
     assert "/xuanpin/api/tabcut/categories" in body
@@ -124,10 +130,9 @@ def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/new-products", "新品选择")
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "/xuanpin/api/new-products/list" in body
 
 
@@ -178,8 +183,9 @@ def test_xuanpin_today_recommendations_page_uses_tab_and_api(
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/today-recommendations", "今日推荐")
+    assert 'class="tr-tabs"' not in body
+    assert '<a class="tr-tab' not in body
     assert "/xuanpin/api/today-recommendations/adopt" in body
     assert "Test Product" in body
 

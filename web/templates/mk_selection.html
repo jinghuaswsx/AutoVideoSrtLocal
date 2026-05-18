@@ -5,6 +5,7 @@
 <span class="selection-center-title-note">店小秘近7天销量 Top1000 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
   --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
@@ -111,21 +112,12 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
-.oc-page-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:var(--oc-sp-5); padding:4px; border:1px solid var(--oc-border); border-radius:9999px; background:var(--oc-bg-subtle); }
-.oc-page-tab { display:inline-flex; align-items:center; justify-content:center; min-width:96px; height:34px; padding:0 18px; font-size:14px; font-weight:600; color:var(--oc-fg-muted); text-decoration:none; border-radius:9999px; border:1px solid transparent; transition:color 120ms,background 120ms,border-color 120ms; }
-.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg); }
-.oc-page-tab.active { color:#fff; background:var(--oc-accent); border-color:var(--oc-accent); }
 {% endblock %}
 
 {% block content %}
 <div class="oc">
-  <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
-    <a class="oc-page-tab active" href="/xuanpin/mk" role="tab" aria-selected="true">明空选品</a>
-    <a class="oc-page-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>
-    <a class="oc-page-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>
-    <a class="oc-page-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>
-    <a class="oc-page-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>
-  </div>
+  {% set active = "mk" %}
+  {% include "_xuanpin_tabs.html" %}
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
