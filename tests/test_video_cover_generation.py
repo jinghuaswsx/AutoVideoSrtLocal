@@ -163,7 +163,12 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
+    assert "1080x1920" in calls[0]["prompt"]
+    assert "TikTok 封面 2K 竖版逻辑" in calls[0]["prompt"]
     assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]["prompt"]
+    assert "完整落在 9:16 安全区内" in calls[0]["prompt"]
+    assert "最多两行" in calls[0]["prompt"]
+    assert "不得贴边、出血或被裁切" in calls[0]["prompt"]
     assert "不要使用固定位置的半透明背景框" in calls[0]["prompt"]
     assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
     assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
@@ -713,7 +718,7 @@ def test_generate_local_cover_image_posts_docs_image_edit_payload():
     assert posted["data"]["model"] == "gpt-image-2"
     assert posted["data"]["prompt"] == "make a cover"
     assert posted["data"]["n"] == "1"
-    assert posted["data"]["size"] == "1024x1536"
+    assert posted["data"]["size"] == "1152x2048"
     assert posted["files"]["image"][0] == "reference.png"
     assert posted["files"]["image"][2] == "image/png"
     assert posted["files"]["image"][1].startswith(b"\x89PNG")
