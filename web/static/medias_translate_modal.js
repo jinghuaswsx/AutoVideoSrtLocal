@@ -359,7 +359,9 @@
     state.selectedContentTypes = new Set(CONTENT_TYPES.map((item) => item.code));
     const sources = state.rawSources || [];
     state.selectedRawIds = new Set(sources.length ? [Number(sources[0].id)] : []);
-    state.selectedLangs = new Set();
+    const bridgeLang = taskBridgeLang();
+    const bridgeLangEnabled = bridgeLang && enabledLanguages().some((lang) => lang.code === bridgeLang);
+    state.selectedLangs = new Set(bridgeLangEnabled ? [bridgeLang] : []);
 
     state.videoFont = 'Impact';
     state.videoSize = 10;
@@ -493,8 +495,25 @@
     );
   }
 
+  function taskBridgeTaskId() {
+    const taskId = Number(window.MEDIAS_TASK_BRIDGE_TASK_ID || 0);
+    return Number.isInteger(taskId) && taskId > 0 ? taskId : null;
+  }
+
+  function taskBridgeLang() {
+    if (!taskBridgeTaskId()) return '';
+    const params = new URLSearchParams(window.location.search);
+    return String(params.get('lang') || '').trim().toLowerCase();
+  }
+
   async function submitTask() {
     if (!state.productId || state.busy) return;
+    const taskCenterTaskId = taskBridgeTaskId();
+    if (taskCenterTaskId && state.selectedLangs.size !== 1) {
+      renderSummary('来自任务中心的翻译任务一次只能提交一个目标语种。');
+      window.alert('来自任务中心的翻译任务一次只能提交一个目标语种。');
+      return;
+    }
     state.busy = true;
     updateSubmitState();
     renderSummary('正在创建翻译任务...');
@@ -510,6 +529,9 @@
         subtitle_position: 'bottom',
       },
     };
+    if (taskCenterTaskId) {
+      payload.task_center_task_id = taskCenterTaskId;
+    }
 
     try {
       const result = await requestJSON(`/medias/api/products/${state.productId}/translate`, {
