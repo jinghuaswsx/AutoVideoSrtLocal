@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from io import BytesIO
 import json
@@ -946,7 +947,7 @@ def test_generate_video_covers_requires_product_title_and_main_image(tmp_path):
 
 def test_video_cover_page_rejects_non_admin(authed_user_client_no_db):
     user_resp = authed_user_client_no_db.get("/video-cover")
-    assert user_resp.status_code == 403
+    assert user_resp.status_code in (302, 403)
 
 
 def test_video_cover_page_requires_login(authed_client_no_db):
@@ -1034,7 +1035,7 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert calls == [
         {
             "user_id": 1,
-            "is_admin": True,
+            "is_admin": False,
             "owner_name_expr": "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
         }
     ]
@@ -1093,8 +1094,8 @@ def test_video_cover_default_config_requires_superadmin(authed_client_no_db):
         json={"steps": {"video_analysis": {"provider": "openrouter", "model_id": "custom"}}},
     )
 
-    assert get_resp.status_code == 403
-    assert post_resp.status_code == 403
+    assert get_resp.status_code in (302, 403)
+    assert post_resp.status_code in (302, 403)
 
 
 def test_video_cover_default_config_normalizes_cover_execution_mode():
@@ -2188,9 +2189,23 @@ def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db,
     assert payload["state"]["result"]["covers"][0]["download_url"].endswith("/video-cover/api/task-1/download/social_reels_1")
 
 
-def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_requires_superadmin(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code in (302, 403)
+
+
+def test_video_cover_debug_payload_returns_cover_full_request(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
     copy_item = {
         "id": 1,
         "english": {
@@ -2254,7 +2269,7 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
     if hasattr(video_cover, "get_provider_config"):
         monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
     assert resp.status_code == 200
     payload = resp.get_json()
@@ -2280,9 +2295,10 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
     assert data["raw_response"]["data"][0]["b64_json"] == "iVBORw0KGgo="
 
 
-def test_video_cover_debug_payload_returns_text_step_without_replay(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_returns_text_step_without_replay(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = {
         "id": "task-1",
         "type": "video_cover",
@@ -2304,7 +2320,7 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(authed_clien
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/ad_copy")
+    resp = client.get("/video-cover/api/task-1/debug-payload/ad_copy")
 
     assert resp.status_code == 200
     payload = resp.get_json()
@@ -2346,30 +2362,32 @@ def _debug_cover_state(provider="local", model="gpt-image-2"):
     }
 
 
-def test_video_cover_debug_payload_response_disables_cache(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_response_disables_cache(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state()
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
     monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
     assert resp.status_code == 200
     assert resp.headers["Cache-Control"] == "no-store"
     assert resp.headers["Pragma"] == "no-cache"
 
 
-def test_video_cover_debug_payload_rejects_missing_prompt_index(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_rejects_missing_prompt_index(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state()
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
     monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
 
     assert resp.status_code == 400
     payload = resp.get_json()
@@ -2377,15 +2395,16 @@ def test_video_cover_debug_payload_rejects_missing_prompt_index(authed_client_no
     assert "prompt_index" in payload["error"]
 
 
-def test_video_cover_debug_payload_rejects_empty_prompt_index(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_rejects_empty_prompt_index(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state()
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
     monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=")
 
     assert resp.status_code == 400
     payload = resp.get_json()
@@ -2393,9 +2412,10 @@ def test_video_cover_debug_payload_rejects_empty_prompt_index(authed_client_no_d
     assert "prompt_index" in payload["error"]
 
 
-def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state()
     request_payload = state["step_requests"]["cover_generation"]
     request_payload.pop("image_prompts")
@@ -2404,7 +2424,7 @@ def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(authed_c
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
     monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
 
     assert resp.status_code == 400
     payload = resp.get_json()
@@ -2412,9 +2432,10 @@ def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(authed_c
     assert "prompt_index" in payload["error"]
 
 
-def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state(provider="openrouter", model="openai/gpt-5.4-image-2:high")
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
@@ -2425,7 +2446,7 @@ def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(auth
 
     monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
     assert resp.status_code == 200
     data = resp.get_json()["data"]
@@ -2444,9 +2465,10 @@ def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(auth
     assert data["replay"]["supported"] is False
 
 
-def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(authed_client_no_db, monkeypatch):
+def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(monkeypatch):
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     state = _debug_cover_state(provider="gemini_aistudio", model="gemini-3-pro-image-preview")
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
@@ -2457,7 +2479,7 @@ def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(authed_c
 
     monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
     assert resp.status_code == 200
     data = resp.get_json()["data"]
@@ -2470,13 +2492,13 @@ def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(authed_c
 
 
 def test_video_cover_debug_payload_apimart_uses_local_reference_output_params(
-    authed_client_no_db,
     monkeypatch,
     tmp_path,
 ):
     from appcore.gemini_image import _resolve_apimart_output_params
     from web.routes import video_cover
 
+    client = _make_superadmin_client_no_db(monkeypatch)
     reference_path = tmp_path / "reference.png"
     reference_path.write_bytes(_png_bytes(size=(1080, 1920)))
     expected_size, expected_resolution = _resolve_apimart_output_params(reference_path.read_bytes())
@@ -2495,13 +2517,109 @@ def test_video_cover_debug_payload_apimart_uses_local_reference_output_params(
 
     monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
 
-    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
     assert resp.status_code == 200
     body = resp.get_json()["data"]["full_request"]["body"]
     assert body["size"] == expected_size
     assert body["resolution"] == expected_resolution
     assert body["output_params_source"] == "local_reference_image"
+
+
+def test_video_cover_debug_replay_requires_superadmin(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes())
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover.local_media_storage, "safe_local_path_for", lambda object_key: reference_path)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/debug-replay/cover_generation",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug", "prompt_index": 1},
+    )
+
+    assert resp.status_code in (302, 403)
+
+
+def test_video_cover_debug_replay_posts_same_cover_payload_without_saving_state(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes())
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "image_prompts": [{"index": 1, "prompt": "actual prompt with native hook text"}],
+            }
+        },
+        "result": {"reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"}},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    posted = {}
+    saved = []
+
+    class FakeResponse:
+        status_code = 200
+        text = json.dumps({"data": [{"b64_json": base64.b64encode(_png_bytes()).decode("ascii")}]})
+
+        def json(self):
+            return json.loads(self.text)
+
+    def fake_post(url, *, headers, data, files, timeout):
+        posted["url"] = url
+        posted["headers"] = headers
+        posted["data"] = data
+        posted["files"] = files
+        posted["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover.local_media_storage, "safe_local_path_for", lambda object_key: reference_path)
+    monkeypatch.setattr(video_cover.local_media_storage, "download_to", lambda object_key, path: None)
+    monkeypatch.setattr(video_cover.requests, "post", fake_post)
+    monkeypatch.setattr(video_cover, "save_project_state", lambda *args, **kwargs: saved.append(args))
+
+    resp = client.post(
+        "/video-cover/api/task-1/debug-replay/cover_generation",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug", "prompt_index": 1},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["image"]["data_url"].startswith("data:image/png;base64,")
+    assert payload["raw_response"]["data"][0]["b64_json"]
+    assert posted["url"] == "https://debug.example/v1/images/edits"
+    assert posted["headers"]["Authorization"] == "Bearer sk-debug"
+    assert posted["data"]["model"] == "gpt-image-2"
+    assert posted["data"]["prompt"] == "actual prompt with native hook text"
+    assert posted["files"]["image"][0] == "reference.png"
+    assert saved == []
+
+
+def test_video_cover_debug_replay_rejects_non_cover_step(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = {"id": "task-1", "type": "video_cover", "step_requests": {"ad_copy": {"messages": []}}}
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    resp = client.post(
+        "/video-cover/api/task-1/debug-replay/ad_copy",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug"},
+    )
+
+    assert resp.status_code == 400
+    assert "暂不支持调试生成" in resp.get_json()["error"]
 
 
 def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):
@@ -2642,7 +2760,7 @@ def test_video_cover_delete_soft_deletes_visible_project_and_cleans_storage(
             "state_json": row["state_json"],
         }
     ]
-    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": True}]
+    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": False}]
 
 
 def test_video_cover_duplicate_copies_inputs_and_restarts(

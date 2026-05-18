@@ -1,13 +1,13 @@
 # 文案封面提示词调试弹窗增强设计
 
 日期：2026-05-18
-状态：待实现
+状态：已实现
 
 ## 文档锚点
 
 - `AGENTS.md#Verification`：改动后必须跑相关 pytest，并检查未登录 302、登录后 200、POST 带 CSRF。
 - `AGENTS.md#硬红线`：文档驱动代码；本次实现必须以本规格和既有文案封面规格为锚点。
-- `web/templates/CLAUDE.md#CSRF / 路由守卫`：模板里的 mutating fetch 必须带 `X-CSRFToken`，路由必须登录管理员可访问。
+- `web/templates/CLAUDE.md#CSRF / 路由守卫`：模板里的 mutating fetch 必须带 `X-CSRFToken`；返回明文 API key 的调试接口只允许超级管理员访问。
 - `web/static/CLAUDE.md#Ocean Blue 设计系统`：弹窗、Tab、按钮、输入框沿用后台蓝色管理系统视觉，不引入紫色。
 - `docs/superpowers/specs/2026-05-14-video-cover-generation-design.md#1.2 过程可视化与结构化结果`：每张步骤卡片的「提示词」弹窗展示请求输入、模型配置、媒体输入摘要、prompt/messages、原始返回和结构化结果。
 - `docs/superpowers/specs/2026-05-15-video-cover-copy-format-overlay-design.md#可审计性`：第 4 步必须保存每张封面实际使用的 prompt 和标准化文案，`step_requests.cover_generation.image_prompts` 是实际请求。
@@ -36,7 +36,7 @@
 - 不把调试生成的新结果写回项目正式 `state_json.result.covers`。
 - 不新增单图重试、任务取消或覆盖正式封面结果。
 - 不改变封面生成 prompt 内容、图片后处理、`1080x1920` 输出规则。
-- 不开放给非管理员；不新增普通用户访问面。
+- 不开放给非超级管理员；不新增普通用户访问面。
 - 不把 API key 长期持久化到 `state_json`、项目 artifact 或日志文件。
 
 ## 设计
@@ -75,7 +75,7 @@
 后端新增管理员接口，按步骤实时构造调试报文，不依赖前端猜测：
 
 - `GET /video-cover/api/<task_id>/debug-payload/<step>`
-- 权限：`@login_required + @admin_required`，复用项目访问校验。
+- 权限：`@login_required + @superadmin_required`，复用项目访问校验。
 - 返回：
   - `request_data`：结构化请求输入。
   - `full_request`：完整报文对象。
@@ -111,7 +111,7 @@
 }
 ```
 
-用户明确需要看到 API key，因此 `full_request` 在管理员弹窗内明文展示 API key。实现必须避免把这份明文 key 写入 `state_json` 或项目文件；只在当前请求响应中返回。
+用户明确需要看到 API key，因此 `full_request` 在超级管理员弹窗内明文展示 API key。实现必须避免把这份明文 key 写入 `state_json` 或项目文件；只在当前请求响应中返回。
 
 文本步骤如果无法稳定复现 SDK 内部协议，也必须展示当前系统保存的 prompt/messages、provider/model、schema/media 摘要；`replay.supported=false`。
 
@@ -130,7 +130,7 @@
 新增接口：
 
 - `POST /video-cover/api/<task_id>/debug-replay/<step>`
-- 权限：`@login_required + @admin_required`。
+- 权限：`@login_required + @superadmin_required`。
 - CSRF：前端 fetch 必须带 `X-CSRFToken`。
 - 仅 `cover_generation` 支持调试重放；其他步骤返回 400 或 `supported=false` 的明确错误。
 - 请求体：
@@ -196,7 +196,7 @@
 - 调试生成不覆盖页面正式封面、不写项目状态。
 - `返回数据` 能结构化展示封面生成结果。
 - `返回结果报文` 展示格式化 JSON。
-- 未登录访问新增接口跳登录或返回未授权；普通非管理员不能访问。
+- 未登录访问新增接口跳登录或返回未授权；普通管理员和非管理员不能访问明文 API key 调试接口。
 - mutating 调试接口前端请求带 `X-CSRFToken`。
 
 ## 测试

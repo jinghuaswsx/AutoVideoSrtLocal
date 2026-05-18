@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date
 import json
 import mimetypes
@@ -11,6 +12,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
+import requests
 from flask import Blueprint, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
@@ -37,6 +39,7 @@ from appcore.video_cover_generation import (
     resolve_cover_model_selection,
     resolve_text_model_selection,
     video_cover_model_options,
+    _decode_image_response_payload,
 )
 from appcore.video_cover_generation import _fetch_product_image, _product_value
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
@@ -1476,9 +1479,60 @@ def _debug_payload_json_response(payload: dict, status: int = 200):
     return response
 
 
+def _request_json_payload() -> dict:
+    payload = request.get_json(silent=True) if request.is_json else None
+    return payload if isinstance(payload, dict) else {}
+
+
+def _cover_reference_image_bytes(state: dict) -> tuple[bytes, str, str]:
+    object_key = _cover_reference_object_key(state)
+    if not object_key:
+        raise VideoCoverGenerationError("缺少封面生成参考图，无法调试生成")
+    path = local_media_storage.safe_local_path_for(object_key)
+    if not path.is_file():
+        local_media_storage.download_to(object_key, path)
+    if not path.is_file():
+        raise VideoCoverGenerationError("封面生成参考图文件不存在，无法调试生成")
+    return path.read_bytes(), "image/png", object_key
+
+
+def _post_debug_cover_request(
+    *,
+    request_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    image_bytes: bytes,
+    image_mime: str,
+) -> tuple[bytes, str, dict]:
+    if not request_url:
+        raise VideoCoverGenerationError("请填写请求 URL")
+    if not api_key:
+        raise VideoCoverGenerationError("请填写 API key")
+    response = requests.post(
+        request_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        data={"model": model or "gpt-image-2", "prompt": prompt, "n": "1", "size": "1024x1536"},
+        files={"image": ("reference.png", image_bytes, image_mime or "image/png")},
+        timeout=360,
+    )
+    try:
+        raw_response = response.json()
+    except Exception:
+        raw_response = {"text": str(getattr(response, "text", "") or "")}
+    if getattr(response, "status_code", 0) >= 400:
+        message = ""
+        if isinstance(raw_response, dict):
+            message = str(raw_response.get("error") or raw_response.get("message") or "")
+        message = message or str(getattr(response, "text", "") or "")
+        raise VideoCoverGenerationError(f"调试生成失败（HTTP {response.status_code}）：{message}")
+    image, mime = _decode_image_response_payload(raw_response)
+    return image, mime, raw_response
+
+
 @bp.route("/video-cover/api/<task_id>/debug-payload/<step>", methods=["GET"])
 @login_required
-@admin_required
+@superadmin_required
 def api_debug_payload(task_id: str, step: str):
     row, state = _load_user_project(task_id)
     if not row:
@@ -1488,6 +1542,46 @@ def api_debug_payload(task_id: str, step: str):
     except VideoCoverGenerationError as exc:
         return _debug_payload_json_response({"ok": False, "error": str(exc)}, 400)
     return _debug_payload_json_response({"ok": True, "data": _json_safe(payload)})
+
+
+@bp.route("/video-cover/api/<task_id>/debug-replay/<step>", methods=["POST"])
+@login_required
+@superadmin_required
+def api_debug_replay(task_id: str, step: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return _json_response({"ok": False, "error": "not found"}, 404)
+    if step != "cover_generation":
+        return _json_response({"ok": False, "error": "该步骤暂不支持调试生成"}, 400)
+    payload = _request_json_payload()
+    try:
+        prompt_index = _parse_prompt_index(payload.get("prompt_index") or 1)
+        request_payload = _step_debug_request(state, step)
+        provider = str(request_payload.get("provider") or "local").strip() or "local"
+        if provider != "local":
+            return _json_response({"ok": False, "error": "该供应商暂不支持调试生成"}, 400)
+        prompt_row = _cover_prompt_row(request_payload, prompt_index)
+        prompt = str(prompt_row.get("prompt") or request_payload.get("prompt") or "")
+        model = str(request_payload.get("model") or request_payload.get("model_id") or "gpt-image-2")
+        image_bytes, image_mime, _object_key = _cover_reference_image_bytes(state)
+        generated, mime, raw_response = _post_debug_cover_request(
+            request_url=str(payload.get("request_url") or "").strip(),
+            api_key=str(payload.get("api_key") or "").strip(),
+            model=model,
+            prompt=prompt,
+            image_bytes=image_bytes,
+            image_mime=image_mime,
+        )
+    except VideoCoverGenerationError as exc:
+        return _json_response({"ok": False, "error": str(exc)}, 400)
+    data_url = f"data:{mime or 'image/png'};base64,{base64.b64encode(generated).decode('ascii')}"
+    return _json_response({
+        "ok": True,
+        "image": {"data_url": data_url, "mime": mime or "image/png"},
+        "raw_response": raw_response,
+        "request_url": str(payload.get("request_url") or "").strip(),
+        "prompt_index": prompt_index,
+    })
 
 
 @bp.route("/video-cover/api/<task_id>/run/<step>", methods=["POST"])
