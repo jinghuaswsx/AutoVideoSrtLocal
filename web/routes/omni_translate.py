@@ -40,7 +40,7 @@ from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
 )
-from web.auth import admin_required, permission_required
+from web.auth import permission_required
 
 log = logging.getLogger(__name__)
 
@@ -292,12 +292,16 @@ def _is_superadmin_user() -> bool:
     return getattr(current_user, "is_superadmin", False)
 
 
+def _is_admin_user() -> bool:
+    return getattr(current_user, "is_admin", False)
+
+
 def _task_belongs_to_current_user(task: dict) -> bool:
     return str(task.get("_user_id")) == str(getattr(current_user, "id", ""))
 
 
 def _can_view_task(task: dict) -> bool:
-    if _task_belongs_to_current_user(task) or _is_superadmin_user():
+    if _task_belongs_to_current_user(task) or _is_admin_user():
         return True
     return bool(task.get("visible_to_all"))
 
@@ -324,7 +328,7 @@ def _query_viewable_project(
         task_id,
         "omni_translate",
         user_id=current_user.id,
-        is_admin=_is_superadmin_user(),
+        is_admin=_is_admin_user(),
         columns=columns,
         include_deleted=include_deleted,
         query_one_func=db_query_one,
@@ -903,8 +907,9 @@ RESUMABLE_STEPS = [
 
 @bp.route("/api/omni-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
-@admin_required
 def set_loudness_profile(task_id):
+    if not _is_admin_user():
+        return _json_response({"error": "仅管理员可操作"}, 403)
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
     if not task:

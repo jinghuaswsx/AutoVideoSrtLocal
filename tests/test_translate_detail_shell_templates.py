@@ -197,6 +197,14 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "font-size: 16px" in separation
     assert "white-space: normal" in separation
     assert "overflow-wrap: anywhere" in separation
+    assert "previousLoudnessProfile" in separation
+    assert "selectedLoudnessProfile = profile;" in separation
+    assert "e.preventDefault();" in separation
+    assert "e.stopPropagation();" in separation
+    assert "appearance: none;" in separation
+    assert "-webkit-appearance: none;" in separation
+    assert "box-sizing: border-box;" in separation
+    assert "font-family: inherit;" in separation
     assert "+10%" in separation
     assert "+100%" in separation
     assert "loudnessStepStatus" in separation

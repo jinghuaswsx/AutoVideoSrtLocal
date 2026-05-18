@@ -100,7 +100,16 @@
     if (API_BASE !== "/api/omni-translate") return Promise.resolve();
     if (loudnessStepStatus === "running") return Promise.resolve();
     if (loudnessProfileSaving) return Promise.resolve();
+    var previousLoudnessProfile = selectedLoudnessProfile;
+    var previousManualBoostPct = selectedManualBoostPct;
     loudnessProfileSaving = true;
+    selectedLoudnessProfile = profile;
+    if (profile === "manual_boost") {
+      selectedManualBoostPct = Number(manualPct || selectedManualBoostPct || 50);
+    }
+    var preview = document.getElementById("preview-loudness_match");
+    if (preview) preview.dataset.profileError = "";
+    refreshAll();
     var payload = { profile: profile };
     if (profile === "manual_boost") payload.manual_boost_pct = Number(manualPct);
     return fetch(API_BASE + "/" + TASK_ID + "/loudness-profile", {
@@ -114,13 +123,15 @@
       return r.json().then(function (data) {
         if (!r.ok) throw new Error(data.error || "保存响度方案失败");
         selectedLoudnessProfile = data.profile || profile;
-        selectedManualBoostPct = Number(data.manual_boost_pct || manualPct || 50);
-        var preview = document.getElementById("preview-loudness_match");
+        selectedManualBoostPct = (data.manual_boost_pct !== null && data.manual_boost_pct !== undefined)
+          ? Number(data.manual_boost_pct)
+          : selectedManualBoostPct;
         if (preview) preview.dataset.profileError = "";
         refreshAll();
       });
     }).catch(function (err) {
-      var preview = document.getElementById("preview-loudness_match");
+      selectedLoudnessProfile = previousLoudnessProfile || "standard";
+      selectedManualBoostPct = Number(previousManualBoostPct || 50);
       if (preview) {
         preview.dataset.profileError = (err && err.message) ? err.message : "保存响度方案失败";
       }
@@ -399,6 +410,8 @@
   document.addEventListener("click", function (e) {
     var pill = e.target.closest("#preview-loudness_match .loudness-profile-pill");
     if (!pill || API_BASE !== "/api/omni-translate") return;
+    e.preventDefault();
+    e.stopPropagation();
     var profile = pill.dataset.profile;
     if (profile === "manual_boost") {
       openManualBoostModal();
@@ -502,12 +515,16 @@
     gap: var(--space-3);
   }
   #preview-loudness_match .loudness-profile-pill {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--border-strong, #bfdbfe);
     background: var(--bg, #f8fafc);
     color: var(--fg-muted, #475569);
+    font-family: inherit;
     border-radius: var(--radius-full, 999px);
     padding: 10px 18px;
     min-width: 104px;
