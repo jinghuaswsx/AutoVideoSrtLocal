@@ -18,6 +18,12 @@
 
   <div class="vs-toolbar">
     <input id="vs-search" type="text" placeholder="搜索音色名或描述..."/>
+    <label class="vs-voice-select-field" for="vs-voice-select">
+      <span class="vs-voice-select-label">音色</span>
+      <select id="vs-voice-select" disabled>
+        <option value="">加载中...</option>
+      </select>
+    </label>
     <div class="vs-gender-pills" id="vs-gender-filter" role="group" aria-label="性别筛选">
       <button type="button" class="vs-pill vs-pill-male" data-gender="male"
               aria-pressed="false">男声</button>
@@ -147,6 +153,18 @@
     border-radius: 6px; font-size: 13px; font-family: inherit;
   }
   .vs-toolbar input[type=text] { flex: 1; min-width: 160px; }
+  .vs-voice-select-field {
+    display: flex; align-items: center; gap: 6px; min-width: 240px; flex: 1 1 280px;
+  }
+  .vs-voice-select-label {
+    font-size: 12px; color: var(--text-user-badge); font-weight: 600; white-space: nowrap;
+  }
+  #vs-voice-select {
+    min-width: 180px; width: 100%;
+  }
+  #vs-voice-select:disabled {
+    opacity: 0.65; cursor: wait;
+  }
 
   /* 性别胶囊按钮组 */
   .vs-gender-pills { display: flex; gap: 6px; }
@@ -210,6 +228,20 @@
   .vs-row-main { flex: 1; min-width: 0; }
   .vs-row-name { font-weight: 600; font-size: 14px; }
   .vs-row-meta { font-size: 12px; color: var(--text-user-badge); margin-top: 2px; }
+  .vs-row-speed {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 6px; font-size: 11px; color: var(--text-user-badge);
+  }
+  .vs-row-speed span,
+  .vs-row-speed-missing {
+    display: inline-flex; align-items: center;
+    padding: 2px 7px; border-radius: 999px;
+    background: var(--bg-muted, #f1f5f9);
+  }
+  .vs-row-speed-missing {
+    color: oklch(48% 0.08 70);
+    background: oklch(96% 0.03 80);
+  }
   .vs-row-sim {
     display: inline-block; padding: 2px 8px; border-radius: 999px;
     font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;

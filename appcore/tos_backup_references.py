@@ -129,12 +129,17 @@ def collect_protected_file_refs() -> list[ProtectedFileRef]:
         _add_object_key(grouped, (row or {}).get("object_key"), "raw_source_translation_cover")
 
     for row in query(
-        "SELECT local_video_path "
-        "FROM meta_hot_posts WHERE local_video_path IS NOT NULL AND local_video_path != ''"
+        "SELECT local_video_path, local_video_cover_path "
+        "FROM meta_hot_posts "
+        "WHERE (local_video_path IS NOT NULL AND local_video_path != '') "
+        "OR (local_video_cover_path IS NOT NULL AND local_video_cover_path != '')"
     ):
         local_path = _output_relative_path((row or {}).get("local_video_path"))
         if local_path is not None:
             _add_local_path(grouped, local_path, "meta_hot_post_video")
+        cover_path = _output_relative_path((row or {}).get("local_video_cover_path"))
+        if cover_path is not None:
+            _add_local_path(grouped, cover_path, "meta_hot_post_video_cover")
 
     return [
         ProtectedFileRef(

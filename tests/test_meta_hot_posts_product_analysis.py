@@ -128,8 +128,8 @@ def test_categorize_product_marks_current_openrouter_provider_when_llm_response_
     )
 
     assert result["category"] == "Home Supplies"
-    assert result["provider"] == "openrouter"
-    assert result["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert result["provider"] == product_analysis.CATEGORY_PROVIDER
+    assert result["model"] == product_analysis.CATEGORY_MODEL
 
 
 def test_detect_product_link_type_handles_shopify_tiktok_and_generic_urls():

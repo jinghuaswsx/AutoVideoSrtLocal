@@ -226,6 +226,7 @@ def _reset_separation(value: Any, *, loudness: bool) -> Any:
     separation = copy.deepcopy(dict(value))
     for key in (
         "composite_audio_path",
+        "cleaned_accompaniment_path",
         "effective_background_volume",
     ):
         separation.pop(key, None)
@@ -235,6 +236,8 @@ def _reset_separation(value: Any, *, loudness: bool) -> Any:
             "background_volume",
             "background_boost",
             "manual_boost",
+            "background_suppression",
+            "background_cleanup",
             "accompaniment_lufs",
         ):
             separation.pop(key, None)

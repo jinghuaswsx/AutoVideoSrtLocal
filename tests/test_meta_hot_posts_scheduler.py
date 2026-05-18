@@ -497,6 +497,61 @@ def test_process_video_analysis_queue_runs_us_before_europe_with_shared_delay(mo
     assert sleep_calls == [30, 30]
 
 
+def test_process_video_analysis_queue_rebuilds_both_queues_before_selecting_items(monkeypatch):
+    events = []
+    rows = [
+        {"analysis_id": 1, "hot_post_id": 10, "analysis_status": "pending", "attempts": 0},
+        {"analysis_id": 2, "hot_post_id": 11, "analysis_status": "pending", "attempts": 0},
+    ]
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(
+        scheduler.store,
+        "ensure_video_copyability_candidates",
+        lambda: events.append(("ensure_us",)) or 7,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "ensure_europe_fit_candidates",
+        lambda: events.append(("ensure_europe",)) or 11,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: events.append(("select_us", limit)) or ([rows.pop(0)] if rows else []),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: (_ for _ in ()).throw(AssertionError("US capacity should fill this round")),
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "mark_video_copyability_running",
+        lambda analysis_id: events.append(("mark_us", analysis_id)),
+    )
+    monkeypatch.setattr(
+        scheduler.video_copyability,
+        "analyze_video_copyability",
+        lambda row, user_id=None: events.append(("analyze_us", row["analysis_id"], user_id))
+        or {"overall_score": 88},
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_video_copyability_analysis",
+        lambda analysis_id, **kwargs: events.append(("finish_us", analysis_id)),
+    )
+
+    summary = scheduler.process_video_analysis_queue(limit=2, user_id=7, run_id=42)
+
+    assert summary["queued_us_copyability"] == 7
+    assert summary["queued_europe_fit"] == 11
+    assert summary["scanned"] == 2
+    assert summary["us_copyability_done"] == 2
+    assert events[:3] == [("ensure_us",), ("ensure_europe",), ("select_us", 1)]
+
+
 def test_process_video_analysis_queue_stops_when_run_is_superseded(monkeypatch):
     events = []
     latest_calls = []
@@ -802,6 +857,7 @@ def test_process_video_analysis_queue_idles_without_billing_user_when_empty(monk
     assert summary["done"] == 0
     assert summary["failed"] == 0
     assert summary["queued_us_copyability"] == 0
+    assert summary["queued_europe_fit"] == 0
 
 
 def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monkeypatch):
@@ -823,7 +879,7 @@ def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monke
     assert captured["per_item_delay_seconds"] == 20
 
 
-def test_translation_tick_once_defaults_to_50_messages_with_3_second_spacing(monkeypatch):
+def test_translation_tick_once_defaults_to_30_messages_with_no_spacing(monkeypatch):
     captured = {}
 
     def fake_translate_pending_messages(*, limit, user_id=None, per_item_delay_seconds):
@@ -838,8 +894,8 @@ def test_translation_tick_once_defaults_to_50_messages_with_3_second_spacing(mon
 
     scheduler.translation_tick_once()
 
-    assert captured["limit"] == 50
-    assert captured["per_item_delay_seconds"] == 3
+    assert captured["limit"] == 30
+    assert captured["per_item_delay_seconds"] == 0
 
 
 def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):

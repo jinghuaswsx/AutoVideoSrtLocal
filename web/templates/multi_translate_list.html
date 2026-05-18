@@ -35,6 +35,15 @@
   background: oklch(56% 0.16 230); color: #fff;
   border-color: oklch(56% 0.16 230);
 }
+.filter-bar { display: flex; align-items: center; gap: 12px; margin: -12px 0 18px; flex-wrap: wrap; }
+.creator-filter { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-main); }
+.creator-filter label { font-weight: 600; white-space: nowrap; }
+.creator-filter select {
+  height: 32px; min-width: 150px; padding: 0 10px;
+  border: 1.5px solid var(--border-main); border-radius: 8px;
+  background: var(--bg-card); color: var(--text-main); font-family: inherit;
+}
+.creator-filter select:focus { outline: none; border-color: var(--primary-color); }
 
 /* ── Grid view ── */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; justify-content: start; }
@@ -326,13 +335,28 @@
 {% set lang_name_map = {'zh':'中文','de':'德语','fr':'法语','es':'西语','it':'意语','ja':'日语','pt':'葡语','nl':'荷兰语','sv':'瑞典语','fi':'芬兰语','en':'英语'} %}
 {% set source_lang_label_map = {'zh':'中文 zh','en':'英语 en','es':'西语 es','pt':'葡语 pt','fr':'法语 fr','it':'意语 it','de':'德语 de','ja':'日语 ja','nl':'荷兰语 nl','sv':'瑞典语 sv','fi':'芬兰语 fi'} %}
 <div class="lang-pills">
-  <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="{{ module_list_path }}">全部</a>
+  <a class="lang-pill {{ 'active' if not current_lang else '' }}"
+     href="{{ module_list_path }}{% if current_user_filter %}?user_id={{ current_user_filter }}{% endif %}">全部</a>
   {% for lang in filter_langs %}
     {% set label = lang_label_map.get(lang, lang.upper()) %}
     <a class="lang-pill {{ 'active' if current_lang == lang else '' }}"
-       href="{{ module_list_path }}?lang={{ lang }}">{{ label }}</a>
+       href="{{ module_list_path }}?lang={{ lang }}{% if current_user_filter %}&user_id={{ current_user_filter }}{% endif %}">{{ label }}</a>
   {% endfor %}
 </div>
+
+{% if show_user_filter %}
+<div class="filter-bar">
+  <div class="creator-filter">
+    <label for="creatorFilter">创建人</label>
+    <select id="creatorFilter" name="user_id" onchange="changeCreatorFilter(this.value)">
+      <option value="" {% if not current_user_filter %}selected{% endif %}>全部用户</option>
+      {% for option in user_filter_options %}
+      <option value="{{ option.id }}" {% if current_user_filter == option.id %}selected{% endif %}>{{ option.display_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+{% endif %}
 
 <div class="expire-notice">
   <span class="icon">⚠️</span>
@@ -453,6 +477,17 @@
           <span class="warning-icon">⚠️</span>
           <span>先选择目标语言</span>
         </div>
+        {% if module_kind == 'english_redub' %}
+        <div class="modal-field">
+          <label>文案模式</label>
+          <label class="modal-lang-pill" style="display:inline-flex;align-items:center;gap:6px;width:auto;">
+            <input type="checkbox" name="script_mode" value="rewrite">
+            重写文案，保持原意一致
+          </label>
+          <div class="modal-hint" style="margin:6px 0 0;">默认关闭，关闭时保留原英文文案，只重新生成 TTS；开启后用 Omni 对齐逻辑适配语速。</div>
+          <input type="hidden" id="targetLangSelect" name="target_lang" value="en">
+        </div>
+        {% else %}
         <div class="modal-field">
           <label>目标语言</label>
           <div class="modal-lang-pills" id="modalLangPills" role="radiogroup" aria-label="目标语言">
@@ -463,6 +498,7 @@
           </div>
           <input type="hidden" id="targetLangSelect" name="target_lang" value="">
         </div>
+        {% endif %}
         {% if module_kind == 'av_sync' %}
         <div class="modal-field">
           <label for="targetMarketSelect">目标市场</label>
@@ -500,6 +536,9 @@
           <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
           <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
         </div>
+        {% if module_kind == 'english_redub' %}
+          <input type="hidden" id="sourceLanguageSelect" name="source_language" value="en">
+        {% else %}
         <div class="modal-field" id="sourceLanguageField">
           <label>源语言</label>
           <div class="modal-lang-pills" id="modalSourceLangPills" role="radiogroup" aria-label="源语言">
@@ -511,6 +550,7 @@
           <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
+        {% endif %}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -522,6 +562,9 @@
 {% endblock %}
 {% block scripts %}
 <script>
+var MODULE_KIND = {{ module_kind|tojson }};
+var IS_ENGLISH_REDUB = MODULE_KIND === 'english_redub';
+
 function switchView(mode) {
   var grid = document.getElementById('gridView');
   var list = document.getElementById('listView');
@@ -536,6 +579,13 @@ try {
   var saved = localStorage.getItem({{ module_storage_key|tojson }});
   if (saved === 'list') switchView('list');
 } catch {}
+
+function changeCreatorFilter(userId) {
+  var url = new URL(window.location.href);
+  if (userId) url.searchParams.set('user_id', userId);
+  else url.searchParams.delete('user_id');
+  window.location.href = url.pathname + url.search + url.hash;
+}
 
 function toggleMenu(e, menuId) {
   e.preventDefault(); e.stopPropagation();
@@ -625,6 +675,10 @@ function _resetUploadModal() {
   var srcPills = document.querySelectorAll('#modalSourceLangPills .modal-lang-pill');
   srcPills.forEach(function(b) { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
   document.getElementById('sourceLanguageSelect').value = '';
+  if (IS_ENGLISH_REDUB) {
+    document.getElementById('targetLangSelect').value = 'en';
+    document.getElementById('sourceLanguageSelect').value = 'en';
+  }
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');
   if (warning) warning.classList.remove('shake');

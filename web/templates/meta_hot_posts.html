@@ -5,15 +5,13 @@
 <span class="selection-center-title-note">Meta热帖 <span class="mh-count" id="mhCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
+{% include "_xuanpin_tabs_style.html" %}
 :root {
   --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
   --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
   --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
 }
 .meta-hot-page { color:var(--mh-text); }
-.mh-tabs { display:inline-flex; gap:4px; margin-bottom:18px; padding:4px; border:1px solid var(--mh-line); border-radius:999px; background:#f6f8fb; }
-.mh-tab { display:inline-flex; align-items:center; justify-content:center; height:34px; min-width:104px; padding:0 16px; border-radius:999px; color:#5b6472; text-decoration:none; font-size:14px; font-weight:700; }
-.mh-tab.active { background:var(--mh-accent); color:#fff; }
 .mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
 .mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
 .mh-subtab.active { background:#0f766e; color:#fff; }
@@ -28,6 +26,8 @@
 .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
 .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
 .mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
+.mh-status-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.mh-zoom-btn { min-width:104px; }
 .mh-pager { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin:10px 0 12px; color:var(--mh-muted); font-size:13px; }
 .mh-pager button { height:32px; min-width:32px; padding:0 10px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
 .mh-pager button.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
@@ -52,9 +52,23 @@
 .mh-metric b { color:#334155; }
 .mh-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .mh-ratio { color:var(--mh-danger); font-weight:800; }
-.mh-media { width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; }
+.mh-media { position:relative; width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; border-radius:6px; }
 .mh-media img, .mh-media iframe, .mh-media video { width:100%; height:100%; border:0; object-fit:cover; display:block; }
+.mh-video-shell { position:relative; width:100%; height:100%; cursor:pointer; background:#dbe3ee; outline:none; }
+.mh-video-shell:focus-visible { box-shadow:0 0 0 3px rgba(15,118,110,.24) inset; }
+.mh-video-cover { width:100%; height:100%; object-fit:cover; display:block; background:#dbe3ee; pointer-events:none; }
+.mh-video-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:100%; color:#64748b; font-size:13px; font-weight:800; }
+.mh-video-badges { position:absolute; left:8px; bottom:8px; z-index:2; display:flex; align-items:center; gap:5px; }
+.mh-video-duration-badge { min-width:34px; min-height:20px; padding:0 7px; border:1px solid rgba(220,38,38,.38); border-radius:4px; background:#fee2e2; color:var(--mh-danger); font-size:12px; font-weight:900; line-height:20px; text-align:center; box-shadow:0 1px 3px rgba(15,23,42,.16); }
+.mh-play-button { position:absolute; z-index:3; display:flex; align-items:center; justify-content:center; border:0; background:rgba(15,23,42,.72); box-shadow:0 2px 10px rgba(15,23,42,.25); pointer-events:none; }
+.mh-play-button::before { content:""; width:0; height:0; margin-left:3px; border-top:11px solid transparent; border-bottom:11px solid transparent; border-left:16px solid #fff; }
+.mh-play-button.center { left:50%; top:50%; width:58px; height:58px; border-radius:999px; transform:translate(-50%, -50%); }
+.mh-play-button.bottom { right:8px; bottom:8px; width:34px; height:24px; border-radius:5px; }
+.mh-play-button.bottom::before { border-top-width:7px; border-bottom-width:7px; border-left-width:10px; }
+.mh-message-wrap { display:grid; gap:8px; margin-bottom:2px; }
 .mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
+.mh-message-toggle { justify-self:start; height:28px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:5px; background:#fff; color:#334155; font-size:12px; font-weight:700; cursor:pointer; }
+.mh-message-toggle:hover { border-color:var(--mh-accent); color:var(--mh-accent); }
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
@@ -84,6 +98,17 @@
 .mh-failure-url { color:#0f766e; font-weight:700; word-break:break-all; }
 .mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 @media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
+@media (min-width: 769px) {
+  .meta-hot-page.mh-zoomed .meta-hot-card-grid { grid-template-columns:repeat(auto-fill, minmax(720px, 1fr)); gap:20px; }
+  .meta-hot-page.mh-zoomed .mh-card-head { padding:16px 18px; }
+  .meta-hot-page.mh-zoomed .mh-card-title { font-size:22px; }
+  .meta-hot-page.mh-zoomed .mh-card-body { padding:16px 18px; }
+  .meta-hot-page.mh-zoomed .mh-media { width:534px; height:952px; }
+  .meta-hot-page.mh-zoomed .mh-message { max-height:300px; font-size:15px; }
+  .meta-hot-page.mh-zoomed .mh-analysis,
+  .meta-hot-page.mh-zoomed .mh-copyability,
+  .meta-hot-page.mh-zoomed .mh-europe-panel { padding:12px; }
+}
 
 /* 移动端适配 */
 @media (max-width: 768px) {
@@ -97,27 +122,6 @@
   .mh-tool-title {
     display: none; /* 隐藏工具标题，给按钮更多空间 */
   }
-  /* 主导航横向滚动 */
-  .mh-tabs {
-    display: flex;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 4px;
-    padding: 8px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .mh-tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .mh-tab {
-    flex-shrink: 0;
-    white-space: nowrap;
-    min-width: 80px;
-    text-align: center;
-    padding: 0 12px;
-  }
-
   /* 子导航横向滚动 */
   .mh-subtabs {
     display: flex;
@@ -191,6 +195,9 @@
     flex-shrink: 0;
     min-width: 40px;
   }
+  .mh-zoom-btn {
+    display: none;
+  }
 }
 
 /* 移动端视频源切换开关 */
@@ -240,13 +247,8 @@
 {% endblock %}
 {% block content %}
 <div class="meta-hot-page">
-  <nav class="mh-tabs" aria-label="选品中心类型">
-    <a class="mh-tab" href="/xuanpin/mk">明空选品</a>
-    <a class="mh-tab active" href="/xuanpin/meta-hot-posts">Meta热帖</a>
-    <a class="mh-tab" href="/xuanpin/tabcut">TABCUT</a>
-    <a class="mh-tab" href="/xuanpin/today-recommendations">今日推荐</a>
-    <a class="mh-tab" href="/xuanpin/new-products">新品选择</a>
-  </nav>
+  {% set active = "meta-hot-posts" %}
+  {% include "_xuanpin_tabs.html" %}
 
   <div class="mh-subtabs" role="tablist" aria-label="Meta热帖子菜单">
     <button class="mh-subtab active" id="mhLibrarySubtab" type="button" onclick="switchMetaHotSubtab('library')">素材库</button>
@@ -260,13 +262,6 @@
     <div class="mh-tool-buttons">
       <button class="mh-btn secondary" type="button" onclick="showCategoryPrompt()">类目分析提示词</button>
       <button class="mh-btn secondary" type="button" onclick="showFailureRecords()">商品分析失败记录</button>
-      <button class="mh-btn secondary" type="button" onclick="refreshMetaHotPosts()">同步</button>
-      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPosts()">分析商品</button>
-      <button class="mh-btn secondary" type="button" onclick="translateMetaHotPostMessages()">翻译文案</button>
-      <button class="mh-btn secondary" type="button" onclick="localizeMetaHotPostVideos()">本地化视频</button>
-      <button class="mh-btn secondary" type="button" onclick="assessEuropeFitMaterials()">欧洲评估</button>
-      <button class="mh-btn secondary" type="button" onclick="analyzeMetaHotPostVideos()">分析视频</button>
-      <button class="mh-btn" type="button" onclick="showVideoCopyabilityTop50()">可抄 Top 50</button>
     </div>
   </div>
 
@@ -330,6 +325,9 @@
 
   <div class="mh-status">
     <span id="mhStatus">Ready</span>
+    <div class="mh-status-actions">
+      <button class="mh-btn secondary mh-zoom-btn" id="mhCardZoomButton" type="button" aria-pressed="false" onclick="toggleMetaHotCardZoom()">卡片放大 2x</button>
+    </div>
   </div>
 
   <div class="mh-pager" id="mhPagerTop" aria-label="Meta热帖分页"></div>
@@ -370,6 +368,7 @@
 let mhPage = 1;
 let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
+let mhCardZoomed = false;
 const mhPageSize = 50;
 const qs = id => document.getElementById(id);
 function esc(v) {
@@ -381,6 +380,68 @@ function fmtMoney(min, max, currency) {
   const prefix = currency && currency !== 'USD' ? currency + ' ' : '$';
   if (max && Number(max) !== Number(min)) return `${prefix}${Number(min).toFixed(2)} - ${prefix}${Number(max).toFixed(2)}`;
   return `${prefix}${Number(min).toFixed(2)}`;
+}
+function videoDurationSeconds(row) {
+  const seconds = row.video_duration_seconds ?? row.duration_seconds ?? row.video_duration;
+  const parsedSeconds = Number(seconds || 0);
+  if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) return parsedSeconds;
+  const milliseconds = row.video_duration_ms ?? row.videoDuration ?? row.duration_ms;
+  const parsedMilliseconds = Number(milliseconds || 0);
+  return Number.isFinite(parsedMilliseconds) && parsedMilliseconds > 0 ? parsedMilliseconds / 1000 : 0;
+}
+function formatVideoDuration(value) {
+  const seconds = Math.round(Number(value || 0));
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = String(seconds % 60).padStart(2, '0');
+  if (minutes < 60) return `${minutes}:${rest}`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}:${String(minutes % 60).padStart(2, '0')}:${rest}`;
+}
+function playbackVideoHtml(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video>`;
+  }
+  if (row.local_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.local_video_url)}"></video>`;
+  }
+  if (row.video_url) {
+    const src = row.invisible && row.invisible_region === 'usa'
+      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
+      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
+    return `<iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>`;
+  }
+  return '';
+}
+function previewCoverUrl(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_cover_url) return row.tos_video_cover_url;
+  return row.local_video_cover_url || row.tos_video_cover_url || row.image_url || '';
+}
+function renderVideoShell(row, videoHtml) {
+  const coverUrl = previewCoverUrl(row);
+  const duration = formatVideoDuration(videoDurationSeconds(row));
+  const cover = coverUrl
+    ? `<img class="mh-video-cover" src="${esc(coverUrl)}" alt="" loading="lazy">`
+    : '<span class="mh-video-placeholder">Video</span>';
+  const durationBadge = duration ? `<span class="mh-video-duration-badge">${esc(duration)}</span>` : '';
+  return `<div class="mh-video-shell" role="button" tabindex="0" data-video-html="${esc(videoHtml)}" onclick="loadMetaHotPostVideo(event)" onkeydown="handleMetaHotPostVideoKey(event)">
+    ${cover}
+    <span class="mh-play-button center" aria-hidden="true"></span>
+    <span class="mh-play-button bottom" aria-hidden="true"></span>
+    <span class="mh-video-badges">${durationBadge}</span>
+  </div>`;
+}
+function loadMetaHotPostVideo(event) {
+  const shell = event.currentTarget;
+  const media = shell && shell.closest ? shell.closest('.mh-media') : null;
+  const videoHtml = shell && shell.dataset ? shell.dataset.videoHtml : '';
+  if (media && videoHtml) media.innerHTML = videoHtml;
+}
+function handleMetaHotPostVideoKey(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  loadMetaHotPostVideo(event);
 }
 
 // 视频源切换逻辑
@@ -412,21 +473,27 @@ function restoreVideoSource() {
     setVideoSource('local');
   }
 }
+function applyMetaHotCardZoom(zoomed) {
+  mhCardZoomed = Boolean(zoomed);
+  const page = document.querySelector('.meta-hot-page');
+  if (page) page.classList.toggle('mh-zoomed', mhCardZoomed);
+  const button = qs('mhCardZoomButton');
+  if (button) {
+    button.textContent = mhCardZoomed ? '恢复卡片' : '卡片放大 2x';
+    button.setAttribute('aria-pressed', mhCardZoomed ? 'true' : 'false');
+  }
+  localStorage.setItem('mhCardZoomed', mhCardZoomed ? '1' : '0');
+}
+function toggleMetaHotCardZoom() {
+  applyMetaHotCardZoom(!mhCardZoomed);
+}
+function restoreMetaHotCardZoom() {
+  applyMetaHotCardZoom(localStorage.getItem('mhCardZoomed') === '1');
+}
 
 function cardMedia(row) {
-  // 根据视频源设置决定使用哪个 URL
-  if (mhVideoSource === 'tos' && row.tos_video_url) {
-    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video></div>`;
-  }
-  if (row.local_video_url) {
-    return `<div class="mh-media"><video controls preload="metadata" playsinline src="${esc(row.local_video_url)}"></video></div>`;
-  }
-  if (row.video_url) {
-    const src = row.invisible && row.invisible_region === 'usa'
-      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
-      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
-    return `<div class="mh-media"><iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe></div>`;
-  }
+  const videoHtml = playbackVideoHtml(row);
+  if (videoHtml) return `<div class="mh-media">${renderVideoShell(row, videoHtml)}</div>`;
   if (row.image_url) return `<div class="mh-media"><img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
   return `<div class="mh-media"></div>`;
 }
@@ -486,6 +553,30 @@ function copyabilityBlock(row) {
     <div class="mh-copy-summary">${esc(data.summary || '')}</div>
   </div>`;
 }
+function renderMessageBlock(row) {
+  const translated = row.message_html || '';
+  const original = row.message_source_html || '';
+  const canToggleOriginal = Boolean(row.message_is_translated && original);
+  const attrs = canToggleOriginal
+    ? ` data-message-showing="translated" data-message-translated="${esc(translated)}" data-message-original="${esc(original)}"`
+    : '';
+  const toggle = canToggleOriginal
+    ? '<button class="mh-message-toggle" type="button" onclick="toggleMetaHotPostSourceMessage(event)">显示原文案</button>'
+    : '';
+  return `<div class="mh-message-wrap"${attrs}><div class="mh-message">${translated}</div>${toggle}</div>`;
+}
+function toggleMetaHotPostSourceMessage(event) {
+  const button = event.currentTarget;
+  const wrap = button && button.closest ? button.closest('.mh-message-wrap') : null;
+  const message = wrap ? wrap.querySelector('.mh-message') : null;
+  if (!wrap || !message) return;
+  const showingOriginal = wrap.dataset.messageShowing === 'original';
+  message.innerHTML = showingOriginal
+    ? (wrap.dataset.messageTranslated || '')
+    : (wrap.dataset.messageOriginal || '');
+  wrap.dataset.messageShowing = showingOriginal ? 'translated' : 'original';
+  button.textContent = showingOriginal ? '显示原文案' : '显示翻译文案';
+}
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
@@ -503,7 +594,7 @@ function renderCard(row) {
       <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
       <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
       ${cardMedia(row)}
-      <div class="mh-message">${row.message_html || ''}</div>
+      ${renderMessageBlock(row)}
       ${copyabilityBlock(row)}
       <div class="mh-analysis">
         <div class="mh-product">${productImg}<div>
@@ -535,6 +626,7 @@ function buildParams(page) {
 }
 function switchMetaHotSubtab(tab) {
   mhSubtab = ['today', 'europe', 'us'].includes(tab) ? tab : 'library';
+  location.hash = mhSubtab;
   qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
   qs('mhTodayNewSubtab').classList.toggle('active', mhSubtab === 'today');
   qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
@@ -577,6 +669,14 @@ function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
     qs(id).innerHTML = buttons.join('');
   });
 }
+function renderMetaHotPageSummary(data, items, label = '') {
+  const currentCount = Array.isArray(items) ? items.length : 0;
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const prefix = label ? `${label} · ` : '';
+  return `${prefix}当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材`;
+}
 async function loadMetaHotPosts(page = 1) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
@@ -593,7 +693,7 @@ async function loadMetaHotPosts(page = 1) {
     : '<div class="mh-empty">暂无结果</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data);
-  qs('mhStatus').textContent = `Page ${mhPage}`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);
 }
 async function loadTodayNewMaterials(page = 1) {
   mhSubtab = 'today';
@@ -611,7 +711,7 @@ async function loadTodayNewMaterials(page = 1) {
     : '<div class="mh-empty">今日暂无新抓到的帖子</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data, 'loadTodayNewMaterials');
-  qs('mhStatus').textContent = `今日新增 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');
 }
 async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
@@ -627,7 +727,7 @@ async function loadEuropeTopMaterials() {
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无欧洲评估结果</div>';
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
-  qs('mhStatus').textContent = '欧洲Top50';
+  qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 async function loadUsTopMaterials() {
   mhSubtab = 'us';
@@ -643,7 +743,7 @@ async function loadUsTopMaterials() {
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
-  qs('mhStatus').textContent = `美国Top50 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
@@ -761,6 +861,16 @@ async function showFailureRecords() {
     : '<div class="mh-empty">暂无失败记录</div>';
 }
 restoreVideoSource();
-loadMetaHotPosts(1);
+restoreMetaHotCardZoom();
+// 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us）
+function initMetaHotSubtabFromHash() {
+  const tab = location.hash.replace('#', '') || 'library';
+  switchMetaHotSubtab(tab);
+}
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace('#', '') || 'library';
+  if (tab !== mhSubtab) switchMetaHotSubtab(tab);
+});
+initMetaHotSubtabFromHash();
 </script>
 {% endblock %}

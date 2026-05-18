@@ -114,7 +114,7 @@ def _cleanup_orphan_uploads() -> None:
     alive_ids = {row["id"] for row in alive_rows}
 
     for filename in os.listdir(UPLOAD_DIR):
-        task_id = os.path.splitext(filename)[0]
+        task_id = _upload_task_id_from_filename(filename)
         if task_id in alive_ids:
             continue
         file_path = os.path.join(UPLOAD_DIR, filename)
@@ -127,3 +127,10 @@ def _cleanup_orphan_uploads() -> None:
             log.warning("Skip deleting orphan upload outside UPLOAD_DIR: %s", file_path)
         except Exception:
             pass
+
+
+def _upload_task_id_from_filename(filename: str) -> str:
+    stem = os.path.splitext(filename)[0]
+    if "_video_" in stem:
+        return stem.split("_video_", 1)[0]
+    return stem

@@ -126,6 +126,11 @@ def _coerce_ad_frequency(value: str | None) -> str:
     return normalized
 
 
+def _normalize_ad_account_filter(ad_account_id: str | None) -> str | None:
+    normalized = str(ad_account_id or "").strip().removeprefix("act_")
+    return normalized or None
+
+
 def import_meta_ad_rows(
     rows: list[dict],
     filename: str,
@@ -429,6 +434,7 @@ def get_meta_ad_summary(
     start_date: str | None = None,
     end_date: str | None = None,
     q: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
     report_start, report_end, resolved_batch_id = _resolve_meta_ad_period(batch_id, start_date, end_date)
     if not report_start or not report_end:
@@ -438,6 +444,10 @@ def get_meta_ad_summary(
 
     use_daily_metrics = not batch_id and bool(start_date and end_date)
     q_clean = (q or "").strip()
+    account_filter = _normalize_ad_account_filter(ad_account_id)
+    account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
+    daily_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
+    daily_unmatched_account_clause = "AND ad_account_id = %s " if account_filter else ""
     search_args: tuple[str, ...] = ()
     daily_search_clause = ""
     batch_search_clause = ""
@@ -481,11 +491,12 @@ def get_meta_ad_summary(
             "FROM meta_ad_daily_campaign_metrics m "
             "LEFT JOIN media_products mp ON mp.id = m.product_id "
             "WHERE m.meta_business_date >= %s AND m.meta_business_date <= %s "
+            f"{daily_account_clause}"
             f"{daily_search_clause}"
             "GROUP BY m.product_id, mp.name, mp.product_code, "
             "COALESCE(m.matched_product_code, m.product_code), m.campaign_name "
             "ORDER BY spend_usd DESC",
-            (report_start, report_end) + search_args,
+            (report_start, report_end) + account_args + search_args,
         )
     else:
         metric_rows = query(
@@ -553,10 +564,11 @@ def get_meta_ad_summary(
             "SUM(purchase_value_usd) AS purchase_value_usd "
             "FROM meta_ad_daily_campaign_metrics "
             "WHERE meta_business_date >= %s AND meta_business_date <= %s AND product_id IS NULL "
+            f"{daily_unmatched_account_clause}"
             f"{daily_unmatched_search_clause}"
             "GROUP BY campaign_name, normalized_campaign_code "
             "ORDER BY spend_usd DESC",
-            (report_start, report_end) + search_args[:3],
+            (report_start, report_end) + account_args + search_args[:3],
         )
     else:
         unmatched = query(
@@ -1014,6 +1026,7 @@ def get_ads_level_list(
     sort_by: str = "spend_usd",
     sort_dir: str = "desc",
     q: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
     """List Campaign / Ad Set / Ad rows aggregated by code within a date range."""
     cfg = _resolve_ads_level(level)
@@ -1028,6 +1041,9 @@ def get_ads_level_list(
     code_col = cfg["code_col"]
     name_col = cfg["name_col"]
     q_clean = (q or "").strip()
+    account_filter = _normalize_ad_account_filter(ad_account_id)
+    account_clause = "AND ad_account_id = %s " if account_filter else ""
+    account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
     search_clause = ""
     search_args: tuple[str, ...] = ()
     if q_clean:
@@ -1047,10 +1063,11 @@ def get_ads_level_list(
         f"SELECT COUNT(*) AS total FROM ("
         f"SELECT 1 FROM {table} "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"{account_clause}"
         f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id"
         ") AS t",
-        (start, end) + search_args,
+        (start, end) + account_args + search_args,
     )
     total = int((total_row or {}).get("total") or 0)
 
@@ -1065,11 +1082,12 @@ def get_ads_level_list(
         "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0)) AS roas_purchase "
         f"FROM {table} "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        f"{account_clause}"
         f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id "
         f"ORDER BY {sort_expr} {sort_dir_norm} "
         "LIMIT %s OFFSET %s",
-        (start, end) + search_args + (page_size, offset),
+        (start, end) + account_args + search_args + (page_size, offset),
     )
 
     out: list[dict] = []
@@ -1149,12 +1167,22 @@ def search_ads_by_level(level: str, q: str, limit: int = 20) -> dict:
 def _fetch_realtime_today_campaign(
     code: str,
     business_date: date,
+    ad_account_id: str | None = None,
 ) -> dict | None:
     """Latest-snapshot-per-account aggregation for a single campaign code on `business_date`.
 
     Mirrors the (business_date, ad_account_id) -> MAX(snapshot_at) rule documented in
     CLAUDE.md "Meta 广告多账户同步" — DO NOT use a global MAX(snapshot_at).
     """
+    account_filter = _normalize_ad_account_filter(ad_account_id)
+    inner_account_clause = "AND ad_account_id = %s " if account_filter else ""
+    outer_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
+    args: list[Any] = [business_date, code]
+    if account_filter:
+        args.append(account_filter)
+    args.extend([business_date, code])
+    if account_filter:
+        args.append(account_filter)
     row = query_one(
         "SELECT SUM(m.spend_usd) AS spend_usd, "
         "SUM(m.purchase_value_usd) AS purchase_value_usd, "
@@ -1170,13 +1198,15 @@ def _fetch_realtime_today_campaign(
         "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
         "  FROM meta_ad_realtime_daily_campaign_metrics "
         "  WHERE business_date = %s AND normalized_campaign_code = %s "
+        f"{inner_account_clause}"
         "  GROUP BY business_date, ad_account_id "
         ") latest "
         "ON m.business_date = latest.business_date "
         "AND m.ad_account_id = latest.ad_account_id "
         "AND m.snapshot_at = latest.max_snapshot_at "
-        "WHERE m.business_date = %s AND m.normalized_campaign_code = %s",
-        (business_date, code, business_date, code),
+        "WHERE m.business_date = %s AND m.normalized_campaign_code = %s "
+        f"{outer_account_clause}",
+        tuple(args),
     )
     if not row or row.get("spend_usd") is None:
         return None
@@ -1188,6 +1218,7 @@ def get_ads_level_detail(
     code: str,
     start_date: str | None = None,
     end_date: str | None = None,
+    ad_account_id: str | None = None,
 ) -> dict:
     """Per-day detail for one Campaign / Ad Set / Ad code within a date range."""
     cfg = _resolve_ads_level(level)
@@ -1200,6 +1231,9 @@ def get_ads_level_detail(
     code_col = cfg["code_col"]
     name_col = cfg["name_col"]
     supports_realtime = cfg["supports_realtime"]
+    account_filter = _normalize_ad_account_filter(ad_account_id)
+    account_clause = "AND ad_account_id = %s " if account_filter else ""
+    account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
 
     raw_rows = query(
         f"SELECT meta_business_date, {name_col} AS name, "
@@ -1208,14 +1242,15 @@ def get_ads_level_detail(
         f"FROM {table} "
         f"WHERE {code_col} = %s "
         "AND meta_business_date >= %s AND meta_business_date <= %s "
+        f"{account_clause}"
         "ORDER BY meta_business_date DESC",
-        (code_clean, start, end),
+        (code_clean, start, end) + account_args,
     )
 
     today = current_meta_business_date()
     realtime_row = None
     if supports_realtime and end >= today:
-        realtime_row = _fetch_realtime_today_campaign(code_clean, today)
+        realtime_row = _fetch_realtime_today_campaign(code_clean, today, account_filter)
 
     daily_by_date: dict[date, list[dict]] = {}
     name_seen = None

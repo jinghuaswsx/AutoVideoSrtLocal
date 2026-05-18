@@ -15,6 +15,17 @@ def _is_admin() -> bool:
     )
 
 
+def _has_permission(code: str) -> bool:
+    checker = getattr(current_user, "has_permission", None)
+    if checker is None:
+        return False
+    return bool(checker(code))
+
+
+def _can_access_meta_hot_posts() -> bool:
+    return _is_admin() or _has_permission("meta_hot_posts")
+
+
 def _medias_routes():
     from web.routes import medias as routes
 
@@ -45,10 +56,20 @@ def _meta_hot_posts():
     return service
 
 
+def _mingkong_materials():
+    from appcore import mingkong_materials as service
+
+    return service
+
+
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
-    return redirect(url_for("xuanpin.mk_selection_page"))
+    if _is_admin():
+        return redirect(url_for("xuanpin.mk_selection_page"))
+    if _can_access_meta_hot_posts():
+        return redirect(url_for("xuanpin.meta_hot_posts_page"))
+    abort(403)
 
 
 @bp.route("/mk", methods=["GET"])
@@ -70,7 +91,7 @@ def tabcut_selection_page():
 @bp.route("/meta-hot-posts", methods=["GET"])
 @login_required
 def meta_hot_posts_page():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         abort(403)
     return render_template(
         "meta_hot_posts.html",
@@ -106,10 +127,49 @@ def api_mk_selection():
     return _medias_routes().api_mk_selection()
 
 
+@bp.route("/api/mk-selection/snapshots", methods=["GET"])
+@login_required
+def api_mk_selection_snapshots():
+    return _medias_routes().api_mk_selection_snapshots()
+
+
 @bp.route("/api/mk-selection/refresh", methods=["POST"])
 @login_required
 def api_mk_selection_refresh():
     return _medias_routes().api_mk_selection_refresh()
+
+
+@bp.route("/api/mk-video-materials", methods=["GET"])
+@login_required
+def api_mk_video_materials():
+    return _medias_routes().api_mk_video_materials()
+
+
+@bp.route("/api/mk-material-library", methods=["GET"])
+@login_required
+def api_mk_material_library():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_materials().list_material_library(
+        snapshot_date=(request.args.get("snapshot") or "").strip() or None,
+        keyword=(request.args.get("keyword") or "").strip(),
+        page=request.args.get("page") or 1,
+        page_size=request.args.get("page_size") or 100,
+    )
+    return jsonify(result)
+
+
+@bp.route("/api/mk-yesterday-top100", methods=["GET"])
+@login_required
+def api_mk_yesterday_top100():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_materials().list_yesterday_top100(
+        snapshot_date=(request.args.get("snapshot") or "").strip() or None,
+        page=request.args.get("page") or 1,
+        page_size=request.args.get("page_size") or 100,
+    )
+    return jsonify(result)
 
 
 @bp.route("/api/mk-media", methods=["GET"])
@@ -157,7 +217,7 @@ def api_tabcut_refresh():
 @bp.route("/api/meta-hot-posts", methods=["GET"])
 @login_required
 def api_meta_hot_posts():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_list_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -166,7 +226,7 @@ def api_meta_hot_posts():
 @bp.route("/api/meta-hot-posts/categories", methods=["GET"])
 @login_required
 def api_meta_hot_posts_categories():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_category_options_response()
     return jsonify(result.payload), result.status_code
@@ -175,7 +235,7 @@ def api_meta_hot_posts_categories():
 @bp.route("/api/meta-hot-posts/category-prompt", methods=["GET"])
 @login_required
 def api_meta_hot_posts_category_prompt():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_category_prompt_response()
     return jsonify(result.payload), result.status_code
@@ -184,7 +244,7 @@ def api_meta_hot_posts_category_prompt():
 @bp.route("/api/meta-hot-posts/failures", methods=["GET"])
 @login_required
 def api_meta_hot_posts_failures():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_failures_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -193,7 +253,7 @@ def api_meta_hot_posts_failures():
 @bp.route("/api/meta-hot-posts/europe-top", methods=["GET"])
 @login_required
 def api_meta_hot_posts_europe_top():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_europe_top_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -202,7 +262,7 @@ def api_meta_hot_posts_europe_top():
 @bp.route("/api/meta-hot-posts/today-new", methods=["GET"])
 @login_required
 def api_meta_hot_posts_today_new():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_today_new_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -211,7 +271,7 @@ def api_meta_hot_posts_today_new():
 @bp.route("/api/meta-hot-posts/<int:post_id>/mark", methods=["POST"])
 @login_required
 def api_meta_hot_posts_mark(post_id: int):
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     result = _meta_hot_posts().build_mark_response(
@@ -225,7 +285,7 @@ def api_meta_hot_posts_mark(post_id: int):
 @bp.route("/api/meta-hot-posts/refresh", methods=["POST"])
 @login_required
 def api_meta_hot_posts_refresh():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_refresh_response()
     return jsonify(result.payload), result.status_code
@@ -234,7 +294,7 @@ def api_meta_hot_posts_refresh():
 @bp.route("/api/meta-hot-posts/analyze", methods=["POST"])
 @login_required
 def api_meta_hot_posts_analyze():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     payload["user_id"] = getattr(current_user, "id", None)
@@ -245,7 +305,7 @@ def api_meta_hot_posts_analyze():
 @bp.route("/api/meta-hot-posts/translate-messages", methods=["POST"])
 @login_required
 def api_meta_hot_posts_translate_messages():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     payload["user_id"] = getattr(current_user, "id", None)
@@ -256,7 +316,7 @@ def api_meta_hot_posts_translate_messages():
 @bp.route("/api/meta-hot-posts/localize-videos", methods=["POST"])
 @login_required
 def api_meta_hot_posts_localize_videos():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     result = _meta_hot_posts().build_localize_videos_response(payload)
@@ -265,7 +325,7 @@ def api_meta_hot_posts_localize_videos():
 @bp.route("/api/meta-hot-posts/europe-fit", methods=["POST"])
 @login_required
 def api_meta_hot_posts_europe_fit():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     payload["user_id"] = getattr(current_user, "id", None)
@@ -276,7 +336,7 @@ def api_meta_hot_posts_europe_fit():
 @bp.route("/api/meta-hot-posts/analyze-videos", methods=["POST"])
 @login_required
 def api_meta_hot_posts_analyze_videos():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     payload["user_id"] = getattr(current_user, "id", None)
@@ -287,7 +347,7 @@ def api_meta_hot_posts_analyze_videos():
 @bp.route("/api/meta-hot-posts/video-copyability/top50", methods=["GET"])
 @login_required
 def api_meta_hot_posts_video_copyability_top50():
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_video_copyability_top50_response(request.args)
     return jsonify(result.payload), result.status_code
@@ -296,12 +356,23 @@ def api_meta_hot_posts_video_copyability_top50():
 @bp.route("/api/meta-hot-posts/<int:post_id>/local-video", methods=["GET"])
 @login_required
 def api_meta_hot_posts_local_video(post_id: int):
-    if not _is_admin():
+    if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().resolve_local_video_response(post_id)
     if result.path is None:
         return jsonify({"error": result.error or "not_found"}), result.status_code
     return send_file(str(result.path), mimetype="video/mp4", conditional=True)
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/local-video-cover", methods=["GET"])
+@login_required
+def api_meta_hot_posts_local_video_cover(post_id: int):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().resolve_local_video_cover_response(post_id)
+    if result.path is None:
+        return jsonify({"error": result.error or "not_found"}), result.status_code
+    return send_file(str(result.path), mimetype="image/jpeg", conditional=True)
 
 
 @bp.route("/api/new-products/list", methods=["GET"])

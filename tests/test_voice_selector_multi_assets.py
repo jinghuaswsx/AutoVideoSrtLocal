@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 SCRIPT = Path("web/static/voice_selector_multi.js").read_text(encoding="utf-8")
+TEMPLATE = Path("web/templates/_voice_selector_multi.html").read_text(encoding="utf-8")
 
 
 def test_voice_selector_multi_sanitizes_preview_media_sources():
@@ -38,3 +39,22 @@ def test_voice_selector_multi_escapes_voice_library_error_response_text():
     assert "const detail = escapeHtml(await resp.text());" in SCRIPT
     assert 'listEl.innerHTML = `<div class="vs-loading">加载失败：${detail}</div>`;' in SCRIPT
     assert 'listEl.innerHTML = `<div class="vs-loading">加载失败：${await resp.text()}</div>`;' not in SCRIPT
+
+
+def test_voice_selector_multi_exposes_explicit_voice_select_control():
+    assert 'for="vs-voice-select"' in TEMPLATE
+    assert 'id="vs-voice-select"' in TEMPLATE
+    assert 'const voiceSelect = document.getElementById("vs-voice-select");' in SCRIPT
+    assert "function syncVoiceSelectOptions(" in SCRIPT
+    assert "function selectVoiceFromControl()" in SCRIPT
+    assert 'voiceSelect.addEventListener("change", selectVoiceFromControl);' in SCRIPT
+
+
+def test_voice_selector_multi_renders_speed_metadata():
+    assert "function voiceSpeedMetaHtml(rec)" in SCRIPT
+    assert "preview_words_per_second" in SCRIPT
+    assert "speed_match_score" in SCRIPT
+    assert "combined_score" in SCRIPT
+    assert "语速未维护，已按音色排序" in SCRIPT
+    assert "语速匹配" in SCRIPT
+    assert ".vs-row-speed" in TEMPLATE

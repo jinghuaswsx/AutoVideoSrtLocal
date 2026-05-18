@@ -3272,6 +3272,20 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     row.style.background = 'oklch(96% 0.05 85)';
     setTimeout(function() { row.style.background = ''; }, 2500);
 
+    function clickRowAction(selector) {
+      var btn = row.querySelector(selector) || document.querySelector(selector);
+      if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
+      btn.click();
+      return true;
+    }
+
+    if (action === 'translate' && clickRowAction('.js-translate[data-pid="' + productId + '"]')) {
+      return;
+    }
+    if (action === 'history' && clickRowAction('.js-translation-tasks[data-pid="' + productId + '"]')) {
+      return;
+    }
+
     /* ── 3. Open edit modal via the edit button (data-edit="pid") ──
        medias.js wires:  b.addEventListener('click', () => openEdit(+b.dataset.edit))
        so clicking the button is the correct entry point.              */

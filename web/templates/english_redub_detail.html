@@ -1,0 +1,17 @@
+{% extends "_translate_detail_shell.html" %}
+{% if not project.deleted_at %}
+{% set allow_upload = false %}
+{% set show_back_link = false %}
+{% set task_id = project.id %}
+{% set initial_task = state %}
+{% set api_base = '/api/english-redub' %}
+{% set url_for_detail = '/english-redub/__TASK_ID__' %}
+{% set voice_language = target_lang or 'en' %}
+{% set default_source_language = state.source_language or 'en' %}
+{% endif %}
+{% set detail_mode = 'multi' %}
+{% set pipeline_kind = 'english_redub' %}
+
+{% block detail_extra %}
+{% include "_separation_card.html" %}
+{% endblock %}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date
 import json
 import mimetypes
@@ -11,10 +12,13 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
+import requests
 from flask import Blueprint, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from appcore import local_media_storage, medias, video_cover_project_store, video_cover_settings
+from appcore.gemini_image import _resolve_apimart_output_params, parse_openrouter_openai_image2_model
+from appcore.llm_provider_configs import get_provider_config
 from appcore.project_state import resolve_project_display_name_conflict, save_project_state
 from appcore.settings import get_retention_hours
 from appcore.task_recovery import try_register_active_task, unregister_active_task
@@ -35,6 +39,7 @@ from appcore.video_cover_generation import (
     resolve_cover_model_selection,
     resolve_text_model_selection,
     video_cover_model_options,
+    _decode_image_response_payload,
 )
 from appcore.video_cover_generation import _fetch_product_image, _product_value
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
@@ -985,7 +990,17 @@ def api_duplicate_project(task_id: str):
         return _json_response({"ok": False, "error": "not found"}, 404)
 
     source_video_path = str(state.get("video_path") or "").strip()
-    video_available = source_video_path and Path(source_video_path).is_file()
+    if not source_video_path:
+        return _json_response({"ok": False, "error": "源视频缺失，无法复制项目。"}, 409)
+    if not Path(source_video_path).is_file():
+        try:
+            from web.services.task_source_video import ensure_local_source_video
+
+            ensure_local_source_video(task_id, state)
+        except Exception:
+            return _json_response({"ok": False, "error": f"源视频缺失: {source_video_path}"}, 409)
+    if not Path(source_video_path).is_file():
+        return _json_response({"ok": False, "error": f"源视频缺失: {source_video_path}"}, 409)
 
     try:
         product_url = _validate_product_url(state.get("product_url") or "")
@@ -1011,17 +1026,16 @@ def api_duplicate_project(task_id: str):
     new_video_path = ""
     thumbnail_path = str(state.get("thumbnail_path") or "").strip()
 
-    if video_available:
-        safe_name = secure_filename_component(original_filename)
-        new_video_path = os.path.join(UPLOAD_DIR, f"{new_task_id}_video_{safe_name}")
-        try:
-            shutil.copy2(source_video_path, new_video_path)
-        except OSError as exc:
-            return _json_response({"ok": False, "error": f"复制源视频失败: {exc}"}, 500)
-        try:
-            thumbnail_path = _extract_card_thumbnail(new_video_path, new_task_dir)
-        except Exception:
-            pass
+    safe_name = secure_filename_component(original_filename)
+    new_video_path = os.path.join(UPLOAD_DIR, f"{new_task_id}_video_{safe_name}")
+    try:
+        shutil.copy2(source_video_path, new_video_path)
+    except OSError as exc:
+        return _json_response({"ok": False, "error": f"复制源视频失败: {exc}"}, 500)
+    try:
+        thumbnail_path = _extract_card_thumbnail(new_video_path, new_task_dir)
+    except Exception:
+        pass
 
     new_product_image_path = os.path.join(new_task_dir, "product_main.jpg")
     try:
@@ -1039,59 +1053,32 @@ def api_duplicate_project(task_id: str):
     image_count = normalize_image_count(state.get("image_count"), default=DEFAULT_IMAGE_COUNT)
     model_defaults = _project_model_defaults(state)
 
-    if video_available:
-        next_state = _initial_state(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            product_url=product_url,
-            video_path=new_video_path,
-            video_filename=original_filename,
-            task_dir=new_task_dir,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            product_title=title,
-            main_image_url=image_url,
-            product_image_path=new_product_image_path,
-            image_count=image_count,
-            model_defaults=model_defaults,
-        )
-        video_cover_project_store.insert_project(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            original_filename=original_filename,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            task_dir=new_task_dir,
-            state=next_state,
-            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
-        )
-        _start_video_cover_background(new_task_id, "video_analysis", image_count)
-    else:
-        # 源视频不可用：深度复制已有状态，保留源项目的所有结果
-        next_state = dict(state)
-        next_state["id"] = new_task_id
-        next_state["user_id"] = int(current_user.id)
-        next_state["display_name"] = display_name
-        next_state["task_dir"] = new_task_dir
-        next_state["video_path"] = ""
-        next_state["video_filename"] = original_filename
-        next_state["product_image_path"] = new_product_image_path
-        product_payload = _product_payload(product_url, title, image_url, new_product_image_path)
-        next_state["product"] = product_payload
-        if thumbnail_path and Path(thumbnail_path).is_file():
-            next_state["thumbnail_path"] = thumbnail_path
-        next_state["model_defaults"] = model_defaults
-
-        video_cover_project_store.insert_project(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            original_filename=original_filename,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            task_dir=new_task_dir,
-            state=next_state,
-            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
-        )
+    next_state = _initial_state(
+        task_id=new_task_id,
+        user_id=int(current_user.id),
+        product_url=product_url,
+        video_path=new_video_path,
+        video_filename=original_filename,
+        task_dir=new_task_dir,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        product_title=title,
+        main_image_url=image_url,
+        product_image_path=new_product_image_path,
+        image_count=image_count,
+        model_defaults=model_defaults,
+    )
+    video_cover_project_store.insert_project(
+        task_id=new_task_id,
+        user_id=int(current_user.id),
+        original_filename=original_filename,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        task_dir=new_task_dir,
+        state=next_state,
+        retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
+    )
+    _start_video_cover_background(new_task_id, "video_analysis", image_count)
 
     return _json_response({
         "ok": True,
@@ -1134,6 +1121,449 @@ def api_default_config():
 def api_save_default_config():
     defaults = video_cover_settings.save_model_defaults(_config_payload_from_request())
     return _json_response({"ok": True, "data": {"steps": defaults}})
+
+
+def _json_safe(value):
+    try:
+        json.dumps(value, ensure_ascii=False)
+        return value
+    except TypeError:
+        pass
+
+    if isinstance(value, dict):
+        safe = {}
+        for key, item in value.items():
+            if isinstance(key, (str, int, float, bool)) or key is None:
+                safe_key = key
+            else:
+                safe_key = str(key)
+            safe[safe_key] = _json_safe(item)
+        return safe
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+def _cover_provider_config_code(provider: str) -> str:
+    normalized = (provider or "").strip()
+    if normalized in {"", "local"}:
+        return "video_cover_local_image"
+    if normalized == "openrouter":
+        return "openrouter_image"
+    if normalized == "apimart":
+        return "apimart_image"
+    if normalized == "gemini_aistudio":
+        return "gemini_aistudio_image"
+    if normalized == "gemini_vertex_adc":
+        return "gemini_vertex_adc_image"
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
+
+
+def _step_debug_request(state: dict, step: str) -> dict:
+    request_payload = ((state.get("step_requests") or {}).get(step)) or {}
+    return request_payload if isinstance(request_payload, dict) else {}
+
+
+def _step_debug_result(state: dict, step: str) -> dict:
+    result_payload = ((state.get("step_results") or {}).get(step)) or {}
+    return result_payload if isinstance(result_payload, dict) else {}
+
+
+def _prompt_index_from_request(default: int = 1) -> int:
+    raw = request.args.get("prompt_index")
+    if raw is None:
+        return default
+    return _parse_prompt_index(raw)
+
+
+def _parse_prompt_index(value) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise VideoCoverGenerationError("prompt_index 非法") from exc
+    if parsed < 1:
+        raise VideoCoverGenerationError("prompt_index 非法")
+    return parsed
+
+
+def _cover_prompt_row(request_payload: dict, prompt_index: int) -> dict:
+    prompts = request_payload.get("image_prompts")
+    if not isinstance(prompts, list):
+        prompts = []
+    if not prompts:
+        prompt = str(request_payload.get("prompt") or "")
+        if prompt_index == 1 and prompt:
+            return {"index": prompt_index, "prompt": prompt}
+        raise VideoCoverGenerationError(f"prompt_index {prompt_index} 不存在")
+    for item in prompts:
+        if not isinstance(item, dict):
+            continue
+        item_index = _parse_prompt_index(item.get("index"))
+        if item_index == prompt_index:
+            return item
+    raise VideoCoverGenerationError(f"prompt_index {prompt_index} 不存在")
+
+
+def _cover_reference_object_key(state: dict) -> str:
+    result = state.get("result") if isinstance(state.get("result"), dict) else {}
+    reference = result.get("reference") if isinstance(result.get("reference"), dict) else {}
+    return str(reference.get("object_key") or "").strip()
+
+
+def _provider_config_values(provider: str) -> tuple[str, str]:
+    cfg = get_provider_config(_cover_provider_config_code(provider))
+    api_key = str(getattr(cfg, "api_key", "") or "").strip() if cfg else ""
+    base_url = str(getattr(cfg, "base_url", "") or "").strip() if cfg else ""
+    return api_key, base_url.rstrip("/")
+
+
+def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str]:
+    normalized = (provider or "").strip()
+    if normalized in {"", "local"}:
+        api_base = base_url or "http://172.30.254.14:82/v1"
+        return f"{api_base.rstrip('/')}/images/edits", "multipart/form-data"
+    if normalized == "openrouter":
+        api_base = base_url or "https://openrouter.ai/api/v1"
+        return f"{api_base.rstrip('/')}/chat/completions", "application/json"
+    if normalized == "apimart":
+        api_base = base_url or "https://api.apimart.ai"
+        return f"{api_base.rstrip('/')}/v1/images/generations", "application/json"
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
+
+
+def _reference_image_summary(object_key: str) -> dict:
+    return {
+        "object_key": object_key,
+        "content_type": "image/png",
+        "data_url": "data:image/png;base64,<reference image bytes>",
+    }
+
+
+def _apimart_output_params_for_reference(object_key: str) -> tuple[str, str, str]:
+    try:
+        path = local_media_storage.safe_local_path_for(object_key)
+        if path and Path(path).is_file():
+            size, resolution = _resolve_apimart_output_params(Path(path).read_bytes())
+            return size, resolution, "local_reference_image"
+    except Exception:
+        pass
+    return "auto", "1k", "fallback_no_local_reference"
+
+
+def _base_cover_request_parts(request_payload: dict, prompt_index: int) -> tuple[str, str, str, str, list]:
+    provider = str(request_payload.get("provider") or "local").strip() or "local"
+    model = str(request_payload.get("model") or request_payload.get("model_id") or "gpt-image-2").strip() or "gpt-image-2"
+    prompt_row = _cover_prompt_row(request_payload, prompt_index)
+    prompt = str(prompt_row.get("prompt") or request_payload.get("prompt") or "")
+    image_prompts = request_payload.get("image_prompts")
+    if not isinstance(image_prompts, list):
+        image_prompts = []
+    return provider, model, prompt, str(prompt_row.get("index") or prompt_index), image_prompts
+
+
+def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: int) -> tuple[dict, dict]:
+    provider, model, prompt, resolved_prompt_index_raw, image_prompts = _base_cover_request_parts(request_payload, prompt_index)
+    api_key, base_url = _provider_config_values(provider)
+    if provider in {"local", "openrouter", "apimart", "gemini_aistudio"} and not api_key:
+        raise VideoCoverGenerationError(f"缺少供应商配置 {_cover_provider_config_code(provider)}.api_key")
+    object_key = _cover_reference_object_key(state)
+    if not object_key:
+        raise VideoCoverGenerationError("缺少 reference image")
+
+    prompt_indexes = [
+        _parse_prompt_index(item.get("index") or idx + 1)
+        for idx, item in enumerate(image_prompts)
+        if isinstance(item, dict)
+    ]
+    resolved_prompt_index = _parse_prompt_index(resolved_prompt_index_raw)
+
+    replay = {
+        "supported": provider == "local",
+        "prompt_index": resolved_prompt_index,
+        "prompt_indexes": prompt_indexes or [prompt_index],
+    }
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    if provider == "local":
+        url, content_type = _cover_full_request_endpoint(provider, base_url)
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": content_type,
+            },
+            "api_key": api_key,
+            "body": {
+                "model": model,
+                "prompt": prompt,
+                "n": "1",
+                "size": "1024x1536",
+            },
+            "files": [{
+                "field": "image",
+                "filename": "reference.png",
+                "content_type": "image/png",
+                "source": object_key,
+            }],
+            "image_prompts": image_prompts,
+        }
+        replay.update({
+            "default_url": url,
+            "default_api_key": api_key,
+        })
+        return full_request, replay
+
+    if provider == "openrouter":
+        url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        openrouter_model = model
+        extra_body = {"usage": {"include": True}}
+        parsed_openrouter_model = parse_openrouter_openai_image2_model(model)
+        if parsed_openrouter_model is not None:
+            openrouter_model, quality = parsed_openrouter_model
+            extra_body["quality"] = quality
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {**headers, "Content-Type": "application/json"},
+            "api_key": api_key,
+            "body": {
+                "model": openrouter_model,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,<reference image bytes>",
+                                "reference_image_object_key": object_key,
+                            },
+                        },
+                    ],
+                }],
+                "modalities": ["image", "text"],
+                "extra_body": extra_body,
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    if provider == "apimart":
+        url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        size, resolution, output_params_source = _apimart_output_params_for_reference(object_key)
+        full_request = {
+            "method": "POST",
+            "url": url,
+            "headers": {**headers, "Content-Type": "application/json"},
+            "api_key": api_key,
+            "body": {
+                "model": model,
+                "prompt": prompt,
+                "n": 1,
+                "size": size,
+                "resolution": resolution,
+                "output_params_source": output_params_source,
+                "image_urls": ["data:image/png;base64,<reference image bytes>"],
+                "reference_image_object_key": object_key,
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    if provider in {"gemini_aistudio", "gemini_vertex_adc"}:
+        full_request = {
+            "method": "SDK",
+            "url": provider,
+            "headers": headers,
+            "api_key": api_key,
+            "body": {
+                "provider": provider,
+                "model": model,
+                "prompt": prompt,
+                "source_image": _reference_image_summary(object_key),
+            },
+            "files": [],
+            "image_prompts": image_prompts,
+        }
+        replay["reason"] = "该供应商暂不支持调试生成"
+        return full_request, replay
+
+    raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
+
+
+def _build_text_full_request(request_payload: dict) -> dict:
+    body = {}
+    if request_payload.get("messages") is not None:
+        body["messages"] = request_payload.get("messages")
+    if request_payload.get("prompt") is not None:
+        body["prompt"] = request_payload.get("prompt")
+    if request_payload.get("request_data") is not None:
+        body["request_data"] = request_payload.get("request_data")
+    return {
+        "method": "SDK",
+        "url": "",
+        "headers": {},
+        "api_key": "",
+        "body": body,
+        "files": [],
+    }
+
+
+def _build_step_debug_payload(task_id: str, state: dict, step: str, prompt_index: int = 1) -> dict:
+    if step not in STEP_ORDER:
+        raise VideoCoverGenerationError(f"未知步骤：{step}")
+    view_state = _state_with_urls(task_id, state)
+    request_payload = _step_debug_request(view_state, step)
+    result_payload = _step_debug_result(view_state, step)
+
+    if step == "cover_generation":
+        full_request, replay = _build_cover_full_request(view_state, request_payload, prompt_index)
+        response_data = dict(view_state.get("result") or {})
+    else:
+        full_request = _build_text_full_request(request_payload)
+        replay = {"supported": False, "reason": "该步骤暂不支持调试生成"}
+        response_data = result_payload.get("structured_result")
+
+    image_prompts = request_payload.get("image_prompts")
+    if not isinstance(image_prompts, list):
+        image_prompts = []
+    return {
+        "step": step,
+        "label": STEP_LABELS.get(step, step),
+        "status": ((view_state.get("steps") or {}).get(step)) or "pending",
+        "request_data": {
+            "request": request_payload,
+            "product": view_state.get("product") or {},
+            "image_count": view_state.get("image_count") or DEFAULT_IMAGE_COUNT,
+            "image_prompts": image_prompts,
+        },
+        "full_request": full_request,
+        "response_data": response_data,
+        "raw_response": result_payload.get("raw_response"),
+        "replay": replay,
+    }
+
+
+def _debug_payload_json_response(payload: dict, status: int = 200):
+    response = _json_response(payload, status)
+    if isinstance(response, tuple):
+        body, status_code = response
+        body.headers["Cache-Control"] = "no-store"
+        body.headers["Pragma"] = "no-cache"
+        return body, status_code
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+def _request_json_payload() -> dict:
+    payload = request.get_json(silent=True) if request.is_json else None
+    return payload if isinstance(payload, dict) else {}
+
+
+def _cover_reference_image_bytes(state: dict) -> tuple[bytes, str, str]:
+    object_key = _cover_reference_object_key(state)
+    if not object_key:
+        raise VideoCoverGenerationError("缺少封面生成参考图，无法调试生成")
+    path = local_media_storage.safe_local_path_for(object_key)
+    if not path.is_file():
+        local_media_storage.download_to(object_key, path)
+    if not path.is_file():
+        raise VideoCoverGenerationError("封面生成参考图文件不存在，无法调试生成")
+    return path.read_bytes(), "image/png", object_key
+
+
+def _post_debug_cover_request(
+    *,
+    request_url: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    image_bytes: bytes,
+    image_mime: str,
+) -> tuple[bytes, str, dict]:
+    if not request_url:
+        raise VideoCoverGenerationError("请填写请求 URL")
+    if not api_key:
+        raise VideoCoverGenerationError("请填写 API key")
+    response = requests.post(
+        request_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        data={"model": model or "gpt-image-2", "prompt": prompt, "n": "1", "size": "1024x1536"},
+        files={"image": ("reference.png", image_bytes, image_mime or "image/png")},
+        timeout=360,
+    )
+    try:
+        raw_response = response.json()
+    except Exception:
+        raw_response = {"text": str(getattr(response, "text", "") or "")}
+    if getattr(response, "status_code", 0) >= 400:
+        message = ""
+        if isinstance(raw_response, dict):
+            message = str(raw_response.get("error") or raw_response.get("message") or "")
+        message = message or str(getattr(response, "text", "") or "")
+        raise VideoCoverGenerationError(f"调试生成失败（HTTP {response.status_code}）：{message}")
+    image, mime = _decode_image_response_payload(raw_response)
+    return image, mime, raw_response
+
+
+@bp.route("/video-cover/api/<task_id>/debug-payload/<step>", methods=["GET"])
+@login_required
+@superadmin_required
+def api_debug_payload(task_id: str, step: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return _debug_payload_json_response({"ok": False, "error": "not found"}, 404)
+    try:
+        payload = _build_step_debug_payload(task_id, state, step, _prompt_index_from_request())
+    except VideoCoverGenerationError as exc:
+        return _debug_payload_json_response({"ok": False, "error": str(exc)}, 400)
+    return _debug_payload_json_response({"ok": True, "data": _json_safe(payload)})
+
+
+@bp.route("/video-cover/api/<task_id>/debug-replay/<step>", methods=["POST"])
+@login_required
+@superadmin_required
+def api_debug_replay(task_id: str, step: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return _json_response({"ok": False, "error": "not found"}, 404)
+    if step != "cover_generation":
+        return _json_response({"ok": False, "error": "该步骤暂不支持调试生成"}, 400)
+    payload = _request_json_payload()
+    try:
+        prompt_index = _parse_prompt_index(payload.get("prompt_index") or 1)
+        request_payload = _step_debug_request(state, step)
+        provider = str(request_payload.get("provider") or "local").strip() or "local"
+        if provider != "local":
+            return _json_response({"ok": False, "error": "该供应商暂不支持调试生成"}, 400)
+        prompt_row = _cover_prompt_row(request_payload, prompt_index)
+        prompt = str(prompt_row.get("prompt") or request_payload.get("prompt") or "")
+        model = str(request_payload.get("model") or request_payload.get("model_id") or "gpt-image-2")
+        image_bytes, image_mime, _object_key = _cover_reference_image_bytes(state)
+        generated, mime, raw_response = _post_debug_cover_request(
+            request_url=str(payload.get("request_url") or "").strip(),
+            api_key=str(payload.get("api_key") or "").strip(),
+            model=model,
+            prompt=prompt,
+            image_bytes=image_bytes,
+            image_mime=image_mime,
+        )
+    except VideoCoverGenerationError as exc:
+        return _json_response({"ok": False, "error": str(exc)}, 400)
+    data_url = f"data:{mime or 'image/png'};base64,{base64.b64encode(generated).decode('ascii')}"
+    return _json_response({
+        "ok": True,
+        "image": {"data_url": data_url, "mime": mime or "image/png"},
+        "raw_response": raw_response,
+        "request_url": str(payload.get("request_url") or "").strip(),
+        "prompt_index": prompt_index,
+    })
 
 
 @bp.route("/video-cover/api/<task_id>/run/<step>", methods=["POST"])

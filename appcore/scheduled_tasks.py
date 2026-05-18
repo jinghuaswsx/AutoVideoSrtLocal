@@ -133,19 +133,35 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "dianxiaomi_listing_ranking_sync": {
         "code": "dianxiaomi_listing_ranking_sync",
-        "name": "店小秘 Listing 销量 Top1000",
+        "name": "店小秘 Listing 近7天有销量全量归档",
         "description": (
-            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 天；每一天都按单日 "
-            "beginDate=endDate 锁定榜单，按 paidProductCount 倒序采集 Listing 销量前 1000 名，"
-            "写入 dianxiaomi_rankings；"
-            "回补模式从 2026-04-23 起把不足 1000 条的日期视为缺失。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-12-dianxiaomi-listing-ranking-sync.md"
+            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 个快照日；"
+            "每个 snapshot_date 代表截至当日的近 7 天窗口，按 paidProductCount 倒序全量采集有销量 Listing，"
+            "写入 dianxiaomi_rankings；回补模式不再使用 1000 条阈值。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md"
         ),
         "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-listing-ranking-sync.timer",
         "runner": "tools/dianxiaomi_listing_ranking_sync.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
+    "mingkong_material_daily_snapshot": {
+        "code": "mingkong_material_daily_snapshot",
+        "name": "明空素材每日快照",
+        "description": (
+            "每天 06:00 读取店小秘 Listing 最新可用快照 Top300 产品 code，"
+            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前100。"
+            "Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-mingkong-daily-material-snapshot-top100-design.md"
+        ),
+        "schedule": "每天 06:00（北京时间，跑完前300产品后结束）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-material-daily-snapshot.timer",
+        "runner": "tools/mingkong_material_daily_snapshot.py",
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
@@ -299,9 +315,10 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖文案翻译",
         "description": (
             "每 10 分钟扫描 Meta 热帖下方视频文案中尚未生成中文缓存的记录，"
-            "每轮最多 50 条，逐条调用 LLM 翻译为简体中文并写回 message_zh_html；"
-            "页面优先展示中文缓存，原始英文仍保留在 message_html。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-14-meta-hot-posts-message-translation-design.md"
+            "每轮最多 30 条，任务之间不额外停顿；"
+            "逐条调用可单独配置的 LLM 翻译为简体中文并写回 message_zh_html；"
+            "页面优先展示中文缓存，原始英文仍保留在 message_html。默认使用 OpenRouter Gemini 3 Flash。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-translate-model-and-schedule-design.md"
         ),
         "schedule": "每 10 分钟",
         "source_type": "apscheduler",
@@ -316,7 +333,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖视频本地化",
         "description": (
             "每 10 分钟串行下载 Meta 热帖中尚未本地化的视频，默认每轮最多 30 条；"
-            "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载结果写回 local_video_* 字段。"
+            "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载、时长、首帧封面结果写回 local_video_* 字段。"
             "失败视频至少 12 小时后才重试，最多尝试 5 次，仍失败则标记 unavailable；"
             "页面优先使用本地 MP4，缺失时回退 Facebook iframe。Docs-anchor: "
             "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md"
@@ -333,7 +350,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_hot_posts_tos_video_sync_tick",
         "name": "Meta 热帖视频 TOS 同步",
         "description": (
-            "每 10 分钟扫描已本地化的 Meta 热帖投放视频，按 OUTPUT_DIR 解析 local_video_path，"
+            "每 10 分钟扫描已本地化的 Meta 热帖投放视频和封面，按 OUTPUT_DIR 解析 local_video_path/local_video_cover_path，"
             "复用 TOS/NAS 备份 reconcile 逻辑把缺失对象上传到 TOS；"
             "也可通过 tools/meta_hot_posts_tos_sync.py 手工回填。Docs-anchor: "
             "docs/superpowers/specs/2026-05-16-meta-hot-posts-tos-video-sync-design.md"

@@ -121,9 +121,26 @@
 .vcd-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.44); padding:22px; }
 .vcd-modal-backdrop.show { display:flex; }
 .vcd-modal { width:min(920px, 100%); max-height:88vh; overflow:auto; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); box-shadow:0 18px 48px rgba(15,23,42,.24); }
+.vcd-prompt-debug-modal { width:min(80vw, 1600px); max-height:90vh; display:grid; grid-template-rows:auto minmax(0, 1fr); overflow:hidden; }
 .vcd-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border-main); }
 .vcd-modal-title { font-size:15px; font-weight:900; color:var(--text-main); }
 .vcd-modal-body { padding:16px; }
+.vcd-prompt-debug-body { min-height:0; overflow:auto; display:grid; gap:12px; padding:14px 16px 16px; }
+.vcd-tab-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.vcd-tab-btn { height:30px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-size:12px; font-weight:900; cursor:pointer; }
+.vcd-tab-btn.active { border-color:var(--primary-color); background:var(--primary-color); color:#f8fafc; }
+.vcd-debug-panel { display:none; min-width:0; }
+.vcd-debug-panel.active { display:grid; gap:12px; }
+.vcd-debug-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
+.vcd-debug-card { min-width:0; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; }
+.vcd-debug-label { margin-bottom:6px; font-size:11px; font-weight:900; color:#64748b; }
+.vcd-debug-value { font-size:12px; line-height:1.5; color:var(--text-main); white-space:pre-wrap; overflow-wrap:anywhere; }
+.vcd-debug-form { display:grid; grid-template-columns:minmax(240px, 1fr) minmax(180px, 280px) auto; gap:10px; align-items:end; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:12px; }
+.vcd-debug-field { display:grid; gap:5px; min-width:0; }
+.vcd-debug-field label { font-size:11px; font-weight:900; color:#64748b; }
+.vcd-debug-field input { height:32px; border:1px solid var(--border-main); border-radius:8px; padding:0 10px; font-size:12px; color:var(--text-main); background:var(--bg-card); }
+.vcd-debug-result { display:grid; gap:10px; }
+.vcd-debug-result img { width:min(260px, 100%); aspect-ratio:9/16; object-fit:cover; border:1px solid var(--border-main); border-radius:8px; background:#e5e7eb; }
 .vcd-pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:#0f172a; color:#e5e7eb; }
 @media (max-width:1080px) {
   .vcd-project-grid { grid-template-columns:1fr; }
@@ -137,6 +154,8 @@
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
   .vcd-progress-steps, .vcd-field-grid { grid-template-columns:1fr; }
   .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
+  .vcd-prompt-debug-modal { width:min(96vw, 100%); }
+  .vcd-debug-form { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -263,13 +282,50 @@
 </div>
 
 <div class="vcd-modal-backdrop" id="vcdPromptModal">
-  <div class="vcd-modal">
+  <div class="vcd-modal vcd-prompt-debug-modal">
     <div class="vcd-modal-head">
       <div class="vcd-modal-title" id="vcdPromptTitle">提示词</div>
       <button class="btn btn-ghost btn-sm" type="button" id="vcdPromptClose">关闭</button>
     </div>
-    <div class="vcd-modal-body">
-      <pre class="vcd-pre" id="vcdPromptBody"></pre>
+    <div class="vcd-prompt-debug-body">
+      <div class="vcd-tab-row" role="tablist" aria-label="提示词调试">
+        <button class="vcd-tab-btn active" type="button" data-prompt-root-tab="request">请求</button>
+        <button class="vcd-tab-btn" type="button" data-prompt-root-tab="result">结果</button>
+      </div>
+
+      <section class="vcd-debug-panel active" data-prompt-root-panel="request">
+        <div class="vcd-tab-row" role="tablist" aria-label="请求明细">
+          <button class="vcd-tab-btn active" type="button" data-prompt-subtab="request-data">请求数据</button>
+          <button class="vcd-tab-btn" type="button" data-prompt-subtab="full-request">完整报文</button>
+        </div>
+        <div class="vcd-debug-panel active" data-prompt-subpanel="request-data" id="vcdPromptRequestData"></div>
+        <div class="vcd-debug-panel" data-prompt-subpanel="full-request">
+          <pre class="vcd-pre" id="vcdPromptFullRequest"></pre>
+          <div class="vcd-debug-form" id="vcdDebugReplayForm">
+            <div class="vcd-debug-field">
+              <label for="vcdDebugRequestUrl">请求 URL</label>
+              <input id="vcdDebugRequestUrl" type="text" autocomplete="off">
+            </div>
+            <div class="vcd-debug-field">
+              <label for="vcdDebugApiKey">API key</label>
+              <input id="vcdDebugApiKey" type="text" autocomplete="off">
+            </div>
+            <button class="btn btn-primary" type="button" id="vcdDebugReplayBtn">调试生成</button>
+          </div>
+          <div class="vcd-debug-result" id="vcdDebugReplayResult"></div>
+        </div>
+      </section>
+
+      <section class="vcd-debug-panel" data-prompt-root-panel="result">
+        <div class="vcd-tab-row" role="tablist" aria-label="结果明细">
+          <button class="vcd-tab-btn active" type="button" data-prompt-subtab="response-data">返回数据</button>
+          <button class="vcd-tab-btn" type="button" data-prompt-subtab="raw-response">返回结果报文</button>
+        </div>
+        <div class="vcd-debug-panel active" data-prompt-subpanel="response-data" id="vcdPromptResponseData"></div>
+        <div class="vcd-debug-panel" data-prompt-subpanel="raw-response">
+          <pre class="vcd-pre" id="vcdPromptRawResponse"></pre>
+        </div>
+      </section>
     </div>
   </div>
 </div>
@@ -286,9 +342,18 @@
   const errorBox = document.getElementById('vcdError');
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
-  const modalBody = document.getElementById('vcdPromptBody');
+  const promptRequestData = document.getElementById('vcdPromptRequestData');
+  const promptFullRequest = document.getElementById('vcdPromptFullRequest');
+  const promptResponseData = document.getElementById('vcdPromptResponseData');
+  const promptRawResponse = document.getElementById('vcdPromptRawResponse');
+  const debugRequestUrl = document.getElementById('vcdDebugRequestUrl');
+  const debugApiKey = document.getElementById('vcdDebugApiKey');
+  const debugReplayBtn = document.getElementById('vcdDebugReplayBtn');
+  const debugReplayResult = document.getElementById('vcdDebugReplayResult');
   const allPayloadModal = document.getElementById('vcdAllPayloadModal');
   const allPayloadBody = document.getElementById('vcdAllPayloadBody');
+  let currentPromptStep = '';
+  let currentDebugPayload = null;
 
   // 事件监听器已绑定标记，避免重复绑定
   let eventListenersBound = false;
@@ -381,6 +446,68 @@
     if (value == null || value === '') return '';
     if (typeof value === 'string') return value;
     try { return JSON.stringify(value, null, 2); } catch (e) { return String(value); }
+  }
+  function debugCard(label, value) {
+    const text = typeof value === 'string' ? value : compactJson(value);
+    if (!text) return '';
+    return `<div class="vcd-debug-card"><div class="vcd-debug-label">${escapeHtml(label)}</div><div class="vcd-debug-value">${escapeHtml(text)}</div></div>`;
+  }
+  function renderDebugGrid(items) {
+    const html = items.map(([label, value]) => debugCard(label, value)).filter(Boolean).join('');
+    return html ? `<div class="vcd-debug-grid">${html}</div>` : '<div class="vcd-empty">暂无数据。</div>';
+  }
+  function renderRequestData(data) {
+    const requestData = data.request_data || {};
+    const request = requestData.request || {};
+    const product = requestData.product || {};
+    const imagePrompts = requestData.image_prompts || [];
+    return renderDebugGrid([
+      ['步骤', data.label || data.step],
+      ['状态', data.status || 'pending'],
+      ['供应商', request.provider || ''],
+      ['模型', request.model || request.model_id || ''],
+      ['执行方式', request.execution_mode || (request.request_data || {}).execution_mode || ''],
+      ['商品标题', product.title || ''],
+      ['商品链接', product.product_url || currentState.product_url || ''],
+      ['请求输入', request.request_data || {}],
+      ['Prompt', request.prompt || ''],
+      ['Messages', request.messages || ''],
+      ['图片 Prompt', imagePrompts]
+    ]);
+  }
+  function renderResponseData(data) {
+    return renderDebugGrid([
+      ['步骤', data.label || data.step],
+      ['返回数据', data.response_data || {}],
+      ['原始返回', data.raw_response || {}],
+      ['模型', (((currentState.models || {})[data.step]) || {})],
+      ['耗时', (((currentState.step_timing || {})[data.step]) || {})]
+    ]);
+  }
+  function setPromptRootTab(name) {
+    document.querySelectorAll('[data-prompt-root-tab]').forEach(btn => btn.classList.toggle('active', btn.dataset.promptRootTab === name));
+    document.querySelectorAll('[data-prompt-root-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.promptRootPanel === name));
+  }
+  function setPromptSubTab(name) {
+    document.querySelectorAll('[data-prompt-subtab]').forEach(btn => btn.classList.toggle('active', btn.dataset.promptSubtab === name));
+    document.querySelectorAll('[data-prompt-subpanel]').forEach(panel => panel.classList.toggle('active', panel.dataset.promptSubpanel === name));
+  }
+  function fillPromptModal(data) {
+    currentDebugPayload = data;
+    promptRequestData.innerHTML = renderRequestData(data);
+    promptFullRequest.textContent = compactJson(data.full_request || {});
+    promptResponseData.innerHTML = renderResponseData(data);
+    promptRawResponse.textContent = compactJson({raw_response: data.raw_response || {}, response_data: data.response_data || {}});
+    debugRequestUrl.value = ((data.replay || {}).default_url) || ((data.full_request || {}).url) || '';
+    debugApiKey.value = ((data.replay || {}).default_api_key) || ((data.full_request || {}).api_key) || '';
+    debugReplayBtn.disabled = !((data.replay || {}).supported);
+    debugReplayResult.innerHTML = (data.replay || {}).supported ? '' : '<div class="vcd-empty">该步骤暂不支持调试生成。</div>';
+  }
+  async function loadDebugPayload(step) {
+    const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/debug-payload/${encodeURIComponent(step)}`, {cache: 'no-store'});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || '调试报文加载失败');
+    return payload.data || {};
   }
   function getStepResult(step) {
     return (currentState.step_results || {})[step] || {};
@@ -609,12 +736,48 @@
     try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
   }
-  function openPrompt(step) {
-    const request = ((currentState.step_requests || {})[step]) || {};
-    const result = ((currentState.step_results || {})[step]) || {};
+  async function openPrompt(step) {
+    currentPromptStep = step;
     modalTitle.textContent = `${STEP_LABELS[step] || step}提示词`;
-    modalBody.textContent = compactJson({request, result});
+    setPromptRootTab('request');
+    setPromptSubTab('request-data');
+    promptRequestData.innerHTML = '<div class="vcd-empty">正在加载请求数据</div>';
+    promptFullRequest.textContent = '';
+    promptResponseData.innerHTML = '';
+    promptRawResponse.textContent = '';
+    debugRequestUrl.value = '';
+    debugApiKey.value = '';
+    debugReplayBtn.disabled = true;
+    debugReplayResult.innerHTML = '';
     modal.classList.add('show');
+    try {
+      fillPromptModal(await loadDebugPayload(step));
+    } catch (e) {
+      promptRequestData.innerHTML = `<div class="vcd-empty">调试报文加载失败：${escapeHtml(e.message || e)}</div>`;
+    }
+  }
+  async function runDebugReplay() {
+    if (!currentPromptStep) return;
+    debugReplayBtn.disabled = true;
+    debugReplayResult.innerHTML = '<div class="vcd-empty">正在调试生成</div>';
+    try {
+      const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/debug-replay/${encodeURIComponent(currentPromptStep)}`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          request_url: debugRequestUrl.value,
+          api_key: debugApiKey.value,
+          prompt_index: ((currentDebugPayload || {}).replay || {}).prompt_index || 1
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '调试生成失败');
+      debugReplayResult.innerHTML = `<img src="${escapeHtml((payload.image || {}).data_url || '')}" alt="调试生成结果"><pre class="vcd-pre">${escapeHtml(compactJson(payload.raw_response || {}))}</pre>`;
+    } catch (e) {
+      debugReplayResult.innerHTML = `<div class="vcd-empty">调试生成失败：${escapeHtml(e.message || e)}</div>`;
+    } finally {
+      debugReplayBtn.disabled = !(((currentDebugPayload || {}).replay || {}).supported);
+    }
   }
   function stepPayload(step) {
     return {
@@ -705,6 +868,12 @@
 
     // 提示词按钮
     document.querySelectorAll('[data-prompt-step]').forEach(btn => btn.addEventListener('click', () => openPrompt(btn.dataset.promptStep)));
+    document.querySelectorAll('[data-prompt-root-tab]').forEach(btn => btn.addEventListener('click', () => {
+      setPromptRootTab(btn.dataset.promptRootTab);
+      setPromptSubTab(btn.dataset.promptRootTab === 'result' ? 'response-data' : 'request-data');
+    }));
+    document.querySelectorAll('[data-prompt-subtab]').forEach(btn => btn.addEventListener('click', () => setPromptSubTab(btn.dataset.promptSubtab)));
+    debugReplayBtn.addEventListener('click', runDebugReplay);
 
     // 全部报文预览
     document.querySelector('[data-all-payload-preview]').addEventListener('click', openAllPayloads);
@@ -714,6 +883,12 @@
     document.getElementById('vcdAllPayloadClose').addEventListener('click', () => allPayloadModal.classList.remove('show'));
     modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('show'); });
     allPayloadModal.addEventListener('click', event => { if (event.target === allPayloadModal) allPayloadModal.classList.remove('show'); });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        modal.classList.remove('show');
+        allPayloadModal.classList.remove('show');
+      }
+    });
 
     // 复制文案按钮（事件委托）
     document.addEventListener('click', (e) => {

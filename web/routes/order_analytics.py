@@ -372,7 +372,10 @@ def ad_summary():
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
     q = (request.args.get("q") or "").strip() or None
-    return _json_response(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date, q=q)))
+    ad_account_id = (request.args.get("ad_account_id") or "").strip() or None
+    return _json_response(_json_safe(
+        oa.get_meta_ad_summary(batch_id, start_date, end_date, q=q, ad_account_id=ad_account_id)
+    ))
 
 
 # ── 三级 tab：Campaign / Ad Set / Ad ────────────────────
@@ -404,6 +407,7 @@ def ads_level_list():
             sort_by=(request.args.get("sort_by") or "spend_usd").strip(),
             sort_dir=(request.args.get("sort_dir") or "desc").strip(),
             q=(request.args.get("q") or "").strip() or None,
+            ad_account_id=(request.args.get("ad_account_id") or "").strip() or None,
         )
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400
@@ -455,6 +459,7 @@ def ads_level_detail():
             code=code,
             start_date=(request.args.get("start_date") or "").strip() or None,
             end_date=(request.args.get("end_date") or "").strip() or None,
+            ad_account_id=(request.args.get("ad_account_id") or "").strip() or None,
         )
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400

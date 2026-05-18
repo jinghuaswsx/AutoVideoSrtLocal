@@ -40,7 +40,7 @@ from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
 )
-from web.auth import admin_required, permission_required
+from web.auth import permission_required
 
 log = logging.getLogger(__name__)
 
@@ -292,12 +292,16 @@ def _is_superadmin_user() -> bool:
     return getattr(current_user, "is_superadmin", False)
 
 
+def _is_admin_user() -> bool:
+    return getattr(current_user, "is_admin", False)
+
+
 def _task_belongs_to_current_user(task: dict) -> bool:
     return str(task.get("_user_id")) == str(getattr(current_user, "id", ""))
 
 
 def _can_view_task(task: dict) -> bool:
-    if _task_belongs_to_current_user(task) or _is_superadmin_user():
+    if _task_belongs_to_current_user(task) or _is_admin_user():
         return True
     return bool(task.get("visible_to_all"))
 
@@ -324,9 +328,10 @@ def _query_viewable_project(
         task_id,
         "omni_translate",
         user_id=current_user.id,
-        is_admin=_is_superadmin_user(),
+        is_admin=_is_admin_user(),
         columns=columns,
         include_deleted=include_deleted,
+        include_visible_to_all=True,
         query_one_func=db_query_one,
     )
 
@@ -337,6 +342,17 @@ def _multi_translate_creator_name_expr() -> str:
     except Exception:
         log.warning("[omni_translate] resolve creator name expr failed; fallback to username", exc_info=True)
         return "u.username"
+
+
+def _parse_user_filter_id() -> int | None:
+    raw = (request.args.get("user_id") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 # ── 页面路由 ──────────────────────────────────────────
@@ -353,6 +369,15 @@ def index():
         lang = ""
 
     owner_name_expr = _multi_translate_creator_name_expr()
+    show_user_filter = _is_superadmin_user()
+    current_user_filter = _parse_user_filter_id() if show_user_filter else None
+    user_filter_options = []
+    if show_user_filter:
+        user_filter_options = translation_route_store.list_project_creators(
+            project_type="omni_translate",
+            owner_name_expr=owner_name_expr,
+            query_func=db_query,
+        )
 
     rows = translation_route_store.list_projects_with_creator(
         user_id=current_user.id,
@@ -360,6 +385,8 @@ def index():
         is_admin=_is_superadmin_user(),
         owner_name_expr=owner_name_expr,
         target_lang=lang,
+        filter_user_id=current_user_filter,
+        include_visible_to_all=True,
         query_func=db_query,
     )
     for row in rows:
@@ -377,6 +404,9 @@ def index():
         projects=rows, now=datetime.now(),
         current_lang=lang,
         filter_langs=filter_langs,
+        show_user_filter=show_user_filter,
+        current_user_filter=current_user_filter,
+        user_filter_options=user_filter_options,
         supported_langs=_list_enabled_target_langs(),
         retention_hours=get_retention_hours("omni_translate"),
     )
@@ -903,7 +933,7 @@ RESUMABLE_STEPS = [
 
 @bp.route("/api/omni-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
-@admin_required
+@permission_required("omni_translate")
 def set_loudness_profile(task_id):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)

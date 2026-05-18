@@ -2579,6 +2579,7 @@ class PipelineRunner:
 
         import shutil
         from appcore.audio_loudness import (
+            clean_electronic_background,
             measure_integrated_lufs,
             mix_with_background,
             normalize_to_lufs,
@@ -2618,6 +2619,33 @@ class PipelineRunner:
             profile_summary["background_boost"] = dict(profile_summary["background_boost"])
             if "effective_volume" in profile_summary["background_boost"]:
                 profile_summary["background_boost"]["effective_volume"] = effective_bg_volume
+        if isinstance(profile_summary.get("background_suppression"), dict):
+            profile_summary["background_suppression"] = dict(profile_summary["background_suppression"])
+            if "effective_volume" in profile_summary["background_suppression"]:
+                profile_summary["background_suppression"]["effective_volume"] = effective_bg_volume
+        if isinstance(profile_summary.get("background_cleanup"), dict):
+            profile_summary["background_cleanup"] = dict(profile_summary["background_cleanup"])
+
+        accompaniment_for_mix = accompaniment_path
+        cleaned_accompaniment_path = None
+        cleanup_summary = profile_summary.get("background_cleanup") or {}
+        if cleanup_summary.get("enabled"):
+            cleanup_path = os.path.join(loudness_dir, "accompaniment.clean.wav")
+            try:
+                cleaned_accompaniment_path = clean_electronic_background(
+                    accompaniment_path,
+                    cleanup_path,
+                )
+                accompaniment_for_mix = cleaned_accompaniment_path
+                cleanup_summary["status"] = "done"
+                cleanup_summary["path"] = cleaned_accompaniment_path
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[loudness_match] background cleanup failed, using original accompaniment: %s",
+                    exc,
+                )
+                cleanup_summary["status"] = "failed"
+                cleanup_summary["error"] = str(exc)[:200]
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
@@ -2649,7 +2677,7 @@ class PipelineRunner:
                 if algorithm == "B":
                     b_summary = self._b_overall_match(
                         audio_path=audio_path,
-                        accompaniment_path=accompaniment_path,
+                        accompaniment_path=accompaniment_for_mix,
                         video_lufs=float(video_lufs),
                         bg_volume=effective_bg_volume,
                         loudness_dir=loudness_dir,
@@ -2733,6 +2761,8 @@ class PipelineRunner:
             "effective_background_volume": effective_bg_volume,
             "background_boost": profile_summary["background_boost"],
             "manual_boost": profile_summary["manual_boost"],
+            "background_suppression": profile_summary["background_suppression"],
+            "background_cleanup": profile_summary["background_cleanup"],
             "variants": summaries,
         }
         # 暴露 background_volume 给 UI（前端 separation_card 直接读）
@@ -2740,6 +2770,8 @@ class PipelineRunner:
         separation["effective_background_volume"] = effective_bg_volume
         if accompaniment_lufs is not None:
             separation["accompaniment_lufs"] = accompaniment_lufs
+        if cleaned_accompaniment_path:
+            separation["cleaned_accompaniment_path"] = cleaned_accompaniment_path
         task_state.update(task_id, separation=separation)
 
         if summaries:
@@ -2913,9 +2945,30 @@ class PipelineRunner:
             "converged": result.converged,
         }
 
+    def _ensure_audio_path_for_asr(self, task_id: str, task_dir: str) -> str:
+        """Make resume-from-ASR idempotent when extracted audio is missing."""
+        task = task_state.get(task_id) or {}
+        audio_path = str(task.get("audio_path") or "").strip()
+        if audio_path and os.path.isfile(audio_path):
+            return audio_path
+
+        video_path = str(task.get("video_path") or "").strip()
+        if not video_path:
+            raise RuntimeError("语音识别缺少源视频路径，无法补齐 audio_path，请重新上传源视频")
+        if not os.path.isfile(video_path):
+            raise RuntimeError(f"语音识别缺少本地源视频，无法补齐 audio_path: {video_path}")
+
+        self._step_extract(task_id, video_path, task_dir)
+        refreshed = task_state.get(task_id) or {}
+        rebuilt_audio_path = str(refreshed.get("audio_path") or "").strip()
+        if rebuilt_audio_path and os.path.isfile(rebuilt_audio_path):
+            return rebuilt_audio_path
+        raise RuntimeError("语音识别所需音频提取失败，请从「音频提取」步骤重新开始")
+
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
-        audio_path = task["audio_path"]
+        audio_path = self._ensure_audio_path_for_asr(task_id, task_dir)
+        task = task_state.get(task_id) or task
         from pipeline.extract import get_video_duration
         from appcore import asr_router
         from pipeline.lang_labels import lang_label
@@ -3560,7 +3613,11 @@ class PipelineRunner:
         独立 accompaniment 音轨让用户能在编辑器里单独调音量。
         """
         from pipeline import audio_separation as sep
-        from appcore.audio_loudness import mix_with_background
+        from appcore.audio_loudness import (
+            LOUDNESS_PROFILE_CLEAN_BACKGROUND,
+            clean_electronic_background,
+            mix_with_background,
+        )
 
         task = task_state.get(task_id) or {}
         separation = task.get("separation") or {}
@@ -3591,18 +3648,48 @@ class PipelineRunner:
 
         # 没有 post_mix（A 算法 / loudness_match 跳过）→ 现场 mix
         settings = sep.load_settings()
-        background_volume = float(
-            separation.get("effective_background_volume")
-            or separation.get("background_volume")
-            or settings.background_volume
+        background_volume_value = separation.get("effective_background_volume")
+        if background_volume_value is None:
+            background_volume_value = separation.get("background_volume")
+        if background_volume_value is None:
+            background_volume_value = settings.background_volume
+        background_volume = float(background_volume_value)
+        background_path = separation["accompaniment_path"]
+        cleanup = tl.get("background_cleanup") or {}
+        profile = task.get("loudness_profile") or tl.get("profile")
+        cleanup_enabled = (
+            profile == LOUDNESS_PROFILE_CLEAN_BACKGROUND
+            or bool(cleanup.get("enabled"))
         )
+        if cleanup_enabled:
+            cleaned_path = separation.get("cleaned_accompaniment_path")
+            if not cleaned_path or not os.path.isfile(cleaned_path):
+                cleaned_path = os.path.join(
+                    task_dir, f"background_clean.{variant}.wav",
+                )
+                try:
+                    cleaned_path = clean_electronic_background(
+                        separation["accompaniment_path"],
+                        cleaned_path,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "[compose] background cleanup failed, using original accompaniment: %s",
+                        exc,
+                    )
+                    cleaned_path = None
+            if cleaned_path and os.path.isfile(cleaned_path):
+                background_path = cleaned_path
+                separation = dict(separation)
+                separation["cleaned_accompaniment_path"] = cleaned_path
+                task_state.update(task_id, separation=separation)
         mixed_path = os.path.join(
             task_dir, f"final_audio_mixed.{variant}.wav",
         )
         try:
             mix_with_background(
                 main_path=tts_audio_path,
-                background_path=separation["accompaniment_path"],
+                background_path=background_path,
                 output_path=mixed_path,
                 background_volume=background_volume,
                 duration="longest",

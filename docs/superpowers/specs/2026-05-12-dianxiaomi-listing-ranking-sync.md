@@ -2,6 +2,9 @@
 
 Last updated: 2026-05-12
 
+Superseded for new collection behavior by `2026-05-18-dianxiaomi-full-listing-archive-design.md`.
+This document remains the historical record for the original Top1000 implementation and DXM endpoint discovery.
+
 ## Goal
 
 Mingkong selection uses Dianxiaomi DXM02-MK browser state to collect the Listing sales ranking. The ranking source is Dianxiaomi's `Listing销量` page:

@@ -44,6 +44,7 @@
   const selectionText = document.getElementById("vs-selection-text");
   const launchBtn = document.getElementById("vs-launch-btn");
   const searchInput = document.getElementById("vs-search");
+  const voiceSelect = document.getElementById("vs-voice-select");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
 
@@ -431,6 +432,10 @@
       candidatesMap.clear();
       (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
       selectedVoiceId = data.selected_voice_id || null;
+      if (selectedVoiceId && !selectedVoiceName) {
+        const selected = allItems.find(v => v.voice_id === selectedVoiceId);
+        selectedVoiceName = selected ? (selected.name || selected.voice_id) : null;
+      }
 
       const n = (data.candidates || []).length;
       const ready = !!data.voice_match_ready;
@@ -476,7 +481,7 @@
   }
 
   function rowHtml(v, opts) {
-    const { badge, pinClass, isSelected } = opts;
+    const { badge, pinClass, isSelected, rec } = opts;
     const classes = ["vs-row"];
     if (pinClass) classes.push(pinClass);
     if (isSelected) classes.push("selected");
@@ -486,12 +491,14 @@
     const preview = previewUrl
       ? `<audio controls preload="none" src="${escapeHtml(previewUrl)}"></audio>`
       : "";
+    const speedMeta = voiceSpeedMetaHtml(rec);
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
            data-voice-name="${escapeHtml(v.name || '')}">
         <div class="vs-row-main">
           <div class="vs-row-name">${badge || ""}${escapeHtml(v.name || v.voice_id)}</div>
           <div class="vs-row-meta">${meta}</div>
+          ${speedMeta}
         </div>
         ${preview}
         <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
@@ -499,7 +506,48 @@
     `;
   }
 
-  function render(waitingProgress) {
+  function fmtRate(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n.toFixed(2) : null;
+  }
+
+  function fmtScore(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? `${(n * 100).toFixed(0)}%` : null;
+  }
+
+  function voiceSpeedMetaHtml(rec) {
+    if (!rec) return "";
+    const status = String(rec.voice_speed_status || "");
+    const sourceRate = fmtRate(rec.source_words_per_second);
+    const previewRate = fmtRate(rec.preview_words_per_second);
+    const speedScore = fmtScore(rec.speed_match_score);
+    const combinedScore = fmtScore(rec.combined_score);
+    if (!previewRate || status === "missing_preview_rate") {
+      const sourceText = sourceRate ? `原视频 ${escapeHtml(sourceRate)} 词/秒 · ` : "";
+      return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，已按音色排序</div>`;
+    }
+    return `
+      <div class="vs-row-speed">
+        ${sourceRate ? `<span>原视频 ${escapeHtml(sourceRate)} 词/秒</span>` : ""}
+        <span>Preview ${escapeHtml(previewRate)} 词/秒</span>
+        ${speedScore ? `<span>语速匹配 ${escapeHtml(speedScore)}</span>` : ""}
+        ${combinedScore ? `<span>综合 ${escapeHtml(combinedScore)}</span>` : ""}
+      </div>
+    `;
+  }
+
+  function sortedVoiceRows() {
+    return allItems.map(v => {
+      const rec = candidatesMap.get(v.voice_id);
+      return { v, rec, sim: rec ? rec.similarity : -1 };
+    }).sort((a, b) => {
+      if (a.sim !== b.sim) return b.sim - a.sim;
+      return (a.v.name || "").localeCompare(b.v.name || "");
+    });
+  }
+
+  function filteredVoiceRows() {
     const q = (searchInput.value || "").trim().toLowerCase();
     const gender = activeGender;
     const onlyRec = recommendedOnly.checked;
@@ -514,18 +562,60 @@
       return true;
     };
 
-    const withSort = allItems.map(v => {
-      const rec = candidatesMap.get(v.voice_id);
-      return { v, rec, sim: rec ? rec.similarity : -1 };
-    }).sort((a, b) => {
-      if (a.sim !== b.sim) return b.sim - a.sim;
-      return (a.v.name || "").localeCompare(b.v.name || "");
-    });
-
-    const filtered = withSort.filter(({ v, rec }) => {
+    return sortedVoiceRows().filter(({ v, rec }) => {
       if (onlyRec && !rec) return false;
       return applyFilter(v);
     });
+  }
+
+  function voiceOptionLabel(v, rec) {
+    const name = v.name || v.voice_id || "";
+    if (rec) {
+      return `${(rec.similarity * 100).toFixed(1)}% 相似 · ${name}`;
+    }
+    return name;
+  }
+
+  function syncVoiceSelectOptions(rows, waitingProgress) {
+    if (!voiceSelect) return;
+
+    const selectedRow = selectedVoiceId
+      ? sortedVoiceRows().find(({ v }) => v.voice_id === selectedVoiceId)
+      : null;
+    const optionRows = rows.slice();
+    if (
+      selectedRow &&
+      !optionRows.some(({ v }) => v.voice_id === selectedVoiceId)
+    ) {
+      optionRows.push(selectedRow);
+    }
+
+    voiceSelect.innerHTML = "";
+    const placeholder = new Option(
+      waitingProgress ? "音色库加载中..." : "请选择音色",
+      "",
+    );
+    placeholder.disabled = true;
+    voiceSelect.appendChild(placeholder);
+
+    optionRows.forEach(({ v, rec }) => {
+      if (!v.voice_id) return;
+      const option = new Option(voiceOptionLabel(v, rec), v.voice_id);
+      option.dataset.voiceName = v.name || v.voice_id;
+      voiceSelect.appendChild(option);
+    });
+
+    voiceSelect.disabled = launched || optionRows.length === 0;
+    if (selectedVoiceId && optionRows.some(({ v }) => v.voice_id === selectedVoiceId)) {
+      voiceSelect.value = selectedVoiceId;
+    } else {
+      voiceSelect.value = "";
+    }
+  }
+
+  function render(waitingProgress) {
+    const filtered = filteredVoiceRows();
+    syncVoiceSelectOptions(filtered, waitingProgress);
 
     let html = "";
 
@@ -538,7 +628,7 @@
         ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
         : "";
       html += rowHtml(v, {
-        badge, pinClass: classes.join(" "), isSelected,
+        badge, pinClass: classes.join(" "), isSelected, rec,
       });
     });
 
@@ -565,6 +655,13 @@
     selectedVoiceName = voiceName;
     render();
     updateLaunchState();
+  }
+
+  function selectVoiceFromControl() {
+    if (!voiceSelect) return;
+    const option = voiceSelect.selectedOptions && voiceSelect.selectedOptions[0];
+    if (!voiceSelect.value || !option) return;
+    selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
   }
 
   function updateLaunchState() {
@@ -617,6 +714,7 @@
 
   searchInput.addEventListener("input", () => render());
   recommendedOnly.addEventListener("change", () => render());
+  if (voiceSelect) voiceSelect.addEventListener("change", selectVoiceFromControl);
 
   // 性别胶囊：toggle + 触发后端重算 top-10（不重新 embed，走 /rematch）
   async function onGenderPillClick(btn) {

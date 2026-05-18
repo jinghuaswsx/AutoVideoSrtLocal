@@ -1,3 +1,63 @@
+from __future__ import annotations
+
+import json
+from html.parser import HTMLParser
+
+
+class _SidebarNavParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._in_sidebar_nav = False
+        self._depth = 0
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "nav" and attrs_dict.get("class") == "sidebar-nav":
+            self._in_sidebar_nav = True
+            self._depth = 1
+            return
+        if self._in_sidebar_nav:
+            self._depth += 1
+            if tag == "a":
+                self.links.append(attrs_dict)
+
+    def handle_endtag(self, tag):
+        if not self._in_sidebar_nav:
+            return
+        self._depth -= 1
+        if self._depth <= 0:
+            self._in_sidebar_nav = False
+
+
+def _client_for_user(monkeypatch, *, role="user", username="worker", permissions=None):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    from web.app import create_app
+
+    fake_user = {
+        "id": 3,
+        "username": username,
+        "role": role,
+        "is_active": 1,
+        "permissions": json.dumps(permissions) if permissions is not None else None,
+    }
+
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 3 else None)
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "3"
+        session["_fresh"] = True
+    return client
+
+
 def test_meta_hot_posts_page_requires_login(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
 
@@ -10,7 +70,80 @@ def test_meta_hot_posts_page_requires_login(authed_client_no_db):
 def test_meta_hot_posts_page_requires_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.get("/xuanpin/meta-hot-posts")
 
+    assert resp.status_code == 302
+    assert "/" in resp.headers.get("Location", "")
+
+
+def test_meta_hot_posts_api_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/xuanpin/api/meta-hot-posts")
+
     assert resp.status_code == 403
+    assert "forbidden" in resp.get_data(as_text=True)
+
+
+def test_meta_hot_posts_allows_analyst(monkeypatch):
+    client = _client_for_user(monkeypatch, role="analyst", username="test-analyst")
+
+    # Test analyst can access the page
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+    resp = client.get("/xuanpin/meta-hot-posts")
+    assert resp.status_code == 200
+
+
+def test_meta_hot_posts_permission_allows_non_admin_page_and_api(monkeypatch):
+    client = _client_for_user(
+        monkeypatch,
+        role="user",
+        permissions={"meta_hot_posts": True, "mk_selection": False},
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.build_list_response",
+        lambda args: type("Resp", (), {"payload": {"items": [{"id": 1}], "total": 1}, "status_code": 200})(),
+    )
+
+    page = client.get("/xuanpin/meta-hot-posts")
+    api = client.get("/xuanpin/api/meta-hot-posts")
+
+    assert page.status_code == 200
+    assert api.status_code == 200
+    assert api.get_json()["items"] == [{"id": 1}]
+
+
+def test_analyst_root_redirects_to_meta_hot_posts(monkeypatch):
+    client = _client_for_user(monkeypatch, role="analyst", username="test-analyst")
+
+    resp = client.get("/")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/xuanpin/meta-hot-posts")
+
+
+def test_meta_hot_posts_only_user_sidebar_links_selection_center_to_meta(monkeypatch):
+    client = _client_for_user(
+        monkeypatch,
+        role="user",
+        permissions={"meta_hot_posts": True, "mk_selection": False},
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+
+    resp = client.get("/xuanpin/meta-hot-posts")
+    parser = _SidebarNavParser()
+    parser.feed(resp.get_data(as_text=True))
+    nav_hrefs = [link.get("href") for link in parser.links]
+
+    assert resp.status_code == 200
+    assert "/xuanpin/meta-hot-posts" in nav_hrefs
+    assert "/xuanpin/mk" not in nav_hrefs
 
 
 def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypatch):
@@ -29,10 +162,22 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'value="Kitchenware"' in body
     assert "厨房用品" in body
     assert "meta-hot-card-grid" in body
+    assert 'id="mhCardZoomButton"' in body
+    assert "卡片放大" in body
+    assert "function toggleMetaHotCardZoom()" in body
+    assert "mh-zoomed" in body
+    assert "localStorage.setItem('mhCardZoomed'" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
+    assert 'onclick="refreshMetaHotPosts()"' not in body
+    assert 'onclick="analyzeMetaHotPosts()"' not in body
+    assert 'onclick="translateMetaHotPostMessages()"' not in body
+    assert 'onclick="localizeMetaHotPostVideos()"' not in body
+    assert 'onclick="assessEuropeFitMaterials()"' not in body
+    assert 'onclick="analyzeMetaHotPostVideos()"' not in body
+    assert 'onclick="showVideoCopyabilityTop50()"' not in body
     assert "const mhPageSize = 50;" in body
     assert 'id="mhPagerTop"' in body
     assert 'id="mhPagerBottom"' in body
@@ -41,6 +186,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert '<option value="empty">空</option>' in body
     assert "params.set('mark_status', qs('mhMarkStatus').value)" in body
     assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
+    assert "function renderMetaHotPageSummary(data, items, label = '')" in body
+    assert "当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材" in body
+    assert "qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);" in body
+    assert "qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');" in body
+    assert "qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;" in body
+    assert "qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;" in body
     assert "首页" in body
     assert "上一页" in body
     assert "下一页" in body
@@ -54,13 +205,15 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "不行" in body
     assert "function toggleMetaHotPostMark" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/mark" in body
-    assert "翻译文案" in body
-    assert "function translateMetaHotPostMessages" in body
+    assert "翻译文案</button>" not in body
+    assert "显示原文案" in body
+    assert "显示翻译文案" in body
+    assert "function renderMessageBlock(row)" in body
+    assert "function toggleMetaHotPostSourceMessage(event)" in body
+    assert "row.message_source_html" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
-    assert "function localizeMetaHotPostVideos" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
-    assert "可抄 Top 50" in body
-    assert "function showVideoCopyabilityTop50" in body
+    assert "可抄 Top 50</button>" not in body
     assert "/xuanpin/api/meta-hot-posts/video-copyability/top50" in body
     assert "/xuanpin/api/meta-hot-posts/analyze-videos" in body
     assert "row.local_video_url" in body
@@ -79,6 +232,17 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
     assert "JSON.stringify({limit:10})" in body
     assert "renderEuropeFitPanel" in body
+    assert "copyabilityBlock(row)" in body
+    assert "function formatVideoDuration" in body
+    assert "function loadMetaHotPostVideo" in body
+    assert "function renderVideoShell" in body
+    assert "mh-video-duration-badge" in body
+    assert "mh-play-button bottom" in body
+    assert "data-video-html" in body
+    assert "local_video_cover_url" in body
+    assert "tos_video_cover_url" in body
+    assert "firstFrameUrl" not in body
+    assert "#t=0.1" not in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -259,6 +423,23 @@ def test_meta_hot_posts_local_video_route_returns_404_when_missing(authed_client
 
     assert resp.status_code == 404
     assert resp.get_json()["error"] == "not_found"
+
+
+def test_meta_hot_posts_local_video_cover_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):
+    cover = tmp_path / "output" / "meta_hot_posts" / "video_covers" / "5" / "thumbnail.jpg"
+    cover.parent.mkdir(parents=True)
+    cover.write_bytes(b"jpeg")
+
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.resolve_local_video_cover_response",
+        lambda post_id: type("Resolved", (), {"path": cover, "status_code": 200, "error": None})(),
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/5/local-video-cover")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "image/jpeg"
+    assert resp.get_data() == b"jpeg"
 
 
 def test_meta_hot_posts_mark_api_passes_current_user_and_status(authed_client_no_db, monkeypatch):

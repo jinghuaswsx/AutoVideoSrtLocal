@@ -83,6 +83,7 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
         "localized_links_json": {
             "de": "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special",
         },
+        "task_id": 456,
         "lang": "de",
         "filename": "demo.mp4",
         "display_name": "demo.mp4",
@@ -114,12 +115,17 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
         "web.routes.pushes.pushes.compute_status",
         lambda item, product: "pending",
     )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_product_page_url",
+        lambda lang, product: product["localized_links_json"][lang],
+    )
 
     resp = authed_client_no_db.get("/pushes/api/items?page=1")
 
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["items"][0]["mk_id"] == 998877
+    assert data["items"][0]["task_id"] == 456
     assert data["items"][0]["product_page_url"] == (
         "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special"
     )

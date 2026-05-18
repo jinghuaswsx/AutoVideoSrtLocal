@@ -192,6 +192,25 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </div>
 
     <hr class="divider">
+    <label>Meta 热帖文案翻译 Provider</label>
+    <select id="metaHotPostsTranslateProvider" name="meta_hot_posts_translate_provider">
+      {% for opt in meta_hot_posts_translate_binding.provider_options %}
+      <option value="{{ opt.code }}" {{ 'selected' if meta_hot_posts_translate_binding.provider == opt.code }}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <label>Meta 热帖文案翻译模型</label>
+    <select id="metaHotPostsTranslateModelKey" name="meta_hot_posts_translate_model_key">
+      {% for opt in meta_hot_posts_translate_binding.model_options %}
+      <option value="{{ opt.key }}" {{ 'selected' if meta_hot_posts_translate_binding.model_key == opt.key }}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      仅作用于 <code>{{ meta_hot_posts_translate_binding.use_case_code }}</code>。
+      OpenRouter 会保存为 <code>google/...</code> 模型 ID；Google AI Studio / Vertex / Vertex ADC 保存原生 Gemini 模型 ID。
+      默认是 OpenRouter + Gemini 3 Flash。
+    </p>
+
+    <hr class="divider">
     <label>Admin 偏好：翻译默认模型选择器</label>
     <div style="display:flex;gap:8px">
       <select id="translate_provider_group" style="flex:0 0 200px">
@@ -1224,6 +1243,24 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   .omni-preset-modal .cap-option.is-disabled { opacity: 0.5; cursor: not-allowed; }
   .omni-preset-modal .cap-option.is-disabled input { cursor: not-allowed; }
 </style>
+
+<form method="post" class="settings-card" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="omni_preset">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h2>英语视频重新配音</h2>
+      <div class="step-desc">只影响 <code>/english-redub</code> 的推荐音色排序；Omni / Multi 原有音色匹配不变。</div>
+    </div>
+    <button class="btn btn-primary btn-sm" type="submit">保存</button>
+  </div>
+  <label for="englishRedubVoiceMatchStrategy">音色推荐策略</label>
+  <select id="englishRedubVoiceMatchStrategy" name="english_redub_voice_match_strategy">
+    <option value="legacy" {{ 'selected' if english_redub_voice_match_strategy == 'legacy' }}>旧音色匹配</option>
+    <option value="timbre_speed" {{ 'selected' if english_redub_voice_match_strategy == 'timbre_speed' }}>音色 + 语速匹配</option>
+  </select>
+  <p class="hint">默认使用旧音色匹配；开启新策略后先取音色相近候选，再按声音 preview 语速和原视频 ASR 语速重排。</p>
+</form>
 
 <div class="settings-card" id="omniPresetTabRoot">
   <p style="color:var(--settings-fg-muted);font-size:13px;margin:0 0 16px;">

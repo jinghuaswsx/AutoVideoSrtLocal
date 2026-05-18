@@ -620,7 +620,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert translation_task["source_type"] == "apscheduler"
     assert translation_task["runner"] == "appcore.meta_hot_posts.scheduler.translation_tick_once"
     assert translation_task["log_table"] == "scheduled_task_runs"
-    assert "50 条" in translation_task["description"]
+    assert "30 条" in translation_task["description"]
     assert "中文" in translation_task["description"]
 
     assert "meta_hot_posts_video_copyability_tick" not in definitions
@@ -669,7 +669,8 @@ def test_task_definitions_include_dianxiaomi_listing_ranking_sync():
     assert task["source_ref"] == "autovideosrt-dianxiaomi-listing-ranking-sync.timer"
     assert task["runner"] == "tools/dianxiaomi_listing_ranking_sync.py"
     assert task["log_table"] == "scheduled_task_runs"
-    assert "2026-05-12-dianxiaomi-listing-ranking-sync.md" in task["description"]
+    assert "近7天有销量全量归档" in task["name"]
+    assert "2026-05-18-dianxiaomi-full-listing-archive-design.md" in task["description"]
 
 
 def test_task_definitions_expose_control_strategy_and_log_source():

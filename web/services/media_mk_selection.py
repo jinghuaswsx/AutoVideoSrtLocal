@@ -5,8 +5,9 @@ import hashlib
 import mimetypes
 import os
 from pathlib import Path
+import re
 import tempfile
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from typing import Callable, Mapping, Sequence
 
 import requests
@@ -16,6 +17,7 @@ from flask import Response, jsonify, send_file
 _MK_CREDENTIALS_MISSING_ERROR = "明空凭据未配置，请先在设置页同步 wedev 凭据"
 _DEFAULT_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024
 _DEFAULT_MK_SELECTION_SNAPSHOT = "2026-04-23"
+_RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 
 
 class MkCredentialsMissingError(RuntimeError):
@@ -143,6 +145,256 @@ def _resolve_mk_selection_snapshot(
     return str(value)[:10]
 
 
+def _snapshot_text(value: object) -> str:
+    return str(value or "")[:10]
+
+
+def build_mk_selection_snapshots_response(
+    args: Mapping[str, str],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> MkSelectionResponse:
+    try:
+        limit = _parse_bounded_int(args, "limit", default=30, minimum=1, maximum=365)
+    except ValueError as exc:
+        return MkSelectionResponse(
+            {
+                "error": "invalid_pagination",
+                "message": f"{exc.args[0]} must be an integer",
+            },
+            400,
+        )
+
+    rows = db_query_fn(
+        """
+        SELECT snapshot_date, COUNT(*) AS listing_count
+        FROM dianxiaomi_rankings
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date DESC
+        LIMIT %s
+        """,
+        [limit],
+    )
+    items = [
+        {
+            "snapshot": _snapshot_text(row.get("snapshot_date")),
+            "listing_count": _int_value(row.get("listing_count")),
+        }
+        for row in rows
+        if _snapshot_text(row.get("snapshot_date"))
+    ]
+    return MkSelectionResponse(
+        {
+            "items": items,
+            "default_snapshot": items[0]["snapshot"] if items else "",
+        },
+        200,
+    )
+
+
+def _trim_text(value: object, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+def _strip_rjc(value: str) -> str:
+    return _RJC_SUFFIX_RE.sub("", str(value or "").strip()).lower()
+
+
+def _product_handle(value: str) -> str:
+    parsed = urlparse(value or "")
+    parts = [part for part in parsed.path.split("/") if part]
+    if "products" not in parts:
+        return ""
+    index = parts.index("products")
+    if index + 1 >= len(parts):
+        return ""
+    return _strip_rjc(parts[index + 1])
+
+
+def _raw_product_handle(value: str) -> str:
+    parsed = urlparse(value or "")
+    parts = [part for part in parsed.path.split("/") if part]
+    if "products" not in parts:
+        return ""
+    index = parts.index("products")
+    if index + 1 >= len(parts):
+        return ""
+    return str(parts[index + 1] or "").strip().lower()
+
+
+def _normalize_product_code(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    handle = _product_handle(text)
+    if handle:
+        return handle
+    parsed = urlparse(text)
+    path = (parsed.path or text).replace("\\", "/").strip("/")
+    parts = [part for part in path.split("/") if part]
+    if "products" in parts:
+        index = parts.index("products")
+        if index + 1 < len(parts):
+            return _strip_rjc(parts[index + 1])
+    if parts:
+        return _strip_rjc(parts[-1])
+    return _strip_rjc(path)
+
+
+def _link_tail(value: str) -> str:
+    return _raw_product_handle(value)
+
+
+def _float_value(value: object, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return default
+    multiplier = 1.0
+    if "万" in text:
+        multiplier = 10000.0
+        text = text.replace("万", "")
+    elif "千" in text:
+        multiplier = 1000.0
+        text = text.replace("千", "")
+    text = (
+        text.replace("CNY", "")
+        .replace("USD", "")
+        .replace("$", "")
+        .replace("¥", "")
+        .strip()
+    )
+    try:
+        return float(text) * multiplier
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_value(value: object, default: int = 0) -> int:
+    try:
+        return int(float(str(value or "").replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def _visible_mk_video_rows(item: dict) -> list[dict]:
+    out = []
+    for raw in item.get("videos") or []:
+        if not isinstance(raw, dict) or raw.get("hidden"):
+            continue
+        path = normalize_mk_media_path(str(raw.get("path") or ""))
+        if not path:
+            continue
+        video = {
+            "name": _trim_text(raw.get("name"), 260),
+            "path": path,
+            "image_path": normalize_mk_media_path(str(raw.get("image_path") or "")),
+            "spends": _float_value(raw.get("spends")),
+            "spends_text": str(raw.get("spends") or "").strip(),
+            "ads_count": _int_value(raw.get("ads_count")),
+            "author": _trim_text(raw.get("author"), 80),
+            "upload_time": _trim_text(raw.get("upload_time"), 64),
+            "duration_seconds": _float_value(raw.get("duration_seconds") or raw.get("duration")),
+        }
+        out.append(video)
+    out.sort(key=lambda row: (float(row.get("spends") or 0), int(row.get("ads_count") or 0)), reverse=True)
+    return out
+
+
+def _select_mk_product(items: list[dict], handle: str) -> tuple[dict | None, list[dict]]:
+    target_handle = str(handle or "").strip().lower()
+    if not target_handle:
+        return None, []
+    best: tuple[tuple[int, int, int, int], dict, list[dict]] | None = None
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        result_codes = {
+            str(item.get(key) or "").strip().lower()
+            for key in ("product_code", "code", "handle")
+            if str(item.get(key) or "").strip()
+        }
+        for link in item.get("product_links") or []:
+            code = _link_tail(str(link))
+            if code:
+                result_codes.add(code)
+        if target_handle not in result_codes:
+            continue
+        videos = _visible_mk_video_rows(item)
+        if not videos:
+            continue
+        total_spends = sum(float(video.get("spends") or 0) for video in videos)
+        total_ads = sum(int(video.get("ads_count") or 0) for video in videos)
+        score = (int(total_spends), total_ads, len(videos), _int_value(item.get("id")))
+        if best is None or score > best[0]:
+            best = (score, item, videos)
+    if best is None:
+        return None, []
+    return best[1], best[2]
+
+
+def _mk_video_material_stats(*, source_products: int = 0) -> dict[str, int]:
+    return {
+        "source_products": source_products,
+        "mk_searches": 0,
+        "mk_no_handle": 0,
+        "mk_no_match": 0,
+        "mk_request_failed": 0,
+        "videos": 0,
+    }
+
+
+def _mk_product_first_link(mk_product: dict, fallback: object = "") -> str:
+    links = mk_product.get("product_links") or []
+    if links:
+        return str(links[0] or "")
+    return str(fallback or "")
+
+
+def _serialize_mk_video_material(row: Mapping[str, object], handle: str, mk_product: dict, video: dict, index: int) -> dict:
+    product_link = _mk_product_first_link(mk_product, row.get("product_url") or "")
+    metadata = dict(video)
+    metadata.update({
+        "mk_id": mk_product.get("id"),
+        "product_name": mk_product.get("product_name") or "",
+        "product_link": product_link,
+        "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
+        "product_code": handle,
+    })
+    return {
+        "id": f"{mk_product.get('id') or handle}-{index}-{hashlib.sha1(str(video.get('path') or '').encode('utf-8')).hexdigest()[:10]}",
+        "product_handle": handle,
+        "rank_position": row.get("rank_position"),
+        "shopify_id": row.get("shopify_id"),
+        "product_name": row.get("product_name") or mk_product.get("product_name") or "",
+        "product_url": row.get("product_url") or product_link,
+        "store": row.get("store") or "",
+        "sales_count": row.get("sales_count") or 0,
+        "order_count": row.get("order_count") or 0,
+        "revenue_main": row.get("revenue_main") or "",
+        "mk_product_id": mk_product.get("id"),
+        "mk_product_name": mk_product.get("product_name") or "",
+        "mk_product_link": product_link,
+        "main_image": mk_product.get("main_image") or mk_product.get("image") or "",
+        "video_name": video.get("name") or "",
+        "video_path": video.get("path") or "",
+        "video_image_path": video.get("image_path") or "",
+        "video_spends": float(video.get("spends") or 0),
+        "video_spends_text": video.get("spends_text") or "",
+        "video_ads_count": int(video.get("ads_count") or 0),
+        "video_author": video.get("author") or "",
+        "video_upload_time": video.get("upload_time") or "",
+        "video_duration_seconds": video.get("duration_seconds") or 0,
+        "mk_video_metadata": metadata,
+    }
+
+
 def build_mk_selection_response(
     args: Mapping[str, str],
     *,
@@ -238,7 +490,165 @@ def build_mk_selection_response(
         })
 
     return MkSelectionResponse(
-        {"items": items, "total": total, "page": page_num, "page_size": page_size},
+        {
+            "items": items,
+            "total": total,
+            "page": page_num,
+            "page_size": page_size,
+            "snapshot": snapshot,
+        },
+        200,
+    )
+
+
+def build_mk_video_materials_response(
+    args: Mapping[str, str],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+    build_headers_fn: Callable[[], dict],
+    get_base_url_fn: Callable[[], str],
+    http_get_fn=requests.get,
+) -> MkSelectionResponse:
+    headers = build_headers_fn()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return MkSelectionResponse({"error": _MK_CREDENTIALS_MISSING_ERROR}, 500)
+
+    base_url = (get_base_url_fn() or "https://os.wedev.vip").rstrip("/")
+    direct_product_code = _normalize_product_code(args.get("product_code") or "")
+    try:
+        page_num = _parse_bounded_int(args, "page", default=1, minimum=1)
+        page_size = _parse_bounded_int(args, "page_size", default=24, minimum=1, maximum=60)
+        max_videos = _parse_bounded_int(
+            args,
+            "max_videos_per_product",
+            default=24 if direct_product_code else 3,
+            minimum=1,
+            maximum=100 if direct_product_code else 5,
+        )
+    except ValueError as exc:
+        return MkSelectionResponse(
+            {
+                "error": "invalid_pagination",
+                "message": f"{exc.args[0]} must be an integer",
+            },
+            400,
+        )
+    if direct_product_code:
+        stats = _mk_video_material_stats()
+        out = []
+        try:
+            stats["mk_searches"] += 1
+            response = http_get_fn(
+                f"{base_url}/api/marketing/medias",
+                params={"page": 1, "q": direct_product_code, "source": "", "level": "", "show_attention": 0},
+                headers=headers,
+                timeout=20,
+            )
+            data = response.json() or {}
+        except Exception:
+            stats["mk_request_failed"] += 1
+            data = {}
+        if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+            return MkSelectionResponse({"error": "明空登录已失效，请重新同步 wedev 凭据"}, 401)
+        products = [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
+        mk_product, videos = _select_mk_product(products, direct_product_code)
+        if not mk_product:
+            stats["mk_no_match"] += 1
+        else:
+            empty_row = {
+                "rank_position": None,
+                "shopify_id": None,
+                "product_name": mk_product.get("product_name") or "",
+                "product_url": _mk_product_first_link(mk_product),
+                "store": "",
+                "sales_count": 0,
+                "order_count": 0,
+                "revenue_main": "",
+            }
+            for index, video in enumerate(videos[:max_videos], start=1):
+                out.append(_serialize_mk_video_material(empty_row, direct_product_code, mk_product, video, index))
+        stats["videos"] = len(out)
+        return MkSelectionResponse(
+            {
+                "items": out,
+                "stats": stats,
+                "page": page_num,
+                "page_size": page_size,
+                "snapshot": None,
+                "total_products": 0,
+                "has_more_products": False,
+            },
+            200,
+        )
+    offset = (page_num - 1) * page_size
+    snapshot = _resolve_mk_selection_snapshot(args, db_query_fn=db_query_fn)
+    keyword = (args.get("keyword") or "").strip()
+    where = "dr.snapshot_date = %s"
+    params: list = [snapshot]
+    if keyword:
+        where += " AND (dr.product_name LIKE %s OR dr.product_url LIKE %s)"
+        params.extend([f"%{keyword}%", f"%{keyword}%"])
+
+    count_row = db_query_fn(
+        f"SELECT COUNT(*) AS cnt FROM dianxiaomi_rankings dr WHERE {where}",
+        params,
+    )
+    total_products = int((count_row[0].get("cnt") if count_row else 0) or 0)
+    rows = db_query_fn(
+        f"""
+        SELECT
+            dr.rank_position, dr.product_id AS shopify_id,
+            dr.product_name, dr.product_url,
+            dr.store, dr.sales_count, dr.order_count,
+            dr.revenue_main
+        FROM dianxiaomi_rankings dr
+        WHERE {where}
+        ORDER BY dr.rank_position ASC
+        LIMIT %s OFFSET %s
+        """,
+        params + [page_size, offset],
+    )
+
+    stats = _mk_video_material_stats(source_products=len(rows))
+    out = []
+    for row in rows:
+        handle = _product_handle(str(row.get("product_url") or ""))
+        if not handle:
+            stats["mk_no_handle"] += 1
+            continue
+        try:
+            stats["mk_searches"] += 1
+            response = http_get_fn(
+                f"{base_url}/api/marketing/medias",
+                params={"page": 1, "q": handle, "source": "", "level": "", "show_attention": 0},
+                headers=headers,
+                timeout=20,
+            )
+            data = response.json() or {}
+        except Exception:
+            stats["mk_request_failed"] += 1
+            continue
+        if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+            return MkSelectionResponse({"error": "明空登录已失效，请重新同步 wedev 凭据"}, 401)
+
+        products = [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
+        mk_product, videos = _select_mk_product(products, handle)
+        if not mk_product:
+            stats["mk_no_match"] += 1
+            continue
+        for index, video in enumerate(videos[:max_videos], start=1):
+            out.append(_serialize_mk_video_material(row, handle, mk_product, video, index))
+    stats["videos"] = len(out)
+    return MkSelectionResponse(
+        {
+            "items": out,
+            "stats": stats,
+            "page": page_num,
+            "page_size": page_size,
+            "snapshot": snapshot,
+            "total_products": total_products,
+            "has_more_products": offset + len(rows) < total_products,
+        },
         200,
     )
 

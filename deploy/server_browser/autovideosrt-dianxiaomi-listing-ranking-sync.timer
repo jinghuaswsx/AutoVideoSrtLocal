@@ -1,5 +1,5 @@
 [Unit]
-Description=Run AutoVideoSrt Dianxiaomi Listing Ranking Top1000 sync every day
+Description=Run AutoVideoSrt Dianxiaomi full recent-sales Listing archive sync every day
 
 [Timer]
 OnCalendar=*-*-* 12:40:00

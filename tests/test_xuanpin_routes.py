@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 
+def _assert_unified_xuanpin_tabs(body: str, active_href: str, active_label: str) -> None:
+    assert '<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">' in body
+    assert f'<a class="xuanpin-tab active" href="{active_href}" role="tab" aria-selected="true">{active_label}</a>' in body
+    assert 'href="/xuanpin/mk"' in body
+    assert 'href="/xuanpin/meta-hot-posts"' in body
+    assert 'href="/xuanpin/tabcut"' in body
+    assert 'href="/xuanpin/today-recommendations"' in body
+    assert 'href="/xuanpin/new-products"' in body
+
+
 def _patch_new_product_review_list_deps(monkeypatch):
     monkeypatch.setattr(
         "appcore.new_product_review.list_pending",
@@ -44,17 +54,54 @@ def test_xuanpin_root_redirects_to_mk(authed_client_no_db):
     assert resp.headers["Location"].endswith("/xuanpin/mk")
 
 
+def test_xuanpin_root_redirects_to_meta_hot_posts_when_mk_hidden(monkeypatch):
+    import json
+
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    from web.app import create_app
+
+    fake_user = {
+        "id": 7,
+        "username": "meta-worker",
+        "role": "user",
+        "is_active": 1,
+        "permissions": json.dumps({"meta_hot_posts": True, "mk_selection": False}),
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 7 else None)
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "7"
+        session["_fresh"] = True
+
+    resp = client.get("/xuanpin/")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/xuanpin/meta-hot-posts")
+
+
 def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/tabcut"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/mk", "明空选品")
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "/xuanpin/api/mk-selection" in body
+    assert "/xuanpin/api/mk-selection/snapshots" in body
+    assert 'aria-label="明空选品库类型"' in body
+    assert "产品库" in body
+    assert "视频素材库" in body
+    assert "昨天消耗前100" in body
+    assert "/xuanpin/api/mk-material-library" in body
+    assert "/xuanpin/api/mk-yesterday-top100" in body
 
 
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
@@ -62,11 +109,9 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/tabcut"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/tabcut", "TABCUT")
+    assert "tabcut-tabs" not in body
+    assert "tabcut-tab-link" not in body
     assert "/xuanpin/api/tabcut/videos" in body
     assert "/xuanpin/api/tabcut/goods" in body
     assert "/xuanpin/api/tabcut/categories" in body
@@ -92,10 +137,9 @@ def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/mk"' in body
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/new-products"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/new-products", "新品选择")
+    assert "oc-page-tabs" not in body
+    assert "oc-page-tab" not in body
     assert "/xuanpin/api/new-products/list" in body
 
 
@@ -146,8 +190,9 @@ def test_xuanpin_today_recommendations_page_uses_tab_and_api(
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'href="/xuanpin/today-recommendations"' in body
-    assert 'href="/xuanpin/meta-hot-posts"' in body
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/today-recommendations", "今日推荐")
+    assert 'class="tr-tabs"' not in body
+    assert '<a class="tr-tab' not in body
     assert "/xuanpin/api/today-recommendations/adopt" in body
     assert "Test Product" in body
 
@@ -187,6 +232,122 @@ def test_xuanpin_mk_api_alias_delegates_after_admin_gate(
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"rank": 1}]
     assert captured["keyword"] == "tooth"
+
+
+def test_xuanpin_mk_selection_snapshots_api_alias_delegates_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["limit"] = args.get("limit")
+        return MkSelectionResponse(
+            {"items": [{"snapshot": "2026-05-18"}], "default_snapshot": "2026-05-18"},
+            200,
+        )
+
+    monkeypatch.setattr("web.routes.medias._build_mk_selection_snapshots_response", fake_build)
+
+    resp = authed_client_no_db.get("/xuanpin/api/mk-selection/snapshots?limit=7")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"snapshot": "2026-05-18"}]
+    assert captured["limit"] == "7"
+
+
+def test_xuanpin_mk_video_materials_api_delegates_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["keyword"] = args.get("keyword")
+        captured["product_code"] = args.get("product_code")
+        return MkSelectionResponse(
+            {"items": [{"video_name": "winner.mp4"}], "page": 1, "page_size": 24},
+            200,
+        )
+
+    monkeypatch.setattr("web.routes.medias._build_mk_video_materials_response", fake_build)
+
+    resp = authed_client_no_db.get("/xuanpin/api/mk-video-materials?keyword=tooth&product_code=cool-widget")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
+    assert captured["keyword"] == "tooth"
+    assert captured["product_code"] == "cool-widget"
+
+
+def test_xuanpin_mk_material_library_api_reads_local_archive(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_list_material_library(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"video_name": "winner.mp4"}],
+            "snapshot": "2026-05-18",
+            "total": 1,
+        }
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_material_library",
+        fake_list_material_library,
+    )
+
+    resp = authed_client_no_db.get(
+        "/xuanpin/api/mk-material-library?keyword=tooth&page=2&page_size=24&snapshot=2026-05-18"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
+    assert captured == {
+        "snapshot_date": "2026-05-18",
+        "keyword": "tooth",
+        "page": "2",
+        "page_size": "24",
+    }
+
+
+def test_xuanpin_mk_yesterday_top100_api_reads_archive(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_list_yesterday_top100(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"video_name": "fresh.mp4", "is_new_top100_entry": True}],
+            "snapshot": "2026-05-18",
+            "previous_snapshot": "2026-05-17",
+            "total": 1,
+        }
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_yesterday_top100",
+        fake_list_yesterday_top100,
+    )
+
+    resp = authed_client_no_db.get(
+        "/xuanpin/api/mk-yesterday-top100?page=1&page_size=100&snapshot=2026-05-18"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
+    assert captured == {
+        "snapshot_date": "2026-05-18",
+        "page": "1",
+        "page_size": "100",
+    }
 
 
 def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):

@@ -1642,6 +1642,36 @@ def test_layout_uses_legacy_video_translate_nav_label(authed_client_no_db):
     assert '<span class="nav-icon">🎬</span> 视频翻译\n' not in body
 
 
+def test_layout_groups_requested_sidebar_menus(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    data_group = body.index("sidebar-data-dashboard-group")
+    material_group = body.index("sidebar-material-creation-group")
+    video_group = body.index("sidebar-video-translate-group")
+    settings_group = body.index("sidebar-settings-group")
+
+    assert data_group < material_group < video_group < settings_group
+    assert body.index("数据看板", data_group) < body.index("数据分析", data_group)
+    assert body.index("数据分析", data_group) < body.index("产品盈亏看板", data_group)
+    assert body.index("产品盈亏看板", data_group) < body.index("订单利润核算", data_group)
+    assert body.index("素材创作", material_group) < body.index("图片翻译", material_group)
+    assert body.index("图片翻译", material_group) < body.index("字幕移除", material_group)
+    assert body.index("字幕移除", material_group) < body.index("文案封面生成", material_group)
+    assert body.index("文案封面生成", material_group) < body.index("画图工作室", material_group)
+    assert body.index("画图工作室", material_group) < body.index("文案翻译", material_group)
+    assert body.index("文案翻译", material_group) < body.index("多语言标题翻译", material_group)
+    assert body.index("多语言标题翻译", material_group) < video_group
+    assert body.index("视频翻译", video_group) < body.index("多语种视频翻译", video_group)
+    assert body.index("多语种视频翻译", video_group) < body.index("全能视频翻译", video_group)
+    assert body.index("全能视频翻译", video_group) < body.index("视频翻译传统", video_group)
+    assert body.index("设置", settings_group) < body.index("API 账单", settings_group)
+    assert body.index("API 账单", settings_group) < body.index("用户设置", settings_group)
+    assert body.index("用户设置", settings_group) < body.index("浏览器监控", settings_group)
+
+
 def test_layout_hides_api_config_nav_for_normal_user(authed_user_client_no_db):
     response = authed_user_client_no_db.get("/subtitle-removal")
 

@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, Callable, Mapping
 
-from appcore.db import execute, query
+from appcore.db import execute, get_conn, query
 from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVIDER
 
 
@@ -27,6 +27,16 @@ def _score(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _execute_rowcount(sql: str, args: tuple[Any, ...] = ()) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, args or None)
+            return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def product_url_hash(product_url: str) -> str:
@@ -156,15 +166,31 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
-               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
-               a.last_error, a.analyzed_at
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         {where_sql}
         ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
@@ -212,15 +238,31 @@ def list_today_new_hot_posts(
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
-               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
-               a.last_error, a.analyzed_at
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         {where_sql}
         ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
         LIMIT %s OFFSET %s
@@ -300,6 +342,8 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           copycat=VALUES(copycat),
           select_json=VALUES(select_json),
           local_video_path=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_path ELSE NULL END,
+          local_video_duration_seconds=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_duration_seconds ELSE NULL END,
+          local_video_cover_path=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_cover_path ELSE NULL END,
           local_video_status=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_status ELSE 'pending' END,
           local_video_error=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_error ELSE NULL END,
           local_video_downloaded_at=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_downloaded_at ELSE NULL END,
@@ -501,6 +545,8 @@ def finish_local_video_download(
     post_id: int,
     *,
     local_video_path: str | None,
+    local_video_duration_seconds: float | int | None = None,
+    local_video_cover_path: str | None = None,
     error_message: str | None,
     max_attempts: int = LOCAL_VIDEO_MAX_ATTEMPTS,
     execute_fn: ExecuteFn = execute,
@@ -523,12 +569,19 @@ def finish_local_video_download(
         """
         UPDATE meta_hot_posts
         SET local_video_path=%s,
+            local_video_duration_seconds=%s,
+            local_video_cover_path=%s,
             local_video_status='downloaded',
             local_video_error=NULL,
             local_video_downloaded_at=NOW()
         WHERE id=%s
         """,
-        (local_video_path or "", int(post_id)),
+        (
+            local_video_path or "",
+            _score(local_video_duration_seconds),
+            local_video_cover_path or "",
+            int(post_id),
+        ),
     )
 
 
@@ -539,7 +592,8 @@ def get_hot_post_local_video(
 ) -> dict[str, Any] | None:
     rows = query_fn(
         """
-        SELECT id, local_video_path, local_video_status, local_video_error,
+        SELECT id, local_video_path, local_video_duration_seconds, local_video_cover_path,
+               local_video_status, local_video_error,
                local_video_downloaded_at
         FROM meta_hot_posts
         WHERE id=%s
@@ -548,7 +602,50 @@ def get_hot_post_local_video(
     )
     return rows[0] if rows else None
 
-def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+
+def list_local_videos_missing_metadata(
+    *,
+    limit: int | None = 100,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    sql = """
+        SELECT id, local_video_path, local_video_duration_seconds, local_video_cover_path
+        FROM meta_hot_posts
+        WHERE local_video_status = 'downloaded'
+          AND local_video_path IS NOT NULL
+          AND TRIM(local_video_path) <> ''
+          AND (
+            local_video_duration_seconds IS NULL
+            OR local_video_duration_seconds <= 0
+            OR local_video_cover_path IS NULL
+            OR TRIM(local_video_cover_path) = ''
+          )
+        ORDER BY local_video_downloaded_at DESC, id DESC
+        """
+    if limit is None or int(limit or 0) <= 0:
+        return query_fn(sql, ())
+    safe_limit = max(1, min(1000, int(limit)))
+    return query_fn(sql + " LIMIT %s", (safe_limit,))
+
+
+def update_local_video_metadata(
+    post_id: int,
+    *,
+    local_video_duration_seconds: float | int | None,
+    local_video_cover_path: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_posts
+        SET local_video_duration_seconds=%s,
+            local_video_cover_path=%s
+        WHERE id=%s
+        """,
+        (_score(local_video_duration_seconds), local_video_cover_path or "", int(post_id)),
+    )
+
+def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
         INSERT INTO meta_hot_post_video_copyability_analyses (
@@ -570,19 +667,19 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> i
     )
 
 
-def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = execute) -> int:
+def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = _execute_rowcount) -> int:
     return execute_fn(
         """
-        INSERT INTO meta_hot_post_europe_assessments (post_id, status)
+        INSERT IGNORE INTO meta_hot_post_europe_assessments (post_id, status)
         SELECT p.id, 'pending'
         FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
         WHERE p.local_video_status = 'downloaded'
           AND p.local_video_path IS NOT NULL
           AND TRIM(p.local_video_path) <> ''
           AND p.product_url IS NOT NULL
           AND TRIM(p.product_url) <> ''
-        ON DUPLICATE KEY UPDATE
-          post_id=VALUES(post_id)
+          AND e.id IS NULL
         """,
         (),
     )
@@ -814,9 +911,12 @@ def list_top_video_copyability_analyses(
                p.sync_period_likes,
                p.sync_period_hours,
                p.copycat,
+               p.local_video_duration_seconds,
+               p.local_video_cover_path,
                p.local_video_status,
                p.message_html,
                p.message_zh_html,
+               p.raw_json,
                pa.status AS analysis_status,
                pa.product_title,
                pa.product_main_image_url,
@@ -1008,7 +1108,9 @@ def list_top_europe_fit_materials(
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
-               p.local_video_path, p.local_video_status, p.local_video_error,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
                a.product_title, a.product_main_image_url, a.price_min,
@@ -1028,10 +1130,24 @@ def list_top_europe_fit_materials(
                e.llm_provider AS europe_fit_provider,
                e.llm_model AS europe_fit_model,
                e.video_optimization_json AS europe_fit_video_optimization_json,
-               e.assessed_at AS europe_fit_assessed_at
+               e.assessed_at AS europe_fit_assessed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_post_europe_assessments e
         JOIN meta_hot_posts p ON p.id = e.post_id
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         WHERE e.status = 'done'
         ORDER BY e.suitability_score DESC,
                  COALESCE(p.sync_period_likes, 0) DESC,

@@ -118,7 +118,13 @@ def test_collects_meta_hot_post_videos_relative_to_output_dir(monkeypatch, tmp_p
 
     def fake_query(sql, args=()):
         if "FROM meta_hot_posts" in sql:
-            return [{"local_video_path": "meta_hot_posts/videos/meta_hot_post_20.mp4"}]
+            assert "local_video_cover_path" in sql
+            return [
+                {
+                    "local_video_path": "meta_hot_posts/videos/meta_hot_post_20.mp4",
+                    "local_video_cover_path": "meta_hot_posts/video_covers/20/thumbnail.jpg",
+                }
+            ]
         return []
 
     monkeypatch.setattr(refs, "query", fake_query)
@@ -127,7 +133,11 @@ def test_collects_meta_hot_post_videos_relative_to_output_dir(monkeypatch, tmp_p
 
     assert collected == [
         refs.ProtectedFileRef(
+            local_path=str(output_dir / "meta_hot_posts" / "video_covers" / "20" / "thumbnail.jpg"),
+            sources=("meta_hot_post_video_cover",),
+        ),
+        refs.ProtectedFileRef(
             local_path=str(output_dir / "meta_hot_posts" / "videos" / "meta_hot_post_20.mp4"),
             sources=("meta_hot_post_video",),
-        )
+        ),
     ]

@@ -3,7 +3,7 @@
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
 - 四级角色：superadmin / admin / user / translator
-- 权限项粒度：菜单/页面级 + 任务能力位，共 27 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
+- 权限项粒度：菜单/页面级 + 任务能力位，共 28 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
@@ -15,13 +15,15 @@ ROLE_SUPERADMIN = "superadmin"
 ROLE_ADMIN = "admin"
 ROLE_USER = "user"
 ROLE_TRANSLATOR = "translator"
-ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR)
+ROLE_ANALYST = "analyst"
+ROLES = (ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_USER, ROLE_TRANSLATOR, ROLE_ANALYST)
 
 ROLE_LABELS = {
     ROLE_SUPERADMIN: "超级管理员",
     ROLE_ADMIN: "管理员",
     ROLE_USER: "普通用户",
     ROLE_TRANSLATOR: "翻译用户",
+    ROLE_ANALYST: "分析用户",
 }
 
 GROUP_BUSINESS = "business"
@@ -54,6 +56,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     # A. 业务功能（普通用户也用）
     ("medias",                GROUP_BUSINESS,   "素材管理",         True,  True),
     ("multi_translate",       GROUP_BUSINESS,   "多语种视频翻译",   True,  True),
+    ("english_redub",         GROUP_BUSINESS,   "英语视频重新配音", True,  True),
     ("title_translate",       GROUP_BUSINESS,   "多语言标题翻译",   True,  True),
     ("image_translate",       GROUP_BUSINESS,   "图片翻译",         True,  True),
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
@@ -66,6 +69,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("drawing_studio",        GROUP_BUSINESS,   "画图工作室",       True,  True),
     # B. 管理类
     ("mk_selection",          GROUP_MANAGEMENT, "选品中心",         True,  False),
+    ("meta_hot_posts",        GROUP_MANAGEMENT, "Meta 热帖选品",   True,  False),
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
     menu_permission("order_profit",          GROUP_MANAGEMENT, "订单利润核算"),
@@ -104,10 +108,12 @@ HOME_REDIRECT_ORDER = [
     ("order_profit",     "/order-profit"),
     ("product_profit",   "/product-profit"),
     ("multi_translate",  "/multi-translate"),
+    ("english_redub",    "/english-redub"),
     ("title_translate",  "/title-translate"),
     ("image_translate",  "/image-translate"),
     ("drawing_studio",   "/drawing-studio/sso"),
     ("subtitle_removal", "/subtitle-removal"),
+    ("meta_hot_posts",   "/xuanpin/meta-hot-posts"),
     ("mk_selection",     "/xuanpin/mk"),
     ("task_center",      "/tasks/"),
     ("raw_video_pool",   "/raw-video-pool/"),
@@ -123,7 +129,13 @@ HOME_REDIRECT_ORDER = [
     ("lab",              "/voice-library"),
 ]
 
-_TRANSLATOR_TRUE_PERMISSIONS = {"omni_translate", "user_settings", "can_translate"}
+_TRANSLATOR_TRUE_PERMISSIONS = {
+    "omni_translate",
+    "english_redub",
+    "user_settings",
+    "can_translate",
+}
+_ANALYST_TRUE_PERMISSIONS = {"meta_hot_posts", "user_settings"}
 
 
 def default_permissions_for_role(role: str) -> dict[str, bool]:
@@ -134,6 +146,8 @@ def default_permissions_for_role(role: str) -> dict[str, bool]:
         return {code: meta["admin"] for code, meta in PERMISSION_META.items()}
     if role == ROLE_TRANSLATOR:
         return {code: code in _TRANSLATOR_TRUE_PERMISSIONS for code in PERMISSION_CODES}
+    if role == ROLE_ANALYST:
+        return {code: code in _ANALYST_TRUE_PERMISSIONS for code in PERMISSION_CODES}
     return {code: meta["user"] for code, meta in PERMISSION_META.items()}
 
 

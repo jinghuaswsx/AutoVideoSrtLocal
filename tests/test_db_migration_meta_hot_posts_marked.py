@@ -39,6 +39,23 @@ def test_meta_hot_posts_message_translation_migration_adds_cached_chinese_fields
     assert "idx_meta_hot_posts_message_zh_status" in body
 
 
+def test_meta_hot_posts_copy_translation_model_binding_migration():
+    body = Path(
+        "db/migrations/2026_05_18_meta_hot_posts_copy_translation_flash_lite_binding.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-copy-original-and-model-design.md" in body
+    assert "'meta_hot_posts.translate_message'" in body
+    assert "'title_translate.generate'" in body
+    assert "'copywriting_translate.generate'" in body
+    assert "'openrouter'" in body
+    assert "'google/gemini-3.1-flash-lite'" in body
+    assert "ON DUPLICATE KEY UPDATE" in body
+    assert "provider_code = VALUES(provider_code)" in body
+    assert "model_id = VALUES(model_id)" in body
+    assert "enabled = VALUES(enabled)" in body
+
+
 def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     body = Path("db/migrations/2026_05_14_meta_hot_posts_local_video.sql").read_text(
         encoding="utf-8"
@@ -51,6 +68,18 @@ def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     assert "local_video_downloaded_at" in body
     assert "local_video_attempts" in body
     assert "idx_meta_hot_posts_local_video_status" in body
+    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
+
+
+def test_meta_hot_posts_local_video_metadata_migration_adds_duration_and_cover_fields():
+    body = Path("db/migrations/2026_05_18_meta_hot_posts_local_video_metadata.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "local_video_duration_seconds" in body
+    assert "local_video_cover_path" in body
+    assert "information_schema.COLUMNS" in body
     assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
 
 

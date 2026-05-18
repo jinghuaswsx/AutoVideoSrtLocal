@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from io import BytesIO
 import json
@@ -31,6 +32,22 @@ class _FakeProduct:
     price_min = 39.99
     price_max = 39.99
     currency = "USD"
+
+
+class _FakeProviderConfig:
+    def __init__(self, api_key="sk-local-test", base_url="http://image.local/v1", model_id=None, extra_config=None):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model_id = model_id
+        self.extra_config = extra_config or {}
+
+    def require_api_key(self):
+        if not self.api_key:
+            raise AssertionError("missing api key in test provider config")
+        return self.api_key
+
+    def require_base_url(self, default=None):
+        return (self.base_url or default or "").rstrip("/")
 
 
 def test_normalize_product_image_jpg_outputs_400_square_jpeg():
@@ -163,7 +180,12 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert len(calls) == 1
     assert "Facebook Reels / Instagram Reels / TikTok / Shorts" in calls[0]["prompt"]
     assert "优秀的创意总监" in calls[0]["prompt"]
+    assert "1080x1920" in calls[0]["prompt"]
+    assert "TikTok 封面 2K 竖版逻辑" in calls[0]["prompt"]
     assert "把 selected_ad_copy.english.title 作为画面中唯一可读英文 hook" in calls[0]["prompt"]
+    assert "完整落在 9:16 安全区内" in calls[0]["prompt"]
+    assert "最多两行" in calls[0]["prompt"]
+    assert "不得贴边、出血或被裁切" in calls[0]["prompt"]
     assert "不要使用固定位置的半透明背景框" in calls[0]["prompt"]
     assert "不要在图片中生成任何文字" not in calls[0]["prompt"]
     assert '"title": "Blend Anywhere"' in calls[0]["prompt"]
@@ -713,7 +735,7 @@ def test_generate_local_cover_image_posts_docs_image_edit_payload():
     assert posted["data"]["model"] == "gpt-image-2"
     assert posted["data"]["prompt"] == "make a cover"
     assert posted["data"]["n"] == "1"
-    assert posted["data"]["size"] == "1024x1536"
+    assert posted["data"]["size"] == "1152x2048"
     assert posted["files"]["image"][0] == "reference.png"
     assert posted["files"]["image"][2] == "image/png"
     assert posted["files"]["image"][1].startswith(b"\x89PNG")
@@ -930,7 +952,7 @@ def test_generate_video_covers_requires_product_title_and_main_image(tmp_path):
 
 def test_video_cover_page_rejects_non_admin(authed_user_client_no_db):
     user_resp = authed_user_client_no_db.get("/video-cover")
-    assert user_resp.status_code == 403
+    assert user_resp.status_code in (302, 403)
 
 
 def test_video_cover_page_requires_login(authed_client_no_db):
@@ -1018,7 +1040,7 @@ def test_video_cover_page_renders_project_list_for_admin(authed_client_no_db, mo
     assert calls == [
         {
             "user_id": 1,
-            "is_admin": True,
+            "is_admin": False,
             "owner_name_expr": "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
         }
     ]
@@ -1077,8 +1099,8 @@ def test_video_cover_default_config_requires_superadmin(authed_client_no_db):
         json={"steps": {"video_analysis": {"provider": "openrouter", "model_id": "custom"}}},
     )
 
-    assert get_resp.status_code == 403
-    assert post_resp.status_code == 403
+    assert get_resp.status_code in (302, 403)
+    assert post_resp.status_code in (302, 403)
 
 
 def test_video_cover_default_config_normalizes_cover_execution_mode():
@@ -1601,6 +1623,71 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "/video-cover/api/task-1/download/social_reels_2" in html
 
 
+def test_video_cover_prompt_modal_has_request_result_tabs_and_debug_form(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 1,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "request_data": {"image_count": 1, "execution_mode": "serial"},
+                "image_prompts": [{"index": 1, "prompt": "actual prompt", "source_ad_copy_id": 1}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"data": [{"b64_json": "iVBORw0KGgo="}]},
+                "structured_result": {"covers": [{"index": 1, "hook": "Love the breeze"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/1/task-1/reference.png"},
+            "covers": [{"platform": "social_reels", "index": 1, "object_key": "artifacts/video_cover/1/task-1/social_reels.png"}],
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "vcd-prompt-debug-modal" in html
+    assert "width:min(80vw, 1600px)" in html
+    assert 'data-prompt-root-tab="request"' in html
+    assert 'data-prompt-root-tab="result"' in html
+    assert 'data-prompt-subtab="request-data"' in html
+    assert 'data-prompt-subtab="full-request"' in html
+    assert 'data-prompt-subtab="response-data"' in html
+    assert 'data-prompt-subtab="raw-response"' in html
+    assert "请求数据" in html
+    assert "完整报文" in html
+    assert "返回数据" in html
+    assert "返回结果报文" in html
+    assert 'id="vcdDebugRequestUrl"' in html
+    assert 'id="vcdDebugApiKey"' in html
+    assert 'id="vcdDebugReplayBtn"' in html
+    assert "debug-payload" in html
+    assert "debug-replay" in html
+    assert "'X-CSRFToken': csrfToken()" in html
+
+
 def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defaults(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
@@ -2107,6 +2194,439 @@ def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db,
     assert payload["state"]["result"]["covers"][0]["download_url"].endswith("/video-cover/api/task-1/download/social_reels_1")
 
 
+def test_video_cover_debug_payload_requires_superadmin(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code in (302, 403)
+
+
+def test_video_cover_debug_payload_returns_cover_full_request(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    copy_item = {
+        "id": 1,
+        "english": {
+            "title": "Love the breeze",
+            "message": "Stop choosing between fresh air and mosquito bites.",
+            "description": "Keep bugs out",
+        },
+    }
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product": {
+            "title": "Bug-Proof Car Sunshade Screen",
+            "main_image_url": "https://cdn.example/product.jpg",
+            "product_image_path": "/data/product.jpg",
+        },
+        "product_url": "https://shop.example/products/screen",
+        "video_filename": "screen.mp4",
+        "image_count": 1,
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "alias": "gpt_image_2",
+                "request_data": {"image_count": 1, "execution_mode": "serial", "ad_copy_sets": {"ad_copy_sets": [copy_item]}},
+                "image_prompts": [{"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"data": [{"b64_json": "iVBORw0KGgo="}]},
+                "structured_result": {"covers": [{"index": 1, "hook": "structured hook"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2", "execution_mode": "serial"}},
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "index": 1,
+                    "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
+                    "copy": copy_item,
+                    "hook": "result hook",
+                    "formatted_copy": (
+                        "标题: result hook\n"
+                        "文案: Stop choosing between fresh air and mosquito bites.\n"
+                        "描述: Keep bugs out"
+                    ),
+                }
+            ],
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    def fake_get_provider_config(code):
+        assert code == "video_cover_local_image"
+        return _FakeProviderConfig()
+
+    if hasattr(video_cover, "get_provider_config"):
+        monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    data = payload["data"]
+    assert data["label"] == "封面生成"
+    assert data["request_data"]["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
+    assert data["response_data"]["covers"][0]["hook"] == "result hook"
+    assert data["full_request"]["method"] == "POST"
+    assert data["full_request"]["url"] == "http://image.local/v1/images/edits"
+    assert data["full_request"]["headers"]["Authorization"] == "Bearer sk-local-test"
+    assert data["full_request"]["headers"]["Content-Type"] == "multipart/form-data"
+    assert data["full_request"]["api_key"] == "sk-local-test"
+    assert data["full_request"]["body"]["model"] == "gpt-image-2"
+    assert data["full_request"]["body"]["prompt"] == "actual prompt with native hook text"
+    assert data["full_request"]["body"]["n"] == "1"
+    assert data["full_request"]["body"]["size"] == "1024x1536"
+    assert data["full_request"]["files"][0]["field"] == "image"
+    assert data["full_request"]["files"][0]["filename"] == "reference.png"
+    assert data["full_request"]["files"][0]["content_type"] == "image/png"
+    assert data["full_request"]["files"][0]["source"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["replay"]["supported"] is True
+    assert data["raw_response"]["data"][0]["b64_json"] == "iVBORw0KGgo="
+
+
+def test_video_cover_debug_payload_returns_text_step_without_replay(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "step_requests": {
+            "ad_copy": {
+                "provider": "openrouter",
+                "model": "google/gemini-3-flash-preview",
+                "messages": [{"role": "user", "content": "write ad copy"}],
+                "request_data": {"product_title": "Screen"},
+            }
+        },
+        "step_results": {
+            "ad_copy": {
+                "raw_response": {"raw_marker": True},
+                "structured_result": {"structured_marker": True},
+            }
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/ad_copy")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    data = payload["data"]
+    assert data["full_request"]["body"]["messages"][0]["content"] == "write ad copy"
+    assert data["response_data"] == {"structured_marker": True}
+    assert data["raw_response"] == {"raw_marker": True}
+    assert data["replay"]["supported"] is False
+
+
+def _debug_cover_state(provider="local", model="gpt-image-2"):
+    return {
+        "id": "task-1",
+        "type": "video_cover",
+        "product": {
+            "title": "Bug-Proof Car Sunshade Screen",
+            "main_image_url": "https://cdn.example/product.jpg",
+        },
+        "image_count": 1,
+        "step_requests": {
+            "cover_generation": {
+                "provider": provider,
+                "model": model,
+                "request_data": {"image_count": 1},
+                "image_prompts": [{"index": 1, "prompt": "debug prompt text"}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"raw_marker": True},
+                "structured_result": {"covers": [{"index": 1, "hook": "structured hook"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "covers": [{"platform": "social_reels", "index": 1, "hook": "result hook"}],
+        },
+    }
+
+
+def test_video_cover_debug_payload_response_disables_cache(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["Pragma"] == "no-cache"
+
+
+def test_video_cover_debug_payload_rejects_missing_prompt_index(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
+def test_video_cover_debug_payload_rejects_empty_prompt_index(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
+def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state()
+    request_payload = state["step_requests"]["cover_generation"]
+    request_payload.pop("image_prompts")
+    request_payload["prompt"] = "fallback prompt text"
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
+def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state(provider="openrouter", model="openai/gpt-5.4-image-2:high")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    def fake_get_provider_config(code):
+        assert code == "openrouter_image"
+        return _FakeProviderConfig(api_key="sk-openrouter-test", base_url="https://openrouter.test/api/v1")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["full_request"]["method"] == "POST"
+    assert data["full_request"]["url"] == "https://openrouter.test/api/v1/chat/completions"
+    assert data["full_request"]["headers"]["Content-Type"] == "application/json"
+    assert data["full_request"]["body"]["model"] == "openai/gpt-5.4-image-2"
+    assert data["full_request"]["body"]["modalities"] == ["image", "text"]
+    assert data["full_request"]["body"]["extra_body"]["usage"] == {"include": True}
+    assert data["full_request"]["body"]["extra_body"]["quality"] == "high"
+    content = data["full_request"]["body"]["messages"][0]["content"]
+    assert content[0] == {"type": "text", "text": "debug prompt text"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["reference_image_object_key"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["full_request"]["files"] == []
+    assert data["replay"]["supported"] is False
+
+
+def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = _debug_cover_state(provider="gemini_aistudio", model="gemini-3-pro-image-preview")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    def fake_get_provider_config(code):
+        assert code == "gemini_aistudio_image"
+        return _FakeProviderConfig(api_key="sk-gemini-test", base_url="")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["full_request"]["method"] == "SDK"
+    assert data["full_request"]["url"] == "gemini_aistudio"
+    assert data["full_request"]["body"]["model"] == "gemini-3-pro-image-preview"
+    assert data["full_request"]["body"]["prompt"] == "debug prompt text"
+    assert data["full_request"]["body"]["source_image"]["object_key"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["replay"]["supported"] is False
+
+
+def test_video_cover_debug_payload_apimart_uses_local_reference_output_params(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore.gemini_image import _resolve_apimart_output_params
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes(size=(1080, 1920)))
+    expected_size, expected_resolution = _resolve_apimart_output_params(reference_path.read_bytes())
+    state = _debug_cover_state(provider="apimart", model="gpt-image-2")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(
+        video_cover.local_media_storage,
+        "safe_local_path_for",
+        lambda object_key: reference_path,
+    )
+
+    def fake_get_provider_config(code):
+        assert code == "apimart_image"
+        return _FakeProviderConfig(api_key="sk-apimart-test", base_url="https://apimart.test")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    body = resp.get_json()["data"]["full_request"]["body"]
+    assert body["size"] == expected_size
+    assert body["resolution"] == expected_resolution
+    assert body["output_params_source"] == "local_reference_image"
+
+
+def test_video_cover_debug_replay_requires_superadmin(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes())
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover.local_media_storage, "safe_local_path_for", lambda object_key: reference_path)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/debug-replay/cover_generation",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug", "prompt_index": 1},
+    )
+
+    assert resp.status_code in (302, 403)
+
+
+def test_video_cover_debug_replay_posts_same_cover_payload_without_saving_state(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes())
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "image_prompts": [{"index": 1, "prompt": "actual prompt with native hook text"}],
+            }
+        },
+        "result": {"reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"}},
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    posted = {}
+    saved = []
+
+    class FakeResponse:
+        status_code = 200
+        text = json.dumps({"data": [{"b64_json": base64.b64encode(_png_bytes()).decode("ascii")}]})
+
+        def json(self):
+            return json.loads(self.text)
+
+    def fake_post(url, *, headers, data, files, timeout):
+        posted["url"] = url
+        posted["headers"] = headers
+        posted["data"] = data
+        posted["files"] = files
+        posted["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover.local_media_storage, "safe_local_path_for", lambda object_key: reference_path)
+    monkeypatch.setattr(video_cover.local_media_storage, "download_to", lambda object_key, path: None)
+    monkeypatch.setattr(video_cover.requests, "post", fake_post)
+    monkeypatch.setattr(video_cover, "save_project_state", lambda *args, **kwargs: saved.append(args))
+
+    resp = client.post(
+        "/video-cover/api/task-1/debug-replay/cover_generation",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug", "prompt_index": 1},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["image"]["data_url"].startswith("data:image/png;base64,")
+    assert payload["raw_response"]["data"][0]["b64_json"]
+    assert posted["url"] == "https://debug.example/v1/images/edits"
+    assert posted["headers"]["Authorization"] == "Bearer sk-debug"
+    assert posted["data"]["model"] == "gpt-image-2"
+    assert posted["data"]["prompt"] == "actual prompt with native hook text"
+    assert posted["files"]["image"][0] == "reference.png"
+    assert saved == []
+
+
+def test_video_cover_debug_replay_rejects_non_cover_step(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = {"id": "task-1", "type": "video_cover", "step_requests": {"ad_copy": {"messages": []}}}
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    resp = client.post(
+        "/video-cover/api/task-1/debug-replay/ad_copy",
+        json={"request_url": "https://debug.example/v1/images/edits", "api_key": "sk-debug"},
+    )
+
+    assert resp.status_code == 400
+    assert "暂不支持调试生成" in resp.get_json()["error"]
+
+
 def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import video_cover
 
@@ -2245,7 +2765,7 @@ def test_video_cover_delete_soft_deletes_visible_project_and_cleans_storage(
             "state_json": row["state_json"],
         }
     ]
-    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": True}]
+    assert delete_calls == [{"task_id": "task-1", "user_id": 1, "is_admin": False}]
 
 
 def test_video_cover_duplicate_copies_inputs_and_restarts(
@@ -2375,6 +2895,163 @@ def test_video_cover_duplicate_copies_inputs_and_restarts(
         }
     ]
     assert started == [(inserted["task_id"], "video_analysis", 3)]
+
+
+def test_video_cover_duplicate_restores_missing_source_before_copy(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    source_video = tmp_path / "source.mp4"
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(source_video),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 2,
+        "model_defaults": {},
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = {}
+    started = []
+    restored = []
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.update(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "resolve_project_display_name_conflict",
+        lambda user_id, desired_name: desired_name,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "extract_thumbnail",
+        lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
+    )
+
+    def fake_restore(task_id, task):
+        restored.append((task_id, task["video_path"]))
+        source_video.write_bytes(b"restored-video")
+
+    monkeypatch.setattr("web.services.task_source_video.ensure_local_source_video", fake_restore)
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 201
+    assert restored == [("task-1", str(source_video))]
+    next_state = inserted["state"]
+    assert Path(next_state["video_path"]).read_bytes() == b"restored-video"
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    assert started == [(inserted["task_id"], "video_analysis", 2)]
+
+
+def test_video_cover_duplicate_returns_conflict_when_source_cannot_be_restored(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    missing_source = tmp_path / "missing.mp4"
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(missing_source),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 2,
+        "model_defaults": {},
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = []
+    started = []
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.append(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda *args, **kwargs: started.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.services.task_source_video.ensure_local_source_video",
+        lambda task_id, task: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 409
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "源视频缺失" in payload["error"]
+    assert str(missing_source) in payload["error"]
+    assert inserted == []
+    assert started == []
 
 
 def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):

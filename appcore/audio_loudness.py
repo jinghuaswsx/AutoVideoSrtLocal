@@ -31,15 +31,26 @@ EBUR128_FLOOR = -70.0
 LOUDNESS_PROFILE_STANDARD = "standard"
 LOUDNESS_PROFILE_AUTO_BOOST = "bg_boost"
 LOUDNESS_PROFILE_MANUAL_BOOST = "manual_boost"
+LOUDNESS_PROFILE_VOICE_ONLY = "voice_only"
+LOUDNESS_PROFILE_CLEAN_BACKGROUND = "clean_background"
 LOUDNESS_PROFILES = {
     LOUDNESS_PROFILE_STANDARD,
     LOUDNESS_PROFILE_AUTO_BOOST,
     LOUDNESS_PROFILE_MANUAL_BOOST,
+    LOUDNESS_PROFILE_VOICE_ONLY,
+    LOUDNESS_PROFILE_CLEAN_BACKGROUND,
 }
 
-BOOST_TARGET_GAP_LU = 10.0
-BOOST_MAX_BACKGROUND_VOLUME = 1.8
-DEFAULT_MANUAL_BOOST_PCT = 50
+BOOST_TARGET_GAP_LU = 7.0
+BOOST_MAX_BACKGROUND_VOLUME = 2.4
+DEFAULT_MANUAL_BOOST_PCT = 100
+BACKGROUND_CLEANUP_MODE_DE_ELECTRIC = "de_electric"
+DE_ELECTRIC_BACKGROUND_FILTER = (
+    "highpass=f=80,"
+    "equalizer=f=3000:t=q:w=1.4:g=-6,"
+    "equalizer=f=6000:t=q:w=1.2:g=-10,"
+    "lowpass=f=8000"
+)
 
 
 @dataclass
@@ -79,11 +90,11 @@ def validate_loudness_profile(
         isinstance(manual_boost_pct, bool)
         or not isinstance(manual_boost_pct, int)
         or manual_boost_pct < 10
-        or manual_boost_pct > 100
+        or manual_boost_pct > 200
         or manual_boost_pct % 10 != 0
     ):
         raise ValueError(
-            "manual_boost_pct must be an integer multiple of 10 from 10 to 100"
+            "manual_boost_pct must be an integer multiple of 10 from 10 to 200"
         )
     return normalized_profile, manual_boost_pct
 
@@ -98,6 +109,13 @@ def _empty_boost_summary() -> dict:
         "manual_boost": {
             "enabled": False,
             "capped": False,
+        },
+        "background_suppression": {
+            "enabled": False,
+        },
+        "background_cleanup": {
+            "enabled": False,
+            "mode": None,
         },
     }
 
@@ -128,6 +146,23 @@ def resolve_background_volume_profile(
     }
 
     if normalized_profile == LOUDNESS_PROFILE_STANDARD:
+        return result
+
+    if normalized_profile == LOUDNESS_PROFILE_VOICE_ONLY:
+        result["effective_background_volume"] = 0.0
+        result["background_suppression"] = {
+            "enabled": True,
+            "standard_volume": standard_volume,
+            "effective_volume": 0.0,
+        }
+        return result
+
+    if normalized_profile == LOUDNESS_PROFILE_CLEAN_BACKGROUND:
+        result["background_cleanup"] = {
+            "enabled": True,
+            "mode": BACKGROUND_CLEANUP_MODE_DE_ELECTRIC,
+            "filter": DE_ELECTRIC_BACKGROUND_FILTER,
+        }
         return result
 
     if normalized_profile == LOUDNESS_PROFILE_MANUAL_BOOST:
@@ -364,6 +399,35 @@ def mix_with_background(
     if proc.returncode != 0:
         raise RuntimeError(
             f"ffmpeg amix failed (rc={proc.returncode}): {proc.stderr[-500:]}"
+        )
+    return str(out_p)
+
+
+def clean_electronic_background(
+    input_path: str,
+    output_path: str,
+    *,
+    sample_rate: int = 44100,
+    channels: int = 2,
+) -> str:
+    """Render an accompaniment copy with harsh electronic bands attenuated."""
+    in_p = Path(input_path)
+    if not in_p.is_file():
+        raise FileNotFoundError(f"background not found: {input_path}")
+    out_p = Path(output_path)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats", "-y",
+        "-i", str(in_p),
+        "-af", DE_ELECTRIC_BACKGROUND_FILTER,
+        "-ar", str(sample_rate), "-ac", str(channels),
+        str(out_p),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg background cleanup failed (rc={proc.returncode}): {proc.stderr[-500:]}"
         )
     return str(out_p)
 

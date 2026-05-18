@@ -70,6 +70,53 @@ def test_build_plugin_config_annotation_marks_custom_config():
     assert "响度匹配关闭" in annotation["summary"]
 
 
+def test_superadmin_list_filters_omni_translate_projects_by_user_id(authed_client_no_db):
+    with patch("web.routes.omni_translate.db_query", side_effect=[[], []]) as m_q, \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate._is_superadmin_user", return_value=True), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237&lang=de")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args_list[-1].args[0].lower()
+    args = m_q.call_args_list[-1].args[1]
+    assert "p.user_id = %s" in sql
+    assert args == (237, "de")
+
+
+def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):
+    creators = [
+        {"id": 237, "display_name": "顾倩"},
+        {"id": 238, "display_name": "translator238"},
+    ]
+    with patch("web.routes.omni_translate.db_query", side_effect=[creators, []]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate._is_superadmin_user", return_value=True), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'id="creatorFilter"' in html
+    assert '<option value="237" selected>顾倩</option>' in html
+    assert 'value="238"' in html
+    assert ">translator238</option>" in html
+
+
+def test_non_superadmin_omni_translate_ignores_user_filter(authed_client_no_db):
+    with patch("web.routes.omni_translate.db_query", return_value=[]) as m_q, \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/omni-translate?user_id=237")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args.args[0].lower()
+    args = m_q.call_args.args[1]
+    assert "p.user_id = %s" in sql
+    assert args == (1,)
+    assert b'id="creatorFilter"' not in resp.data
+
+
 def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
     authed_client_no_db, tmp_path, monkeypatch,
 ):
@@ -121,6 +168,36 @@ def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
     assert body["items"][0]["request_payload"]["provider"] == "openrouter"
 
 
+def test_omni_list_includes_visible_to_all_for_permitted_users(authed_user_client_no_db):
+    with patch("web.routes.omni_translate.db_query", return_value=[]) as mock_query, \
+         patch("web.routes.omni_translate.medias.list_enabled_language_codes", return_value=["de", "en"]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.omni_translate.recover_all_interrupted_tasks"):
+        resp = authed_user_client_no_db.get("/omni-translate")
+
+    assert resp.status_code == 200
+    sql, args = mock_query.call_args.args
+    assert (
+        "p.user_id = %s OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.visible_to_all')) = 'true'"
+        in sql
+    )
+    assert args == (2,)
+
+
+def test_omni_detail_query_includes_visible_to_all_for_permitted_users(authed_user_client_no_db):
+    with patch("web.routes.omni_translate.db_query_one", return_value=None) as mock_query_one, \
+         patch("web.routes.omni_translate.recover_project_if_needed"):
+        resp = authed_user_client_no_db.get("/omni-translate/shared-task")
+
+    assert resp.status_code == 404
+    sql, args = mock_query_one.call_args.args
+    assert (
+        "user_id = %s OR JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.visible_to_all')) = 'true'"
+        in sql
+    )
+    assert args == ("shared-task", 2, "omni_translate")
+
+
 def test_loudness_profile_route_saves_standard_without_starting_runner(
     authed_client_no_db,
 ):
@@ -164,20 +241,78 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
         mock_store.get.return_value = fake_task
         resp = authed_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
-            json={"profile": "manual_boost", "manual_boost_pct": 50},
+            json={"profile": "manual_boost", "manual_boost_pct": 200},
         )
 
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["profile"] == "manual_boost"
-    assert body["manual_boost_pct"] == 50
+    assert body["manual_boost_pct"] == 200
     assert body["applied_profile"] == "standard"
     assert body["applied_manual_boost_pct"] is None
     assert body["needs_resume"] is True
     mock_store.update.assert_called_once_with(
         "t-1",
         loudness_profile="manual_boost",
-        loudness_manual_boost_pct=50,
+        loudness_manual_boost_pct=200,
+    )
+    mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
+
+
+def test_loudness_profile_route_saves_voice_only(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "separation": {"tts_loudness": {"profile": "standard"}},
+    }
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "voice_only"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "voice_only"
+    assert body["manual_boost_pct"] is None
+    assert body["applied_profile"] == "standard"
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="voice_only",
+        loudness_manual_boost_pct=None,
+    )
+    mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
+
+
+def test_loudness_profile_route_saves_clean_background(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "separation": {"tts_loudness": {"profile": "standard"}},
+    }
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "clean_background"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "clean_background"
+    assert body["manual_boost_pct"] is None
+    assert body["applied_profile"] == "standard"
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="clean_background",
+        loudness_manual_boost_pct=None,
     )
     mock_runner.resume.assert_not_called()
     mock_runner.start.assert_not_called()
@@ -283,20 +418,32 @@ def test_resume_uses_fresh_loudness_profile_before_starting_runner(
     }
 
 
-def test_loudness_profile_route_rejects_non_admin(authed_user_client_no_db):
-    with patch("web.routes.omni_translate.recover_task_if_needed") as mock_recover, \
+def test_loudness_profile_route_allows_visible_project_user_with_permission(authed_user_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "visible_to_all": True,
+        "separation": {"tts_loudness": {"profile": "bg_boost"}},
+    }
+    with patch("web.routes.omni_translate.db_query_one", return_value=None), \
+         patch("web.routes.omni_translate.recover_task_if_needed") as mock_recover, \
          patch("web.routes.omni_translate.store") as mock_store:
+        mock_store.get.return_value = fake_task
         resp = authed_user_client_no_db.post(
             "/api/omni-translate/t-1/loudness-profile",
             json={"profile": "standard"},
         )
 
-    assert resp.status_code == 403
-    mock_recover.assert_not_called()
-    mock_store.update.assert_not_called()
+    assert resp.status_code == 200
+    assert resp.get_json()["profile"] == "standard"
+    mock_recover.assert_called_once_with("t-1")
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="standard",
+        loudness_manual_boost_pct=None,
+    )
 
 
-@pytest.mark.parametrize("pct", [0, 5, 55, 101, "abc", None])
+@pytest.mark.parametrize("pct", [0, 5, 55, 101, 210, "abc", None])
 def test_loudness_profile_route_rejects_invalid_manual_pct(
     authed_client_no_db, pct,
 ):

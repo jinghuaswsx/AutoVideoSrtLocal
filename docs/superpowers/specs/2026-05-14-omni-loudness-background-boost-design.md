@@ -23,7 +23,7 @@
 1. 响度匹配卡片做三个胶囊按钮：`标准`、`增强背景`、`手动调整`。
 2. `标准` 作为默认方案，保持当前输出口径。
 3. `增强背景` 自动抬高 BGM/环境音，但必须有上限。
-4. `手动调整` 打开弹窗选择增强幅度，可选 `+10%` 到 `+100%`，对应当前标准背景音量上的线性增强比例。
+4. `手动调整` 打开弹窗选择增强幅度，可选 `+10%` 到 `+200%`，对应当前标准背景音量上的线性增强比例。
 5. 按钮下方用小字说明方案差异。
 6. 用户选择方案后，从 `loudness_match` 步骤继续，让新响度方案生效。
 
@@ -31,8 +31,8 @@
 
 1. 每个 Omni 任务拥有独立 `loudness_profile`，取值为 `standard`、`bg_boost` 或 `manual_boost`。
 2. `standard` 默认使用当前全局背景音量，不改变既有任务的默认听感。
-3. `bg_boost` 自动计算更高的背景音量，目标是让背景音约比配音低 10 LU，同时把最终背景音量乘数限制在 `1.8` 以内。
-4. `manual_boost` 按用户选择的 `manual_boost_pct` 计算背景音量，范围 `10` 到 `100`，含义是标准背景音量的额外增强百分比。
+3. `bg_boost` 自动计算更高的背景音量，目标是让背景音约比配音低 7 LU，同时把最终背景音量乘数限制在 `2.4` 以内。
+4. `manual_boost` 按用户选择的 `manual_boost_pct` 计算背景音量，范围 `10` 到 `200`，含义是标准背景音量的额外增强百分比。
 5. 用户在响度匹配卡片选择方案后，选择状态立即保存；点击现有“从此步继续”后，从 `loudness_match` 重跑并使用新方案。
 6. UI 明确显示“已选择但未重跑”和“当前结果已按此方案生成”的区别。
 7. 重复切换方案不能在已经 loudnorm 过的 TTS 上继续叠加处理；新实现后的任务必须保留响度处理前的 TTS 源文件用于重跑。
@@ -53,9 +53,9 @@
 - `标准`
   - 小字：`按当前背景音量混入，优先保证配音清晰。`
 - `增强背景`
-  - 小字：`自动提高 BGM/环境音，最高 1.8，避免盖住配音。`
+  - 小字：`自动提高 BGM/环境音，最高 2.4，避免盖住配音。`
 - `手动调整`
-  - 小字：`按所选比例提高背景音，最高 1.8。`
+  - 小字：`按所选比例提高背景音，最高 2.4。`
 
 按钮视觉和自适应规则：
 
@@ -67,7 +67,7 @@
 `手动调整` 的交互：
 
 1. 点击 `手动调整` 胶囊时打开小弹窗，不立即保存。
-2. 弹窗提供 `+10%` 到 `+100%` 的选择，步长 `10%`。实现可用分段按钮或 slider + 当前值，但提交值必须是整数 `10, 20, ..., 100`。
+2. 弹窗提供 `+10%` 到 `+200%` 的选择，步长 `10%`。实现可用分段按钮或 slider + 当前值，但提交值必须是整数 `10, 20, ..., 200`。
 3. 弹窗确认后保存 `loudness_profile="manual_boost"` 和 `manual_boost_pct`。
 4. 弹窗取消时保持原方案不变。
 5. 小字显示当前选择，例如 `手动 +50%，点击“从此步继续”后生效。`
@@ -78,7 +78,7 @@
 2. 点击 `标准` / `增强背景` 只保存选择，不自动重跑；点击 `手动调整` 先弹窗确认比例，避免用户误触后立刻启动耗时任务。
 3. 如果选择方案与当前 `tts_loudness.profile` 不同，卡片显示小字：`已选择，点击“从此步继续”后生效。`
 4. 如果选择方案与当前 `tts_loudness.profile` 相同，并且手动比例也一致，卡片显示小字：`当前结果已按此方案生成。`
-5. `loudness_match` running 时按钮禁用或显示处理中状态，避免并发修改。
+5. `loudness_match` running 时仍允许切换并保存任务级选择；如果当前步骤已开始，用户可从此步继续重新生成。
 6. 按钮请求使用 CSRF header；失败时保留原选中状态并显示轻量错误提示。
 7. 卡片同时标注本次已经生成结果实际采用的背景音逻辑，文案形如：`当前运行逻辑：标准`、`当前运行逻辑：增强背景`、`当前运行逻辑：手动 +50%`。当用户已选择新方案但尚未从此步继续时，这行仍显示旧结果实际采用的逻辑，选择状态行继续提示新方案待生效。
 
@@ -112,7 +112,7 @@
     "standard_volume": 0.8,
     "raw_volume": 1.2,
     "effective_volume": 1.2,
-    "max_volume": 1.8,
+    "max_volume": 2.4,
     "capped": false
   }
 }
@@ -137,8 +137,8 @@
 
 常量：
 
-- `BOOST_TARGET_GAP_LU = 10.0`
-- `BOOST_MAX_BACKGROUND_VOLUME = 1.8`
+- `BOOST_TARGET_GAP_LU = 7.0`
+- `BOOST_MAX_BACKGROUND_VOLUME = 2.4`
 - `BOOST_SILENCE_LUFS_THRESHOLD = -50.0`，沿用现有静音阈值
 
 输入：
@@ -159,7 +159,7 @@ effective_volume = min(BOOST_MAX_BACKGROUND_VOLUME, max(standard_volume, raw_vol
 规则：
 
 1. 增强模式只抬高背景，不降低背景；如果计算结果小于标准音量，使用标准音量。
-2. `effective_volume` 不超过 `1.8`。
+2. `effective_volume` 不超过 `2.4`。
 3. accompaniment 近似静音时不强行打到上限，避免把分离噪声放大。
 4. B 算法和 A 兜底都使用同一个 `effective_volume`；如果 B 因偏差过大切 A，A 后续合成也继续使用同一个有效背景音量。
 5. Summary 要记录增强计算过程，便于排查“为什么没有明显增强”。
@@ -169,7 +169,7 @@ effective_volume = min(BOOST_MAX_BACKGROUND_VOLUME, max(standard_volume, raw_vol
 输入：
 
 - `standard_volume`：当前全局 `settings.background_volume`
-- `manual_boost_pct`：用户选择的整数百分比，范围 `10` 到 `100`
+- `manual_boost_pct`：用户选择的整数百分比，范围 `10` 到 `200`
 
 计算：
 
@@ -184,13 +184,14 @@ effective_volume = min(BOOST_MAX_BACKGROUND_VOLUME, raw_volume)
 - 标准音量 `0.80`，手动 `+10%` → `0.88`
 - 标准音量 `0.80`，手动 `+50%` → `1.20`
 - 标准音量 `0.80`，手动 `+100%` → `1.60`
-- 标准音量 `1.20`，手动 `+100%` → 原始 `2.40`，按上限截断为 `1.80`
+- 标准音量 `0.80`，手动 `+200%` → `2.40`
+- 标准音量 `1.20`，手动 `+200%` → 原始 `3.60`，按上限截断为 `2.40`
 
 规则：
 
-1. `manual_boost_pct` 必须是 `10` 到 `100` 的整数，且必须是 10 的倍数。
+1. `manual_boost_pct` 必须是 `10` 到 `200` 的整数，且必须是 10 的倍数。
 2. 手动增强不读取 `tts_reference_lufs`，不按素材自动判断。
-3. 手动增强和自动增强共用 `BOOST_MAX_BACKGROUND_VOLUME = 1.8` 上限。
+3. 手动增强和自动增强共用 `BOOST_MAX_BACKGROUND_VOLUME = 2.4` 上限。
 4. Summary 要记录 `manual_boost_pct`、`raw_volume`、`effective_volume` 和 `capped`。
 
 ## 后端接口
@@ -208,7 +209,7 @@ Content-Type: application/json
 
 1. 必须登录并可访问该任务。
 2. `profile` 只允许 `standard`、`bg_boost` 或 `manual_boost`。
-3. `profile="manual_boost"` 时必须提供 `manual_boost_pct`，合法范围 `10` 到 `100`，且必须是 10 的倍数。
+3. `profile="manual_boost"` 时必须提供 `manual_boost_pct`，合法范围 `10` 到 `200`，且必须是 10 的倍数。
 4. 写入任务顶层 `loudness_profile`；手动模式同时写入 `loudness_manual_boost_pct`。
 5. 不自动启动 runner。
 6. 返回当前选择、最新已应用方案、已保存手动比例和是否需要重跑：
@@ -259,8 +260,8 @@ Content-Type: application/json
 
 实现后需要覆盖：
 
-1. 纯函数测试：自动增强背景音量会抬高但不超过 `1.8`，静音 accompaniment 回退标准音量。
-2. 纯函数测试：手动增强 `+10%`、`+50%`、`+100%` 按标准音量线性放大并受 `1.8` 上限约束。
+1. 纯函数测试：自动增强背景音量会抬高但不超过 `2.4`，静音 accompaniment 回退标准音量。
+2. 纯函数测试：手动增强 `+10%`、`+50%`、`+100%`、`+200%` 按标准音量线性放大并受 `2.4` 上限约束。
 3. Runtime 测试：`loudness_profile=bg_boost` 或 `manual_boost` 时 `_step_loudness_match()` 把 `effective_background_volume` 写入 summary，并传给 B/A mix。
 4. Runtime 测试：反复从 `loudness_match` 恢复时先还原 source backup，不在已 loudnorm 音频上叠加。
 5. Route 测试：`POST /api/omni-translate/<id>/loudness-profile` 接受三种 profile；`manual_boost` 接受合法 `manual_boost_pct` 并拒绝非法比例；接口不自动调用 runner。

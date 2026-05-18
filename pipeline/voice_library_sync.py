@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple, Callable
 import requests
 
+from appcore import voice_preview_speech_rate
 from appcore.db import execute, query
 from pipeline.voice_embedding import embed_audio_file, serialize_embedding
 
@@ -382,6 +383,183 @@ def _download_preview(url: str, dest_path) -> str:
     with open(dest_str, "wb") as f:
         f.write(resp.content)
     return dest_str
+
+
+def _preview_url_hash(url: str) -> str:
+    return hashlib.sha256(str(url or "").strip().encode("utf-8")).hexdigest()
+
+
+def _preview_rate_provider_code(language: str | None) -> str:
+    return "doubao_asr" if str(language or "").strip().lower() == "en" else "elevenlabs_tts"
+
+
+def _preview_rate_source_code(language: str | None) -> str:
+    return "doubao_asr" if str(language or "").strip().lower() == "en" else "elevenlabs_scribe"
+
+
+def _build_preview_rate_adapter(language: str | None):
+    from appcore.asr_providers import build_adapter
+
+    return build_adapter(_preview_rate_provider_code(language))
+
+
+def _preview_rate_table_for_language(language: str) -> str:
+    try:
+        rows = query(
+            "SELECT COUNT(*) AS c FROM elevenlabs_voice_variants "
+            "WHERE language = %s AND preview_url IS NOT NULL AND preview_url <> ''",
+            (language,),
+        )
+        row = rows[0] if rows else {}
+        if int(row.get("c") or 0) > 0:
+            return "elevenlabs_voice_variants"
+    except Exception:
+        pass
+    return "elevenlabs_voices"
+
+
+def _list_preview_rate_targets(
+    *,
+    language: str | None = None,
+    voice_ids: Optional[List[str]] = None,
+    limit: Optional[int] = None,
+) -> list[dict]:
+    lang = str(language or "").strip().lower()
+    if not lang:
+        return []
+    ids = [
+        str(voice_id or "").strip()
+        for voice_id in (voice_ids or [])
+        if str(voice_id or "").strip()
+    ]
+    table = _preview_rate_table_for_language(lang)
+    sql = (
+        f"SELECT voice_id, language, preview_url FROM {table} "
+        "WHERE language = %s AND preview_url IS NOT NULL AND preview_url <> ''"
+    )
+    params: list[Any] = [lang]
+    if ids:
+        placeholders = ",".join(["%s"] * len(ids))
+        sql += f" AND voice_id IN ({placeholders})"
+        params.extend(ids)
+    if limit:
+        sql += " LIMIT %s"
+        params.append(int(limit))
+
+    rows = query(sql, tuple(params))
+    if not rows:
+        return []
+
+    existing_rows = query(
+        "SELECT voice_id, preview_url_hash FROM voice_preview_speech_rate "
+        "WHERE language = %s",
+        (lang,),
+    )
+    existing = {
+        (
+            str(row.get("voice_id") or "").strip(),
+            str(row.get("preview_url_hash") or "").strip(),
+        )
+        for row in (existing_rows or [])
+    }
+
+    targets: list[dict] = []
+    for row in rows:
+        voice_id = str(row.get("voice_id") or "").strip()
+        preview_url = str(row.get("preview_url") or "").strip()
+        if not voice_id or not preview_url:
+            continue
+        preview_hash = _preview_url_hash(preview_url)
+        if (voice_id, preview_hash) in existing:
+            continue
+        targets.append({
+            "voice_id": voice_id,
+            "language": lang,
+            "preview_url": preview_url,
+            "preview_url_hash": preview_hash,
+        })
+    return targets
+
+
+def _preview_rate_from_utterances(utterances: list[dict]) -> tuple[float, float, float]:
+    from pipeline.voice_match_speed import compute_source_speech_rate
+
+    rate = compute_source_speech_rate(utterances)
+    words_per_second = float(rate.get("source_words_per_second") or 0.0)
+    chars_per_second = float(rate.get("source_chars_per_second") or 0.0)
+    sample_duration = 0.0
+    for item in utterances or []:
+        try:
+            sample_duration = max(sample_duration, float(item.get("end_time") or item.get("end") or 0.0))
+        except (TypeError, ValueError):
+            continue
+    return words_per_second, chars_per_second, sample_duration
+
+
+def compute_missing_preview_speech_rates(
+    *,
+    cache_dir: str | None = None,
+    language: str | None = None,
+    voice_ids: Optional[List[str]] = None,
+    limit: Optional[int] = None,
+    on_progress: Optional[Callable[[int, int, str, bool], None]] = None,
+) -> int:
+    """Download voice previews, transcribe them, and cache preview speech rates.
+
+    English previews intentionally use Doubao ASR. Other languages use
+    ElevenLabs Scribe. A single failed voice does not abort the batch.
+    """
+    targets = _list_preview_rate_targets(
+        language=language,
+        voice_ids=voice_ids,
+        limit=limit,
+    )
+    total = len(targets)
+    if not targets:
+        return 0
+
+    if cache_dir is None:
+        from config import UPLOAD_DIR
+
+        cache_dir = str(Path(UPLOAD_DIR) / "voice_preview_rate_cache")
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for index, target in enumerate(targets, start=1):
+        voice_id = target["voice_id"]
+        lang = target["language"]
+        ok = False
+        try:
+            file_key = hashlib.sha1(
+                f"{lang}:{voice_id}:{target['preview_url_hash']}".encode("utf-8")
+            ).hexdigest()
+            dest = cache_path / f"{file_key}.mp3"
+            _download_preview(target["preview_url"], dest)
+            adapter = _build_preview_rate_adapter(lang)
+            utterances = adapter.transcribe(dest, language=lang)
+            words_per_second, chars_per_second, sample_duration = _preview_rate_from_utterances(utterances)
+            if words_per_second <= 0:
+                raise RuntimeError("preview ASR produced no measurable speech")
+            voice_preview_speech_rate.upsert_rate(
+                voice_id=voice_id,
+                language=lang,
+                preview_url_hash=target["preview_url_hash"],
+                words_per_second=words_per_second,
+                chars_per_second=chars_per_second or None,
+                sample_duration=sample_duration or None,
+                source=f"preview_asr:{_preview_rate_source_code(lang)}",
+            )
+            count += 1
+            ok = True
+        except Exception as exc:
+            log.warning("[compute_missing_preview_speech_rates] failed %s/%s: %s", lang, voice_id, exc)
+        if on_progress is not None:
+            try:
+                on_progress(index, total, voice_id, ok)
+            except Exception as exc:
+                log.warning("on_progress callback failed at %s: %s", voice_id, exc)
+    return count
 
 
 def _update_embedding(voice_id: str, blob: bytes) -> None:

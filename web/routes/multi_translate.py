@@ -176,6 +176,17 @@ def _multi_translate_creator_name_expr() -> str:
         return "u.username"
 
 
+def _parse_user_filter_id() -> int | None:
+    raw = (request.args.get("user_id") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 # ── 页面路由 ──────────────────────────────────────────
 
 @bp.route("/multi-translate")
@@ -190,6 +201,15 @@ def index():
         lang = ""
 
     owner_name_expr = _multi_translate_creator_name_expr()
+    show_user_filter = _is_superadmin_user()
+    current_user_filter = _parse_user_filter_id() if show_user_filter else None
+    user_filter_options = []
+    if show_user_filter:
+        user_filter_options = translation_route_store.list_project_creators(
+            project_type="multi_translate",
+            owner_name_expr=owner_name_expr,
+            query_func=db_query,
+        )
 
     rows = translation_route_store.list_projects_with_creator(
         user_id=current_user.id,
@@ -197,6 +217,7 @@ def index():
         is_admin=_is_superadmin_user(),
         owner_name_expr=owner_name_expr,
         target_lang=lang,
+        filter_user_id=current_user_filter,
         query_func=db_query,
     )
 
@@ -215,6 +236,9 @@ def index():
         projects=rows, now=datetime.now(),
         current_lang=lang,
         filter_langs=filter_langs,
+        show_user_filter=show_user_filter,
+        current_user_filter=current_user_filter,
+        user_filter_options=user_filter_options,
         supported_langs=_list_enabled_target_langs(),
         retention_hours=get_retention_hours("multi_translate"),
     )

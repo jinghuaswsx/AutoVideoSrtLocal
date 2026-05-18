@@ -42,6 +42,10 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "p.marked_at" in data_sql
     assert "p.marked_by" in data_sql
     assert "p.message_zh_html" in data_sql
+    assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in data_sql
+    assert "va.status = 'done'" in data_sql
+    assert "va.id AS video_copyability_analysis_id" in data_sql
+    assert "va.overall_score AS video_copyability_overall_score" in data_sql
     assert "(p.message_html LIKE %s OR p.message_zh_html LIKE %s" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:8] == ["Kitchenware", 10.0, 30.5, 1000, 50, "ok", "2026-05-01", "2026-05-13"]
@@ -86,6 +90,9 @@ def test_list_today_new_hot_posts_filters_by_first_seen_today():
     assert "p.first_seen_at >= CURDATE()" in data_sql
     assert "p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)" in data_sql
     assert "p.first_seen_at" in data_sql
+    assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in data_sql
+    assert "va.status = 'done'" in data_sql
+    assert "va.id AS video_copyability_analysis_id" in data_sql
     assert "ORDER BY p.first_seen_at DESC" in data_sql
     assert "COALESCE(p.sync_period_likes, 0) DESC" in data_sql
     assert data_params == [50, 0]
@@ -248,7 +255,10 @@ def test_list_hot_posts_selects_local_video_cache_fields():
 
     data_sql, _params = calls[-1]
     assert payload["items"][0]["local_video_status"] == "downloaded"
+    assert "p.raw_json" in data_sql
     assert "p.local_video_path" in data_sql
+    assert "p.local_video_duration_seconds" in data_sql
+    assert "p.local_video_cover_path" in data_sql
     assert "p.local_video_status" in data_sql
     assert "p.local_video_error" in data_sql
     assert "p.local_video_downloaded_at" in data_sql
@@ -287,6 +297,8 @@ def test_local_video_status_transitions_are_recorded():
     store.finish_local_video_download(
         77,
         local_video_path="meta_hot_posts/videos/77.mp4",
+        local_video_duration_seconds=12.345,
+        local_video_cover_path="meta_hot_posts/video_covers/77/thumbnail.jpg",
         error_message=None,
         execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
     )
@@ -304,8 +316,15 @@ def test_local_video_status_transitions_are_recorded():
     assert "local_video_attempts=local_video_attempts + 1" in running_sql
     assert running_params == (77,)
     assert "local_video_status='downloaded'" in success_sql
+    assert "local_video_duration_seconds=%s" in success_sql
+    assert "local_video_cover_path=%s" in success_sql
     assert "local_video_downloaded_at=NOW()" in success_sql
-    assert success_params == ("meta_hot_posts/videos/77.mp4", 77)
+    assert success_params == (
+        "meta_hot_posts/videos/77.mp4",
+        12.345,
+        "meta_hot_posts/video_covers/77/thumbnail.jpg",
+        77,
+    )
     assert "ELSE 'failed'" in failure_sql
     assert "local_video_error=CASE" in failure_sql
     assert failure_params == (5, 5, "download failed", "download failed", 78)
@@ -325,6 +344,48 @@ def test_finish_local_video_download_marks_unavailable_after_fifth_failure():
     assert "local_video_status=CASE WHEN local_video_attempts >= %s THEN 'unavailable' ELSE 'failed' END" in sql
     assert "unavailable after max retry attempts" in sql
     assert params == (5, 5, "still blocked", "still blocked", 88)
+
+
+def test_local_video_metadata_queries_are_recorded():
+    calls = []
+
+    rows = store.list_local_videos_missing_metadata(
+        limit=25,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 5}],
+    )
+    updated = store.update_local_video_metadata(
+        5,
+        local_video_duration_seconds=33.2,
+        local_video_cover_path="meta_hot_posts/video_covers/5/thumbnail.jpg",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    select_sql, select_params = calls[0]
+    update_sql, update_params = calls[1]
+    assert rows == [{"id": 5}]
+    assert "local_video_status = 'downloaded'" in select_sql
+    assert "local_video_duration_seconds IS NULL" in select_sql
+    assert "local_video_cover_path IS NULL" in select_sql
+    assert select_params == (25,)
+    assert updated == 1
+    assert "UPDATE meta_hot_posts" in update_sql
+    assert "local_video_duration_seconds=%s" in update_sql
+    assert "local_video_cover_path=%s" in update_sql
+    assert update_params == (33.2, "meta_hot_posts/video_covers/5/thumbnail.jpg", 5)
+
+
+def test_list_local_videos_missing_metadata_can_scan_all_rows():
+    calls = []
+
+    rows = store.list_local_videos_missing_metadata(
+        limit=None,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 5}],
+    )
+
+    sql, params = calls[0]
+    assert rows == [{"id": 5}]
+    assert "LIMIT" not in sql
+    assert params == ()
 
 
 def test_reset_running_local_videos_marks_all_downloading_failed_for_takeover():
@@ -374,6 +435,90 @@ def test_ensure_video_copyability_candidates_inserts_downloaded_product_videos()
     assert "p.product_url IS NOT NULL" in sql
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert params == ()
+
+
+def test_ensure_video_copyability_candidates_default_returns_rowcount(monkeypatch):
+    executed = []
+    closed = []
+
+    class FakeCursor:
+        rowcount = 4
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(store, "get_conn", lambda: FakeConn())
+
+    result = store.ensure_video_copyability_candidates()
+
+    assert result == 4
+    assert executed
+    assert closed == [True]
+
+
+def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
+    calls = []
+
+    result = store.ensure_europe_fit_candidates(
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 9,
+    )
+
+    sql, params = calls[0]
+    assert result == 9
+    assert "INSERT IGNORE INTO meta_hot_post_europe_assessments" in sql
+    assert "SELECT p.id, 'pending'" in sql
+    assert "FROM meta_hot_posts p" in sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id" in sql
+    assert "p.local_video_status = 'downloaded'" in sql
+    assert "p.local_video_path IS NOT NULL" in sql
+    assert "p.product_url IS NOT NULL" in sql
+    assert "e.id IS NULL" in sql
+    assert params == ()
+
+
+def test_ensure_europe_fit_candidates_default_returns_insert_rowcount(monkeypatch):
+    executed = []
+    closed = []
+
+    class FakeCursor:
+        rowcount = 5
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(store, "get_conn", lambda: FakeConn())
+
+    result = store.ensure_europe_fit_candidates()
+
+    assert result == 5
+    assert executed
+    assert closed == [True]
 
 
 def test_next_pending_video_copyability_analyses_selects_unfinished_downloaded_rows():
@@ -655,6 +800,9 @@ def test_list_top_europe_fit_materials_orders_by_score():
     assert rows[0]["europe_fit_score"] == 96
     assert "FROM meta_hot_post_europe_assessments e" in sql
     assert "JOIN meta_hot_posts p ON p.id = e.post_id" in sql
+    assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in sql
+    assert "va.status = 'done'" in sql
+    assert "va.id AS video_copyability_analysis_id" in sql
     assert "e.status = 'done'" in sql
     assert "ORDER BY e.suitability_score DESC" in sql
     assert params == (50,)
@@ -743,8 +891,8 @@ def test_next_category_reanalysis_candidates_selects_done_rows_with_titles():
     assert "category failed:%%" not in sql
     assert "category_l1 = 'Other'" in sql
     assert params == (
-        "openrouter",
-        "google/gemini-3.1-flash-lite-preview",
+        store.CATEGORY_PROVIDER,
+        store.CATEGORY_MODEL,
         "category failed:%",
         "category failed:%",
         100,
@@ -765,7 +913,7 @@ def test_next_category_reanalysis_candidates_include_all_skips_current_openroute
     assert "COALESCE(llm_model, '') <> %s" in sql
     assert "AND (last_error LIKE %s" not in sql
     assert "category failed:%%" not in sql
-    assert params == ("openrouter", "google/gemini-3.1-flash-lite-preview", "category failed:%", 80)
+    assert params == (store.CATEGORY_PROVIDER, store.CATEGORY_MODEL, "category failed:%", 80)
 
 
 def test_next_category_reanalysis_candidates_excludes_current_openrouter_failures():
@@ -782,8 +930,8 @@ def test_next_category_reanalysis_candidates_excludes_current_openrouter_failure
         "AND (last_error LIKE %s"
     ) in " ".join(sql.split())
     assert params == (
-        "openrouter",
-        "google/gemini-3.1-flash-lite-preview",
+        store.CATEGORY_PROVIDER,
+        store.CATEGORY_MODEL,
         "category failed:%",
         "category failed:%",
         100,

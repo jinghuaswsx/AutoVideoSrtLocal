@@ -54,6 +54,16 @@ _RUNNING_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 
 
+def _positive_int_or_none(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized > 0 else None
+
+
 def _download_media_source_to(object_key: str, destination: str) -> str:
     """Materialize a medias raw-source object into a local pipeline file."""
     key = (object_key or "").strip()
@@ -74,6 +84,7 @@ def create_bulk_translate_task(
     video_params: dict,
     initiator: dict,
     raw_source_ids: list[int] | None = None,
+    task_center_task_id: int | None = None,
 ) -> str:
     plan = generate_plan(
         user_id,
@@ -90,6 +101,7 @@ def create_bulk_translate_task(
         "content_types": list(content_types),
         "force_retranslate": bool(force_retranslate),
         "raw_source_ids": list(raw_source_ids or []),
+        "task_center_task_id": _positive_int_or_none(task_center_task_id),
         "video_params_snapshot": dict(video_params or {}),
         "initiator": dict(initiator or {}),
         "plan": [_normalize_item(item) for item in plan],
@@ -976,6 +988,7 @@ def _sync_child_result(
             source_raw_id=source_raw_id,
             video_object_key=video_object_key,
             cover_object_key=cover_object_key,
+            task_center_task_id=_positive_int_or_none(parent_state.get("task_center_task_id")),
         )
         _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return

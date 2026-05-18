@@ -128,8 +128,37 @@ def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_c
         "total": 0,
         "page": 1,
         "page_size": 50,
+        "snapshot": "2026-04-23",
     }
     assert len(calls) == 3
+
+
+def test_build_mk_selection_snapshots_response_lists_recent_archive_dates():
+    from datetime import date
+    from web.services.media_mk_selection import build_mk_selection_snapshots_response
+
+    def fake_db_query(sql, args=()):
+        assert "FROM dianxiaomi_rankings" in sql
+        assert "GROUP BY snapshot_date" in sql
+        assert args == [30]
+        return [
+            {"snapshot_date": date(2026, 5, 18), "listing_count": 1534},
+            {"snapshot_date": "2026-05-17", "listing_count": 1498},
+        ]
+
+    result = build_mk_selection_snapshots_response(
+        {},
+        db_query_fn=fake_db_query,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "items": [
+            {"snapshot": "2026-05-18", "listing_count": 1534},
+            {"snapshot": "2026-05-17", "listing_count": 1498},
+        ],
+        "default_snapshot": "2026-05-18",
+    }
 
 
 def test_build_mk_selection_response_defaults_to_latest_snapshot():
@@ -170,6 +199,7 @@ def test_build_mk_selection_response_defaults_to_latest_snapshot():
 
     assert result.status_code == 200
     assert result.payload["total"] == 0
+    assert result.payload["snapshot"] == "2026-05-11"
 
 
 def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query():
@@ -189,6 +219,362 @@ def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query
 
     assert result.status_code == 400
     assert result.payload["error"] == "invalid_pagination"
+
+
+def test_build_mk_video_materials_response_searches_mingkong_by_product_handle():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    http_calls = []
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-17"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            return [{"cnt": 1}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert "mk_product_id" not in sql
+            assert args == ["2026-05-17", 24, 0]
+            return [
+                {
+                    "rank_position": 7,
+                    "product_id": "gid-1",
+                    "product_name": "Cool Widget",
+                    "product_url": "https://shop.example/products/cool-widget",
+                    "store": "7662984",
+                    "sales_count": 88,
+                    "order_count": 80,
+                    "revenue_main": "CNY 1234.00",
+                }
+            ]
+        raise AssertionError(sql)
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 901,
+                            "product_name": "Cool Widget MK",
+                            "product_links": ["https://shop.example/products/cool-widget"],
+                            "main_image": "uploads2/main.jpg",
+                            "videos": [
+                                {
+                                    "name": "low.mp4",
+                                    "path": "uploads2/low.mp4",
+                                    "image_path": "uploads2/low.jpg",
+                                    "spends": "10",
+                                    "ads_count": 1,
+                                },
+                                {
+                                    "name": "winner.mp4",
+                                    "path": "./medias/uploads2/winner.mp4",
+                                    "image_path": "./medias/uploads2/winner.jpg",
+                                    "spends": "1.2万",
+                                    "ads_count": 9,
+                                    "author": "Bob",
+                                    "upload_time": "2026-05-16T10:00:00",
+                                    "duration_seconds": 12.5,
+                                },
+                                {
+                                    "name": "hidden.mp4",
+                                    "path": "uploads2/hidden.mp4",
+                                    "hidden": True,
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    def fake_http_get(url, *, params=None, headers=None, timeout=None):
+        http_calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = build_mk_video_materials_response(
+        {},
+        db_query_fn=fake_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fake_http_get,
+    )
+
+    assert result.status_code == 200
+    assert http_calls == [
+        {
+            "url": "https://wedev.example/api/marketing/medias",
+            "params": {"page": 1, "q": "cool-widget", "source": "", "level": "", "show_attention": 0},
+            "headers": {"Authorization": "Bearer synced-token"},
+            "timeout": 20,
+        }
+    ]
+    assert result.payload["stats"] == {
+        "source_products": 1,
+        "mk_searches": 1,
+        "mk_no_handle": 0,
+        "mk_no_match": 0,
+        "mk_request_failed": 0,
+        "videos": 2,
+    }
+    assert result.payload["items"][0]["video_name"] == "winner.mp4"
+    assert result.payload["items"][0]["video_path"] == "uploads2/winner.mp4"
+    assert result.payload["items"][0]["video_image_path"] == "uploads2/winner.jpg"
+    assert result.payload["items"][0]["video_spends"] == 12000.0
+    assert result.payload["items"][0]["video_ads_count"] == 9
+    assert result.payload["items"][0]["mk_product_id"] == 901
+    assert result.payload["items"][0]["product_handle"] == "cool-widget"
+    assert result.payload["items"][0]["rank_position"] == 7
+    assert result.payload["items"][0]["sales_count"] == 88
+    assert result.payload["items"][1]["video_name"] == "low.mp4"
+
+
+def test_build_mk_video_materials_response_searches_direct_product_code_without_db():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    http_calls = []
+
+    def fail_db_query(*_args, **_kwargs):
+        raise AssertionError("direct product_code search should not require local rankings")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 902,
+                            "product_name": "Direct Widget MK",
+                            "product_links": ["https://shop.example/products/cool-widget"],
+                            "main_image": "uploads2/direct-main.jpg",
+                            "videos": [
+                                {
+                                    "name": "direct-low.mp4",
+                                    "path": "uploads2/direct-low.mp4",
+                                    "spends": "12",
+                                    "ads_count": 1,
+                                },
+                                {
+                                    "name": "direct-winner.mp4",
+                                    "path": "uploads2/direct-winner.mp4",
+                                    "image_path": "uploads2/direct-winner.jpg",
+                                    "spends": "2.4\u4e07",
+                                    "ads_count": 8,
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    def fake_http_get(url, *, params=None, headers=None, timeout=None):
+        http_calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = build_mk_video_materials_response(
+        {"product_code": "cool-widget-RJC", "max_videos_per_product": "5"},
+        db_query_fn=fail_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fake_http_get,
+    )
+
+    assert result.status_code == 200
+    assert http_calls == [
+        {
+            "url": "https://wedev.example/api/marketing/medias",
+            "params": {"page": 1, "q": "cool-widget", "source": "", "level": "", "show_attention": 0},
+            "headers": {"Authorization": "Bearer synced-token"},
+            "timeout": 20,
+        }
+    ]
+    assert result.payload["stats"]["source_products"] == 0
+    assert result.payload["stats"]["mk_searches"] == 1
+    assert result.payload["stats"]["videos"] == 2
+    assert result.payload["items"][0]["video_name"] == "direct-winner.mp4"
+    assert result.payload["items"][0]["product_handle"] == "cool-widget"
+    assert result.payload["items"][0]["mk_product_id"] == 902
+    assert result.payload["items"][0]["rank_position"] is None
+    assert result.payload["has_more_products"] is False
+
+
+def test_build_mk_video_materials_response_requires_exact_mingkong_product_code():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 902,
+                            "product_name": "Wrong RJC Widget",
+                            "product_links": ["https://shop.example/products/cool-widget-rjc"],
+                            "videos": [
+                                {
+                                    "name": "wrong-rjc.mp4",
+                                    "path": "uploads2/wrong-rjc.mp4",
+                                    "spends": "99000",
+                                    "ads_count": 99,
+                                },
+                            ],
+                        },
+                        {
+                            "id": 903,
+                            "product_name": "Exact Widget",
+                            "product_links": ["https://shop.example/products/cool-widget"],
+                            "videos": [
+                                {
+                                    "name": "exact.mp4",
+                                    "path": "uploads2/exact.mp4",
+                                    "spends": "10",
+                                    "ads_count": 1,
+                                },
+                            ],
+                        },
+                    ]
+                }
+            }
+
+    result = build_mk_video_materials_response(
+        {"product_code": "cool-widget"},
+        db_query_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no db")),
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert result.status_code == 200
+    assert result.payload["stats"]["videos"] == 1
+    assert result.payload["items"][0]["mk_product_id"] == 903
+    assert result.payload["items"][0]["video_name"] == "exact.mp4"
+
+
+def test_build_mk_video_materials_response_treats_suffix_only_result_as_no_match():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 902,
+                            "product_links": ["https://shop.example/products/cool-widget-rjc"],
+                            "videos": [
+                                {
+                                    "name": "wrong-rjc.mp4",
+                                    "path": "uploads2/wrong-rjc.mp4",
+                                    "spends": "99000",
+                                    "ads_count": 99,
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    result = build_mk_video_materials_response(
+        {"product_code": "cool-widget"},
+        db_query_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no db")),
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert result.status_code == 200
+    assert result.payload["stats"]["mk_no_match"] == 1
+    assert result.payload["stats"]["videos"] == 0
+    assert result.payload["items"] == []
+
+
+def test_build_mk_video_materials_response_direct_product_defaults_to_all_visible_videos():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    def fail_db_query(*_args, **_kwargs):
+        raise AssertionError("direct product_code search should not require local rankings")
+
+    spends = ["3.05万", "2.56万", "3.89千", "1.94千", "1.50千", "1.29千", "598"]
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 903,
+                            "product_name": "Fitness Band MK",
+                            "product_links": ["https://shop.example/products/fitness-band"],
+                            "videos": [
+                                {
+                                    "name": f"video-{index}.mp4",
+                                    "path": f"uploads2/video-{index}.mp4",
+                                    "spends": spend,
+                                    "ads_count": index,
+                                }
+                                for index, spend in enumerate(spends, start=1)
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    result = build_mk_video_materials_response(
+        {"product_code": "fitness-band"},
+        db_query_fn=fail_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert result.status_code == 200
+    assert result.payload["stats"]["videos"] == 7
+    assert [item["video_name"] for item in result.payload["items"]] == [
+        "video-1.mp4",
+        "video-2.mp4",
+        "video-3.mp4",
+        "video-4.mp4",
+        "video-5.mp4",
+        "video-6.mp4",
+        "video-7.mp4",
+    ]
+    assert result.payload["items"][0]["video_spends"] == 30500.0
+    assert result.payload["items"][0]["video_spends_text"] == "3.05万"
+
+
+def test_build_mk_video_materials_response_rejects_missing_credentials_without_request():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    def fail_db_query(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before db query")
+
+    def fail_http_get(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before wedev request")
+
+    result = build_mk_video_materials_response(
+        {},
+        db_query_fn=fail_db_query,
+        build_headers_fn=lambda: {"Accept": "application/json"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fail_http_get,
+    )
+
+    assert result.status_code == 500
+    assert result.payload["error"] == "明空凭据未配置，请先在设置页同步 wedev 凭据"
 
 
 def test_build_mk_detail_response_uses_server_side_credentials():

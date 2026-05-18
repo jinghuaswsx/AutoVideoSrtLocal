@@ -117,7 +117,7 @@ def _copy_clip_metadata_to_sentences(sentences: list[dict], segments: list[dict]
 def _should_run_speech_shot_alignment(task: dict) -> bool:
     cfg = task.get("plugin_config") if isinstance(task.get("plugin_config"), dict) else {}
     return (
-        task.get("type") == "omni_translate"
+        task.get("type") in {"omni_translate", "english_redub"}
         and bool(cfg.get("shot_decompose"))
         and cfg.get("tts_strategy") == "sentence_reconcile"
     )
