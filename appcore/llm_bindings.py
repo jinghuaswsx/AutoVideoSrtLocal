@@ -16,6 +16,7 @@ from appcore.db import execute, query, query_one
 from appcore.llm_use_cases import USE_CASES, get_use_case
 
 VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
+    "meta_hot_posts.translate_message",
     "meta_hot_posts.europe_fit",
     "meta_hot_posts.video_copyability",
 })

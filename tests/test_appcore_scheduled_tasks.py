@@ -619,7 +619,7 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert translation_task["source_type"] == "apscheduler"
     assert translation_task["runner"] == "appcore.meta_hot_posts.scheduler.translation_tick_once"
     assert translation_task["log_table"] == "scheduled_task_runs"
-    assert "50 条" in translation_task["description"]
+    assert "30 条" in translation_task["description"]
     assert "中文" in translation_task["description"]
 
     assert "meta_hot_posts_video_copyability_tick" not in definitions

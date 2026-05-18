@@ -506,7 +506,7 @@ USE_CASES: dict[str, UseCase] = {
         "Meta 热帖文案翻译",
         "把 Meta 热帖视频下方英文文案翻译为简体中文并缓存",
         "openrouter",
-        "google/gemini-3.1-flash-lite",
+        "google/gemini-3-flash-preview",
         "openrouter",
         "tokens",
     ),

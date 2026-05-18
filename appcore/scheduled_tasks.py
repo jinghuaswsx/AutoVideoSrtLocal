@@ -299,9 +299,10 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Meta 热帖文案翻译",
         "description": (
             "每 10 分钟扫描 Meta 热帖下方视频文案中尚未生成中文缓存的记录，"
-            "每轮最多 50 条，逐条调用 LLM 翻译为简体中文并写回 message_zh_html；"
-            "页面优先展示中文缓存，原始英文仍保留在 message_html。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-14-meta-hot-posts-message-translation-design.md"
+            "每轮最多 30 条，任务之间不额外停顿；"
+            "逐条调用可单独配置的 LLM 翻译为简体中文并写回 message_zh_html；"
+            "页面优先展示中文缓存，原始英文仍保留在 message_html。默认使用 OpenRouter Gemini 3 Flash。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-translate-model-and-schedule-design.md"
         ),
         "schedule": "每 10 分钟",
         "source_type": "apscheduler",

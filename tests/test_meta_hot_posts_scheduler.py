@@ -675,7 +675,7 @@ def test_analysis_tick_once_defaults_to_30_products_with_20_second_spacing(monke
     assert captured["per_item_delay_seconds"] == 20
 
 
-def test_translation_tick_once_defaults_to_50_messages_with_3_second_spacing(monkeypatch):
+def test_translation_tick_once_defaults_to_30_messages_with_no_spacing(monkeypatch):
     captured = {}
 
     def fake_translate_pending_messages(*, limit, user_id=None, per_item_delay_seconds):
@@ -690,8 +690,8 @@ def test_translation_tick_once_defaults_to_50_messages_with_3_second_spacing(mon
 
     scheduler.translation_tick_once()
 
-    assert captured["limit"] == 50
-    assert captured["per_item_delay_seconds"] == 3
+    assert captured["limit"] == 30
+    assert captured["per_item_delay_seconds"] == 0
 
 
 def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):

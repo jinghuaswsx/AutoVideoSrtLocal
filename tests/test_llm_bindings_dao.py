@@ -66,6 +66,19 @@ def test_resolve_keeps_meta_video_analysis_adc_binding():
     assert result["model"] == "gemini-3.1-pro-preview"
 
 
+def test_resolve_keeps_meta_message_translation_adc_binding():
+    row = {
+        "provider_code": "gemini_vertex_adc",
+        "model_id": "gemini-3-flash-preview",
+        "extra_config": None,
+        "enabled": 1,
+    }
+    with patch("appcore.llm_bindings.query_one", return_value=row):
+        result = llm_bindings.resolve("meta_hot_posts.translate_message")
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3-flash-preview"
+
+
 def test_resolve_disabled_falls_back_to_default_without_reseeding():
     """enabled=0 视为无绑定，返回默认，但不 seed（避免覆盖管理员意图）。"""
     row = {
@@ -144,6 +157,19 @@ def test_upsert_normalizes_non_meta_video_adc_binding_to_aistudio():
     args = m_exec.call_args[0][1]
     assert args[1] == "gemini_aistudio"
     assert args[2] == "gemini-3.1-pro-preview"
+
+
+def test_upsert_keeps_meta_message_translation_adc_binding():
+    with patch("appcore.llm_bindings.execute") as m_exec:
+        llm_bindings.upsert(
+            "meta_hot_posts.translate_message",
+            provider="gemini_vertex_adc",
+            model="gemini-3-flash-preview",
+            updated_by=7,
+        )
+    args = m_exec.call_args[0][1]
+    assert args[1] == "gemini_vertex_adc"
+    assert args[2] == "gemini-3-flash-preview"
 
 
 def test_delete_removes_binding():

@@ -95,7 +95,19 @@ IMAGE_TEXT_DETECT_PROVIDERS = (
     "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc", "openrouter",
 )
 IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite"
-HIDDEN_BINDING_CODES = {"image_translate.generate"}
+META_HOT_POSTS_TRANSLATE_USE_CASE = "meta_hot_posts.translate_message"
+META_HOT_POSTS_TRANSLATE_PROVIDERS = (
+    "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc", "openrouter",
+)
+META_HOT_POSTS_TRANSLATE_MODEL_OPTIONS = (
+    ("gemini_3_flash", "Gemini 3 Flash"),
+    ("gemini_31_flash_lite", "Gemini 3 Flash-Lite"),
+)
+_META_HOT_POSTS_TRANSLATE_BASE_MODELS = {
+    "gemini_3_flash": "gemini-3-flash-preview",
+    "gemini_31_flash_lite": "gemini-3.1-flash-lite",
+}
+HIDDEN_BINDING_CODES = {"image_translate.generate", META_HOT_POSTS_TRANSLATE_USE_CASE}
 PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
 IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
     **IMAGE_TRANSLATE_CHANNEL_LABELS,
@@ -107,6 +119,54 @@ def _image_translate_models_by_channel() -> dict[str, list[dict]]:
     return {
         code: [{"id": mid, "label": label} for mid, label in list_image_models(code)]
         for code in IMAGE_TRANSLATE_CHANNELS
+    }
+
+
+def _meta_hot_posts_translate_model_id(provider: str, model_key: str) -> str | None:
+    base_model = _META_HOT_POSTS_TRANSLATE_BASE_MODELS.get(model_key)
+    if not base_model:
+        return None
+    return f"google/{base_model}" if provider == "openrouter" else base_model
+
+
+def _meta_hot_posts_translate_model_key(provider: str, model_id: str) -> str:
+    model = (model_id or "").strip()
+    if provider == "openrouter" and model.startswith("google/"):
+        model = model.split("/", 1)[1]
+    for key, base_model in _META_HOT_POSTS_TRANSLATE_BASE_MODELS.items():
+        if model == base_model:
+            return key
+    return "gemini_3_flash"
+
+
+def _meta_hot_posts_translate_binding_view(bindings_rows: list[dict] | None = None) -> dict:
+    default_provider = "openrouter"
+    default_model = _meta_hot_posts_translate_model_id(
+        default_provider, "gemini_3_flash",
+    ) or "google/gemini-3-flash-preview"
+    binding = {"provider": default_provider, "model": default_model}
+    for row in bindings_rows or []:
+        if row.get("code") == META_HOT_POSTS_TRANSLATE_USE_CASE:
+            binding = row
+            break
+    provider = str(binding.get("provider") or default_provider).strip()
+    if provider not in META_HOT_POSTS_TRANSLATE_PROVIDERS:
+        provider = default_provider
+    model_key = _meta_hot_posts_translate_model_key(
+        provider, str(binding.get("model") or default_model),
+    )
+    return {
+        "use_case_code": META_HOT_POSTS_TRANSLATE_USE_CASE,
+        "provider": provider,
+        "model_key": model_key,
+        "provider_options": [
+            {"code": code, "label": BINDING_PROVIDER_LABELS.get(code, code)}
+            for code in META_HOT_POSTS_TRANSLATE_PROVIDERS
+        ],
+        "model_options": [
+            {"key": key, "label": label}
+            for key, label in META_HOT_POSTS_TRANSLATE_MODEL_OPTIONS
+        ],
     }
 
 
@@ -334,6 +394,7 @@ def index():
         image_translate_models_by_channel=image_translate_models_by_channel,
         openrouter_openai_image2_enabled=openrouter_openai_image2_enabled,
         openrouter_openai_image2_default_quality=openrouter_openai_image2_default_quality,
+        meta_hot_posts_translate_binding=_meta_hot_posts_translate_binding_view(bindings_rows),
         bindings_grouped=bindings_grouped,
         module_labels=MODULE_LABELS,
         binding_allowed_providers=BINDING_ALLOWED_PROVIDERS,
@@ -360,6 +421,7 @@ def _load_translate_pref() -> str:
 def _handle_providers_post() -> None:
     """保存 providers Tab：每个 provider_code 独立保存，admin-only。"""
     user_id = current_user.id
+    _handle_meta_hot_posts_translate_binding_post(user_id)
     known_codes = set(llm_provider_configs.known_provider_codes())
     clear_keys = set(request.form.getlist("clear") or [])
     for provider_code in known_codes:
@@ -434,6 +496,27 @@ def _handle_providers_post() -> None:
     translate_pref = request.form.get("translate_pref", DEFAULT_TRANSLATE_PROVIDER).strip()
     if translate_pref in TRANSLATE_PROVIDERS:
         set_key(user_id, "translate_pref", translate_pref)
+
+
+def _handle_meta_hot_posts_translate_binding_post(user_id: int) -> None:
+    if (
+        "meta_hot_posts_translate_provider" not in request.form
+        and "meta_hot_posts_translate_model_key" not in request.form
+    ):
+        return
+    provider = (request.form.get("meta_hot_posts_translate_provider") or "").strip()
+    model_key = (request.form.get("meta_hot_posts_translate_model_key") or "").strip()
+    if provider not in META_HOT_POSTS_TRANSLATE_PROVIDERS:
+        return
+    model_id = _meta_hot_posts_translate_model_id(provider, model_key)
+    if not model_id:
+        return
+    llm_bindings.upsert(
+        META_HOT_POSTS_TRANSLATE_USE_CASE,
+        provider=provider,
+        model=model_id,
+        updated_by=user_id,
+    )
 
 
 def _handle_bindings_post() -> None:
