@@ -64,6 +64,7 @@ from appcore.tts_language_guard import (
     extract_tts_script_text,
     validate_tts_script_language_or_raise,
 )
+from pipeline import speech_rate_model
 
 
 from ._helpers import (
@@ -96,6 +97,19 @@ from ._helpers import (
     _fit_tts_segments_to_duration,
     _trim_tts_metadata_to_segments,
 )
+
+_SPEECH_RATE_FALLBACK_CPS = {
+    "en": 14.0,
+    "de": 13.0,
+    "fr": 14.0,
+    "es": 14.0,
+    "pt": 14.0,
+    "it": 14.0,
+    "nl": 14.0,
+    "sv": 14.0,
+    "fi": 14.0,
+    "ja": 7.0,
+}
 
 
 def run_av_localize(*args, **kwargs):
@@ -341,6 +355,85 @@ class PipelineRunner:
             )
             or _DEFAULT_WPS.get(target_language_label, 2.5)
         )
+        speech_rate_voice_id = str(
+            voice.get("elevenlabs_voice_id")
+            or voice.get("voice_id")
+            or voice.get("id")
+            or ""
+        ).strip()
+        speech_rate_lang = str(target_language_label or "").strip()
+
+        def _rate_fallback_cps() -> float:
+            return float(_SPEECH_RATE_FALLBACK_CPS.get(speech_rate_lang, 14.0))
+
+        def _resolve_speech_rate_reference() -> dict:
+            try:
+                return speech_rate_model.get_rate_with_source(
+                    speech_rate_voice_id,
+                    speech_rate_lang,
+                    fallback=_rate_fallback_cps(),
+                )
+            except Exception:
+                log.warning(
+                    "failed to resolve speech rate reference for voice=%s language=%s",
+                    speech_rate_voice_id,
+                    speech_rate_lang,
+                    exc_info=True,
+                )
+                return {"chars_per_second": _rate_fallback_cps(), "source": "fallback"}
+
+        initial_speech_rate = _resolve_speech_rate_reference()
+
+        def _attach_speech_rate_diagnostics(
+            round_record: dict,
+            *,
+            char_count: int,
+            audio_duration: float,
+            rate_info: dict,
+        ) -> None:
+            try:
+                cps = float(rate_info.get("chars_per_second") or 0.0)
+            except (TypeError, ValueError):
+                cps = 0.0
+            source = str(rate_info.get("source") or "missing")
+            if cps <= 0 or char_count <= 0:
+                return
+            estimated_duration = char_count / cps
+            round_record["speech_rate_source"] = source
+            round_record["speech_rate_cps"] = round(cps, 4)
+            round_record["speech_rate_char_count"] = int(char_count)
+            round_record["speech_rate_estimated_duration"] = round(estimated_duration, 3)
+            if audio_duration > 0:
+                actual_cps = char_count / audio_duration
+                round_record["speech_rate_actual_duration"] = round(audio_duration, 3)
+                round_record["speech_rate_actual_cps"] = round(actual_cps, 4)
+                if estimated_duration > 0:
+                    round_record["speech_rate_estimate_delta_pct"] = round(
+                        ((audio_duration - estimated_duration) / estimated_duration) * 100.0,
+                        3,
+                    )
+
+        def _record_measured_speech_rate(*, char_count: int, audio_duration: float) -> bool:
+            if not speech_rate_voice_id or not speech_rate_lang:
+                return False
+            if char_count <= 0 or audio_duration <= 0:
+                return False
+            try:
+                speech_rate_model.update_rate(
+                    speech_rate_voice_id,
+                    speech_rate_lang,
+                    chars=char_count,
+                    duration_seconds=audio_duration,
+                )
+                return True
+            except Exception:
+                log.warning(
+                    "failed to update speech rate sample for voice=%s language=%s",
+                    speech_rate_voice_id,
+                    speech_rate_lang,
+                    exc_info=True,
+                )
+                return False
 
         def _count_rewrite_units(text: str) -> int:
             try:
@@ -1190,6 +1283,19 @@ class PipelineRunner:
             if tts_usage:
                 round_record["tts_script_tokens_in"] = tts_usage.get("input_tokens")
                 round_record["tts_script_tokens_out"] = tts_usage.get("output_tokens")
+            if round_index == 1:
+                planned_tts_text = tts_script.get("full_text", "")
+                planned_char_count = (
+                    _count_rewrite_units(planned_tts_text)
+                    if unit_label == "字"
+                    else _count_visible_chars(planned_tts_text)
+                )
+                _attach_speech_rate_diagnostics(
+                    round_record,
+                    char_count=planned_char_count,
+                    audio_duration=0.0,
+                    rate_info=initial_speech_rate,
+                )
 
             # Phase 3: audio_gen
             tts_segments = loc_mod.build_tts_segments(tts_script, script_segments)
@@ -1262,6 +1368,24 @@ class PipelineRunner:
             if unit_label == "字":
                 round_record["ja_char_count"] = word_count
             round_record["wps_observed"] = (word_count / audio_duration) if audio_duration > 0 else 0.0
+            tts_char_count = int(round_record.get("tts_char_count") or 0)
+            if round_index == 1:
+                _attach_speech_rate_diagnostics(
+                    round_record,
+                    char_count=tts_char_count,
+                    audio_duration=audio_duration,
+                    rate_info=initial_speech_rate,
+                )
+            speech_rate_recorded = _record_measured_speech_rate(
+                char_count=tts_char_count,
+                audio_duration=audio_duration,
+            )
+            if round_index == 1 and round_record.get("speech_rate_source"):
+                round_record["speech_rate_actual_recorded"] = speech_rate_recorded
+                round_record["speech_rate_reference_switched"] = (
+                    speech_rate_recorded
+                    and round_record.get("speech_rate_source") != "actual_tts"
+                )
 
             # persist rounds incrementally so UI survives page refresh
             import appcore.task_state as task_state

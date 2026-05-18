@@ -132,12 +132,22 @@ def test_av_translate_response_schema_requires_sentence_metadata():
 
 
 def test_compute_target_chars_range_uses_speech_rate_model(monkeypatch):
-    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+    monkeypatch.setattr(
+        av_translate.speech_rate_model,
+        "get_effective_rate",
+        lambda voice_id, language, fallback=None: 10.0,
+        raising=False,
+    )
     assert av_translate.compute_target_chars_range(2.0, "voice-1", "en") == (18, 22)
 
 
 def test_compute_target_chars_range_falls_back_when_cps_missing(monkeypatch):
-    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: None)
+    monkeypatch.setattr(
+        av_translate.speech_rate_model,
+        "get_effective_rate",
+        lambda voice_id, language, fallback=None: fallback,
+        raising=False,
+    )
     assert av_translate.compute_target_chars_range(1.0, "voice-1", "ja") == (6, 8)
 
 

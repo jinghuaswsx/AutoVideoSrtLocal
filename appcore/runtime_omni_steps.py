@@ -621,7 +621,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
       voice_match 步骤里若 cfg["translate_algo"] == "shot_char_limit" 时
       会自动调 initialize_baseline；此函数只负责读 cps 用。
     """
-    from pipeline.speech_rate_model import get_rate
+    from pipeline.speech_rate_model import get_effective_rate
     from pipeline.translate_v2 import compute_char_limit, translate_shot
     from appcore import llm_bindings
 
@@ -645,7 +645,7 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     voice_id = task.get("selected_voice_id") or ""
     target_lang = runner._resolve_target_lang(task)
     default_cps = 15.0
-    cps = get_rate(voice_id, target_lang) or default_cps
+    cps = get_effective_rate(voice_id, target_lang, fallback=default_cps) or default_cps
 
     jobs: list[dict[str, Any]] = []
     for i, unit in enumerate(translation_units):

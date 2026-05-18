@@ -3025,6 +3025,44 @@
       </details>`;
   }
 
+  function speechRateSourceLabel(source) {
+    return ({
+      actual_tts: "真实 TTS",
+      preview_prior: "预览先验",
+      fallback: "语言兜底",
+      missing: "未命中",
+    })[String(source || "")] || source || "--";
+  }
+
+  function renderSpeechRateDiagnostic(round, options = {}) {
+    if (!round) return "";
+    const cps = numberOrNull(round.speech_rate_cps ?? round.speech_rate_chars_per_second);
+    const source = round.speech_rate_source || "";
+    const charCount = numberOrNull(round.speech_rate_char_count ?? round.tts_char_count ?? round.char_count);
+    const estimated = numberOrNull(round.speech_rate_estimated_duration);
+    const actual = numberOrNull(round.speech_rate_actual_duration ?? round.audio_duration);
+    const actualCps = numberOrNull(round.speech_rate_actual_cps);
+    const deltaPct = numberOrNull(round.speech_rate_estimate_delta_pct);
+    const switched = Boolean(round.speech_rate_reference_switched);
+    if (cps == null && !source && estimated == null && actualCps == null) return "";
+
+    const sourceLabel = speechRateSourceLabel(source);
+    const sourceClass = source ? ` is-${String(source).replace(/[^a-z0-9_-]/gi, "")}` : "";
+    const bits = [];
+    bits.push(`<span><b>语速基准</b>${escapeHtml(sourceLabel)}${cps != null ? ` · ${escapeHtml(cps.toFixed(2))} 字/秒` : ""}</span>`);
+    if (charCount != null) bits.push(`<span><b>字符</b>${escapeHtml(Math.round(charCount))}</span>`);
+    if (estimated != null) bits.push(`<span><b>预计首轮</b>${escapeHtml(formatAvDuration(estimated))}</span>`);
+    if (actual != null) bits.push(`<span><b>实测首轮</b>${escapeHtml(formatAvDuration(actual))}</span>`);
+    if (actualCps != null) bits.push(`<span><b>实测语速</b>${escapeHtml(actualCps.toFixed(2))} 字/秒</span>`);
+    if (deltaPct != null) {
+      const sign = deltaPct > 0 ? "+" : "";
+      bits.push(`<span><b>偏差</b>${escapeHtml(sign + deltaPct.toFixed(1))}%</span>`);
+    }
+    if (switched) bits.push("<span><b>参考</b>后续使用实测语速</span>");
+    const compactClass = options.compact ? " is-compact" : "";
+    return `<div class="duration-rate-diagnostic${sourceClass}${compactClass}">${bits.join("")}</div>`;
+  }
+
   // ============================================================
   // Duration Loop 主渲染
   // ============================================================
@@ -3220,6 +3258,7 @@
             ${finalBadge}
           </div>
           <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
+          ${renderSpeechRateDiagnostic(round)}
           ${ttsSummary ? `<div class="duration-round-meta">${ttsSummary}</div>` : ''}
           ${tokenStr ? `<div class="duration-round-meta">${tokenStr}</div>` : ''}
           ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
@@ -3751,6 +3790,7 @@
               <span style="width:${escapeAttr(pct.toFixed(2))}%"></span>
             </div>
             <div class="sentence-tts-progress-meta">${total ? `${escapeHtml(done)}/${escapeHtml(total)} 段` : "等待进度"} · 活跃 ${escapeHtml(active)} 路 · 排队 ${escapeHtml(queued)}</div>
+            ${renderSpeechRateDiagnostic(initialAudioProgress, { compact: true })}
           </div>
           <div class="sentence-tts-progress-step is-current">
             <div class="sentence-tts-progress-step-title">当前句处理</div>

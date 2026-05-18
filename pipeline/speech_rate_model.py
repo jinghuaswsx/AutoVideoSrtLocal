@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import datetime
 from typing import Optional, Tuple
@@ -27,6 +28,56 @@ def _query_rate(voice_id: str, language: str):
     )
 
 
+def _preview_url_hash(url: str) -> str:
+    return hashlib.sha256(str(url or "").strip().encode("utf-8")).hexdigest()
+
+
+def _query_current_preview_url(voice_id: str, language: str) -> str | None:
+    voice_id = str(voice_id or "").strip()
+    language = str(language or "").strip()
+    if not voice_id or not language:
+        return None
+    row = query_one(
+        "SELECT preview_url FROM elevenlabs_voice_variants "
+        "WHERE voice_id=%s AND language=%s "
+        "AND preview_url IS NOT NULL AND preview_url <> '' "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (voice_id, language),
+    )
+    if row and str(row.get("preview_url") or "").strip():
+        return str(row["preview_url"]).strip()
+    row = query_one(
+        "SELECT preview_url FROM elevenlabs_voices "
+        "WHERE voice_id=%s AND language=%s "
+        "AND preview_url IS NOT NULL AND preview_url <> '' "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (voice_id, language),
+    )
+    if row and str(row.get("preview_url") or "").strip():
+        return str(row["preview_url"]).strip()
+    return None
+
+
+def _query_preview_prior_rate(voice_id: str, language: str) -> Optional[float]:
+    preview_url = _query_current_preview_url(voice_id, language)
+    if not preview_url:
+        return None
+    row = query_one(
+        "SELECT chars_per_second FROM voice_preview_speech_rate "
+        "WHERE voice_id=%s AND language=%s AND preview_url_hash=%s "
+        "AND chars_per_second IS NOT NULL AND chars_per_second > 0 "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (str(voice_id or "").strip(), str(language or "").strip(), _preview_url_hash(preview_url)),
+    )
+    if not row:
+        return None
+    try:
+        cps = float(row.get("chars_per_second") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return cps if cps > 0 else None
+
+
 def _upsert_rate(voice_id: str, language: str, cps: float, count: int) -> None:
     execute(
         """
@@ -47,6 +98,38 @@ def get_rate(voice_id: str, language: str) -> Optional[float]:
     if not row:
         return None
     return float(row["chars_per_second"])
+
+
+def get_rate_with_source(
+    voice_id: str,
+    language: str,
+    *,
+    fallback: float | None = None,
+) -> dict:
+    """Return effective TTS cps and where it came from.
+
+    `voice_speech_rate` remains actual generated TTS only. Preview ASR rates are
+    used only as a cold-start prior when no actual TTS sample exists.
+    """
+    actual = get_rate(voice_id, language)
+    if actual is not None and actual > 0:
+        return {"chars_per_second": actual, "source": "actual_tts"}
+    preview = _query_preview_prior_rate(voice_id, language)
+    if preview is not None and preview > 0:
+        return {"chars_per_second": preview, "source": "preview_prior"}
+    if fallback is not None and fallback > 0:
+        return {"chars_per_second": float(fallback), "source": "fallback"}
+    return {"chars_per_second": None, "source": "missing"}
+
+
+def get_effective_rate(
+    voice_id: str,
+    language: str,
+    *,
+    fallback: float | None = None,
+) -> Optional[float]:
+    value = get_rate_with_source(voice_id, language, fallback=fallback).get("chars_per_second")
+    return float(value) if value is not None else None
 
 
 def update_rate(voice_id: str, language: str, *,

@@ -416,6 +416,90 @@ class TestDurationLoopRound1Only:
         assert result["rounds"][0]["round"] == 1
         assert result["rounds"][0]["audio_duration"] == 30.0
 
+    def test_round1_records_speech_rate_prior_diagnostics_and_actual_sample(self, tmp_path, monkeypatch):
+        runner = self._make_runner()
+
+        def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return {
+                "full_audio_path": out,
+                "segments": [{"index": 0, "tts_path": out, "tts_duration": 6.0}],
+            }
+
+        tts_text = "abcdefghijklmnopqrstuvwxyzABCD"
+
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 6.0)
+        monkeypatch.setattr(
+            "pipeline.translate.generate_tts_script",
+            lambda loc, **kwargs: {
+                "full_text": tts_text,
+                "blocks": [{"index": 0, "text": tts_text, "sentence_indices": [0], "source_segment_indices": [0]}],
+                "subtitle_chunks": [],
+            },
+        )
+        monkeypatch.setattr(
+            "pipeline.speech_rate_model.get_rate_with_source",
+            lambda voice_id, language, *, fallback=None: {
+                "chars_per_second": 10.0,
+                "source": "preview_prior",
+            },
+        )
+        updates = []
+        monkeypatch.setattr(
+            "pipeline.speech_rate_model.update_rate",
+            lambda voice_id, language, **kwargs: updates.append((voice_id, language, kwargs)),
+        )
+
+        from appcore import task_state
+        task_state.create("tdl-r1-rate-prior", "v.mp4", str(tmp_path),
+                          original_filename="v.mp4", user_id=1)
+
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        monkeypatch.setattr(
+            loc_mod,
+            "build_tts_segments",
+            lambda script, segs: [{"index": 0, "tts_text": tts_text, "tts_duration": 0.0}],
+        )
+
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-r1-rate-prior",
+            task_dir=str(tmp_path),
+            loc_mod=loc_mod,
+            provider="openrouter",
+            video_duration=6.0,
+            voice={"id": 1, "elevenlabs_voice_id": "voice-preview"},
+            initial_localized_translation={
+                "full_text": tts_text,
+                "sentences": [{"index": 0, "text": tts_text, "source_segment_indices": [0]}],
+            },
+            source_full_text="Source.",
+            source_language="en",
+            elevenlabs_api_key="fake-key",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 6}],
+            variant="normal",
+            target_language_label="en",
+        )
+
+        round_record = result["rounds"][0]
+        assert round_record["speech_rate_source"] == "preview_prior"
+        assert round_record["speech_rate_cps"] == 10.0
+        assert round_record["speech_rate_estimated_duration"] == 3.0
+        assert round_record["speech_rate_actual_duration"] == 6.0
+        assert round_record["speech_rate_actual_cps"] == 5.0
+        assert round_record["speech_rate_estimate_delta_pct"] == pytest.approx(100.0)
+        assert round_record["speech_rate_reference_switched"] is True
+        assert updates == [
+            (
+                "voice-preview",
+                "en",
+                {"chars": len(tts_text), "duration_seconds": 6.0},
+            )
+        ]
+
     def test_round1_language_mismatch_fails_tts_step(self, tmp_path, monkeypatch):
         from appcore import task_state
         from appcore.tts_language_guard import TtsLanguageValidationError

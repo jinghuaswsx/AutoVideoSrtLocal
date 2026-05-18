@@ -18,6 +18,65 @@ def test_get_rate_returns_float_when_record_exists():
     assert rate == 14.5
 
 
+def test_get_rate_with_source_prefers_actual_tts_over_preview_prior(monkeypatch):
+    from pipeline import speech_rate_model
+
+    monkeypatch.setattr(
+        speech_rate_model,
+        "_query_rate",
+        lambda voice_id, language: {"chars_per_second": 14.5, "sample_count": 3},
+    )
+    monkeypatch.setattr(
+        speech_rate_model,
+        "_query_preview_prior_rate",
+        lambda voice_id, language: 19.0,
+        raising=False,
+    )
+
+    info = speech_rate_model.get_rate_with_source("v1", "en")
+
+    assert info["chars_per_second"] == 14.5
+    assert info["source"] == "actual_tts"
+
+
+def test_get_rate_with_source_uses_preview_prior_when_actual_missing(monkeypatch):
+    from pipeline import speech_rate_model
+
+    monkeypatch.setattr(speech_rate_model, "_query_rate", lambda voice_id, language: None)
+    monkeypatch.setattr(
+        speech_rate_model,
+        "_query_preview_prior_rate",
+        lambda voice_id, language: 18.25,
+        raising=False,
+    )
+
+    info = speech_rate_model.get_rate_with_source("v1", "en")
+
+    assert info["chars_per_second"] == 18.25
+    assert info["source"] == "preview_prior"
+    assert speech_rate_model.get_effective_rate("v1", "en", fallback=14.0) == 18.25
+
+
+def test_preview_prior_rate_matches_current_preview_url_hash(monkeypatch):
+    import hashlib
+    from pipeline import speech_rate_model
+
+    preview_url = "https://example.com/current.mp3"
+    expected_hash = hashlib.sha256(preview_url.encode("utf-8")).hexdigest()
+
+    def fake_query_one(sql, args):
+        if "FROM elevenlabs_voice_variants" in sql:
+            return {"preview_url": preview_url}
+        if "FROM voice_preview_speech_rate" in sql:
+            assert args == ("v1", "en", expected_hash)
+            return {"chars_per_second": 17.5}
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(speech_rate_model, "query_one", fake_query_one)
+
+    assert speech_rate_model._query_preview_prior_rate("v1", "en") == 17.5
+
+
 def test_update_rate_inserts_first_sample():
     captured = {}
     def fake_upsert(voice_id, language, cps, count):

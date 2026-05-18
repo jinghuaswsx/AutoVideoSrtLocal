@@ -6,6 +6,7 @@ PR6: 把 ``AvSyncProfile.tts`` 的 body 搬到 strategy。新 av_sync 变种
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import appcore.task_state as task_state
@@ -26,6 +27,7 @@ from appcore.tts_language_guard import (
     validate_tts_script_language_or_raise,
 )
 from pipeline.audio_stitch import apply_compact_audio_schedule
+from pipeline import speech_rate_model
 from pipeline.speech_shot_alignment import apply_speech_shot_alignment
 
 from .base import TtsConvergenceStrategy
@@ -33,6 +35,21 @@ from .base import TtsConvergenceStrategy
 if TYPE_CHECKING:
     from appcore.runtime import PipelineRunner
     from appcore.translate_profiles.base import TranslateProfile
+
+log = logging.getLogger(__name__)
+
+_SPEECH_RATE_FALLBACK_CPS = {
+    "en": 14.0,
+    "de": 13.0,
+    "fr": 14.0,
+    "es": 14.0,
+    "pt": 14.0,
+    "it": 14.0,
+    "nl": 14.0,
+    "sv": 14.0,
+    "fi": 14.0,
+    "ja": 7.0,
+}
 
 
 def _float_value(value, default: float = 0.0) -> float:
@@ -112,6 +129,102 @@ def _copy_clip_metadata_to_sentences(sentences: list[dict], segments: list[dict]
         for field in clip_fields:
             if field in segment:
                 sentence[field] = segment[field]
+
+
+def _tts_speech_rate_sample(segments: list[dict] | None) -> tuple[int, float]:
+    total_chars = 0
+    total_duration = 0.0
+    for segment in segments or []:
+        if not isinstance(segment, dict):
+            continue
+        text = str(
+            segment.get("tts_text")
+            or segment.get("translated")
+            or segment.get("text")
+            or ""
+        )
+        try:
+            duration = float(segment.get("tts_duration") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if text and duration > 0:
+            total_chars += len(text)
+            total_duration += duration
+    return total_chars, total_duration
+
+
+def _record_tts_speech_rate_sample(
+    *,
+    voice_id: str,
+    target_language: str,
+    segments: list[dict] | None,
+) -> tuple[int, float, bool]:
+    total_chars, total_duration = _tts_speech_rate_sample(segments)
+    if total_chars <= 0 or total_duration <= 0:
+        return total_chars, total_duration, False
+    try:
+        speech_rate_model.update_rate(
+            voice_id,
+            target_language,
+            chars=total_chars,
+            duration_seconds=total_duration,
+        )
+        return total_chars, total_duration, True
+    except Exception:
+        log.warning(
+            "[sentence_reconcile] failed to update speech rate voice=%s language=%s",
+            voice_id,
+            target_language,
+            exc_info=True,
+        )
+    return total_chars, total_duration, False
+
+
+def _resolve_speech_rate_reference(voice_id: str, target_language: str) -> dict:
+    fallback = _SPEECH_RATE_FALLBACK_CPS.get(str(target_language or ""), 14.0)
+    try:
+        return speech_rate_model.get_rate_with_source(
+            voice_id,
+            target_language,
+            fallback=fallback,
+        )
+    except Exception:
+        log.warning(
+            "[sentence_reconcile] failed to resolve speech rate reference voice=%s language=%s",
+            voice_id,
+            target_language,
+            exc_info=True,
+        )
+        return {"chars_per_second": fallback, "source": "fallback"}
+
+
+def _speech_rate_diagnostics(
+    *,
+    rate_info: dict,
+    char_count: int,
+    audio_duration: float | None = None,
+) -> dict:
+    try:
+        cps = float(rate_info.get("chars_per_second") or 0.0)
+    except (TypeError, ValueError):
+        cps = 0.0
+    if cps <= 0 or char_count <= 0:
+        return {}
+    estimated_duration = char_count / cps
+    payload = {
+        "speech_rate_source": str(rate_info.get("source") or "missing"),
+        "speech_rate_cps": round(cps, 4),
+        "speech_rate_char_count": int(char_count),
+        "speech_rate_estimated_duration": round(estimated_duration, 3),
+    }
+    if audio_duration is not None and audio_duration > 0:
+        payload["speech_rate_actual_duration"] = round(audio_duration, 3)
+        payload["speech_rate_actual_cps"] = round(char_count / audio_duration, 4)
+        payload["speech_rate_estimate_delta_pct"] = round(
+            ((audio_duration - estimated_duration) / estimated_duration) * 100.0,
+            3,
+        )
+    return payload
 
 
 def _should_run_speech_shot_alignment(task: dict) -> bool:
@@ -355,6 +468,12 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
 
             runner._set_step(task_id, "tts", "running", f"正在生成{target_language_name}首轮配音...")
             tts_input_segments = _build_av_tts_segments(av_sentences)
+            initial_rate_info = _resolve_speech_rate_reference(tts_voice_id, target_language)
+            initial_char_count = sum(
+                len(str(segment.get("tts_text") or segment.get("translated") or segment.get("text") or ""))
+                for segment in tts_input_segments
+                if isinstance(segment, dict)
+            )
             from appcore.runtime._helpers import make_tts_progress_emitter
 
             def _on_initial_tts_progress(snapshot: dict) -> None:
@@ -369,6 +488,10 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     "audio_segments_queued": int(snapshot.get("queued") or 0),
                     "target_language": target_language,
                 }
+                record.update(_speech_rate_diagnostics(
+                    rate_info=initial_rate_info,
+                    char_count=initial_char_count,
+                ))
                 runner._emit_duration_round(task_id, 0, "initial_audio_gen", record)
 
             on_progress = make_tts_progress_emitter(
@@ -385,6 +508,41 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 language_code=target_language,
                 on_progress=on_progress,
             )
+            measured_chars, measured_duration, speech_rate_recorded = _record_tts_speech_rate_sample(
+                voice_id=tts_voice_id,
+                target_language=target_language,
+                segments=list((tts_output or {}).get("segments") or []),
+            )
+            if measured_chars > 0 and measured_duration > 0:
+                diagnostics = _speech_rate_diagnostics(
+                    rate_info=initial_rate_info,
+                    char_count=measured_chars,
+                    audio_duration=measured_duration,
+                )
+                if diagnostics.get("speech_rate_source"):
+                    diagnostics["speech_rate_actual_recorded"] = speech_rate_recorded
+                    diagnostics["speech_rate_reference_switched"] = (
+                        speech_rate_recorded
+                        and diagnostics.get("speech_rate_source") != "actual_tts"
+                    )
+                runner._emit_duration_round(
+                    task_id,
+                    0,
+                    "initial_measure",
+                    {
+                        "mode": "sentence_reconcile",
+                        "round": 0,
+                        "phase": "initial_measure",
+                        "status": "initial_measure",
+                        "audio_segments_done": len((tts_output or {}).get("segments") or []),
+                        "audio_segments_total": len((tts_output or {}).get("segments") or []),
+                        "audio_segments_active": 0,
+                        "audio_segments_queued": 0,
+                        "target_language": target_language,
+                        "audio_duration": round(measured_duration, 3),
+                        **diagnostics,
+                    },
+                )
 
             av_tts_text = " ".join(
                 str(segment.get("tts_text") or segment.get("translated") or "").strip()

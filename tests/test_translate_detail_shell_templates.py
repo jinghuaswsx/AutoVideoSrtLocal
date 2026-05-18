@@ -64,6 +64,18 @@ def test_task_workbench_config_exposes_detail_mode_and_selector_endpoints():
     assert "detailMode:" in script
 
 
+def test_task_workbench_renders_tts_speech_rate_diagnostics():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "renderSpeechRateDiagnostic" in script
+    assert "语速基准" in script
+    assert "预览先验" in script
+    assert "后续使用实测语速" in script
+    assert ".duration-rate-diagnostic" in styles
+
+
 def test_translate_status_card_is_sticky_below_topbar():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

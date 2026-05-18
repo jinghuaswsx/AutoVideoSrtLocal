@@ -169,9 +169,11 @@ def extract_must_keep_terms(source_text: str, *, limit: int = 8) -> list[str]:
 
 
 def compute_target_chars_range(target_duration, voice_id, target_language):
-    cps = speech_rate_model.get_rate(voice_id, target_language)
-    if cps is None or cps <= 0:
-        cps = FALLBACK_CPS.get(target_language, 14.0)
+    cps = speech_rate_model.get_effective_rate(
+        voice_id,
+        target_language,
+        fallback=FALLBACK_CPS.get(target_language, 14.0),
+    )
     lo = max(1, int(cps * target_duration * 0.92))
     hi = max(lo + 1, int(cps * target_duration * 1.08 + 0.5))
     return (lo, hi)

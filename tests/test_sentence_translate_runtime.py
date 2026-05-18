@@ -104,6 +104,7 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     captured = {}
     final_audio = tmp_path / "tts_full.av.mp3"
     final_audio.write_bytes(b"audio")
+    rate_updates = []
 
     monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
     monkeypatch.setattr(
@@ -140,6 +141,17 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
         "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
         lambda task_dir, segments, variant="av": str(final_audio),
     )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.speech_rate_model.update_rate",
+        lambda voice_id, language, chars, duration_seconds: rate_updates.append(
+            {
+                "voice_id": voice_id,
+                "language": language,
+                "chars": chars,
+                "duration_seconds": duration_seconds,
+            }
+        ),
+    )
 
     _runner()._step_tts(task_id, str(tmp_path))
 
@@ -150,6 +162,12 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     assert variant["sentences"][0]["text"] == "Frisch auf der Haut."
     assert variant["av_debug"]["summary"]["text_rewrite_attempts"] == 1
     assert saved["tts_audio_path"] == str(final_audio)
+    assert rate_updates[0] == {
+        "voice_id": "voice-1",
+        "language": "de",
+        "chars": len("Dieses Serum fühlt sich frisch an."),
+        "duration_seconds": 2.1,
+    }
 
 
 def test_omni_tts_step_applies_speech_shot_alignment_before_rebuild(tmp_path, monkeypatch):

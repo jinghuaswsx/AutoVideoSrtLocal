@@ -132,3 +132,21 @@ def test_english_redub_sentence_reconcile_uses_speech_shot_alignment_gate():
             "tts_strategy": "sentence_reconcile",
         },
     }) is False
+
+
+def test_english_redub_original_target_range_uses_preview_prior(monkeypatch):
+    from appcore import runtime_english_redub
+
+    monkeypatch.setattr(
+        runtime_english_redub.speech_rate_model,
+        "get_effective_rate",
+        lambda voice_id, language, fallback=None: 12.0,
+        raising=False,
+    )
+
+    assert runtime_english_redub._target_chars_range(
+        "This original sentence is intentionally much longer than the target.",
+        2.0,
+        voice_id="voice-1",
+        language="en",
+    ) == [22, 26]

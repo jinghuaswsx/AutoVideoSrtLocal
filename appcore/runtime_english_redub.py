@@ -15,6 +15,7 @@ from appcore.omni_plugin_config import validate_plugin_config
 from appcore.preview_artifacts import build_translate_artifact
 from appcore.runtime_omni import OmniTranslateRunner
 from appcore.video_translate_defaults import resolve_default_voice
+from pipeline import speech_rate_model
 from pipeline.voice_embedding import embed_audio_file, serialize_embedding
 from pipeline.voice_match import extract_sample_from_utterances
 
@@ -100,10 +101,22 @@ def _normalize_script_segments(task: dict) -> list[dict[str, Any]]:
     return normalized
 
 
-def _target_chars_range(text: str, duration: float) -> list[int]:
+def _target_chars_range(
+    text: str,
+    duration: float,
+    *,
+    voice_id: str | None = None,
+    language: str = "en",
+) -> list[int]:
     text_len = len(text)
     if text_len <= 0:
         return [0, 0]
+    if duration > 0 and voice_id:
+        cps = speech_rate_model.get_effective_rate(voice_id, language, fallback=None)
+        if cps and cps > 0:
+            lower = max(1, int(cps * duration * 0.92))
+            upper = max(lower + 1, int(cps * duration * 1.08 + 0.5))
+            return [lower, upper]
     lower = max(1, int(text_len * 0.95))
     upper = max(lower, int(text_len * 1.05 + 0.5))
     if duration > 0:
@@ -196,6 +209,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
         if not script_segments:
             raise RuntimeError("缺少英文 ASR 文案，无法重新配音")
 
+        selected_voice_id = str(task.get("selected_voice_id") or task.get("voice_id") or "").strip()
         source_full_text = " ".join(segment["text"] for segment in script_segments).strip()
         sentences: list[dict[str, Any]] = []
         av_sentences: list[dict[str, Any]] = []
@@ -218,7 +232,12 @@ class EnglishRedubRunner(OmniTranslateRunner):
                 "source_start_time": start_time,
                 "source_end_time": end_time,
                 "target_duration": target_duration,
-                "target_chars_range": _target_chars_range(text, target_duration),
+                "target_chars_range": _target_chars_range(
+                    text,
+                    target_duration,
+                    voice_id=selected_voice_id,
+                    language="en",
+                ),
                 "text": text,
                 "est_chars": len(text),
                 "source_text": text,

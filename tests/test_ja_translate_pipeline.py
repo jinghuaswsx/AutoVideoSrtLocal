@@ -16,6 +16,26 @@ def test_compute_ja_char_range_uses_measured_cps(monkeypatch):
     assert ja_translate.compute_ja_char_range(2.0, "voice-ja") == (11, 13)
 
 
+def test_compute_ja_char_range_uses_preview_prior_when_measured_missing(monkeypatch):
+    calls = []
+
+    def fake_effective_rate(voice_id, language, *, fallback=None):
+        calls.append((voice_id, language, fallback))
+        return {"chars_per_second": 4.0, "source": "preview_prior"}
+
+    monkeypatch.setattr(ja_translate.speech_rate_model, "get_rate_with_source", fake_effective_rate)
+    monkeypatch.setattr(
+        ja_translate.speech_rate_model,
+        "get_rate",
+        lambda voice_id, language: (_ for _ in ()).throw(
+            AssertionError("compute_ja_char_range should use effective rate")
+        ),
+    )
+
+    assert ja_translate.compute_ja_char_range(2.0, "voice-ja") == (7, 9)
+    assert calls == [("voice-ja", "ja", ja_translate.FALLBACK_JA_CPS)]
+
+
 def test_build_sentence_inputs_preserves_each_source_segment(monkeypatch):
     monkeypatch.setattr(ja_translate.speech_rate_model, "get_rate", lambda voice_id, language: 5.0)
 

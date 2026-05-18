@@ -90,7 +90,12 @@ def count_visible_japanese_chars(text: str) -> int:
 
 
 def compute_ja_char_range(target_duration: float, voice_id: str | None) -> tuple[int, int]:
-    cps = speech_rate_model.get_rate(str(voice_id or ""), TARGET_LANGUAGE)
+    rate_info = speech_rate_model.get_rate_with_source(
+        str(voice_id or ""),
+        TARGET_LANGUAGE,
+        fallback=FALLBACK_JA_CPS,
+    )
+    cps = rate_info.get("chars_per_second")
     if cps is None or cps <= 0:
         cps = FALLBACK_JA_CPS
     duration = max(0.1, float(target_duration or 0.0))
