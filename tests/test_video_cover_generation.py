@@ -2377,6 +2377,163 @@ def test_video_cover_duplicate_copies_inputs_and_restarts(
     assert started == [(inserted["task_id"], "video_analysis", 3)]
 
 
+def test_video_cover_duplicate_restores_missing_source_before_copy(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    source_video = tmp_path / "source.mp4"
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(source_video),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 2,
+        "model_defaults": {},
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = {}
+    started = []
+    restored = []
+    monkeypatch.setattr(video_cover, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(video_cover, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(video_cover, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.update(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "resolve_project_display_name_conflict",
+        lambda user_id, desired_name: desired_name,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "extract_thumbnail",
+        lambda video_path, output_dir, scale=None: str(Path(output_dir) / "thumb.jpg"),
+    )
+
+    def fake_restore(task_id, task):
+        restored.append((task_id, task["video_path"]))
+        source_video.write_bytes(b"restored-video")
+
+    monkeypatch.setattr("web.services.task_source_video.ensure_local_source_video", fake_restore)
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 201
+    assert restored == [("task-1", str(source_video))]
+    next_state = inserted["state"]
+    assert Path(next_state["video_path"]).read_bytes() == b"restored-video"
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    assert started == [(inserted["task_id"], "video_analysis", 2)]
+
+
+def test_video_cover_duplicate_returns_conflict_when_source_cannot_be_restored(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    missing_source = tmp_path / "missing.mp4"
+    source_product = tmp_path / "product_main.jpg"
+    source_product.write_bytes(b"source-product")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "display_name": "Lamp Cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(missing_source),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path / "old-task"),
+        "product": {
+            "title": "Portable Blender Pro",
+            "main_image_url": "https://cdn.example/blender.png",
+            "product_image_path": str(source_product),
+        },
+        "image_count": 2,
+        "model_defaults": {},
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "display_name": "Lamp Cover",
+        "original_filename": "lamp.mp4",
+        "task_dir": state["task_dir"],
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    inserted = []
+    started = []
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "insert_project",
+        lambda **kwargs: inserted.append(kwargs),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda *args, **kwargs: started.append((args, kwargs)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.services.task_source_video.ensure_local_source_video",
+        lambda task_id, task: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/duplicate")
+
+    assert resp.status_code == 409
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "源视频缺失" in payload["error"]
+    assert str(missing_source) in payload["error"]
+    assert inserted == []
+    assert started == []
+
+
 def test_video_cover_download_serves_owned_cover(authed_client_no_db, monkeypatch, tmp_path):
     from web.routes import video_cover
 

@@ -105,6 +105,29 @@ def test_orphan_upload_cleanup_uses_safe_delete(monkeypatch, tmp_path):
     assert deleted == [(str(orphan), (str(upload_root),))]
 
 
+def test_orphan_upload_cleanup_keeps_video_cover_prefixed_uploads(monkeypatch, tmp_path):
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    alive_video_cover_upload = upload_root / "alive_video_demo.mp4"
+    alive_video_cover_upload.write_bytes(b"alive")
+    orphan_video_cover_upload = upload_root / "missing_video_demo.mp4"
+    orphan_video_cover_upload.write_bytes(b"orphan")
+    deleted = []
+
+    monkeypatch.setattr(cleanup, "UPLOAD_DIR", str(upload_root))
+    monkeypatch.setattr(cleanup, "query", lambda sql, args=(): [{"id": "alive"}])
+
+    def fake_remove_file_under_roots(path, roots):
+        deleted.append((path, tuple(roots)))
+        return True
+
+    monkeypatch.setattr(cleanup, "remove_file_under_roots", fake_remove_file_under_roots)
+
+    cleanup._cleanup_orphan_uploads()
+
+    assert deleted == [(str(orphan_video_cover_upload), (str(upload_root),))]
+
+
 def test_collect_task_tos_keys_keeps_legacy_metadata_for_reports():
     keys = cleanup.collect_task_tos_keys(
         {

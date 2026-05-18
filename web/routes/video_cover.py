@@ -985,7 +985,17 @@ def api_duplicate_project(task_id: str):
         return _json_response({"ok": False, "error": "not found"}, 404)
 
     source_video_path = str(state.get("video_path") or "").strip()
-    video_available = source_video_path and Path(source_video_path).is_file()
+    if not source_video_path:
+        return _json_response({"ok": False, "error": "源视频缺失，无法复制项目。"}, 409)
+    if not Path(source_video_path).is_file():
+        try:
+            from web.services.task_source_video import ensure_local_source_video
+
+            ensure_local_source_video(task_id, state)
+        except Exception:
+            return _json_response({"ok": False, "error": f"源视频缺失: {source_video_path}"}, 409)
+    if not Path(source_video_path).is_file():
+        return _json_response({"ok": False, "error": f"源视频缺失: {source_video_path}"}, 409)
 
     try:
         product_url = _validate_product_url(state.get("product_url") or "")
@@ -1011,17 +1021,16 @@ def api_duplicate_project(task_id: str):
     new_video_path = ""
     thumbnail_path = str(state.get("thumbnail_path") or "").strip()
 
-    if video_available:
-        safe_name = secure_filename_component(original_filename)
-        new_video_path = os.path.join(UPLOAD_DIR, f"{new_task_id}_video_{safe_name}")
-        try:
-            shutil.copy2(source_video_path, new_video_path)
-        except OSError as exc:
-            return _json_response({"ok": False, "error": f"复制源视频失败: {exc}"}, 500)
-        try:
-            thumbnail_path = _extract_card_thumbnail(new_video_path, new_task_dir)
-        except Exception:
-            pass
+    safe_name = secure_filename_component(original_filename)
+    new_video_path = os.path.join(UPLOAD_DIR, f"{new_task_id}_video_{safe_name}")
+    try:
+        shutil.copy2(source_video_path, new_video_path)
+    except OSError as exc:
+        return _json_response({"ok": False, "error": f"复制源视频失败: {exc}"}, 500)
+    try:
+        thumbnail_path = _extract_card_thumbnail(new_video_path, new_task_dir)
+    except Exception:
+        pass
 
     new_product_image_path = os.path.join(new_task_dir, "product_main.jpg")
     try:
@@ -1039,59 +1048,32 @@ def api_duplicate_project(task_id: str):
     image_count = normalize_image_count(state.get("image_count"), default=DEFAULT_IMAGE_COUNT)
     model_defaults = _project_model_defaults(state)
 
-    if video_available:
-        next_state = _initial_state(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            product_url=product_url,
-            video_path=new_video_path,
-            video_filename=original_filename,
-            task_dir=new_task_dir,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            product_title=title,
-            main_image_url=image_url,
-            product_image_path=new_product_image_path,
-            image_count=image_count,
-            model_defaults=model_defaults,
-        )
-        video_cover_project_store.insert_project(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            original_filename=original_filename,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            task_dir=new_task_dir,
-            state=next_state,
-            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
-        )
-        _start_video_cover_background(new_task_id, "video_analysis", image_count)
-    else:
-        # 源视频不可用：深度复制已有状态，保留源项目的所有结果
-        next_state = dict(state)
-        next_state["id"] = new_task_id
-        next_state["user_id"] = int(current_user.id)
-        next_state["display_name"] = display_name
-        next_state["task_dir"] = new_task_dir
-        next_state["video_path"] = ""
-        next_state["video_filename"] = original_filename
-        next_state["product_image_path"] = new_product_image_path
-        product_payload = _product_payload(product_url, title, image_url, new_product_image_path)
-        next_state["product"] = product_payload
-        if thumbnail_path and Path(thumbnail_path).is_file():
-            next_state["thumbnail_path"] = thumbnail_path
-        next_state["model_defaults"] = model_defaults
-
-        video_cover_project_store.insert_project(
-            task_id=new_task_id,
-            user_id=int(current_user.id),
-            original_filename=original_filename,
-            display_name=display_name,
-            thumbnail_path=thumbnail_path,
-            task_dir=new_task_dir,
-            state=next_state,
-            retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
-        )
+    next_state = _initial_state(
+        task_id=new_task_id,
+        user_id=int(current_user.id),
+        product_url=product_url,
+        video_path=new_video_path,
+        video_filename=original_filename,
+        task_dir=new_task_dir,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        product_title=title,
+        main_image_url=image_url,
+        product_image_path=new_product_image_path,
+        image_count=image_count,
+        model_defaults=model_defaults,
+    )
+    video_cover_project_store.insert_project(
+        task_id=new_task_id,
+        user_id=int(current_user.id),
+        original_filename=original_filename,
+        display_name=display_name,
+        thumbnail_path=thumbnail_path,
+        task_dir=new_task_dir,
+        state=next_state,
+        retention_hours=get_retention_hours(video_cover_project_store.VIDEO_COVER_TYPE),
+    )
+    _start_video_cover_background(new_task_id, "video_analysis", image_count)
 
     return _json_response({
         "ok": True,
