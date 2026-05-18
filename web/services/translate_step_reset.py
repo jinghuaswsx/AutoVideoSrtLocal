@@ -235,6 +235,7 @@ def _reset_separation(value: Any, *, loudness: bool) -> Any:
             "background_volume",
             "background_boost",
             "manual_boost",
+            "background_suppression",
             "accompaniment_lufs",
         ):
             separation.pop(key, None)

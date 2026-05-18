@@ -228,3 +228,49 @@ def test_compose_fallback_uses_effective_background_volume(monkeypatch, tmp_path
 
     assert result.endswith("final_audio_mixed.normal.wav")
     assert captured["background_volume"] == 1.2
+
+
+def test_compose_fallback_respects_zero_effective_background_volume(monkeypatch, tmp_path):
+    task_state = _disable_task_state_db(monkeypatch)
+    runner = PipelineRunner(bus=EventBus(), user_id=1)
+    task_id = "compose-zero-background-volume"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    tts_path = _write(task_dir / "tts.mp3", "tts")
+    accomp_path = _write(task_dir / "accompaniment.wav", "background")
+
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        separation={
+            "status": "done",
+            "vocals_lufs": -13.0,
+            "accompaniment_path": accomp_path,
+            "effective_background_volume": 0.0,
+            "background_volume": 0.8,
+            "tts_loudness": {"variants": [{"variant": "normal"}]},
+        },
+    )
+    monkeypatch.setattr(
+        "pipeline.audio_separation.load_settings",
+        lambda: SimpleNamespace(background_volume=0.8),
+    )
+    captured = {}
+
+    def fake_mix_with_background(**kwargs):
+        captured.update(kwargs)
+        with open(kwargs["output_path"], "w", encoding="utf-8") as fh:
+            fh.write("mixed")
+        return kwargs["output_path"]
+
+    monkeypatch.setattr("appcore.audio_loudness.mix_with_background", fake_mix_with_background)
+
+    result = runner._maybe_mix_background_for_compose(
+        task_id,
+        tts_audio_path=tts_path,
+        task_dir=str(task_dir),
+        variant="normal",
+    )
+
+    assert result.endswith("final_audio_mixed.normal.wav")
+    assert captured["background_volume"] == 0.0

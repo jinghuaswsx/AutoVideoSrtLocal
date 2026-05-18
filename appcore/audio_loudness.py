@@ -31,10 +31,12 @@ EBUR128_FLOOR = -70.0
 LOUDNESS_PROFILE_STANDARD = "standard"
 LOUDNESS_PROFILE_AUTO_BOOST = "bg_boost"
 LOUDNESS_PROFILE_MANUAL_BOOST = "manual_boost"
+LOUDNESS_PROFILE_VOICE_ONLY = "voice_only"
 LOUDNESS_PROFILES = {
     LOUDNESS_PROFILE_STANDARD,
     LOUDNESS_PROFILE_AUTO_BOOST,
     LOUDNESS_PROFILE_MANUAL_BOOST,
+    LOUDNESS_PROFILE_VOICE_ONLY,
 }
 
 BOOST_TARGET_GAP_LU = 10.0
@@ -99,6 +101,9 @@ def _empty_boost_summary() -> dict:
             "enabled": False,
             "capped": False,
         },
+        "background_suppression": {
+            "enabled": False,
+        },
     }
 
 
@@ -128,6 +133,15 @@ def resolve_background_volume_profile(
     }
 
     if normalized_profile == LOUDNESS_PROFILE_STANDARD:
+        return result
+
+    if normalized_profile == LOUDNESS_PROFILE_VOICE_ONLY:
+        result["effective_background_volume"] = 0.0
+        result["background_suppression"] = {
+            "enabled": True,
+            "standard_volume": standard_volume,
+            "effective_volume": 0.0,
+        }
         return result
 
     if normalized_profile == LOUDNESS_PROFILE_MANUAL_BOOST:

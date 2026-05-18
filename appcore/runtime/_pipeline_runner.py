@@ -2618,6 +2618,10 @@ class PipelineRunner:
             profile_summary["background_boost"] = dict(profile_summary["background_boost"])
             if "effective_volume" in profile_summary["background_boost"]:
                 profile_summary["background_boost"]["effective_volume"] = effective_bg_volume
+        if isinstance(profile_summary.get("background_suppression"), dict):
+            profile_summary["background_suppression"] = dict(profile_summary["background_suppression"])
+            if "effective_volume" in profile_summary["background_suppression"]:
+                profile_summary["background_suppression"]["effective_volume"] = effective_bg_volume
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
@@ -2733,6 +2737,7 @@ class PipelineRunner:
             "effective_background_volume": effective_bg_volume,
             "background_boost": profile_summary["background_boost"],
             "manual_boost": profile_summary["manual_boost"],
+            "background_suppression": profile_summary["background_suppression"],
             "variants": summaries,
         }
         # 暴露 background_volume 给 UI（前端 separation_card 直接读）
@@ -3591,11 +3596,12 @@ class PipelineRunner:
 
         # 没有 post_mix（A 算法 / loudness_match 跳过）→ 现场 mix
         settings = sep.load_settings()
-        background_volume = float(
-            separation.get("effective_background_volume")
-            or separation.get("background_volume")
-            or settings.background_volume
-        )
+        background_volume_value = separation.get("effective_background_volume")
+        if background_volume_value is None:
+            background_volume_value = separation.get("background_volume")
+        if background_volume_value is None:
+            background_volume_value = settings.background_volume
+        background_volume = float(background_volume_value)
         mixed_path = os.path.join(
             task_dir, f"final_audio_mixed.{variant}.wav",
         )
