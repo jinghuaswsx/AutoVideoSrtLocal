@@ -35,6 +35,50 @@ def test_build_list_response_adds_chinese_category_label(monkeypatch):
     assert item["category_l1_zh"] == "家居用品"
 
 
+def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "list_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 1,
+                    "sku_prices_json": "[]",
+                    "video_copyability_analysis_id": 8,
+                    "video_copyability_overall_score": 91,
+                    "video_copyability_copyability_score": 94,
+                    "video_copyability_meta_us_ad_fit_score": 89,
+                    "video_copyability_product_fit_score": 88,
+                    "video_copyability_compliance_risk_score": 12,
+                    "video_copyability_recommendation": "copy",
+                    "video_copyability_summary": "Strong hook.",
+                    "video_copyability_provider": "gemini_vertex_adc",
+                    "video_copyability_model": "gemini-3-flash-preview",
+                    "video_copyability_analyzed_at": "2026-05-18 10:00:00",
+                    "video_copyability_analysis_json": '{"hook":"clear"}',
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    payload = service.build_list_response({}).payload
+
+    copyability = payload["items"][0]["video_copyability"]
+    assert copyability["analysis_id"] == 8
+    assert copyability["overall_score"] == 91
+    assert copyability["copyability_score"] == 94
+    assert copyability["meta_us_ad_fit_score"] == 89
+    assert copyability["product_fit_score"] == 88
+    assert copyability["compliance_risk_score"] == 12
+    assert copyability["recommendation"] == "copy"
+    assert copyability["summary"] == "Strong hook."
+    assert copyability["provider"] == "gemini_vertex_adc"
+    assert copyability["model"] == "gemini-3-flash-preview"
+    assert copyability["analyzed_at"] == "2026-05-18 10:00:00"
+    assert copyability["raw"] == {"hook": "clear"}
+
+
 def test_build_today_new_response_hydrates_first_seen_items(monkeypatch):
     monkeypatch.setattr(
         service.store,

@@ -162,6 +162,11 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'value="Kitchenware"' in body
     assert "厨房用品" in body
     assert "meta-hot-card-grid" in body
+    assert 'id="mhCardZoomButton"' in body
+    assert "卡片放大" in body
+    assert "function toggleMetaHotCardZoom()" in body
+    assert "mh-zoomed" in body
+    assert "localStorage.setItem('mhCardZoomed'" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
@@ -227,6 +232,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
     assert "JSON.stringify({limit:10})" in body
     assert "renderEuropeFitPanel" in body
+    assert "copyabilityBlock(row)" in body
     assert "function formatVideoDuration" in body
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body

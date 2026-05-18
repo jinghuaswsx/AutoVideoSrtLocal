@@ -69,6 +69,61 @@ def _decode_json_dict(value: Any) -> dict[str, Any]:
     return _decode_json_object(value)
 
 
+def _pop_video_copyability_payload(
+    item: dict[str, Any],
+    *,
+    prefixed: bool,
+) -> dict[str, Any] | None:
+    if prefixed:
+        keys = {
+            "analysis_id": "video_copyability_analysis_id",
+            "overall_score": "video_copyability_overall_score",
+            "copyability_score": "video_copyability_copyability_score",
+            "meta_us_ad_fit_score": "video_copyability_meta_us_ad_fit_score",
+            "product_fit_score": "video_copyability_product_fit_score",
+            "compliance_risk_score": "video_copyability_compliance_risk_score",
+            "recommendation": "video_copyability_recommendation",
+            "summary": "video_copyability_summary",
+            "provider": "video_copyability_provider",
+            "model": "video_copyability_model",
+            "analyzed_at": "video_copyability_analyzed_at",
+            "analysis_json": "video_copyability_analysis_json",
+        }
+    else:
+        keys = {
+            "analysis_id": "analysis_id",
+            "overall_score": "overall_score",
+            "copyability_score": "copyability_score",
+            "meta_us_ad_fit_score": "meta_us_ad_fit_score",
+            "product_fit_score": "product_fit_score",
+            "compliance_risk_score": "compliance_risk_score",
+            "recommendation": "recommendation",
+            "summary": "summary",
+            "provider": "llm_provider",
+            "model": "llm_model",
+            "analyzed_at": "analyzed_at",
+            "analysis_json": "analysis_json",
+        }
+    if prefixed:
+        values = {name: item.pop(key, None) for name, key in keys.items()}
+    else:
+        values = {name: item.get(key) for name, key in keys.items()}
+    has_payload = any(
+        values.get(name) not in (None, "")
+        for name in (
+            "analysis_id",
+            "overall_score",
+            "copyability_score",
+            "meta_us_ad_fit_score",
+            "summary",
+        )
+    )
+    if not has_payload:
+        return None
+    analysis = _decode_json_object(values.pop("analysis_json", None))
+    return {**values, "raw": analysis}
+
+
 def _duration_number(value: Any) -> float | None:
     if value in (None, ""):
         return None
@@ -238,26 +293,15 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     )
     if "europe_fit_direct_reuse" in item:
         item["europe_fit_direct_reuse"] = _bool_payload(item.get("europe_fit_direct_reuse"))
+    video_copyability = _pop_video_copyability_payload(item, prefixed=True)
+    if video_copyability:
+        item["video_copyability"] = video_copyability
     return item
 
 
 def _hydrate_video_copyability_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item = _hydrate_item(row)
-    analysis = _decode_json_object(item.pop("analysis_json", None))
-    item["video_copyability"] = {
-        "analysis_id": item.get("analysis_id"),
-        "overall_score": item.get("overall_score"),
-        "copyability_score": item.get("copyability_score"),
-        "meta_us_ad_fit_score": item.get("meta_us_ad_fit_score"),
-        "product_fit_score": item.get("product_fit_score"),
-        "compliance_risk_score": item.get("compliance_risk_score"),
-        "recommendation": item.get("recommendation"),
-        "summary": item.get("summary"),
-        "provider": item.get("llm_provider"),
-        "model": item.get("llm_model"),
-        "analyzed_at": item.get("analyzed_at"),
-        "raw": analysis,
-    }
+    item["video_copyability"] = _pop_video_copyability_payload(item, prefixed=False) or {}
     return item
 
 

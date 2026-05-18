@@ -174,9 +174,23 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
-               a.last_error, a.analyzed_at
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         {where_sql}
         ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
@@ -232,9 +246,23 @@ def list_today_new_hot_posts(
                a.product_title, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
-               a.last_error, a.analyzed_at
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         {where_sql}
         ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
         LIMIT %s OFFSET %s
@@ -1040,10 +1068,24 @@ def list_top_europe_fit_materials(
                e.llm_provider AS europe_fit_provider,
                e.llm_model AS europe_fit_model,
                e.video_optimization_json AS europe_fit_video_optimization_json,
-               e.assessed_at AS europe_fit_assessed_at
+               e.assessed_at AS europe_fit_assessed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_post_europe_assessments e
         JOIN meta_hot_posts p ON p.id = e.post_id
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
         WHERE e.status = 'done'
         ORDER BY e.suitability_score DESC,
                  COALESCE(p.sync_period_likes, 0) DESC,
