@@ -2796,6 +2796,13 @@
   .oa-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
   .ads-level-toolbar { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap;
     padding: var(--space-3) 0; }
+  .oad-account-filter { display: inline-flex; align-items: center; gap: var(--space-2);
+    min-height: 32px; color: var(--fg-muted); font-size: var(--text-sm); font-weight: 600; }
+  .oad-account-filter select { height: 32px; min-width: 180px; padding: 0 var(--space-3);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--bg-card); color: var(--fg); font-size: var(--text-sm); }
+  .oad-account-filter select:focus-visible { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-ring); }
   .oa-modal { border: 1px solid var(--border); border-radius: 8px; padding: 0; max-width: 480px; }
   .oa-modal::backdrop { background: rgba(0,0,0,0.4); }
   .oa-modal-form { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 360px; }
@@ -2833,6 +2840,12 @@
           <div class="oa-search-box ads-level-search">
             <input type="text" id="adOverviewSearchInput" placeholder="搜索产品 / Campaign..." autocomplete="off">
           </div>
+          <label class="oad-account-filter">
+            <span>广告户</span>
+            <select id="adAccountFilter" data-ads-account-filter="overview" aria-label="广告户筛选">
+              <option value="">全部广告户</option>
+            </select>
+          </label>
           <div class="oad-range-presets" role="group" aria-label="广告分析时间范围">
             <button type="button" class="oad-seg is-active" data-ad-range="today" aria-pressed="true">今天</button>
             <button type="button" class="oad-seg" data-ad-range="yesterday" aria-pressed="false">昨天</button>
@@ -2897,6 +2910,12 @@
         <div class="oa-search-box ads-level-search">
           <input type="text" placeholder="{{ search_placeholder }}" data-ads-search-input="{{ level }}" autocomplete="off">
         </div>
+        <label class="oad-account-filter">
+          <span>广告户</span>
+          <select data-ads-account-filter="{{ level }}" aria-label="{{ label }} 广告户筛选">
+            <option value="">全部广告户</option>
+          </select>
+        </label>
         <div class="oad-date-range-field" role="group" aria-label="{{ label }} 日期范围">
           <input type="date" data-ads-list-start="{{ level }}" aria-label="开始日期">
           <span class="oad-date-range-sep">至</span>
@@ -2953,6 +2972,12 @@
         </div>
       </div>
       <div class="ads-level-toolbar">
+        <label class="oad-account-filter">
+          <span>广告户</span>
+          <select data-ads-detail-account="{{ level }}" aria-label="{{ label }} 详情广告户筛选">
+            <option value="">全部广告户</option>
+          </select>
+        </label>
         <div class="oad-date-range-field" role="group" aria-label="{{ label }} 详情日期范围">
           <input type="date" data-ads-detail-start="{{ level }}" aria-label="开始日期">
           <span class="oad-date-range-sep">至</span>
@@ -4800,6 +4825,7 @@
         metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || META_AD_COLUMN_PRESET_FALLBACK_CHOICES;
         metaAdAccountsState.accounts = res.body.accounts || [];
         renderMetaAdAccounts();
+        adsPopulateAccountFilters();
         setMetaAdAccountsStatus('共 ' + metaAdAccountsState.accounts.length + ' 个账户', false);
       })
       .catch(function(err) {
@@ -4979,11 +5005,72 @@
         metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || metaAdAccountsState.columnPresetChoices;
         metaAdAccountsState.accounts = res.body.accounts || accounts;
         renderMetaAdAccounts();
+        adsPopulateAccountFilters();
         setMetaAdAccountsStatus('已保存', false);
       })
       .catch(function(err) {
         setMetaAdAccountsStatus('保存失败：' + (err.message || String(err)), true);
       });
+  }
+
+  function adsNormalizeAccountId(value) {
+    return String(value || '').trim().replace(/^act_/, '');
+  }
+
+  function adsAccountOptionLabel(account) {
+    var label = account.label || account.code || account.account_id || '未命名广告户';
+    var accountId = adsNormalizeAccountId(account.account_id);
+    return label + (accountId ? ' · ' + accountId : '');
+  }
+
+  function adsAccountOptionsHtml(selectedValue) {
+    var selected = adsNormalizeAccountId(selectedValue);
+    var seenSelected = !selected;
+    var html = '<option value="">全部广告户</option>';
+    (metaAdAccountsState.accounts || []).forEach(function(account) {
+      var accountId = adsNormalizeAccountId(account.account_id);
+      if (!accountId) return;
+      var isSelected = accountId === selected;
+      if (isSelected) seenSelected = true;
+      html += '<option value="' + escapeHtml(accountId) + '"' + (isSelected ? ' selected' : '') + '>' +
+        escapeHtml(adsAccountOptionLabel(account)) + '</option>';
+    });
+    if (selected && !seenSelected) {
+      html += '<option value="' + escapeHtml(selected) + '" selected>' + escapeHtml(selected) + '</option>';
+    }
+    return html;
+  }
+
+  function adsPopulateAccountFilters() {
+    document.querySelectorAll('[data-ads-account-filter], [data-ads-detail-account]').forEach(function(select) {
+      var current = adsNormalizeAccountId(select.value);
+      select.innerHTML = adsAccountOptionsHtml(current);
+      if (current) select.value = current;
+    });
+  }
+
+  function loadAdsAccountFilters() {
+    if (metaAdAccountsState.accounts && metaAdAccountsState.accounts.length) {
+      adsPopulateAccountFilters();
+      return;
+    }
+    fetch('/order-analytics/meta-ad-accounts', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
+      .then(function(res) {
+        if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '加载广告户失败');
+        metaAdAccountsState.stores = res.body.available_store_codes || metaAdAccountsState.stores;
+        metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || metaAdAccountsState.columnPresetChoices;
+        metaAdAccountsState.accounts = res.body.accounts || [];
+        adsPopulateAccountFilters();
+      })
+      .catch(function() {
+        adsPopulateAccountFilters();
+      });
+  }
+
+  function getSelectedAdsAccountId(target) {
+    var select = typeof target === 'string' ? document.querySelector(target) : target;
+    return adsNormalizeAccountId(select && select.value);
   }
 
   function initMetaAdSyncModal() {
@@ -5224,10 +5311,8 @@
     if (adsInited) return;
     adsInited = true;
     // Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
-    setInputValue('adStartDate', adsDefaultStartIso());
-    setInputValue('adEndDate', adsDefaultEndIso());
-    adRangeState.range = '';
-    syncAdRangeSelection();
+    setAdRange('today', true);
+    loadAdsAccountFilters();
     document.querySelectorAll('[data-ad-range]').forEach(function(btn) {
       btn.addEventListener('click', function() {
         setAdRange(btn.dataset.adRange);
@@ -5237,6 +5322,8 @@
       var input = document.getElementById(id);
       if (input) input.addEventListener('change', syncAdRangeSelection);
     });
+    var accountFilter = document.getElementById('adAccountFilter');
+    if (accountFilter) accountFilter.addEventListener('change', loadAdSummary);
     var refresh = document.getElementById('adRefresh');
     if (refresh) refresh.addEventListener('click', function() {
       if (adRangeState.range && adRangeState.range !== 'custom') {
@@ -5337,6 +5424,10 @@
       '&end_date=' + encodeURIComponent(range.end);
     if (overviewQuery) {
       url += '&q=' + encodeURIComponent(overviewQuery);
+    }
+    var accountId = getSelectedAdsAccountId('#adAccountFilter');
+    if (accountId) {
+      url += '&ad_account_id=' + encodeURIComponent(accountId);
     }
     fetch(url)
       .then(function(r) { return r.json(); })
@@ -6281,17 +6372,13 @@
     var d = window.orderAnalyticsMetaCalendar
       ? window.orderAnalyticsMetaCalendar.today()
       : new Date();
-    var year = d.getFullYear();
-    if (d.getMonth() < 2) year -= 1;
-    return year + '-03-01';
+    return formatDateInput(d);
   }
   function adsDefaultEndIso() {
     var d = window.orderAnalyticsMetaCalendar
       ? window.orderAnalyticsMetaCalendar.today()
       : new Date();
-    var year = d.getFullYear();
-    if (d.getMonth() < 4) year -= 1;
-    return year + '-05-03';
+    return formatDateInput(d);
   }
   function adsFmtMoney(v) {
     if (v === null || v === undefined || v === '') return '—';
@@ -6364,6 +6451,7 @@
     var searchInput = document.querySelector('[data-ads-search-input="' + level + '"]');
     var query = '';
     if (searchInput) query = searchInput.value.trim();
+    var accountId = getSelectedAdsAccountId('[data-ads-account-filter="' + level + '"]');
     var page = adsLevelState[level].listPage || 1;
     var url = '/order-analytics/ads/list?level=' + encodeURIComponent(level) +
               '&start_date=' + encodeURIComponent(start) +
@@ -6372,6 +6460,9 @@
               '&page_size=50&sort_by=spend_usd&sort_dir=desc';
     if (query) {
       url += '&q=' + encodeURIComponent(query);
+    }
+    if (accountId) {
+      url += '&ad_account_id=' + encodeURIComponent(accountId);
     }
     var body = document.querySelector('[data-ads-list-body="' + level + '"]');
     if (body) body.innerHTML = '<tr><td colspan="7" class="oad-loading">加载中...</td></tr>';
@@ -6463,7 +6554,7 @@
       var html = '';
       rows.forEach(function(r) {
         var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
-        html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '">';
+        html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '" data-ads-account-id="' + escHtml(r.ad_account_id || '') + '">';
         var copyLabel = adsCopyLabels[level];
         if (copyLabel) {
           var levelName = r.name || r.code || '';
@@ -6494,7 +6585,7 @@
       body.querySelectorAll('[data-ads-row]').forEach(function(tr) {
         tr.addEventListener('click', function(ev) {
           if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
-          adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow);
+          adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
         });
       });
     }
@@ -6526,10 +6617,18 @@
     }
   }
 
-  function adsOpenDetail(level, code, name) {
+  function adsOpenDetail(level, code, name, accountId) {
     adsLevelState[level].mode = 'detail';
     adsLevelState[level].code = code;
     adsLevelState[level].name = name;
+    adsLevelState[level].accountId = adsNormalizeAccountId(accountId);
+    var accountSelect = document.querySelector('[data-ads-detail-account="' + level + '"]');
+    if (accountSelect) {
+      var selectedAccount = adsNormalizeAccountId(accountId) ||
+        getSelectedAdsAccountId('[data-ads-account-filter="' + level + '"]');
+      accountSelect.innerHTML = adsAccountOptionsHtml(selectedAccount);
+      accountSelect.value = selectedAccount || '';
+    }
     var nameEl = document.querySelector('[data-ads-detail-name="' + level + '"]');
     if (nameEl) nameEl.textContent = name || code || '';
     adsShowMode(level, 'detail');
@@ -6541,10 +6640,17 @@
     if (!code) return;
     var start = (document.querySelector('[data-ads-detail-start="' + level + '"]') || {}).value || adsDefaultStartIso();
     var end = (document.querySelector('[data-ads-detail-end="' + level + '"]') || {}).value || adsDefaultEndIso();
+    var accountSelect = document.querySelector('[data-ads-detail-account="' + level + '"]');
+    var accountId = accountSelect
+      ? getSelectedAdsAccountId(accountSelect)
+      : adsNormalizeAccountId(adsLevelState[level].accountId);
     var url = '/order-analytics/ads/detail?level=' + encodeURIComponent(level) +
               '&code=' + encodeURIComponent(code) +
               '&start_date=' + encodeURIComponent(start) +
               '&end_date=' + encodeURIComponent(end);
+    if (accountId) {
+      url += '&ad_account_id=' + encodeURIComponent(accountId);
+    }
     var body = document.querySelector('[data-ads-detail-body="' + level + '"]');
     if (body) body.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
     fetch(url, { credentials: 'same-origin' })
@@ -6630,8 +6736,15 @@
         adsLevelState[level].listPage = 1;
         adsLoadList(level);
       });
+      var accountFilter = document.querySelector('[data-ads-account-filter="' + level + '"]');
+      if (accountFilter) accountFilter.addEventListener('change', function() {
+        adsLevelState[level].listPage = 1;
+        adsLoadList(level);
+      });
       var detailRefresh = document.querySelector('[data-ads-detail-refresh="' + level + '"]');
       if (detailRefresh) detailRefresh.addEventListener('click', function() { adsLoadDetail(level); });
+      var detailAccount = document.querySelector('[data-ads-detail-account="' + level + '"]');
+      if (detailAccount) detailAccount.addEventListener('change', function() { adsLoadDetail(level); });
       var backBtn = document.querySelector('[data-ads-detail-back="' + level + '"]');
       if (backBtn) backBtn.addEventListener('click', function() {
         adsLevelState[level].mode = 'list';

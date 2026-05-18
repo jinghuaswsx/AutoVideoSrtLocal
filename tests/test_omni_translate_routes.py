@@ -260,6 +260,64 @@ def test_loudness_profile_route_saves_manual_boost_pct(authed_client_no_db):
     mock_runner.start.assert_not_called()
 
 
+def test_loudness_profile_route_saves_voice_only(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "separation": {"tts_loudness": {"profile": "standard"}},
+    }
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "voice_only"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "voice_only"
+    assert body["manual_boost_pct"] is None
+    assert body["applied_profile"] == "standard"
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="voice_only",
+        loudness_manual_boost_pct=None,
+    )
+    mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
+
+
+def test_loudness_profile_route_saves_clean_background(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "separation": {"tts_loudness": {"profile": "standard"}},
+    }
+    with patch("web.routes.omni_translate.recover_task_if_needed"), \
+         patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/loudness-profile",
+            json={"profile": "clean_background"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["profile"] == "clean_background"
+    assert body["manual_boost_pct"] is None
+    assert body["applied_profile"] == "standard"
+    assert body["needs_resume"] is True
+    mock_store.update.assert_called_once_with(
+        "t-1",
+        loudness_profile="clean_background",
+        loudness_manual_boost_pct=None,
+    )
+    mock_runner.resume.assert_not_called()
+    mock_runner.start.assert_not_called()
+
+
 def test_omni_get_task_prefers_fresh_project_state_for_loudness_profile(
     authed_client_no_db, monkeypatch, tmp_path,
 ):

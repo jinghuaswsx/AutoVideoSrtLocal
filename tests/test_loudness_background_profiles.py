@@ -5,8 +5,10 @@ import pytest
 from appcore.audio_loudness import (
     BOOST_MAX_BACKGROUND_VOLUME,
     LOUDNESS_PROFILE_AUTO_BOOST,
+    LOUDNESS_PROFILE_CLEAN_BACKGROUND,
     LOUDNESS_PROFILE_MANUAL_BOOST,
     LOUDNESS_PROFILE_STANDARD,
+    LOUDNESS_PROFILE_VOICE_ONLY,
     resolve_background_volume_profile,
     validate_loudness_profile,
 )
@@ -24,6 +26,42 @@ def test_standard_profile_uses_current_background_volume():
     assert result["manual_boost_pct"] is None
     assert result["background_volume"] == 0.8
     assert result["effective_background_volume"] == 0.8
+    assert result["background_boost"]["enabled"] is False
+    assert result["manual_boost"]["enabled"] is False
+
+
+def test_voice_only_profile_suppresses_background_volume():
+    result = resolve_background_volume_profile(
+        LOUDNESS_PROFILE_VOICE_ONLY,
+        standard_volume=0.8,
+        accompaniment_lufs=-24.0,
+        tts_reference_lufs=-13.0,
+    )
+
+    assert result["profile"] == LOUDNESS_PROFILE_VOICE_ONLY
+    assert result["manual_boost_pct"] is None
+    assert result["background_volume"] == 0.8
+    assert result["effective_background_volume"] == 0.0
+    assert result["background_suppression"]["enabled"] is True
+    assert result["background_boost"]["enabled"] is False
+    assert result["manual_boost"]["enabled"] is False
+
+
+def test_clean_background_profile_keeps_background_volume_and_enables_cleanup():
+    result = resolve_background_volume_profile(
+        LOUDNESS_PROFILE_CLEAN_BACKGROUND,
+        standard_volume=0.8,
+        accompaniment_lufs=-24.0,
+        tts_reference_lufs=-13.0,
+    )
+
+    assert result["profile"] == LOUDNESS_PROFILE_CLEAN_BACKGROUND
+    assert result["manual_boost_pct"] is None
+    assert result["background_volume"] == 0.8
+    assert result["effective_background_volume"] == 0.8
+    assert result["background_cleanup"]["enabled"] is True
+    assert result["background_cleanup"]["mode"] == "de_electric"
+    assert result["background_suppression"]["enabled"] is False
     assert result["background_boost"]["enabled"] is False
     assert result["manual_boost"]["enabled"] is False
 
@@ -137,5 +175,13 @@ def test_validate_loudness_profile_normalizes_non_manual_profiles():
     assert validate_loudness_profile(None, None) == (LOUDNESS_PROFILE_STANDARD, None)
     assert validate_loudness_profile(LOUDNESS_PROFILE_AUTO_BOOST, None) == (
         LOUDNESS_PROFILE_AUTO_BOOST,
+        None,
+    )
+    assert validate_loudness_profile(LOUDNESS_PROFILE_VOICE_ONLY, None) == (
+        LOUDNESS_PROFILE_VOICE_ONLY,
+        None,
+    )
+    assert validate_loudness_profile(LOUDNESS_PROFILE_CLEAN_BACKGROUND, None) == (
+        LOUDNESS_PROFILE_CLEAN_BACKGROUND,
         None,
     )

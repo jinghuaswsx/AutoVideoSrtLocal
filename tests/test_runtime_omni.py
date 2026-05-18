@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 from appcore.events import EventBus
 
@@ -95,3 +96,80 @@ def test_omni_ja_localization_adapter_keeps_character_budget_hooks(monkeypatch):
         source_language="pt",
     )
     assert "ORIGINAL VIDEO TRANSCRIPT (Portuguese" in rewrite_messages[1]["content"]
+
+
+def test_step_asr_rebuilds_missing_audio_path_before_transcribe(monkeypatch, tmp_path):
+    from appcore import ai_billing, asr_router, task_state
+    from appcore.runtime._pipeline_runner import PipelineRunner
+    from appcore.runtime_omni import OmniTranslateRunner
+    from pipeline import extract as pipeline_extract
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_billing, "log_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_extract, "get_video_duration", lambda path: 12.0)
+
+    task_id = "omni-missing-audio-path"
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"fake-video")
+    rebuilt_audio_path = tmp_path / "source_audio.wav"
+
+    task_state.create(task_id, str(video_path), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        type="omni_translate",
+        source_language="en",
+        target_lang="es",
+        user_specified_source_language=True,
+    )
+
+    def fake_step_extract(self, received_task_id, received_video_path, received_task_dir):
+        assert received_task_id == task_id
+        assert received_video_path == str(video_path)
+        assert received_task_dir == str(tmp_path)
+        rebuilt_audio_path.write_bytes(b"fake-audio")
+        task_state.update(received_task_id, audio_path=str(rebuilt_audio_path))
+        task_state.set_preview_file(received_task_id, "audio_extract", str(rebuilt_audio_path))
+        self._set_step(received_task_id, "extract", "done", "audio rebuilt")
+
+    captured = {}
+
+    def fake_transcribe(audio_path, *, source_language, stage):
+        captured["audio_path"] = audio_path
+        captured["source_language"] = source_language
+        captured["stage"] = stage
+        return {
+            "utterances": [
+                {
+                    "start_time": 0.0,
+                    "end_time": 2.0,
+                    "text": "this is a long enough english transcript " * 3,
+                }
+            ],
+            "provider_code": "fake-asr",
+            "model_id": "fake-model",
+        }
+
+    monkeypatch.setattr(PipelineRunner, "_step_extract", fake_step_extract)
+    monkeypatch.setattr(
+        asr_router,
+        "resolve_adapter",
+        lambda stage, source_language: (
+            SimpleNamespace(display_name="Fake ASR", model_id="fake-model"),
+            {},
+        ),
+    )
+    monkeypatch.setattr(asr_router, "transcribe", fake_transcribe)
+
+    runner = OmniTranslateRunner(bus=EventBus(), user_id=1)
+    runner._step_asr(task_id, str(tmp_path))
+
+    task = task_state.get(task_id) or {}
+    assert captured == {
+        "audio_path": str(rebuilt_audio_path),
+        "source_language": "en",
+        "stage": "asr_main",
+    }
+    assert task["audio_path"] == str(rebuilt_audio_path)
+    assert task["steps"]["extract"] == "done"
+    assert task["steps"]["asr"] == "done"

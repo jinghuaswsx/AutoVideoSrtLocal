@@ -660,6 +660,14 @@ function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
     qs(id).innerHTML = buttons.join('');
   });
 }
+function renderMetaHotPageSummary(data, items, label = '') {
+  const currentCount = Array.isArray(items) ? items.length : 0;
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const prefix = label ? `${label} · ` : '';
+  return `${prefix}当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材`;
+}
 async function loadMetaHotPosts(page = 1) {
   mhSubtab = 'library';
   qs('mhLibrarySubtab').classList.add('active');
@@ -676,7 +684,7 @@ async function loadMetaHotPosts(page = 1) {
     : '<div class="mh-empty">暂无结果</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data);
-  qs('mhStatus').textContent = `Page ${mhPage}`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);
 }
 async function loadTodayNewMaterials(page = 1) {
   mhSubtab = 'today';
@@ -694,7 +702,7 @@ async function loadTodayNewMaterials(page = 1) {
     : '<div class="mh-empty">今日暂无新抓到的帖子</div>';
   mhPage = Number(data.page || page || 1);
   renderMetaHotPager(data, 'loadTodayNewMaterials');
-  qs('mhStatus').textContent = `今日新增 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');
 }
 async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
@@ -710,7 +718,7 @@ async function loadEuropeTopMaterials() {
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无欧洲评估结果</div>';
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
-  qs('mhStatus').textContent = '欧洲Top50';
+  qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 async function loadUsTopMaterials() {
   mhSubtab = 'us';
@@ -726,7 +734,7 @@ async function loadUsTopMaterials() {
   qs('metaHotCardGrid').innerHTML = (data.items || []).length
     ? data.items.map(renderCard).join('')
     : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
-  qs('mhStatus').textContent = `美国Top50 · ${data.total || 0} 条`;
+  qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');

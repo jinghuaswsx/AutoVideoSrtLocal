@@ -480,6 +480,42 @@ def test_get_meta_ad_summary_filters_by_search_query(monkeypatch):
     )
 
 
+def test_get_meta_ad_summary_filters_by_ad_account(monkeypatch):
+    report_start = oa._parse_meta_date("2026-05-17")
+    report_end = oa._parse_meta_date("2026-05-17")
+    queries = []
+
+    monkeypatch.setattr(
+        oa,
+        "query_one",
+        lambda sql, args=(): (_ for _ in ()).throw(AssertionError("batch lookup should not run")),
+    )
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM meta_ad_daily_campaign_metrics m" in sql and "LEFT JOIN media_products" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(
+        start_date="2026-05-17",
+        end_date="2026-05-17",
+        ad_account_id="act_1253003326160754",
+    )
+
+    assert summary["rows"] == []
+    main_sql, main_args = queries[0]
+    unmatched_sql, unmatched_args = queries[1]
+    assert "m.ad_account_id = %s" in main_sql
+    assert main_args == (report_start, report_end, "1253003326160754")
+    assert "ad_account_id = %s" in unmatched_sql
+    assert unmatched_args == (report_start, report_end, "1253003326160754")
+
+
 def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
     report_start = oa._parse_meta_date("2026-04-01")
     report_end = oa._parse_meta_date("2026-04-18")
@@ -893,25 +929,42 @@ def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
     assert '/order-analytics/ad-summary?start_date=' in body
 
 
-def test_ads_default_date_range_uses_march_first_of_current_year(authed_client_no_db):
-    """广告分析默认日期范围统一为「最近一次 3 月 1 日 → 今天」。
+def test_ads_default_date_range_uses_meta_business_today(authed_client_no_db):
+    """广告分析默认日期范围选择 Meta 广告日「今天」。
 
-    Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
+    Meta 今天由 Beijing 16:00 cutover 决定，例如 2026-05-18 16:00 前是
+    2026-05-17。
     """
     response = authed_client_no_db.get("/order-analytics")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "function adsDefaultStartIso()" in body
-    assert "if (d.getMonth() < 2) year -= 1;" in body
-    assert "return year + '-03-01';" in body
-    assert "setInputValue('adStartDate', adsDefaultStartIso());" in body
-    assert "setInputValue('adEndDate', formatDateInput(window.orderAnalyticsMetaCalendar.today()));" in body
+    assert "return formatDateInput(d);" in body
+    assert "setAdRange('today', true);" in body
+    assert "setInputValue('adStartDate', adsDefaultStartIso());" not in body
+    assert "return year + '-03-01';" not in body
+    assert "return year + '-05-03';" not in body
     assert "startListEl.value = adsDefaultStartIso();" in body
     assert "startDetailEl.value = adsDefaultStartIso();" in body
     assert ".value || adsDefaultStartIso();" in body
-    assert "setAdRange('today', true);" not in body
     assert "adsDaysAgoIso" not in body
+
+
+def test_ads_analysis_page_has_ad_account_filter_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "广告户" in body
+    assert 'id="adAccountFilter"' in body
+    assert 'data-ads-account-filter="overview"' in body
+    for level in ("campaign", "adset", "ad"):
+        assert f'data-ads-account-filter="{level}"' in body
+        assert f'data-ads-detail-account="{level}"' in body
+    assert "adsPopulateAccountFilters" in body
+    assert "getSelectedAdsAccountId" in body
+    assert "'&ad_account_id=' + encodeURIComponent" in body
 
 
 def test_ads_level_search_queries_bottom_list_without_dropdown(authed_client_no_db):
@@ -1209,6 +1262,38 @@ def test_get_ads_level_list_filters_by_search_query(monkeypatch):
     assert "%water-blaster%" in captured[0]["args"]
 
 
+def test_get_ads_level_list_filters_by_ad_account(monkeypatch):
+    captured: list[dict] = []
+    report_start = oa._parse_meta_date("2026-05-17")
+    report_end = oa._parse_meta_date("2026-05-17")
+
+    def fake_query_one(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_ads_level_list(
+        "campaign",
+        start_date="2026-05-17",
+        end_date="2026-05-17",
+        ad_account_id="act_1253003326160754",
+    )
+
+    assert result["rows"] == []
+    total_query = captured[0]
+    list_query = captured[1]
+    assert "ad_account_id = %s" in total_query["sql"]
+    assert total_query["args"] == (report_start, report_end, "1253003326160754")
+    assert "ad_account_id = %s" in list_query["sql"]
+    assert list_query["args"] == (report_start, report_end, "1253003326160754", 50, 0)
+
+
 def test_search_ads_by_level_rejects_empty_q():
     import pytest
 
@@ -1319,6 +1404,32 @@ def test_get_ads_level_detail_excludes_realtime_for_adset(monkeypatch):
     assert result["rows"] == []
 
 
+def test_get_ads_level_detail_filters_by_ad_account(monkeypatch):
+    captured = {}
+    day = oa._parse_meta_date("2026-05-17")
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_adset_metrics" in sql and "WHERE normalized_adset_code = %s" in sql:
+            captured["sql"] = sql
+            captured["args"] = args
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "query_one", lambda sql, args=(): None)
+
+    result = oa.get_ads_level_detail(
+        "adset",
+        code="water-blaster",
+        start_date="2026-05-17",
+        end_date="2026-05-17",
+        ad_account_id="act_1253003326160754",
+    )
+
+    assert result["rows"] == []
+    assert "ad_account_id = %s" in captured["sql"]
+    assert captured["args"] == ("water-blaster", day, day, "1253003326160754")
+
+
 def test_ads_list_route_400_for_invalid_level(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/ads/list?level=bogus")
     assert response.status_code == 400
@@ -1337,21 +1448,23 @@ def test_ads_detail_route_400_for_missing_code(authed_client_no_db):
     assert b"code is required" in response.data
 
 
-def test_ad_summary_route_passes_search_query_to_data_layer(authed_client_no_db, monkeypatch):
+def test_ad_summary_route_passes_search_and_account_query_to_data_layer(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_summary(batch_id=None, start_date=None, end_date=None, q=None):
+    def fake_summary(batch_id=None, start_date=None, end_date=None, q=None, ad_account_id=None):
         captured.update({
             "batch_id": batch_id,
             "start_date": start_date,
             "end_date": end_date,
             "q": q,
+            "ad_account_id": ad_account_id,
         })
         return {"period": None, "rows": [], "unmatched": []}
 
     monkeypatch.setattr(oa, "get_meta_ad_summary", fake_summary)
     response = authed_client_no_db.get(
-        "/order-analytics/ad-summary?start_date=2026-04-01&end_date=2026-05-03&q=water-blaster"
+        "/order-analytics/ad-summary?start_date=2026-04-01&end_date=2026-05-03"
+        "&q=water-blaster&ad_account_id=act_1253003326160754"
     )
 
     assert response.status_code == 200, response.data
@@ -1360,6 +1473,7 @@ def test_ad_summary_route_passes_search_query_to_data_layer(authed_client_no_db,
         "start_date": "2026-04-01",
         "end_date": "2026-05-03",
         "q": "water-blaster",
+        "ad_account_id": "act_1253003326160754",
     }
 
 
@@ -1862,11 +1976,12 @@ def test_get_ads_level_detail_applies_order_fallback_to_historical_days(monkeypa
 def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir, q):
+    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir, q, ad_account_id):
         captured.update({
             "level": level, "start_date": start_date, "end_date": end_date,
             "page": page, "page_size": page_size,
             "sort_by": sort_by, "sort_dir": sort_dir, "q": q,
+            "ad_account_id": ad_account_id,
         })
         return {"level": level, "rows": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
 
@@ -1874,7 +1989,8 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     response = authed_client_no_db.get(
         "/order-analytics/ads/list?level=campaign"
         "&start_date=2026-04-01&end_date=2026-04-14"
-        "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc&q=water-blaster"
+        "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc"
+        "&q=water-blaster&ad_account_id=1253003326160754"
     )
     assert response.status_code == 200, response.data
     assert captured["level"] == "campaign"
@@ -1885,3 +2001,34 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     assert captured["sort_by"] == "roas_purchase"
     assert captured["sort_dir"] == "asc"
     assert captured["q"] == "water-blaster"
+    assert captured["ad_account_id"] == "1253003326160754"
+
+
+def test_ads_detail_route_passes_account_to_data_layer(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_detail(level, code, start_date, end_date, ad_account_id):
+        captured.update({
+            "level": level,
+            "code": code,
+            "start_date": start_date,
+            "end_date": end_date,
+            "ad_account_id": ad_account_id,
+        })
+        return {"level": level, "code": code, "rows": []}
+
+    monkeypatch.setattr(oa, "get_ads_level_detail", fake_detail)
+    response = authed_client_no_db.get(
+        "/order-analytics/ads/detail?level=ad&code=water-blaster"
+        "&start_date=2026-05-17&end_date=2026-05-17"
+        "&ad_account_id=act_1253003326160754"
+    )
+
+    assert response.status_code == 200, response.data
+    assert captured == {
+        "level": "ad",
+        "code": "water-blaster",
+        "start_date": "2026-05-17",
+        "end_date": "2026-05-17",
+        "ad_account_id": "act_1253003326160754",
+    }

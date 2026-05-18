@@ -254,7 +254,8 @@ class OmniTranslateRunner(MultiTranslateRunner):
         from appcore.events import EVT_ASR_RESULT
 
         task = task_state.get(task_id)
-        audio_path = task["audio_path"]
+        audio_path = self._ensure_audio_path_for_asr(task_id, task_dir)
+        task = task_state.get(task_id) or task
         source_language = (task.get("source_language") or "").strip()
         if source_language not in _MANUAL_SOURCE_LANGUAGES:
             message = (
