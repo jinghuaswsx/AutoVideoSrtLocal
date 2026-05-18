@@ -2228,12 +2228,31 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
         "result": {
             "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
             "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2", "execution_mode": "serial"}},
-            "covers": [{"platform": "social_reels", "index": 1, "object_key": "artifacts/video_cover/8/task-1/social_reels.png", "copy": copy_item}],
+            "covers": [
+                {
+                    "platform": "social_reels",
+                    "index": 1,
+                    "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
+                    "copy": copy_item,
+                    "hook": "Love the breeze",
+                    "formatted_copy": (
+                        "标题: Love the breeze\n"
+                        "文案: Stop choosing between fresh air and mosquito bites.\n"
+                        "描述: Keep bugs out"
+                    ),
+                }
+            ],
         },
     }
     row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
     monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
-    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig(), raising=False)
+
+    def fake_get_provider_config(code):
+        assert code == "video_cover_local_image"
+        return _FakeProviderConfig()
+
+    if hasattr(video_cover, "get_provider_config"):
+        monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
 
     resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
 
@@ -2247,10 +2266,15 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
     assert data["full_request"]["method"] == "POST"
     assert data["full_request"]["url"] == "http://image.local/v1/images/edits"
     assert data["full_request"]["headers"]["Authorization"] == "Bearer sk-local-test"
+    assert data["full_request"]["headers"]["Content-Type"] == "multipart/form-data"
     assert data["full_request"]["api_key"] == "sk-local-test"
     assert data["full_request"]["body"]["model"] == "gpt-image-2"
     assert data["full_request"]["body"]["prompt"] == "actual prompt with native hook text"
+    assert data["full_request"]["body"]["n"] == "1"
+    assert data["full_request"]["body"]["size"] == "1024x1536"
     assert data["full_request"]["files"][0]["field"] == "image"
+    assert data["full_request"]["files"][0]["filename"] == "reference.png"
+    assert data["full_request"]["files"][0]["content_type"] == "image/png"
     assert data["full_request"]["files"][0]["source"] == "artifacts/video_cover/8/task-1/reference.png"
     assert data["replay"]["supported"] is True
     assert data["raw_response"]["data"][0]["b64_json"] == "iVBORw0KGgo="
@@ -2283,8 +2307,12 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(authed_clien
     resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/ad_copy")
 
     assert resp.status_code == 200
-    data = resp.get_json()["data"]
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    data = payload["data"]
     assert data["full_request"]["body"]["messages"][0]["content"] == "write ad copy"
+    assert data["response_data"] == {"ad_copy_sets": []}
+    assert data["raw_response"] == {"ad_copy_sets": []}
     assert data["replay"]["supported"] is False
 
 
