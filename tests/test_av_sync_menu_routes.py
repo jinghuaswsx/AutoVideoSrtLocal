@@ -69,17 +69,20 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     order_profit_idx = nav_html.index('href="/order-profit"')
     multi_translate_idx = nav_html.index('href="/multi-translate"')
     omni_translate_idx = nav_html.index('href="/omni-translate"')
-    projects_idx = nav_html.index('href="/projects"')
     title_translate_idx = nav_html.index('href="/title-translate"')
     image_translate_idx = nav_html.index('href="/image-translate"')
     subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
     mk_selection_idx = nav_html.index('href="/xuanpin/mk"')
+    task_group_idx = nav_html.index("sidebar-task-group")
+    settings_group_idx = nav_html.index("sidebar-settings-group")
+    lab_group_idx = nav_html.index("sidebar-lab-group")
 
     assert medias_idx < pushes_idx < data_group_idx < material_group_idx < video_group_idx
     assert data_group_idx < order_analytics_idx < product_profit_idx < order_profit_idx
     assert material_group_idx < image_translate_idx < subtitle_removal_idx
-    assert video_group_idx < multi_translate_idx < omni_translate_idx < projects_idx
-    assert video_group_idx < title_translate_idx < mk_selection_idx
+    assert video_group_idx < multi_translate_idx < omni_translate_idx
+    assert video_group_idx < title_translate_idx < mk_selection_idx < task_group_idx
+    assert task_group_idx < settings_group_idx < lab_group_idx
 
 
 def test_dashboard_sidebar_moves_lab_group_to_bottom():
@@ -120,7 +123,8 @@ def test_dashboard_sidebar_settings_group_includes_browser_monitor():
     browser_monitor_idx = nav_html.index("url_for('browser_monitor.page')", settings_group_idx)
 
     assert "浏览器监控" in nav_html
-    assert settings_group_idx < browser_monitor_idx < lab_group_idx
+    assert settings_group_idx < browser_monitor_idx
+    assert nav_html.index("浏览器监控", browser_monitor_idx) < lab_group_idx
 
 
 def test_dashboard_sidebar_groups_task_center_entries():
