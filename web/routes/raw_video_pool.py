@@ -34,6 +34,10 @@ def _is_admin() -> bool:
     return getattr(current_user, "is_superadmin", False)
 
 
+def _viewer_role() -> str:
+    return getattr(current_user, "role", "user") or "user"
+
+
 def _can_process_raw_video() -> bool:
     if _is_admin():
         return True

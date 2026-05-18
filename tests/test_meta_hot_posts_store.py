@@ -248,7 +248,10 @@ def test_list_hot_posts_selects_local_video_cache_fields():
 
     data_sql, _params = calls[-1]
     assert payload["items"][0]["local_video_status"] == "downloaded"
+    assert "p.raw_json" in data_sql
     assert "p.local_video_path" in data_sql
+    assert "p.local_video_duration_seconds" in data_sql
+    assert "p.local_video_cover_path" in data_sql
     assert "p.local_video_status" in data_sql
     assert "p.local_video_error" in data_sql
     assert "p.local_video_downloaded_at" in data_sql
@@ -287,6 +290,8 @@ def test_local_video_status_transitions_are_recorded():
     store.finish_local_video_download(
         77,
         local_video_path="meta_hot_posts/videos/77.mp4",
+        local_video_duration_seconds=12.345,
+        local_video_cover_path="meta_hot_posts/video_covers/77/thumbnail.jpg",
         error_message=None,
         execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
     )
@@ -304,8 +309,15 @@ def test_local_video_status_transitions_are_recorded():
     assert "local_video_attempts=local_video_attempts + 1" in running_sql
     assert running_params == (77,)
     assert "local_video_status='downloaded'" in success_sql
+    assert "local_video_duration_seconds=%s" in success_sql
+    assert "local_video_cover_path=%s" in success_sql
     assert "local_video_downloaded_at=NOW()" in success_sql
-    assert success_params == ("meta_hot_posts/videos/77.mp4", 77)
+    assert success_params == (
+        "meta_hot_posts/videos/77.mp4",
+        12.345,
+        "meta_hot_posts/video_covers/77/thumbnail.jpg",
+        77,
+    )
     assert "ELSE 'failed'" in failure_sql
     assert "local_video_error=CASE" in failure_sql
     assert failure_params == (5, 5, "download failed", "download failed", 78)
@@ -325,6 +337,48 @@ def test_finish_local_video_download_marks_unavailable_after_fifth_failure():
     assert "local_video_status=CASE WHEN local_video_attempts >= %s THEN 'unavailable' ELSE 'failed' END" in sql
     assert "unavailable after max retry attempts" in sql
     assert params == (5, 5, "still blocked", "still blocked", 88)
+
+
+def test_local_video_metadata_queries_are_recorded():
+    calls = []
+
+    rows = store.list_local_videos_missing_metadata(
+        limit=25,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 5}],
+    )
+    updated = store.update_local_video_metadata(
+        5,
+        local_video_duration_seconds=33.2,
+        local_video_cover_path="meta_hot_posts/video_covers/5/thumbnail.jpg",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    select_sql, select_params = calls[0]
+    update_sql, update_params = calls[1]
+    assert rows == [{"id": 5}]
+    assert "local_video_status = 'downloaded'" in select_sql
+    assert "local_video_duration_seconds IS NULL" in select_sql
+    assert "local_video_cover_path IS NULL" in select_sql
+    assert select_params == (25,)
+    assert updated == 1
+    assert "UPDATE meta_hot_posts" in update_sql
+    assert "local_video_duration_seconds=%s" in update_sql
+    assert "local_video_cover_path=%s" in update_sql
+    assert update_params == (33.2, "meta_hot_posts/video_covers/5/thumbnail.jpg", 5)
+
+
+def test_list_local_videos_missing_metadata_can_scan_all_rows():
+    calls = []
+
+    rows = store.list_local_videos_missing_metadata(
+        limit=None,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 5}],
+    )
+
+    sql, params = calls[0]
+    assert rows == [{"id": 5}]
+    assert "LIMIT" not in sql
+    assert params == ()
 
 
 def test_reset_running_local_videos_marks_all_downloading_failed_for_takeover():

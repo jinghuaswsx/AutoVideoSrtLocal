@@ -54,6 +54,18 @@ def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
 
 
+def test_meta_hot_posts_local_video_metadata_migration_adds_duration_and_cover_fields():
+    body = Path("db/migrations/2026_05_18_meta_hot_posts_local_video_metadata.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "local_video_duration_seconds" in body
+    assert "local_video_cover_path" in body
+    assert "information_schema.COLUMNS" in body
+    assert "docs/superpowers/specs/2026-05-14-meta-hot-posts-video-localization-design.md" in body
+
+
 def test_meta_hot_posts_europe_fit_migration_creates_assessment_table():
     body = Path("db/migrations/2026_05_14_meta_hot_posts_europe_fit.sql").read_text(
         encoding="utf-8"

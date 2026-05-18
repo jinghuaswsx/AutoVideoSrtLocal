@@ -61,17 +61,28 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
 
     medias_idx = nav_html.index('href="/medias"')
     pushes_idx = nav_html.index('href="/pushes"')
+    data_group_idx = nav_html.index("sidebar-data-dashboard-group")
+    material_group_idx = nav_html.index("sidebar-material-creation-group")
+    video_group_idx = nav_html.index("sidebar-video-translate-group")
     order_analytics_idx = nav_html.index('href="/order-analytics"')
+    product_profit_idx = nav_html.index('href="/product-profit"')
+    order_profit_idx = nav_html.index('href="/order-profit"')
     multi_translate_idx = nav_html.index('href="/multi-translate"')
+    omni_translate_idx = nav_html.index('href="/omni-translate"')
     title_translate_idx = nav_html.index('href="/title-translate"')
     image_translate_idx = nav_html.index('href="/image-translate"')
     subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
     mk_selection_idx = nav_html.index('href="/xuanpin/mk"')
+    task_group_idx = nav_html.index("sidebar-task-group")
+    settings_group_idx = nav_html.index("sidebar-settings-group")
+    lab_group_idx = nav_html.index("sidebar-lab-group")
 
-    assert medias_idx < pushes_idx < order_analytics_idx
-    assert order_analytics_idx < multi_translate_idx < title_translate_idx
-    assert title_translate_idx < image_translate_idx < subtitle_removal_idx
-    assert subtitle_removal_idx < mk_selection_idx
+    assert medias_idx < pushes_idx < data_group_idx < material_group_idx < video_group_idx
+    assert data_group_idx < order_analytics_idx < product_profit_idx < order_profit_idx
+    assert material_group_idx < image_translate_idx < subtitle_removal_idx
+    assert video_group_idx < multi_translate_idx < omni_translate_idx
+    assert video_group_idx < title_translate_idx < mk_selection_idx < task_group_idx
+    assert task_group_idx < settings_group_idx < lab_group_idx
 
 
 def test_dashboard_sidebar_moves_lab_group_to_bottom():
@@ -82,11 +93,10 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom():
     lab_group_marker = '<details class="sidebar-group sidebar-lab-group"'
     lab_group_idx = nav_html.index(lab_group_marker)
     video_translate_idx = nav_html.index("url_for('projects.index')")
-    order_analytics_idx = nav_html.index('href="/order-analytics"')
+    settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
     voice_library_idx = nav_html.index('href="/voice-library"')
     prompt_library_idx = nav_html.index('href="/prompt-library"')
     copywriting_idx = nav_html.index('href="/copywriting"')
-    text_translate_idx = nav_html.index('href="/text-translate"')
     video_creation_idx = nav_html.index('href="/video-creation"')
     video_review_idx = nav_html.index('href="/video-review"')
     link_check_idx = nav_html.index("url_for('link_check.page')")
@@ -94,25 +104,56 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom():
 
     assert "实验室" in nav_html
     assert lab_group_idx > video_translate_idx
+    assert lab_group_idx > settings_group_idx
     assert lab_group_idx == nav_html.rfind(lab_group_marker)
     assert voice_library_idx > lab_group_idx
     assert voice_library_idx < prompt_library_idx < copywriting_idx
-    assert copywriting_idx < text_translate_idx < video_creation_idx
+    assert copywriting_idx < video_creation_idx
     assert video_creation_idx < video_review_idx < link_check_idx < av_sync_idx
     assert '<details class="sidebar-group sidebar-lab-group" open' not in nav_html
 
 
-def test_dashboard_sidebar_lab_group_includes_browser_monitor():
+def test_dashboard_sidebar_settings_group_includes_browser_monitor():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
     nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
 
+    settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
     lab_group_idx = nav_html.index('<details class="sidebar-group sidebar-lab-group"')
-    browser_monitor_idx = nav_html.index("url_for('browser_monitor.page')")
-    av_sync_idx = nav_html.index("url_for('projects.av_sync_page')")
+    browser_monitor_idx = nav_html.index("url_for('browser_monitor.page')", settings_group_idx)
 
     assert "浏览器监控" in nav_html
-    assert lab_group_idx < browser_monitor_idx < av_sync_idx
+    assert settings_group_idx < browser_monitor_idx
+    assert nav_html.index("浏览器监控", browser_monitor_idx) < lab_group_idx
+
+
+def test_dashboard_sidebar_groups_task_center_entries():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
+    nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
+
+    task_group_idx = nav_html.index('<details class="sidebar-group sidebar-task-group"')
+    raw_pool_idx = nav_html.index('href="/raw-video-pool/"', task_group_idx)
+    task_center_idx = nav_html.index('href="/tasks/"', task_group_idx)
+    bulk_admin_idx = nav_html.index("url_for('bulk_translate_pages.admin_tasks_page')", task_group_idx)
+    settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
+
+    assert "原始素材任务库" in nav_html
+    assert "任务中心" in nav_html
+    assert "批量翻译任务管理" in nav_html
+    assert task_group_idx < raw_pool_idx < task_center_idx < bulk_admin_idx < settings_group_idx
+    assert 'data-default-href="{{ task_group_href }}"' in nav_html
+    assert '<details class="sidebar-group sidebar-task-group" open' not in nav_html
+
+
+def test_dashboard_sidebar_task_group_opens_when_child_active(authed_client_no_db):
+    resp = authed_client_no_db.get("/raw-video-pool/")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert '<details class="sidebar-group sidebar-task-group" open>' in html
+    assert re.search(r'<summary[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span>', html)
+    assert re.search(r'<a href="/raw-video-pool/"[^>]*class="active"', html)
 
 
 def test_dashboard_sidebar_hides_offline_video_translation_entries():
