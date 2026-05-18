@@ -2222,7 +2222,7 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
         "step_results": {
             "cover_generation": {
                 "raw_response": {"data": [{"b64_json": "iVBORw0KGgo="}]},
-                "structured_result": {"covers": [{"index": 1, "hook": "Love the breeze"}]},
+                "structured_result": {"covers": [{"index": 1, "hook": "structured hook"}]},
             }
         },
         "result": {
@@ -2234,9 +2234,9 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
                     "index": 1,
                     "object_key": "artifacts/video_cover/8/task-1/social_reels.png",
                     "copy": copy_item,
-                    "hook": "Love the breeze",
+                    "hook": "result hook",
                     "formatted_copy": (
-                        "标题: Love the breeze\n"
+                        "标题: result hook\n"
                         "文案: Stop choosing between fresh air and mosquito bites.\n"
                         "描述: Keep bugs out"
                     ),
@@ -2262,7 +2262,7 @@ def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_d
     data = payload["data"]
     assert data["label"] == "封面生成"
     assert data["request_data"]["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
-    assert data["response_data"]["covers"][0]["hook"] == "Love the breeze"
+    assert data["response_data"]["covers"][0]["hook"] == "result hook"
     assert data["full_request"]["method"] == "POST"
     assert data["full_request"]["url"] == "http://image.local/v1/images/edits"
     assert data["full_request"]["headers"]["Authorization"] == "Bearer sk-local-test"
@@ -2296,8 +2296,8 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(authed_clien
         },
         "step_results": {
             "ad_copy": {
-                "raw_response": {"ad_copy_sets": []},
-                "structured_result": {"ad_copy_sets": []},
+                "raw_response": {"raw_marker": True},
+                "structured_result": {"structured_marker": True},
             }
         },
     }
@@ -2311,8 +2311,8 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(authed_clien
     assert payload["ok"] is True
     data = payload["data"]
     assert data["full_request"]["body"]["messages"][0]["content"] == "write ad copy"
-    assert data["response_data"] == {"ad_copy_sets": []}
-    assert data["raw_response"] == {"ad_copy_sets": []}
+    assert data["response_data"] == {"structured_marker": True}
+    assert data["raw_response"] == {"raw_marker": True}
     assert data["replay"]["supported"] is False
 
 
