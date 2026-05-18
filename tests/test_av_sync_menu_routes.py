@@ -115,6 +115,34 @@ def test_dashboard_sidebar_lab_group_includes_browser_monitor():
     assert lab_group_idx < browser_monitor_idx < av_sync_idx
 
 
+def test_dashboard_sidebar_groups_task_center_entries():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
+    nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
+
+    task_group_idx = nav_html.index('<details class="sidebar-group sidebar-task-group"')
+    raw_pool_idx = nav_html.index('href="/raw-video-pool/"')
+    task_center_idx = nav_html.index('href="/tasks/"')
+    bulk_admin_idx = nav_html.index("url_for('bulk_translate_pages.admin_tasks_page')")
+    omni_translate_idx = nav_html.index('href="/omni-translate"')
+
+    assert "原始素材任务库" in nav_html
+    assert "任务中心" in nav_html
+    assert "批量翻译任务管理" in nav_html
+    assert task_group_idx < raw_pool_idx < task_center_idx < bulk_admin_idx < omni_translate_idx
+    assert '<details class="sidebar-group sidebar-task-group" open' not in nav_html
+
+
+def test_dashboard_sidebar_task_group_opens_when_child_active(authed_client_no_db):
+    resp = authed_client_no_db.get("/raw-video-pool/")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert '<details class="sidebar-group sidebar-task-group" open>' in html
+    assert re.search(r'<summary class="active">\s*<span class="nav-icon">📋</span>', html)
+    assert re.search(r'<a href="/raw-video-pool/"[^>]*class="active"', html)
+
+
 def test_dashboard_sidebar_hides_offline_video_translation_entries():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
