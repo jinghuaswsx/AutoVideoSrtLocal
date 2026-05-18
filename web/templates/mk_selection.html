@@ -113,8 +113,8 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
-.mk-library-tabs { display:inline-flex; align-items:center; gap:4px; margin:0 0 var(--oc-sp-4); padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
-.mk-library-tab { height:32px; min-width:92px; padding:0 14px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:700; cursor:pointer; }
+.mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
+.mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
 .mk-library-tab.active { background:var(--oc-accent); color:#fff; }
 .mk-library-panel[hidden] { display:none; }
 .mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
@@ -122,6 +122,11 @@
 .mk-video-product-line { display:flex; flex-direction:column; gap:2px; min-height:48px; font-size:12px; color:var(--oc-fg-muted); }
 .mk-video-product-line a { color:var(--oc-accent); text-decoration:none; font-weight:700; }
 .mk-video-product-line a:hover { text-decoration:underline; }
+@media (max-width: 768px) {
+  .mk-library-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; -ms-overflow-style:none; }
+  .mk-library-tabs::-webkit-scrollbar { display:none; }
+  .mk-library-tab { flex-shrink:0; min-width:80px; white-space:nowrap; }
+}
 {% endblock %}
 
 {% block content %}
@@ -195,6 +200,7 @@
 const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
 let currentMkLibraryTab = 'products';
+let mkProductsLoaded = false;
 let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
 let selectedMkSnapshot = '';
@@ -246,10 +252,11 @@ function fmtMkSpendText(raw, parsed) {
 }
 
 function runMkSearch() {
+  mkProductsLoaded = false;
+  mkVideoMaterialsLoaded = false;
   if (currentMkLibraryTab === 'videos') {
     loadMkVideoMaterials(1);
   } else {
-    mkVideoMaterialsLoaded = false;
     loadData(1);
   }
 }
@@ -287,12 +294,16 @@ async function loadMkSelectionSnapshots() {
 
 function onMkSnapshotChange() {
   selectedMkSnapshot = document.getElementById('snapshotSelect').value || '';
+  mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   runMkSearch();
 }
 
-function switchMkLibraryTab(tab) {
-  currentMkLibraryTab = tab === 'videos' ? 'videos' : 'products';
+function normalizeMkLibraryTab(tab) {
+  return tab === 'videos' ? 'videos' : 'products';
+}
+
+function applyMkLibraryTabState() {
   document.querySelectorAll('.mk-library-tab').forEach(btn => {
     const active = btn.dataset.mkLibraryTab === currentMkLibraryTab;
     btn.classList.toggle('active', active);
@@ -300,9 +311,25 @@ function switchMkLibraryTab(tab) {
   });
   document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
   document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
-  if (currentMkLibraryTab === 'videos' && !mkVideoMaterialsLoaded) {
-    loadMkVideoMaterials(1);
+}
+
+function switchMkLibraryTab(tab, options = {}) {
+  currentMkLibraryTab = normalizeMkLibraryTab(tab);
+  if (options.updateHash !== false) {
+    location.hash = currentMkLibraryTab;
   }
+  applyMkLibraryTabState();
+  if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
+    loadMkVideoMaterials(1);
+  } else if (currentMkLibraryTab === 'products' && (!mkProductsLoaded || options.forceLoad)) {
+    loadData(1);
+  }
+}
+
+function initMkLibraryTabFromHash() {
+  currentMkLibraryTab = normalizeMkLibraryTab(location.hash.replace('#', ''));
+  applyMkLibraryTabState();
+  return currentMkLibraryTab;
 }
 
 async function loadData(page) {
@@ -312,6 +339,7 @@ async function loadData(page) {
 
   const resp = await fetch(url);
   const data = await resp.json();
+  mkProductsLoaded = true;
   if (data.snapshot) selectedMkSnapshot = String(data.snapshot);
 
   document.getElementById('totalCount').textContent = data.total + ' 条';
@@ -383,6 +411,7 @@ async function loadMkVideoMaterials(page) {
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const stats = data.stats || {};
+    document.getElementById('totalCount').textContent = (data.total_products || 0) + ' 条';
     status.textContent = `快照 ${data.snapshot || selectedMkSnapshot || '最新'} · 扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无明空视频素材</div>';
@@ -646,8 +675,13 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 
 // 初始加载
 (async function initMkSelection() {
+  const initialTab = initMkLibraryTabFromHash();
   await loadMkSelectionSnapshots();
-  loadData(1);
+  if (initialTab === 'videos') {
+    loadMkVideoMaterials(1);
+  } else {
+    loadData(1);
+  }
 })();
 
 // mk-import: Task 9 — page-load + post-render batch check
