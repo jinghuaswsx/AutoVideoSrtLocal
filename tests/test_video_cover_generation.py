@@ -2377,6 +2377,41 @@ def test_video_cover_debug_payload_rejects_missing_prompt_index(authed_client_no
     assert "prompt_index" in payload["error"]
 
 
+def test_video_cover_debug_payload_rejects_empty_prompt_index(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state()
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
+def test_video_cover_debug_payload_rejects_prompt_index_without_prompts(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = _debug_cover_state()
+    request_payload = state["step_requests"]["cover_generation"]
+    request_payload.pop("image_prompts")
+    request_payload["prompt"] = "fallback prompt text"
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig())
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation?prompt_index=99")
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "prompt_index" in payload["error"]
+
+
 def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
@@ -2397,9 +2432,10 @@ def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(auth
     assert data["full_request"]["method"] == "POST"
     assert data["full_request"]["url"] == "https://openrouter.test/api/v1/chat/completions"
     assert data["full_request"]["headers"]["Content-Type"] == "application/json"
-    assert data["full_request"]["body"]["model"] == "openai/gpt-5.4-image-2:high"
+    assert data["full_request"]["body"]["model"] == "openai/gpt-5.4-image-2"
     assert data["full_request"]["body"]["modalities"] == ["image", "text"]
     assert data["full_request"]["body"]["extra_body"]["usage"] == {"include": True}
+    assert data["full_request"]["body"]["extra_body"]["quality"] == "high"
     content = data["full_request"]["body"]["messages"][0]["content"]
     assert content[0] == {"type": "text", "text": "debug prompt text"}
     assert content[1]["type"] == "image_url"
@@ -2431,6 +2467,41 @@ def test_video_cover_debug_payload_gemini_aistudio_sdk_without_base_url(authed_c
     assert data["full_request"]["body"]["prompt"] == "debug prompt text"
     assert data["full_request"]["body"]["source_image"]["object_key"] == "artifacts/video_cover/8/task-1/reference.png"
     assert data["replay"]["supported"] is False
+
+
+def test_video_cover_debug_payload_apimart_uses_local_reference_output_params(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from appcore.gemini_image import _resolve_apimart_output_params
+    from web.routes import video_cover
+
+    reference_path = tmp_path / "reference.png"
+    reference_path.write_bytes(_png_bytes(size=(1080, 1920)))
+    expected_size, expected_resolution = _resolve_apimart_output_params(reference_path.read_bytes())
+    state = _debug_cover_state(provider="apimart", model="gpt-image-2")
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(
+        video_cover.local_media_storage,
+        "safe_local_path_for",
+        lambda object_key: reference_path,
+    )
+
+    def fake_get_provider_config(code):
+        assert code == "apimart_image"
+        return _FakeProviderConfig(api_key="sk-apimart-test", base_url="https://apimart.test")
+
+    monkeypatch.setattr(video_cover, "get_provider_config", fake_get_provider_config)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    body = resp.get_json()["data"]["full_request"]["body"]
+    assert body["size"] == expected_size
+    assert body["resolution"] == expected_resolution
+    assert body["output_params_source"] == "local_reference_image"
 
 
 def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):

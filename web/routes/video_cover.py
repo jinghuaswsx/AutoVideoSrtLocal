@@ -15,6 +15,7 @@ from flask import Blueprint, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from appcore import local_media_storage, medias, video_cover_project_store, video_cover_settings
+from appcore.gemini_image import _resolve_apimart_output_params, parse_openrouter_openai_image2_model
 from appcore.llm_provider_configs import get_provider_config
 from appcore.project_state import resolve_project_display_name_conflict, save_project_state
 from appcore.settings import get_retention_hours
@@ -1185,7 +1186,7 @@ def _step_debug_result(state: dict, step: str) -> dict:
 
 def _prompt_index_from_request(default: int = 1) -> int:
     raw = request.args.get("prompt_index")
-    if raw is None or raw == "":
+    if raw is None:
         return default
     return _parse_prompt_index(raw)
 
@@ -1205,7 +1206,10 @@ def _cover_prompt_row(request_payload: dict, prompt_index: int) -> dict:
     if not isinstance(prompts, list):
         prompts = []
     if not prompts:
-        return {"index": prompt_index, "prompt": str(request_payload.get("prompt") or "")}
+        prompt = str(request_payload.get("prompt") or "")
+        if prompt_index == 1 and prompt:
+            return {"index": prompt_index, "prompt": prompt}
+        raise VideoCoverGenerationError(f"prompt_index {prompt_index} 不存在")
     for item in prompts:
         if not isinstance(item, dict):
             continue
@@ -1248,6 +1252,17 @@ def _reference_image_summary(object_key: str) -> dict:
         "content_type": "image/png",
         "data_url": "data:image/png;base64,<reference image bytes>",
     }
+
+
+def _apimart_output_params_for_reference(object_key: str) -> tuple[str, str, str]:
+    try:
+        path = local_media_storage.safe_local_path_for(object_key)
+        if path and Path(path).is_file():
+            size, resolution = _resolve_apimart_output_params(Path(path).read_bytes())
+            return size, resolution, "local_reference_image"
+    except Exception:
+        pass
+    return "auto", "1k", "fallback_no_local_reference"
 
 
 def _base_cover_request_parts(request_payload: dict, prompt_index: int) -> tuple[str, str, str, str, list]:
@@ -1316,13 +1331,19 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
 
     if provider == "openrouter":
         url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        openrouter_model = model
+        extra_body = {"usage": {"include": True}}
+        parsed_openrouter_model = parse_openrouter_openai_image2_model(model)
+        if parsed_openrouter_model is not None:
+            openrouter_model, quality = parsed_openrouter_model
+            extra_body["quality"] = quality
         full_request = {
             "method": "POST",
             "url": url,
             "headers": {**headers, "Content-Type": "application/json"},
             "api_key": api_key,
             "body": {
-                "model": model,
+                "model": openrouter_model,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -1337,7 +1358,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
                     ],
                 }],
                 "modalities": ["image", "text"],
-                "extra_body": {"usage": {"include": True}},
+                "extra_body": extra_body,
             },
             "files": [],
             "image_prompts": image_prompts,
@@ -1347,6 +1368,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
 
     if provider == "apimart":
         url, _content_type = _cover_full_request_endpoint(provider, base_url)
+        size, resolution, output_params_source = _apimart_output_params_for_reference(object_key)
         full_request = {
             "method": "POST",
             "url": url,
@@ -1356,8 +1378,9 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
                 "model": model,
                 "prompt": prompt,
                 "n": 1,
-                "size": str(request_payload.get("size") or "auto"),
-                "resolution": str(request_payload.get("resolution") or "1k"),
+                "size": size,
+                "resolution": resolution,
+                "output_params_source": output_params_source,
                 "image_urls": ["data:image/png;base64,<reference image bytes>"],
                 "reference_image_object_key": object_key,
             },
