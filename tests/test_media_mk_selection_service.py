@@ -191,6 +191,137 @@ def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query
     assert result.payload["error"] == "invalid_pagination"
 
 
+def test_build_mk_video_materials_response_searches_mingkong_by_product_handle():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    http_calls = []
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-17"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            return [{"cnt": 1}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert "mk_product_id" not in sql
+            assert args == ["2026-05-17", 24, 0]
+            return [
+                {
+                    "rank_position": 7,
+                    "product_id": "gid-1",
+                    "product_name": "Cool Widget",
+                    "product_url": "https://shop.example/products/cool-widget",
+                    "store": "7662984",
+                    "sales_count": 88,
+                    "order_count": 80,
+                    "revenue_main": "CNY 1234.00",
+                }
+            ]
+        raise AssertionError(sql)
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 901,
+                            "product_name": "Cool Widget MK",
+                            "product_links": ["https://shop.example/products/cool-widget-RJC"],
+                            "main_image": "uploads2/main.jpg",
+                            "videos": [
+                                {
+                                    "name": "low.mp4",
+                                    "path": "uploads2/low.mp4",
+                                    "image_path": "uploads2/low.jpg",
+                                    "spends": "10",
+                                    "ads_count": 1,
+                                },
+                                {
+                                    "name": "winner.mp4",
+                                    "path": "./medias/uploads2/winner.mp4",
+                                    "image_path": "./medias/uploads2/winner.jpg",
+                                    "spends": "1.2万",
+                                    "ads_count": 9,
+                                    "author": "Bob",
+                                    "upload_time": "2026-05-16T10:00:00",
+                                    "duration_seconds": 12.5,
+                                },
+                                {
+                                    "name": "hidden.mp4",
+                                    "path": "uploads2/hidden.mp4",
+                                    "hidden": True,
+                                },
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    def fake_http_get(url, *, params=None, headers=None, timeout=None):
+        http_calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = build_mk_video_materials_response(
+        {},
+        db_query_fn=fake_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fake_http_get,
+    )
+
+    assert result.status_code == 200
+    assert http_calls == [
+        {
+            "url": "https://wedev.example/api/marketing/medias",
+            "params": {"page": 1, "q": "cool-widget", "source": "", "level": "", "show_attention": 0},
+            "headers": {"Authorization": "Bearer synced-token"},
+            "timeout": 20,
+        }
+    ]
+    assert result.payload["stats"] == {
+        "source_products": 1,
+        "mk_searches": 1,
+        "mk_no_handle": 0,
+        "mk_no_match": 0,
+        "mk_request_failed": 0,
+        "videos": 2,
+    }
+    assert result.payload["items"][0]["video_name"] == "winner.mp4"
+    assert result.payload["items"][0]["video_path"] == "uploads2/winner.mp4"
+    assert result.payload["items"][0]["video_image_path"] == "uploads2/winner.jpg"
+    assert result.payload["items"][0]["video_spends"] == 12000.0
+    assert result.payload["items"][0]["video_ads_count"] == 9
+    assert result.payload["items"][0]["mk_product_id"] == 901
+    assert result.payload["items"][0]["product_handle"] == "cool-widget"
+    assert result.payload["items"][0]["rank_position"] == 7
+    assert result.payload["items"][0]["sales_count"] == 88
+    assert result.payload["items"][1]["video_name"] == "low.mp4"
+
+
+def test_build_mk_video_materials_response_rejects_missing_credentials_without_request():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    def fail_db_query(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before db query")
+
+    def fail_http_get(*_args, **_kwargs):
+        raise AssertionError("missing credentials should stop before wedev request")
+
+    result = build_mk_video_materials_response(
+        {},
+        db_query_fn=fail_db_query,
+        build_headers_fn=lambda: {"Accept": "application/json"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=fail_http_get,
+    )
+
+    assert result.status_code == 500
+    assert result.payload["error"] == "明空凭据未配置，请先在设置页同步 wedev 凭据"
+
+
 def test_build_mk_detail_response_uses_server_side_credentials():
     from web.services.media_mk_selection import build_mk_detail_response
 

@@ -25,6 +25,7 @@ from web.services.media_mk_selection import (
     build_mk_media_proxy_flask_response as _build_mk_media_proxy_flask_response,
     build_mk_media_proxy_response as _build_mk_media_proxy_response_impl,
     build_mk_selection_response as _build_mk_selection_response_impl,
+    build_mk_video_materials_response as _build_mk_video_materials_response_impl,
     build_mk_video_cache_object_key as _build_mk_video_cache_object_key_impl,
     guess_mk_video_type as _guess_mk_video_type_impl,
     normalize_mk_media_path as _normalize_mk_media_path_impl,
@@ -59,6 +60,16 @@ def _build_mk_selection_response(args):
         args,
         ranking_columns_fn=_dianxiaomi_rankings_columns,
         db_query_fn=db_query,
+    )
+
+
+def _build_mk_video_materials_response(args):
+    return _build_mk_video_materials_response_impl(
+        args,
+        db_query_fn=db_query,
+        build_headers_fn=_build_mk_request_headers,
+        get_base_url_fn=_get_mk_api_base_url,
+        http_get_fn=_mk_http_get,
     )
 
 
@@ -115,6 +126,16 @@ def api_mk_selection_refresh():
     if not _is_admin():
         return _routes()._mk_admin_required_response()
     result = _routes()._build_mk_selection_refresh_response()
+    return _routes()._build_mk_json_flask_response(result)
+
+
+@bp.route("/api/mk-video-materials", methods=["GET"])
+@login_required
+def api_mk_video_materials():
+    """返回明空/wedev 源视频素材卡片，不依赖本地素材管理。"""
+    if not _is_admin():
+        return _routes()._mk_admin_required_response()
+    result = _routes()._build_mk_video_materials_response(request.args)
     return _routes()._build_mk_json_flask_response(result)
 
 

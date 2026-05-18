@@ -46,6 +46,9 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert "店小秘近7天销量 Top1000" in body
     assert '<h1 class="title">选品中心</h1>' not in body
     _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
+    assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
+    assert 'data-mk-library-tab="products">产品库' in body
+    assert 'data-mk-library-tab="videos">视频素材库' in body
     assert "oc-page-tabs" not in body
     assert "oc-page-tab" not in body
     assert "明控选品" not in body

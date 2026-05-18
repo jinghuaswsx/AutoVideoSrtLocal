@@ -95,6 +95,10 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "oc-page-tabs" not in body
     assert "oc-page-tab" not in body
     assert "/xuanpin/api/mk-selection" in body
+    assert 'aria-label="明空选品库类型"' in body
+    assert "产品库" in body
+    assert "视频素材库" in body
+    assert "/xuanpin/api/mk-video-materials" in body
 
 
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
@@ -224,6 +228,30 @@ def test_xuanpin_mk_api_alias_delegates_after_admin_gate(
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"rank": 1}]
+    assert captured["keyword"] == "tooth"
+
+
+def test_xuanpin_mk_video_materials_api_delegates_after_admin_gate(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.services.media_mk_selection import MkSelectionResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured["keyword"] = args.get("keyword")
+        return MkSelectionResponse(
+            {"items": [{"video_name": "winner.mp4"}], "page": 1, "page_size": 24},
+            200,
+        )
+
+    monkeypatch.setattr("web.routes.medias._build_mk_video_materials_response", fake_build)
+
+    resp = authed_client_no_db.get("/xuanpin/api/mk-video-materials?keyword=tooth")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
     assert captured["keyword"] == "tooth"
 
 

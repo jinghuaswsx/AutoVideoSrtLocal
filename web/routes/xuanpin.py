@@ -127,6 +127,12 @@ def api_mk_selection_refresh():
     return _medias_routes().api_mk_selection_refresh()
 
 
+@bp.route("/api/mk-video-materials", methods=["GET"])
+@login_required
+def api_mk_video_materials():
+    return _medias_routes().api_mk_video_materials()
+
+
 @bp.route("/api/mk-media", methods=["GET"])
 @login_required
 def api_mk_media_proxy():

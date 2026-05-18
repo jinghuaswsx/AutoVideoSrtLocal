@@ -112,44 +112,69 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+.mk-library-tabs { display:inline-flex; align-items:center; gap:4px; margin:0 0 var(--oc-sp-4); padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
+.mk-library-tab { height:32px; min-width:92px; padding:0 14px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:700; cursor:pointer; }
+.mk-library-tab.active { background:var(--oc-accent); color:#fff; }
+.mk-library-panel[hidden] { display:none; }
+.mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
+.mk-video-library-grid { min-height:180px; }
+.mk-video-product-line { display:flex; flex-direction:column; gap:2px; min-height:48px; font-size:12px; color:var(--oc-fg-muted); }
+.mk-video-product-line a { color:var(--oc-accent); text-decoration:none; font-weight:700; }
+.mk-video-product-line a:hover { text-decoration:underline; }
 {% endblock %}
 
 {% block content %}
 <div class="oc">
   {% set active = "mk" %}
   {% include "_xuanpin_tabs.html" %}
+  <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
+    <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
+  </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
-      <button class="oc-btn oc-btn--primary" onclick="loadData(1)">搜索</button>
-      <button class="oc-btn oc-btn--ghost" onclick="document.getElementById('searchInput').value='';loadData(1)">重置</button>
+      <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
+      <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
   </div>
 
-  <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
-    <table class="oc-table" id="mainTable">
-      <thead>
-        <tr>
-          <th style="width:50px">#</th>
-          <th style="width:220px; text-align:left;">产品名称</th>
-          <th style="width:180px; text-align:left;">中文产品名</th>
-          <th style="width:100px">店铺</th>
-          <th style="width:90px" class="text-right">付款销量</th>
-          <th style="width:110px" class="text-right">销售额</th>
-          <th style="width:110px" class="text-right">明空消耗</th>
-          <th style="width:80px" class="text-right">视频数</th>
-          <th style="width:80px" class="text-right">广告数</th>
-          <th style="width:100px">素材库</th>
-          <th style="width:100px">操作</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody">
-        <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <section id="mkProductsPanel" class="mk-library-panel">
+    <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
+      <table class="oc-table" id="mainTable">
+        <thead>
+          <tr>
+            <th style="width:50px">#</th>
+            <th style="width:220px; text-align:left;">产品名称</th>
+            <th style="width:180px; text-align:left;">中文产品名</th>
+            <th style="width:100px">店铺</th>
+            <th style="width:90px" class="text-right">付款销量</th>
+            <th style="width:110px" class="text-right">销售额</th>
+            <th style="width:110px" class="text-right">明空消耗</th>
+            <th style="width:80px" class="text-right">视频数</th>
+            <th style="width:80px" class="text-right">广告数</th>
+            <th style="width:100px">素材库</th>
+            <th style="width:100px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
 
-  <div class="oc-pager" id="pager"></div>
+    <div class="oc-pager" id="pager"></div>
+  </section>
+
+  <section id="mkVideosPanel" class="mk-library-panel" hidden>
+    <div class="mk-video-library-head">
+      <span id="mkVideoLibraryStatus">切换到视频素材库后加载明空素材</span>
+    </div>
+    <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
+      <div class="oc-empty">加载中...</div>
+    </div>
+    <div class="oc-pager" id="mkVideoPager"></div>
+  </section>
 </div>
 
 <!-- 素材详情居中弹窗 -->
@@ -165,7 +190,11 @@
 <script>
 const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
+let currentMkLibraryTab = 'products';
+let mkVideoPage = 1;
+let mkVideoMaterialsLoaded = false;
 const PAGE_SIZE = 50;
+const MK_VIDEO_PAGE_SIZE = 24;
 
 function fmtMoney(v) {
   if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
@@ -209,6 +238,33 @@ function fmtMkSpendText(raw, parsed) {
   if (parsed >= 10000) return (parsed / 10000).toFixed(2).replace(/\.?0+$/, '') + '万';
   if (parsed >= 1000) return (parsed / 1000).toFixed(1).replace(/\.?0+$/, '') + '千';
   return String(Math.round(parsed || 0));
+}
+
+function runMkSearch() {
+  if (currentMkLibraryTab === 'videos') {
+    loadMkVideoMaterials(1);
+  } else {
+    loadData(1);
+  }
+}
+
+function resetMkSearch() {
+  document.getElementById('searchInput').value = '';
+  runMkSearch();
+}
+
+function switchMkLibraryTab(tab) {
+  currentMkLibraryTab = tab === 'videos' ? 'videos' : 'products';
+  document.querySelectorAll('.mk-library-tab').forEach(btn => {
+    const active = btn.dataset.mkLibraryTab === currentMkLibraryTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
+  document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
+  if (currentMkLibraryTab === 'videos' && !mkVideoMaterialsLoaded) {
+    loadMkVideoMaterials(1);
+  }
 }
 
 async function loadData(page) {
@@ -270,6 +326,108 @@ async function loadData(page) {
   pagerHtml += ` <span>${page} / ${totalPages}</span> `;
   pagerHtml += `<button onclick="loadData(${page+1})" ${page>=totalPages?'disabled':''}>下一页</button>`;
   document.getElementById('pager').innerHTML = pagerHtml;
+}
+
+async function loadMkVideoMaterials(page) {
+  mkVideoPage = page;
+  mkVideoMaterialsLoaded = true;
+  const kw = document.getElementById('searchInput').value.trim();
+  const grid = document.getElementById('mkVideoMaterialGrid');
+  const status = document.getElementById('mkVideoLibraryStatus');
+  const pager = document.getElementById('mkVideoPager');
+  grid.innerHTML = '<div class="oc-empty">加载明空视频素材中...</div>';
+  pager.innerHTML = '';
+  status.textContent = '正在从明空素材库读取视频...';
+  try {
+    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
+    const stats = data.stats || {};
+    status.textContent = `扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
+    if (!data.items || !data.items.length) {
+      grid.innerHTML = '<div class="oc-empty">暂无明空视频素材</div>';
+    } else {
+      grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
+      mkiCheckRenderedButtons();
+    }
+    let pagerHtml = `<button onclick="loadMkVideoMaterials(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+    pagerHtml += ` <span>第 ${page} 页</span> `;
+    pagerHtml += `<button onclick="loadMkVideoMaterials(${page+1})" ${data.has_more_products ? '' : 'disabled'}>下一页</button>`;
+    pager.innerHTML = pagerHtml;
+  } catch (e) {
+    status.textContent = '明空视频素材加载失败';
+    grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderMkVideoMaterialCard(r) {
+  const spends = Number(r.video_spends || 0);
+  const heat = heatLevel(spends);
+  const coverPath = normalizeMkMediaPath(r.video_image_path);
+  const coverUrl = coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
+  const videoPath = normalizeMkMediaPath(r.video_path);
+  const videoUrl = videoPath ? '/xuanpin/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
+  const videoName = escapeHtml(r.video_name || '未命名素材');
+  const safeCoverUrl = escapeHtml(coverUrl);
+  const safeVideoUrl = escapeHtml(videoUrl);
+  const safeProductUrl = safeExternalHref(r.product_url || r.mk_product_link || '');
+  const safeProductName = escapeHtml(r.mk_product_name || r.product_name || '--');
+  const productHandle = escapeHtml(r.product_handle || '');
+  const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
+  const author = escapeHtml(r.video_author || '--');
+  const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
+  const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+  return `<div class="mk-video-card">
+    <div class="mk-video-product-line">
+      ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong title="${safeProductName}">${safeProductName}</strong>`}
+      <span>#${escapeHtml(r.rank_position || '--')} · ${productHandle} · 销量 ${Number(r.sales_count || 0)}</span>
+    </div>
+    <div class="mk-video-card-title" title="${videoName}">${videoName}</div>
+    <div class="mk-video-summary-row">
+      <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
+      <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
+    </div>
+    <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+      <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
+      <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+    </div>
+    <div class="mk-video-frame">
+      <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+      <div class="mk-video-pane" data-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
+    </div>
+    <div class="mk-video-meta-list">
+      <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${Number(r.video_ads_count || 0)}</span></div>
+      <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
+      <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
+    </div>
+    <button class="mki-btn mki-btn--add"
+        data-mki-filename="${escapeHtml(r.video_name || '')}"
+        data-mki-mp4-url="${safeVideoUrl}"
+        data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-cover-url="${safeCoverUrl}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-product-code="${productHandle}"
+        data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        onclick="mkiHandleClick(this)">
+      加入素材库
+    </button>
+    <button class="mki-btn mki-btn--xiao"
+        data-mki-filename="${escapeHtml(r.video_name || '')}"
+        data-mki-mp4-url="${safeVideoUrl}"
+        data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-cover-url="${safeCoverUrl}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-product-code="${productHandle}"
+        data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        onclick="mkiXiaoHandleClick(this)">
+      做小语种
+    </button>
+  </div>`;
 }
 
 async function openDetail(mkId, mkName) {
@@ -437,14 +595,14 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
-document.getElementById('detailContent').addEventListener('click', e => {
+document.addEventListener('click', e => {
   const tab = e.target.closest('.mk-video-tab');
   if (tab) activateMkVideoTab(tab);
 });
 
 // Enter 搜索
 document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') loadData(1);
+  if (e.key === 'Enter') runMkSearch();
 });
 
 // 初始加载
