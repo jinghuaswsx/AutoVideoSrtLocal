@@ -1452,6 +1452,11 @@
         <div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div>
       </div>
       <div class="oa-stat-card">
+        <div class="oa-stat-label">全局保本 ROAS</div>
+        <div class="oa-stat-value" id="realtimeGlobalBreakEvenRoas">-</div>
+        <div class="oa-stat-sub">盈亏平衡点</div>
+      </div>
+      <div class="oa-stat-card">
         <div class="oa-stat-label">订单数</div>
         <div class="oa-stat-value" id="realtimeOrderCount">0</div>
       </div>
@@ -3868,6 +3873,13 @@
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
         document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
         var profitSummary = data.order_profit_summary || {};
+        var globalBreakEvenRoasEl = document.getElementById('realtimeGlobalBreakEvenRoas');
+        if (globalBreakEvenRoasEl) {
+          var globalBreakEvenRoasValue = Number(profitSummary.global_break_even_roas);
+          globalBreakEvenRoasEl.textContent = Number.isFinite(globalBreakEvenRoasValue)
+            ? globalBreakEvenRoasValue.toFixed(3)
+            : '-';
+        }
         var profitValue = Number(profitSummary.profit_with_estimate_usd);
         var profitEl = document.getElementById('realtimeProfit');
         if (profitEl) {

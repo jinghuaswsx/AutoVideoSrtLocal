@@ -53,6 +53,21 @@ def test_realtime_roas_trend_copy_matches_hourly_node_contract():
     assert "走势图按广告系统日小时节点展示" in panel
 
 
+def test_realtime_global_break_even_roas_kpi_is_rendered():
+    panel = _realtime_panel_source()
+
+    assert 'id="realtimeGlobalBreakEvenRoas"' in panel
+    assert "全局保本 ROAS" in panel
+
+
+def test_realtime_global_break_even_roas_js_uses_three_decimals():
+    template = _template_source()
+
+    assert "profitSummary.global_break_even_roas" in template
+    assert "globalBreakEvenRoasValue.toFixed(3)" in template
+    assert "realtimeGlobalBreakEvenRoas" in template
+
+
 def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
     template = _template_source()
