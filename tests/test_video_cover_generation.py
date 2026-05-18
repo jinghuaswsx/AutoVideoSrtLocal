@@ -1601,6 +1601,71 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "/video-cover/api/task-1/download/social_reels_2" in html
 
 
+def test_video_cover_prompt_modal_has_request_result_tabs_and_debug_form(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "display_name": "Lamp",
+        "image_count": 1,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "request_data": {"image_count": 1, "execution_mode": "serial"},
+                "image_prompts": [{"index": 1, "prompt": "actual prompt", "source_ad_copy_id": 1}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"data": [{"b64_json": "iVBORw0KGgo="}]},
+                "structured_result": {"covers": [{"index": 1, "hook": "Love the breeze"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/1/task-1/reference.png"},
+            "covers": [{"platform": "social_reels", "index": 1, "object_key": "artifacts/video_cover/1/task-1/social_reels.png"}],
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Lamp"}
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    resp = authed_client_no_db.get("/video-cover/task-1")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "vcd-prompt-debug-modal" in html
+    assert "width:min(80vw, 1600px)" in html
+    assert 'data-prompt-root-tab="request"' in html
+    assert 'data-prompt-root-tab="result"' in html
+    assert 'data-prompt-subtab="request-data"' in html
+    assert 'data-prompt-subtab="full-request"' in html
+    assert 'data-prompt-subtab="response-data"' in html
+    assert 'data-prompt-subtab="raw-response"' in html
+    assert "请求数据" in html
+    assert "完整报文" in html
+    assert "返回数据" in html
+    assert "返回结果报文" in html
+    assert 'id="vcdDebugRequestUrl"' in html
+    assert 'id="vcdDebugApiKey"' in html
+    assert 'id="vcdDebugReplayBtn"' in html
+    assert "debug-payload" in html
+    assert "debug-replay" in html
+    assert "'X-CSRFToken': csrfToken()" in html
+
+
 def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defaults(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
