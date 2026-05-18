@@ -307,6 +307,43 @@ def test_compute_missing_preview_speech_rates_downloads_asr_and_upserts(tmp_path
     assert upserts[0]["source"] == "preview_asr:doubao_asr"
 
 
+def test_sync_driver_runs_preview_rate_backfill_after_embedding(monkeypatch, tmp_path):
+    from scripts import sync_voice_libraries as driver
+
+    calls = []
+    monkeypatch.setattr(driver, "CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(driver, "ensure_voice_variants_table", lambda: calls.append("ensure"))
+    monkeypatch.setattr(
+        driver,
+        "sync_shared_voice_variants",
+        lambda **kwargs: calls.append("metadata") or 1,
+    )
+    monkeypatch.setattr(
+        driver,
+        "embed_missing_voice_variants",
+        lambda *args, **kwargs: calls.append("embed") or 1,
+    )
+    monkeypatch.setattr(
+        driver,
+        "backfill_missing_preview_speech_rates",
+        lambda *args, **kwargs: calls.append(("rate", kwargs.get("language"))) or {
+            "total": 1,
+            "processed": 1,
+            "updated": 1,
+            "failed": 0,
+            "skipped": 0,
+        },
+    )
+    monkeypatch.setattr(driver, "_summary_row", lambda lang: {"total": 1, "embedded": 1})
+    monkeypatch.setattr(driver, "_save_state", lambda state: None)
+
+    state = {"languages": {}}
+    driver._sync_language("en", "api-key", state)
+
+    assert calls == ["ensure", "metadata", "embed", ("rate", "en")]
+    assert state["languages"]["en"]["preview_rate"]["updated"] == 1
+
+
 def test_upsert_voice_writes_use_case_from_top_level():
     from pipeline.voice_library_sync import upsert_voice
     captured = {}

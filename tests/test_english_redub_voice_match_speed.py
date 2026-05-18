@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 def test_compute_source_speech_rate_uses_words_when_available():
@@ -110,3 +111,221 @@ def test_preview_rate_dao_maps_voice_ids(monkeypatch):
         "a": 3.5,
         "b": 2.0,
     }
+
+
+def test_preview_rate_targets_include_missing_voice_and_variant(monkeypatch):
+    from appcore import voice_preview_speech_rate as rates
+
+    queries = []
+
+    def fake_query(sql, params=()):
+        queries.append((sql, params))
+        if "FROM elevenlabs_voices" in sql:
+            return [
+                {"voice_id": "base", "language": "en", "preview_url": "https://p/base.mp3"},
+            ]
+        if "FROM elevenlabs_voice_variants" in sql:
+            return [
+                {"voice_id": "variant", "language": "nl", "preview_url": "https://p/nl.mp3"},
+            ]
+        if "FROM voice_preview_speech_rate" in sql:
+            return [
+                {
+                    "voice_id": "base",
+                    "language": "en",
+                    "preview_url_hash": rates.hash_preview_url("https://p/base.mp3"),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(rates, "query", fake_query)
+
+    targets = rates.list_missing_preview_rate_targets()
+
+    assert [(row["voice_id"], row["language"]) for row in targets] == [("variant", "nl")]
+    assert targets[0]["preview_url_hash"] == rates.hash_preview_url("https://p/nl.mp3")
+    assert any("elevenlabs_voice_variants" in sql for sql, _params in queries)
+
+
+def test_preview_rate_targets_deduplicate_base_and_variant(monkeypatch):
+    from appcore import voice_preview_speech_rate as rates
+
+    preview_url = "https://p/shared.mp3"
+
+    def fake_query(sql, params=()):
+        if "FROM elevenlabs_voices" in sql:
+            return [
+                {"voice_id": "shared", "language": "en", "preview_url": preview_url},
+            ]
+        if "FROM elevenlabs_voice_variants" in sql:
+            return [
+                {"voice_id": "shared", "language": "en", "preview_url": preview_url},
+            ]
+        return []
+
+    monkeypatch.setattr(rates, "query", fake_query)
+
+    targets = rates.list_missing_preview_rate_targets(language="en")
+
+    assert [(row["voice_id"], row["language"]) for row in targets] == [("shared", "en")]
+
+
+def test_preview_rate_computation_uses_asr_words():
+    from appcore.voice_preview_speech_rate import compute_rate_from_utterances
+
+    result = compute_rate_from_utterances(
+        [
+            {
+                "text": "hello fast world",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "words": [
+                    {"text": "hello", "start_time": 0.0, "end_time": 0.2},
+                    {"text": "fast", "start_time": 0.3, "end_time": 0.5},
+                    {"text": "world", "start_time": 0.6, "end_time": 1.0},
+                ],
+            }
+        ],
+        fallback_duration=1.4,
+    )
+
+    assert result["words_per_second"] == pytest.approx(3.0)
+    assert result["chars_per_second"] == pytest.approx(14.0)
+    assert result["sample_duration"] == pytest.approx(1.0)
+    assert result["sample_text"] == "hello fast world"
+
+
+def test_backfill_preview_rates_downloads_transcribes_and_upserts(tmp_path, monkeypatch):
+    from pipeline import voice_library_sync as sync
+    from appcore import voice_preview_speech_rate as rates
+
+    upserts = []
+    monkeypatch.setattr(
+        rates,
+        "list_missing_preview_rate_targets",
+        lambda language=None, limit=None: [
+            {
+                "voice_id": "v1",
+                "language": "en",
+                "preview_url": "https://p/v1.mp3",
+                "preview_url_hash": "hash-v1",
+            }
+        ],
+    )
+    monkeypatch.setattr(sync, "_download_preview", lambda url, dest: dest.write_bytes(b"mp3") or str(dest))
+    monkeypatch.setattr(sync.tts, "get_audio_duration", lambda path: 1.0)
+    monkeypatch.setattr(
+        sync,
+        "_transcribe_preview_for_rate",
+        lambda path, language: [
+            {
+                "text": "hello world",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "words": [
+                    {"text": "hello", "start_time": 0.0, "end_time": 0.4},
+                    {"text": "world", "start_time": 0.5, "end_time": 1.0},
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(rates, "upsert_rate", lambda **kwargs: upserts.append(kwargs))
+
+    result = sync.backfill_missing_preview_speech_rates(str(tmp_path), language="en")
+
+    assert result == {"total": 1, "processed": 1, "updated": 1, "failed": 0, "skipped": 0}
+    assert upserts[0]["voice_id"] == "v1"
+    assert upserts[0]["language"] == "en"
+    assert upserts[0]["preview_url_hash"] == "hash-v1"
+    assert upserts[0]["words_per_second"] == pytest.approx(2.0)
+    assert upserts[0]["source"] == "preview_asr:doubao_asr"
+
+
+def test_backfill_preview_rates_dry_run_does_not_download(tmp_path, monkeypatch):
+    from pipeline import voice_library_sync as sync
+    from appcore import voice_preview_speech_rate as rates
+
+    monkeypatch.setattr(
+        rates,
+        "list_missing_preview_rate_targets",
+        lambda language=None, limit=None: [
+            {
+                "voice_id": "v1",
+                "language": "en",
+                "preview_url": "https://p/v1.mp3",
+                "preview_url_hash": "hash-v1",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sync,
+        "_download_preview",
+        lambda url, dest: (_ for _ in ()).throw(AssertionError("dry-run must not download")),
+    )
+
+    result = sync.backfill_missing_preview_speech_rates(str(tmp_path), dry_run=True)
+
+    assert result == {"total": 1, "processed": 0, "updated": 0, "failed": 0, "skipped": 1}
+
+
+def test_backfill_preview_rates_supports_workers(tmp_path, monkeypatch):
+    from pipeline import voice_library_sync as sync
+    from appcore import voice_preview_speech_rate as rates
+
+    upserts = []
+    monkeypatch.setattr(
+        rates,
+        "list_missing_preview_rate_targets",
+        lambda language=None, limit=None: [
+            {
+                "voice_id": f"v{index}",
+                "language": "en",
+                "preview_url": f"https://p/v{index}.mp3",
+                "preview_url_hash": f"hash-v{index}",
+            }
+            for index in range(3)
+        ],
+    )
+    monkeypatch.setattr(sync, "_download_preview", lambda url, dest: dest.write_bytes(b"mp3") or str(dest))
+    monkeypatch.setattr(sync.tts, "get_audio_duration", lambda path: 1.0)
+    monkeypatch.setattr(
+        sync,
+        "_transcribe_preview_for_rate",
+        lambda path, language: [
+            {
+                "text": "hello world",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "words": [
+                    {"text": "hello", "start_time": 0.0, "end_time": 0.4},
+                    {"text": "world", "start_time": 0.5, "end_time": 1.0},
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(rates, "upsert_rate", lambda **kwargs: upserts.append(kwargs))
+
+    result = sync.backfill_missing_preview_speech_rates(str(tmp_path), workers=2)
+
+    assert result == {"total": 3, "processed": 3, "updated": 3, "failed": 0, "skipped": 0}
+    assert sorted(row["voice_id"] for row in upserts) == ["v0", "v1", "v2"]
+
+
+def test_preview_rate_transcribe_retries_transient_failure(monkeypatch):
+    from pipeline import voice_library_sync as sync
+
+    attempts = {"count": 0}
+
+    def flaky_transcribe(path, language):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("temporary eof")
+        return [{"text": "hello", "start_time": 0.0, "end_time": 1.0}]
+
+    monkeypatch.setattr(sync, "_transcribe_preview_for_rate", flaky_transcribe)
+    monkeypatch.setattr(sync.time, "sleep", lambda seconds: None)
+
+    assert sync._transcribe_preview_for_rate_with_retry("preview.mp3", "en") == [
+        {"text": "hello", "start_time": 0.0, "end_time": 1.0}
+    ]
+    assert attempts["count"] == 2

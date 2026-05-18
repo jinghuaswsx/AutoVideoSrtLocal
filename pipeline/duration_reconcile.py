@@ -89,6 +89,7 @@ def _candidate_from_current(current: dict, *, round_number: int) -> dict:
         "round": round_number,
         "text": current["text"],
         "tts_path": current.get("tts_path"),
+        "tts_base_path": current.get("tts_base_path"),
         "tts_duration": float(current.get("tts_duration", 0.0) or 0.0),
         "duration_ratio": duration_ratio(
             float(current.get("target_duration", 0.0) or 0.0),
@@ -114,6 +115,7 @@ def _apply_candidate(current: dict, candidate: dict) -> None:
     current["text"] = candidate["text"]
     current["est_chars"] = len(candidate["text"])
     current["tts_path"] = candidate.get("tts_path")
+    current["tts_base_path"] = candidate.get("tts_base_path") or current.get("tts_base_path")
     current["tts_duration"] = float(candidate.get("tts_duration", 0.0) or 0.0)
     current["target_chars_range"] = tuple(candidate.get("target_chars_range") or current["target_chars_range"])
     current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
@@ -339,7 +341,11 @@ def _regenerate_segment(
     speed: float | None = None,
     suffix: str | None = None,
 ) -> tuple[str, float]:
-    output_path = sentence.get("tts_path") or f"av_seg_{sentence['asr_index']}.mp3"
+    output_path = (
+        sentence.get("tts_base_path")
+        or sentence.get("tts_path")
+        or f"av_seg_{sentence['asr_index']}.mp3"
+    )
     if suffix:
         base, ext = os.path.splitext(output_path)
         output_path = f"{base}.{suffix}{ext or '.mp3'}"
@@ -702,6 +708,7 @@ def _initial_sentence_state(
 ) -> dict:
     asr_index = int(av_sentence.get("asr_index", position))
     tts_segment = dict(tts_by_index.get(asr_index, {}))
+    tts_base_path = tts_segment.get("tts_path") or f"av_seg_{asr_index}.mp3"
     current = {
         "asr_index": asr_index,
         "start_time": av_sentence.get("start_time"),
@@ -711,6 +718,7 @@ def _initial_sentence_state(
         "text": av_sentence.get("text", ""),
         "est_chars": int(av_sentence.get("est_chars", len(av_sentence.get("text", ""))) or 0),
         "tts_path": tts_segment.get("tts_path"),
+        "tts_base_path": tts_base_path,
         "tts_duration": float(tts_segment.get("tts_duration", 0.0) or 0.0),
         "speed": 1.0,
         "rewrite_rounds": 0,

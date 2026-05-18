@@ -70,6 +70,13 @@ Sentence records should expose final fallback details without hiding existing fi
 - `second_rewrite_attempts`: list of all second rewrite attempt records (up to 10), each with round, text, duration, status, selected, second_rewrite flag.
 - `audio_clipped`, `audio_clip_reason`, `audio_clip_duration`, and `audio_clipped_seconds` continue to be written by the timeline audio builder for truncation.
 
+Candidate audio files generated during normal rewrite and second-rewrite loops
+must be derived from the stable original segment basename, not from the current
+candidate `tts_path`. For example, repeated retries should produce
+`seg_0000.rewrite_r10.mp3` or `seg_0000.second_rewrite_r10.mp3`, never
+`seg_0000.rewrite_r1.rewrite_r2...mp3`. This keeps file names below filesystem
+limits and makes diagnostics readable.
+
 Progress events in `tts_duration_rounds` should include:
 
 - `phase = "ffmpeg_tempo_align"` when final overlong fallback audio is aligned.

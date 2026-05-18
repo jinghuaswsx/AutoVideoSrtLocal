@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple, Callable
@@ -12,6 +13,7 @@ import requests
 
 from appcore import voice_preview_speech_rate
 from appcore.db import execute, query
+from pipeline import tts
 from pipeline.voice_embedding import embed_audio_file, serialize_embedding
 
 log = logging.getLogger(__name__)
@@ -21,6 +23,8 @@ DEFAULT_PAGE_SIZE = 100
 REQUEST_TIMEOUT = 30
 DOWNLOAD_RETRIES = 3
 DOWNLOAD_RETRY_SLEEP_SECONDS = 1.0
+TRANSCRIBE_RETRIES = 3
+TRANSCRIBE_RETRY_SLEEP_SECONDS = 2.0
 
 
 def ensure_voice_variants_table() -> None:
@@ -536,8 +540,7 @@ def compute_missing_preview_speech_rates(
             ).hexdigest()
             dest = cache_path / f"{file_key}.mp3"
             _download_preview(target["preview_url"], dest)
-            adapter = _build_preview_rate_adapter(lang)
-            utterances = adapter.transcribe(dest, language=lang)
+            utterances = _transcribe_preview_for_rate_with_retry(str(dest), lang)
             words_per_second, chars_per_second, sample_duration = _preview_rate_from_utterances(utterances)
             if words_per_second <= 0:
                 raise RuntimeError("preview ASR produced no measurable speech")
@@ -673,6 +676,195 @@ def embed_missing_voice_variants(
                     "on_progress callback failed at %s: %s", voice_id, exc
                 )
     return count
+
+
+def _transcribe_preview_for_rate(path: str, language: str | None) -> list[dict]:
+    adapter = _build_preview_rate_adapter(language)
+    return adapter.transcribe(Path(path), language=(language or None))
+
+
+def _transcribe_preview_for_rate_with_retry(path: str, language: str | None) -> list[dict]:
+    for attempt in range(TRANSCRIBE_RETRIES):
+        try:
+            return _transcribe_preview_for_rate(path, language)
+        except Exception:
+            if attempt + 1 >= TRANSCRIBE_RETRIES:
+                raise
+            time.sleep(TRANSCRIBE_RETRY_SLEEP_SECONDS * (attempt + 1))
+    return []
+
+
+def _row_identity(row: dict, language: Optional[str] = None) -> tuple[str, str]:
+    return (
+        str(row.get("voice_id") or "").strip(),
+        str(row.get("language") or language or "").strip(),
+    )
+
+
+def _measure_preview_speech_rate(row: dict, cache_path: Path, language: Optional[str]) -> dict:
+    from appcore import voice_preview_speech_rate
+
+    voice_id, lang = _row_identity(row, language)
+    preview_url = str(row.get("preview_url") or "").strip()
+    preview_hash = str(row.get("preview_url_hash") or "").strip()
+    if not voice_id or not lang or not preview_url or not preview_hash:
+        return {"skipped": True, "voice_id": voice_id, "language": lang}
+
+    cache_key = f"rate:{lang}:{voice_id}:{preview_hash}"
+    dest = cache_path / (hashlib.sha1(cache_key.encode("utf-8")).hexdigest() + ".mp3")
+    _download_preview(preview_url, dest)
+    duration = tts.get_audio_duration(str(dest))
+    utterances = _transcribe_preview_for_rate_with_retry(str(dest), lang)
+    rate = voice_preview_speech_rate.compute_rate_from_utterances(
+        utterances,
+        fallback_duration=duration,
+    )
+    if not rate.get("words_per_second"):
+        raise RuntimeError("preview ASR produced no measurable speech")
+    return {
+        "skipped": False,
+        "voice_id": voice_id,
+        "language": lang,
+        "preview_url_hash": preview_hash,
+        "rate": rate,
+    }
+
+
+def backfill_missing_preview_speech_rates(
+    cache_dir: str,
+    limit: Optional[int] = None,
+    on_progress: Optional[Callable[[int, int, str, bool], None]] = None,
+    *,
+    language: Optional[str] = None,
+    dry_run: bool = False,
+    workers: int = 1,
+) -> dict[str, int]:
+    """Backfill preview speech-rate rows for voices missing current preview hash.
+
+    This uses the same preview download cache as embedding generation. Per-row
+    failures are logged and do not abort the batch.
+    """
+    from appcore import voice_preview_speech_rate
+
+    targets = voice_preview_speech_rate.list_missing_preview_rate_targets(
+        language=language,
+        limit=limit,
+    )
+    total = len(targets)
+    if dry_run:
+        return {
+            "total": total,
+            "processed": 0,
+            "updated": 0,
+            "failed": 0,
+            "skipped": total,
+        }
+
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+
+    processed = 0
+    updated = 0
+    failed = 0
+    skipped = 0
+
+    def _store_result(result: dict, index: int, total_rows: int) -> None:
+        nonlocal processed, updated, failed, skipped
+        voice_id = str(result.get("voice_id") or "").strip()
+        ok = False
+        if result.get("skipped"):
+            skipped += 1
+        else:
+            processed += 1
+            try:
+                rate = result["rate"]
+                voice_preview_speech_rate.upsert_rate(
+                    voice_id=voice_id,
+                    language=result["language"],
+                    preview_url_hash=result["preview_url_hash"],
+                    words_per_second=rate.get("words_per_second"),
+                    chars_per_second=rate.get("chars_per_second"),
+                    sample_duration=rate.get("sample_duration"),
+                    source=f"preview_asr:{_preview_rate_source_code(result['language'])}",
+                )
+                updated += 1
+                ok = True
+            except Exception as exc:
+                failed += 1
+                log.warning(
+                    "[preview_rate_backfill] failed %s/%s: %s",
+                    result.get("language"),
+                    voice_id,
+                    exc,
+                )
+        if on_progress is not None:
+            try:
+                on_progress(index, total_rows, voice_id, ok)
+            except Exception as exc:
+                log.warning("on_progress callback failed at %s: %s", voice_id, exc)
+
+    worker_count = max(1, int(workers or 1))
+    if worker_count == 1:
+        for index, row in enumerate(targets, start=1):
+            voice_id, lang = _row_identity(row, language)
+            try:
+                result = _measure_preview_speech_rate(row, cache_path, language)
+            except Exception as exc:
+                processed += 1
+                failed += 1
+                log.warning("[preview_rate_backfill] failed %s/%s: %s", lang, voice_id, exc)
+                if on_progress is not None:
+                    try:
+                        on_progress(index, total, voice_id, False)
+                    except Exception as callback_exc:
+                        log.warning(
+                            "on_progress callback failed at %s: %s",
+                            voice_id,
+                            callback_exc,
+                        )
+                continue
+            _store_result(result, index, total)
+        return {
+            "total": total,
+            "processed": processed,
+            "updated": updated,
+            "failed": failed,
+            "skipped": skipped,
+        }
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(_measure_preview_speech_rate, row, cache_path, language): row
+            for row in targets
+        }
+        for index, future in enumerate(as_completed(futures), start=1):
+            row = futures[future]
+            voice_id, lang = _row_identity(row, language)
+            try:
+                result = future.result()
+            except Exception as exc:
+                processed += 1
+                failed += 1
+                log.warning("[preview_rate_backfill] failed %s/%s: %s", lang, voice_id, exc)
+                if on_progress is not None:
+                    try:
+                        on_progress(index, total, voice_id, False)
+                    except Exception as callback_exc:
+                        log.warning(
+                            "on_progress callback failed at %s: %s",
+                            voice_id,
+                            callback_exc,
+                        )
+                continue
+            _store_result(result, index, total)
+
+    return {
+        "total": total,
+        "processed": processed,
+        "updated": updated,
+        "failed": failed,
+        "skipped": skipped,
+    }
 
 
 def upsert_library_stats(language: str, total_available: int) -> None:

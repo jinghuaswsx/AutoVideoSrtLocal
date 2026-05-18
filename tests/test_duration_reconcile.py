@@ -746,6 +746,56 @@ def test_reconcile_duration_second_rewrite_runs_multi_round(monkeypatch):
     assert len(second_calls) >= 2
 
 
+def test_reconcile_duration_candidate_audio_paths_use_stable_base(monkeypatch):
+    durations = iter([4.0] * 20)
+    generated_paths = []
+    rewrite_counter = {"n": 0}
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_counter["n"] += 1
+        return f"Candidate {rewrite_counter['n']}"
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        generated_paths.append(output_path)
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (20, 30),
+                    "text": "Short",
+                    "est_chars": 5,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg_0000.mp3", "tts_duration": 4.0}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=10,
+    )
+
+    basenames = [path.rsplit("/", 1)[-1] for path in generated_paths]
+    assert len(generated_paths) == 20
+    assert max(len(name.encode("utf-8")) for name in basenames) < 255
+    assert not any(".rewrite_r1.rewrite_r2" in name for name in basenames)
+    assert "seg_0000.rewrite_r10.mp3" in basenames
+    assert "seg_0000.second_rewrite_r10.mp3" in basenames
+    assert result[0]["tts_path"].endswith("seg_0000.second_rewrite_r10.mp3")
+
+
 def test_reconcile_duration_repairs_semantic_coverage_before_accepting_timing(monkeypatch):
     durations = iter([3.0])
     rewrite_calls = []

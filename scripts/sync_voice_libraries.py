@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from pipeline.voice_library_sync import (  # noqa: E402
+    backfill_missing_preview_speech_rates,
     embed_missing_voice_variants,
     ensure_voice_variants_table,
     sync_shared_voice_variants,
@@ -219,10 +220,17 @@ def _sync_language(lang: str, api_key: str, state: dict) -> None:
         on_progress=_on_progress(lang, state, throttle),
         language=lang,
     )
+    log.info("[%s] === phase 3: preview speech rate ===", lang)
+    preview_rate = backfill_missing_preview_speech_rates(
+        CACHE_DIR,
+        language=lang,
+    )
+    entry["preview_rate"] = preview_rate
+    _save_state(state)
     summary = _summary_row(lang)
     log.info(
-        "[%s] done. embedded_this_run=%d total=%d embedded_total=%d",
-        lang, embedded, summary["total"], summary["embedded"],
+        "[%s] done. embedded_this_run=%d preview_rate=%s total=%d embedded_total=%d",
+        lang, embedded, preview_rate, summary["total"], summary["embedded"],
     )
 
     target_total = _target_from_entry(entry)

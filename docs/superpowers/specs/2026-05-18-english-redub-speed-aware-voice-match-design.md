@@ -290,6 +290,17 @@ CREATE TABLE IF NOT EXISTS voice_preview_speech_rate (
 - 写入 `voice_preview_speech_rate`。
 - 声音库同步任务在完成 metadata sync 和 embedding 补算后，继续补算当前语言缺失的 preview 语速。
 - 英配 `voice_match` 在 `timbre_speed` 策略下会对候选池缺失的 preview 语速做小批量懒加载补算；仍缺失时候选保留音色排序，但必须携带 `voice_speed_status="missing_preview_rate"` 供前端说明。
+- 历史声音库必须提供一次性 backfill 脚本，按 `preview_url_hash` 找出缺失或
+  preview 已变化的行，逐条补齐；脚本必须支持 `--dry-run`、`--language`、
+  `--limit`，并且单条失败不中断整批。历史补齐脚本可显式传 `--workers`
+  控制并发下载/转写，默认串行，避免日常同步任务意外放大外部请求量。
+- preview 下载和 ASR 转写都要对瞬时网络错误做有限重试；重试后仍失败的
+  单条记录保留为缺口，下一轮 backfill 或声音库同步继续补。
+- 后续声音库同步在 metadata + embedding 之后必须继续补齐 preview 语速；
+  新增/更新的声音以后不依赖人工再跑一次历史脚本。
+- backfill 和同步共用同一套幂等写入逻辑：`(voice_id, language,
+  preview_url_hash)` 唯一，重复执行只刷新当前 hash 的测量结果；同一轮
+  backfill 内相同唯一键只处理一次。
 
 失败策略：
 
