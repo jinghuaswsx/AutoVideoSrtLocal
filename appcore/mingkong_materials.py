@@ -5,11 +5,15 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlparse
 
+import requests
+
+from appcore import pushes, scheduled_tasks
 from appcore.db import execute, get_conn, query, query_one
 from web.services.media_mk_selection import normalize_mk_media_path
 
@@ -111,6 +115,12 @@ def _json_loads(value: Any, default: Any = None) -> Any:
         return json.loads(value)
     except (TypeError, ValueError):
         return default
+
+
+def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
+    page_num = max(1, _as_int(page, 1))
+    size = min(100, max(1, _as_int(page_size, 100)))
+    return page_num, size, (page_num - 1) * size
 
 
 def material_key_for(product_code: str, mk_product_id: int | str | None, video_path: str) -> str:
@@ -253,6 +263,9 @@ def build_top100_rows(
         previous_spend = None if previous is None else _as_float(previous.get("cumulative_90_spend"))
         delta = current_spend if previous_spend is None else max(0.0, current_spend - previous_spend)
         row = dict(current)
+        row["source_product_rank_position"] = _as_int(
+            current.get("source_product_rank_position") or current.get("rank_position")
+        )
         row.update(
             {
                 "snapshot_date": snapshot_date,
@@ -293,3 +306,683 @@ def build_top100_rows(
     for index, row in enumerate(top_rows, start=1):
         row["display_position"] = index
     return top_rows
+
+
+def _latest_snapshot_date(table: str) -> str:
+    row = query_one(f"SELECT MAX(snapshot_date) AS snapshot_date FROM {table}") or {}
+    return _coerce_date(row.get("snapshot_date"))
+
+
+def _run_summary(snapshot_date: str) -> dict[str, Any] | None:
+    row = query_one(
+        """
+        SELECT id, snapshot_date, ranking_snapshot_date, status, source_product_limit,
+               source_product_count, processed_product_count, material_count,
+               failed_product_count, summary_json, error_message, started_at, finished_at
+        FROM mingkong_material_sync_runs
+        WHERE snapshot_date = %s
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (snapshot_date,),
+    )
+    if not row:
+        return None
+    out = dict(row)
+    out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
+    out["summary"] = _json_loads(out.pop("summary_json", None), {})
+    for key in ("started_at", "finished_at"):
+        value = out.get(key)
+        out[key] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+    return out
+
+
+def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
+    spend = _as_float(out.get("cumulative_90_spend"))
+    out["cumulative_90_spend"] = spend
+    out["video_spends"] = spend
+    out["video_ads_count"] = _as_int(out.get("video_ads_count"))
+    out["mk_video_metadata"] = _json_loads(out.pop("mk_video_metadata_json", None), {})
+    for key in ("created_at", "updated_at"):
+        value = out.get(key)
+        out[key] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+    return out
+
+
+def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["previous_snapshot_date"] = _coerce_date(out.get("previous_snapshot_date"))
+    out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
+    current_spend = _as_float(out.get("current_cumulative_90_spend"))
+    out["current_cumulative_90_spend"] = current_spend
+    out["video_spends"] = current_spend
+    out["previous_cumulative_90_spend"] = (
+        None
+        if out.get("previous_cumulative_90_spend") is None
+        else _as_float(out.get("previous_cumulative_90_spend"))
+    )
+    out["yesterday_spend_delta"] = _as_float(out.get("yesterday_spend_delta"))
+    out["video_ads_count"] = _as_int(out.get("video_ads_count"))
+    out["is_new_material"] = bool(out.get("is_new_material"))
+    out["is_new_top100_entry"] = bool(out.get("is_new_top100_entry"))
+    out["mk_video_metadata"] = _json_loads(out.pop("mk_video_metadata_json", None), {})
+    value = out.get("created_at")
+    out["created_at"] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+    return out
+
+
+def upsert_snapshot_rows(
+    *,
+    run_id: int,
+    snapshot_date: str,
+    ranking_snapshot_date: str,
+    rows: list[dict[str, Any]],
+) -> int:
+    inserted = 0
+    for row in rows:
+        execute(
+            """
+            INSERT INTO mingkong_material_daily_snapshots
+              (snapshot_date, ranking_snapshot_date, run_id, material_key,
+               product_code, rank_position, shopify_product_id, product_name, product_url,
+               mk_product_id, mk_product_name, mk_product_link, main_image,
+               video_name, video_path, video_image_path, cumulative_90_spend,
+               video_ads_count, video_author, video_upload_time, video_duration_seconds,
+               mk_video_metadata_json)
+            VALUES
+              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+               ranking_snapshot_date=VALUES(ranking_snapshot_date),
+               run_id=VALUES(run_id),
+               product_code=VALUES(product_code),
+               rank_position=VALUES(rank_position),
+               shopify_product_id=VALUES(shopify_product_id),
+               product_name=VALUES(product_name),
+               product_url=VALUES(product_url),
+               mk_product_id=VALUES(mk_product_id),
+               mk_product_name=VALUES(mk_product_name),
+               mk_product_link=VALUES(mk_product_link),
+               main_image=VALUES(main_image),
+               video_name=VALUES(video_name),
+               video_path=VALUES(video_path),
+               video_image_path=VALUES(video_image_path),
+               cumulative_90_spend=VALUES(cumulative_90_spend),
+               video_ads_count=VALUES(video_ads_count),
+               video_author=VALUES(video_author),
+               video_upload_time=VALUES(video_upload_time),
+               video_duration_seconds=VALUES(video_duration_seconds),
+               mk_video_metadata_json=VALUES(mk_video_metadata_json),
+               updated_at=NOW()
+            """,
+            (
+                snapshot_date,
+                ranking_snapshot_date,
+                int(run_id),
+                row.get("material_key"),
+                row.get("product_code") or "",
+                row.get("rank_position"),
+                row.get("shopify_product_id") or None,
+                row.get("product_name") or None,
+                row.get("product_url") or None,
+                row.get("mk_product_id"),
+                row.get("mk_product_name") or None,
+                row.get("mk_product_link") or None,
+                row.get("main_image") or None,
+                row.get("video_name") or None,
+                row.get("video_path") or "",
+                row.get("video_image_path") or None,
+                _as_float(row.get("cumulative_90_spend")),
+                _as_int(row.get("video_ads_count")),
+                row.get("video_author") or None,
+                row.get("video_upload_time") or None,
+                row.get("video_duration_seconds"),
+                _json_dumps(row.get("mk_video_metadata") or {}),
+            ),
+        )
+        inserted += 1
+    return inserted
+
+
+def list_material_library(
+    *,
+    snapshot_date: str | None = None,
+    keyword: str = "",
+    page: int | str | None = 1,
+    page_size: int | str | None = 100,
+) -> dict[str, Any]:
+    guard_against_windows_local_mysql()
+    snapshot = _coerce_date(snapshot_date) if snapshot_date else _latest_snapshot_date(
+        "mingkong_material_daily_snapshots"
+    )
+    if not snapshot:
+        return {"items": [], "snapshot": "", "total": 0, "run_summary": None}
+    page_num, size, offset = _page_bounds(page, page_size)
+    where = ["snapshot_date = %s"]
+    args: list[Any] = [snapshot]
+    kw = str(keyword or "").strip()
+    if kw:
+        like = f"%{kw}%"
+        where.append(
+            "(product_code LIKE %s OR product_name LIKE %s OR mk_product_name LIKE %s "
+            "OR video_name LIKE %s OR video_path LIKE %s)"
+        )
+        args.extend([like, like, like, like, like])
+    where_sql = " AND ".join(where)
+    count_row = query_one(
+        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots WHERE {where_sql}",
+        tuple(args),
+    ) or {}
+    rows = query(
+        f"""
+        SELECT *
+        FROM mingkong_material_daily_snapshots
+        WHERE {where_sql}
+        ORDER BY cumulative_90_spend DESC, video_ads_count DESC, rank_position ASC, id ASC
+        LIMIT %s OFFSET %s
+        """,
+        tuple(args + [size, offset]),
+    )
+    return {
+        "items": [_serialize_material_row(row) for row in rows or []],
+        "snapshot": snapshot,
+        "total": _as_int(count_row.get("cnt")),
+        "page": page_num,
+        "page_size": size,
+        "run_summary": _run_summary(snapshot),
+    }
+
+
+def list_yesterday_top100(
+    *,
+    snapshot_date: str | None = None,
+    page: int | str | None = 1,
+    page_size: int | str | None = 100,
+) -> dict[str, Any]:
+    guard_against_windows_local_mysql()
+    snapshot = _coerce_date(snapshot_date) if snapshot_date else _latest_snapshot_date(
+        "mingkong_material_daily_top100"
+    )
+    if not snapshot:
+        return {
+            "items": [],
+            "snapshot": "",
+            "previous_snapshot": "",
+            "total": 0,
+            "run_summary": None,
+        }
+    page_num, size, offset = _page_bounds(page, page_size)
+    count_row = query_one(
+        "SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 WHERE snapshot_date = %s",
+        (snapshot,),
+    ) or {}
+    rows = query(
+        """
+        SELECT *
+        FROM mingkong_material_daily_top100
+        WHERE snapshot_date = %s
+        ORDER BY is_new_top100_entry DESC, yesterday_spend_delta DESC,
+                 current_cumulative_90_spend DESC, video_ads_count DESC,
+                 rank_position ASC, id ASC
+        LIMIT %s OFFSET %s
+        """,
+        (snapshot, size, offset),
+    )
+    items = [_serialize_top100_row(row) for row in rows or []]
+    previous_snapshot = items[0].get("previous_snapshot_date") if items else ""
+    return {
+        "items": items,
+        "snapshot": snapshot,
+        "previous_snapshot": previous_snapshot or "",
+        "total": _as_int(count_row.get("cnt")),
+        "page": page_num,
+        "page_size": size,
+        "run_summary": _run_summary(snapshot),
+    }
+
+
+def create_or_reuse_run(
+    *,
+    snapshot_date: str,
+    ranking_snapshot_date: str,
+    source_product_count: int,
+    source_product_limit: int,
+) -> dict[str, Any]:
+    existing = query_one(
+        "SELECT * FROM mingkong_material_sync_runs WHERE snapshot_date = %s LIMIT 1",
+        (snapshot_date,),
+    )
+    if existing:
+        if str(existing.get("status") or "") != "success":
+            execute(
+                """
+                UPDATE mingkong_material_sync_runs
+                SET status='running', ranking_snapshot_date=%s, source_product_count=%s,
+                    source_product_limit=%s, processed_product_count=0,
+                    material_count=0, failed_product_count=0, error_message=NULL,
+                    summary_json=NULL, started_at=NOW(), finished_at=NULL
+                WHERE id=%s
+                """,
+                (
+                    ranking_snapshot_date,
+                    int(source_product_count),
+                    int(source_product_limit),
+                    int(existing["id"]),
+                ),
+            )
+            existing = dict(existing)
+            existing.update(
+                {
+                    "status": "running",
+                    "ranking_snapshot_date": ranking_snapshot_date,
+                    "source_product_count": source_product_count,
+                    "source_product_limit": source_product_limit,
+                }
+            )
+        return dict(existing)
+    run_id = execute(
+        """
+        INSERT INTO mingkong_material_sync_runs
+          (snapshot_date, ranking_snapshot_date, status, source_product_limit,
+           source_product_count)
+        VALUES (%s,%s,'running',%s,%s)
+        """,
+        (
+            snapshot_date,
+            ranking_snapshot_date,
+            int(source_product_limit),
+            int(source_product_count),
+        ),
+    )
+    return {
+        "id": run_id,
+        "snapshot_date": snapshot_date,
+        "ranking_snapshot_date": ranking_snapshot_date,
+        "status": "running",
+    }
+
+
+def record_product_status(
+    *,
+    run_id: int,
+    snapshot_date: str,
+    ranking_snapshot_date: str,
+    source_product: dict[str, Any],
+    status: str,
+    material_count: int = 0,
+    mk_product: dict[str, Any] | None = None,
+    error_message: str | None = None,
+) -> None:
+    product_code = str(source_product.get("product_code") or "")
+    links = (mk_product or {}).get("product_links") or []
+    execute(
+        """
+        INSERT INTO mingkong_material_products
+          (run_id, snapshot_date, ranking_snapshot_date, rank_position, product_code,
+           shopify_product_id, product_name, product_url, store, sales_count, order_count,
+           revenue_main, mk_product_id, mk_product_name, mk_product_link, status,
+           material_count, error_message, processed_at)
+        VALUES
+          (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+        ON DUPLICATE KEY UPDATE
+           rank_position=VALUES(rank_position),
+           shopify_product_id=VALUES(shopify_product_id),
+           product_name=VALUES(product_name),
+           product_url=VALUES(product_url),
+           store=VALUES(store),
+           sales_count=VALUES(sales_count),
+           order_count=VALUES(order_count),
+           revenue_main=VALUES(revenue_main),
+           mk_product_id=VALUES(mk_product_id),
+           mk_product_name=VALUES(mk_product_name),
+           mk_product_link=VALUES(mk_product_link),
+           status=VALUES(status),
+           material_count=VALUES(material_count),
+           error_message=VALUES(error_message),
+           processed_at=NOW()
+        """,
+        (
+            int(run_id),
+            snapshot_date,
+            ranking_snapshot_date,
+            source_product.get("rank_position"),
+            product_code,
+            source_product.get("shopify_product_id") or None,
+            source_product.get("product_name") or None,
+            source_product.get("product_url") or None,
+            source_product.get("store") or None,
+            source_product.get("sales_count"),
+            source_product.get("order_count"),
+            source_product.get("revenue_main") or None,
+            (mk_product or {}).get("id"),
+            (mk_product or {}).get("product_name") or None,
+            str(links[0]) if links else None,
+            status,
+            int(material_count),
+            error_message,
+        ),
+    )
+
+
+def _previous_material_snapshot(snapshot_date: str) -> str:
+    row = query_one(
+        """
+        SELECT MAX(snapshot_date) AS snapshot_date
+        FROM mingkong_material_daily_snapshots
+        WHERE snapshot_date < %s
+        """,
+        (snapshot_date,),
+    ) or {}
+    return _coerce_date(row.get("snapshot_date"))
+
+
+def _snapshot_rows_by_date(snapshot_date: str) -> list[dict[str, Any]]:
+    return query(
+        "SELECT * FROM mingkong_material_daily_snapshots WHERE snapshot_date = %s",
+        (snapshot_date,),
+    )
+
+
+def _previous_top100_keys(snapshot_date: str) -> set[str]:
+    if not snapshot_date:
+        return set()
+    rows = query(
+        "SELECT material_key FROM mingkong_material_daily_top100 WHERE snapshot_date = %s",
+        (snapshot_date,),
+    )
+    return {str(row.get("material_key") or "") for row in rows if row.get("material_key")}
+
+
+def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    snapshot_date = rows[0]["snapshot_date"]
+    execute("DELETE FROM mingkong_material_daily_top100 WHERE snapshot_date = %s", (snapshot_date,))
+    inserted = 0
+    for row in rows:
+        execute(
+            """
+            INSERT INTO mingkong_material_daily_top100
+              (snapshot_date, previous_snapshot_date, ranking_snapshot_date, rank_position,
+               display_position, material_key, product_code, source_product_rank_position,
+               shopify_product_id, product_name, product_url, mk_product_id, mk_product_name,
+               mk_product_link, main_image, video_name, video_path, video_image_path,
+               previous_cumulative_90_spend, current_cumulative_90_spend,
+               yesterday_spend_delta, video_ads_count, video_author, video_upload_time,
+               video_duration_seconds, mk_video_metadata_json, is_new_material,
+               is_new_top100_entry)
+            VALUES
+              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+               %s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+               previous_snapshot_date=VALUES(previous_snapshot_date),
+               ranking_snapshot_date=VALUES(ranking_snapshot_date),
+               rank_position=VALUES(rank_position),
+               display_position=VALUES(display_position),
+               source_product_rank_position=VALUES(source_product_rank_position),
+               previous_cumulative_90_spend=VALUES(previous_cumulative_90_spend),
+               current_cumulative_90_spend=VALUES(current_cumulative_90_spend),
+               yesterday_spend_delta=VALUES(yesterday_spend_delta),
+               is_new_material=VALUES(is_new_material),
+               is_new_top100_entry=VALUES(is_new_top100_entry)
+            """,
+            (
+                row.get("snapshot_date"),
+                row.get("previous_snapshot_date"),
+                row.get("ranking_snapshot_date"),
+                row.get("rank_position"),
+                row.get("display_position"),
+                row.get("material_key"),
+                row.get("product_code") or "",
+                row.get("source_product_rank_position"),
+                row.get("shopify_product_id") or None,
+                row.get("product_name") or None,
+                row.get("product_url") or None,
+                row.get("mk_product_id"),
+                row.get("mk_product_name") or None,
+                row.get("mk_product_link") or None,
+                row.get("main_image") or None,
+                row.get("video_name") or None,
+                row.get("video_path") or "",
+                row.get("video_image_path") or None,
+                row.get("previous_cumulative_90_spend"),
+                _as_float(row.get("current_cumulative_90_spend")),
+                _as_float(row.get("yesterday_spend_delta")),
+                _as_int(row.get("video_ads_count")),
+                row.get("video_author") or None,
+                row.get("video_upload_time") or None,
+                row.get("video_duration_seconds"),
+                _json_dumps(row.get("mk_video_metadata") or {}),
+                1 if row.get("is_new_material") else 0,
+                1 if row.get("is_new_top100_entry") else 0,
+            ),
+        )
+        inserted += 1
+    return inserted
+
+
+def generate_daily_top100(snapshot_date: str) -> dict[str, Any]:
+    previous_snapshot = _previous_material_snapshot(snapshot_date)
+    current_rows = _snapshot_rows_by_date(snapshot_date)
+    previous_rows = _snapshot_rows_by_date(previous_snapshot) if previous_snapshot else []
+    previous_by_key = {
+        str(row.get("material_key") or ""): row
+        for row in previous_rows
+        if row.get("material_key")
+    }
+    top100_rows = build_top100_rows(
+        snapshot_date=snapshot_date,
+        previous_snapshot_date=previous_snapshot or None,
+        current_rows=current_rows,
+        previous_by_key=previous_by_key,
+        previous_top100_keys=_previous_top100_keys(previous_snapshot),
+        limit=100,
+    )
+    inserted = _replace_top100_rows(top100_rows)
+    return {
+        "snapshot_date": snapshot_date,
+        "previous_snapshot_date": previous_snapshot,
+        "top100_count": inserted,
+    }
+
+
+def _mk_headers() -> dict[str, str]:
+    headers = pushes.build_localized_texts_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        raise RuntimeError("Mingkong credentials missing")
+    return headers
+
+
+def _mk_base_url() -> str:
+    return (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+
+
+def _search_mingkong_items(
+    session: requests.Session,
+    *,
+    base_url: str,
+    headers: dict[str, str],
+    product_code: str,
+    timeout_seconds: int,
+) -> list[dict[str, Any]]:
+    resp = session.get(
+        f"{base_url}/api/marketing/medias",
+        params={"page": 1, "q": product_code, "source": "", "level": "", "show_attention": 0},
+        headers=headers,
+        timeout=timeout_seconds,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+        raise RuntimeError("Mingkong credentials expired")
+    return [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
+
+
+def _visible_video_stats(item: dict[str, Any]) -> tuple[int, float, int]:
+    count = 0
+    spend = 0.0
+    ads = 0
+    for video in item.get("videos") or []:
+        if not isinstance(video, dict) or video.get("hidden"):
+            continue
+        if not normalize_mk_media_path(str(video.get("path") or "")):
+            continue
+        count += 1
+        spend += _as_float(video.get("spends"))
+        ads += _as_int(video.get("ads_count"))
+    return count, spend, ads
+
+
+def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> dict[str, Any] | None:
+    best: tuple[tuple[int, int, float, int, int], dict[str, Any]] | None = None
+    for item in items:
+        video_count, spend, ads = _visible_video_stats(item)
+        if video_count <= 0:
+            continue
+        exact = any(_product_handle(link) == product_code for link in item.get("product_links") or [])
+        score = (1 if exact else 0, video_count, spend, ads, _as_int(item.get("id")))
+        if best is None or score > best[0]:
+            best = (score, item)
+    return best[1] if best else None
+
+
+def run_daily_snapshot(
+    *,
+    source_limit: int = 300,
+    batch_size: int = 10,
+    sleep_after_products: int = 2,
+    sleep_seconds: float = 30,
+    timeout_seconds: int = 20,
+    snapshot_date: str | None = None,
+) -> dict[str, Any]:
+    guard_against_windows_local_mysql()
+    scheduled_run_id = scheduled_tasks.start_run("mingkong_material_daily_snapshot")
+    target_snapshot = snapshot_date or date.today().isoformat()
+    try:
+        ranking_snapshot, products = latest_top_products(limit=source_limit)
+        run_row = create_or_reuse_run(
+            snapshot_date=target_snapshot,
+            ranking_snapshot_date=ranking_snapshot,
+            source_product_count=len(products),
+            source_product_limit=source_limit,
+        )
+        if str(run_row.get("status") or "") == "success":
+            summary = {
+                "snapshot_date": target_snapshot,
+                "ranking_snapshot_date": ranking_snapshot,
+                "skipped": True,
+                "reason": "snapshot already completed",
+            }
+            scheduled_tasks.finish_run(scheduled_run_id, status="success", summary=summary)
+            return summary
+
+        headers = _mk_headers()
+        base_url = _mk_base_url()
+        session = requests.Session()
+        processed = 0
+        failed = 0
+        material_count = 0
+        consecutive_failures = 0
+        run_id = int(run_row["id"])
+        for index, product in enumerate(products, start=1):
+            try:
+                items = _search_mingkong_items(
+                    session,
+                    base_url=base_url,
+                    headers=headers,
+                    product_code=str(product["product_code"]),
+                    timeout_seconds=timeout_seconds,
+                )
+                mk_product = _select_mingkong_product(items, str(product["product_code"]))
+                if not mk_product:
+                    record_product_status(
+                        run_id=run_id,
+                        snapshot_date=target_snapshot,
+                        ranking_snapshot_date=ranking_snapshot,
+                        source_product=product,
+                        status="no_match",
+                    )
+                    processed += 1
+                    consecutive_failures = 0
+                else:
+                    rows = flatten_materials_for_product(
+                        source_product=product,
+                        mk_product=mk_product,
+                    )
+                    material_count += upsert_snapshot_rows(
+                        run_id=run_id,
+                        snapshot_date=target_snapshot,
+                        ranking_snapshot_date=ranking_snapshot,
+                        rows=rows,
+                    )
+                    record_product_status(
+                        run_id=run_id,
+                        snapshot_date=target_snapshot,
+                        ranking_snapshot_date=ranking_snapshot,
+                        source_product=product,
+                        status="success",
+                        material_count=len(rows),
+                        mk_product=mk_product,
+                    )
+                    processed += 1
+                    consecutive_failures = 0
+            except Exception as exc:
+                failed += 1
+                consecutive_failures += 1
+                record_product_status(
+                    run_id=run_id,
+                    snapshot_date=target_snapshot,
+                    ranking_snapshot_date=ranking_snapshot,
+                    source_product=product,
+                    status="failed",
+                    error_message=str(exc)[:1000],
+                )
+                if consecutive_failures >= 50:
+                    raise RuntimeError("too many consecutive Mingkong product failures") from exc
+            if sleep_seconds and index < len(products) and index % max(1, int(sleep_after_products)) == 0:
+                time.sleep(float(sleep_seconds))
+            if batch_size and index % max(1, int(batch_size)) == 0:
+                execute(
+                    """
+                    UPDATE mingkong_material_sync_runs
+                    SET processed_product_count=%s, material_count=%s,
+                        failed_product_count=%s, summary_json=%s
+                    WHERE id=%s
+                    """,
+                    (
+                        processed,
+                        material_count,
+                        failed,
+                        _json_dumps({"last_batch_product_index": index}),
+                        run_id,
+                    ),
+                )
+
+        top100 = generate_daily_top100(target_snapshot)
+        summary = {
+            "snapshot_date": target_snapshot,
+            "ranking_snapshot_date": ranking_snapshot,
+            "source_product_count": len(products),
+            "processed_product_count": processed,
+            "material_count": material_count,
+            "failed_product_count": failed,
+            "top100": top100,
+        }
+        execute(
+            """
+            UPDATE mingkong_material_sync_runs
+            SET status='success', processed_product_count=%s, material_count=%s,
+                failed_product_count=%s, summary_json=%s, finished_at=NOW()
+            WHERE id=%s
+            """,
+            (processed, material_count, failed, _json_dumps(summary), run_id),
+        )
+        scheduled_tasks.finish_run(scheduled_run_id, status="success", summary=summary)
+        return summary
+    except Exception as exc:
+        scheduled_tasks.finish_run(scheduled_run_id, status="failed", error_message=str(exc))
+        raise
