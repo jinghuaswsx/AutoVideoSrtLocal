@@ -14,6 +14,9 @@ _KNOWN_PROJECT_TYPES = {
     "omni_translate",
 }
 
+_VISIBLE_TO_ALL_EXPR = "JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.visible_to_all')) = 'true'"
+_VISIBLE_TO_ALL_EXPR_P = "JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.visible_to_all')) = 'true'"
+
 
 def _validate_project_type(project_type: str) -> str:
     if project_type not in _KNOWN_PROJECT_TYPES:
@@ -144,6 +147,7 @@ def get_viewable_project(
     is_admin: bool,
     columns: str = "*",
     include_deleted: bool = True,
+    include_visible_to_all: bool = False,
     query_one_func=query_one,
 ) -> dict | None:
     _validate_project_type(project_type)
@@ -153,6 +157,13 @@ def get_viewable_project(
             f"SELECT {columns} FROM projects WHERE id = %s "
             f"AND type = %s{deleted_sql}",
             (task_id, project_type),
+        )
+    if include_visible_to_all:
+        return query_one_func(
+            f"SELECT {columns} FROM projects WHERE id = %s "
+            f"AND (user_id = %s OR {_VISIBLE_TO_ALL_EXPR}) "
+            f"AND type = %s{deleted_sql}",
+            (task_id, user_id, project_type),
         )
     return query_one_func(
         f"SELECT {columns} FROM projects WHERE id = %s "
@@ -169,6 +180,7 @@ def list_projects_with_creator(
     owner_name_expr: str,
     target_lang: str = "",
     filter_user_id: int | None = None,
+    include_visible_to_all: bool = False,
     query_func=query,
 ) -> list[dict]:
     project_type = _validate_project_type(project_type)
@@ -178,6 +190,12 @@ def list_projects_with_creator(
         if filter_user_id is not None:
             scope_sql += " AND p.user_id = %s"
             scope_args = (filter_user_id,)
+    elif include_visible_to_all:
+        scope_sql = (
+            f"(p.user_id = %s OR {_VISIBLE_TO_ALL_EXPR_P}) "
+            f"AND p.type = '{project_type}' AND p.deleted_at IS NULL"
+        )
+        scope_args = (user_id,)
     else:
         scope_sql = f"p.user_id = %s AND p.type = '{project_type}' AND p.deleted_at IS NULL"
         scope_args = (user_id,)
