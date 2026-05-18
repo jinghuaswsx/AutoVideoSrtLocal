@@ -99,7 +99,9 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'aria-label="明空选品库类型"' in body
     assert "产品库" in body
     assert "视频素材库" in body
-    assert "/xuanpin/api/mk-video-materials" in body
+    assert "昨天消耗前100" in body
+    assert "/xuanpin/api/mk-material-library" in body
+    assert "/xuanpin/api/mk-yesterday-top100" in body
 
 
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
@@ -280,6 +282,72 @@ def test_xuanpin_mk_video_materials_api_delegates_after_admin_gate(
     assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
     assert captured["keyword"] == "tooth"
     assert captured["product_code"] == "cool-widget"
+
+
+def test_xuanpin_mk_material_library_api_reads_local_archive(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_list_material_library(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"video_name": "winner.mp4"}],
+            "snapshot": "2026-05-18",
+            "total": 1,
+        }
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_material_library",
+        fake_list_material_library,
+    )
+
+    resp = authed_client_no_db.get(
+        "/xuanpin/api/mk-material-library?keyword=tooth&page=2&page_size=24&snapshot=2026-05-18"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
+    assert captured == {
+        "snapshot_date": "2026-05-18",
+        "keyword": "tooth",
+        "page": "2",
+        "page_size": "24",
+    }
+
+
+def test_xuanpin_mk_yesterday_top100_api_reads_archive(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_list_yesterday_top100(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"video_name": "fresh.mp4", "is_new_top100_entry": True}],
+            "snapshot": "2026-05-18",
+            "previous_snapshot": "2026-05-17",
+            "total": 1,
+        }
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_yesterday_top100",
+        fake_list_yesterday_top100,
+    )
+
+    resp = authed_client_no_db.get(
+        "/xuanpin/api/mk-yesterday-top100?page=1&page_size=100&snapshot=2026-05-18"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
+    assert captured == {
+        "snapshot_date": "2026-05-18",
+        "page": "1",
+        "page_size": "100",
+    }
 
 
 def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):

@@ -139,6 +139,7 @@
   <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
     <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
     <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top100')" data-mk-library-tab="yesterday-top100">昨天消耗前100</button>
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
@@ -180,12 +181,22 @@
 
   <section id="mkVideosPanel" class="mk-library-panel" hidden>
     <div class="mk-video-library-head">
-      <span id="mkVideoLibraryStatus">切换到视频素材库后加载明空素材</span>
+      <span id="mkVideoLibraryStatus">切换到视频素材库后加载本地素材快照</span>
     </div>
     <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
       <div class="oc-empty">加载中...</div>
     </div>
     <div class="oc-pager" id="mkVideoPager"></div>
+  </section>
+
+  <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
+    <div class="mk-video-library-head">
+      <span id="mkYesterdayTop100Status">切换到昨天消耗前100后加载本地归档</span>
+    </div>
+    <div class="mk-video-grid mk-video-library-grid" id="mkYesterdayTop100Grid">
+      <div class="oc-empty">加载中...</div>
+    </div>
+    <div class="oc-pager" id="mkYesterdayTop100Pager"></div>
   </section>
 </div>
 
@@ -206,6 +217,8 @@ let currentMkLibraryTab = 'products';
 let mkProductsLoaded = false;
 let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
+let mkYesterdayTop100Page = 1;
+let mkYesterdayTop100Loaded = false;
 let selectedMkSnapshot = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
@@ -285,9 +298,12 @@ function fmtMkSpendText(raw, parsed) {
 function runMkSearch() {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
   if (currentMkLibraryTab === 'videos') {
     activeMkProductCode = '';
-    loadMkVideoMaterials(1);
+    loadMkLocalMaterialLibrary(1);
+  } else if (currentMkLibraryTab === 'yesterday-top100') {
+    loadMkYesterdayTop100(1);
   } else {
     loadData(1);
   }
@@ -329,11 +345,12 @@ function onMkSnapshotChange() {
   selectedMkSnapshot = document.getElementById('snapshotSelect').value || '';
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
   runMkSearch();
 }
 
 function normalizeMkLibraryTab(tab) {
-  return tab === 'videos' ? 'videos' : 'products';
+  return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'products';
 }
 
 function applyMkLibraryTabState() {
@@ -344,6 +361,7 @@ function applyMkLibraryTabState() {
   });
   document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
   document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
+  document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top100';
 }
 
 function switchMkLibraryTab(tab, options = {}) {
@@ -353,7 +371,9 @@ function switchMkLibraryTab(tab, options = {}) {
   }
   applyMkLibraryTabState();
   if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
-    loadMkVideoMaterials(1);
+    loadMkLocalMaterialLibrary(1);
+  } else if (currentMkLibraryTab === 'yesterday-top100' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
+    loadMkYesterdayTop100(1);
   } else if (currentMkLibraryTab === 'products' && (!mkProductsLoaded || options.forceLoad)) {
     loadData(1);
   }
@@ -373,8 +393,8 @@ function openProductMaterialLibrary(productCode, productName) {
   document.getElementById('searchInput').value = code;
   switchMkLibraryTab('videos');
   const label = String(productName || code).trim();
-  document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的明空素材...`;
-  loadMkVideoMaterials(1);
+  document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的本地素材快照...`;
+  loadMkLocalMaterialLibrary(1);
 }
 
 async function loadData(page) {
@@ -441,39 +461,74 @@ async function loadData(page) {
   document.getElementById('pager').innerHTML = pagerHtml;
 }
 
-async function loadMkVideoMaterials(page) {
+async function loadMkLocalMaterialLibrary(page) {
   mkVideoPage = page;
   mkVideoMaterialsLoaded = true;
   const kw = document.getElementById('searchInput').value.trim();
   const grid = document.getElementById('mkVideoMaterialGrid');
   const status = document.getElementById('mkVideoLibraryStatus');
   const pager = document.getElementById('mkVideoPager');
-  grid.innerHTML = '<div class="oc-empty">加载明空视频素材中...</div>';
+  grid.innerHTML = '<div class="oc-empty">加载本地视频素材快照中...</div>';
   pager.innerHTML = '';
-  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索明空素材...` : '正在从明空素材库读取视频...';
+  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
   try {
-    const keywordParam = activeMkProductCode ? '' : `&keyword=${encodeURIComponent(kw)}`;
-    const productCodeParam = activeMkProductCode ? `&product_code=${encodeURIComponent(activeMkProductCode)}` : '';
-    const url = `/xuanpin/api/mk-video-materials?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${productCodeParam}${mkSnapshotQueryParam()}`;
+    const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
-    const stats = data.stats || {};
-    document.getElementById('totalCount').textContent = (data.total_products || 0) + ' 条';
-    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `快照 ${data.snapshot || selectedMkSnapshot || '最新'}`;
-    status.textContent = `${scopeText} · 扫描产品 ${stats.source_products || 0} 个 · 明空匹配 ${stats.mk_searches || 0} 次 · 视频 ${stats.videos || 0} 条`;
+    const total = Number(data.total || 0);
+    document.getElementById('totalCount').textContent = total + ' 条';
+    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${data.snapshot || '最新'}`;
+    status.textContent = `${scopeText} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
-      grid.innerHTML = '<div class="oc-empty">暂无明空视频素材</div>';
+      grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
     } else {
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
-    let pagerHtml = `<button onclick="loadMkVideoMaterials(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
-    pagerHtml += ` <span>第 ${page} 页</span> `;
-    pagerHtml += `<button onclick="loadMkVideoMaterials(${page+1})" ${data.has_more_products ? '' : 'disabled'}>下一页</button>`;
+    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
+    let pagerHtml = `<button onclick="loadMkLocalMaterialLibrary(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
+    pagerHtml += `<button onclick="loadMkLocalMaterialLibrary(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
     pager.innerHTML = pagerHtml;
   } catch (e) {
-    status.textContent = '明空视频素材加载失败';
+    status.textContent = '本地视频素材加载失败';
+    grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadMkYesterdayTop100(page) {
+  mkYesterdayTop100Page = page;
+  mkYesterdayTop100Loaded = true;
+  const grid = document.getElementById('mkYesterdayTop100Grid');
+  const status = document.getElementById('mkYesterdayTop100Status');
+  const pager = document.getElementById('mkYesterdayTop100Pager');
+  grid.innerHTML = '<div class="oc-empty">加载昨天消耗前100中...</div>';
+  pager.innerHTML = '';
+  status.textContent = '正在读取昨天消耗前100归档...';
+  try {
+    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
+    const total = Number(data.total || 0);
+    document.getElementById('totalCount').textContent = total + ' 条';
+    const previousText = data.previous_snapshot ? ` · 对比 ${data.previous_snapshot}` : '';
+    status.textContent = `快照 ${data.snapshot || '最新'}${previousText} · 昨天消耗前100`;
+    if (!data.items || !data.items.length) {
+      grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前100归档</div>';
+    } else {
+      grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
+      mkiCheckRenderedButtons();
+    }
+    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
+    let pagerHtml = `<button onclick="loadMkYesterdayTop100(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
+    pagerHtml += `<button onclick="loadMkYesterdayTop100(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
+    pager.innerHTML = pagerHtml;
+  } catch (e) {
+    status.textContent = '昨天消耗前100加载失败';
     grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -490,11 +545,19 @@ function renderMkVideoMaterialCard(r) {
   const safeVideoUrl = escapeHtml(videoUrl);
   const safeProductUrl = safeExternalHref(r.product_url || r.mk_product_link || '');
   const safeProductName = escapeHtml(r.mk_product_name || r.product_name || '--');
-  const productHandle = escapeHtml(r.product_handle || '');
+  const productHandle = escapeHtml(r.product_handle || r.product_code || '');
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
   const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
   const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+  const hasYesterdayDelta = Object.prototype.hasOwnProperty.call(r, 'yesterday_spend_delta');
+  const yesterdayDelta = Number(r.yesterday_spend_delta || 0);
+  const yesterdayDeltaHtml = hasYesterdayDelta
+    ? `<span class="mk-video-summary-item"><span class="label">昨天消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
+    : '';
+  const newTop100Html = r.is_new_top100_entry
+    ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top100</span></span></span>'
+    : '';
   return `<div class="mk-video-card">
     <div class="mk-video-product-line">
       ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong title="${safeProductName}">${safeProductName}</strong>`}
@@ -504,6 +567,8 @@ function renderMkVideoMaterialCard(r) {
     <div class="mk-video-summary-row">
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
       <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
+      ${yesterdayDeltaHtml}
+      ${newTop100Html}
     </div>
     <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
       <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
@@ -732,7 +797,9 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
   const initialTab = initMkLibraryTabFromHash();
   await loadMkSelectionSnapshots();
   if (initialTab === 'videos') {
-    loadMkVideoMaterials(1);
+    loadMkLocalMaterialLibrary(1);
+  } else if (initialTab === 'yesterday-top100') {
+    loadMkYesterdayTop100(1);
   } else {
     loadData(1);
   }

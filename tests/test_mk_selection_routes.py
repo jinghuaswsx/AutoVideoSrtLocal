@@ -49,6 +49,7 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
     assert 'data-mk-library-tab="products">产品库' in body
     assert 'data-mk-library-tab="videos">视频素材库' in body
+    assert 'data-mk-library-tab="yesterday-top100">昨天消耗前100' in body
     assert 'id="snapshotSelect"' in body
     assert "loadMkSelectionSnapshots" in body
     assert "oc-page-tabs" not in body
@@ -128,8 +129,13 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "function normalizeMkLibraryTab(tab)" in template
     assert "function initMkLibraryTabFromHash()" in template
     assert "location.hash = currentMkLibraryTab;" in template
+    assert "loadMkLocalMaterialLibrary" in template
+    assert "loadMkYesterdayTop100" in template
     assert "if (initialTab === 'videos')" in template
-    assert "(data.total_products || 0) + ' 条'" in template
+    assert "if (initialTab === 'yesterday-top100')" in template
+    assert "/xuanpin/api/mk-material-library" in template
+    assert "/xuanpin/api/mk-yesterday-top100" in template
+    assert "/xuanpin/api/mk-video-materials" not in template
 
 
 def test_mk_selection_video_cards_include_local_video_preview():
@@ -153,7 +159,7 @@ def test_mk_selection_product_rows_include_material_library_button():
     assert "const productCode = productCodeFromUrl(r.product_url);" in template
     assert "renderProductMaterialButton(productCode, rawProductName, linked)" in template
     assert "openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '')" in template
-    assert "product_code=${encodeURIComponent(activeMkProductCode)}" in template
+    assert "activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}`" in template
 
 
 def test_mk_selection_dynamic_html_escapes_api_fields():
