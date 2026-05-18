@@ -92,6 +92,7 @@ def test_flatten_mingkong_materials_keeps_all_visible_videos():
 
     assert [row["video_path"] for row in rows] == ["uploads2/a.mp4", "uploads2/b.mp4"]
     assert rows[0]["cumulative_90_spend"] == 15000.0
+    assert rows[0]["video_spends_text"] == "1.5万"
     assert rows[0]["material_key"] == mm.material_key_for(
         "cool-widget",
         901,
@@ -99,6 +100,107 @@ def test_flatten_mingkong_materials_keeps_all_visible_videos():
     )
     assert rows[0]["mk_product_link"] == "https://shop.example/products/cool-widget-rjc"
     assert rows[1]["video_image_path"] == "uploads2/b.jpg"
+
+
+def test_select_mingkong_product_requires_exact_result_product_code():
+    rjc_suffix_result = {
+        "id": 901,
+        "product_links": ["https://shop.example/products/cool-widget-rjc"],
+        "videos": [
+            {
+                "name": "rjc.mp4",
+                "path": "uploads2/rjc.mp4",
+                "spends": "9.9万",
+                "ads_count": 99,
+            }
+        ],
+    }
+    exact_result = {
+        "id": 902,
+        "product_links": ["https://shop.example/products/cool-widget"],
+        "videos": [
+            {
+                "name": "exact.mp4",
+                "path": "uploads2/exact.mp4",
+                "spends": "10",
+                "ads_count": 1,
+            }
+        ],
+    }
+
+    selected = mm._select_mingkong_product(
+        [rjc_suffix_result, exact_result],
+        "cool-widget",
+    )
+
+    assert selected["id"] == 902
+    assert mm._select_mingkong_product([rjc_suffix_result], "cool-widget") is None
+
+
+def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_zero(
+    monkeypatch,
+):
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        if "MAX(snapshot_date)" in sql:
+            return {"snapshot_date": date(2026, 5, 18)}
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "fitness-band",
+                "rank_position": 7,
+                "video_name": "2026.03.03.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "cumulative_90_spend": 0,
+                "video_ads_count": 12,
+                "mk_video_metadata_json": '{"spends":"3.05万"}',
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(keyword="fitness-band")
+
+    item = result["items"][0]
+    assert item["video_spends"] == 30500.0
+    assert item["cumulative_90_spend"] == 30500.0
+    assert item["video_spends_text"] == "3.05万"
+
+
+def test_build_top100_rows_recovers_spend_from_raw_metadata_when_numeric_row_is_zero():
+    rows = mm.build_top100_rows(
+        snapshot_date="2026-05-18",
+        previous_snapshot_date=None,
+        current_rows=[
+            {
+                "material_key": "fresh",
+                "cumulative_90_spend": 0,
+                "video_ads_count": 12,
+                "rank_position": 1,
+                "mk_video_metadata_json": '{"spends":"3.05万"}',
+            }
+        ],
+        previous_by_key={},
+        previous_top100_keys=set(),
+    )
+
+    assert rows[0]["current_cumulative_90_spend"] == 30500.0
+    assert rows[0]["yesterday_spend_delta"] == 30500.0
 
 
 def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():

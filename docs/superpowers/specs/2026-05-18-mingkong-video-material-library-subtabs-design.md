@@ -17,8 +17,13 @@ The video material library uses existing wedev credentials and the Mingkong mark
 1. Read the selected `dianxiaomi_rankings` snapshot, defaulting to the latest available date.
 2. Derive the Shopify handle from each product URL.
 3. Query `GET /api/marketing/medias?q=<handle>` with the synced wedev credentials.
-4. Pick the best matching Mingkong product by exact product link tail first, then by visible video spend, ad count, and newer Mingkong id.
-5. Flatten visible videos into cards, sorted per product by spend and ad count.
+4. Pick the best matching Mingkong product only from search-result products whose
+   Mingkong-side `product_code`/`code`/`handle` or product-link tail exactly equals
+   the requested product code. Do not strip `-rjc` from Mingkong search-result
+   links as a match fallback.
+5. If multiple exact Mingkong results remain, rank them by visible video spend,
+   ad count, video count, and newer Mingkong id.
+6. Flatten visible videos into cards, sorted per product by spend and ad count.
 
 The UI must not depend on `dianxiaomi_rankings.mk_product_id` or the old denormalized Mingkong spend columns. The Dianxiaomi full-listing archive owns raw Listing sales rows only; Mingkong matching and spend data are enrichment state.
 
@@ -44,7 +49,10 @@ Query parameters:
 - `keyword`: optional product-name or handle filter.
 - `product_code`: optional direct Mingkong search term for a single product row. When present, search `/api/marketing/medias?q=<product_code>` directly and do not require a local ranking row match.
 - `snapshot`: optional `YYYY-MM-DD`; omitted means latest snapshot.
-- `max_videos_per_product`: default `3`, max `5`.
+- `max_videos_per_product`: for normal paged scans, default `3`, max `5`; for direct
+  `product_code` single-product jumps, default `24`, max `100`, so the product
+  material view mirrors Mingkong's own edit dialog instead of truncating to the
+  first few cards.
 
 Response:
 
