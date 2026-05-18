@@ -480,17 +480,11 @@
         {% if module_kind == 'english_redub' %}
         <div class="modal-field">
           <label>文案模式</label>
-          <div class="modal-lang-pills" role="radiogroup" aria-label="文案模式">
-            <label class="modal-lang-pill active" style="display:inline-flex;align-items:center;gap:6px;">
-              <input type="radio" name="script_mode" value="original" checked>
-              保留原始文案，只重新生成 TTS
-            </label>
-            <label class="modal-lang-pill" style="display:inline-flex;align-items:center;gap:6px;">
-              <input type="radio" name="script_mode" value="rewrite">
-              重写文案，保持原意一致
-            </label>
-          </div>
-          <div class="modal-hint" style="margin:6px 0 0;">默认保留原英文文案；重写模式会用 Omni 对齐逻辑适配语速。</div>
+          <label class="modal-lang-pill" style="display:inline-flex;align-items:center;gap:6px;width:auto;">
+            <input type="checkbox" name="script_mode" value="rewrite">
+            重写文案，保持原意一致
+          </label>
+          <div class="modal-hint" style="margin:6px 0 0;">默认关闭，关闭时保留原英文文案，只重新生成 TTS；开启后用 Omni 对齐逻辑适配语速。</div>
           <input type="hidden" id="targetLangSelect" name="target_lang" value="en">
         </div>
         {% else %}

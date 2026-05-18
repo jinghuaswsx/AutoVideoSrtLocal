@@ -50,6 +50,8 @@
 2026-05-18 首版执行口径：
 
 - 新建项目时提供任务级 `script_mode` 开关，默认 `original`。
+- 视频翻译集合菜单顺序为：`多语种视频翻译`、`全能视频翻译`、`英语视频重新配音`、`视频翻译传统`。
+- 新建项目 UI 中“重写文案”默认关闭；未开启时等价于 `script_mode=original`。
 - `original` 模式禁用句级时长收敛里的文本改写，只保留原英文 ASR 清洗/分段文本进入 TTS。
 - `rewrite` 模式继续走 Omni 的分镜、对齐和句级收敛逻辑。
 - 后台 `english_redub_voice_match_strategy` 只控制英语重配音的音色推荐排序，不影响 Omni / Multi。
