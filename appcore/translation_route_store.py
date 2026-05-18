@@ -8,6 +8,7 @@ from appcore.db import query_one as db_query_one
 
 _KNOWN_PROJECT_TYPES = {
     "de_translate",
+    "english_redub",
     "fr_translate",
     "ja_translate",
     "multi_translate",

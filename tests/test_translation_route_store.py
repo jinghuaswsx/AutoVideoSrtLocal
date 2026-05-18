@@ -284,6 +284,36 @@ def test_list_projects_with_creator_omits_user_scope_for_admin():
     ]
 
 
+def test_list_projects_with_creator_accepts_english_redub_project_type():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return [{"id": "english-1"}]
+
+    rows = store.list_projects_with_creator(
+        user_id=7,
+        project_type="english_redub",
+        is_admin=True,
+        owner_name_expr="u.username",
+        query_func=fake_query,
+    )
+
+    assert rows == [{"id": "english-1"}]
+    assert calls == [
+        (
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.type = 'english_redub' AND p.deleted_at IS NULL "
+            "ORDER BY p.created_at DESC",
+            (),
+        )
+    ]
+
+
 def test_list_projects_with_creator_admin_can_filter_by_creator_and_lang():
     calls = []
 
