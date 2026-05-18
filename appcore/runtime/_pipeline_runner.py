@@ -2945,9 +2945,30 @@ class PipelineRunner:
             "converged": result.converged,
         }
 
+    def _ensure_audio_path_for_asr(self, task_id: str, task_dir: str) -> str:
+        """Make resume-from-ASR idempotent when extracted audio is missing."""
+        task = task_state.get(task_id) or {}
+        audio_path = str(task.get("audio_path") or "").strip()
+        if audio_path and os.path.isfile(audio_path):
+            return audio_path
+
+        video_path = str(task.get("video_path") or "").strip()
+        if not video_path:
+            raise RuntimeError("语音识别缺少源视频路径，无法补齐 audio_path，请重新上传源视频")
+        if not os.path.isfile(video_path):
+            raise RuntimeError(f"语音识别缺少本地源视频，无法补齐 audio_path: {video_path}")
+
+        self._step_extract(task_id, video_path, task_dir)
+        refreshed = task_state.get(task_id) or {}
+        rebuilt_audio_path = str(refreshed.get("audio_path") or "").strip()
+        if rebuilt_audio_path and os.path.isfile(rebuilt_audio_path):
+            return rebuilt_audio_path
+        raise RuntimeError("语音识别所需音频提取失败，请从「音频提取」步骤重新开始")
+
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
-        audio_path = task["audio_path"]
+        audio_path = self._ensure_audio_path_for_asr(task_id, task_dir)
+        task = task_state.get(task_id) or task
         from pipeline.extract import get_video_duration
         from appcore import asr_router
         from pipeline.lang_labels import lang_label

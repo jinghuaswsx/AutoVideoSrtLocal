@@ -400,7 +400,9 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
     monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
 
     task = store.create("task-asr-billing", "video.mp4", str(tmp_path), user_id=9)
-    task["audio_path"] = str(tmp_path / "audio.wav")
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"audio")
+    task["audio_path"] = str(audio_path)
 
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
@@ -441,7 +443,9 @@ def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"original-video")
     task = store.create("task-asr-short-passthrough", str(source_video), str(tmp_path), user_id=9)
-    task["audio_path"] = str(tmp_path / "audio.wav")
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"audio")
+    task["audio_path"] = str(audio_path)
 
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
@@ -478,7 +482,9 @@ def test_step_asr_completes_original_video_passthrough_when_transcript_is_empty(
     source_video = tmp_path / "music.mp4"
     source_video.write_bytes(b"music-video")
     task = store.create("task-asr-empty-passthrough", str(source_video), str(tmp_path), user_id=9)
-    task["audio_path"] = str(tmp_path / "audio.wav")
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"audio")
+    task["audio_path"] = str(audio_path)
 
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
     monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
