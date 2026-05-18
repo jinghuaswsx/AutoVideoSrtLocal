@@ -148,6 +148,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
+    "mingkong_material_daily_snapshot": {
+        "code": "mingkong_material_daily_snapshot",
+        "name": "明空素材每日快照",
+        "description": (
+            "每天 06:00 读取店小秘 Listing 最新可用快照 Top300 产品 code，"
+            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前100。"
+            "Docs-anchor: "
+            "docs/superpowers/specs/2026-05-18-mingkong-daily-material-snapshot-top100-design.md"
+        ),
+        "schedule": "每天 06:00（北京时间，跑完前300产品后结束）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-material-daily-snapshot.timer",
+        "runner": "tools/mingkong_material_daily_snapshot.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",
