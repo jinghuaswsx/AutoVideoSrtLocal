@@ -62,6 +62,17 @@ def _product_handle(value: Any) -> str:
     return _strip_rjc(parts[index + 1])
 
 
+def _raw_product_handle(value: Any) -> str:
+    parsed = urlparse(str(value or ""))
+    parts = [part for part in parsed.path.split("/") if part]
+    if "products" not in parts:
+        return ""
+    index = parts.index("products")
+    if index + 1 >= len(parts):
+        return ""
+    return str(parts[index + 1] or "").strip().lower()
+
+
 def _as_int(value: Any, default: int = 0) -> int:
     try:
         return int(float(str(value or "").replace(",", "").strip()))
@@ -115,6 +126,41 @@ def _json_loads(value: Any, default: Any = None) -> Any:
         return json.loads(value)
     except (TypeError, ValueError):
         return default
+
+
+def _metadata_for_row(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("mk_video_metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    loaded = _json_loads(row.get("mk_video_metadata_json"), {})
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _raw_spend_text(row: dict[str, Any], metadata: dict[str, Any] | None = None) -> str:
+    source = metadata if metadata is not None else _metadata_for_row(row)
+    for container in (row, source):
+        for key in ("video_spends_text", "spends_text", "spends"):
+            value = container.get(key) if isinstance(container, dict) else None
+            text = str(value or "").strip()
+            if text and text != "0":
+                return text
+    return ""
+
+
+def _spend_from_row(row: dict[str, Any], key: str, metadata: dict[str, Any] | None = None) -> float:
+    stored = _as_float(row.get(key))
+    raw = _as_float(_raw_spend_text(row, metadata))
+    if stored <= 0 and raw > 0:
+        return raw
+    return stored
+
+
+def _metadata_for_write(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(row.get("mk_video_metadata") or {})
+    spends_text = str(row.get("video_spends_text") or "").strip()
+    if spends_text and not str(metadata.get("spends") or "").strip():
+        metadata["spends"] = spends_text
+    return metadata
 
 
 def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
@@ -194,7 +240,8 @@ def flatten_materials_for_product(
         if not path:
             continue
         image_path = normalize_mk_media_path(str(raw.get("image_path") or ""))
-        spends = _as_float(raw.get("spends"))
+        spends_text = str(raw.get("spends") or "").strip()
+        spends = _as_float(spends_text)
         metadata = dict(raw)
         metadata.update(
             {
@@ -224,6 +271,7 @@ def flatten_materials_for_product(
                 "video_image_path": image_path,
                 "cumulative_90_spend": spends,
                 "video_spends": spends,
+                "video_spends_text": spends_text,
                 "video_ads_count": _as_int(raw.get("ads_count")),
                 "video_author": _trim(raw.get("author"), 128),
                 "video_upload_time": _trim(raw.get("upload_time"), 64),
@@ -258,9 +306,14 @@ def build_top100_rows(
         material_key = str(current.get("material_key") or "")
         if not material_key:
             continue
-        current_spend = _as_float(current.get("cumulative_90_spend"))
+        current_metadata = _metadata_for_row(current)
+        current_spend = _spend_from_row(current, "cumulative_90_spend", current_metadata)
         previous = previous_by_key.get(material_key)
-        previous_spend = None if previous is None else _as_float(previous.get("cumulative_90_spend"))
+        previous_spend = (
+            None
+            if previous is None
+            else _spend_from_row(previous, "cumulative_90_spend", _metadata_for_row(previous))
+        )
         delta = current_spend if previous_spend is None else max(0.0, current_spend - previous_spend)
         row = dict(current)
         row["source_product_rank_position"] = _as_int(
@@ -342,11 +395,14 @@ def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
     out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
-    spend = _as_float(out.get("cumulative_90_spend"))
+    metadata = _metadata_for_row(out)
+    spend = _spend_from_row(out, "cumulative_90_spend", metadata)
     out["cumulative_90_spend"] = spend
     out["video_spends"] = spend
+    out["video_spends_text"] = _raw_spend_text(out, metadata)
     out["video_ads_count"] = _as_int(out.get("video_ads_count"))
-    out["mk_video_metadata"] = _json_loads(out.pop("mk_video_metadata_json", None), {})
+    out.pop("mk_video_metadata_json", None)
+    out["mk_video_metadata"] = metadata
     for key in ("created_at", "updated_at"):
         value = out.get(key)
         out[key] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
@@ -358,9 +414,11 @@ def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
     out["previous_snapshot_date"] = _coerce_date(out.get("previous_snapshot_date"))
     out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
-    current_spend = _as_float(out.get("current_cumulative_90_spend"))
+    metadata = _metadata_for_row(out)
+    current_spend = _spend_from_row(out, "current_cumulative_90_spend", metadata)
     out["current_cumulative_90_spend"] = current_spend
     out["video_spends"] = current_spend
+    out["video_spends_text"] = _raw_spend_text(out, metadata)
     out["previous_cumulative_90_spend"] = (
         None
         if out.get("previous_cumulative_90_spend") is None
@@ -370,7 +428,8 @@ def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
     out["video_ads_count"] = _as_int(out.get("video_ads_count"))
     out["is_new_material"] = bool(out.get("is_new_material"))
     out["is_new_top100_entry"] = bool(out.get("is_new_top100_entry"))
-    out["mk_video_metadata"] = _json_loads(out.pop("mk_video_metadata_json", None), {})
+    out.pop("mk_video_metadata_json", None)
+    out["mk_video_metadata"] = metadata
     value = out.get("created_at")
     out["created_at"] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
     return out
@@ -436,12 +495,12 @@ def upsert_snapshot_rows(
                 row.get("video_name") or None,
                 row.get("video_path") or "",
                 row.get("video_image_path") or None,
-                _as_float(row.get("cumulative_90_spend")),
+                _spend_from_row(row, "cumulative_90_spend"),
                 _as_int(row.get("video_ads_count")),
                 row.get("video_author") or None,
                 row.get("video_upload_time") or None,
                 row.get("video_duration_seconds"),
-                _json_dumps(row.get("mk_video_metadata") or {}),
+                _json_dumps(_metadata_for_write(row)),
             ),
         )
         inserted += 1
@@ -750,13 +809,13 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
                 row.get("video_path") or "",
                 row.get("video_image_path") or None,
                 row.get("previous_cumulative_90_spend"),
-                _as_float(row.get("current_cumulative_90_spend")),
+                _spend_from_row(row, "current_cumulative_90_spend"),
                 _as_float(row.get("yesterday_spend_delta")),
                 _as_int(row.get("video_ads_count")),
                 row.get("video_author") or None,
                 row.get("video_upload_time") or None,
                 row.get("video_duration_seconds"),
-                _json_dumps(row.get("mk_video_metadata") or {}),
+                _json_dumps(_metadata_for_write(row)),
                 1 if row.get("is_new_material") else 0,
                 1 if row.get("is_new_top100_entry") else 0,
             ),
@@ -837,14 +896,31 @@ def _visible_video_stats(item: dict[str, Any]) -> tuple[int, float, int]:
     return count, spend, ads
 
 
+def _mingkong_result_product_codes(item: dict[str, Any]) -> set[str]:
+    codes = {
+        str(item.get(key) or "").strip().lower()
+        for key in ("product_code", "code", "handle")
+        if str(item.get(key) or "").strip()
+    }
+    for link in item.get("product_links") or []:
+        code = _raw_product_handle(link)
+        if code:
+            codes.add(code)
+    return codes
+
+
 def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> dict[str, Any] | None:
-    best: tuple[tuple[int, int, float, int, int], dict[str, Any]] | None = None
+    target_code = str(product_code or "").strip().lower()
+    if not target_code:
+        return None
+    best: tuple[tuple[int, float, int, int], dict[str, Any]] | None = None
     for item in items:
+        if target_code not in _mingkong_result_product_codes(item):
+            continue
         video_count, spend, ads = _visible_video_stats(item)
         if video_count <= 0:
             continue
-        exact = any(_product_handle(link) == product_code for link in item.get("product_links") or [])
-        score = (1 if exact else 0, video_count, spend, ads, _as_int(item.get("id")))
+        score = (video_count, spend, ads, _as_int(item.get("id")))
         if best is None or score > best[0]:
             best = (score, item)
     return best[1] if best else None

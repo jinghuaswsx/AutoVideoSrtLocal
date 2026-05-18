@@ -28,6 +28,10 @@ In scope:
 3. For each selected product, derive the product code/handle from `product_url`.
 4. Query Mingkong `/api/marketing/medias?q=<product_code>` and store the full visible
    video material list for that product.
+   A Mingkong search-result product is a match only when its Mingkong-side
+   `product_code`/`code`/`handle` or product-link tail exactly equals the requested
+   product code. Search-result links ending in `-rjc` must not be normalized into
+   a match for the base code.
 5. Store daily per-material snapshots of the Mingkong cumulative 90-day spend value.
 6. Compare the current snapshot with the previous available material snapshot to compute
    the latest one-day spend delta.
@@ -223,6 +227,11 @@ Required fields:
 - `mk_video_metadata_json`
 - `created_at`
 - `updated_at`
+
+`mk_video_metadata_json` must preserve the raw Mingkong `spends` text (for example
+`3.05万` or `1.50千`). Read paths may use that raw value to recover display and
+ranking values if an older snapshot row has `cumulative_90_spend = 0` because of
+an earlier parser bug.
 
 Unique key:
 
