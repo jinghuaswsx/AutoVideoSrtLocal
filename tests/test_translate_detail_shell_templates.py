@@ -210,11 +210,25 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     assert "loudnessStepStatus" in separation
     assert "state.steps.get('loudness_match', '')" in separation
     assert 'task.steps.loudness_match' in separation
-    assert 'loudnessStepStatus === "running"' in separation
     assert "escapeHtml(sep.model" in separation
     assert "escapeHtml(sep.api_url" in separation
     assert "escapeHtml(sep.error" in separation
     assert 'hasOwnProperty.call(task, "separation")' in separation
+
+
+def test_loudness_profile_controls_are_clickable_and_blue_when_selected():
+    root = Path(__file__).resolve().parents[1]
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+
+    assert 'var disabled = loudnessProfileSaving || loudnessStepStatus === "running";' not in separation
+    assert 'var disabledAttr = disabled ? " disabled" : "";' not in separation
+    assert 'if (loudnessStepStatus === "running") return Promise.resolve();' not in separation
+    assert 'if (loudnessStepStatus === "running") return;' not in separation
+    assert 'aria-pressed="' in separation
+    assert 'selectedLoudnessProfile = "manual_boost";' in separation
+    assert "#preview-loudness_match .loudness-profile-pill.active" in separation
+    assert "background: var(--accent, #0284c7);" in separation
+    assert "color: var(--accent-contrast, #f8fafc);" in separation
 
 
 def test_separation_card_renders_when_loudness_step_is_missing():
