@@ -439,14 +439,14 @@ def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
 
     sql, params = calls[0]
     assert result == 9
-    assert "INSERT INTO meta_hot_post_europe_assessments" in sql
+    assert "INSERT IGNORE INTO meta_hot_post_europe_assessments" in sql
     assert "SELECT p.id, 'pending'" in sql
     assert "FROM meta_hot_posts p" in sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id" in sql
     assert "p.local_video_status = 'downloaded'" in sql
     assert "p.local_video_path IS NOT NULL" in sql
     assert "p.product_url IS NOT NULL" in sql
-    assert "ON DUPLICATE KEY UPDATE" in sql
-    assert "post_id=VALUES(post_id)" in sql
+    assert "e.id IS NULL" in sql
     assert params == ()
 
 

@@ -632,16 +632,16 @@ def ensure_video_copyability_candidates(*, execute_fn: ExecuteFn = execute) -> i
 def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = execute) -> int:
     return execute_fn(
         """
-        INSERT INTO meta_hot_post_europe_assessments (post_id, status)
+        INSERT IGNORE INTO meta_hot_post_europe_assessments (post_id, status)
         SELECT p.id, 'pending'
         FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_europe_assessments e ON e.post_id = p.id
         WHERE p.local_video_status = 'downloaded'
           AND p.local_video_path IS NOT NULL
           AND TRIM(p.local_video_path) <> ''
           AND p.product_url IS NOT NULL
           AND TRIM(p.product_url) <> ''
-        ON DUPLICATE KEY UPDATE
-          post_id=VALUES(post_id)
+          AND e.id IS NULL
         """,
         (),
     )
