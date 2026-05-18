@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any
 
 from ._constants import META_ATTRIBUTION_CUTOVER_HOUR_BJ, META_ATTRIBUTION_TIMEZONE
@@ -177,6 +178,28 @@ def _product_filter_sql(column: str, product_id: int | None) -> tuple[str, list[
     return f"AND {column} = %s ", [int(product_id)]
 
 
+def _global_break_even_roas(summary: dict[str, Any]) -> float | None:
+    try:
+        revenue = Decimal(str(summary.get("total_revenue_usd") or 0))
+        available_ad_spend = (
+            revenue
+            - Decimal(str(summary.get("profit_deduction_usd") or 0))
+            - Decimal(str(summary.get("purchase_cost_with_estimate_usd") or 0))
+            - Decimal(str(summary.get("logistics_cost_with_estimate_usd") or 0))
+            - Decimal(str(summary.get("shopify_fee_total_usd") or 0))
+        )
+    except (InvalidOperation, ValueError):
+        return None
+    if revenue <= 0 or available_ad_spend <= 0:
+        return None
+    return float(
+        (revenue / available_ad_spend).quantize(
+            Decimal("0.001"),
+            rounding=ROUND_CEILING,
+        )
+    )
+
+
 def _empty_order_profit_summary() -> dict[str, Any]:
     return {
         "order_count": 0,
@@ -200,6 +223,7 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "total_ad_spend_usd": 0.0,
         "profit_with_estimate_usd": 0.0,
         "profit_with_estimate_margin_pct": None,
+        "global_break_even_roas": None,
     }
 
 
@@ -294,6 +318,7 @@ def _build_order_profit_summary(
         )
     else:
         summary["profit_with_estimate_margin_pct"] = None
+    summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
 
@@ -357,6 +382,7 @@ def _build_order_profit_summary_from_status(
         )
     else:
         summary["profit_with_estimate_margin_pct"] = None
+    summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
 
