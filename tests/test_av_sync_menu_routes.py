@@ -79,9 +79,9 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
 
     assert medias_idx < pushes_idx < data_group_idx < material_group_idx < video_group_idx
     assert data_group_idx < order_analytics_idx < product_profit_idx < order_profit_idx
-    assert material_group_idx < image_translate_idx < subtitle_removal_idx
+    assert material_group_idx < image_translate_idx < subtitle_removal_idx < title_translate_idx
     assert video_group_idx < multi_translate_idx < omni_translate_idx
-    assert video_group_idx < title_translate_idx < mk_selection_idx < task_group_idx
+    assert video_group_idx < mk_selection_idx < task_group_idx
     assert task_group_idx < settings_group_idx < lab_group_idx
 
 
