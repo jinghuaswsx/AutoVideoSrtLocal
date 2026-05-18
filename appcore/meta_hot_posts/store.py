@@ -641,7 +641,7 @@ def ensure_europe_fit_candidates(*, execute_fn: ExecuteFn = execute) -> int:
           AND p.product_url IS NOT NULL
           AND TRIM(p.product_url) <> ''
         ON DUPLICATE KEY UPDATE
-          updated_at=updated_at
+          post_id=VALUES(post_id)
         """,
         (),
     )

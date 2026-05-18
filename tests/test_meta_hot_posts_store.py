@@ -446,6 +446,7 @@ def test_ensure_europe_fit_candidates_inserts_downloaded_product_videos():
     assert "p.local_video_path IS NOT NULL" in sql
     assert "p.product_url IS NOT NULL" in sql
     assert "ON DUPLICATE KEY UPDATE" in sql
+    assert "post_id=VALUES(post_id)" in sql
     assert params == ()
 
 
