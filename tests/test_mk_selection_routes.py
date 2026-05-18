@@ -120,6 +120,18 @@ def test_mk_selection_modal_preview_tokens_available_globally():
     assert 'id="detailPanel"' in template
 
 
+def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_logic():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mk-library-tabs { display:flex;" in template
+    assert "width:max-content" in template
+    assert "function normalizeMkLibraryTab(tab)" in template
+    assert "function initMkLibraryTabFromHash()" in template
+    assert "location.hash = currentMkLibraryTab;" in template
+    assert "if (initialTab === 'videos')" in template
+    assert "(data.total_products || 0) + ' 条'" in template
+
+
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
