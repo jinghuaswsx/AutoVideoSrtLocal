@@ -1,8 +1,27 @@
 from datetime import datetime, timedelta
 import time
 
+import pytest
+
 from appcore.meta_hot_posts import scheduler
 from appcore.meta_hot_posts.product_analysis import ProductAnalysisResult
+
+
+@pytest.fixture(autouse=True)
+def _default_video_analysis_queue_guards(monkeypatch):
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_run", lambda task_code: None, raising=False)
+    monkeypatch.setattr(
+        scheduler.store,
+        "suspend_exhausted_video_copyability_analyses",
+        lambda max_attempts=3: 0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "suspend_exhausted_europe_fit_assessments",
+        lambda max_attempts=3: 0,
+        raising=False,
+    )
 
 
 def test_sync_hot_posts_fetches_until_target_count(monkeypatch):
@@ -232,6 +251,44 @@ def test_video_analysis_queue_tick_once_defaults_to_560_second_window_with_hard_
     assert captured["limit"] is None
 
 
+def test_video_analysis_queue_tick_once_pauses_automatic_after_rate_limit_until_manual(monkeypatch):
+    events = []
+    rate_limited_run = {
+        "id": 91,
+        "started_at": datetime(2026, 5, 18, 10, 0, 0),
+        "finished_at": datetime(2026, 5, 18, 10, 0, 40),
+        "summary": {"stop_reason": "rate_limited", "rate_limit_circuit_break": True},
+    }
+
+    monkeypatch.setattr(scheduler, "_take_over_video_analysis_queue_singleton", lambda: {})
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_run", lambda task_code: rate_limited_run)
+    monkeypatch.setattr(
+        scheduler.scheduled_tasks,
+        "start_run",
+        lambda task_code: (_ for _ in ()).throw(AssertionError("automatic tick must not start")),
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "process_video_analysis_queue",
+        lambda **kwargs: events.append(("process", kwargs)) or {"scanned": 1, "done": 1, "failed": 0},
+    )
+
+    automatic_summary = scheduler.video_analysis_queue_tick_once()
+
+    assert automatic_summary["skipped"] is True
+    assert automatic_summary["reason"] == "rate_limit_manual_required"
+    assert automatic_summary["previous_rate_limited_run_id"] == 91
+    assert events == []
+
+    monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 101)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
+
+    manual_summary = scheduler.video_analysis_queue_tick_once(respect_rate_limit_circuit=False)
+
+    assert manual_summary == {"scanned": 1, "done": 1, "failed": 0}
+    assert events[0][0] == "process"
+
+
 def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatch):
     started_at = datetime(2026, 5, 14, 10, 0, 0)
     events = []
@@ -245,12 +302,12 @@ def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatc
     monkeypatch.setattr(
         scheduler.store,
         "reset_running_video_copyability_analyses",
-        lambda: events.append(("reset_us",)) or 2,
+        lambda max_attempts=3: events.append(("reset_us", max_attempts)) or 2,
     )
     monkeypatch.setattr(
         scheduler.store,
         "reset_running_europe_fit_assessments",
-        lambda: events.append(("reset_europe",)) or 3,
+        lambda max_attempts=3: events.append(("reset_europe", max_attempts)) or 3,
     )
     monkeypatch.setattr(
         scheduler.scheduled_tasks,
@@ -282,8 +339,8 @@ def test_video_analysis_queue_tick_once_replaces_previous_running_run(monkeypatc
     assert summary["running_run_replaced"] == 33
     assert summary["running_us_copyability_reset"] == 2
     assert summary["running_europe_fit_reset"] == 3
-    assert events[0] == ("reset_us",)
-    assert events[1] == ("reset_europe",)
+    assert events[0] == ("reset_us", scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS)
+    assert events[1] == ("reset_europe", scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS)
     assert events[2][0] == "finish"
     assert events[2][2]["status"] == "failed"
     assert events[3] == ("start", scheduler.VIDEO_ANALYSIS_QUEUE_TASK_CODE)
@@ -552,6 +609,52 @@ def test_process_video_analysis_queue_rebuilds_both_queues_before_selecting_item
     assert events[:3] == [("ensure_us",), ("ensure_europe",), ("select_us", 1)]
 
 
+def test_process_video_analysis_queue_suspends_exhausted_rows_before_selecting_items(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "resolve_billing_user_id",
+        lambda user_id=None: (_ for _ in ()).throw(AssertionError("empty queue should not resolve billing user")),
+    )
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: events.append(("ensure_us",)) or 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: events.append(("ensure_europe",)) or 0)
+    monkeypatch.setattr(
+        scheduler.store,
+        "suspend_exhausted_video_copyability_analyses",
+        lambda max_attempts=3: events.append(("suspend_us", max_attempts)) or 2,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "suspend_exhausted_europe_fit_assessments",
+        lambda max_attempts=3: events.append(("suspend_europe", max_attempts)) or 1,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: events.append(("select_us", limit)) or [],
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: events.append(("select_europe", limit)) or [],
+    )
+
+    summary = scheduler.process_video_analysis_queue(limit=2, user_id=7, run_id=42)
+
+    assert summary["exhausted_us_copyability_suspended"] == 2
+    assert summary["exhausted_europe_fit_suspended"] == 1
+    assert summary["scanned"] == 0
+    assert events == [
+        ("ensure_us",),
+        ("ensure_europe",),
+        ("suspend_us", scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS),
+        ("suspend_europe", scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS),
+        ("select_us", 1),
+        ("select_europe", 1),
+    ]
+
+
 def test_process_video_analysis_queue_stops_when_run_is_superseded(monkeypatch):
     events = []
     latest_calls = []
@@ -773,6 +876,70 @@ def test_process_video_analysis_queue_hard_timeout_counts_as_us_failure(monkeypa
     assert events[1][2]["result"] == {}
     assert events[1][2]["status_override"] == "failed"
     assert "timed out" in events[1][2]["error_message"]
+
+
+def test_process_video_analysis_queue_stops_round_after_first_timeout(monkeypatch):
+    events = []
+    rows = [
+        {
+            "analysis_id": 1,
+            "hot_post_id": 10,
+            "local_video_path": "us-a.mp4",
+            "analysis_status": "pending",
+            "attempts": 0,
+            "last_error": None,
+        },
+        {
+            "analysis_id": 2,
+            "hot_post_id": 11,
+            "local_video_path": "us-b.mp4",
+            "analysis_status": "pending",
+            "attempts": 0,
+            "last_error": None,
+        },
+    ]
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 2)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_video_copyability_analyses",
+        lambda limit: [rows.pop(0)] if rows else [],
+    )
+    monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
+    monkeypatch.setattr(scheduler.store, "mark_video_copyability_running", lambda analysis_id: events.append(("mark", analysis_id)))
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_video_copyability_analysis",
+        lambda analysis_id, **kwargs: events.append(("finish", analysis_id, kwargs)),
+    )
+
+    def slow_analyze(row, user_id=None):
+        events.append(("analyze", row["analysis_id"]))
+        time.sleep(0.5)
+        return {"overall_score": 88}
+
+    monkeypatch.setattr(scheduler.video_copyability, "analyze_video_copyability", slow_analyze)
+
+    started = time.monotonic()
+    summary = scheduler.process_video_analysis_queue(
+        limit=2,
+        user_id=7,
+        run_id=42,
+        per_item_timeout_seconds=0.01,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.25
+    assert summary["scanned"] == 1
+    assert summary["failed"] == 1
+    assert summary["timed_out"] == 1
+    assert summary["timeout_circuit_break"] is True
+    assert summary["stop_reason"] == "timed_out"
+    assert [event for event in events if event[0] == "mark"] == [("mark", 1)]
+    assert [event for event in events if event[0] == "analyze"] == [("analyze", 1)]
 
 
 def test_process_video_analysis_queue_hard_timeout_suspends_third_europe_attempt(monkeypatch):

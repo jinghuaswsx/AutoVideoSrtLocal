@@ -56,6 +56,7 @@ SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT = 22
 SCHEDULED_VIDEO_ANALYSIS_PER_ITEM_TIMEOUT_SECONDS = 40
 SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS = 3
 SCHEDULED_VIDEO_ANALYSIS_RATE_LIMIT_STOP_THRESHOLD = 1
+SCHEDULED_VIDEO_ANALYSIS_TIMEOUT_STOP_THRESHOLD = 1
 MANUAL_CATCH_UP_DELAY_SECONDS = 10
 
 SleepFn = Callable[[float], None]
@@ -589,8 +590,12 @@ def _take_over_video_analysis_queue_singleton() -> dict[str, Any]:
         return {}
     age_seconds = _running_age_seconds(running)
     running_id = int(running["id"])
-    us_reset_count = store.reset_running_video_copyability_analyses()
-    europe_reset_count = store.reset_running_europe_fit_assessments()
+    us_reset_count = store.reset_running_video_copyability_analyses(
+        max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
+    )
+    europe_reset_count = store.reset_running_europe_fit_assessments(
+        max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
+    )
     scheduled_tasks.finish_run(
         running_id,
         status="failed",
@@ -809,6 +814,9 @@ def _video_analysis_queue_summary(queued_us: int, queued_eu: int = 0) -> dict[st
     return {
         "queued_us_copyability": queued_us,
         "queued_europe_fit": queued_eu,
+        "exhausted_suspended": 0,
+        "exhausted_us_copyability_suspended": 0,
+        "exhausted_europe_fit_suspended": 0,
         "scanned": 0,
         "done": 0,
         "failed": 0,
@@ -951,6 +959,39 @@ def _should_stop_video_analysis_queue_for_rate_limit(summary: dict[str, Any]) ->
     return True
 
 
+def _should_stop_video_analysis_queue_for_timeout(summary: dict[str, Any]) -> bool:
+    threshold = max(0, int(SCHEDULED_VIDEO_ANALYSIS_TIMEOUT_STOP_THRESHOLD))
+    if threshold <= 0:
+        return False
+    if int(summary.get("timed_out") or 0) < threshold:
+        return False
+    summary["timeout_circuit_break"] = True
+    summary["stop_reason"] = "timed_out"
+    return True
+
+
+def _latest_video_analysis_queue_rate_limit_pause() -> dict[str, Any] | None:
+    try:
+        latest = scheduled_tasks.latest_run(VIDEO_ANALYSIS_QUEUE_TASK_CODE)
+    except Exception:
+        log.warning("failed to inspect latest video analysis queue run", exc_info=True)
+        return None
+    if not latest or str(latest.get("status") or "") == "running":
+        return None
+    summary = latest.get("summary") or {}
+    if not isinstance(summary, dict):
+        return None
+    if summary.get("stop_reason") != "rate_limited" and not summary.get("rate_limit_circuit_break"):
+        return None
+    return {
+        "skipped": True,
+        "reason": "rate_limit_manual_required",
+        "previous_rate_limited_run_id": latest.get("id"),
+        "previous_rate_limited_started_at": latest.get("started_at"),
+        "previous_rate_limited_finished_at": latest.get("finished_at"),
+    }
+
+
 def process_video_analysis_queue(
     *,
     max_duration_seconds: int = SCHEDULED_VIDEO_ANALYSIS_QUEUE_MAX_DURATION_SECONDS,
@@ -964,6 +1005,21 @@ def process_video_analysis_queue(
     queued_us = int(store.ensure_video_copyability_candidates() or 0)
     queued_eu = int(store.ensure_europe_fit_candidates() or 0)
     summary: dict[str, Any] = _video_analysis_queue_summary(queued_us, queued_eu)
+    exhausted_us = int(
+        store.suspend_exhausted_video_copyability_analyses(
+            max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
+        )
+        or 0
+    )
+    exhausted_eu = int(
+        store.suspend_exhausted_europe_fit_assessments(
+            max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
+        )
+        or 0
+    )
+    summary["exhausted_us_copyability_suspended"] = exhausted_us
+    summary["exhausted_europe_fit_suspended"] = exhausted_eu
+    summary["exhausted_suspended"] = exhausted_us + exhausted_eu
     billing_user_id: int | None = None
     round_start = time.monotonic()
     processed = 0
@@ -1125,6 +1181,8 @@ def process_video_analysis_queue(
                 )
                 summary["done"] += 1
                 summary[f"{task_type}_done"] += 1
+        if _should_stop_video_analysis_queue_for_timeout(summary):
+            break
         if _should_stop_video_analysis_queue_for_rate_limit(summary):
             break
         if safe_limit is not None and processed >= safe_limit:
@@ -1142,8 +1200,14 @@ def video_analysis_queue_tick_once(
     user_id: int | None = None,
     per_item_delay_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_QUEUE_DELAY_SECONDS,
     per_item_timeout_seconds: float | int | str | None = SCHEDULED_VIDEO_ANALYSIS_PER_ITEM_TIMEOUT_SECONDS,
+    respect_rate_limit_circuit: bool = True,
 ) -> dict[str, Any]:
     guard_summary = _take_over_video_analysis_queue_singleton()
+    if respect_rate_limit_circuit:
+        pause_summary = _latest_video_analysis_queue_rate_limit_pause()
+        if pause_summary:
+            pause_summary.update(guard_summary)
+            return pause_summary
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(VIDEO_ANALYSIS_QUEUE_TASK_CODE)

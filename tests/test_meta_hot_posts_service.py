@@ -194,7 +194,11 @@ def test_build_europe_fit_response_runs_unified_video_queue_with_current_user(mo
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert result.payload["result"] == {"scanned": 3, "done": 3, "failed": 0}
-    assert captured == {"limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, "user_id": 7}
+    assert captured == {
+        "limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT,
+        "user_id": 7,
+        "respect_rate_limit_circuit": False,
+    }
 
 
 def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
@@ -216,7 +220,11 @@ def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
     assert result.status_code == 202
     assert result.payload["ok"] is True
     assert result.payload["result"] == {"scanned": 2, "done": 2, "failed": 0}
-    assert captured == {"limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, "user_id": 7}
+    assert captured == {
+        "limit": scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT,
+        "user_id": 7,
+        "respect_rate_limit_circuit": False,
+    }
 
 
 def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):

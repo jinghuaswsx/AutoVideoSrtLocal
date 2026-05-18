@@ -630,6 +630,24 @@ def test_restore_video_copyability_analysis_state_only_updates_running_row():
     assert params == ("failed", 2, "old failure", 78)
 
 
+def test_suspend_exhausted_video_copyability_analyses_quarantines_pending_or_failed_rows():
+    calls = []
+
+    result = store.suspend_exhausted_video_copyability_analyses(
+        max_attempts=3,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 2,
+    )
+
+    sql, params = calls[0]
+    assert result == 2
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in sql
+    assert "SET status='suspended'" in sql
+    assert "status IN ('pending', 'failed')" in sql
+    assert "attempts >= %s" in sql
+    assert "attempts exhausted; suspended by queue guard" in sql
+    assert params == (3,)
+
+
 def test_reset_running_video_copyability_analyses_requeues_for_takeover():
     calls = []
 
@@ -640,10 +658,11 @@ def test_reset_running_video_copyability_analyses_requeues_for_takeover():
     sql, params = calls[0]
     assert result == 4
     assert "UPDATE meta_hot_post_video_copyability_analyses" in sql
-    assert "status='pending'" in sql
+    assert "status=CASE WHEN attempts >= %s THEN 'suspended' ELSE 'pending' END" in sql
     assert "status='running'" in sql
     assert "superseded by a new run" in sql
-    assert params == ()
+    assert "attempts exhausted; suspended by queue guard" in sql
+    assert params == (3, 3)
 
 
 def test_list_top_video_copyability_analyses_orders_best_50():
@@ -771,6 +790,24 @@ def test_restore_europe_fit_assessment_state_only_updates_running_row():
     assert params == ("failed", 1, "old europe failure", 78)
 
 
+def test_suspend_exhausted_europe_fit_assessments_quarantines_pending_or_failed_rows():
+    calls = []
+
+    result = store.suspend_exhausted_europe_fit_assessments(
+        max_attempts=3,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "UPDATE meta_hot_post_europe_assessments" in sql
+    assert "SET status='suspended'" in sql
+    assert "status IN ('pending', 'failed')" in sql
+    assert "attempts >= %s" in sql
+    assert "attempts exhausted; suspended by queue guard" in sql
+    assert params == (3,)
+
+
 def test_reset_running_europe_fit_assessments_requeues_for_takeover():
     calls = []
 
@@ -781,10 +818,11 @@ def test_reset_running_europe_fit_assessments_requeues_for_takeover():
     sql, params = calls[0]
     assert result == 3
     assert "UPDATE meta_hot_post_europe_assessments" in sql
-    assert "status='pending'" in sql
+    assert "status=CASE WHEN attempts >= %s THEN 'suspended' ELSE 'pending' END" in sql
     assert "status='running'" in sql
     assert "superseded by a new run" in sql
-    assert params == ()
+    assert "attempts exhausted; suspended by queue guard" in sql
+    assert params == (3, 3)
 
 
 def test_list_top_europe_fit_materials_orders_by_score():

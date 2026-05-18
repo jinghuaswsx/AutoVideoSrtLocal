@@ -842,6 +842,27 @@ def restore_video_copyability_analysis_state(
     )
 
 
+def suspend_exhausted_video_copyability_analyses(
+    *,
+    max_attempts: int = 3,
+    execute_fn: ExecuteFn = _execute_rowcount,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status='suspended',
+            last_error=CASE
+              WHEN last_error IS NULL OR TRIM(last_error) = ''
+                THEN 'video copyability attempts exhausted; suspended by queue guard'
+              ELSE last_error
+            END
+        WHERE status IN ('pending', 'failed')
+          AND attempts >= %s
+        """,
+        (int(max_attempts),),
+    )
+
+
 def reset_stale_running_video_copyability_analyses(
     *,
     older_than_seconds: int = 3600,
@@ -859,15 +880,22 @@ def reset_stale_running_video_copyability_analyses(
     )
 
 
-def reset_running_video_copyability_analyses(*, execute_fn: ExecuteFn = execute) -> int:
+def reset_running_video_copyability_analyses(
+    *,
+    max_attempts: int = 3,
+    execute_fn: ExecuteFn = execute,
+) -> int:
     return execute_fn(
         """
         UPDATE meta_hot_post_video_copyability_analyses
-        SET status='pending',
-            last_error='video analysis queue superseded by a new run'
+        SET status=CASE WHEN attempts >= %s THEN 'suspended' ELSE 'pending' END,
+            last_error=CASE
+              WHEN attempts >= %s THEN 'video copyability attempts exhausted; suspended by queue guard'
+              ELSE 'video analysis queue superseded by a new run'
+            END
         WHERE status='running'
         """,
-        (),
+        (int(max_attempts), int(max_attempts)),
     )
 
 
@@ -1080,15 +1108,43 @@ def restore_europe_fit_assessment_state(
     )
 
 
-def reset_running_europe_fit_assessments(*, execute_fn: ExecuteFn = execute) -> int:
+def suspend_exhausted_europe_fit_assessments(
+    *,
+    max_attempts: int = 3,
+    execute_fn: ExecuteFn = _execute_rowcount,
+) -> int:
     return execute_fn(
         """
         UPDATE meta_hot_post_europe_assessments
-        SET status='pending',
-            last_error='Europe fit assessment superseded by a new run'
+        SET status='suspended',
+            last_error=CASE
+              WHEN last_error IS NULL OR TRIM(last_error) = ''
+                THEN 'Europe fit attempts exhausted; suspended by queue guard'
+              ELSE last_error
+            END
+        WHERE status IN ('pending', 'failed')
+          AND attempts >= %s
+        """,
+        (int(max_attempts),),
+    )
+
+
+def reset_running_europe_fit_assessments(
+    *,
+    max_attempts: int = 3,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET status=CASE WHEN attempts >= %s THEN 'suspended' ELSE 'pending' END,
+            last_error=CASE
+              WHEN attempts >= %s THEN 'Europe fit attempts exhausted; suspended by queue guard'
+              ELSE 'Europe fit assessment superseded by a new run'
+            END
         WHERE status='running'
         """,
-        (),
+        (int(max_attempts), int(max_attempts)),
     )
 
 

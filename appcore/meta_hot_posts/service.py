@@ -510,6 +510,7 @@ def build_europe_fit_response(payload: Mapping[str, Any] | None = None) -> MetaH
             "result": scheduler.video_analysis_queue_tick_once(
                 limit=max(1, min(scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, limit)),
                 user_id=user_id,
+                respect_rate_limit_circuit=False,
             ),
         },
         202,
@@ -534,6 +535,7 @@ def build_video_copyability_response(payload: Mapping[str, Any] | None = None) -
             "result": scheduler.video_analysis_queue_tick_once(
                 limit=max(1, min(scheduler.SCHEDULED_VIDEO_ANALYSIS_QUEUE_LIMIT, limit)),
                 user_id=user_id,
+                respect_rate_limit_circuit=False,
             ),
         },
         202,
