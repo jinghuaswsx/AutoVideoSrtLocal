@@ -67,7 +67,8 @@
   }
 
   function profileLabel(profile, manualPct) {
-    if (profile === "voice_only") return "清除背景";
+    if (profile === "clean_background") return "清除电音";
+    if (profile === "voice_only") return "只保留配音";
     if (profile === "bg_boost") return "增强背景";
     if (profile === "manual_boost") return "手动 +" + manualPct + "%";
     return "标准";
@@ -276,7 +277,7 @@
     if (API_BASE !== "/api/omni-translate") return "";
     var profileItems = [
       { profile: "standard", label: "标准", hint: "按当前背景音量混入，优先保证配音清晰。" },
-      { profile: "voice_only", label: "清除背景", hint: "成品 mp4 只保留配音，去掉 BGM/电音。" },
+      { profile: "clean_background", label: "清除电音", hint: "先压制电子伪影，再保留可用背景音混入成品。" },
       { profile: "bg_boost", label: "增强背景", hint: "自动提高 BGM/环境音，最高 1.8，避免盖住配音。" },
       { profile: "manual_boost", label: "手动调整", hint: "按所选比例提高背景音，最高 1.8。" },
     ];

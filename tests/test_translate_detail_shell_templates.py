@@ -178,8 +178,8 @@ def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
 
     assert "loudness-profile-controls" in separation
     assert "标准" in separation
-    assert "清除背景" in separation
-    assert "voice_only" in separation
+    assert "清除电音" in separation
+    assert "clean_background" in separation
     assert "增强背景" in separation
     assert "手动调整" in separation
     assert "manualBoostModal" in separation

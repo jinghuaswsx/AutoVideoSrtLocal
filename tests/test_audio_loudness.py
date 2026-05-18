@@ -15,6 +15,7 @@ import pytest
 from appcore.audio_loudness import (
     EBUR128_FLOOR,
     SILENCE_LUFS_THRESHOLD,
+    clean_electronic_background,
     is_likely_silence,
     measure_integrated_lufs,
     mix_with_background,
@@ -145,6 +146,21 @@ def test_mix_with_background_first_duration_truncates_to_main(tmp_path):
     )
     duration = float(proc.stdout.strip())
     assert 2.8 <= duration <= 3.3
+
+
+def test_clean_electronic_background_outputs_file_with_expected_duration(tmp_path):
+    src = _gen_sine(tmp_path / "electric.wav", gain_db=-18.0, duration=4.0, freq=3200)
+
+    out = clean_electronic_background(str(src), str(tmp_path / "clean.wav"))
+
+    assert os.path.isfile(out)
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", out],
+        check=True, capture_output=True, text=True,
+    )
+    duration = float(proc.stdout.strip())
+    assert 3.8 <= duration <= 4.2
 
 
 def test_mix_with_missing_main_raises(tmp_path):
