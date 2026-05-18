@@ -1006,11 +1006,17 @@ def process_video_analysis_queue(
                 )
             except VideoAnalysisItemTimeout as exc:
                 log.warning("meta hot post US copyability analysis timed out id=%s: %s", analysis_id, exc)
-                store.restore_video_copyability_analysis_state(analysis_id, **original_state)
+                status_override = _failure_status_for_attempt(attempt_number)
+                store.finish_video_copyability_analysis(
+                    analysis_id,
+                    result={},
+                    error_message=str(exc)[:1000],
+                    status_override=status_override,
+                )
                 _record_video_analysis_failure(
                     summary,
                     task_type=task_type,
-                    status=original_state["status"],
+                    status=status_override,
                     timed_out=True,
                 )
             except Exception as exc:
@@ -1065,11 +1071,18 @@ def process_video_analysis_queue(
                 )
             except VideoAnalysisItemTimeout as exc:
                 log.warning("meta hot post Europe fit assessment timed out id=%s: %s", post_id, exc)
-                store.restore_europe_fit_assessment_state(post_id, **original_state)
+                status = _failure_status_for_attempt(attempt_number)
+                store.finish_europe_fit_assessment(
+                    post_id,
+                    status=status,
+                    result={},
+                    video_optimization={},
+                    error_message=str(exc)[:1000],
+                )
                 _record_video_analysis_failure(
                     summary,
                     task_type=task_type,
-                    status=original_state["status"],
+                    status=status,
                     timed_out=True,
                 )
             except Exception as exc:

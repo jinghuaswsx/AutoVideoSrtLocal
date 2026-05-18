@@ -76,16 +76,16 @@ Register one APScheduler job:
 - per-item timeout: 40 seconds
 - rate-limit circuit breaker: the first 429 / quota error stops the current round
 
-The per-item timeout applies to the whole item worker, including video preparation and the LLM request. The queue must not call the row-specific finish method for the timed-out item, because the worker may still finish later and must not overwrite the persisted analysis row. A timed-out item therefore keeps its pre-run status and attempt count.
+The per-item timeout applies to the whole item worker, including video preparation and the LLM request. The queue stops waiting for the worker after 40 seconds, records the timeout in the scheduled-task summary, and marks the row as one failed attempt through the normal finish path. The worker may still finish later, but the queue must not wait for it or write a later success result from that worker.
 
 ## Retry And Suspension
 
-Both task types keep row status unchanged until the item succeeds or fails before the timeout.
+Both task types count an attempt when an item is marked `running`.
 
 - Before invoking an analyzer, the queue records the row's original status and attempt count.
 - If the item succeeds before timeout, the queue writes the normal `done` result.
-- If the item fails before timeout with a non-rate-limit error, the queue may write `failed` / `suspended` using the existing attempt policy.
-- If the item times out, the queue restores the row to its original status and attempt count and records timeout only in the scheduled-task summary.
+- If the item fails before timeout with a non-rate-limit error, the queue writes `failed` / `suspended` using the existing attempt policy.
+- If the item times out, the queue writes `failed` / `suspended` using the existing attempt policy and records timeout in the scheduled-task summary. Timeout therefore counts toward the row's cumulative attempts.
 - If the item fails with 429 / quota / rate-limit, the queue restores the row to its original status and attempt count, records the rate-limit stop in the scheduled-task summary, and ends the current round immediately.
 
 Queue summaries include `timed_out`, `rate_limited`, `suspended`, `rate_limit_circuit_break`, and `stop_reason` counters/flags, plus task-type-specific counters, so follow-up monitoring can tune the safety interval based on real timeout and 429 rates.

@@ -712,7 +712,7 @@ def test_process_video_analysis_queue_rate_limit_restores_europe_state_and_stops
     ]
 
 
-def test_process_video_analysis_queue_hard_timeout_restores_us_state_without_finish(monkeypatch):
+def test_process_video_analysis_queue_hard_timeout_counts_as_us_failure(monkeypatch):
     events = []
     rows = [
         {
@@ -739,13 +739,13 @@ def test_process_video_analysis_queue_hard_timeout_restores_us_state_without_fin
     monkeypatch.setattr(
         scheduler.store,
         "restore_video_copyability_analysis_state",
-        lambda analysis_id, **kwargs: events.append(("restore", analysis_id, kwargs)),
+        lambda analysis_id, **kwargs: (_ for _ in ()).throw(AssertionError("timeout must count as failure")),
         raising=False,
     )
     monkeypatch.setattr(
         scheduler.store,
         "finish_video_copyability_analysis",
-        lambda analysis_id, **kwargs: (_ for _ in ()).throw(AssertionError("timeout must not finish row")),
+        lambda analysis_id, **kwargs: events.append(("finish", analysis_id, kwargs)),
     )
 
     def slow_analyze(row, user_id=None):
@@ -768,10 +768,76 @@ def test_process_video_analysis_queue_hard_timeout_restores_us_state_without_fin
     assert summary["failed"] == 1
     assert summary["timed_out"] == 1
     assert summary["us_copyability_timed_out"] == 1
-    assert events == [
-        ("mark", 1),
-        ("restore", 1, {"status": "pending", "attempts": 0, "last_error": None}),
+    assert events[0] == ("mark", 1)
+    assert events[1][0:2] == ("finish", 1)
+    assert events[1][2]["result"] == {}
+    assert events[1][2]["status_override"] == "failed"
+    assert "timed out" in events[1][2]["error_message"]
+
+
+def test_process_video_analysis_queue_hard_timeout_suspends_third_europe_attempt(monkeypatch):
+    events = []
+    rows = [
+        {
+            "id": 21,
+            "local_video_path": "eu-a.mp4",
+            "europe_fit_status": "failed",
+            "europe_fit_attempts": 2,
+            "europe_fit_last_error": "old europe failure",
+        }
     ]
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: {"id": 42})
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 1)
+    monkeypatch.setattr(scheduler.store, "next_pending_video_copyability_analyses", lambda limit: [])
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_europe_fit_materials",
+        lambda limit: [rows.pop(0)] if rows else [],
+    )
+    monkeypatch.setattr(scheduler.store, "mark_europe_fit_running", lambda post_id: events.append(("mark", post_id)))
+    monkeypatch.setattr(
+        scheduler.store,
+        "restore_europe_fit_assessment_state",
+        lambda post_id, **kwargs: (_ for _ in ()).throw(AssertionError("timeout must count as failure")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_europe_fit_assessment",
+        lambda post_id, **kwargs: events.append(("finish", post_id, kwargs)),
+    )
+
+    def slow_analyze(row, user_id=None):
+        time.sleep(0.5)
+        return {"suitability_score": 88, "video_optimization": {}}
+
+    monkeypatch.setattr(scheduler.europe_fit, "assess_material", slow_analyze)
+
+    started = time.monotonic()
+    summary = scheduler.process_video_analysis_queue(
+        limit=1,
+        user_id=7,
+        run_id=42,
+        per_item_timeout_seconds=0.01,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.25
+    assert summary["scanned"] == 1
+    assert summary["failed"] == 1
+    assert summary["suspended"] == 1
+    assert summary["timed_out"] == 1
+    assert summary["europe_fit_timed_out"] == 1
+    assert summary["europe_fit_suspended"] == 1
+    assert events[0] == ("mark", 21)
+    assert events[1][0:2] == ("finish", 21)
+    assert events[1][2]["status"] == "suspended"
+    assert events[1][2]["result"] == {}
+    assert events[1][2]["video_optimization"] == {}
+    assert "timed out" in events[1][2]["error_message"]
 
 
 def test_process_video_analysis_queue_suspends_after_third_us_attempt(monkeypatch):
