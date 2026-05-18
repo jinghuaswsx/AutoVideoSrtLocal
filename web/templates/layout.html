@@ -729,9 +729,17 @@
         <span class="nav-icon">🔍</span> 选品中心
       </a>
       {% endif %}
+      {% set task_group_href = "" %}
+      {% if has_permission('raw_video_pool') %}
+        {% set task_group_href = "/raw-video-pool/" %}
+      {% elif has_permission('task_center') %}
+        {% set task_group_href = "/tasks/" %}
+      {% elif has_permission('bulk_translate_admin') %}
+        {% set task_group_href = url_for('bulk_translate_pages.admin_tasks_page') %}
+      {% endif %}
       {% if has_permission('raw_video_pool') or has_permission('task_center') or has_permission('bulk_translate_admin') %}
       <details class="sidebar-group sidebar-task-group" {% if task_group_active %}open{% endif %}>
-        <summary {% if task_group_active %}class="active"{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ task_group_href }}" data-default-target="_blank" {% if task_group_active %}class="active"{% endif %}>
           <span class="nav-icon">📋</span>
           <span class="nav-label">任务中心</span>
           <span class="sidebar-group-caret">⌄</span>
