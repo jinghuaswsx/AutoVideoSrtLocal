@@ -249,6 +249,32 @@ def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     assert "estimated_cost_cny" not in state["audit_events"][0]["detail"]
 
 
+def test_create_stores_task_center_child_id(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", lang="de", ref={"source_raw_id": 301}),
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1},
+        raw_source_ids=[301],
+        task_center_task_id=456,
+    )
+
+    state = json.loads(fake_db.rows[task_id]["state_json"])
+    assert state["task_center_task_id"] == 456
+
+
 def test_compute_progress_counts_new_statuses(runtime_env):
     mod, _fake_db = runtime_env
 
@@ -2019,6 +2045,49 @@ def test_sync_child_result_refreshes_video_covers_for_any_translation_kind(runti
     )
 
     assert refreshed == [(77, "de")]
+
+
+def test_sync_child_result_passes_task_center_child_id_to_video_backfill(runtime_env, monkeypatch):
+    mod, _fake_db = runtime_env
+    captured = {}
+
+    monkeypatch.setattr(
+        mod,
+        "_materialize_multi_translate_video",
+        lambda **kwargs: "1/medias/77/de_result.mp4",
+    )
+    monkeypatch.setattr(
+        mod,
+        "_materialize_multi_translate_cover",
+        lambda **kwargs: "1/medias/77/de_cover.png",
+    )
+    monkeypatch.setattr(
+        mod,
+        "sync_video_result",
+        lambda **kwargs: captured.update(kwargs) or 701,
+    )
+    monkeypatch.setattr(
+        mod,
+        "refresh_translated_video_item_covers_for_scope",
+        lambda product_id, lang: 1,
+    )
+
+    mod._sync_child_result(
+        "bt-1",
+        {
+            "kind": "videos",
+            "lang": "de",
+            "child_task_id": "video-child",
+            "ref": {"source_raw_id": 301},
+        },
+        {"product_id": 77, "task_center_task_id": 456},
+        {"_project_status": "done"},
+    )
+
+    assert captured["task_center_task_id"] == 456
+    assert captured["parent_task_id"] == "bt-1"
+    assert captured["product_id"] == 77
+    assert captured["source_raw_id"] == 301
 
 
 # ---------------------------------------------------------------------------

@@ -742,6 +742,13 @@ let mkiXiaoResolve = null;
 let mkiXiaoTranslatorsCache = null;
 let mkiXiaoLangsCache = null;
 
+function mkiXiaoLangCode(lang) {
+  if (lang && typeof lang === 'object') {
+    return String(lang.code || '').trim().toUpperCase();
+  }
+  return String(lang || '').trim().toUpperCase();
+}
+
 async function mkiXiaoOpenModal() {
   // Load translators
   if (!mkiXiaoTranslatorsCache) {
@@ -768,8 +775,10 @@ async function mkiXiaoOpenModal() {
   }
   var langsDiv = document.getElementById('mkiXiaoLangs');
   langsDiv.innerHTML = mkiXiaoLangsCache.map(function(l) {
+    var code = mkiXiaoLangCode(l);
+    if (!code) return '';
     return '<label style="display:inline-flex; align-items:center; gap:2px; font-size:13px; cursor:pointer; padding:2px 6px; border:1px solid var(--oc-border); border-radius:4px; user-select:none;">'
-      + '<input type="checkbox" value="' + escapeHtml(l) + '" style="margin:0;"> ' + escapeHtml(l) + '</label>';
+      + '<input type="checkbox" value="' + escapeHtml(code) + '" style="margin:0;"> ' + escapeHtml(code) + '</label>';
   }).join('');
 
   document.getElementById('mkiXiaoModal').style.display = 'block';

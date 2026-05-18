@@ -60,6 +60,18 @@ def _coerce_raw_ids(raw_ids) -> tuple[list[int], ProductTranslateResult | None]:
         return [], _validation_error("raw_ids must be integers")
 
 
+def _coerce_task_center_task_id(raw_value) -> tuple[int | None, ProductTranslateResult | None]:
+    if raw_value in (None, ""):
+        return None, None
+    try:
+        task_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None, _validation_error("task_center_task_id must be a positive integer")
+    if task_id <= 0:
+        return None, _validation_error("task_center_task_id must be a positive integer")
+    return task_id, None
+
+
 def build_product_translate_response(result: ProductTranslateResult) -> ProductTranslateResponse:
     if not result.ok:
         return ProductTranslateResponse(
@@ -117,11 +129,18 @@ def start_product_translation(
     raw_ids = body.get("raw_ids") or []
     target_langs = body.get("target_langs") or []
     content_types = body.get("content_types") or list(DEFAULT_CONTENT_TYPES)
+    task_center_task_id, task_center_error = _coerce_task_center_task_id(
+        body.get("task_center_task_id")
+    )
+    if task_center_error:
+        return task_center_error
 
     if ("videos" in content_types or "video_covers" in content_types) and not raw_ids:
         return _validation_error("raw_ids 不能为空")
     if not target_langs:
         return _validation_error("target_langs 不能为空")
+    if task_center_task_id is not None and len(target_langs) != 1:
+        return _validation_error("task_center_task_id requires exactly one target_lang")
 
     if not isinstance(content_types, list) or not content_types:
         return _validation_error("content_types 不能为空")
@@ -160,6 +179,7 @@ def start_product_translation(
         video_params=body.get("video_params") or {},
         initiator=initiator,
         raw_source_ids=raw_ids_int,
+        task_center_task_id=task_center_task_id,
     )
     bulk_translate_runtime.start_task(task_id, user_id)
     start_bulk_scheduler_background(

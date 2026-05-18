@@ -131,6 +131,7 @@ def _serialize_row(row: dict) -> dict:
     cover_url = _item_cover_url(item_id, row)
     return {
         "id": item_id,
+        "task_id": row.get("task_id"),
         "product_id": row["product_id"],
         "product_name": row.get("product_name"),
         "product_code": row.get("product_code"),
