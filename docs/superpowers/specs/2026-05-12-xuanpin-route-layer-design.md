@@ -22,6 +22,7 @@
 ## 验收
 
 - `/xuanpin/mk`、`/xuanpin/new-products`、`/xuanpin/tabcut` 管理员可访问，普通用户禁止访问。
+- `/xuanpin/meta-hot-posts` 管理员或拥有 `meta_hot_posts` 权限的分析用户可访问；分析用户登录首页应落到 `/xuanpin/meta-hot-posts`，不能先跳到 admin-only 的 `/xuanpin/mk`。
 - 旧页面地址自动跳到新地址。
 - `/xuanpin/api/*` 与旧 API 行为一致。
-- 左侧“选品中心”菜单链接到 `/xuanpin/mk`，新旧相关页面都能高亮。
+- 左侧“选品中心”菜单按当前用户可访问的第一个子页决定默认链接：有 `mk_selection` 时链接到 `/xuanpin/mk`，仅有 `meta_hot_posts` 时链接到 `/xuanpin/meta-hot-posts`；新旧相关页面都能高亮。

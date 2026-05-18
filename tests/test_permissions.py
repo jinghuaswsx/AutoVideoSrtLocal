@@ -139,7 +139,8 @@ def test_default_permissions_for_translator():
 
 def test_default_permissions_for_analyst():
     perms = default_permissions_for_role(ROLE_ANALYST)
-    assert perms["mk_selection"] is True
+    assert perms["meta_hot_posts"] is True
+    assert perms["mk_selection"] is False
     assert perms["user_settings"] is True
     # 分析用户不应该有其他权限
     assert perms["omni_translate"] is False
@@ -153,8 +154,9 @@ def test_user_analyst_default_permissions():
     u = User(_make_row(ROLE_ANALYST))
     assert u.is_superadmin is False
     assert u.is_admin is False
-    # 分析用户应该能访问选品中心
-    assert u.has_permission("mk_selection") is True
+    # 分析用户应该只能访问 Meta 热帖选品入口
+    assert u.has_permission("meta_hot_posts") is True
+    assert u.has_permission("mk_selection") is False
     assert u.has_permission("user_settings") is True
     # 分析用户不应该有翻译权限
     assert u.has_permission("omni_translate") is False

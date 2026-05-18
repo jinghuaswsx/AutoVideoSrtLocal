@@ -44,6 +44,38 @@ def test_xuanpin_root_redirects_to_mk(authed_client_no_db):
     assert resp.headers["Location"].endswith("/xuanpin/mk")
 
 
+def test_xuanpin_root_redirects_to_meta_hot_posts_when_mk_hidden(monkeypatch):
+    import json
+
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    from web.app import create_app
+
+    fake_user = {
+        "id": 7,
+        "username": "meta-worker",
+        "role": "user",
+        "is_active": 1,
+        "permissions": json.dumps({"meta_hot_posts": True, "mk_selection": False}),
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 7 else None)
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "7"
+        session["_fresh"] = True
+
+    resp = client.get("/xuanpin/")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/xuanpin/meta-hot-posts")
+
+
 def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

@@ -213,7 +213,8 @@ Gemini 分类必须走统一 LLM use case 和账单链路：
 权限：
 
 - 页面与 API 都需要登录。
-- 页面、刷新、分析入口需要 admin。
+- 页面、刷新、分析入口需要 admin 或 `meta_hot_posts` 权限。
+- `meta_hot_posts` 是独立菜单权限；分析用户默认只开放 Meta 热帖和用户设置，不开放明空 / TABCUT / 今日推荐等其它选品中心子页。
 
 页面交互：
 

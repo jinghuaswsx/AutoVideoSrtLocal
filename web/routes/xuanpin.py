@@ -15,8 +15,15 @@ def _is_admin() -> bool:
     )
 
 
+def _has_permission(code: str) -> bool:
+    checker = getattr(current_user, "has_permission", None)
+    if checker is None:
+        return False
+    return bool(checker(code))
+
+
 def _can_access_meta_hot_posts() -> bool:
-    return _is_admin() or getattr(current_user, "role", "") == "analyst"
+    return _is_admin() or _has_permission("meta_hot_posts")
 
 
 def _medias_routes():
@@ -52,7 +59,11 @@ def _meta_hot_posts():
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
-    return redirect(url_for("xuanpin.mk_selection_page"))
+    if _is_admin():
+        return redirect(url_for("xuanpin.mk_selection_page"))
+    if _can_access_meta_hot_posts():
+        return redirect(url_for("xuanpin.meta_hot_posts_page"))
+    abort(403)
 
 
 @bp.route("/mk", methods=["GET"])

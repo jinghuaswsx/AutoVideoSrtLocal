@@ -3,7 +3,7 @@
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
 - 四级角色：superadmin / admin / user / translator
-- 权限项粒度：菜单/页面级 + 任务能力位，共 27 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
+- 权限项粒度：菜单/页面级 + 任务能力位，共 28 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
@@ -68,6 +68,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("drawing_studio",        GROUP_BUSINESS,   "画图工作室",       True,  True),
     # B. 管理类
     ("mk_selection",          GROUP_MANAGEMENT, "选品中心",         True,  False),
+    ("meta_hot_posts",        GROUP_MANAGEMENT, "Meta 热帖选品",   True,  False),
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
     menu_permission("order_profit",          GROUP_MANAGEMENT, "订单利润核算"),
@@ -110,6 +111,7 @@ HOME_REDIRECT_ORDER = [
     ("image_translate",  "/image-translate"),
     ("drawing_studio",   "/drawing-studio/sso"),
     ("subtitle_removal", "/subtitle-removal"),
+    ("meta_hot_posts",   "/xuanpin/meta-hot-posts"),
     ("mk_selection",     "/xuanpin/mk"),
     ("task_center",      "/tasks/"),
     ("raw_video_pool",   "/raw-video-pool/"),
@@ -126,7 +128,7 @@ HOME_REDIRECT_ORDER = [
 ]
 
 _TRANSLATOR_TRUE_PERMISSIONS = {"omni_translate", "user_settings", "can_translate"}
-_ANALYST_TRUE_PERMISSIONS = {"mk_selection", "user_settings"}
+_ANALYST_TRUE_PERMISSIONS = {"meta_hot_posts", "user_settings"}
 
 
 def default_permissions_for_role(role: str) -> dict[str, bool]:
