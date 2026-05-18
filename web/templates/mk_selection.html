@@ -260,6 +260,16 @@ function safeExternalHref(value) {
   return escapeHtml(url);
 }
 
+function safeMediaSrc(value) {
+  const url = String(value ?? '').trim();
+  if (!url) return '';
+  if (/^\/(medias\/object|xuanpin\/api\/mk-media|xuanpin\/api\/mk-video)\?/i.test(url)) {
+    return escapeHtml(url);
+  }
+  if (/^https?:\/\//i.test(url)) return escapeHtml(url);
+  return '';
+}
+
 function productCodeFromUrl(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -537,7 +547,8 @@ function renderMkVideoMaterialCard(r) {
   const spends = Number(r.video_spends || 0);
   const heat = heatLevel(spends);
   const coverPath = normalizeMkMediaPath(r.video_image_path);
-  const coverUrl = coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
+  const localCoverUrl = safeMediaSrc(r.local_cover_url || '');
+  const coverUrl = localCoverUrl || (coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '');
   const videoPath = normalizeMkMediaPath(r.video_path);
   const videoUrl = videoPath ? '/xuanpin/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
   const videoName = escapeHtml(r.video_name || '未命名素材');

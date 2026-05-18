@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import appcore.mingkong_materials as mm
 
@@ -253,6 +254,93 @@ def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():
     assert rows[2]["is_new_top100_entry"] is False
 
 
+def test_select_mingkong_product_prefers_spend_over_video_count_after_exact_match():
+    items = [
+        {
+            "id": 1,
+            "product_links": ["https://shop.example/products/cool-widget"],
+            "videos": [
+                {"path": "uploads2/low-a.mp4", "spends": "1", "ads_count": 1},
+                {"path": "uploads2/low-b.mp4", "spends": "1", "ads_count": 1},
+                {"path": "uploads2/low-c.mp4", "spends": "1", "ads_count": 1},
+            ],
+        },
+        {
+            "id": 2,
+            "product_links": ["https://shop.example/products/cool-widget"],
+            "videos": [
+                {"path": "uploads2/high.mp4", "spends": "99", "ads_count": 9},
+            ],
+        },
+    ]
+
+    selected = mm._select_mingkong_product(items, "cool-widget")
+
+    assert selected["id"] == 2
+
+
+def test_cache_local_cover_for_material_writes_local_media_object():
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        content = b"cover-bytes"
+        headers = {"content-type": "image/jpeg"}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse()
+
+    writes = []
+
+    row = mm.cache_local_cover_for_material(
+        {
+            "material_key": "a" * 64,
+            "video_image_path": "./medias/uploads2/winner.jpg",
+        },
+        session=FakeSession(),
+        base_url="https://os.wedev.vip",
+        headers={"Authorization": "Bearer token"},
+        timeout_seconds=10,
+        storage_exists_fn=lambda object_key: False,
+        write_bytes_fn=lambda object_key, payload: writes.append((object_key, payload)) or Path("/tmp/cover.jpg"),
+    )
+
+    assert row["local_cover_object_key"] == (
+        "artifacts/mingkong-material-covers/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+    )
+    assert row["cover_cache_error"] is None
+    assert writes == [(row["local_cover_object_key"], b"cover-bytes")]
+    assert calls[0][0] == "https://os.wedev.vip/medias/uploads2/winner.jpg"
+    assert calls[0][1]["headers"]["Accept"].startswith("image/")
+
+
+def test_cache_local_cover_for_material_records_failure_without_raising():
+    class BrokenSession:
+        def get(self, url, **kwargs):
+            raise RuntimeError("network down")
+
+    row = mm.cache_local_cover_for_material(
+        {
+            "material_key": "b" * 64,
+            "video_image_path": "uploads2/missing.jpg",
+        },
+        session=BrokenSession(),
+        base_url="https://os.wedev.vip",
+        headers={"Authorization": "Bearer token"},
+        timeout_seconds=10,
+        storage_exists_fn=lambda object_key: False,
+        write_bytes_fn=lambda object_key, payload: None,
+    )
+
+    assert row["local_cover_object_key"] is None
+    assert row["cover_cache_error"] == "network down"
+
+
 def test_upsert_snapshot_rows_writes_duplicate_update(monkeypatch):
     writes = []
 
@@ -273,6 +361,8 @@ def test_upsert_snapshot_rows_writes_duplicate_update(monkeypatch):
             "video_name": "winner.mp4",
             "video_path": "uploads2/winner.mp4",
             "video_image_path": "uploads2/winner.jpg",
+            "local_cover_object_key": "artifacts/mingkong-material-covers/ab/abc.jpg",
+            "cover_cache_error": None,
             "cumulative_90_spend": 12000.0,
             "video_ads_count": 9,
             "video_author": "Bob",
@@ -294,6 +384,7 @@ def test_upsert_snapshot_rows_writes_duplicate_update(monkeypatch):
     assert "ON DUPLICATE KEY UPDATE" in writes[0][0]
     assert writes[0][1][0] == "2026-05-18"
     assert writes[0][1][3] == "abc"
+    assert "local_cover_object_key" in writes[0][0]
     assert writes[0][1][-1] == '{"spends": 12000}'
 
 
@@ -325,6 +416,9 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
                 "video_name": "winner.mp4",
                 "video_path": "uploads2/winner.mp4",
                 "video_image_path": "uploads2/winner.jpg",
+                "local_cover_object_key": "artifacts/mingkong-material-covers/ab/abc.jpg",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
                 "cumulative_90_spend": 12000,
                 "video_ads_count": 9,
                 "mk_video_metadata_json": '{"video_path":"uploads2/winner.mp4"}',
@@ -342,6 +436,9 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
     assert result["total"] == 1
     assert result["run_summary"]["summary"] == {"processed": 300}
     assert result["items"][0]["video_spends"] == 12000.0
+    assert result["items"][0]["local_cover_url"] == (
+        "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"
+    )
     assert result["items"][0]["mk_video_metadata"] == {"video_path": "uploads2/winner.mp4"}
     assert any("cumulative_90_spend DESC" in item[1] for item in captured if item[0] == "query")
 
@@ -373,6 +470,9 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
                 "display_position": 1,
                 "video_name": "fresh.mp4",
                 "video_path": "uploads2/fresh.mp4",
+                "local_cover_object_key": "artifacts/mingkong-material-covers/ab/abc.jpg",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
                 "current_cumulative_90_spend": 1000,
                 "yesterday_spend_delta": 250,
                 "is_new_material": 0,
@@ -390,9 +490,51 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
     assert result["snapshot"] == "2026-05-18"
     assert result["previous_snapshot"] == "2026-05-17"
     assert result["items"][0]["video_spends"] == 1000.0
+    assert result["items"][0]["local_cover_url"] == (
+        "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"
+    )
     assert result["items"][0]["is_new_top100_entry"] is True
     assert any(
         "is_new_top100_entry DESC, yesterday_spend_delta DESC" in item[1]
         for item in captured
         if item[0] == "query"
     )
+
+
+def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch):
+    writes = []
+    finishes = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm.scheduled_tasks, "start_run", lambda code: 77)
+    monkeypatch.setattr(
+        mm.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: finishes.append((run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        mm,
+        "latest_top_products",
+        lambda limit=300: (
+            "2026-05-17",
+            [{"product_code": "cool-widget", "rank_position": 1}],
+        ),
+    )
+    monkeypatch.setattr(
+        mm,
+        "create_or_reuse_run",
+        lambda **kwargs: {"id": 42, "status": "running"},
+    )
+    monkeypatch.setattr(mm, "_mk_headers", lambda: (_ for _ in ()).throw(RuntimeError("no token")))
+    monkeypatch.setattr(mm, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
+
+    try:
+        mm.run_daily_snapshot(source_limit=300, sleep_seconds=0, snapshot_date="2026-05-18")
+    except RuntimeError as exc:
+        assert str(exc) == "no token"
+    else:
+        raise AssertionError("run_daily_snapshot should raise the fatal error")
+
+    assert any("UPDATE mingkong_material_sync_runs" in sql and "status='failed'" in sql for sql, _ in writes)
+    assert any(args[-1] == 42 for _, args in writes)
+    assert finishes == [(77, {"status": "failed", "error_message": "no token"})]

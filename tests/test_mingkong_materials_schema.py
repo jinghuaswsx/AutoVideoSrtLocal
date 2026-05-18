@@ -29,3 +29,26 @@ def test_mingkong_material_snapshot_migration_declares_tables_and_indexes():
         "idx_mk_material_top100_display",
     ]:
         assert key in body
+
+
+def test_mingkong_material_local_cover_migration_declares_cache_columns():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_05_18_mingkong_material_local_covers.sql"
+    ).read_text(encoding="utf-8")
+
+    for table in [
+        "mingkong_material_daily_snapshots",
+        "mingkong_material_daily_top100",
+    ]:
+        assert f"TABLE_NAME = '{table}'" in body
+
+    for column in [
+        "local_cover_object_key",
+        "cover_cached_at",
+        "cover_cache_error",
+    ]:
+        assert f"COLUMN_NAME = '{column}'" in body
+        assert f"ADD COLUMN {column}" in body

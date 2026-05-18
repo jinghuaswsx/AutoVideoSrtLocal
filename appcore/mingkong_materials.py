@@ -9,16 +9,18 @@ import time
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 
-from appcore import pushes, scheduled_tasks
+from appcore import local_media_storage, pushes, scheduled_tasks
 from appcore.db import execute, get_conn, query, query_one
 from web.services.media_mk_selection import normalize_mk_media_path
 
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
+_COVER_CACHE_PREFIX = "artifacts/mingkong-material-covers"
+_COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def guard_against_windows_local_mysql() -> None:
@@ -163,6 +165,17 @@ def _metadata_for_write(row: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def _iso_datetime(value: Any) -> Any:
+    return value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+
+
+def _local_media_url(object_key: Any) -> str:
+    key = str(object_key or "").strip()
+    if not key:
+        return ""
+    return f"/medias/object?object_key={quote(key, safe='')}"
+
+
 def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
     page_num = max(1, _as_int(page, 1))
     size = min(100, max(1, _as_int(page_size, 100)))
@@ -179,6 +192,73 @@ def material_key_for(product_code: str, mk_product_id: int | str | None, video_p
         ]
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def local_cover_object_key_for(row: dict[str, Any]) -> str:
+    material_key = str(row.get("material_key") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", material_key):
+        raw = "|".join(
+            [
+                str(row.get("product_code") or "").strip().lower(),
+                str(row.get("mk_product_id") or "").strip(),
+                normalize_mk_media_path(str(row.get("video_image_path") or "")),
+            ]
+        )
+        material_key = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    cover_path = normalize_mk_media_path(str(row.get("video_image_path") or ""))
+    ext = os.path.splitext(urlparse(cover_path).path)[1].lower()
+    if ext not in _COVER_EXTENSIONS:
+        ext = ".jpg"
+    return f"{_COVER_CACHE_PREFIX}/{material_key[:2]}/{material_key}{ext}"
+
+
+def cache_local_cover_for_material(
+    row: dict[str, Any],
+    *,
+    session: requests.Session,
+    base_url: str,
+    headers: dict[str, str],
+    timeout_seconds: int,
+    storage_exists_fn=local_media_storage.exists,
+    write_bytes_fn=local_media_storage.write_bytes,
+) -> dict[str, Any]:
+    out = dict(row)
+    cover_path = normalize_mk_media_path(str(out.get("video_image_path") or ""))
+    out.setdefault("local_cover_object_key", None)
+    out.setdefault("cover_cached_at", None)
+    out.setdefault("cover_cache_error", None)
+    if not cover_path:
+        return out
+
+    object_key = str(out.get("local_cover_object_key") or "").strip() or local_cover_object_key_for(out)
+    try:
+        if storage_exists_fn(object_key):
+            out["local_cover_object_key"] = object_key
+            out["cover_cache_error"] = None
+            return out
+
+        image_headers = dict(headers)
+        image_headers.pop("Content-Type", None)
+        image_headers["Accept"] = "image/*,*/*;q=0.8"
+        url = f"{base_url}/medias/{quote(cover_path, safe='/')}"
+        resp = session.get(url, headers=image_headers, timeout=timeout_seconds)
+        resp.raise_for_status()
+        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if content_type and not content_type.startswith("image/"):
+            raise ValueError(f"Mingkong cover returned non-image content: {content_type}")
+        payload = bytes(resp.content or b"")
+        if not payload:
+            raise ValueError("Mingkong cover returned empty content")
+        write_bytes_fn(object_key, payload)
+        out["local_cover_object_key"] = object_key
+        out["cover_cached_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        out["cover_cache_error"] = None
+    except Exception as exc:
+        out["local_cover_object_key"] = None
+        out["cover_cached_at"] = None
+        out["cover_cache_error"] = str(exc)[:1000]
+    return out
 
 
 def latest_top_products(*, limit: int = 300) -> tuple[str, list[dict[str, Any]]]:
@@ -403,9 +483,11 @@ def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
     out["video_ads_count"] = _as_int(out.get("video_ads_count"))
     out.pop("mk_video_metadata_json", None)
     out["mk_video_metadata"] = metadata
+    out["local_cover_url"] = _local_media_url(out.get("local_cover_object_key"))
+    out["cover_cached_at"] = _iso_datetime(out.get("cover_cached_at"))
     for key in ("created_at", "updated_at"):
         value = out.get(key)
-        out[key] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+        out[key] = _iso_datetime(value)
     return out
 
 
@@ -430,8 +512,10 @@ def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
     out["is_new_top100_entry"] = bool(out.get("is_new_top100_entry"))
     out.pop("mk_video_metadata_json", None)
     out["mk_video_metadata"] = metadata
+    out["local_cover_url"] = _local_media_url(out.get("local_cover_object_key"))
+    out["cover_cached_at"] = _iso_datetime(out.get("cover_cached_at"))
     value = out.get("created_at")
-    out["created_at"] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
+    out["created_at"] = _iso_datetime(value)
     return out
 
 
@@ -450,11 +534,11 @@ def upsert_snapshot_rows(
               (snapshot_date, ranking_snapshot_date, run_id, material_key,
                product_code, rank_position, shopify_product_id, product_name, product_url,
                mk_product_id, mk_product_name, mk_product_link, main_image,
-               video_name, video_path, video_image_path, cumulative_90_spend,
-               video_ads_count, video_author, video_upload_time, video_duration_seconds,
-               mk_video_metadata_json)
+               video_name, video_path, video_image_path, local_cover_object_key,
+               cover_cached_at, cover_cache_error, cumulative_90_spend, video_ads_count,
+               video_author, video_upload_time, video_duration_seconds, mk_video_metadata_json)
             VALUES
-              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
                ranking_snapshot_date=VALUES(ranking_snapshot_date),
                run_id=VALUES(run_id),
@@ -470,6 +554,9 @@ def upsert_snapshot_rows(
                video_name=VALUES(video_name),
                video_path=VALUES(video_path),
                video_image_path=VALUES(video_image_path),
+               local_cover_object_key=VALUES(local_cover_object_key),
+               cover_cached_at=VALUES(cover_cached_at),
+               cover_cache_error=VALUES(cover_cache_error),
                cumulative_90_spend=VALUES(cumulative_90_spend),
                video_ads_count=VALUES(video_ads_count),
                video_author=VALUES(video_author),
@@ -495,6 +582,9 @@ def upsert_snapshot_rows(
                 row.get("video_name") or None,
                 row.get("video_path") or "",
                 row.get("video_image_path") or None,
+                row.get("local_cover_object_key") or None,
+                row.get("cover_cached_at") or None,
+                row.get("cover_cache_error") or None,
                 _spend_from_row(row, "cumulative_90_spend"),
                 _as_int(row.get("video_ads_count")),
                 row.get("video_author") or None,
@@ -770,19 +860,23 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
                display_position, material_key, product_code, source_product_rank_position,
                shopify_product_id, product_name, product_url, mk_product_id, mk_product_name,
                mk_product_link, main_image, video_name, video_path, video_image_path,
+               local_cover_object_key, cover_cached_at, cover_cache_error,
                previous_cumulative_90_spend, current_cumulative_90_spend,
                yesterday_spend_delta, video_ads_count, video_author, video_upload_time,
                video_duration_seconds, mk_video_metadata_json, is_new_material,
                is_new_top100_entry)
             VALUES
               (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-               %s,%s,%s,%s,%s,%s,%s,%s)
+               %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
                previous_snapshot_date=VALUES(previous_snapshot_date),
                ranking_snapshot_date=VALUES(ranking_snapshot_date),
                rank_position=VALUES(rank_position),
                display_position=VALUES(display_position),
                source_product_rank_position=VALUES(source_product_rank_position),
+               local_cover_object_key=VALUES(local_cover_object_key),
+               cover_cached_at=VALUES(cover_cached_at),
+               cover_cache_error=VALUES(cover_cache_error),
                previous_cumulative_90_spend=VALUES(previous_cumulative_90_spend),
                current_cumulative_90_spend=VALUES(current_cumulative_90_spend),
                yesterday_spend_delta=VALUES(yesterday_spend_delta),
@@ -808,6 +902,9 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
                 row.get("video_name") or None,
                 row.get("video_path") or "",
                 row.get("video_image_path") or None,
+                row.get("local_cover_object_key") or None,
+                row.get("cover_cached_at") or None,
+                row.get("cover_cache_error") or None,
                 row.get("previous_cumulative_90_spend"),
                 _spend_from_row(row, "current_cumulative_90_spend"),
                 _as_float(row.get("yesterday_spend_delta")),
@@ -913,14 +1010,14 @@ def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> 
     target_code = str(product_code or "").strip().lower()
     if not target_code:
         return None
-    best: tuple[tuple[int, float, int, int], dict[str, Any]] | None = None
+    best: tuple[tuple[float, int, int, int], dict[str, Any]] | None = None
     for item in items:
         if target_code not in _mingkong_result_product_codes(item):
             continue
         video_count, spend, ads = _visible_video_stats(item)
         if video_count <= 0:
             continue
-        score = (video_count, spend, ads, _as_int(item.get("id")))
+        score = (spend, ads, video_count, _as_int(item.get("id")))
         if best is None or score > best[0]:
             best = (score, item)
     return best[1] if best else None
@@ -938,6 +1035,10 @@ def run_daily_snapshot(
     guard_against_windows_local_mysql()
     scheduled_run_id = scheduled_tasks.start_run("mingkong_material_daily_snapshot")
     target_snapshot = snapshot_date or date.today().isoformat()
+    run_id: int | None = None
+    processed = 0
+    failed = 0
+    material_count = 0
     try:
         ranking_snapshot, products = latest_top_products(limit=source_limit)
         run_row = create_or_reuse_run(
@@ -956,14 +1057,11 @@ def run_daily_snapshot(
             scheduled_tasks.finish_run(scheduled_run_id, status="success", summary=summary)
             return summary
 
+        run_id = int(run_row["id"])
         headers = _mk_headers()
         base_url = _mk_base_url()
         session = requests.Session()
-        processed = 0
-        failed = 0
-        material_count = 0
         consecutive_failures = 0
-        run_id = int(run_row["id"])
         for index, product in enumerate(products, start=1):
             try:
                 items = _search_mingkong_items(
@@ -989,6 +1087,16 @@ def run_daily_snapshot(
                         source_product=product,
                         mk_product=mk_product,
                     )
+                    rows = [
+                        cache_local_cover_for_material(
+                            row,
+                            session=session,
+                            base_url=base_url,
+                            headers=headers,
+                            timeout_seconds=timeout_seconds,
+                        )
+                        for row in rows
+                    ]
                     material_count += upsert_snapshot_rows(
                         run_id=run_id,
                         snapshot_date=target_snapshot,
@@ -1060,5 +1168,15 @@ def run_daily_snapshot(
         scheduled_tasks.finish_run(scheduled_run_id, status="success", summary=summary)
         return summary
     except Exception as exc:
+        if run_id is not None:
+            execute(
+                """
+                UPDATE mingkong_material_sync_runs
+                SET status='failed', processed_product_count=%s, material_count=%s,
+                    failed_product_count=%s, error_message=%s, finished_at=NOW()
+                WHERE id=%s
+                """,
+                (processed, material_count, failed, str(exc)[:1000], run_id),
+            )
         scheduled_tasks.finish_run(scheduled_run_id, status="failed", error_message=str(exc))
         raise

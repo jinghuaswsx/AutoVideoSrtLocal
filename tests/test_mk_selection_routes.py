@@ -138,6 +138,14 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "/xuanpin/api/mk-video-materials" not in template
 
 
+def test_mk_selection_video_cards_prefer_local_cover_url():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "const localCoverUrl = safeMediaSrc(r.local_cover_url || '');" in template
+    assert "const coverUrl = localCoverUrl ||" in template
+    assert "/xuanpin/api/mk-media?path=" in template
+
+
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
