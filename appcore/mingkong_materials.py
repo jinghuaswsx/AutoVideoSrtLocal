@@ -978,6 +978,36 @@ def _search_mingkong_items(
     return [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
 
 
+def _fetch_mingkong_product_detail(
+    session: requests.Session,
+    *,
+    base_url: str,
+    headers: dict[str, str],
+    mk_product: dict[str, Any],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    mk_product_id = _as_int(mk_product.get("id"))
+    if mk_product_id <= 0:
+        return mk_product
+    resp = session.get(
+        f"{base_url}/api/marketing/medias/{mk_product_id}",
+        headers=headers,
+        timeout=timeout_seconds,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+        raise RuntimeError("Mingkong credentials expired")
+    item = ((data.get("data") or {}).get("item") or {})
+    if not isinstance(item, dict) or not item:
+        return mk_product
+    merged = dict(mk_product)
+    merged.update(item)
+    if not merged.get("product_links") and mk_product.get("product_links"):
+        merged["product_links"] = mk_product.get("product_links")
+    return merged
+
+
 def _visible_video_stats(item: dict[str, Any]) -> tuple[int, float, int]:
     count = 0
     spend = 0.0
@@ -1083,6 +1113,13 @@ def run_daily_snapshot(
                     processed += 1
                     consecutive_failures = 0
                 else:
+                    mk_product = _fetch_mingkong_product_detail(
+                        session,
+                        base_url=base_url,
+                        headers=headers,
+                        mk_product=mk_product,
+                        timeout_seconds=timeout_seconds,
+                    )
                     rows = flatten_materials_for_product(
                         source_product=product,
                         mk_product=mk_product,

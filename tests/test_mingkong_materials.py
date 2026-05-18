@@ -279,6 +279,74 @@ def test_select_mingkong_product_prefers_spend_over_video_count_after_exact_matc
     assert selected["id"] == 2
 
 
+def test_fetch_mingkong_product_detail_supplies_video_spends_for_snapshot():
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "code": 0,
+                "data": {
+                    "item": {
+                        "id": 901,
+                        "product_name": "MK Cool Detail",
+                        "videos": [
+                            {
+                                "name": "winner.mp4",
+                                "path": "uploads2/winner.mp4",
+                                "spends": "7.26万",
+                                "ads_count": 26,
+                            }
+                        ],
+                    }
+                },
+            }
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse()
+
+    selected_from_search = {
+        "id": 901,
+        "product_name": "MK Cool",
+        "product_links": ["https://shop.example/products/cool-widget"],
+        "videos": [
+            {
+                "name": "winner.mp4",
+                "path": "uploads2/winner.mp4",
+                "ads_count": 26,
+            }
+        ],
+    }
+
+    detail = mm._fetch_mingkong_product_detail(
+        FakeSession(),
+        base_url="https://os.wedev.vip",
+        headers={"Authorization": "Bearer token"},
+        mk_product=selected_from_search,
+        timeout_seconds=20,
+    )
+    rows = mm.flatten_materials_for_product(
+        source_product={
+            "product_code": "cool-widget",
+            "rank_position": 1,
+            "shopify_product_id": "gid-1",
+            "product_name": "Cool Widget",
+            "product_url": "https://shop.example/products/cool-widget",
+        },
+        mk_product=detail,
+    )
+
+    assert calls[0][0] == "https://os.wedev.vip/api/marketing/medias/901"
+    assert detail["product_links"] == ["https://shop.example/products/cool-widget"]
+    assert rows[0]["cumulative_90_spend"] == 72600.0
+    assert rows[0]["video_spends_text"] == "7.26万"
+
+
 def test_cache_local_cover_for_material_writes_local_media_object():
     calls = []
 
