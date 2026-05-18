@@ -33,6 +33,22 @@ class _FakeProduct:
     currency = "USD"
 
 
+class _FakeProviderConfig:
+    def __init__(self, api_key="sk-local-test", base_url="http://image.local/v1", model_id=None, extra_config=None):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model_id = model_id
+        self.extra_config = extra_config or {}
+
+    def require_api_key(self):
+        if not self.api_key:
+            raise AssertionError("missing api key in test provider config")
+        return self.api_key
+
+    def require_base_url(self, default=None):
+        return (self.base_url or default or "").rstrip("/")
+
+
 def test_normalize_product_image_jpg_outputs_400_square_jpeg():
     from appcore.video_cover_generation import normalize_product_image_jpg
 
@@ -2170,6 +2186,106 @@ def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db,
     assert payload["state"]["step_timing"]["ad_copy"]["running_seconds"] == 15
     assert payload["state"]["result"]["covers"][0]["url"]
     assert payload["state"]["result"]["covers"][0]["download_url"].endswith("/video-cover/api/task-1/download/social_reels_1")
+
+
+def test_video_cover_debug_payload_returns_cover_full_request(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    copy_item = {
+        "id": 1,
+        "english": {
+            "title": "Love the breeze",
+            "message": "Stop choosing between fresh air and mosquito bites.",
+            "description": "Keep bugs out",
+        },
+    }
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product": {
+            "title": "Bug-Proof Car Sunshade Screen",
+            "main_image_url": "https://cdn.example/product.jpg",
+            "product_image_path": "/data/product.jpg",
+        },
+        "product_url": "https://shop.example/products/screen",
+        "video_filename": "screen.mp4",
+        "image_count": 1,
+        "step_requests": {
+            "cover_generation": {
+                "provider": "local",
+                "model": "gpt-image-2",
+                "alias": "gpt_image_2",
+                "request_data": {"image_count": 1, "execution_mode": "serial", "ad_copy_sets": {"ad_copy_sets": [copy_item]}},
+                "image_prompts": [{"index": 1, "prompt": "actual prompt with native hook text", "source_ad_copy_id": 1}],
+            }
+        },
+        "step_results": {
+            "cover_generation": {
+                "raw_response": {"data": [{"b64_json": "iVBORw0KGgo="}]},
+                "structured_result": {"covers": [{"index": 1, "hook": "Love the breeze"}]},
+            }
+        },
+        "result": {
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "models": {"cover_generation": {"provider": "local", "model_id": "gpt-image-2", "execution_mode": "serial"}},
+            "covers": [{"platform": "social_reels", "index": 1, "object_key": "artifacts/video_cover/8/task-1/social_reels.png", "copy": copy_item}],
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+    monkeypatch.setattr(video_cover, "get_provider_config", lambda code: _FakeProviderConfig(), raising=False)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/cover_generation")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    data = payload["data"]
+    assert data["label"] == "封面生成"
+    assert data["request_data"]["image_prompts"][0]["prompt"] == "actual prompt with native hook text"
+    assert data["response_data"]["covers"][0]["hook"] == "Love the breeze"
+    assert data["full_request"]["method"] == "POST"
+    assert data["full_request"]["url"] == "http://image.local/v1/images/edits"
+    assert data["full_request"]["headers"]["Authorization"] == "Bearer sk-local-test"
+    assert data["full_request"]["api_key"] == "sk-local-test"
+    assert data["full_request"]["body"]["model"] == "gpt-image-2"
+    assert data["full_request"]["body"]["prompt"] == "actual prompt with native hook text"
+    assert data["full_request"]["files"][0]["field"] == "image"
+    assert data["full_request"]["files"][0]["source"] == "artifacts/video_cover/8/task-1/reference.png"
+    assert data["replay"]["supported"] is True
+    assert data["raw_response"]["data"][0]["b64_json"] == "iVBORw0KGgo="
+
+
+def test_video_cover_debug_payload_returns_text_step_without_replay(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "step_requests": {
+            "ad_copy": {
+                "provider": "openrouter",
+                "model": "google/gemini-3-flash-preview",
+                "messages": [{"role": "user", "content": "write ad copy"}],
+                "request_data": {"product_title": "Screen"},
+            }
+        },
+        "step_results": {
+            "ad_copy": {
+                "raw_response": {"ad_copy_sets": []},
+                "structured_result": {"ad_copy_sets": []},
+            }
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    resp = authed_client_no_db.get("/video-cover/api/task-1/debug-payload/ad_copy")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["full_request"]["body"]["messages"][0]["content"] == "write ad copy"
+    assert data["replay"]["supported"] is False
 
 
 def test_video_cover_force_restart_clears_intermediate_state_and_restarts(authed_client_no_db, monkeypatch, tmp_path):
