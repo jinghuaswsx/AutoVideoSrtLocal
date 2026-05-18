@@ -28,10 +28,8 @@ def normalize_voice_match_strategy(value: str | None) -> str:
 def get_voice_match_strategy() -> str:
     try:
         return normalize_voice_match_strategy(
-            settings_store.get_setting(
-                SETTING_VOICE_MATCH_STRATEGY,
-                STRATEGY_LEGACY,
-            )
+            settings_store.get_setting(SETTING_VOICE_MATCH_STRATEGY)
+            or STRATEGY_LEGACY
         )
     except ValueError:
         return STRATEGY_LEGACY

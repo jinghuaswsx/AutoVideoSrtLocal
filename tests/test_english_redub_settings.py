@@ -15,6 +15,18 @@ def test_voice_match_strategy_defaults_to_legacy(monkeypatch):
     assert settings.get_voice_match_strategy() == "legacy"
 
 
+def test_voice_match_strategy_uses_settings_store_signature(monkeypatch):
+    from appcore import english_redub_settings as settings
+
+    monkeypatch.setattr(
+        settings.settings_store,
+        "get_setting",
+        lambda key: None,
+    )
+
+    assert settings.get_voice_match_strategy() == "legacy"
+
+
 def test_voice_match_strategy_accepts_timbre_speed(monkeypatch):
     from appcore import english_redub_settings as settings
 
