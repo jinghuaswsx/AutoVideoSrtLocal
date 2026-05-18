@@ -32,12 +32,16 @@ In scope:
 6. Compare the current snapshot with the previous available material snapshot to compute
    the latest one-day spend delta.
 7. Persist a daily "昨天消耗前100" result table.
-8. Add a `/xuanpin/mk` inner tab that reads the persisted Top100 result instead of
-   calling Mingkong live.
+8. Change the `/xuanpin/mk` `视频素材库` inner tab so clicking it shows the latest
+   locally archived material card list, including localized cover/video preview URLs and
+   stored spend data. It must not depend on a live Mingkong request at click time.
+9. Add a `/xuanpin/mk` `昨天消耗前100` inner tab that reads the persisted Top100
+   result instead of calling Mingkong live.
 
 Out of scope:
 
-- Do not replace the existing live `视频素材库` tab.
+- Do not remove the existing Mingkong media proxy endpoints; the local cards still use
+  them for previewing stored Mingkong paths when local media objects are absent.
 - Do not add LLM ranking or subjective material scoring.
 - Do not connect to Windows local MySQL for verification. Database checks must run on
   the server/test environment according to project rules.
@@ -329,7 +333,27 @@ stored as the UI order after new-entry prioritization.
 
 ## API And UI
 
-Add an admin-only API:
+Add an admin-only API for the local archived `视频素材库` tab:
+
+```text
+GET /xuanpin/api/mk-material-library
+```
+
+Query parameters:
+
+- `snapshot`: optional snapshot date; default latest material snapshot date.
+- `page`: default `1`.
+- `page_size`: default `100`, max `100`.
+- `keyword`: optional product/material search term.
+
+Response fields:
+
+- `items`
+- `snapshot`
+- `total`
+- `run_summary`
+
+Add an admin-only API for the archived daily Top100:
 
 ```text
 GET /xuanpin/api/mk-yesterday-top100
@@ -352,9 +376,10 @@ Response fields:
 The page changes stay inside `mk_selection.html`:
 
 - Keep `产品库`.
-- Keep `视频素材库`.
+- Change `视频素材库` to read local archived snapshot rows and render localized cover
+  and data video cards when clicked.
 - Add `昨天消耗前100`.
-- The new tab uses local archived rows only.
+- Both material card tabs use local archived rows only.
 - Cards reuse the existing Mingkong media proxy paths for cover/video preview.
 - Existing `加入素材库` and `做小语种` actions are available when metadata is sufficient.
 
@@ -380,8 +405,9 @@ Focused automated checks:
 - Service tests cover delta calculation, new-material handling, negative-delta clamp, and
   new Top100 membership.
 - Scheduler tests cover 06:00 registration and scheduled task registry metadata.
+- Route tests cover `/xuanpin/api/mk-material-library` local archived material listing.
 - Route tests cover `/xuanpin/api/mk-yesterday-top100` admin behavior.
-- Template tests cover the new `昨天消耗前100` inner tab.
+- Template tests cover local `视频素材库` behavior and the new `昨天消耗前100` inner tab.
 
 Manual/server verification:
 
