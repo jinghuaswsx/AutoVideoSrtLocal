@@ -40,8 +40,10 @@
 .mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
 .mh-post-id-bar { display:flex; align-items:center; gap:6px; min-height:30px; padding:8px 14px 0; color:#64748b; font-size:12px; font-weight:700; }
 .mh-post-id-value { min-width:0; max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#334155; font-family:ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-weight:800; }
-.mh-post-id-copy { height:24px; padding:0 7px; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
-.mh-post-id-copy:hover { border-color:#0f766e; background:#f0fdfa; }
+.mh-post-copy-btn { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:24px; height:24px; padding:0; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#0f766e; cursor:pointer; }
+.mh-post-copy-btn:hover { border-color:#0f766e; background:#f0fdfa; }
+.mh-post-copy-btn svg { width:14px; height:14px; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.mh-post-copy-done { color:#0f766e; font-size:13px; font-weight:900; line-height:1; }
 .mh-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:12px 14px; border-bottom:1px solid #edf2f7; }
 .mh-card-title { display:flex; align-items:center; gap:8px; font-size:18px; font-weight:700; }
 .mh-card-side { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
@@ -728,6 +730,21 @@ function metaHotPostDisplayId(row) {
   const value = row.post_id || row.wedev_post_id || row.id || '';
   return String(value).trim();
 }
+function metaHotPostLink(row) {
+  const direct = String(row.post_url || '').trim();
+  if (direct) return direct;
+  const pageId = String(row.page_id || '').trim();
+  const postId = String(row.post_id || '').trim();
+  if (!pageId || !postId) return '';
+  return `https://facebook.com/${encodeURIComponent(pageId)}/posts/${encodeURIComponent(postId)}`;
+}
+function metaHotPostIcon(name) {
+  const icons = {
+    copy: '<path d="M8 8h8v8H8z"></path><path d="M5 12H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1"></path>',
+    link: '<path d="M10 13a5 5 0 0 1-7 0 5 5 0 0 1 0-7l2-2a5 5 0 0 1 7 0"></path><path d="M8 7a5 5 0 0 1 7 0 5 5 0 0 1 0 7l-2 2a5 5 0 0 1-7 0"></path><path d="M7 10h6"></path>'
+  };
+  return `<svg viewBox="0 0 18 18" aria-hidden="true">${icons[name] || icons.copy}</svg>`;
+}
 function fallbackCopyMetaHotPostId(value) {
   const textarea = document.createElement('textarea');
   textarea.value = value;
@@ -747,9 +764,14 @@ function copyMetaHotPostId(event, value) {
   const button = event.currentTarget;
   const done = () => {
     if (!button) return;
-    const original = button.textContent;
-    button.textContent = '已复制';
-    window.setTimeout(() => { button.textContent = original || '复制'; }, 1200);
+    const originalHtml = button.innerHTML;
+    const originalTitle = button.getAttribute('title') || '';
+    button.innerHTML = '<span class="mh-post-copy-done" aria-hidden="true">&#10003;</span>';
+    button.setAttribute('title', '已复制');
+    window.setTimeout(() => {
+      button.innerHTML = originalHtml;
+      button.setAttribute('title', originalTitle);
+    }, 1200);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => {
@@ -764,10 +786,15 @@ function copyMetaHotPostId(event, value) {
 function renderMetaHotPostId(row) {
   const displayId = metaHotPostDisplayId(row);
   if (!displayId) return '';
+  const postLink = metaHotPostLink(row);
+  const linkButton = postLink
+    ? `<button class="mh-post-copy-btn mh-post-link-copy" type="button" data-copy-value="${esc(postLink)}" title="复制帖子链接" aria-label="复制帖子链接" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('link')}</button>`
+    : '';
   return `<div class="mh-post-id-bar">
     <span>帖子ID</span>
     <span class="mh-post-id-value" title="${esc(displayId)}">${esc(displayId)}</span>
-    <button class="mh-post-id-copy" type="button" data-copy-value="${esc(displayId)}" title="复制帖子ID" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">复制</button>
+    <button class="mh-post-copy-btn mh-post-id-copy" type="button" data-copy-value="${esc(displayId)}" title="复制帖子ID" aria-label="复制帖子ID" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('copy')}</button>
+    ${linkButton}
   </div>`;
 }
 function cardMedia(row) {
