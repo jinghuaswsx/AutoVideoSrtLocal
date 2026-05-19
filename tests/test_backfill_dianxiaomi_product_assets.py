@@ -67,6 +67,25 @@ def test_select_candidate_products_includes_attempted_rows_with_missing_main_ima
     assert captured["args"] == (10,)
 
 
+def test_select_candidate_products_only_retries_missing_main_image_when_product_url_exists():
+    from tools import backfill_dianxiaomi_product_assets as backfill
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    backfill.select_candidate_products(limit=10, query_fn=fake_query)
+
+    normalized_sql = " ".join(captured["sql"].split())
+    assert (
+        "OR ( product_url IS NOT NULL AND product_url <> '' AND"
+        in normalized_sql
+    )
+
+
 def test_select_candidate_products_can_filter_by_hash_shard():
     from tools import backfill_dianxiaomi_product_assets as backfill
 
