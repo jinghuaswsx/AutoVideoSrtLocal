@@ -8,8 +8,8 @@ from tools.shopify_image_localizer import controller, settings, version
 from tools.shopify_image_localizer.browser import session
 
 
-def test_shopify_image_localizer_release_version_is_4_15() -> None:
-    assert version.RELEASE_VERSION == "4.15"
+def test_shopify_image_localizer_release_version_is_4_16() -> None:
+    assert version.RELEASE_VERSION == "4.16"
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
@@ -201,8 +201,8 @@ def test_cache_store_slug_for_domain_writes_and_reads(tmp_path) -> None:
     assert settings.cache_store_slug_for_domain("omurio.com", "abc-xyz", root=tmp_path) is False
 
 
-def test_shopify_store_slug_prefers_cache_then_default_dict(tmp_path) -> None:
-    # 缓存优先：写入后读到的是 cached
+def test_shopify_store_slug_uses_known_domain_before_cache(tmp_path) -> None:
+    # newjoyloo.com 的 store slug 已知，不能被用户误点其它店铺后写入的缓存覆盖。
     settings.save_runtime_config(
         base_url="http://x",
         api_key="key",
@@ -211,7 +211,7 @@ def test_shopify_store_slug_prefers_cache_then_default_dict(tmp_path) -> None:
         store_slug_cache={"newjoyloo.com": "real-slug-xyz", "demo.example": "demo-slug"},
         root=tmp_path,
     )
-    assert settings.shopify_store_slug_for_domain("newjoyloo.com", root=tmp_path) == "real-slug-xyz"
+    assert settings.shopify_store_slug_for_domain("newjoyloo.com", root=tmp_path) == "0ixug9-pv"
     assert settings.shopify_store_slug_for_domain("demo.example", root=tmp_path) == "demo-slug"
 
     # 没缓存时回退到内置 dict（newjoyloo.com 默认）/ 默认 slug
@@ -349,6 +349,45 @@ def test_confirm_shopify_login_capture_slug_from_current_browser_url(
     assert "7t1gn3-sv" in result["url"]
     assert result["source"] == "active_tab"
     assert settings.cached_store_slug_for_domain("omurio.com", root=tmp_path) == "7t1gn3-sv"
+
+
+def test_confirm_shopify_login_rejects_known_domain_mismatched_store_slug(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    profile_dir = tmp_path / "profile-newjoyloo"
+    profile_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        controller.settings,
+        "browser_user_data_dir_for_domain",
+        lambda base_dir, domain: str(profile_dir),
+    )
+    monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        controller,
+        "_read_current_admin_store_url_from_browser",
+        lambda timeout_s=0, **_kwargs: (
+            "https://admin.shopify.com/store/7t1gn3-sv/products",
+            "active_tab",
+        ),
+    )
+    settings.save_runtime_config(
+        base_url="http://172.30.254.14",
+        api_key="demo-key",
+        browser_user_data_dir=str(profile_dir),
+        shopify_domain="newjoyloo.com",
+        root=tmp_path,
+    )
+
+    result = controller.confirm_shopify_login_capture_slug(
+        browser_user_data_dir=str(profile_dir),
+        shopify_domain="newjoyloo.com",
+    )
+
+    assert result["status"] == "mismatch"
+    assert result["slug"] == "7t1gn3-sv"
+    assert result["expected_slug"] == "0ixug9-pv"
+    assert settings.cached_store_slug_for_domain("newjoyloo.com", root=tmp_path) == ""
 
 
 def test_confirm_shopify_login_capture_slug_uses_current_browser_url_not_history(

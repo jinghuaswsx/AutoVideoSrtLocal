@@ -2188,3 +2188,28 @@ def test_wait_plugin_frame_pumps_playwright_page_events(monkeypatch):
 
     assert frame is page.frames[0]
     assert ("wait_for_timeout", 500) in calls
+
+
+def test_wait_plugin_frame_fails_fast_on_ez_product_load_error():
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    class FakeBody:
+        def inner_text(self, **_kwargs):
+            return "Error\nImpossible de charger les données du produit. Veuillez réessayer."
+
+    class FakePage:
+        frames = []
+        url = "https://admin.shopify.com/store/7t1gn3-sv/apps/ez-product-image-translate/product/8571180122285"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return FakeBody()
+
+        def wait_for_timeout(self, _ms):
+            raise AssertionError("product load errors should fail before waiting")
+
+    with pytest.raises(RuntimeError, match="EZ 页面无法加载商品数据") as exc:
+        ez_cdp._wait_plugin_frame(FakePage(), timeout_s=1)
+
+    assert "Impossible de charger" in str(exc.value)
+    assert "7t1gn3-sv" in str(exc.value)

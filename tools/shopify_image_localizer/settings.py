@@ -101,6 +101,9 @@ def cache_store_slug_for_domain(domain: str, slug: str, root: str | Path | None 
     normalized_slug = _normalize_store_slug(slug)
     if not normalized_slug:
         return False
+    known_slug = known_store_slug_for_domain(normalized_domain)
+    if known_slug and normalized_slug != known_slug:
+        return False
     cfg = load_runtime_config(root)
     cached = dict(cfg.get("shopify_domain_store_slugs") or {})
     if cached.get(normalized_domain) == normalized_slug:
@@ -117,15 +120,20 @@ def cache_store_slug_for_domain(domain: str, slug: str, root: str | Path | None 
     return True
 
 
-def shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
-    """优先用 runtime config 缓存的真实 slug；缺失时退到内置 dict / 默认 slug。"""
+def known_store_slug_for_domain(domain: str | None) -> str:
     normalized = normalize_domain(domain)
-    cached = cached_store_slug_for_domain(normalized, root=root)
-    if cached:
-        return cached
+    return _normalize_store_slug(DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN.get(normalized))
+
+
+def shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
+    """优先用内置已知 slug；其它域名用 runtime config 缓存，缺失时退到默认 slug。"""
+    normalized = normalize_domain(domain)
     configured = DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN.get(normalized)
     if configured:
         return configured
+    cached = cached_store_slug_for_domain(normalized, root=root)
+    if cached:
+        return cached
     return DEFAULT_SHOPIFY_STORE_SLUG
 
 
