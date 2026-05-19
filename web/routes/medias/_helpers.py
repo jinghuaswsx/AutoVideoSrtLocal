@@ -349,6 +349,13 @@ def _default_image_translate_model_id() -> str:
         return coerce_image_model("", channel=channel)
 
 
+def _safe_image_translate_channel() -> str:
+    try:
+        return its.get_channel()
+    except Exception:
+        return "aistudio"
+
+
 def probe_media_info_safe(path: str) -> dict:
     try:
         from pipeline.ffutil import probe_media_info

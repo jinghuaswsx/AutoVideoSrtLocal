@@ -32,6 +32,7 @@ def test_build_detail_translate_from_en_response_creates_task_with_static_source
         get_prompts_for_lang_fn=lambda lang: {"detail": "Translate to {target_language_name}"},
         get_language_name_fn=lambda lang: {"de": "German"}[lang],
         default_model_id_fn=lambda: "default-model",
+        default_channel_fn=lambda: "apimart",
         compose_project_name_fn=lambda product_name, preset, lang_name: f"{product_name}-{preset}-{lang_name}",
         create_image_translate_fn=lambda task_id, task_dir, **kwargs: (
             create_calls.append((task_id, task_dir, kwargs)) or {"id": task_id}
@@ -48,6 +49,7 @@ def test_build_detail_translate_from_en_response_creates_task_with_static_source
     assert task_id == outcome.payload["task_id"]
     assert task_dir.endswith(task_id)
     assert created["model_id"] == "custom-model"
+    assert created["channel"] == "apimart"
     assert created["concurrency_mode"] == "parallel"
     assert [item["source_detail_image_id"] for item in created["items"]] == [11, 13]
     assert created["medias_context"]["source_detail_image_ids"] == [11, 13]

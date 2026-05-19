@@ -916,6 +916,7 @@ def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db,
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
     monkeypatch.setattr(r.medias, "get_language_name", lambda lang: {"de": "德语"}.get(lang, lang))
     monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "把图中文字翻译成 {target_language_name}"})
+    monkeypatch.setattr(r.its, "get_channel", lambda: "apimart")
     monkeypatch.setattr(r.task_state, "create_image_translate", lambda task_id, task_dir, **kw: created.update({"task_id": task_id, **kw}) or {"id": task_id})
     monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
 
@@ -926,6 +927,7 @@ def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db,
     assert data["detail_url"] == f"/image-translate/{data['task_id']}"
     assert created["preset"] == "detail"
     assert created["target_language"] == "de"
+    assert created["channel"] == "apimart"
     assert created["medias_context"]["entry"] == "medias_edit_detail"
     assert created["medias_context"]["product_id"] == 123
     assert created["medias_context"]["target_lang"] == "de"

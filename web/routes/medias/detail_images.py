@@ -65,6 +65,7 @@ from ._helpers import (
     _detail_images_archive_part,
     _detail_images_archive_product_code,
     _detail_images_is_gif,
+    _safe_image_translate_channel,
     _parse_lang,
 )
 from ._serializers import _serialize_detail_image
@@ -271,6 +272,7 @@ def _build_detail_translate_from_en_response(
         compose_project_name_fn=image_translate_routes._compose_project_name,
         create_image_translate_fn=task_state.create_image_translate,
         start_image_translate_runner_fn=_start_image_translate_runner,
+        default_channel_fn=_safe_image_translate_channel,
     )
 
 
