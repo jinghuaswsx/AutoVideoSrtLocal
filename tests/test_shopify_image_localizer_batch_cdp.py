@@ -988,6 +988,47 @@ def test_apply_uploaded_replacements_uses_target_size_when_display_size_url_miss
     assert "290px" not in updated
 
 
+def test_apply_uploaded_replacements_keeps_large_target_size_responsive_when_display_size_matches():
+    old_src = "https://cdn.shopify.com/s/files/old_from_url_en_08_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_refsize_800x800.png?v=2"
+    html = (
+        f'<p><img alt="demo" src="{old_src}" '
+        'width="800" height="800" '
+        'style="width: 800px; min-width: 800px; max-width: 800px; '
+        'height: 800px; min-height: 800px; max-height: 800px;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [
+            {
+                "old": old_src,
+                "new": "https://cdn.shopify.com/s/files/new_refsize_800x800.png?v=3",
+                "target_width": 800,
+                "target_height": 800,
+            }
+        ],
+        display_size_by_src={
+            old_src: {
+                "width": 800,
+                "height": 800,
+                "naturalWidth": 800,
+                "naturalHeight": 800,
+            }
+        },
+    )
+
+    assert 'src="https://cdn.shopify.com/s/files/new_refsize_800x800.png?v=3"' in updated
+    assert 'width="800"' in updated
+    assert 'height="800"' in updated
+    assert "width: 800px" in updated
+    assert "max-width: 100%" in updated
+    assert "height: auto" in updated
+    assert "min-width" not in updated
+    assert "height: 800px" not in updated
+    assert "min-height" not in updated
+    assert "max-height" not in updated
+
+
 def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
     calls: list[tuple] = []
     html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"

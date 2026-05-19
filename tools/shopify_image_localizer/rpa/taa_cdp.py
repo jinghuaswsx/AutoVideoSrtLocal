@@ -912,14 +912,9 @@ def _display_size_for_replacement(
     target_size = _replacement_target_display_size(row)
     if not target_size:
         return display_size
-    display_width = _positive_pixel((display_size or {}).get("width"))
-    display_height = _positive_pixel((display_size or {}).get("height"))
-    if not display_size or (
-        display_width < MIN_PERSISTED_DETAIL_IMAGE_PIXEL
-        or display_height < MIN_PERSISTED_DETAIL_IMAGE_PIXEL
-    ):
-        return {**(display_size or {}), **target_size}
-    return display_size
+    if display_size:
+        return {**display_size, **target_size}
+    return target_size
 
 
 def _apply_display_size_to_img_tag(tag: str, size: dict[str, Any] | None) -> str:
