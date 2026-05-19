@@ -44,7 +44,11 @@ from appcore.image_translate_settings import (
     set_openrouter_openai_image2_default_quality,
     set_openrouter_openai_image2_enabled,
 )
-from appcore.gemini_image import coerce_image_model, list_image_models
+from appcore.gemini_image import (
+    coerce_image_model,
+    is_openrouter_openai_image2_model,
+    list_image_models,
+)
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
 from web.services.settings_ai_pricing import (
     build_ai_pricing_error_response,
@@ -115,9 +119,31 @@ IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
 }
 
 
+IMAGE_TRANSLATE_OPENROUTER_IMAGE2_LOW_MODEL = "openai/gpt-5.4-image-2:low"
+
+
+def _list_image_translate_models_for_settings(code: str) -> list[dict]:
+    models = list_image_models(code)
+    if code == "openrouter":
+        models = [
+            (model_id, label)
+            for model_id, label in models
+            if not is_openrouter_openai_image2_model(model_id)
+            or model_id == IMAGE_TRANSLATE_OPENROUTER_IMAGE2_LOW_MODEL
+        ]
+    return [{"id": mid, "label": label} for mid, label in models]
+
+
+def _coerce_image_translate_model_for_settings(model_id: str, *, channel: str) -> str:
+    normalized = (model_id or "").strip()
+    if channel == "openrouter" and is_openrouter_openai_image2_model(normalized):
+        normalized = IMAGE_TRANSLATE_OPENROUTER_IMAGE2_LOW_MODEL
+    return coerce_image_model(normalized, channel=channel)
+
+
 def _image_translate_models_by_channel() -> dict[str, list[dict]]:
     return {
-        code: [{"id": mid, "label": label} for mid, label in list_image_models(code)]
+        code: _list_image_translate_models_for_settings(code)
         for code in IMAGE_TRANSLATE_CHANNELS
     }
 
@@ -307,6 +333,12 @@ def index():
     image_translate_current_models = image_translate_models_by_channel.get(
         current_image_channel, image_translate_models_by_channel.get("aistudio", []),
     )
+    current_model_ids = [item["id"] for item in image_translate_current_models]
+    if current_image_default_model not in current_model_ids:
+        if IMAGE_TRANSLATE_OPENROUTER_IMAGE2_LOW_MODEL in current_model_ids:
+            current_image_default_model = IMAGE_TRANSLATE_OPENROUTER_IMAGE2_LOW_MODEL
+        elif current_model_ids:
+            current_image_default_model = current_model_ids[0]
 
     bindings_rows = llm_bindings.list_all()
     bindings_grouped: dict[str, list] = {}
@@ -489,7 +521,9 @@ def _handle_providers_post() -> None:
         image_translate_model = request.form.get("image_translate_default_model", "").strip()
         set_image_translate_default_model(
             image_translate_channel,
-            coerce_image_model(image_translate_model, channel=image_translate_channel),
+            _coerce_image_translate_model_for_settings(
+                image_translate_model, channel=image_translate_channel,
+            ),
         )
 
     # Admin 个人偏好：翻译模型选择器（老路径，存 api_keys.translate_pref）

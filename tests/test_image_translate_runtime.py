@@ -119,7 +119,7 @@ def test_runtime_uses_registered_billing_use_case(tmp_path):
     assert gen.call_args.kwargs["service"] == "image_translate.generate"
 
 
-def test_runtime_passes_2k_openrouter_image_size_for_cover_preset(tmp_path):
+def test_runtime_passes_1k_openrouter_image_size_for_cover_preset(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
 
@@ -139,7 +139,7 @@ def test_runtime_passes_2k_openrouter_image_size_for_cover_preset(tmp_path):
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as gen:
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
-    assert gen.call_args.kwargs["openrouter_image_size"] == "2K"
+    assert gen.call_args.kwargs["openrouter_image_size"] == "1K"
 
 
 def test_runtime_passes_1k_openrouter_image_size_for_detail_preset(tmp_path):
@@ -825,7 +825,7 @@ def test_apply_translated_detail_images_writes_local_media_store_instead_of_tos_
 
 
 def test_create_image_translate_stores_concurrency_mode():
-    """task_state.create_image_translate 接受 concurrency_mode 并写入 state；默认 parallel。"""
+    """task_state.create_image_translate 接受 concurrency_mode 并写入 state；默认 sequential。"""
     from appcore import task_state as ts
     from unittest.mock import patch
 
@@ -837,7 +837,7 @@ def test_create_image_translate_stores_concurrency_mode():
             target_language_name="德语", model_id="gemini-x",
             prompt="p", items=[],
         )
-        assert t1["concurrency_mode"] == "parallel"
+        assert t1["concurrency_mode"] == "sequential"
 
         # 2) 显式 parallel
         t2 = ts.create_image_translate(

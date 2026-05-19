@@ -1246,6 +1246,32 @@ def soft_delete_detail_images_by_lang(product_id: int, lang: str) -> int:
     )
 
 
+def replace_detail_image_asset(
+    image_id: int,
+    *,
+    object_key: str,
+    content_type: str | None = None,
+    file_size: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> int:
+    return execute(
+        "UPDATE media_product_detail_images "
+        "SET object_key=%s, content_type=%s, file_size=%s, width=%s, height=%s, "
+        "origin_type=%s, source_detail_image_id=NULL, image_translate_task_id=NULL "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (
+            object_key,
+            content_type,
+            file_size,
+            width,
+            height,
+            "manual",
+            image_id,
+        ),
+    )
+
+
 def replace_detail_images_for_lang(product_id: int, lang: str, images: list[dict]) -> list[int]:
     soft_delete_detail_images_by_lang(product_id, lang)
     created_ids: list[int] = []

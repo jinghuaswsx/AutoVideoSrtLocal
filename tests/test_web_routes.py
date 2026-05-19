@@ -3606,6 +3606,17 @@ def test_medias_edit_modal_contains_detail_image_zip_download_button():
     assert "detail-images/download-zip" in scripts
 
 
+def test_medias_edit_modal_contains_detail_image_single_replace_control():
+    scripts = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "data-detail-selection-replace" in scripts
+    assert "替换选中" in scripts
+    assert "replaceSelectedDetailImage" in scripts
+    assert "replace-bootstrap" in scripts
+    assert "replace-complete" in scripts
+    assert "replaceBtn.hidden = count !== 1" in scripts
+
+
 def test_medias_edit_modal_contains_download_product_images_button():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

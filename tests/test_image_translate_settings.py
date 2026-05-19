@@ -364,7 +364,7 @@ def _patch_store(monkeypatch, store):
 def test_get_channel_returns_default_when_unset(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {})
-    assert its.get_channel() == "openrouter"
+    assert its.get_channel() == "local_image_2"
 
 
 def test_get_channel_returns_persisted_value(monkeypatch):
@@ -376,7 +376,7 @@ def test_get_channel_returns_persisted_value(monkeypatch):
 def test_get_channel_falls_back_on_invalid_value(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {"image_translate.channel": "mystery"})
-    assert its.get_channel() == "openrouter"
+    assert its.get_channel() == "local_image_2"
 
 
 def test_get_channel_accepts_vertex_adc_channel(monkeypatch):
@@ -428,19 +428,19 @@ def test_get_default_model_returns_channel_default_when_unset(monkeypatch):
     _patch_store(monkeypatch, {})
 
     assert its.get_default_model("aistudio") == "gemini-3.1-flash-image-preview"
-    assert its.get_default_model("openrouter") == "openai/gpt-5.4-image-2:low"
+    assert its.get_default_model("openrouter") == "gemini-3.1-flash-image-preview"
     assert its.get_default_model("doubao") == "doubao-seedream-5-0-260128"
 
 
-def test_material_image_translate_defaults_to_openrouter_image2_low_parallel(monkeypatch):
+def test_material_image_translate_defaults_to_local_image2_low_serial(monkeypatch):
     from appcore import image_translate_settings as its
     from appcore import task_state
 
     _patch_store(monkeypatch, {})
 
-    assert its.get_material_image_translate_default_channel() == "openrouter"
-    assert its.get_material_image_translate_default_model() == "openai/gpt-5.4-image-2:low"
-    assert task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE == "parallel"
+    assert its.get_material_image_translate_default_channel() == "local_image_2"
+    assert its.get_material_image_translate_default_model() == "gpt-image-2"
+    assert task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE == "sequential"
 
 
 def test_get_default_model_returns_persisted_model_for_channel(monkeypatch):
@@ -480,12 +480,12 @@ def test_set_default_model_rejects_invalid_channel_or_model(monkeypatch):
         its.set_default_model("doubao", "gemini-3-pro-image-preview")
 
 
-def test_openrouter_openai_image2_defaults(monkeypatch):
+def test_openrouter_openai_image2_disabled_by_default(monkeypatch):
     from appcore import image_translate_settings as its
 
     _patch_store(monkeypatch, {})
 
-    assert its.is_openrouter_openai_image2_enabled() is True
+    assert its.is_openrouter_openai_image2_enabled() is False
     assert its.get_openrouter_openai_image2_default_quality() == "low"
 
 

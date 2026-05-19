@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import time
 from pathlib import Path
 
@@ -16,6 +17,29 @@ from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
+
+
+def test_gui_batch_passes_visual_confirmation_callback_to_runner():
+    gui_path = Path("tools/shopify_image_localizer/gui.py")
+    tree = ast.parse(gui_path.read_text(encoding="utf-8"))
+    run_batch = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_run_batch"
+    )
+    runner_calls = [
+        node
+        for node in ast.walk(run_batch)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run_shopify_localizer"
+    ]
+
+    assert runner_calls
+    assert all(
+        any(keyword.arg == "visual_pair_confirm_cb" for keyword in call.keywords)
+        for call in runner_calls
+    )
 
 
 def _localized(filename: str) -> dict:
@@ -888,6 +912,36 @@ def test_apply_uploaded_replacements_overrides_conflicting_display_size():
     assert "height: auto" not in updated
 
 
+def test_apply_uploaded_replacements_uses_natural_size_when_rendered_size_is_too_small():
+    html = (
+        '<p><img alt="demo" src="https://old.example.com/a.jpg" '
+        'width="290" height="290" '
+        'style="width: 290px; max-width: 290px; height: 290px;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [{"old": "https://old.example.com/a.jpg", "new": "https://cdn.shopify.com/a.jpg"}],
+        display_size_by_src={
+            "https://old.example.com/a.jpg": {
+                "width": 290,
+                "height": 290,
+                "naturalWidth": 800,
+                "naturalHeight": 800,
+            }
+        },
+    )
+
+    assert 'src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'width="800"' in updated
+    assert 'height="800"' in updated
+    assert 'width="290"' not in updated
+    assert 'height="290"' not in updated
+    assert "width: 800px" in updated
+    assert "height: 800px" in updated
+    assert "290px" not in updated
+
+
 def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
     calls: list[tuple] = []
     html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"
@@ -984,6 +1038,149 @@ def test_detail_size_reference_locale_en_uses_root_storefront():
     assert run_product_cdp._detail_size_reference_storefront_locale("en") == ""
     assert run_product_cdp._normalize_detail_size_reference_locale("es") == "es"
     assert run_product_cdp._detail_size_reference_storefront_locale("es") == "es"
+
+
+def test_detail_reference_sizes_use_newjoyloo_target_locale_when_larger_than_800():
+    token = "fde938b6b7f3a20badb4752d1dd70324"
+    small_token = "1df676f72a9e53c3235502f3aa4cb6bd"
+
+    selected = run_product_cdp.select_detail_reference_sizes(
+        store_domain="newjoyloo.com",
+        reference_size_by_token={
+            token: {"width": 800, "height": 800},
+            small_token: {"width": 900, "height": 900},
+        },
+        target_size_by_token={
+            token: {"width": 1254, "height": 1254},
+            small_token: {"width": 800, "height": 800},
+        },
+    )
+
+    assert selected[token] == {"width": 1254, "height": 1254}
+    assert selected[small_token] == {"width": 900, "height": 900}
+
+
+def test_detail_reference_sizes_keep_english_for_other_domains():
+    token = "fde938b6b7f3a20badb4752d1dd70324"
+
+    selected = run_product_cdp.select_detail_reference_sizes(
+        store_domain="omurio.com",
+        reference_size_by_token={token: {"width": 800, "height": 800}},
+        target_size_by_token={token: {"width": 1254, "height": 1254}},
+    )
+
+    assert selected[token] == {"width": 800, "height": 800}
+
+
+def test_run_applies_newjoyloo_target_detail_size_override(monkeypatch, tmp_path):
+    token = "fde938b6b7f3a20badb4752d1dd70324"
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    workspace.source_localized_dir.mkdir(parents=True)
+    captured_reference_sizes: list[dict[str, dict[str, int]]] = []
+    target_html = "<p><img src='https://cdn.shopify.com/files/detail.png'></p>"
+
+    def fake_fetch_product(product_code, *, locale="", store_domain="newjoyloo.com", **_kwargs):
+        return {
+            "id": "8571180122285",
+            "images": [],
+            "description": target_html if locale == "de" else "",
+        }
+
+    def fake_normalize(_rows, reference_size_by_token, **_kwargs):
+        captured_reference_sizes.append(reference_size_by_token)
+        return 0
+
+    monkeypatch.setattr(
+        run_product_cdp.settings,
+        "load_runtime_config",
+        lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}},
+    )
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", fake_fetch_product)
+    monkeypatch.setattr(
+        run_product_cdp,
+        "fetch_bootstrap_ready",
+        lambda **_kwargs: {"reference_images": [], "localized_images": []},
+    )
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
+    monkeypatch.setattr(
+        run_product_cdp,
+        "fetch_storefront_detail_image_natural_sizes",
+        lambda **_kwargs: {token: {"width": 800, "height": 800}},
+    )
+    monkeypatch.setattr(
+        run_product_cdp,
+        "detail_image_natural_sizes_from_html",
+        lambda *_args, **_kwargs: {token: {"width": 1254, "height": 1254}},
+    )
+    monkeypatch.setattr(
+        run_product_cdp,
+        "normalize_detail_candidate_sizes_to_reference",
+        fake_normalize,
+    )
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "_preload_chrome_tab_to_url", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        run_product_cdp.taa_cdp,
+        "plan_body_html_replacements",
+        lambda *_args, **_kwargs: {"skipped_missing": []},
+    )
+    monkeypatch.setattr(
+        run_product_cdp.taa_cdp,
+        "replace_detail_images",
+        lambda **_kwargs: {
+            "status": "done",
+            "image_count": 0,
+            "replacement_count": 0,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 0,
+            "replacements": [],
+            "verify": {},
+        },
+    )
+    monkeypatch.setattr(
+        run_product_cdp,
+        "verify_storefront_body",
+        lambda *_args, **_kwargs: {"expected_present": 0},
+    )
+
+    args = argparse.Namespace(
+        product_code="spray-can-trigger-handle-rjc",
+        lang="de",
+        shop_locale="de",
+        taa_shop_locale="de",
+        language="German",
+        product_id="",
+        store_domain="newjoyloo.com",
+        store_slug="",
+        browser_user_data_dir="C:/chrome",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=True,
+        no_preserve_detail_size=True,
+        detail_size_reference_locale="en",
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    run_product_cdp.run(args)
+
+    assert captured_reference_sizes == [{token: {"width": 1254, "height": 1254}}]
 
 
 def test_plan_body_html_replacements_re_replaces_same_filename_when_replace_shopify_cdn_true():

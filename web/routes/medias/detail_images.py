@@ -42,6 +42,8 @@ from web.services.media_detail_mutations import (
     build_reorder_detail_images_response as _build_detail_images_reorder_response_impl,
 )
 from web.services.media_detail_uploads import (
+    build_detail_image_replace_bootstrap_response as _build_detail_image_replace_bootstrap_response_impl,
+    build_detail_image_replace_complete_response as _build_detail_image_replace_complete_response_impl,
     build_detail_images_bootstrap_response as _build_detail_images_bootstrap_response_impl,
     build_detail_images_complete_response as _build_detail_images_complete_response_impl,
 )
@@ -184,6 +186,36 @@ def _build_detail_images_complete_response(pid: int, body: dict):
         add_detail_image_fn=medias.add_detail_image,
         get_detail_image_fn=medias.get_detail_image,
         serialize_detail_image_fn=_serialize_detail_image,
+    )
+
+
+def _build_detail_image_replace_bootstrap_response(
+    pid: int,
+    image_id: int,
+    body: dict,
+    user_id: int,
+):
+    return _build_detail_image_replace_bootstrap_response_impl(
+        pid,
+        image_id,
+        int(user_id),
+        body,
+        get_detail_image_fn=medias.get_detail_image,
+        reserve_local_media_upload_fn=_reserve_local_media_upload,
+        build_media_object_key_fn=object_keys.build_media_object_key,
+    )
+
+
+def _build_detail_image_replace_complete_response(pid: int, image_id: int, body: dict):
+    return _build_detail_image_replace_complete_response_impl(
+        pid,
+        image_id,
+        body,
+        get_detail_image_fn=medias.get_detail_image,
+        is_media_available_fn=_is_media_available,
+        replace_detail_image_asset_fn=medias.replace_detail_image_asset,
+        serialize_detail_image_fn=_serialize_detail_image,
+        delete_media_object_fn=_delete_media_object,
     )
 
 
@@ -447,6 +479,37 @@ def api_detail_images_complete(pid: int):
     body = request.get_json(silent=True) or {}
     routes = _routes()
     result = routes._build_detail_images_complete_response(pid, body)
+    return routes._detail_image_json_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/replace-bootstrap", methods=["POST"])
+@login_required
+def api_detail_image_replace_bootstrap(pid: int, image_id: int):
+    """Reserve a local upload target for replacing one existing detail image."""
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    routes = _routes()
+    result = routes._build_detail_image_replace_bootstrap_response(
+        pid,
+        image_id,
+        body,
+        current_user.id,
+    )
+    return routes._detail_image_json_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/replace-complete", methods=["POST"])
+@login_required
+def api_detail_image_replace_complete(pid: int, image_id: int):
+    """Persist a single detail-image replacement after browser upload completes."""
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    routes = _routes()
+    result = routes._build_detail_image_replace_complete_response(pid, image_id, body)
     return routes._detail_image_json_flask_response(result)
 
 

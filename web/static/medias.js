@@ -1072,12 +1072,15 @@
       detailImagesToolbar.hidden = true;
       detailImagesToolbar.innerHTML = `
         <span class="oc-detail-images-selection-count" data-detail-selection-count>已选 0 张</span>
+        <button class="oc-btn ghost sm" type="button" data-detail-selection-replace hidden>替换选中</button>
         <button class="oc-btn danger sm" type="button" data-detail-selection-delete>删除选中</button>
         <button class="oc-btn ghost sm" type="button" data-detail-selection-clear>取消选择</button>
       `;
       grid.parentNode.insertBefore(detailImagesToolbar, grid);
+      const replaceBtn = detailImagesToolbar.querySelector('[data-detail-selection-replace]');
       const deleteBtn = detailImagesToolbar.querySelector('[data-detail-selection-delete]');
       const clearBtn = detailImagesToolbar.querySelector('[data-detail-selection-clear]');
+      if (replaceBtn) replaceBtn.addEventListener('click', replaceSelectedDetailImage);
       if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedDetailImages);
       if (clearBtn) clearBtn.addEventListener('click', clearDetailImageSelection);
       return detailImagesToolbar;
@@ -1088,9 +1091,14 @@
       if (!toolbar) return;
       const count = selectedDetailImageIds.size;
       const label = toolbar.querySelector('[data-detail-selection-count]');
+      const replaceBtn = toolbar.querySelector('[data-detail-selection-replace]');
       const deleteBtn = toolbar.querySelector('[data-detail-selection-delete]');
       toolbar.hidden = count === 0;
       if (label) label.textContent = `已选 ${count} 张`;
+      if (replaceBtn) {
+        replaceBtn.hidden = count !== 1;
+        replaceBtn.disabled = count !== 1;
+      }
       if (deleteBtn) deleteBtn.disabled = count === 0;
     }
 
@@ -1099,6 +1107,11 @@
       selectedDetailImageIds.forEach(id => {
         if (!validIds.has(id)) selectedDetailImageIds.delete(id);
       });
+    }
+
+    function selectedDetailImage() {
+      const selected = items.filter(it => selectedDetailImageIds.has(Number(it.id)));
+      return selected.length === 1 ? selected[0] : null;
     }
 
     function onToggleSelect(e) {
@@ -1239,6 +1252,97 @@
         return 'image/jpeg';
       }
       return '';
+    }
+
+    function pickReplacementFile() {
+      return new Promise((resolve) => {
+        const picker = document.createElement('input');
+        picker.type = 'file';
+        picker.accept = 'image/*';
+        picker.hidden = true;
+        const cleanup = () => {
+          if (picker.parentNode) picker.parentNode.removeChild(picker);
+        };
+        picker.addEventListener('change', () => {
+          const file = [...(picker.files || [])][0] || null;
+          cleanup();
+          resolve(file);
+        }, { once: true });
+        picker.addEventListener('cancel', () => {
+          cleanup();
+          resolve(null);
+        }, { once: true });
+        document.body.appendChild(picker);
+        picker.click();
+      });
+    }
+
+    async function replaceSelectedDetailImage(e) {
+      if (e) e.stopPropagation();
+      if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
+      const target = selectedDetailImage();
+      if (!target) { alert('请只选择一张详情图'); return; }
+      const file = await pickReplacementFile();
+      if (!file) return;
+      const mime = resolveMime(file);
+      if (!mime) {
+        alert('请选择 JPG / PNG / WebP / GIF 图片');
+        return;
+      }
+      const pid = await ensurePid({ allowCreate: false });
+      if (!pid) return;
+      const imageId = Number(target.id);
+      if (!imageId) return;
+
+      setProgress(`准备替换：${file.name}`);
+      try {
+        const boot = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images/${imageId}/replace-bootstrap`,
+          {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file: {
+                filename: file.name,
+                content_type: mime,
+                size: file.size,
+              },
+            }),
+          });
+        const upload = boot && boot.upload;
+        if (!upload || !upload.upload_url || !upload.object_key) {
+          throw new Error('后端返回的替换上传位无效');
+        }
+
+        setProgress(`上传替换图片：${file.name}`);
+        const putRes = await fetch(upload.upload_url, {
+          method: 'PUT',
+          headers: { 'Content-Type': mime || 'application/octet-stream' },
+          body: file,
+        });
+        if (!putRes.ok) throw new Error('上传失败');
+
+        setProgress('登记替换…');
+        const done = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images/${imageId}/replace-complete`,
+          {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image: {
+                object_key: upload.object_key,
+                content_type: mime,
+                file_size: file.size,
+              },
+            }),
+          });
+        if (!done.item) throw new Error('后端未返回替换后的详情图');
+        items = items.map(it => Number(it.id) === imageId ? done.item : it);
+        selectedDetailImageIds = new Set([imageId]);
+        renderGrid();
+        setProgress('');
+      } catch (err) {
+        setProgress('替换失败：' + (err.message || err));
+        setTimeout(() => setProgress(''), 3500);
+      }
     }
 
   async function uploadFiles(rawFiles) {

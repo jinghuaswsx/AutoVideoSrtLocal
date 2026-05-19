@@ -29,6 +29,8 @@ from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 DEFAULT_STORE_DOMAIN = settings.DEFAULT_SHOPIFY_DOMAIN
 DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE = "en"
+DETAIL_SIZE_TARGET_OVERRIDE_DOMAIN = "newjoyloo.com"
+DETAIL_SIZE_TARGET_OVERRIDE_MIN_PIXEL = 800
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
@@ -815,6 +817,14 @@ def fetch_storefront_detail_image_natural_sizes(
     cancellation.throw_if_cancelled(cancel_token)
     product = fetch_storefront_product(product_code, locale=locale, store_domain=store_domain)
     body_html = str(product.get("description") or product.get("body_html") or "")
+    return detail_image_natural_sizes_from_html(body_html, cancel_token=cancel_token)
+
+
+def detail_image_natural_sizes_from_html(
+    body_html: str,
+    *,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, dict[str, int]]:
     sizes: dict[str, dict[str, int]] = {}
     for src in taa_cdp.extract_image_srcs(body_html):
         cancellation.throw_if_cancelled(cancel_token)
@@ -830,6 +840,38 @@ def fetch_storefront_detail_image_natural_sizes(
             sizes[token] = {"width": width, "height": height}
     cancellation.throw_if_cancelled(cancel_token)
     return sizes
+
+
+def _is_newjoyloo_target_size_override(store_domain: str | None) -> bool:
+    return settings.normalize_domain(store_domain, default="") == DETAIL_SIZE_TARGET_OVERRIDE_DOMAIN
+
+
+def _is_larger_than_default_detail_size(size: dict[str, Any] | None) -> bool:
+    width, height = _positive_size(size)
+    return width > DETAIL_SIZE_TARGET_OVERRIDE_MIN_PIXEL and height > DETAIL_SIZE_TARGET_OVERRIDE_MIN_PIXEL
+
+
+def select_detail_reference_sizes(
+    *,
+    store_domain: str,
+    reference_size_by_token: dict[str, dict[str, Any]],
+    target_size_by_token: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, dict[str, int]]:
+    selected: dict[str, dict[str, int]] = {}
+    for token, size in (reference_size_by_token or {}).items():
+        width, height = _positive_size(size)
+        if width > 0 and height > 0:
+            selected[token] = {"width": width, "height": height}
+
+    if not _is_newjoyloo_target_size_override(store_domain):
+        return selected
+
+    for token, size in (target_size_by_token or {}).items():
+        if not token or not _is_larger_than_default_detail_size(size):
+            continue
+        width, height = _positive_size(size)
+        selected[token] = {"width": width, "height": height}
+    return selected
 
 
 def _normalize_detail_size_reference_locale(value: str | None) -> str:
@@ -1125,16 +1167,33 @@ def run(
                     store_domain=args.store_domain,
                     cancel_token=cancel_token,
                 )
+                target_sizes = (
+                    detail_image_natural_sizes_from_html(detail_html, cancel_token=cancel_token)
+                    if _is_newjoyloo_target_size_override(args.store_domain)
+                    else {}
+                )
+                selected_sizes = select_detail_reference_sizes(
+                    store_domain=args.store_domain,
+                    reference_size_by_token=reference_sizes,
+                    target_size_by_token=target_sizes,
+                )
+                target_override_count = sum(
+                    1
+                    for token, size in selected_sizes.items()
+                    if _positive_size(size) == _positive_size(target_sizes.get(token))
+                    and _is_larger_than_default_detail_size(target_sizes.get(token))
+                )
                 resized_count = normalize_detail_candidate_sizes_to_reference(
                     downloaded,
-                    reference_sizes,
+                    selected_sizes,
                     output_dir=workspace.source_localized_dir / "_reference_size",
                     cancel_token=cancel_token,
                 )
                 print(
                     "详情图：参考语种尺寸归一化 "
                     f"locale={detail_size_reference_locale} "
-                    f"matched={len(reference_sizes)} resized={resized_count}"
+                    f"matched={len(selected_sizes)} target_override={target_override_count} "
+                    f"resized={resized_count}"
                 )
             except cancellation.OperationCancelled:
                 raise

@@ -632,7 +632,55 @@ def test_generate_image_openrouter_image2_passes_low_quality_and_1k_size_to_open
     assert created["extra_body"]["usage"] == {"include": True}
 
 
-def test_generate_image_openrouter_image2_video_cover_uses_low_quality_and_2k_size():
+def test_generate_image_openrouter_image2_image_translate_forces_low_quality_and_1k_size():
+    import base64 as _b64
+    from appcore import gemini_image
+
+    raw = b"PNG-COVER-I2"
+    data_url = f"data:image/png;base64,{_b64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0, cost="0.05")
+
+    created: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+
+            def _create(**kwargs):
+                created.update(kwargs)
+                return or_resp
+
+            self.chat.completions.create = _create
+
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
+         patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
+        out, mime = gemini_image.generate_image(
+            prompt="封面",
+            source_image=b"SRC",
+            source_mime="image/jpeg",
+            model="openai/gpt-5.4-image-2:high",
+            service="image_translate.generate",
+        )
+
+    assert out == raw
+    assert mime == "image/png"
+    assert created["model"] == "openai/gpt-5.4-image-2"
+    assert created["extra_body"]["quality"] == "low"
+    assert created["extra_body"]["image_config"] == {"image_size": "1K"}
+
+
+def test_generate_image_openrouter_image2_video_cover_keeps_2k_default():
     import base64 as _b64
     from appcore import gemini_image
 
@@ -675,9 +723,57 @@ def test_generate_image_openrouter_image2_video_cover_uses_low_quality_and_2k_si
 
     assert out == raw
     assert mime == "image/png"
-    assert created["model"] == "openai/gpt-5.4-image-2"
     assert created["extra_body"]["quality"] == "low"
     assert created["extra_body"]["image_config"] == {"image_size": "2K"}
+
+
+def test_generate_image_openrouter_image2_sets_aspect_ratio_from_source_image():
+    import base64 as _b64
+    from appcore import gemini_image
+
+    raw = b"PNG-COVER-I2-ASPECT"
+    data_url = f"data:image/png;base64,{_b64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0, cost="0.05")
+
+    created: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+
+            def _create(**kwargs):
+                created.update(kwargs)
+                return or_resp
+
+            self.chat.completions.create = _create
+
+    with patch("appcore.llm_providers._helpers.openrouter_image.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
+         patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
+        out, mime = gemini_image.generate_image(
+            prompt="封面",
+            source_image=_png_bytes(1080, 1920),
+            source_mime="image/png",
+            model="openai/gpt-5.4-image-2:low",
+            service="image_translate.generate",
+        )
+
+    assert out == raw
+    assert mime == "image/png"
+    assert created["extra_body"]["image_config"] == {
+        "image_size": "1K",
+        "aspect_ratio": "9:16",
+    }
 
 
 def test_generate_image_openrouter_non_image2_does_not_set_quality():
@@ -724,8 +820,8 @@ def test_generate_image_openrouter_non_image2_does_not_set_quality():
     assert "quality" not in created.get("extra_body", {})
 
 
-def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_off():
-    """开关关闭，但历史任务 model_id 是 OpenAI Image 2 虚拟 ID：仍应照原档位执行。"""
+def test_generate_image_openrouter_image2_historical_task_forces_low_when_switch_off():
+    """开关关闭，但历史任务 model_id 是 OpenAI Image 2 虚拟 ID：图片翻译仍强制 Low。"""
     import base64 as _b64
     from appcore import gemini_image
 
@@ -767,7 +863,8 @@ def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_
 
     assert out == raw
     assert created["model"] == "openai/gpt-5.4-image-2"
-    assert created["extra_body"]["quality"] == "high"
+    assert created["extra_body"]["quality"] == "low"
+    assert created["extra_body"]["image_config"] == {"image_size": "1K"}
 
 
 def test_generate_image_apimart_passes_requested_resolution():

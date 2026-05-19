@@ -185,8 +185,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         <option value="low" {{ 'selected' if openrouter_openai_image2_default_quality == 'low' }}>Low</option>
       </select>
       <p class="hint">
-        关闭时不在图片翻译模型备选中展示 OpenAI Image 2；开启后在 OpenRouter 通道只追加 Low 档，
-        并把它用于新建任务。历史 Mid / High 任务不受关闭影响。
+        关闭时不在图片翻译模型备选中展示 OpenAI Image 2；开启后在 OpenRouter 通道仅保留 Low。
+        图片翻译固定使用 Low + 1K，避免 Mid / High 的高费用请求。
       </p>
     </div>
 

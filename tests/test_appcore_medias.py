@@ -219,6 +219,40 @@ def test_replace_detail_images_for_lang_recreates_rows_with_provenance(monkeypat
     assert inserted[1][3]["image_translate_task_id"] == "img-task-1"
 
 
+def test_replace_detail_image_asset_updates_row_and_clears_provenance(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    updated = medias.replace_detail_image_asset(
+        88,
+        object_key="1/medias/101/new.jpg",
+        content_type="image/jpeg",
+        file_size=42,
+        width=640,
+        height=480,
+    )
+
+    assert updated == 1
+    assert "origin_type=%s" in captured["sql"]
+    assert "source_detail_image_id=NULL" in captured["sql"]
+    assert "image_translate_task_id=NULL" in captured["sql"]
+    assert captured["args"] == (
+        "1/medias/101/new.jpg",
+        "image/jpeg",
+        42,
+        640,
+        480,
+        "manual",
+        88,
+    )
+
+
 def test_update_product_link_check_tasks_json(monkeypatch):
     payload = {
         "de": {

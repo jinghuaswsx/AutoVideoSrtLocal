@@ -13,7 +13,7 @@ from appcore import medias
 SUPPORTED_LANGS: tuple[str, ...] = ("de", "fr", "es", "it", "ja", "pt", "nl", "sv", "fi")
 PRESETS: tuple[str, ...] = ("cover", "detail")
 
-# 图片翻译 Gemini 通道（全局配置，存 system_settings）
+# 图片翻译通道（全局配置，存 system_settings）
 CHANNELS: tuple[str, ...] = ("aistudio", "cloud", "cloud_adc", "openrouter", "doubao", "apimart", "local_image_2")
 CHANNEL_LABELS: dict[str, str] = {
     "aistudio": "Google AI Studio",
@@ -25,10 +25,10 @@ CHANNEL_LABELS: dict[str, str] = {
     "local_image_2": "本地 Image 2",
 }
 _CHANNEL_KEY = "image_translate.channel"
-_DEFAULT_CHANNEL = "openrouter"
+_DEFAULT_CHANNEL = "local_image_2"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "openrouter"
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "openai/gpt-5.4-image-2:low"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "local_image_2"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gpt-image-2"
 
 # OpenRouter OpenAI Image 2 质量档位开关与默认值；新建入口只暴露 low。
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
@@ -660,7 +660,7 @@ def update_prompt(preset: str, lang: str, value: str) -> None:
 
 
 def get_channel() -> str:
-    """返回当前图片翻译通道。未配置或不合法时回退到默认 OpenRouter。"""
+    """返回当前图片翻译通道。未配置或不合法时回退到本地 Image 2。"""
     return _normalize_channel(_read(_CHANNEL_KEY))
 
 
@@ -711,7 +711,7 @@ def is_openrouter_openai_image2_enabled() -> bool:
     """是否启用 OpenRouter 的 OpenAI Image 2 Low 模型。"""
     value = _read(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY)
     if value is None:
-        return True
+        return False
     raw = str(value or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 

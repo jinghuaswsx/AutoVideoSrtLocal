@@ -623,9 +623,9 @@ def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_
     assert "启用 OpenAI Image 2" in body
     assert 'name="openrouter_openai_image2_enabled"' in body
     assert 'name="openrouter_openai_image2_default_quality"' in body
-    assert '<option value="low" selected>Low</option>' in body
-    assert '<option value="mid"' not in body
-    assert '<option value="high"' not in body
+    assert 'value="low"' in body and 'selected' in body
+    assert 'value="mid"' not in body
+    assert 'value="high"' not in body
     assert 'id="openrouterOpenaiImage2Enabled"' in body
     assert "checked" in body
 

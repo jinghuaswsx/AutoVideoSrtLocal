@@ -171,3 +171,132 @@ def test_build_detail_images_complete_response_rejects_missing_object_before_ins
 
     assert result.status_code == 400
     assert result.payload == {"error": "images[0] object missing: missing.jpg"}
+
+
+def test_build_detail_image_replace_bootstrap_response_reserves_single_upload():
+    from web.services.media_detail_uploads import build_detail_image_replace_bootstrap_response
+
+    calls = []
+
+    result = build_detail_image_replace_bootstrap_response(
+        123,
+        9,
+        7,
+        {"file": {"filename": "../new detail.jpg", "content_type": "image/jpeg", "size": 12}},
+        get_detail_image_fn=lambda image_id: {
+            "id": image_id,
+            "product_id": 123,
+            "lang": "de",
+            "object_key": "7/medias/123/old.jpg",
+            "deleted_at": None,
+        },
+        reserve_local_media_upload_fn=lambda object_key: (
+            calls.append(("reserve", object_key)) or {"upload_url": f"/upload/{object_key}"}
+        ),
+        build_media_object_key_fn=lambda user_id, pid, filename: (
+            calls.append(("key", user_id, pid, filename)) or f"{user_id}/medias/{pid}/{filename}"
+        ),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "upload": {
+            "idx": 0,
+            "object_key": "7/medias/123/detail_de_replace_9_new detail.jpg",
+            "upload_url": "/upload/7/medias/123/detail_de_replace_9_new detail.jpg",
+        },
+        "storage_backend": "local",
+    }
+    assert calls == [
+        ("key", 7, 123, "detail_de_replace_9_new detail.jpg"),
+        ("reserve", "7/medias/123/detail_de_replace_9_new detail.jpg"),
+    ]
+
+
+def test_build_detail_image_replace_bootstrap_response_rejects_missing_image_before_reserve():
+    from web.services.media_detail_uploads import build_detail_image_replace_bootstrap_response
+
+    result = build_detail_image_replace_bootstrap_response(
+        123,
+        9,
+        7,
+        {"file": {"filename": "new.jpg", "content_type": "image/jpeg", "size": 12}},
+        get_detail_image_fn=lambda image_id: None,
+        reserve_local_media_upload_fn=lambda object_key: (_ for _ in ()).throw(AssertionError("reserve not reached")),
+        build_media_object_key_fn=lambda *args: (_ for _ in ()).throw(AssertionError("key not reached")),
+    )
+
+    assert result.status_code == 404
+    assert result.payload == {"error": "detail image not found"}
+
+
+def test_build_detail_image_replace_complete_response_updates_existing_row():
+    from web.services.media_detail_uploads import build_detail_image_replace_complete_response
+
+    calls = []
+    rows = {
+        9: {
+            "id": 9,
+            "product_id": 123,
+            "lang": "de",
+            "sort_order": 2,
+            "object_key": "7/medias/123/old.jpg",
+            "content_type": "image/jpeg",
+            "file_size": 11,
+            "width": None,
+            "height": None,
+            "origin_type": "image_translate",
+            "source_detail_image_id": 3,
+            "image_translate_task_id": "img-1",
+            "created_at": None,
+            "deleted_at": None,
+        }
+    }
+
+    def fake_update(image_id, **kwargs):
+        calls.append(("update", image_id, kwargs))
+        rows[image_id] = {
+            **rows[image_id],
+            **kwargs,
+            "origin_type": "manual",
+            "source_detail_image_id": None,
+            "image_translate_task_id": None,
+        }
+        return 1
+
+    result = build_detail_image_replace_complete_response(
+        123,
+        9,
+        {
+            "image": {
+                "object_key": "7/medias/123/new.jpg",
+                "content_type": "image/jpeg",
+                "file_size": "42",
+                "width": "640",
+                "height": "480",
+            }
+        },
+        get_detail_image_fn=lambda image_id: rows.get(image_id),
+        is_media_available_fn=lambda object_key: calls.append(("exists", object_key)) or True,
+        replace_detail_image_asset_fn=fake_update,
+        serialize_detail_image_fn=lambda row: {"id": row["id"], "object_key": row["object_key"], "sort_order": row["sort_order"]},
+        delete_media_object_fn=lambda object_key: calls.append(("delete", object_key)),
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"item": {"id": 9, "object_key": "7/medias/123/new.jpg", "sort_order": 2}}
+    assert calls == [
+        ("exists", "7/medias/123/new.jpg"),
+        (
+            "update",
+            9,
+            {
+                "object_key": "7/medias/123/new.jpg",
+                "content_type": "image/jpeg",
+                "file_size": 42,
+                "width": 640,
+                "height": 480,
+            },
+        ),
+        ("delete", "7/medias/123/old.jpg"),
+    ]
