@@ -14,7 +14,11 @@ from flask_login import current_user, login_required
 from web.auth import permission_required
 
 from appcore import image_translate_store, local_media_storage, medias, runner_dispatch, task_state
-from appcore.gemini_image import is_valid_image_model, list_image_models
+from appcore.gemini_image import (
+    is_openrouter_openai_image2_model,
+    is_valid_image_model,
+    list_image_models,
+)
 from appcore import image_translate_settings as its
 
 _BACKEND_LABELS = {
@@ -29,6 +33,19 @@ _BACKEND_LABELS = {
 def _channel_label(channel: str) -> str:
     key = (channel or "").strip().lower()
     return its.CHANNEL_LABELS.get(key) or _BACKEND_LABELS.get(key, key or "unknown")
+
+
+def _is_valid_model_origin(channel: str | None, model_id: str | None) -> bool:
+    channel_key = (channel or "").strip().lower()
+    model = (model_id or "").strip()
+    if not channel_key or not model:
+        return False
+    if channel_key == "openrouter" and is_openrouter_openai_image2_model(model):
+        return True
+    try:
+        return is_valid_image_model(model, channel=channel_key)
+    except Exception:
+        return False
 
 
 def _backend_badge(channel: str | None = None) -> dict:
@@ -397,6 +414,7 @@ def _state_payload(task: dict) -> dict:
         "channel": channel,
         "channel_label": _channel_label(channel),
         "model_id": task.get("model_id") or "",
+        "model_origin_valid": _is_valid_model_origin(channel, task.get("model_id") or ""),
         "prompt": task.get("prompt") or "",
         "product_name": task.get("product_name") or "",
         "project_name": task.get("project_name") or "",
