@@ -26,7 +26,8 @@ def test_select_candidate_products_groups_missing_assets_by_product_url():
 
     assert rows[0]["product_code"] == "fitness-band"
     sql, args = calls[0]
-    assert "product_assets_synced_at IS NULL" in sql
+    assert "LEFT JOIN dianxiaomi_product_assets dpa" in sql
+    assert "dpa.last_synced_at IS NULL" in sql
     assert "GROUP BY" in sql
     assert "product_url" in sql
     assert args == ("2026-05-18", "2026-05-18", 25)
@@ -44,7 +45,7 @@ def test_select_candidate_products_force_omits_missing_assets_predicate():
 
     backfill.select_candidate_products(limit=10, query_fn=fake_query, force=True)
 
-    assert "product_assets_synced_at IS NULL" not in captured["sql"]
+    assert "dpa.last_synced_at IS NULL" not in captured["sql"]
     assert captured["args"] == (10,)
 
 
@@ -60,10 +61,10 @@ def test_select_candidate_products_includes_attempted_rows_with_missing_main_ima
 
     backfill.select_candidate_products(limit=10, query_fn=fake_query)
 
-    assert "product_main_image_url IS NULL" in captured["sql"]
-    assert "product_main_image_url = ''" in captured["sql"]
-    assert "product_main_image_object_key IS NULL" in captured["sql"]
-    assert "product_main_image_object_key = ''" in captured["sql"]
+    assert "dpa.product_main_image_url IS NULL" in captured["sql"]
+    assert "dpa.product_main_image_url = ''" in captured["sql"]
+    assert "dpa.product_main_image_object_key IS NULL" in captured["sql"]
+    assert "dpa.product_main_image_object_key = ''" in captured["sql"]
     assert captured["args"] == (10,)
 
 
@@ -81,7 +82,7 @@ def test_select_candidate_products_only_retries_missing_main_image_when_product_
 
     normalized_sql = " ".join(captured["sql"].split())
     assert (
-        "OR ( product_url IS NOT NULL AND product_url <> '' AND"
+        "OR ( dr.product_url IS NOT NULL AND dr.product_url <> '' AND"
         in normalized_sql
     )
 
@@ -103,18 +104,18 @@ def test_select_candidate_products_can_filter_by_hash_shard():
         shard_count=4,
     )
 
-    assert "MOD(CRC32(COALESCE(NULLIF(product_url, ''), CONCAT('product_id:', product_id))), %s) = %s" in captured["sql"]
+    assert "MOD(CRC32(COALESCE(NULLIF(dr.product_url, ''), CONCAT('product_id:', dr.product_id))), %s) = %s" in captured["sql"]
     assert captured["args"] == (4, 2, 10)
 
 
-def test_update_backfilled_product_by_url_writes_asset_fields_to_all_matching_rows():
+def test_update_backfilled_product_by_url_writes_asset_fields_to_product_table_only():
     from tools import backfill_dianxiaomi_product_assets as backfill
 
     calls = []
 
     def fake_execute(sql, args=()):
         calls.append((sql, args))
-        return 7
+        return 7 if "UPDATE dianxiaomi_rankings" in sql else 1
 
     changed = backfill.update_backfilled_product(
         {
@@ -137,12 +138,16 @@ def test_update_backfilled_product_by_url_writes_asset_fields_to_all_matching_ro
     )
 
     assert changed == 7
-    sql, args = calls[0]
-    assert "product_assets_synced_at=NOW()" in sql
-    assert "WHERE product_url = %s" in sql
-    assert args[-1] == "https://shop.example/products/fitness-band-rjc"
-    assert args[0] == "fitness-band"
-    assert args[5] == "健身脚蹬拉力器"
+    asset_sql, asset_args = calls[0]
+    ranking_sql, ranking_args = calls[1]
+    assert "INSERT INTO dianxiaomi_product_assets" in asset_sql
+    assert "product_main_image_object_key" in asset_sql
+    assert asset_args[2] == "fitness-band"
+    assert "UPDATE dianxiaomi_rankings" in ranking_sql
+    assert "SET product_code=%s" in ranking_sql
+    assert "product_main_image_url" not in ranking_sql
+    assert "WHERE product_url = %s" in ranking_sql
+    assert ranking_args == ("fitness-band", "https://shop.example/products/fitness-band-rjc")
 
 
 def test_update_backfilled_product_without_url_marks_product_id_rows():
@@ -157,10 +162,10 @@ def test_update_backfilled_product_without_url_marks_product_id_rows():
     )
 
     assert changed == 3
-    sql, args = calls[0]
+    sql, args = calls[1]
     assert "WHERE product_id = %s AND (product_url IS NULL OR product_url = '')" in sql
     assert args[-1] == "7540261912642"
-    assert args[4] == "missing product_url"
+    assert args[0] is None
 
 
 def test_run_backfill_dry_run_does_not_enrich_or_update():

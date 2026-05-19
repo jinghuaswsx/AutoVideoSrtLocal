@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from appcore.db import execute, query
 from tools.dianxiaomi_listing_ranking_sync import (
+    build_product_asset_records,
     enrich_listing_rows,
     guard_against_windows_local_mysql,
     product_code_from_url,
@@ -30,16 +31,17 @@ OUTPUT_DIR = REPO_ROOT / "output" / "dianxiaomi_product_asset_backfill"
 def _missing_assets_predicate() -> str:
     return """
     (
-      product_assets_synced_at IS NULL
-      OR ((product_code IS NULL OR product_code = '') AND product_url IS NOT NULL AND product_url <> '')
+      dpa.id IS NULL
+      OR dpa.last_synced_at IS NULL
+      OR ((dr.product_code IS NULL OR dr.product_code = '') AND dr.product_url IS NOT NULL AND dr.product_url <> '')
       OR (
-        product_url IS NOT NULL
-        AND product_url <> ''
+        dr.product_url IS NOT NULL
+        AND dr.product_url <> ''
         AND (
-          product_main_image_url IS NULL
-          OR product_main_image_url = ''
-          OR product_main_image_object_key IS NULL
-          OR product_main_image_object_key = ''
+          dpa.product_main_image_url IS NULL
+          OR dpa.product_main_image_url = ''
+          OR dpa.product_main_image_object_key IS NULL
+          OR dpa.product_main_image_object_key = ''
         )
       )
     )
@@ -56,33 +58,49 @@ def select_candidate_products(
     shard_index: int = 0,
     shard_count: int = 1,
 ) -> list[dict[str, Any]]:
-    where_parts = ["(product_url IS NOT NULL AND product_url <> '' OR product_id IS NOT NULL AND product_id <> '')"]
+    where_parts = ["(dr.product_url IS NOT NULL AND dr.product_url <> '' OR dr.product_id IS NOT NULL AND dr.product_id <> '')"]
     args: list[Any] = []
     if not force:
         where_parts.append(_missing_assets_predicate())
     if snapshot_date_from:
-        where_parts.append("snapshot_date >= %s")
+        where_parts.append("dr.snapshot_date >= %s")
         args.append(snapshot_date_from)
     if snapshot_date_to:
-        where_parts.append("snapshot_date <= %s")
+        where_parts.append("dr.snapshot_date <= %s")
         args.append(snapshot_date_to)
     if int(shard_count) > 1:
         where_parts.append(
-            "MOD(CRC32(COALESCE(NULLIF(product_url, ''), CONCAT('product_id:', product_id))), %s) = %s"
+            "MOD(CRC32(COALESCE(NULLIF(dr.product_url, ''), CONCAT('product_id:', dr.product_id))), %s) = %s"
         )
         args.extend([int(shard_count), int(shard_index)])
     where_sql = " AND ".join(f"({part})" for part in where_parts)
     sql = f"""
     SELECT
-      MAX(product_id) AS product_id,
-      MAX(product_name) AS product_name,
-      MAX(COALESCE(NULLIF(product_url, ''), '')) AS product_url,
+      MAX(dr.product_id) AS product_id,
+      MAX(dr.product_name) AS product_name,
+      MAX(COALESCE(NULLIF(dr.product_url, ''), '')) AS product_url,
       COUNT(*) AS ranking_rows,
-      MAX(snapshot_date) AS latest_snapshot_date
-    FROM dianxiaomi_rankings
+      MAX(dr.snapshot_date) AS latest_snapshot_date
+    FROM dianxiaomi_rankings dr
+    LEFT JOIN dianxiaomi_product_assets dpa
+      ON (
+        dpa.product_code IS NOT NULL
+        AND dpa.product_code <> ''
+        AND dpa.product_code = dr.product_code
+      )
+      OR (
+        dpa.product_url IS NOT NULL
+        AND dpa.product_url <> ''
+        AND dpa.product_url = dr.product_url
+      )
+      OR (
+        dpa.product_id IS NOT NULL
+        AND dpa.product_id <> ''
+        AND dpa.product_id = dr.product_id
+      )
     WHERE {where_sql}
-    GROUP BY COALESCE(NULLIF(product_url, ''), CONCAT('product_id:', product_id))
-    ORDER BY MAX(snapshot_date) DESC, COUNT(*) DESC
+    GROUP BY COALESCE(NULLIF(dr.product_url, ''), CONCAT('product_id:', dr.product_id))
+    ORDER BY MAX(dr.snapshot_date) DESC, COUNT(*) DESC
     LIMIT %s
     """
     args.append(int(limit))
@@ -104,63 +122,89 @@ def _asset_value(row: dict[str, Any], key: str) -> Any:
     return value
 
 
+def _upsert_product_asset(
+    product: dict[str, Any],
+    enriched: dict[str, Any],
+    *,
+    execute_fn: Callable[[str, tuple], int],
+) -> None:
+    merged = dict(product)
+    merged.update(enriched)
+    records = build_product_asset_records([merged])
+    if not records:
+        return
+    record = records[0]
+    execute_fn(
+        """
+        INSERT INTO dianxiaomi_product_assets
+            (asset_key, product_id, product_code, product_url, product_name,
+             product_main_image_url, product_main_image_object_key, product_detail_images_json,
+             product_assets_error, product_cn_name, mk_first_material_name,
+             mk_first_material_path, mk_first_material_url, mk_material_error, last_synced_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        ON DUPLICATE KEY UPDATE
+            product_id=COALESCE(NULLIF(VALUES(product_id), ''), product_id),
+            product_code=COALESCE(NULLIF(VALUES(product_code), ''), product_code),
+            product_url=COALESCE(NULLIF(VALUES(product_url), ''), product_url),
+            product_name=COALESCE(NULLIF(VALUES(product_name), ''), product_name),
+            product_main_image_url=COALESCE(NULLIF(VALUES(product_main_image_url), ''), product_main_image_url),
+            product_main_image_object_key=COALESCE(NULLIF(VALUES(product_main_image_object_key), ''), product_main_image_object_key),
+            product_detail_images_json=COALESCE(VALUES(product_detail_images_json), product_detail_images_json),
+            product_assets_error=VALUES(product_assets_error),
+            product_cn_name=COALESCE(NULLIF(VALUES(product_cn_name), ''), product_cn_name),
+            mk_first_material_name=COALESCE(NULLIF(VALUES(mk_first_material_name), ''), mk_first_material_name),
+            mk_first_material_path=COALESCE(NULLIF(VALUES(mk_first_material_path), ''), mk_first_material_path),
+            mk_first_material_url=COALESCE(NULLIF(VALUES(mk_first_material_url), ''), mk_first_material_url),
+            mk_material_error=VALUES(mk_material_error),
+            last_synced_at=VALUES(last_synced_at),
+            updated_at=NOW()
+        """,
+        (
+            record["asset_key"],
+            _asset_value(record, "product_id"),
+            _asset_value(record, "product_code"),
+            _asset_value(record, "product_url"),
+            _asset_value(record, "product_name"),
+            _asset_value(record, "product_main_image_url"),
+            _asset_value(record, "product_main_image_object_key"),
+            _asset_value(record, "product_detail_images_json"),
+            _asset_value(record, "product_assets_error"),
+            _asset_value(record, "product_cn_name"),
+            _asset_value(record, "mk_first_material_name"),
+            _asset_value(record, "mk_first_material_path"),
+            _asset_value(record, "mk_first_material_url"),
+            _asset_value(record, "mk_material_error"),
+        ),
+    )
+
+
 def update_backfilled_product(
     product: dict[str, Any],
     enriched: dict[str, Any],
     *,
     execute_fn: Callable[[str, tuple], int] = execute,
 ) -> int:
-    args = (
-        _asset_value(enriched, "product_code"),
-        _asset_value(enriched, "product_main_image_url"),
-        _asset_value(enriched, "product_main_image_object_key"),
-        _asset_value(enriched, "product_detail_images_json"),
-        _asset_value(enriched, "product_assets_error"),
-        _asset_value(enriched, "product_cn_name"),
-        _asset_value(enriched, "mk_first_material_name"),
-        _asset_value(enriched, "mk_first_material_path"),
-        _asset_value(enriched, "mk_first_material_url"),
-        _asset_value(enriched, "mk_material_error"),
-    )
+    _upsert_product_asset(product, enriched, execute_fn=execute_fn)
+    product_code = _asset_value(enriched, "product_code")
     product_url = str(product.get("product_url") or "").strip()
     product_id = str(product.get("product_id") or "").strip()
     if product_url:
         return execute_fn(
             """
             UPDATE dianxiaomi_rankings
-            SET product_code=%s,
-                product_main_image_url=%s,
-                product_main_image_object_key=%s,
-                product_detail_images_json=%s,
-                product_assets_error=%s,
-                product_cn_name=%s,
-                mk_first_material_name=%s,
-                mk_first_material_path=%s,
-                mk_first_material_url=%s,
-                mk_material_error=%s,
-                product_assets_synced_at=NOW()
+            SET product_code=%s
             WHERE product_url = %s
             """,
-            args + (product_url,),
+            (product_code, product_url),
         )
     if product_id:
         return execute_fn(
             """
             UPDATE dianxiaomi_rankings
-            SET product_code=%s,
-                product_main_image_url=%s,
-                product_main_image_object_key=%s,
-                product_detail_images_json=%s,
-                product_assets_error=%s,
-                product_cn_name=%s,
-                mk_first_material_name=%s,
-                mk_first_material_path=%s,
-                mk_first_material_url=%s,
-                mk_material_error=%s,
-                product_assets_synced_at=NOW()
+            SET product_code=%s
             WHERE product_id = %s AND (product_url IS NULL OR product_url = '')
             """,
-            args + (product_id,),
+            (product_code, product_id),
         )
     return 0
 

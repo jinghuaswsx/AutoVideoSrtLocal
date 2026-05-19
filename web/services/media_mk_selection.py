@@ -421,6 +421,7 @@ def build_mk_selection_response(
     args: Mapping[str, str],
     *,
     ranking_columns_fn: Callable[[], Sequence[str] | set[str]],
+    product_assets_table_exists_fn: Callable[[], bool] | None = None,
     db_query_fn: Callable[[str, list], list[dict]],
 ) -> MkSelectionResponse:
     keyword = (args.get("keyword") or "").strip()
@@ -452,6 +453,7 @@ def build_mk_selection_response(
     has_mk_first_material_name = "mk_first_material_name" in ranking_columns
     has_mk_first_material_path = "mk_first_material_path" in ranking_columns
     has_mk_first_material_url = "mk_first_material_url" in ranking_columns
+    has_product_assets_table = bool(product_assets_table_exists_fn and product_assets_table_exists_fn())
 
     where = "dr.snapshot_date = %s"
     params: list = [snapshot]
@@ -465,44 +467,97 @@ def build_mk_selection_response(
         if has_product_cn_name:
             keyword_clauses.append("dr.product_cn_name LIKE %s")
             params.append(f"%{keyword}%")
+        if has_product_assets_table:
+            if not has_product_code:
+                keyword_clauses.append("dpa.product_code LIKE %s")
+                params.append(f"%{keyword}%")
+            keyword_clauses.append("dpa.product_cn_name LIKE %s")
+            params.append(f"%{keyword}%")
         if has_mk_product_name:
             keyword_clauses.append("dr.mk_product_name LIKE %s")
             params.append(f"%{keyword}%")
         where += " AND (" + " OR ".join(keyword_clauses) + ")"
+
+    product_assets_join = ""
+    if has_product_assets_table:
+        join_conditions = [
+            "(dpa.product_url IS NOT NULL AND dpa.product_url <> '' AND dpa.product_url = dr.product_url)",
+            "(dpa.product_id IS NOT NULL AND dpa.product_id <> '' AND dpa.product_id = dr.product_id)",
+        ]
+        if has_product_code:
+            join_conditions.insert(
+                0,
+                "(dpa.product_code IS NOT NULL AND dpa.product_code <> '' AND dpa.product_code = dr.product_code)",
+            )
+        product_assets_join = "LEFT JOIN dianxiaomi_product_assets dpa ON " + " OR ".join(join_conditions)
+
+    def asset_select(asset_column: str, legacy_expr: str | None, alias: str) -> str:
+        if has_product_assets_table:
+            if legacy_expr:
+                return f"COALESCE(dpa.{asset_column}, {legacy_expr}) AS {alias}"
+            return f"dpa.{asset_column} AS {alias}"
+        if legacy_expr:
+            return f"{legacy_expr} AS {alias}"
+        return f"NULL AS {alias}"
 
     mk_product_id_select = "dr.mk_product_id" if has_mk_product_id else "NULL AS mk_product_id"
     mk_product_name_select = "dr.mk_product_name" if has_mk_product_name else "NULL AS mk_product_name"
     mk_total_spends_select = "dr.mk_total_spends" if has_mk_total_spends else "0 AS mk_total_spends"
     mk_video_count_select = "dr.mk_video_count" if has_mk_video_count else "0 AS mk_video_count"
     mk_total_ads_select = "dr.mk_total_ads" if has_mk_total_ads else "0 AS mk_total_ads"
-    product_code_select = "dr.product_code" if has_product_code else "NULL AS product_code"
-    product_main_image_url_select = (
-        "dr.product_main_image_url" if has_product_main_image_url else "NULL AS product_main_image_url"
+    if has_product_assets_table and has_product_code:
+        product_code_select = "COALESCE(NULLIF(dr.product_code, ''), dpa.product_code) AS product_code"
+    elif has_product_assets_table:
+        product_code_select = "dpa.product_code AS product_code"
+    elif has_product_code:
+        product_code_select = "dr.product_code AS product_code"
+    else:
+        product_code_select = "NULL AS product_code"
+    product_main_image_url_select = asset_select(
+        "product_main_image_url",
+        "dr.product_main_image_url" if has_product_main_image_url else None,
+        "product_main_image_url",
     )
-    product_main_image_object_key_select = (
-        "dr.product_main_image_object_key"
-        if has_product_main_image_object_key
-        else "NULL AS product_main_image_object_key"
+    product_main_image_object_key_select = asset_select(
+        "product_main_image_object_key",
+        "dr.product_main_image_object_key" if has_product_main_image_object_key else None,
+        "product_main_image_object_key",
     )
-    product_detail_images_json_select = (
-        "dr.product_detail_images_json"
-        if has_product_detail_images_json
-        else "NULL AS product_detail_images_json"
+    product_detail_images_json_select = asset_select(
+        "product_detail_images_json",
+        "dr.product_detail_images_json" if has_product_detail_images_json else None,
+        "product_detail_images_json",
     )
-    product_cn_name_select = "dr.product_cn_name" if has_product_cn_name else "NULL AS product_cn_name"
-    mk_first_material_name_select = (
-        "dr.mk_first_material_name" if has_mk_first_material_name else "NULL AS mk_first_material_name"
+    product_cn_name_select = asset_select(
+        "product_cn_name",
+        "dr.product_cn_name" if has_product_cn_name else None,
+        "product_cn_name",
     )
-    mk_first_material_path_select = (
-        "dr.mk_first_material_path" if has_mk_first_material_path else "NULL AS mk_first_material_path"
+    mk_first_material_name_select = asset_select(
+        "mk_first_material_name",
+        "dr.mk_first_material_name" if has_mk_first_material_name else None,
+        "mk_first_material_name",
     )
-    mk_first_material_url_select = (
-        "dr.mk_first_material_url" if has_mk_first_material_url else "NULL AS mk_first_material_url"
+    mk_first_material_path_select = asset_select(
+        "mk_first_material_path",
+        "dr.mk_first_material_path" if has_mk_first_material_path else None,
+        "mk_first_material_path",
+    )
+    mk_first_material_url_select = asset_select(
+        "mk_first_material_url",
+        "dr.mk_first_material_url" if has_mk_first_material_url else None,
+        "mk_first_material_url",
     )
     order_by = "dr.mk_total_spends DESC, dr.rank_position ASC" if has_mk_total_spends else "dr.rank_position ASC"
 
+    count_expr = "COUNT(DISTINCT dr.id)" if has_product_assets_table else "COUNT(*)"
     count_row = db_query_fn(
-        f"SELECT COUNT(*) AS cnt FROM dianxiaomi_rankings dr WHERE {where}",
+        f"""
+        SELECT {count_expr} AS cnt
+        FROM dianxiaomi_rankings dr
+        {product_assets_join}
+        WHERE {where}
+        """,
         params,
     )
     total = count_row[0]["cnt"] if count_row else 0
@@ -523,6 +578,7 @@ def build_mk_selection_response(
             dr.media_product_id,
             mp.name AS mp_name, mp.product_code AS mp_code
         FROM dianxiaomi_rankings dr
+        {product_assets_join}
         LEFT JOIN media_products mp ON dr.media_product_id = mp.id
         WHERE {where}
         ORDER BY {order_by}

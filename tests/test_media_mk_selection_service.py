@@ -290,6 +290,86 @@ def test_build_mk_selection_response_returns_product_asset_fields_when_schema_ha
     assert item["mk_first_material_name"] == "2025.12.25-健身脚蹬拉力器-原素材.mp4"
 
 
+def test_build_mk_selection_response_prefers_product_asset_table_over_legacy_columns():
+    from web.services.media_mk_selection import build_mk_selection_response
+
+    def fake_ranking_columns():
+        return {
+            "id",
+            "product_id",
+            "product_name",
+            "product_url",
+            "store",
+            "sales_count",
+            "order_count",
+            "revenue_main",
+            "revenue_split",
+            "media_product_id",
+            "snapshot_date",
+            "rank_position",
+            "product_code",
+        }
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-18"}]
+        if "SELECT COUNT(" in sql:
+            assert "LEFT JOIN dianxiaomi_product_assets dpa" in sql
+            assert "dpa.product_cn_name LIKE %s" in sql
+            assert args == ["2026-05-18", "%fitness%", "%fitness%", "%fitness%"]
+            return [{"cnt": 1}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert "LEFT JOIN dianxiaomi_product_assets dpa" in sql
+            assert "dpa.product_main_image_object_key AS product_main_image_object_key" in sql
+            assert "dpa.product_detail_images_json AS product_detail_images_json" in sql
+            assert args == ["2026-05-18", "%fitness%", "%fitness%", "%fitness%", 50, 0]
+            return [
+                {
+                    "rank_position": 1,
+                    "shopify_id": "7540261912642",
+                    "product_name": "21 Fitness Resistance Bands",
+                    "product_url": "https://shop.example/products/fitness-band",
+                    "store": "7543373",
+                    "sales_count": 1635,
+                    "order_count": 1500,
+                    "revenue_main": "CNY 154353.48",
+                    "revenue_split": "CNY 94.00",
+                    "mk_product_id": None,
+                    "mk_product_name": None,
+                    "mk_total_spends": 0,
+                    "mk_video_count": 0,
+                    "mk_total_ads": 0,
+                    "media_product_id": None,
+                    "mp_name": None,
+                    "mp_code": None,
+                    "product_code": "fitness-band",
+                    "product_main_image_url": "https://cdn.example/main.jpg",
+                    "product_main_image_object_key": "xuanpin/product-main-images/fitness-band/main.jpg",
+                    "product_detail_images_json": '["https://cdn.example/detail.jpg"]',
+                    "product_cn_name": "Fitness Band CN",
+                    "mk_first_material_name": "material.mp4",
+                    "mk_first_material_path": "uploads/material.mp4",
+                    "mk_first_material_url": "https://os.example/medias/uploads/material.mp4",
+                }
+            ]
+        raise AssertionError(sql)
+
+    result = build_mk_selection_response(
+        {"keyword": "fitness"},
+        ranking_columns_fn=fake_ranking_columns,
+        product_assets_table_exists_fn=lambda: True,
+        db_query_fn=fake_db_query,
+    )
+
+    assert result.status_code == 200
+    item = result.payload["items"][0]
+    assert item["product_main_image_local_url"] == (
+        "/medias/object?object_key=xuanpin%2Fproduct-main-images%2Ffitness-band%2Fmain.jpg"
+    )
+    assert item["product_detail_image_urls"] == ["https://cdn.example/detail.jpg"]
+    assert item["product_cn_name"] == "Fitness Band CN"
+
+
 def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query():
     from web.services.media_mk_selection import build_mk_selection_response
 
