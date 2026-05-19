@@ -489,7 +489,8 @@ async function loadMkLocalMaterialLibrary(page) {
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const total = Number(data.total || 0);
     document.getElementById('totalCount').textContent = total + ' 条';
-    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${data.snapshot || '最新'}`;
+    const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
+    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${snapshotLabel}`;
     status.textContent = `${scopeText} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
@@ -524,8 +525,10 @@ async function loadMkYesterdayTop100(page) {
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const total = Number(data.total || 0);
     document.getElementById('totalCount').textContent = total + ' 条';
-    const previousText = data.previous_snapshot ? ` · 对比 ${data.previous_snapshot}` : '';
-    status.textContent = `快照 ${data.snapshot || '最新'}${previousText} · 昨天消耗前100`;
+    const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
+    const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
+    const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
+    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前100`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前100归档</div>';
     } else {

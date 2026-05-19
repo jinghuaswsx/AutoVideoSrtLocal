@@ -10,6 +10,7 @@ def test_arg_parser_defaults_to_top300_and_sleep_policy():
     assert args.batch_size == 10
     assert args.sleep_after_products == 2
     assert args.sleep_seconds == 30
+    assert args.snapshot_at == ""
 
 
 def test_main_invokes_service_run(monkeypatch):
@@ -25,6 +26,14 @@ def test_main_invokes_service_run(monkeypatch):
         fake_run_daily_snapshot,
     )
 
-    assert runner.main(["--source-limit", "3", "--sleep-seconds", "0"]) == 0
+    assert runner.main([
+        "--source-limit",
+        "3",
+        "--sleep-seconds",
+        "0",
+        "--snapshot-at",
+        "2026-05-19 18:00:00",
+    ]) == 0
     assert called["source_limit"] == 3
     assert called["sleep_seconds"] == 0
+    assert called["snapshot_at"] == "2026-05-19 18:00:00"

@@ -16,6 +16,7 @@ def test_mingkong_material_daily_snapshot_registered():
     assert task["runner"] == "tools/mingkong_material_daily_snapshot.py"
     assert task["log_table"] == "scheduled_task_runs"
     assert "06:00" in task["schedule"]
+    assert "18:00" in task["schedule"]
     assert "2026-05-18-mingkong-daily-material-snapshot-top100-design.md" in task["description"]
     assert enriched["control_strategy"] == "systemd"
     assert enriched["log_source"] == "db:scheduled_task_runs"
@@ -36,5 +37,6 @@ def test_mingkong_material_daily_snapshot_systemd_units():
     assert "python tools/mingkong_material_daily_snapshot.py" in service
     assert "TimeoutStartSec=21600" in service
     assert "OnCalendar=*-*-* 06:00:00" in timer
+    assert "OnCalendar=*-*-* 18:00:00" in timer
     assert "Persistent=true" in timer
     assert "systemctl enable --now" in installer

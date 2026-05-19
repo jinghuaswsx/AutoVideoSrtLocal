@@ -21,6 +21,7 @@ from web.services.media_mk_selection import normalize_mk_media_path
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 _COVER_CACHE_PREFIX = "artifacts/mingkong-material-covers"
 _COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_SECONDS_PER_DAY = 24 * 60 * 60
 
 
 def guard_against_windows_local_mysql() -> None:
@@ -42,6 +43,48 @@ def _coerce_date(value: Any) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value or "")[:10]
+
+
+def _coerce_datetime(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return f"{value.isoformat()} 00:00:00"
+    text = str(value or "").strip().replace("T", " ")
+    if not text:
+        return ""
+    if len(text) == 10:
+        return f"{text} 00:00:00"
+    return text[:19]
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(microsecond=0)
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    text = _coerce_datetime(value)
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _snapshot_slot_for(snapshot_at: Any) -> str:
+    value = _parse_datetime(snapshot_at)
+    if value is None:
+        return ""
+    return "0600" if value.hour < 12 else "1800"
+
+
+def _snapshot_identity(snapshot_date: str | None = None, snapshot_at: Any = None) -> tuple[str, str, str]:
+    resolved_at = _coerce_datetime(snapshot_at) if snapshot_at else _coerce_datetime(datetime.now())
+    resolved_date = _coerce_date(snapshot_date) if snapshot_date else resolved_at[:10]
+    if snapshot_date and not snapshot_at:
+        resolved_at = f"{resolved_date} {resolved_at[11:19]}"
+    return resolved_date, resolved_at, _snapshot_slot_for(resolved_at)
 
 
 def _trim(value: Any, limit: int) -> str:
@@ -372,15 +415,45 @@ def flatten_materials_for_product(
     return out
 
 
+def choose_previous_snapshot_for_24h(
+    current_snapshot_at: Any,
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    current_dt = _parse_datetime(current_snapshot_at)
+    if current_dt is None:
+        return None
+    best: tuple[tuple[float, float], dict[str, Any]] | None = None
+    for raw in candidates:
+        previous_dt = _parse_datetime(raw.get("snapshot_at"))
+        if previous_dt is None or previous_dt >= current_dt:
+            continue
+        interval_seconds = int((current_dt - previous_dt).total_seconds())
+        candidate = dict(raw)
+        candidate["snapshot_date"] = _coerce_date(candidate.get("snapshot_date"))
+        candidate["snapshot_at"] = _coerce_datetime(previous_dt)
+        candidate["snapshot_slot"] = str(candidate.get("snapshot_slot") or _snapshot_slot_for(previous_dt))
+        candidate["comparison_interval_seconds"] = interval_seconds
+        score = (abs(interval_seconds - _SECONDS_PER_DAY), -previous_dt.timestamp())
+        if best is None or score < best[0]:
+            best = (score, candidate)
+    return best[1] if best else None
+
+
 def build_top100_rows(
     *,
     snapshot_date: str,
+    snapshot_at: str | None = None,
     previous_snapshot_date: str | None,
+    previous_snapshot_at: str | None = None,
+    previous_snapshot_slot: str | None = None,
+    comparison_interval_seconds: int | None = None,
     current_rows: list[dict[str, Any]],
     previous_by_key: dict[str, dict[str, Any]],
     previous_top100_keys: set[str],
     limit: int = 100,
 ) -> list[dict[str, Any]]:
+    resolved_snapshot_at = _coerce_datetime(snapshot_at) if snapshot_at else ""
+    snapshot_slot = _snapshot_slot_for(resolved_snapshot_at) if resolved_snapshot_at else ""
     ranked: list[dict[str, Any]] = []
     for current in current_rows:
         material_key = str(current.get("material_key") or "")
@@ -402,7 +475,12 @@ def build_top100_rows(
         row.update(
             {
                 "snapshot_date": snapshot_date,
+                "snapshot_at": resolved_snapshot_at,
+                "snapshot_slot": snapshot_slot,
                 "previous_snapshot_date": previous_snapshot_date,
+                "previous_snapshot_at": previous_snapshot_at,
+                "previous_snapshot_slot": previous_snapshot_slot,
+                "comparison_interval_seconds": comparison_interval_seconds,
                 "previous_cumulative_90_spend": previous_spend,
                 "current_cumulative_90_spend": current_spend,
                 "yesterday_spend_delta": round(delta, 2),
@@ -446,23 +524,87 @@ def _latest_snapshot_date(table: str) -> str:
     return _coerce_date(row.get("snapshot_date"))
 
 
-def _run_summary(snapshot_date: str) -> dict[str, Any] | None:
+def _latest_snapshot_identity(
+    table: str,
+    *,
+    snapshot_date: str | None = None,
+    snapshot_at: str | None = None,
+) -> dict[str, str]:
+    if snapshot_at:
+        at = _coerce_datetime(snapshot_at)
+        return {"snapshot_date": _coerce_date(snapshot_date or at[:10]), "snapshot_at": at, "snapshot_slot": _snapshot_slot_for(at)}
+    if snapshot_date:
+        row = query_one(
+            f"""
+            SELECT snapshot_date, snapshot_at, snapshot_slot
+            FROM {table}
+            WHERE snapshot_date = %s
+            GROUP BY snapshot_date, snapshot_at, snapshot_slot
+            ORDER BY snapshot_at DESC, snapshot_date DESC
+            LIMIT 1
+            """,
+            (_coerce_date(snapshot_date),),
+        ) or {}
+        if row:
+            return {
+                "snapshot_date": _coerce_date(row.get("snapshot_date")),
+                "snapshot_at": _coerce_datetime(row.get("snapshot_at")),
+                "snapshot_slot": str(row.get("snapshot_slot") or _snapshot_slot_for(row.get("snapshot_at"))),
+            }
+        return {"snapshot_date": _coerce_date(snapshot_date), "snapshot_at": "", "snapshot_slot": ""}
     row = query_one(
-        """
-        SELECT id, snapshot_date, ranking_snapshot_date, status, source_product_limit,
-               source_product_count, processed_product_count, material_count,
-               failed_product_count, summary_json, error_message, started_at, finished_at
-        FROM mingkong_material_sync_runs
-        WHERE snapshot_date = %s
-        ORDER BY id DESC
+        f"""
+        SELECT snapshot_date, snapshot_at, snapshot_slot
+        FROM {table}
+        GROUP BY snapshot_date, snapshot_at, snapshot_slot
+        ORDER BY snapshot_at DESC, snapshot_date DESC
         LIMIT 1
-        """,
-        (snapshot_date,),
-    )
+        """
+    ) or {}
+    if row:
+        return {
+            "snapshot_date": _coerce_date(row.get("snapshot_date")),
+            "snapshot_at": _coerce_datetime(row.get("snapshot_at")),
+            "snapshot_slot": str(row.get("snapshot_slot") or _snapshot_slot_for(row.get("snapshot_at"))),
+        }
+    return {"snapshot_date": "", "snapshot_at": "", "snapshot_slot": ""}
+
+
+def _run_summary(snapshot_date: str, snapshot_at: str | None = None) -> dict[str, Any] | None:
+    if snapshot_at:
+        row = query_one(
+            """
+            SELECT id, snapshot_date, snapshot_at, snapshot_slot, ranking_snapshot_date, status,
+                   source_product_limit, source_product_count, processed_product_count, material_count,
+                   failed_product_count, summary_json, error_message, started_at, finished_at
+            FROM mingkong_material_sync_runs
+            WHERE snapshot_at = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (_coerce_datetime(snapshot_at),),
+        )
+    else:
+        row = None
+    if row is None:
+        row = query_one(
+            """
+            SELECT id, snapshot_date, snapshot_at, snapshot_slot, ranking_snapshot_date, status,
+                   source_product_limit, source_product_count, processed_product_count, material_count,
+                   failed_product_count, summary_json, error_message, started_at, finished_at
+            FROM mingkong_material_sync_runs
+            WHERE snapshot_date = %s
+            ORDER BY snapshot_at DESC, id DESC
+            LIMIT 1
+            """,
+            (snapshot_date,),
+        )
     if not row:
         return None
     out = dict(row)
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["snapshot_at"] = _coerce_datetime(out.get("snapshot_at"))
+    out["snapshot_slot"] = str(out.get("snapshot_slot") or _snapshot_slot_for(out.get("snapshot_at")))
     out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
     out["summary"] = _json_loads(out.pop("summary_json", None), {})
     for key in ("started_at", "finished_at"):
@@ -470,10 +612,11 @@ def _run_summary(snapshot_date: str) -> dict[str, Any] | None:
         out[key] = value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
     return out
 
-
 def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["snapshot_at"] = _coerce_datetime(out.get("snapshot_at"))
+    out["snapshot_slot"] = str(out.get("snapshot_slot") or _snapshot_slot_for(out.get("snapshot_at")))
     out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
     metadata = _metadata_for_row(out)
     spend = _spend_from_row(out, "cumulative_90_spend", metadata)
@@ -494,7 +637,14 @@ def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
 def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
+    out["snapshot_at"] = _coerce_datetime(out.get("snapshot_at"))
+    out["snapshot_slot"] = str(out.get("snapshot_slot") or _snapshot_slot_for(out.get("snapshot_at")))
     out["previous_snapshot_date"] = _coerce_date(out.get("previous_snapshot_date"))
+    out["previous_snapshot_at"] = _coerce_datetime(out.get("previous_snapshot_at"))
+    out["previous_snapshot_slot"] = str(out.get("previous_snapshot_slot") or "")
+    out["comparison_interval_seconds"] = (
+        None if out.get("comparison_interval_seconds") is None else _as_int(out.get("comparison_interval_seconds"))
+    )
     out["ranking_snapshot_date"] = _coerce_date(out.get("ranking_snapshot_date"))
     metadata = _metadata_for_row(out)
     current_spend = _spend_from_row(out, "current_cumulative_90_spend", metadata)
@@ -523,25 +673,32 @@ def upsert_snapshot_rows(
     *,
     run_id: int,
     snapshot_date: str,
+    snapshot_at: str | None = None,
+    snapshot_slot: str | None = None,
     ranking_snapshot_date: str,
     rows: list[dict[str, Any]],
 ) -> int:
+    resolved_snapshot_at = _coerce_datetime(snapshot_at) if snapshot_at else f"{snapshot_date} 00:00:00"
+    resolved_snapshot_slot = snapshot_slot or _snapshot_slot_for(resolved_snapshot_at)
     inserted = 0
     for row in rows:
         execute(
             """
             INSERT INTO mingkong_material_daily_snapshots
               (snapshot_date, ranking_snapshot_date, run_id, material_key,
+               snapshot_at, snapshot_slot,
                product_code, rank_position, shopify_product_id, product_name, product_url,
                mk_product_id, mk_product_name, mk_product_link, main_image,
                video_name, video_path, video_image_path, local_cover_object_key,
                cover_cached_at, cover_cache_error, cumulative_90_spend, video_ads_count,
                video_author, video_upload_time, video_duration_seconds, mk_video_metadata_json)
             VALUES
-              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+              (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
                ranking_snapshot_date=VALUES(ranking_snapshot_date),
                run_id=VALUES(run_id),
+               snapshot_date=VALUES(snapshot_date),
+               snapshot_slot=VALUES(snapshot_slot),
                product_code=VALUES(product_code),
                rank_position=VALUES(rank_position),
                shopify_product_id=VALUES(shopify_product_id),
@@ -570,6 +727,8 @@ def upsert_snapshot_rows(
                 ranking_snapshot_date,
                 int(run_id),
                 row.get("material_key"),
+                resolved_snapshot_at,
+                resolved_snapshot_slot,
                 row.get("product_code") or "",
                 row.get("rank_position"),
                 row.get("shopify_product_id") or None,
@@ -600,19 +759,28 @@ def upsert_snapshot_rows(
 def list_material_library(
     *,
     snapshot_date: str | None = None,
+    snapshot_at: str | None = None,
     keyword: str = "",
     page: int | str | None = 1,
     page_size: int | str | None = 100,
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
-    snapshot = _coerce_date(snapshot_date) if snapshot_date else _latest_snapshot_date(
-        "mingkong_material_daily_snapshots"
+    identity = _latest_snapshot_identity(
+        "mingkong_material_daily_snapshots",
+        snapshot_date=_coerce_date(snapshot_date) if snapshot_date else None,
+        snapshot_at=snapshot_at,
     )
+    snapshot = identity["snapshot_date"]
+    selected_snapshot_at = identity["snapshot_at"]
     if not snapshot:
-        return {"items": [], "snapshot": "", "total": 0, "run_summary": None}
+        return {"items": [], "snapshot": "", "snapshot_at": "", "total": 0, "run_summary": None}
     page_num, size, offset = _page_bounds(page, page_size)
-    where = ["snapshot_date = %s"]
-    args: list[Any] = [snapshot]
+    if selected_snapshot_at:
+        where = ["snapshot_at = %s"]
+        args: list[Any] = [selected_snapshot_at]
+    else:
+        where = ["snapshot_date = %s"]
+        args = [snapshot]
     kw = str(keyword or "").strip()
     if kw:
         like = f"%{kw}%"
@@ -639,84 +807,110 @@ def list_material_library(
     return {
         "items": [_serialize_material_row(row) for row in rows or []],
         "snapshot": snapshot,
+        "snapshot_at": selected_snapshot_at,
+        "snapshot_slot": identity.get("snapshot_slot") or "",
         "total": _as_int(count_row.get("cnt")),
         "page": page_num,
         "page_size": size,
-        "run_summary": _run_summary(snapshot),
+        "run_summary": _run_summary(snapshot, selected_snapshot_at),
     }
 
 
 def list_yesterday_top100(
     *,
     snapshot_date: str | None = None,
+    snapshot_at: str | None = None,
     page: int | str | None = 1,
     page_size: int | str | None = 100,
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
-    snapshot = _coerce_date(snapshot_date) if snapshot_date else _latest_snapshot_date(
-        "mingkong_material_daily_top100"
+    identity = _latest_snapshot_identity(
+        "mingkong_material_daily_top100",
+        snapshot_date=_coerce_date(snapshot_date) if snapshot_date else None,
+        snapshot_at=snapshot_at,
     )
+    snapshot = identity["snapshot_date"]
+    selected_snapshot_at = identity["snapshot_at"]
     if not snapshot:
         return {
             "items": [],
             "snapshot": "",
+            "snapshot_at": "",
             "previous_snapshot": "",
+            "previous_snapshot_at": "",
             "total": 0,
             "run_summary": None,
         }
+    if selected_snapshot_at:
+        where_sql = "snapshot_at = %s"
+        base_args: list[Any] = [selected_snapshot_at]
+    else:
+        where_sql = "snapshot_date = %s"
+        base_args = [snapshot]
     page_num, size, offset = _page_bounds(page, page_size)
     count_row = query_one(
-        "SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 WHERE snapshot_date = %s",
-        (snapshot,),
+        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 WHERE {where_sql}",
+        tuple(base_args),
     ) or {}
     rows = query(
-        """
+        f"""
         SELECT *
         FROM mingkong_material_daily_top100
-        WHERE snapshot_date = %s
+        WHERE {where_sql}
         ORDER BY is_new_top100_entry DESC, yesterday_spend_delta DESC,
                  current_cumulative_90_spend DESC, video_ads_count DESC,
                  rank_position ASC, id ASC
         LIMIT %s OFFSET %s
         """,
-        (snapshot, size, offset),
+        tuple(base_args + [size, offset]),
     )
     items = [_serialize_top100_row(row) for row in rows or []]
     previous_snapshot = items[0].get("previous_snapshot_date") if items else ""
+    previous_snapshot_at = items[0].get("previous_snapshot_at") if items else ""
     return {
         "items": items,
         "snapshot": snapshot,
+        "snapshot_at": selected_snapshot_at,
+        "snapshot_slot": identity.get("snapshot_slot") or "",
         "previous_snapshot": previous_snapshot or "",
+        "previous_snapshot_at": previous_snapshot_at or "",
         "total": _as_int(count_row.get("cnt")),
         "page": page_num,
         "page_size": size,
-        "run_summary": _run_summary(snapshot),
+        "run_summary": _run_summary(snapshot, selected_snapshot_at),
     }
 
 
 def create_or_reuse_run(
     *,
     snapshot_date: str,
+    snapshot_at: str,
+    snapshot_slot: str,
     ranking_snapshot_date: str,
     source_product_count: int,
     source_product_limit: int,
 ) -> dict[str, Any]:
     existing = query_one(
-        "SELECT * FROM mingkong_material_sync_runs WHERE snapshot_date = %s LIMIT 1",
-        (snapshot_date,),
+        """
+        SELECT * FROM mingkong_material_sync_runs
+        WHERE snapshot_date = %s AND snapshot_slot = %s
+        LIMIT 1
+        """,
+        (snapshot_date, snapshot_slot),
     )
     if existing:
         if str(existing.get("status") or "") != "success":
             execute(
                 """
                 UPDATE mingkong_material_sync_runs
-                SET status='running', ranking_snapshot_date=%s, source_product_count=%s,
+                SET status='running', snapshot_at=%s, ranking_snapshot_date=%s, source_product_count=%s,
                     source_product_limit=%s, processed_product_count=0,
                     material_count=0, failed_product_count=0, error_message=NULL,
                     summary_json=NULL, started_at=NOW(), finished_at=NULL
                 WHERE id=%s
                 """,
                 (
+                    snapshot_at,
                     ranking_snapshot_date,
                     int(source_product_count),
                     int(source_product_limit),
@@ -727,6 +921,8 @@ def create_or_reuse_run(
             existing.update(
                 {
                     "status": "running",
+                    "snapshot_at": snapshot_at,
+                    "snapshot_slot": snapshot_slot,
                     "ranking_snapshot_date": ranking_snapshot_date,
                     "source_product_count": source_product_count,
                     "source_product_limit": source_product_limit,
@@ -736,12 +932,14 @@ def create_or_reuse_run(
     run_id = execute(
         """
         INSERT INTO mingkong_material_sync_runs
-          (snapshot_date, ranking_snapshot_date, status, source_product_limit,
+          (snapshot_date, snapshot_at, snapshot_slot, ranking_snapshot_date, status, source_product_limit,
            source_product_count)
-        VALUES (%s,%s,'running',%s,%s)
+        VALUES (%s,%s,%s,%s,'running',%s,%s)
         """,
         (
             snapshot_date,
+            snapshot_at,
+            snapshot_slot,
             ranking_snapshot_date,
             int(source_product_limit),
             int(source_product_count),
@@ -750,6 +948,8 @@ def create_or_reuse_run(
     return {
         "id": run_id,
         "snapshot_date": snapshot_date,
+        "snapshot_at": snapshot_at,
+        "snapshot_slot": snapshot_slot,
         "ranking_snapshot_date": ranking_snapshot_date,
         "status": "running",
     }
@@ -759,6 +959,8 @@ def record_product_status(
     *,
     run_id: int,
     snapshot_date: str,
+    snapshot_at: str,
+    snapshot_slot: str,
     ranking_snapshot_date: str,
     source_product: dict[str, Any],
     status: str,
@@ -771,14 +973,16 @@ def record_product_status(
     execute(
         """
         INSERT INTO mingkong_material_products
-          (run_id, snapshot_date, ranking_snapshot_date, rank_position, product_code,
+          (run_id, snapshot_date, snapshot_at, snapshot_slot, ranking_snapshot_date, rank_position, product_code,
            shopify_product_id, product_name, product_url, store, sales_count, order_count,
            revenue_main, mk_product_id, mk_product_name, mk_product_link, status,
            material_count, error_message, processed_at)
         VALUES
-          (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+          (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
         ON DUPLICATE KEY UPDATE
            rank_position=VALUES(rank_position),
+           snapshot_at=VALUES(snapshot_at),
+           snapshot_slot=VALUES(snapshot_slot),
            shopify_product_id=VALUES(shopify_product_id),
            product_name=VALUES(product_name),
            product_url=VALUES(product_url),
@@ -797,6 +1001,8 @@ def record_product_status(
         (
             int(run_id),
             snapshot_date,
+            snapshot_at,
+            snapshot_slot,
             ranking_snapshot_date,
             source_product.get("rank_position"),
             product_code,
@@ -818,27 +1024,47 @@ def record_product_status(
 
 
 def _previous_material_snapshot(snapshot_date: str) -> str:
-    row = query_one(
+    selected = _previous_material_snapshot_for(snapshot_date=snapshot_date, snapshot_at=f"{snapshot_date} 00:00:00")
+    return selected["snapshot_date"] if selected else ""
+
+
+def _previous_material_snapshot_for(*, snapshot_date: str, snapshot_at: str) -> dict[str, Any] | None:
+    rows = query(
         """
-        SELECT MAX(snapshot_date) AS snapshot_date
+        SELECT snapshot_date, snapshot_at, snapshot_slot
         FROM mingkong_material_daily_snapshots
         WHERE snapshot_date < %s
+          AND snapshot_at < %s
+        GROUP BY snapshot_date, snapshot_at, snapshot_slot
+        ORDER BY snapshot_at DESC
+        LIMIT 14
         """,
-        (snapshot_date,),
-    ) or {}
-    return _coerce_date(row.get("snapshot_date"))
+        (snapshot_date, snapshot_at),
+    )
+    return choose_previous_snapshot_for_24h(snapshot_at, rows or [])
 
 
-def _snapshot_rows_by_date(snapshot_date: str) -> list[dict[str, Any]]:
+def _snapshot_rows_by_date(snapshot_date: str, snapshot_at: str | None = None) -> list[dict[str, Any]]:
+    if snapshot_at:
+        return query(
+            "SELECT * FROM mingkong_material_daily_snapshots WHERE snapshot_at = %s",
+            (_coerce_datetime(snapshot_at),),
+        )
     return query(
         "SELECT * FROM mingkong_material_daily_snapshots WHERE snapshot_date = %s",
         (snapshot_date,),
     )
 
 
-def _previous_top100_keys(snapshot_date: str) -> set[str]:
-    if not snapshot_date:
+def _previous_top100_keys(snapshot_date: str, snapshot_at: str | None = None) -> set[str]:
+    if not snapshot_date and not snapshot_at:
         return set()
+    if snapshot_at:
+        rows = query(
+            "SELECT material_key FROM mingkong_material_daily_top100 WHERE snapshot_at = %s",
+            (_coerce_datetime(snapshot_at),),
+        )
+        return {str(row.get("material_key") or "") for row in rows if row.get("material_key")}
     rows = query(
         "SELECT material_key FROM mingkong_material_daily_top100 WHERE snapshot_date = %s",
         (snapshot_date,),
@@ -850,14 +1076,20 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
     snapshot_date = rows[0]["snapshot_date"]
-    execute("DELETE FROM mingkong_material_daily_top100 WHERE snapshot_date = %s", (snapshot_date,))
+    snapshot_at = _coerce_datetime(rows[0].get("snapshot_at"))
+    if snapshot_at:
+        execute("DELETE FROM mingkong_material_daily_top100 WHERE snapshot_at = %s", (snapshot_at,))
+    else:
+        execute("DELETE FROM mingkong_material_daily_top100 WHERE snapshot_date = %s", (snapshot_date,))
     inserted = 0
     for row in rows:
         execute(
             """
             INSERT INTO mingkong_material_daily_top100
-              (snapshot_date, previous_snapshot_date, ranking_snapshot_date, rank_position,
-               display_position, material_key, product_code, source_product_rank_position,
+              (snapshot_date, snapshot_at, snapshot_slot, previous_snapshot_date,
+               previous_snapshot_at, previous_snapshot_slot, comparison_interval_seconds,
+               ranking_snapshot_date, rank_position, display_position, material_key,
+               product_code, source_product_rank_position,
                shopify_product_id, product_name, product_url, mk_product_id, mk_product_name,
                mk_product_link, main_image, video_name, video_path, video_image_path,
                local_cover_object_key, cover_cached_at, cover_cache_error,
@@ -867,9 +1099,14 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
                is_new_top100_entry)
             VALUES
               (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-               %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
+               snapshot_date=VALUES(snapshot_date),
+               snapshot_slot=VALUES(snapshot_slot),
                previous_snapshot_date=VALUES(previous_snapshot_date),
+               previous_snapshot_at=VALUES(previous_snapshot_at),
+               previous_snapshot_slot=VALUES(previous_snapshot_slot),
+               comparison_interval_seconds=VALUES(comparison_interval_seconds),
                ranking_snapshot_date=VALUES(ranking_snapshot_date),
                rank_position=VALUES(rank_position),
                display_position=VALUES(display_position),
@@ -885,7 +1122,12 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
             """,
             (
                 row.get("snapshot_date"),
+                _coerce_datetime(row.get("snapshot_at")) or None,
+                row.get("snapshot_slot") or None,
                 row.get("previous_snapshot_date"),
+                _coerce_datetime(row.get("previous_snapshot_at")) or None,
+                row.get("previous_snapshot_slot") or None,
+                row.get("comparison_interval_seconds"),
                 row.get("ranking_snapshot_date"),
                 row.get("rank_position"),
                 row.get("display_position"),
@@ -921,10 +1163,31 @@ def _replace_top100_rows(rows: list[dict[str, Any]]) -> int:
     return inserted
 
 
-def generate_daily_top100(snapshot_date: str) -> dict[str, Any]:
-    previous_snapshot = _previous_material_snapshot(snapshot_date)
-    current_rows = _snapshot_rows_by_date(snapshot_date)
-    previous_rows = _snapshot_rows_by_date(previous_snapshot) if previous_snapshot else []
+def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) -> dict[str, Any]:
+    if snapshot_at:
+        identity = {
+            "snapshot_date": _coerce_date(snapshot_date),
+            "snapshot_at": _coerce_datetime(snapshot_at),
+            "snapshot_slot": _snapshot_slot_for(snapshot_at),
+        }
+    else:
+        identity = _latest_snapshot_identity(
+            "mingkong_material_daily_snapshots",
+            snapshot_date=snapshot_date,
+        )
+    selected_snapshot_at = identity.get("snapshot_at") or ""
+    previous_snapshot = _previous_material_snapshot_for(
+        snapshot_date=_coerce_date(snapshot_date),
+        snapshot_at=selected_snapshot_at or f"{snapshot_date} 00:00:00",
+    )
+    previous_snapshot_date = previous_snapshot["snapshot_date"] if previous_snapshot else ""
+    previous_snapshot_at = previous_snapshot["snapshot_at"] if previous_snapshot else ""
+    current_rows = _snapshot_rows_by_date(snapshot_date, selected_snapshot_at or None)
+    previous_rows = (
+        _snapshot_rows_by_date(previous_snapshot_date, previous_snapshot_at)
+        if previous_snapshot_date and previous_snapshot_at
+        else []
+    )
     previous_by_key = {
         str(row.get("material_key") or ""): row
         for row in previous_rows
@@ -932,16 +1195,27 @@ def generate_daily_top100(snapshot_date: str) -> dict[str, Any]:
     }
     top100_rows = build_top100_rows(
         snapshot_date=snapshot_date,
-        previous_snapshot_date=previous_snapshot or None,
+        snapshot_at=selected_snapshot_at,
+        previous_snapshot_date=previous_snapshot_date or None,
+        previous_snapshot_at=previous_snapshot_at or None,
+        previous_snapshot_slot=(previous_snapshot or {}).get("snapshot_slot") if previous_snapshot else None,
+        comparison_interval_seconds=(
+            (previous_snapshot or {}).get("comparison_interval_seconds") if previous_snapshot else None
+        ),
         current_rows=current_rows,
         previous_by_key=previous_by_key,
-        previous_top100_keys=_previous_top100_keys(previous_snapshot),
+        previous_top100_keys=_previous_top100_keys(previous_snapshot_date, previous_snapshot_at or None),
         limit=100,
     )
     inserted = _replace_top100_rows(top100_rows)
     return {
         "snapshot_date": snapshot_date,
-        "previous_snapshot_date": previous_snapshot,
+        "snapshot_at": selected_snapshot_at,
+        "previous_snapshot_date": previous_snapshot_date,
+        "previous_snapshot_at": previous_snapshot_at,
+        "comparison_interval_seconds": (
+            (previous_snapshot or {}).get("comparison_interval_seconds") if previous_snapshot else None
+        ),
         "top100_count": inserted,
     }
 
@@ -1061,10 +1335,14 @@ def run_daily_snapshot(
     sleep_seconds: float = 30,
     timeout_seconds: int = 20,
     snapshot_date: str | None = None,
+    snapshot_at: str | None = None,
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     scheduled_run_id = scheduled_tasks.start_run("mingkong_material_daily_snapshot")
-    target_snapshot = snapshot_date or date.today().isoformat()
+    target_snapshot, target_snapshot_at, target_snapshot_slot = _snapshot_identity(
+        snapshot_date=snapshot_date,
+        snapshot_at=snapshot_at,
+    )
     run_id: int | None = None
     processed = 0
     failed = 0
@@ -1073,6 +1351,8 @@ def run_daily_snapshot(
         ranking_snapshot, products = latest_top_products(limit=source_limit)
         run_row = create_or_reuse_run(
             snapshot_date=target_snapshot,
+            snapshot_at=target_snapshot_at,
+            snapshot_slot=target_snapshot_slot,
             ranking_snapshot_date=ranking_snapshot,
             source_product_count=len(products),
             source_product_limit=source_limit,
@@ -1080,6 +1360,8 @@ def run_daily_snapshot(
         if str(run_row.get("status") or "") == "success":
             summary = {
                 "snapshot_date": target_snapshot,
+                "snapshot_at": target_snapshot_at,
+                "snapshot_slot": target_snapshot_slot,
                 "ranking_snapshot_date": ranking_snapshot,
                 "skipped": True,
                 "reason": "snapshot already completed",
@@ -1106,6 +1388,8 @@ def run_daily_snapshot(
                     record_product_status(
                         run_id=run_id,
                         snapshot_date=target_snapshot,
+                        snapshot_at=target_snapshot_at,
+                        snapshot_slot=target_snapshot_slot,
                         ranking_snapshot_date=ranking_snapshot,
                         source_product=product,
                         status="no_match",
@@ -1137,12 +1421,16 @@ def run_daily_snapshot(
                     material_count += upsert_snapshot_rows(
                         run_id=run_id,
                         snapshot_date=target_snapshot,
+                        snapshot_at=target_snapshot_at,
+                        snapshot_slot=target_snapshot_slot,
                         ranking_snapshot_date=ranking_snapshot,
                         rows=rows,
                     )
                     record_product_status(
                         run_id=run_id,
                         snapshot_date=target_snapshot,
+                        snapshot_at=target_snapshot_at,
+                        snapshot_slot=target_snapshot_slot,
                         ranking_snapshot_date=ranking_snapshot,
                         source_product=product,
                         status="success",
@@ -1157,6 +1445,8 @@ def run_daily_snapshot(
                 record_product_status(
                     run_id=run_id,
                     snapshot_date=target_snapshot,
+                    snapshot_at=target_snapshot_at,
+                    snapshot_slot=target_snapshot_slot,
                     ranking_snapshot_date=ranking_snapshot,
                     source_product=product,
                     status="failed",
@@ -1183,9 +1473,11 @@ def run_daily_snapshot(
                     ),
                 )
 
-        top100 = generate_daily_top100(target_snapshot)
+        top100 = generate_daily_top100(target_snapshot, target_snapshot_at)
         summary = {
             "snapshot_date": target_snapshot,
+            "snapshot_at": target_snapshot_at,
+            "snapshot_slot": target_snapshot_slot,
             "ranking_snapshot_date": ranking_snapshot,
             "source_product_count": len(products),
             "processed_product_count": processed,
