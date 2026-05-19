@@ -142,6 +142,7 @@
       if (channelEl && channelEl.value) {
         url += "?channel=" + encodeURIComponent(channelEl.value);
       }
+      url += (url.indexOf("?") === -1 ? "?" : "&") + "preset=" + encodeURIComponent(presetEl.value || "cover");
       return fetch(url,{credentials:"same-origin"})
         .then(function(r){return r.json();})
         .then(function(d){
@@ -161,7 +162,7 @@
         });
     }
 
-    bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
+    bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); loadModels(); });
     setPillActive(presetPills, presetEl.value || "cover");
     bindPillGroup(channelPills, channelEl, function(value){ enforceListConcurrency(value); loadModels(); });
     setPillActive(channelPills, channelEl.value || "");
