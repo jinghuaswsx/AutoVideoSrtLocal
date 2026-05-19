@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 
 _SEEDREAM_MIN_PIXELS = 2560 * 1440
 _SEEDREAM_MAX_PIXELS = 10_404_496
+_LOCAL_IMAGE2_PROVIDER_CODE = "video_cover_local_image"
+_LOCAL_IMAGE2_BASE_URL_DEFAULT = "http://172.30.254.14:82/v1"
+_LOCAL_IMAGE2_DEFAULT_QUALITY = "low"
 
 _APIMART_SIZE_DIMENSIONS: dict[str, dict[str, tuple[int, int]]] = {
     "1:1": {"1k": (1024, 1024), "2k": (2048, 2048)},
@@ -112,6 +115,9 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
         ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
+    ],
+    "local_image_2": [
+        ("gpt-image-2", "GPT-Image-2（本地）"),
     ],
 }
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
@@ -318,6 +324,8 @@ def _channel_provider(channel: str) -> str:
         return "gemini_vertex_adc"
     if channel == "apimart":
         return "apimart"
+    if channel == "local_image_2":
+        return "local_image_2"
     return "gemini_aistudio"
 
 
@@ -947,6 +955,97 @@ def _generate_via_apimart(
         raise
 
 
+def _resolve_local_image2_credentials() -> tuple[str, str]:
+    cfg = get_provider_config(_LOCAL_IMAGE2_PROVIDER_CODE)
+    api_key = str(getattr(cfg, "api_key", "") or "").strip() if cfg else ""
+    base_url = str(getattr(cfg, "base_url", "") or "").strip() if cfg else ""
+    if not api_key:
+        raise GeminiImageError(
+            f"缺少供应商配置 {_LOCAL_IMAGE2_PROVIDER_CODE}.api_key，请在 /settings 填写本地 Image 2。"
+        )
+    return api_key, (base_url or _LOCAL_IMAGE2_BASE_URL_DEFAULT).rstrip("/")
+
+
+def _resolve_local_image2_size(source_image: bytes, resolution: str = "1k") -> str:
+    size_key, _resolved_resolution = _resolve_apimart_output_params(source_image)
+    tier = (resolution or "1k").strip().lower()
+    if tier not in {"1k", "2k"}:
+        tier = "1k"
+    dims = _APIMART_SIZE_DIMENSIONS.get(size_key, {}).get(tier)
+    if not dims:
+        dims = _APIMART_SIZE_DIMENSIONS["1:1"][tier]
+    return f"{dims[0]}x{dims[1]}"
+
+
+def _decode_openai_image_response_payload(payload: dict[str, Any]) -> tuple[bytes, str]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    first = data[0] if isinstance(data, list) and data else None
+    if not isinstance(first, dict):
+        raise GeminiImageError("本地 Image 2 未返回图像数据")
+    b64_json = first.get("b64_json")
+    if b64_json:
+        try:
+            return base64.b64decode(str(b64_json), validate=False), "image/png"
+        except Exception as exc:
+            raise GeminiImageError(f"本地 Image 2 图像 base64 解析失败：{exc}") from exc
+    raise GeminiImageError("本地 Image 2 未返回 b64_json")
+
+
+def _generate_via_local_image2(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    model_id: str,
+    *,
+    api_key: str,
+    base_url: str,
+    size: str,
+    quality: str = _LOCAL_IMAGE2_DEFAULT_QUALITY,
+    timeout_seconds: float | int | None = None,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError(
+            f"缺少供应商配置 {_LOCAL_IMAGE2_PROVIDER_CODE}.api_key，请在 /settings 填写本地 Image 2。"
+        )
+    api_base = (base_url or _LOCAL_IMAGE2_BASE_URL_DEFAULT).rstrip("/")
+    form_data = {
+        "model": (model_id or "gpt-image-2").strip(),
+        "prompt": prompt,
+        "n": "1",
+        "size": (size or "1024x1024").strip(),
+        "quality": (quality or _LOCAL_IMAGE2_DEFAULT_QUALITY).strip().lower(),
+    }
+    request_timeout = _coerce_timeout_seconds(timeout_seconds) or 360
+    try:
+        response = requests.post(
+            f"{api_base}/images/edits",
+            headers={"Authorization": f"Bearer {api_key}"},
+            data=form_data,
+            files={"image": ("source.png", source_image, source_mime or "image/png")},
+            timeout=request_timeout,
+        )
+    except requests.RequestException as exc:
+        _raise_hard_timeout_if_needed(exc, timeout_seconds, "本地 Image 2")
+        raise GeminiImageRetryable(f"本地 Image 2 请求失败：{exc}") from exc
+
+    try:
+        resp_json = response.json()
+    except Exception:
+        resp_json = {}
+    if getattr(response, "status_code", 0) >= 400:
+        error = resp_json.get("error") if isinstance(resp_json, dict) else None
+        if isinstance(error, dict):
+            message = str(error.get("message") or "").strip()
+        else:
+            message = str(error or "").strip()
+        message = message or str(getattr(response, "text", "") or "").strip() or f"HTTP {response.status_code}"
+        if response.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(f"本地 Image 2 请求失败（HTTP {response.status_code}）：{message}")
+        raise GeminiImageError(f"本地 Image 2 请求失败（HTTP {response.status_code}）：{message}")
+    image_bytes, mime = _decode_openai_image_response_payload(resp_json)
+    return image_bytes, mime, resp_json
+
+
 # ---------------------------------------------------------------------------
 # 对外入口
 # ---------------------------------------------------------------------------
@@ -1023,6 +1122,24 @@ def generate_image(
                 size=apimart_size or resolved_size,
                 resolution=apimart_resolution or resolved_resolution,
                 on_submitted=on_apimart_submitted,
+                timeout_seconds=normalized_timeout,
+            )
+            input_tokens = output_tokens = None
+            response_cost_cny = None
+        elif channel == "local_image_2":
+            local_size = _resolve_local_image2_size(source_image, "1k")
+            req_payload["size"] = local_size
+            req_payload["quality"] = _LOCAL_IMAGE2_DEFAULT_QUALITY
+            api_key, base_url = _resolve_local_image2_credentials()
+            image_bytes, mime, resp = _generate_via_local_image2(
+                prompt,
+                source_image,
+                source_mime,
+                model_id,
+                api_key=api_key,
+                base_url=base_url,
+                size=local_size,
+                quality=_LOCAL_IMAGE2_DEFAULT_QUALITY,
                 timeout_seconds=normalized_timeout,
             )
             input_tokens = output_tokens = None

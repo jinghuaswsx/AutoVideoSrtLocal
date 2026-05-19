@@ -740,6 +740,7 @@ def test_generate_local_cover_image_posts_docs_image_edit_payload():
     assert posted["data"]["prompt"] == "make a cover"
     assert posted["data"]["n"] == "1"
     assert posted["data"]["size"] == "1152x2048"
+    assert posted["data"]["quality"] == "low"
     assert posted["files"]["image"][0] == "reference.png"
     assert posted["files"]["image"][2] == "image/png"
     assert posted["files"]["image"][1].startswith(b"\x89PNG")
@@ -2295,7 +2296,8 @@ def test_video_cover_debug_payload_returns_cover_full_request(monkeypatch):
     assert data["full_request"]["body"]["model"] == "gpt-image-2"
     assert data["full_request"]["body"]["prompt"] == "actual prompt with native hook text"
     assert data["full_request"]["body"]["n"] == "1"
-    assert data["full_request"]["body"]["size"] == "1024x1536"
+    assert data["full_request"]["body"]["size"] == "1152x2048"
+    assert data["full_request"]["body"]["quality"] == "low"
     assert data["full_request"]["files"][0]["field"] == "image"
     assert data["full_request"]["files"][0]["filename"] == "reference.png"
     assert data["full_request"]["files"][0]["content_type"] == "image/png"

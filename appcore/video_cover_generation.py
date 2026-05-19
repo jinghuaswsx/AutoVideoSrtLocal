@@ -37,6 +37,7 @@ OUTPUT_SIZE = (1080, 1920)
 REFERENCE_SIZE = (1080, 1920)
 PRODUCT_IMAGE_SIZE = (400, 400)
 LOCAL_TIKTOK_COVER_2K_SIZE = "1152x2048"
+LOCAL_IMAGE_2_QUALITY = "low"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mpeg", ".mpg", ".avi", ".webm", ".m4v"}
 
 
@@ -1243,6 +1244,7 @@ def generate_local_cover_image(
         "prompt": prompt,
         "n": "1",
         "size": LOCAL_TIKTOK_COVER_2K_SIZE,
+        "quality": LOCAL_IMAGE_2_QUALITY,
     }
     files = {
         "image": ("reference.png", source_image, source_mime or "image/png"),

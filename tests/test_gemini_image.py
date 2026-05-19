@@ -821,6 +821,60 @@ def test_all_channels_expose_gemini_2_5_flash_preview():
         assert "gemini-2.5-flash-image-preview" in ids, f"{channel} 缺少 2.5-flash"
 
 
+def test_local_image2_channel_registered_for_image_translate():
+    from appcore import gemini_image
+
+    assert "local_image_2" in gemini_image.IMAGE_MODELS_BY_CHANNEL
+    assert gemini_image.default_image_model("local_image_2") == "gpt-image-2"
+    assert gemini_image._channel_provider("local_image_2") == "local_image_2"
+
+
+def test_generate_image_local_image2_uses_low_quality_1k_square():
+    from appcore import gemini_image
+
+    submitted: dict = {}
+
+    class B64Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"data": [{"b64_json": base64.b64encode(b"PNG-LOCAL").decode("ascii")}]}
+
+    def fake_post(url, *, headers, data, files, timeout):
+        submitted["url"] = url
+        submitted["headers"] = headers
+        submitted["data"] = data
+        submitted["files"] = files
+        submitted["timeout"] = timeout
+        return B64Response()
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image, "_resolve_local_image2_credentials",
+                      return_value=("LOCAL-KEY", "http://image.local/v1")), \
+         patch.object(gemini_image.requests, "post", side_effect=fake_post), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=_png_bytes(900, 900),
+            source_mime="image/png",
+            model="gpt-image-2",
+            channel="local_image_2",
+            user_id=8,
+            project_id="img-local",
+        )
+
+    assert out == b"PNG-LOCAL"
+    assert mime == "image/png"
+    assert submitted["url"] == "http://image.local/v1/images/edits"
+    assert submitted["headers"]["Authorization"] == "Bearer LOCAL-KEY"
+    assert submitted["data"]["model"] == "gpt-image-2"
+    assert submitted["data"]["quality"] == "low"
+    assert submitted["data"]["size"] == "1024x1024"
+    assert submitted["files"]["image"][0] == "source.png"
+    assert m_log.call_args.kwargs["provider"] == "local_image_2"
+
+
 def test_generate_via_apimart_uses_dynamic_model_id():
     """APIMART payload 的 model 字段应跟随 model_id 参数变化。"""
     from appcore import gemini_image

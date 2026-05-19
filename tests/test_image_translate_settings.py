@@ -531,6 +531,20 @@ def test_apimart_channel_registered():
     assert its.CHANNEL_LABELS["apimart"] == "APIMART (GPT-Image-2)"
 
 
+def test_local_image2_channel_registered(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    store = {}
+    _patch_store(monkeypatch, store)
+
+    its.set_channel("LOCAL_IMAGE_2")
+
+    assert "local_image_2" in its.CHANNELS
+    assert its.CHANNEL_LABELS["local_image_2"] == "\u672c\u5730 Image 2"
+    assert store["image_translate.channel"] == "local_image_2"
+    assert its.get_default_model("local_image_2") == "gpt-image-2"
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 
