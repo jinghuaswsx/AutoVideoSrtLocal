@@ -330,6 +330,17 @@ def _multi_translate_creator_name_expr() -> str:
         return "u.username"
 
 
+@bp.before_request
+def _require_english_redub_permission():
+    if not current_user.is_authenticated:
+        return None
+    if not current_user.has_permission("english_redub"):
+        if request.path.startswith("/api/english-redub"):
+            return _json_response({"error": "Forbidden"}, 403)
+        abort(403)
+    return None
+
+
 # ── 页面路由 ──────────────────────────────────────────
 
 @bp.route("/english-redub")

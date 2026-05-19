@@ -94,9 +94,20 @@ PERMISSION_META: dict[str, dict] = {
     for code, group, label, adm, usr in PERMISSIONS
 }
 
+USER_PERMISSION_DENYLIST: dict[str, frozenset[str]] = {
+    "english_redub": frozenset({"zhangwei", "xj"}),
+}
+
 
 def is_valid_role(role: str) -> bool:
     return role in ROLES
+
+
+def is_user_permission_denied(username: str | None, code: str) -> bool:
+    denied_usernames = USER_PERMISSION_DENYLIST.get(code)
+    if not denied_usernames:
+        return False
+    return (username or "").strip().lower() in denied_usernames
 
 
 # 首页跳转优先级：按侧边栏菜单顺序排列，(permission_code, url_path)

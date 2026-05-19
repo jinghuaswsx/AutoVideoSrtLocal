@@ -56,6 +56,11 @@
 - `rewrite` 模式继续走 Omni 的分镜、对齐和句级收敛逻辑。
 - 后台 `english_redub_voice_match_strategy` 只控制英语重配音的音色推荐排序，不影响 Omni / Multi。
 
+2026-05-19 权限收口：
+
+- `zhangwei`、`xj` 账号固定不能访问英语视频重新配音，即使角色默认或用户权限 JSON 显式给了 `english_redub`。
+- `/english-redub` 页面和 `/api/english-redub/...` 接口都必须统一走 `english_redub` 权限守卫，避免只隐藏菜单但仍可直连 API。
+
 ### 菜单
 
 侧边栏视频翻译相关入口新增：

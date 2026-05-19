@@ -10,6 +10,7 @@ from appcore.permissions import (
     PERMISSION_CODES,
     ROLE_ADMIN,
     ROLE_SUPERADMIN,
+    is_user_permission_denied,
     merge_with_defaults,
 )
 
@@ -62,6 +63,8 @@ class User(UserMixin):
     def has_permission(self, code: str) -> bool:
         if self.is_superadmin:
             return True
+        if is_user_permission_denied(self.username, code):
+            return False
         if self.role == ROLE_SUPERADMIN:
             return False
         return bool(self._permissions.get(code, False))

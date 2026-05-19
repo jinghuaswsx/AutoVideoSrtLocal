@@ -3,6 +3,16 @@ from __future__ import annotations
 import io
 
 
+def _denylisted_english_redub_user(username: str) -> dict:
+    return {
+        "id": 1,
+        "username": username,
+        "role": "user",
+        "is_active": 1,
+        "permissions": '{"english_redub": true}',
+    }
+
+
 def test_english_redub_list_page_is_registered(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.english_redub.recover_all_interrupted_tasks",
@@ -14,6 +24,45 @@ def test_english_redub_list_page_is_registered(authed_client_no_db, monkeypatch)
     )
 
     resp = authed_client_no_db.get("/english-redub")
+
+    assert resp.status_code == 200
+    assert "英语视频重新配音" in resp.get_data(as_text=True)
+
+
+def test_english_redub_rejects_denylisted_user_page_and_api(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: _denylisted_english_redub_user("zhangwei"),
+    )
+    with authed_client_no_db.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+
+    page_resp = authed_client_no_db.get("/english-redub")
+    api_resp = authed_client_no_db.post("/api/english-redub/start")
+
+    assert page_resp.status_code == 302
+    assert page_resp.headers["Location"].endswith("/")
+    assert api_resp.status_code == 403
+
+
+def test_english_redub_allows_other_default_user(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.english_redub.recover_all_interrupted_tasks",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.translation_route_store.list_projects_with_creator",
+        lambda **kwargs: [],
+    )
+
+    resp = authed_user_client_no_db.get("/english-redub")
 
     assert resp.status_code == 200
     assert "英语视频重新配音" in resp.get_data(as_text=True)
