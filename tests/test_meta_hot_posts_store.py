@@ -583,7 +583,12 @@ def test_get_hot_post_ai_analysis_row_selects_card_context_and_both_ai_results()
     assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in sql
     assert "LEFT JOIN meta_hot_post_europe_assessments e" in sql
     assert "va.status AS video_copyability_status" in sql
+    assert "va.summary_zh AS video_copyability_summary_zh" in sql
     assert "e.llm_response_json AS europe_fit_llm_response_json" in sql
+    assert "e.strengths_zh_json AS europe_fit_strengths_zh_json" in sql
+    assert "e.risks_zh_json AS europe_fit_risks_zh_json" in sql
+    assert "e.required_changes_zh_json AS europe_fit_required_changes_zh_json" in sql
+    assert "e.reasoning_zh AS europe_fit_reasoning_zh" in sql
     assert "WHERE p.id=%s" in sql
     assert params == (7,)
 
