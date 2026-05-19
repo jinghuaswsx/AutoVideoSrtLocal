@@ -664,9 +664,11 @@ def test_gui_batch_reuses_one_browser_without_per_language_restart(monkeypatch: 
     try:
         calls: list[dict] = []
         killed_profiles: list[str] = []
+        confirm_cb = lambda _pairs: True
 
         monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
         monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(app, "_confirm_visual_pairs_threadsafe", confirm_cb)
         monkeypatch.setattr(
             gui.storage,
             "create_workspace",
@@ -708,6 +710,7 @@ def test_gui_batch_reuses_one_browser_without_per_language_restart(monkeypatch: 
 
         assert [call["lang"] for call in calls] == ["de", "fr"]
         assert all(call["skip_kill_chrome"] is True for call in calls)
+        assert all(call["visual_pair_confirm_cb"] is confirm_cb for call in calls)
         assert killed_profiles == []
     finally:
         app.root.destroy()

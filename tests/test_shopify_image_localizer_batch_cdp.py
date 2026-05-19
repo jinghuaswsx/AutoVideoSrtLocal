@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import time
 from pathlib import Path
 
@@ -16,6 +17,29 @@ from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
+
+
+def test_gui_batch_passes_visual_confirmation_callback_to_runner():
+    gui_path = Path("tools/shopify_image_localizer/gui.py")
+    tree = ast.parse(gui_path.read_text(encoding="utf-8"))
+    run_batch = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_run_batch"
+    )
+    runner_calls = [
+        node
+        for node in ast.walk(run_batch)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run_shopify_localizer"
+    ]
+
+    assert runner_calls
+    assert all(
+        any(keyword.arg == "visual_pair_confirm_cb" for keyword in call.keywords)
+        for call in runner_calls
+    )
 
 
 def _localized(filename: str) -> dict:

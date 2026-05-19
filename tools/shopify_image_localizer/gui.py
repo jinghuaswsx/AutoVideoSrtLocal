@@ -1687,6 +1687,7 @@ class ShopifyImageLocalizerApp:
                                 status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
                                     self._ui_after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
                                 shopify_product_id_cb=lambda pid: self._ui_after(0, self._handle_shopify_product_id, pid),
+                                visual_pair_confirm_cb=self._confirm_visual_pairs_threadsafe,
                             )
                         except Exception as exc:
                             error_container["value"] = exc
