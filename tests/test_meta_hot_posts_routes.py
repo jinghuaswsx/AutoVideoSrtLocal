@@ -265,7 +265,22 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "mh-post-id-copy" in body
     assert "mh-post-link-copy" in body
     assert "data-copy-value" in body
+    assert ".mh-post-id-main .mh-favorite-heart" in body
+    assert "width:26px; height:26px" in body
+    assert "margin-right:1ch" in body
+    assert ".mh-product-title-toggle { flex:0 0 auto; margin-left:auto" in body
+    assert (
+        '<div class="mh-post-id-main">\n'
+        "      ${postId ? renderFavoriteButton(row, 'heart') : ''}\n"
+        '      <span class="mh-post-id-value"'
+    ) in body
+    assert '<div class="mh-card-title">${renderProductTitleBlock(row)}</div>' in body
+    assert "mh-card-title-actions" not in body
     assert "function renderProductTitleBlock(row)" in body
+    assert "if (mode === 'zh') return '英文';" in body
+    assert "return hasChinese ? '中文' : '翻译';" in body
+    assert "英文标题" not in body
+    assert "显示中文" not in body
     assert "function toggleMetaHotProductTitle(event, postId)" in body
     assert "translateMetaHotProductTitleToChinese(event, postId)" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/product-title/translate-zh" in body
