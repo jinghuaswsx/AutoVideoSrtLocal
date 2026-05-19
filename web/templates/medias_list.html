@@ -729,6 +729,38 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-modal-edit { width:min(1344px, calc(100vw - 48px)); }
 @media (max-width: 960px) { .oc-modal-narrow { width:min(1120px, calc(100vw - 24px)); } }
 @media (max-width: 960px) { .oc-modal-edit { width:min(1344px, calc(100vw - 24px)); } }
+.oc-no-localized-images-modal { width:min(520px, calc(100vw - 48px)); }
+.oc-no-localized-images-body {
+  min-height:112px;
+  padding:var(--oc-sp-6) var(--oc-sp-5);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.oc-no-localized-images-message {
+  margin:0;
+  min-height:1.6em;
+  color:var(--oc-danger-fg);
+  font-size:18px;
+  font-weight:700;
+  line-height:1.6;
+  letter-spacing:0;
+  text-align:center;
+}
+.oc-no-localized-images-message::after {
+  content:"";
+  display:inline-block;
+  width:2px;
+  height:1em;
+  margin-left:3px;
+  background:var(--oc-danger-fg);
+  vertical-align:-0.12em;
+  animation:oc-no-localized-caret 900ms steps(1) infinite;
+}
+@keyframes oc-no-localized-caret {
+  0%, 45% { opacity:1; }
+  46%, 100% { opacity:0; }
+}
 .oc-center-body .oc-field > .oc-input,
 .oc-center-body .oc-field > .oc-textarea { width:100%; }
 .oc-center-body .oc-url-row { display:flex; gap:var(--oc-sp-2); justify-content:center; align-items:center; }
