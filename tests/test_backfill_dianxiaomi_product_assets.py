@@ -48,6 +48,65 @@ def test_select_candidate_products_force_omits_missing_assets_predicate():
     assert captured["args"] == (10,)
 
 
+def test_select_candidate_products_includes_attempted_rows_with_missing_main_image():
+    from tools import backfill_dianxiaomi_product_assets as backfill
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    backfill.select_candidate_products(limit=10, query_fn=fake_query)
+
+    assert "product_main_image_url IS NULL" in captured["sql"]
+    assert "product_main_image_url = ''" in captured["sql"]
+    assert "product_main_image_object_key IS NULL" in captured["sql"]
+    assert "product_main_image_object_key = ''" in captured["sql"]
+    assert captured["args"] == (10,)
+
+
+def test_select_candidate_products_only_retries_missing_main_image_when_product_url_exists():
+    from tools import backfill_dianxiaomi_product_assets as backfill
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    backfill.select_candidate_products(limit=10, query_fn=fake_query)
+
+    normalized_sql = " ".join(captured["sql"].split())
+    assert (
+        "OR ( product_url IS NOT NULL AND product_url <> '' AND"
+        in normalized_sql
+    )
+
+
+def test_select_candidate_products_can_filter_by_hash_shard():
+    from tools import backfill_dianxiaomi_product_assets as backfill
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    backfill.select_candidate_products(
+        limit=10,
+        query_fn=fake_query,
+        shard_index=2,
+        shard_count=4,
+    )
+
+    assert "MOD(CRC32(COALESCE(NULLIF(product_url, ''), CONCAT('product_id:', product_id))), %s) = %s" in captured["sql"]
+    assert captured["args"] == (4, 2, 10)
+
+
 def test_update_backfilled_product_by_url_writes_asset_fields_to_all_matching_rows():
     from tools import backfill_dianxiaomi_product_assets as backfill
 
@@ -129,6 +188,38 @@ def test_run_backfill_dry_run_does_not_enrich_or_update():
     assert summary["products_seen"] == 2
     assert summary["ranking_rows_matched"] == 11
     assert summary["products_updated"] == 0
+
+
+def test_run_backfill_passes_shard_options_to_candidate_selector():
+    from tools import backfill_dianxiaomi_product_assets as backfill
+
+    seen_kwargs = []
+
+    def fake_select(limit, **kwargs):
+        seen_kwargs.append({"limit": limit, **kwargs})
+        return []
+
+    summary = backfill.run_backfill(
+        limit=10,
+        batch_size=5,
+        dry_run=True,
+        shard_index=3,
+        shard_count=8,
+        select_candidates_fn=fake_select,
+    )
+
+    assert summary["shard_index"] == 3
+    assert summary["shard_count"] == 8
+    assert seen_kwargs == [
+        {
+            "limit": 5,
+            "force": False,
+            "snapshot_date_from": "",
+            "snapshot_date_to": "",
+            "shard_index": 3,
+            "shard_count": 8,
+        }
+    ]
 
 
 def test_run_backfill_dry_run_all_mode_stops_after_seen_batch():

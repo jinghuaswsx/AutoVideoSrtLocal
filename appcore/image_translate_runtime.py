@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
 _PARALLEL_POOL_SIZE = 15  # 并行模式并发池上限：池里最多 N 个 item 同时跑，跑完一个立即补一个
+_IMAGE_GENERATION_TIMEOUT_SECONDS = 120
 _TEXT_DETECT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -520,8 +521,11 @@ class ImageTranslateRuntime:
                         existing_task_id,
                         api_key=gemini_image._resolve_apimart_api_key(),
                         initial_wait=False,
+                        timeout_seconds=_IMAGE_GENERATION_TIMEOUT_SECONDS,
                     )
                     return out_bytes, out_mime
+                except gemini_image.GeminiImageTimeout:
+                    raise
                 except gemini_image.GeminiImageError as e:
                     logger.info(
                         "[image_translate] APIMART task %s failed upstream, re-generating: %s",
@@ -571,6 +575,7 @@ class ImageTranslateRuntime:
             apimart_size=apimart_size,
             apimart_resolution=apimart_resolution,
             on_apimart_submitted=on_submitted,
+            timeout_seconds=_IMAGE_GENERATION_TIMEOUT_SECONDS,
         )
 
     def _download_source_image(self, task: dict, item: dict, local_path: str) -> str:

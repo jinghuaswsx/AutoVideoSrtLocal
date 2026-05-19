@@ -3490,8 +3490,8 @@ def test_image_translate_templates_show_concurrency_mode_pills():
 
     assert "处理模式" in list_template
     assert "处理模式" in detail_template
-    assert 'id="itConcurrencyMode" value="parallel"' in list_template
-    assert "并行（默认）" in list_template
+    assert 'id="itConcurrencyMode" value="sequential"' in list_template
+    assert "串行（默认）" in list_template
     assert "itMetaConcurrencyMode" in detail_template
     assert "data-concurrency-mode" in list_template
     assert "data-concurrency-mode" in detail_template
@@ -3528,6 +3528,25 @@ def test_image_translate_detail_script_has_banana_regenerate_action():
     assert "/banana-retry/" in scripts
 
 
+def test_image_translate_detail_has_channel_rerun_controls():
+    root = Path(__file__).resolve().parents[1]
+    detail_template = (root / "web" / "templates" / "image_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert 'id="itRerunChannel"' in detail_template
+    assert "换通道重跑" in detail_template
+    assert 'id="itChannelRerunModal"' in detail_template
+    assert 'id="itRerunChannelPills"' in detail_template
+    assert 'id="itRerunModelPills"' in detail_template
+    assert 'id="itRerunConcurrencyPills"' in detail_template
+    assert "只有 APIMART 可以并行" in detail_template
+    assert "/rerun-unfinished" in scripts
+    assert "loadRerunModels" in scripts
+    assert "enforceRerunConcurrency" in scripts
+    assert "it-rerun-modal" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
@@ -3536,8 +3555,8 @@ def test_medias_edit_modal_contains_detail_image_translation_controls():
     assert 'id="edDetailImagesTranslateBtn"' in template
     assert 'id="edDetailTranslateStatus"' in template
     assert 'id="edDetailTranslateHistory"' in template
-    assert "并行（默认）" in template
-    assert "ch.dataset.mode === 'parallel'" in scripts
+    assert "串行（默认）" in template
+    assert "ch.dataset.mode === 'sequential'" in scripts
     assert "detail-image-translate-tasks" in scripts
     assert "detail-images/translate-from-en" in scripts
     history_block = scripts.split("function edRenderDetailTranslateHistory", 1)[1].split("const LINK_CHECK_STATUS_LABELS", 1)[0]

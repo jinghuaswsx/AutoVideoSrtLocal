@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 
 _SEEDREAM_MIN_PIXELS = 2560 * 1440
 _SEEDREAM_MAX_PIXELS = 10_404_496
+_LOCAL_IMAGE2_PROVIDER_CODE = "video_cover_local_image"
+_LOCAL_IMAGE2_BASE_URL_DEFAULT = "http://172.30.254.14:82/v1"
+_LOCAL_IMAGE2_DEFAULT_QUALITY = "low"
 
 _APIMART_SIZE_DIMENSIONS: dict[str, dict[str, tuple[int, int]]] = {
     "1:1": {"1k": (1024, 1024), "2k": (2048, 2048)},
@@ -112,6 +115,9 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
         ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
+    ],
+    "local_image_2": [
+        ("gpt-image-2", "GPT-Image-2（本地）"),
     ],
 }
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
@@ -200,6 +206,10 @@ class GeminiImageError(RuntimeError):
     """不可重试的图像生成错误（安全过滤、鉴权、格式等）。"""
 
 
+class GeminiImageTimeout(GeminiImageError):
+    """Image generation exceeded the caller's hard timeout budget."""
+
+
 class GeminiImageRetryable(RuntimeError):
     """可重试的图像生成错误（网络、429、5xx）。"""
 
@@ -248,6 +258,61 @@ def _classify_error(exc: Exception) -> type[Exception]:
     return GeminiImageError
 
 
+def _coerce_timeout_seconds(timeout_seconds: float | int | None) -> float | None:
+    if timeout_seconds is None:
+        return None
+    try:
+        value = float(timeout_seconds)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _timeout_ms(timeout_seconds: float | int | None) -> int | None:
+    value = _coerce_timeout_seconds(timeout_seconds)
+    if value is None:
+        return None
+    return max(1, int(value * 1000))
+
+
+def _format_timeout_seconds(timeout_seconds: float | int | None) -> str:
+    value = _coerce_timeout_seconds(timeout_seconds)
+    if value is None:
+        return "0s"
+    if float(value).is_integer():
+        return f"{int(value)}s"
+    return f"{value:.1f}s"
+
+
+def _remaining_timeout(deadline: float) -> float:
+    return max(0.001, deadline - time.monotonic())
+
+
+def _is_timeout_exception(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, requests.Timeout)):
+        return True
+    name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    return "timeout" in name or "timed out" in message or "read timed out" in message
+
+
+def _raise_hard_timeout_if_needed(
+    exc: Exception,
+    timeout_seconds: float | int | None,
+    provider_label: str,
+) -> None:
+    if _coerce_timeout_seconds(timeout_seconds) is not None and _is_timeout_exception(exc):
+        raise GeminiImageTimeout(
+            f"{provider_label} 图片翻译请求超过 {_format_timeout_seconds(timeout_seconds)}，已中断"
+        ) from exc
+
+
+def _raise_hard_timeout(timeout_seconds: float | int | None, provider_label: str) -> None:
+    raise GeminiImageTimeout(
+        f"{provider_label} 图片翻译请求超过 {_format_timeout_seconds(timeout_seconds)}，已中断"
+    )
+
+
 def _channel_provider(channel: str) -> str:
     if channel == "doubao":
         return "doubao"
@@ -259,6 +324,8 @@ def _channel_provider(channel: str) -> str:
         return "gemini_vertex_adc"
     if channel == "apimart":
         return "apimart"
+    if channel == "local_image_2":
+        return "local_image_2"
     return "gemini_aistudio"
 
 
@@ -347,15 +414,23 @@ def _generate_via_genai(
     api_key: str,
     project: str = "",
     location: str = "",
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     client = _get_image_client(api_key, backend=backend, project=project, location=location)
     contents = [
         genai_types.Part.from_bytes(data=source_image, mime_type=source_mime),
         genai_types.Part.from_text(text=prompt),
     ]
+    generate_kwargs: dict[str, Any] = {"model": model_id, "contents": contents}
+    timeout_ms = _timeout_ms(timeout_seconds)
+    if timeout_ms is not None:
+        generate_kwargs["config"] = genai_types.GenerateContentConfig(
+            http_options=genai_types.HttpOptions(timeout=timeout_ms)
+        )
     try:
-        resp = client.models.generate_content(model=model_id, contents=contents)
+        resp = client.models.generate_content(**generate_kwargs)
     except Exception as e:
+        _raise_hard_timeout_if_needed(e, timeout_seconds, "Google GenAI")
         raise _classify_error(e)(str(e)) from e
 
     got = _extract_image_part(resp)
@@ -565,6 +640,7 @@ def _generate_via_openrouter(
     *,
     api_key: str,
     base_url: str,
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError(
@@ -574,6 +650,7 @@ def _generate_via_openrouter(
     client = make_openrouter_image_client(
         api_key=api_key,
         base_url=base_url or OPENROUTER_BASE_URL_DEFAULT,
+        timeout=_coerce_timeout_seconds(timeout_seconds),
     )
     parsed = parse_openrouter_openai_image2_model(model_id)
     if parsed is not None:
@@ -603,6 +680,7 @@ def _generate_via_openrouter(
             extra_body=extra_body,
         )
     except Exception as e:
+        _raise_hard_timeout_if_needed(e, timeout_seconds, "OpenRouter")
         raise _classify_error(e)(str(e)) from e
 
     got = _extract_openrouter_image(resp)
@@ -621,6 +699,7 @@ def _generate_via_seedream(
     *,
     api_key: str,
     base_url: str,
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError("豆包 ARK API key 未配置")
@@ -641,6 +720,7 @@ def _generate_via_seedream(
         "stream": False,
         "sequential_image_generation": "disabled",
     }
+    request_timeout = _coerce_timeout_seconds(timeout_seconds) or _SEEDREAM_REQUEST_TIMEOUT
     try:
         resp = requests.post(
             f"{api_base}/images/generations",
@@ -649,9 +729,10 @@ def _generate_via_seedream(
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=_SEEDREAM_REQUEST_TIMEOUT,
+            timeout=request_timeout,
         )
     except requests.RequestException as e:
+        _raise_hard_timeout_if_needed(e, timeout_seconds, "Seedream")
         raise GeminiImageRetryable(f"Seedream 请求失败：{e}") from e
 
     try:
@@ -692,6 +773,7 @@ def poll_apimart_task(
     api_key: str,
     base_url: str | None = None,
     initial_wait: bool = True,
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     """轮询已提交的 APIMART 任务，直到完成或失败。
 
@@ -705,20 +787,29 @@ def poll_apimart_task(
     if not task_id:
         raise GeminiImageError("APIMART task_id 为空")
     api_base = (base_url or _resolve_apimart_base_url()).rstrip("/")
+    hard_timeout = _coerce_timeout_seconds(timeout_seconds)
+    effective_timeout = hard_timeout or _APIMART_POLL_TIMEOUT
+    deadline = time.monotonic() + effective_timeout
 
     if initial_wait:
-        cancellable_sleep(_APIMART_INITIAL_WAIT)
+        sleep_seconds = min(_APIMART_INITIAL_WAIT, _remaining_timeout(deadline))
+        cancellable_sleep(sleep_seconds)
+        if hard_timeout is not None and time.monotonic() >= deadline:
+            _raise_hard_timeout(timeout_seconds, "APIMART")
 
-    deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
     while True:
         throw_if_cancel_requested("apimart.poll")
+        if hard_timeout is not None and time.monotonic() >= deadline:
+            _raise_hard_timeout(timeout_seconds, "APIMART")
+        poll_timeout = min(15, _remaining_timeout(deadline)) if hard_timeout is not None else 15
         try:
             poll_resp = requests.get(
                 f"{api_base}/v1/tasks/{task_id}",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=15,
+                timeout=poll_timeout,
             )
         except requests.RequestException as e:
+            _raise_hard_timeout_if_needed(e, timeout_seconds, "APIMART")
             raise GeminiImageRetryable(f"APIMART 轮询失败：{e}") from e
         if poll_resp.status_code in {429, 500, 502, 503, 504}:
             raise GeminiImageRetryable(
@@ -742,9 +833,13 @@ def poll_apimart_task(
                 image_url = url_value or None
             if not image_url:
                 raise GeminiImageError("APIMART 任务完成但未返回图片 URL")
+            if hard_timeout is not None and time.monotonic() >= deadline:
+                _raise_hard_timeout(timeout_seconds, "APIMART")
+            download_timeout = min(30, _remaining_timeout(deadline)) if hard_timeout is not None else 30
             try:
-                img_resp = requests.get(image_url, timeout=30)
+                img_resp = requests.get(image_url, timeout=download_timeout)
             except requests.RequestException as e:
+                _raise_hard_timeout_if_needed(e, timeout_seconds, "APIMART")
                 raise GeminiImageRetryable(f"APIMART 图片下载失败：{e}") from e
             if img_resp.status_code != 200:
                 raise GeminiImageError(
@@ -757,6 +852,8 @@ def poll_apimart_task(
             raise GeminiImageError(f"APIMART 任务失败：{error_msg}")
 
         if time.monotonic() > deadline:
+            if hard_timeout is not None:
+                _raise_hard_timeout(timeout_seconds, "APIMART")
             raise GeminiImageRetryable(
                 f"APIMART 任务超时（>{_APIMART_POLL_TIMEOUT}s，task_id={task_id}）"
             )
@@ -775,6 +872,7 @@ def _generate_via_apimart(
     size: str = "auto",
     resolution: str = "1k",
     on_submitted: Callable[[str], None] | None = None,
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError(
@@ -796,14 +894,18 @@ def _generate_via_apimart(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    hard_timeout = _coerce_timeout_seconds(timeout_seconds)
+    deadline = time.monotonic() + hard_timeout if hard_timeout is not None else None
+    submit_timeout = min(30, _remaining_timeout(deadline)) if deadline is not None else 30
     try:
         submit_resp = requests.post(
             f"{api_base}/v1/images/generations",
             headers=headers,
             json=payload,
-            timeout=30,
+            timeout=submit_timeout,
         )
     except requests.RequestException as e:
+        _raise_hard_timeout_if_needed(e, timeout_seconds, "APIMART")
         raise GeminiImageRetryable(f"APIMART 提交请求失败：{e}") from e
 
     try:
@@ -834,12 +936,114 @@ def _generate_via_apimart(
         except Exception:
             logger.exception("APIMART on_submitted callback failed for %s", task_id)
 
-    return poll_apimart_task(
-        task_id,
-        api_key=api_key,
-        base_url=api_base,
-        initial_wait=True,
-    )
+    remaining_timeout = None
+    if deadline is not None:
+        if time.monotonic() >= deadline:
+            _raise_hard_timeout(timeout_seconds, "APIMART")
+        remaining_timeout = _remaining_timeout(deadline)
+    try:
+        return poll_apimart_task(
+            task_id,
+            api_key=api_key,
+            base_url=api_base,
+            initial_wait=True,
+            timeout_seconds=remaining_timeout,
+        )
+    except GeminiImageTimeout:
+        if hard_timeout is not None:
+            _raise_hard_timeout(timeout_seconds, "APIMART")
+        raise
+
+
+def _resolve_local_image2_credentials() -> tuple[str, str]:
+    cfg = get_provider_config(_LOCAL_IMAGE2_PROVIDER_CODE)
+    api_key = str(getattr(cfg, "api_key", "") or "").strip() if cfg else ""
+    base_url = str(getattr(cfg, "base_url", "") or "").strip() if cfg else ""
+    if not api_key:
+        raise GeminiImageError(
+            f"缺少供应商配置 {_LOCAL_IMAGE2_PROVIDER_CODE}.api_key，请在 /settings 填写本地 Image 2。"
+        )
+    return api_key, (base_url or _LOCAL_IMAGE2_BASE_URL_DEFAULT).rstrip("/")
+
+
+def _resolve_local_image2_size(source_image: bytes, resolution: str = "1k") -> str:
+    size_key, _resolved_resolution = _resolve_apimart_output_params(source_image)
+    tier = (resolution or "1k").strip().lower()
+    if tier not in {"1k", "2k"}:
+        tier = "1k"
+    dims = _APIMART_SIZE_DIMENSIONS.get(size_key, {}).get(tier)
+    if not dims:
+        dims = _APIMART_SIZE_DIMENSIONS["1:1"][tier]
+    return f"{dims[0]}x{dims[1]}"
+
+
+def _decode_openai_image_response_payload(payload: dict[str, Any]) -> tuple[bytes, str]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    first = data[0] if isinstance(data, list) and data else None
+    if not isinstance(first, dict):
+        raise GeminiImageError("本地 Image 2 未返回图像数据")
+    b64_json = first.get("b64_json")
+    if b64_json:
+        try:
+            return base64.b64decode(str(b64_json), validate=False), "image/png"
+        except Exception as exc:
+            raise GeminiImageError(f"本地 Image 2 图像 base64 解析失败：{exc}") from exc
+    raise GeminiImageError("本地 Image 2 未返回 b64_json")
+
+
+def _generate_via_local_image2(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    model_id: str,
+    *,
+    api_key: str,
+    base_url: str,
+    size: str,
+    quality: str = _LOCAL_IMAGE2_DEFAULT_QUALITY,
+    timeout_seconds: float | int | None = None,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError(
+            f"缺少供应商配置 {_LOCAL_IMAGE2_PROVIDER_CODE}.api_key，请在 /settings 填写本地 Image 2。"
+        )
+    api_base = (base_url or _LOCAL_IMAGE2_BASE_URL_DEFAULT).rstrip("/")
+    form_data = {
+        "model": (model_id or "gpt-image-2").strip(),
+        "prompt": prompt,
+        "n": "1",
+        "size": (size or "1024x1024").strip(),
+        "quality": (quality or _LOCAL_IMAGE2_DEFAULT_QUALITY).strip().lower(),
+    }
+    request_timeout = _coerce_timeout_seconds(timeout_seconds) or 360
+    try:
+        response = requests.post(
+            f"{api_base}/images/edits",
+            headers={"Authorization": f"Bearer {api_key}"},
+            data=form_data,
+            files={"image": ("source.png", source_image, source_mime or "image/png")},
+            timeout=request_timeout,
+        )
+    except requests.RequestException as exc:
+        _raise_hard_timeout_if_needed(exc, timeout_seconds, "本地 Image 2")
+        raise GeminiImageRetryable(f"本地 Image 2 请求失败：{exc}") from exc
+
+    try:
+        resp_json = response.json()
+    except Exception:
+        resp_json = {}
+    if getattr(response, "status_code", 0) >= 400:
+        error = resp_json.get("error") if isinstance(resp_json, dict) else None
+        if isinstance(error, dict):
+            message = str(error.get("message") or "").strip()
+        else:
+            message = str(error or "").strip()
+        message = message or str(getattr(response, "text", "") or "").strip() or f"HTTP {response.status_code}"
+        if response.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(f"本地 Image 2 请求失败（HTTP {response.status_code}）：{message}")
+        raise GeminiImageError(f"本地 Image 2 请求失败（HTTP {response.status_code}）：{message}")
+    image_bytes, mime = _decode_openai_image_response_payload(resp_json)
+    return image_bytes, mime, resp_json
 
 
 # ---------------------------------------------------------------------------
@@ -859,6 +1063,7 @@ def generate_image(
     apimart_size: str | None = None,
     apimart_resolution: str | None = None,
     on_apimart_submitted: Callable[[str], None] | None = None,
+    timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
     channel = normalize_image_channel(channel) if channel else _resolve_channel()
@@ -882,6 +1087,9 @@ def generate_image(
             "direct_preferred" if channel == "doubao" else "proxy_required"
         ),
     }
+    normalized_timeout = _coerce_timeout_seconds(timeout_seconds)
+    if normalized_timeout is not None:
+        req_payload["timeout_seconds"] = normalized_timeout
 
     try:
         if channel == "doubao":
@@ -893,6 +1101,7 @@ def generate_image(
                 model_id=model_id,
                 api_key=api_key,
                 base_url=base_url,
+                timeout_seconds=normalized_timeout,
             )
             input_tokens = output_tokens = None
             response_cost_cny = None
@@ -913,6 +1122,25 @@ def generate_image(
                 size=apimart_size or resolved_size,
                 resolution=apimart_resolution or resolved_resolution,
                 on_submitted=on_apimart_submitted,
+                timeout_seconds=normalized_timeout,
+            )
+            input_tokens = output_tokens = None
+            response_cost_cny = None
+        elif channel == "local_image_2":
+            local_size = _resolve_local_image2_size(source_image, "1k")
+            req_payload["size"] = local_size
+            req_payload["quality"] = _LOCAL_IMAGE2_DEFAULT_QUALITY
+            api_key, base_url = _resolve_local_image2_credentials()
+            image_bytes, mime, resp = _generate_via_local_image2(
+                prompt,
+                source_image,
+                source_mime,
+                model_id,
+                api_key=api_key,
+                base_url=base_url,
+                size=local_size,
+                quality=_LOCAL_IMAGE2_DEFAULT_QUALITY,
+                timeout_seconds=normalized_timeout,
             )
             input_tokens = output_tokens = None
             response_cost_cny = None
@@ -928,6 +1156,7 @@ def generate_image(
                 image_bytes, mime, resp = _generate_via_openrouter(
                     prompt, source_image, source_mime, model_id,
                     api_key=api_key, base_url=or_base_url,
+                    timeout_seconds=normalized_timeout,
                 )
                 input_tokens = output_tokens = None
                 response_cost_cny = _extract_openrouter_cost_cny(resp)
@@ -946,6 +1175,7 @@ def generate_image(
                     backend="cloud" if channel == "cloud_adc" else channel,
                     api_key=api_key,
                     project=project, location=location,
+                    timeout_seconds=normalized_timeout,
                 )
                 meta = getattr(resp, "usage_metadata", None)
                 input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None

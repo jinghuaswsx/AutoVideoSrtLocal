@@ -182,6 +182,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotAiAnalysis(kind)" in body
     assert "function restoreMetaHotAiAnalysisVisibility()" in body
     assert "/xuanpin/api/meta-hot-posts/ai-analysis-visibility" in body
+    assert "const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
+    assert "let mhAiAnalysisVisibilitySaveVersion = 0;" in body
+    assert "const saveVersion = ++mhAiAnalysisVisibilitySaveVersion;" in body
+    assert "const preferences = {...mhAiAnalysisVisibility};" in body
+    assert "client_id: MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
+    assert "save_version: saveVersion" in body
+    assert body.count("if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;") >= 2
     assert "if (!mhAiAnalysisVisibility.us) return '';" in body
     assert "if (!mhAiAnalysisVisibility.europe) return '';" in body
     assert "类目分析提示词" in body
@@ -250,6 +257,11 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function renderMessageBlock(row)" in body
     assert "function toggleMetaHotPostSourceMessage(event)" in body
     assert "row.message_source_html" in body
+    assert "function metaHotPostDisplayId(row)" in body
+    assert "function copyMetaHotPostId(event, value)" in body
+    assert "mh-post-id-bar" in body
+    assert "mh-post-id-copy" in body
+    assert "data-copy-value" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
     assert "可抄 Top 50</button>" not in body
@@ -369,6 +381,20 @@ def test_meta_hot_posts_page_embeds_user_ai_visibility(authed_client_no_db, monk
     assert "MH_INITIAL_AI_ANALYSIS_VISIBILITY" in body
     assert '"us": true' in body
     assert '"europe": false' in body
+
+
+def test_meta_hot_posts_page_registers_single_active_video_handler(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr("appcore.meta_hot_posts.service.category_options", lambda: [])
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function pauseOtherMetaHotVideos(activeVideo)" in body
+    assert "function handleMetaHotVideoPlay(event)" in body
+    assert "document.addEventListener('play', handleMetaHotVideoPlay, true);" in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):

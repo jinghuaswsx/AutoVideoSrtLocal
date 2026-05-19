@@ -379,11 +379,13 @@ def test_get_channel_falls_back_on_invalid_value(monkeypatch):
     assert its.get_channel() == "aistudio"
 
 
-def test_get_channel_treats_retired_cloud_adc_as_aistudio(monkeypatch):
+def test_get_channel_accepts_vertex_adc_channel(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {"image_translate.channel": "cloud_adc"})
-    assert "cloud_adc" not in its.CHANNELS
-    assert its.get_channel() == "aistudio"
+    assert "cloud_adc" in its.CHANNELS
+    assert its.CHANNEL_LABELS["cloud_adc"] == "Google Vertex AI (ADC)"
+    assert its.get_channel() == "cloud_adc"
+    assert its.get_default_model("cloud_adc") == "gemini-3.1-flash-image-preview"
 
 
 def test_set_channel_writes_valid_value(monkeypatch):
@@ -392,6 +394,14 @@ def test_set_channel_writes_valid_value(monkeypatch):
     _patch_store(monkeypatch, store)
     its.set_channel("CLOUD")
     assert store["image_translate.channel"] == "cloud"
+
+
+def test_set_channel_writes_vertex_adc_value(monkeypatch):
+    from appcore import image_translate_settings as its
+    store = {}
+    _patch_store(monkeypatch, store)
+    its.set_channel("CLOUD_ADC")
+    assert store["image_translate.channel"] == "cloud_adc"
 
 
 def test_set_channel_rejects_invalid(monkeypatch):
@@ -519,6 +529,20 @@ def test_apimart_channel_registered():
     assert "apimart" in its.CHANNELS
     assert "apimart" in its.CHANNEL_LABELS
     assert its.CHANNEL_LABELS["apimart"] == "APIMART (GPT-Image-2)"
+
+
+def test_local_image2_channel_registered(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    store = {}
+    _patch_store(monkeypatch, store)
+
+    its.set_channel("LOCAL_IMAGE_2")
+
+    assert "local_image_2" in its.CHANNELS
+    assert its.CHANNEL_LABELS["local_image_2"] == "\u672c\u5730 Image 2"
+    assert store["image_translate.channel"] == "local_image_2"
+    assert its.get_default_model("local_image_2") == "gpt-image-2"
 
 
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):

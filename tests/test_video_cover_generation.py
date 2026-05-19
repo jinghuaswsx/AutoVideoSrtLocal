@@ -171,7 +171,7 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
 
     assert result["product"]["title"] == "Portable Blender Pro"
     assert result["product"]["main_image_url"] == "https://cdn.example/blender.png"
-    assert result["model"]["channel"] == "local"
+    assert result["model"]["channel"] == "local_image_2"
     assert result["model"]["model_id"] == "gpt-image-2"
     assert [cover["platform"] for cover in result["covers"]] == ["social_reels"]
     assert all(cover["width"] == 1080 and cover["height"] == 1920 for cover in result["covers"])
@@ -195,7 +195,7 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
     assert "Portable Blender Pro" in calls[0]["prompt"]
-    assert calls[0]["kwargs"]["channel"] == "local"
+    assert calls[0]["kwargs"]["channel"] == "local_image_2"
     assert calls[0]["kwargs"]["model"] == "gpt-image-2"
     assert calls[0]["kwargs"]["service"] == "video_cover.generate"
     assert [call["use_case_code"] for call in analysis_calls] == [
@@ -563,9 +563,12 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
     assert resolve_text_model_selection("ad_copy", "openrouter", "openai/gpt-5.5").alias == "gpt_5_5"
 
-    local = resolve_cover_model_selection("local", "gpt_image_2")
-    assert local.provider == "local"
+    local = resolve_cover_model_selection("local_image_2", "gpt_image_2")
+    assert local.provider == "local_image_2"
     assert local.model == "gpt-image-2"
+    legacy_local = resolve_cover_model_selection("local", "gpt_image_2")
+    assert legacy_local.provider == "local_image_2"
+    assert legacy_local.model == "gpt-image-2"
     openrouter = resolve_cover_model_selection("openrouter", "nano_banana_pro")
     assert openrouter.provider == "openrouter"
     assert openrouter.model == "google/gemini-3-pro-image-preview"
@@ -591,11 +594,12 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
-    assert "local" in options["steps"]["cover_generation"]["providers"]
+    assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
+    assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
     assert "gemini_vertex_adc" not in options["steps"]["video_analysis"]["providers"]
     assert "gemini_vertex_adc" not in options["steps"]["cover_generation"]["providers"]
-    assert options["steps"]["cover_generation"]["models"]["local"]["gpt_image_2"] == "gpt-image-2"
+    assert options["steps"]["cover_generation"]["models"]["local_image_2"]["gpt_image_2"] == "gpt-image-2"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "google/gemini-3.1-flash-image-preview"
     assert options["steps"]["cover_generation"]["models"]["gemini_aistudio"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
@@ -736,6 +740,7 @@ def test_generate_local_cover_image_posts_docs_image_edit_payload():
     assert posted["data"]["prompt"] == "make a cover"
     assert posted["data"]["n"] == "1"
     assert posted["data"]["size"] == "1152x2048"
+    assert posted["data"]["quality"] == "low"
     assert posted["files"]["image"][0] == "reference.png"
     assert posted["files"]["image"][2] == "image/png"
     assert posted["files"]["image"][1].startswith(b"\x89PNG")
@@ -2291,7 +2296,8 @@ def test_video_cover_debug_payload_returns_cover_full_request(monkeypatch):
     assert data["full_request"]["body"]["model"] == "gpt-image-2"
     assert data["full_request"]["body"]["prompt"] == "actual prompt with native hook text"
     assert data["full_request"]["body"]["n"] == "1"
-    assert data["full_request"]["body"]["size"] == "1024x1536"
+    assert data["full_request"]["body"]["size"] == "1152x2048"
+    assert data["full_request"]["body"]["quality"] == "low"
     assert data["full_request"]["files"][0]["field"] == "image"
     assert data["full_request"]["files"][0]["filename"] == "reference.png"
     assert data["full_request"]["files"][0]["content_type"] == "image/png"

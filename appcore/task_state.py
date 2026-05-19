@@ -20,7 +20,7 @@ _tasks: dict = {}
 _lock = threading.Lock()
 
 IMAGE_TRANSLATE_MAX_ITEMS = 1000
-IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE = "parallel"
+IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE = "sequential"
 
 AV_TRANSLATE_INPUTS_DEFAULT = {
     "target_language": None,

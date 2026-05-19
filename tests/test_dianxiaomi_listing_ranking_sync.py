@@ -130,6 +130,29 @@ def test_extract_product_page_assets_prefers_og_image_and_collects_detail_images
     }
 
 
+def test_extract_product_page_assets_prefers_first_carousel_image_over_og_image():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    html = """
+    <html>
+      <head><meta property="og:image" content="//cdn.example.test/og.jpg"></head>
+      <body>
+        <div class="product__media">
+          <img src="//cdn.example.test/carousel-first.webp">
+          <img src="//cdn.example.test/carousel-second.webp">
+        </div>
+      </body>
+    </html>
+    """
+
+    assets = sync.extract_product_page_assets_from_html(
+        html,
+        base_url="https://shop.example.test/products/foil-covers",
+    )
+
+    assert assets["main_image_url"] == "https://cdn.example.test/carousel-first.webp"
+
+
 def test_cache_product_main_image_writes_deterministic_selection_object_key():
     from tools import dianxiaomi_listing_ranking_sync as sync
 

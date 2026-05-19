@@ -126,6 +126,39 @@ def test_ai_analysis_visibility_defaults_hidden_and_persists_per_user(monkeypatc
     assert service.ai_analysis_visibility_for_user(88) == {"us": True, "europe": False}
 
 
+def test_ai_analysis_visibility_ignores_stale_save_version_for_same_client(monkeypatch):
+    stored = {}
+
+    monkeypatch.setattr(service.api_keys, "get_key", lambda user_id, service_code: stored.get((user_id, service_code)))
+
+    def fake_set_key(user_id, service_code, key_value):
+        stored[(user_id, service_code)] = key_value
+
+    monkeypatch.setattr(service.api_keys, "set_key", fake_set_key)
+
+    newer = service.build_ai_analysis_visibility_update_response(
+        {
+            "preferences": {"us": False, "europe": True},
+            "client_id": "browser-session-1",
+            "save_version": 2,
+        },
+        user_id=88,
+    )
+    stale = service.build_ai_analysis_visibility_update_response(
+        {
+            "preferences": {"us": False, "europe": False},
+            "client_id": "browser-session-1",
+            "save_version": 1,
+        },
+        user_id=88,
+    )
+
+    assert newer.status_code == 200
+    assert stale.status_code == 200
+    assert stale.payload == {"ok": True, "preferences": {"us": False, "europe": True}}
+    assert service.ai_analysis_visibility_for_user(88) == {"us": False, "europe": True}
+
+
 def test_build_ai_analysis_visibility_response_requires_user():
     result = service.build_ai_analysis_visibility_response(None)
 

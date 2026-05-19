@@ -68,6 +68,31 @@ def test_generate_image_returns_bytes_and_mime():
     assert kwargs["success"] is True
 
 
+def test_generate_image_passes_timeout_to_genai_request():
+    from appcore import gemini_image
+
+    client = MagicMock()
+    client.models.generate_content.return_value = _fake_response(b"PNG-BYTES", "image/png")
+    with patch.object(gemini_image, "_get_image_client", return_value=client), \
+         patch.object(
+             gemini_image,
+             "_resolve_gemini_image_credentials",
+             return_value=("KEY", "", "", "gemini-3-pro-image-preview"),
+         ), \
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image.ai_billing, "log_request"):
+        gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="gemini-3-pro-image-preview",
+            timeout_seconds=120,
+        )
+
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert config.http_options.timeout == 120_000
+
+
 def test_generate_image_cloud_channel_uses_vertex_backend():
     from appcore import gemini_image
 
@@ -404,6 +429,25 @@ def test_generate_via_seedream_maps_401_to_error():
                 "doubao-seedream-5-0-260128",
                 api_key="DB-KEY",
                 base_url="https://ark.example.com",
+            )
+
+
+def test_generate_via_seedream_timeout_is_terminal():
+    from appcore import gemini_image
+
+    with patch(
+        "appcore.gemini_image.requests.post",
+        side_effect=gemini_image.requests.Timeout("read timed out"),
+    ):
+        with pytest.raises(gemini_image.GeminiImageTimeout):
+            gemini_image._generate_via_seedream(
+                "translate",
+                b"RAW",
+                "image/jpeg",
+                "doubao-seedream-5-0-260128",
+                api_key="DB-KEY",
+                base_url="https://ark.example.com",
+                timeout_seconds=120,
             )
 
 
@@ -775,6 +819,60 @@ def test_all_channels_expose_gemini_2_5_flash_preview():
     for channel in expected_in:
         ids = [m[0] for m in gemini_image.IMAGE_MODELS_BY_CHANNEL[channel]]
         assert "gemini-2.5-flash-image-preview" in ids, f"{channel} 缺少 2.5-flash"
+
+
+def test_local_image2_channel_registered_for_image_translate():
+    from appcore import gemini_image
+
+    assert "local_image_2" in gemini_image.IMAGE_MODELS_BY_CHANNEL
+    assert gemini_image.default_image_model("local_image_2") == "gpt-image-2"
+    assert gemini_image._channel_provider("local_image_2") == "local_image_2"
+
+
+def test_generate_image_local_image2_uses_low_quality_1k_square():
+    from appcore import gemini_image
+
+    submitted: dict = {}
+
+    class B64Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"data": [{"b64_json": base64.b64encode(b"PNG-LOCAL").decode("ascii")}]}
+
+    def fake_post(url, *, headers, data, files, timeout):
+        submitted["url"] = url
+        submitted["headers"] = headers
+        submitted["data"] = data
+        submitted["files"] = files
+        submitted["timeout"] = timeout
+        return B64Response()
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image, "_resolve_local_image2_credentials",
+                      return_value=("LOCAL-KEY", "http://image.local/v1")), \
+         patch.object(gemini_image.requests, "post", side_effect=fake_post), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=_png_bytes(900, 900),
+            source_mime="image/png",
+            model="gpt-image-2",
+            channel="local_image_2",
+            user_id=8,
+            project_id="img-local",
+        )
+
+    assert out == b"PNG-LOCAL"
+    assert mime == "image/png"
+    assert submitted["url"] == "http://image.local/v1/images/edits"
+    assert submitted["headers"]["Authorization"] == "Bearer LOCAL-KEY"
+    assert submitted["data"]["model"] == "gpt-image-2"
+    assert submitted["data"]["quality"] == "low"
+    assert submitted["data"]["size"] == "1024x1024"
+    assert submitted["files"]["image"][0] == "source.png"
+    assert m_log.call_args.kwargs["provider"] == "local_image_2"
 
 
 def test_generate_via_apimart_uses_dynamic_model_id():

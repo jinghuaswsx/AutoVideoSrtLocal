@@ -9,7 +9,7 @@
 - `dianxiaomi_rankings` 继续作为产品库快照事实表，新增商品素材补充字段。
 - 店小秘 Listing 采集时：
   - 从商品链接解析 `product_code`。
-  - 访问商品链接，解析商品主图和详情图 URL。
+  - 访问商品链接，解析商品主图和详情图 URL；商品主图优先取商品页第一张轮播图，`og:image` / `twitter:image` 只作为没有轮播图时的兜底。
   - 将主图下载到本地 media storage，保存 object key。
   - 使用 `product_code` 搜索明空素材库，取第一个匹配素材文件名，解析中文产品名。
 - 产品库 API 返回本地主图 URL、详情图 URL 列表、中文名和 product_code。
@@ -43,7 +43,9 @@
 
 已有 `dianxiaomi_rankings` 快照不通过重新采集所有日期来补齐。历史数据按 `product_url` 去重为唯一商品后补齐一次，再把结果更新回同一商品的所有历史行；没有 `product_url` 的行按 `product_id` 标记为已尝试并记录错误。
 
-回填工具默认只处理 `product_assets_synced_at` 为空或 `product_code` 为空的商品，避免重复抓取。`--dry-run` 只统计候选商品和影响行数，不访问商品页、不访问明空、不写数据库；`--limit` 用于小批试跑；`--force` 只在需要重跑已尝试商品时手动使用。
+回填工具默认只处理 `product_assets_synced_at` 为空、`product_code` 为空、或有 `product_url` 但 `product_main_image_url` / `product_main_image_object_key` 为空的商品，避免重复抓取已完整补齐的商品。`--dry-run` 只统计候选商品和影响行数，不访问商品页、不访问明空、不写数据库；`--limit` 用于小批试跑；`--force` 只在需要重跑已尝试商品时手动使用。
+
+如果历史行已经记录过 `product_assets_synced_at`，但 `product_main_image_url` 或 `product_main_image_object_key` 为空，仍视为待回填。这样可以专门修复“产品库显示无图”的商品，而不要求重新采集所有 Listing 快照。
 
 ## 中文名解析
 
