@@ -3547,6 +3547,20 @@ def test_image_translate_detail_has_channel_rerun_controls():
     assert "it-rerun-modal" in styles
 
 
+def test_image_translate_detail_result_meta_shows_provider_and_model_id():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "function resultModelBadge" in scripts
+    assert "result_channel" in scripts
+    assert "result_model_id" in scripts
+    assert "供应商：" in scripts
+    assert "模型ID：" in scripts
+    assert "大模型：未调用" in scripts
+    assert "it-meta-chip--model" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

@@ -162,6 +162,31 @@ def test_runtime_passes_task_channel_through_generate_image(tmp_path):
     assert gen.call_args.kwargs["channel"] == "doubao"
 
 
+def test_runtime_stamps_result_model_origin_on_success(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "doubao"
+    task["model_id"] = "doubao-seedream-5-0-260128"
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"IMG-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    item = task["items"][0]
+    assert item["result_source"] == "image_translate"
+    assert item["result_channel"] == "doubao"
+    assert item["result_model_id"] == "doubao-seedream-5-0-260128"
+
+
 def test_runtime_passes_two_minute_timeout_to_image_generation(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
