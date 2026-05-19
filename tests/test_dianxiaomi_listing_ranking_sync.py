@@ -161,6 +161,42 @@ def test_cache_product_main_image_writes_deterministic_selection_object_key():
     assert writes == [(object_key, b"image-bytes")]
 
 
+def test_cache_product_main_image_returns_key_when_local_write_survives_remote_backup_error():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    written_keys = set()
+
+    class FakeResponse:
+        headers = {"content-type": "image/jpeg"}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size):
+            del chunk_size
+            yield b"image-bytes"
+
+    def fake_exists(key):
+        return key in written_keys
+
+    def fake_write(key, _payload):
+        written_keys.add(key)
+        raise RuntimeError("NoSuchBucket")
+
+    object_key = sync.cache_product_main_image(
+        "https://cdn.example.test/main.jpg",
+        product_id="7540261912642",
+        product_code="fitness-band",
+        storage_exists_fn=fake_exists,
+        write_bytes_fn=fake_write,
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert object_key in written_keys
+
+
 def test_extract_product_cn_name_from_mingkong_first_material():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
