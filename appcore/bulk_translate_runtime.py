@@ -1291,29 +1291,23 @@ def _pick_existing_path(candidates: list[str]) -> str:
 
 
 def _safe_get_image_translate_channel() -> str:
-    """读全局图片翻译通道；DB 偶发失败时静默回退到空字符串，
-    保证 bulk task 创建不会因为这个非关键字段中断（同 _default_image_translate_model_id 思路）。"""
+    """素材管理批量翻译创建图片子任务时使用固定默认通道。"""
     from appcore import image_translate_settings as its
 
-    try:
-        return its.get_channel()
-    except Exception:
-        return ""
+    return its.get_material_image_translate_default_channel()
 
 
 def _default_image_translate_model_id(_user_id: int | None) -> str:
     from appcore import image_translate_settings as its
     from appcore.gemini_image import coerce_image_model
 
-    channel = "aistudio"
     try:
-        channel = its.get_channel()
+        return its.get_material_image_translate_default_model()
     except Exception:
-        pass
-    try:
-        return its.get_default_model(channel)
-    except Exception:
-        return coerce_image_model("", channel=channel)
+        return coerce_image_model(
+            "",
+            channel=its.MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL,
+        )
 
 
 def _child_needs_voice(child_state: dict) -> bool:

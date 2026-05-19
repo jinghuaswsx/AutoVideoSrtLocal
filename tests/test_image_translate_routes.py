@@ -112,8 +112,8 @@ def test_models_endpoint_allows_vertex_adc_channel_override(authed_client_no_db,
     assert {"id": "cloud_adc", "name": "Google Vertex AI (ADC)"} in data["channels"]
 
 
-def test_medias_default_image_model_is_flash_when_no_user_preference(authed_client_no_db, monkeypatch):
-    """从英语版一键翻译：用户没有保存偏好时，默认模型应是 Nano Banana 2（快速）。"""
+def test_medias_default_image_task_uses_local_image2_serial(authed_client_no_db, monkeypatch):
+    """从素材管理创建图片翻译任务：默认走本地 Image 2 串行。"""
     from web.routes import medias as r
 
     created = {}
@@ -141,10 +141,12 @@ def test_medias_default_image_model_is_flash_when_no_user_preference(authed_clie
         json={"lang": "de"},
     )
     assert resp.status_code == 201
-    assert created["model_id"] == "gemini-3.1-flash-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
+    assert created["concurrency_mode"] == "sequential"
 
 
-def test_medias_default_image_model_uses_global_default_model(authed_client_no_db, monkeypatch):
+def test_medias_default_image_task_ignores_global_default_model(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
     created = {}
@@ -177,7 +179,8 @@ def test_medias_default_image_model_uses_global_default_model(authed_client_no_d
     )
 
     assert resp.status_code == 201
-    assert created["model_id"] == "gemini-3-pro-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_client_no_db, monkeypatch):
@@ -334,7 +337,7 @@ def test_upload_complete_rejects_model_outside_requested_channel(authed_client_n
     assert resp.get_json()["error"] == "unsupported model"
 
 
-def test_medias_default_image_model_uses_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
+def test_medias_default_image_task_ignores_openrouter_default(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
     created = {}
@@ -364,7 +367,8 @@ def test_medias_default_image_model_uses_openai_image2_when_enabled(authed_clien
     )
 
     assert resp.status_code == 201
-    assert created["model_id"] == "openai/gpt-5.4-image-2:high"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_no_db, monkeypatch):
@@ -388,7 +392,7 @@ def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_
     assert data["channel"] == "doubao"
 
 
-def test_medias_default_image_model_uses_seedream_for_doubao_channel(authed_client_no_db, monkeypatch):
+def test_medias_default_image_task_ignores_doubao_default(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
     created = {}
@@ -421,7 +425,8 @@ def test_medias_default_image_model_uses_seedream_for_doubao_channel(authed_clie
     )
 
     assert resp.status_code == 201
-    assert created["model_id"] == "doubao-seedream-5-0-260128"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):

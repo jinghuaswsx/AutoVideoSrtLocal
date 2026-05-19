@@ -338,22 +338,17 @@ def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
 
 
 def _default_image_translate_model_id() -> str:
-    channel = "aistudio"
     try:
-        channel = its.get_channel()
+        return its.get_material_image_translate_default_model()
     except Exception:
-        pass
-    try:
-        return its.get_default_model(channel)
-    except Exception:
-        return coerce_image_model("", channel=channel)
+        return coerce_image_model(
+            "",
+            channel=its.MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL,
+        )
 
 
 def _safe_image_translate_channel() -> str:
-    try:
-        return its.get_channel()
-    except Exception:
-        return "aistudio"
+    return its.get_material_image_translate_default_channel()
 
 
 def probe_media_info_safe(path: str) -> dict:
