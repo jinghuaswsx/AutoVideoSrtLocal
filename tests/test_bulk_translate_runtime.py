@@ -206,8 +206,8 @@ def test_create_detail_images_child_skips_gif_sources(runtime_env, monkeypatch, 
     assert (child_task_id, child_type, child_status) == ("img-child-1", "image_translate", "running")
     assert [it["source_detail_image_id"] for it in created["items"]] == [11, 14]
     assert created["medias_context"]["source_detail_image_ids"] == [11, 14]
-    assert created["channel"] == "local_image_2"
-    assert created["model_id"] == "gpt-image-2"
+    assert created["channel"] == "cloud_adc"
+    assert created["model_id"] == "gemini-3.1-flash-image-preview"
     assert created["concurrency_mode"] == "sequential"
     assert started == [("img-child-1", 1)]
 

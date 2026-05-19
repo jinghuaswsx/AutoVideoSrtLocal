@@ -258,9 +258,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotPostSourceMessage(event)" in body
     assert "row.message_source_html" in body
     assert "function metaHotPostDisplayId(row)" in body
+    assert "function metaHotPostLink(row)" in body
+    assert "function metaHotPostIcon(name)" in body
     assert "function copyMetaHotPostId(event, value)" in body
     assert "mh-post-id-bar" in body
     assert "mh-post-id-copy" in body
+    assert "mh-post-link-copy" in body
     assert "data-copy-value" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body

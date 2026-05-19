@@ -82,6 +82,8 @@ IMAGE_MODELS = [
 
 全局 `image_translate.channel` 允许 `cloud_adc`，展示为 Google Vertex AI (ADC)。该通道读取 `llm_provider_configs.gemini_vertex_adc_image` 的 project/location，默认模型与其他 Google 图片通道一致为 `gemini-3.1-flash-image-preview`（Nano Banana 2）。
 
+2026-05-19 默认策略：图片翻译默认通道为 `cloud_adc`，默认模型为 `gemini-3.1-flash-image-preview`，默认执行模式为串行。
+
 全局 `image_translate.channel` 允许 `local_image_2`，展示为 本地 Image 2。该通道复用 `llm_provider_configs.video_cover_local_image` 的本地 OpenAI 兼容 `/images/edits` 凭据，默认模型为 `gpt-image-2`；商品图片翻译固定提交 `quality=low`，并按原图比例选择 1K 输出尺寸（如 `1024x1024`）。
 
 ### 用户默认偏好

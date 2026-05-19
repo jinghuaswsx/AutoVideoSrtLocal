@@ -28,8 +28,8 @@ def test_browser_monitor_page_renders_five_vnc_iframes(authed_client_no_db, monk
         '&amp;port=6097&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'src="http://172.30.254.14:5931/vnc.html?host=172.30.254.14'
-        '&amp;port=5931&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
+        'src="http://172.30.254.14:6094/vnc_lite.html?host=172.30.254.14'
+        '&amp;port=6094&amp;path=websockify&amp;scale=true&amp;autoconnect=true"'
     ) in html
 
 

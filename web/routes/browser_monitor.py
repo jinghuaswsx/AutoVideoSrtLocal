@@ -23,6 +23,17 @@ class BrowserEnvironment:
     purpose: str
 
     def _vnc_url(self, *, resize: str, view_only: bool = False) -> str:
+        if self.port == 6094:  # 采集程序的特殊 URL 格式
+            params: dict[str, str | int] = {
+                "host": SERVER_HOST,
+                "port": self.port,
+                "path": "websockify",
+                "scale": "true",
+                "autoconnect": "true",
+            }
+            return f"http://{SERVER_HOST}:{self.port}/vnc_lite.html?{urlencode(params)}"
+
+        # 其他环境的默认 URL 格式
         params: dict[str, str | int] = {
             "host": SERVER_HOST,
             "port": self.port,
@@ -47,7 +58,7 @@ ENVIRONMENTS: tuple[BrowserEnvironment, ...] = (
     BrowserEnvironment("DXM02-MK", "DXM02-MK", 6093, "明空选品店小秘"),
     BrowserEnvironment("DXM03-RJC", "DXM03-RJC", 6095, "荣锦成店小秘订单 / SKU / Shopify ID"),
     BrowserEnvironment("TABCUT", "TABCUT", 6097, "Tabcut 选品采集"),
-    BrowserEnvironment("采集程序", "采集程序", 5931, "采集程序 VNC 窗口"),
+    BrowserEnvironment("采集程序", "采集程序", 6094, "采集程序 VNC 窗口"),
 )
 
 
