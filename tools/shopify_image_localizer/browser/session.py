@@ -183,9 +183,14 @@ def _hidden_subprocess_kwargs() -> dict[str, object]:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
     except Exception:
-        pass
+        class _StartupInfo:
+            pass
+
+        startupinfo = _StartupInfo()
+        startupinfo.dwFlags = getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    kwargs["startupinfo"] = startupinfo
     return kwargs
 
 
