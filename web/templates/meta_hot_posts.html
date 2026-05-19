@@ -118,6 +118,11 @@ button.mh-link-btn { cursor:pointer; }
 .mh-ai-section h4 { margin:0 0 8px; font-size:13px; color:#334155; }
 .mh-ai-chip-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
 .mh-ai-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-ai-summary-head { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px; margin-bottom:8px; }
+.mh-ai-summary-head h4 { margin:0; text-align:center; }
+.mh-ai-summary-switch { height:26px; padding:0 9px; border:1px solid #99f6e4; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
+.mh-ai-summary-switch.active { background:#0f766e; color:#fff; }
+.mh-ai-summary-text { color:#334155; font-size:15px; line-height:1.55; }
 .mh-ai-error { color:#b91c1c; font-size:13px; white-space:pre-wrap; word-break:break-word; }
 .mh-favorite-sort { width:150px; }
 .mh-favorite-sort[hidden] { display:none; }
@@ -1144,6 +1149,14 @@ async function toggleMetaHotPostMark(event, postId, requestedStatus) {
 function metaHotAiEndpoint(postId, mode) {
   return `/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}`;
 }
+function hasMetaHotCardAiResult(row, mode) {
+  if (!row) return false;
+  if (mode === 'us_copyability') return Boolean(row.video_copyability);
+  if (mode === 'europe_translation') {
+    return row.europe_fit_score !== undefined && row.europe_fit_score !== null && row.europe_fit_score !== '';
+  }
+  return false;
+}
 function switchMetaHotAiTab(tab) {
   const isResult = tab === 'result';
   qs('mhAiRequestTab').classList.toggle('active', !isResult);
@@ -1200,6 +1213,32 @@ function renderAiRequestPreview(payload) {
     </div>
   </div>`;
 }
+function renderAiSummarySection(result) {
+  const summaryZh = result.summary_zh || result.summary || '';
+  const summaryEn = result.summary || summaryZh;
+  if (!summaryZh && !summaryEn) return '';
+  return `<div class="mh-ai-section mh-ai-summary" data-summary-zh="${esc(summaryZh)}" data-summary-en="${esc(summaryEn)}" data-summary-lang="zh">
+    <div class="mh-ai-summary-head">
+      <button class="mh-ai-summary-switch active" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'zh')">中文</button>
+      <h4>摘要</h4>
+      <button class="mh-ai-summary-switch" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'en')">English</button>
+    </div>
+    <div class="mh-ai-summary-text">${esc(summaryZh || summaryEn)}</div>
+  </div>`;
+}
+function setMetaHotAiSummaryLanguage(event, lang) {
+  const section = event.currentTarget.closest('.mh-ai-summary');
+  if (!section) return;
+  const text = section.querySelector('.mh-ai-summary-text');
+  const nextLang = lang === 'en' ? 'en' : 'zh';
+  const nextText = nextLang === 'en' ? section.dataset.summaryEn : section.dataset.summaryZh;
+  if (text) text.textContent = nextText || '';
+  section.dataset.summaryLang = nextLang;
+  section.querySelectorAll('.mh-ai-summary-switch').forEach(button => {
+    const isActive = button.textContent === (nextLang === 'en' ? 'English' : '中文');
+    button.classList.toggle('active', isActive);
+  });
+}
 function renderMetaHotAiResult(payload) {
   if (!payload || !payload.has_result) return '<div class="mh-empty">暂无结果</div>';
   const result = payload.result || {};
@@ -1212,11 +1251,11 @@ function renderMetaHotAiResult(payload) {
     : '';
   return `<div>
     <div class="mh-ai-chip-list">${chips.join('')}</div>
-    ${result.summary ? `<div class="mh-ai-section"><h4>摘要</h4><div>${esc(result.summary)}</div></div>` : ''}
-    ${result.reasoning ? `<div class="mh-ai-section"><h4>判断理由</h4><div>${esc(result.reasoning)}</div></div>` : ''}
-    ${list('优势', result.strengths)}
-    ${list('风险', result.risks || result.risk_notes)}
-    ${list('需要调整', result.required_changes || result.copy_notes)}
+    ${renderAiSummarySection(result)}
+    ${(result.reasoning_zh || result.reasoning) ? `<div class="mh-ai-section"><h4>判断理由</h4><div>${esc(result.reasoning_zh || result.reasoning)}</div></div>` : ''}
+    ${list('优势', result.strengths_zh || result.strengths)}
+    ${list('风险', result.risks_zh || result.risks || result.risk_notes)}
+    ${list('需要调整', result.required_changes_zh || result.required_changes || result.copy_notes)}
     ${list('适合语言市场', result.best_language_markets)}
     <div class="mh-ai-section">
       <h4>完整返回报文</h4>
@@ -1269,6 +1308,13 @@ async function openMetaHotAiAnalysis(postId, mode) {
   mhAiState = {postId, mode, request: null, result: null};
   qs('mhAiAnalysisTitle').textContent = MH_AI_MODES[mode]?.label || 'AI 分析';
   qs('mhAiAnalysisModal').hidden = false;
+  const cachedItem = mhItemsById.get(Number(postId));
+  if (hasMetaHotCardAiResult(cachedItem, mode)) {
+    switchMetaHotAiTab('result');
+    qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">Loading...</div>';
+    await loadMetaHotAiResult(postId, mode);
+    return;
+  }
   switchMetaHotAiTab('request');
   qs('mhAiRequestPanel').innerHTML = '<div class="mh-empty">Loading...</div>';
   qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">暂无结果</div>';

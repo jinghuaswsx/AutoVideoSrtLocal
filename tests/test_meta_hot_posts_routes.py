@@ -199,6 +199,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "结果数据" in body
     assert "强制重新分析" in body
     assert "openMetaHotAiAnalysis" in body
+    assert "function hasMetaHotCardAiResult(row, mode)" in body
+    assert "const cachedItem = mhItemsById.get(Number(postId));" in body
+    assert "if (hasMetaHotCardAiResult(cachedItem, mode))" in body
+    assert "qs('mhAiResultPanel').innerHTML = '<div class=\"mh-empty\">Loading...</div>';" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}" in body
     assert "request-preview" in body
     assert "request-payload" in body
@@ -290,6 +294,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "row.europe_fit_required_changes_zh || row.europe_fit_required_changes" in body
     assert "copyabilityBlock(row)" in body
     assert "data.summary_zh || data.summary || ''" in body
+    assert "function renderAiSummarySection(result)" in body
+    assert "function setMetaHotAiSummaryLanguage(event, lang)" in body
+    assert "result.summary_zh || result.summary || ''" in body
+    assert "data-summary-zh" in body
+    assert "data-summary-en" in body
+    assert "中文" in body
+    assert "English" in body
     assert "function formatVideoDuration" in body
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body

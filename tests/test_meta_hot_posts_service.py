@@ -267,6 +267,7 @@ def test_build_ai_analysis_run_short_circuits_existing_result(monkeypatch):
             "video_copyability_status": "done",
             "video_copyability_overall_score": 91,
             "video_copyability_summary": "Strong hook.",
+            "video_copyability_summary_zh": "强钩子，产品展示清晰。",
             "video_copyability_analysis_json": '{"overall_score":91}',
         },
     )
@@ -281,7 +282,42 @@ def test_build_ai_analysis_run_short_circuits_existing_result(monkeypatch):
     assert result.payload["cached"] is True
     assert result.payload["has_result"] is True
     assert result.payload["result"]["summary"] == "Strong hook."
+    assert result.payload["result"]["summary_zh"] == "强钩子，产品展示清晰。"
     assert calls == []
+
+
+def test_build_ai_analysis_result_response_prefers_europe_zh_visual_fields(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "sku_prices_json": "[]",
+            "europe_fit_status": "done",
+            "europe_fit_score": 86,
+            "europe_fit_recommendation": "translate_and_launch",
+            "europe_fit_strengths_json": '["Clear demo"]',
+            "europe_fit_strengths_zh_json": '["演示清晰"]',
+            "europe_fit_risks_json": '["English captions"]',
+            "europe_fit_risks_zh_json": '["英文字幕需要替换"]',
+            "europe_fit_required_changes_json": '["Translate captions"]',
+            "europe_fit_required_changes_zh_json": '["翻译字幕"]',
+            "europe_fit_reasoning": "Suitable after localization.",
+            "europe_fit_reasoning_zh": "本土化后适合投放。",
+            "europe_fit_llm_response_json": '{"translation_fit_score":82}',
+        },
+    )
+
+    result = service.build_ai_analysis_result_response(7, "europe_translation")
+
+    assert result.status_code == 200
+    payload = result.payload
+    assert payload["has_result"] is True
+    assert payload["result"]["reasoning"] == "Suitable after localization."
+    assert payload["result"]["reasoning_zh"] == "本土化后适合投放。"
+    assert payload["result"]["strengths_zh"] == ["演示清晰"]
+    assert payload["result"]["risks_zh"] == ["英文字幕需要替换"]
+    assert payload["result"]["required_changes_zh"] == ["翻译字幕"]
 
 
 def test_build_ai_analysis_run_restores_state_on_rate_limit(monkeypatch):
