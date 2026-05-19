@@ -3490,8 +3490,8 @@ def test_image_translate_templates_show_concurrency_mode_pills():
 
     assert "处理模式" in list_template
     assert "处理模式" in detail_template
-    assert 'id="itConcurrencyMode" value="sequential"' in list_template
-    assert "串行（默认）" in list_template
+    assert 'id="itConcurrencyMode" value="parallel"' in list_template
+    assert "并行（默认）" in list_template
     assert "仅 OpenRouter 和 APIMART 可选" in list_template
     assert "itMetaConcurrencyMode" in detail_template
     assert "data-concurrency-mode" in list_template
@@ -3573,6 +3573,24 @@ def test_image_translate_detail_result_meta_shows_provider_and_model_id():
     assert "it-meta-chip--model" not in primary_meta_block
     assert "it-meta-chip--model" in styles
     assert ".it-item-model-meta" in styles
+
+
+def test_image_translate_templates_have_mobile_adaptation_contract():
+    root = Path(__file__).resolve().parents[1]
+    list_template = (root / "web" / "templates" / "image_translate_list.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "it-history-tabs" in list_template
+    assert "it-history-table-wrap" in list_template
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-19-image-translate-mobile-adaptation-design.md" in styles
+    assert '@media (max-width: 767px)' in styles
+    assert '.it-shell[data-page="image-translate-list"] .card' in styles
+    assert ".it-pill-group" in styles
+    assert "overflow-x:auto" in styles
+    assert "white-space:nowrap" in styles
+    assert ".it-history-tabs" in styles
+    assert ".it-history-table-wrap" in styles
+    assert ".it-item-actions .btn" in styles
 
 
 def test_medias_edit_modal_contains_detail_image_translation_controls():
