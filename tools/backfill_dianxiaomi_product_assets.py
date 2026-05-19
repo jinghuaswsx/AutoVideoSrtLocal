@@ -43,6 +43,8 @@ def select_candidate_products(
     force: bool = False,
     snapshot_date_from: str = "",
     snapshot_date_to: str = "",
+    shard_index: int = 0,
+    shard_count: int = 1,
 ) -> list[dict[str, Any]]:
     where_parts = ["(product_url IS NOT NULL AND product_url <> '' OR product_id IS NOT NULL AND product_id <> '')"]
     args: list[Any] = []
@@ -54,6 +56,11 @@ def select_candidate_products(
     if snapshot_date_to:
         where_parts.append("snapshot_date <= %s")
         args.append(snapshot_date_to)
+    if int(shard_count) > 1:
+        where_parts.append(
+            "MOD(CRC32(COALESCE(NULLIF(product_url, ''), CONCAT('product_id:', product_id))), %s) = %s"
+        )
+        args.extend([int(shard_count), int(shard_index)])
     where_sql = " AND ".join(f"({part})" for part in where_parts)
     sql = f"""
     SELECT
@@ -196,6 +203,8 @@ def run_backfill(
     sleep_seconds: float = 0.0,
     snapshot_date_from: str = "",
     snapshot_date_to: str = "",
+    shard_index: int = 0,
+    shard_count: int = 1,
     select_candidates_fn: Callable[..., list[dict[str, Any]]] = select_candidate_products,
     enrich_rows_fn: Callable[..., list[dict[str, Any]]] = enrich_listing_rows,
     update_product_fn: Callable[[dict[str, Any], dict[str, Any]], int] = update_backfilled_product,
@@ -207,6 +216,8 @@ def run_backfill(
         "batch_size": int(batch_size),
         "snapshot_date_from": snapshot_date_from,
         "snapshot_date_to": snapshot_date_to,
+        "shard_index": int(shard_index),
+        "shard_count": int(shard_count),
         "products_seen": 0,
         "products_updated": 0,
         "products_failed": 0,
@@ -226,6 +237,8 @@ def run_backfill(
             force=force,
             snapshot_date_from=snapshot_date_from,
             snapshot_date_to=snapshot_date_to,
+            shard_index=int(shard_index),
+            shard_count=int(shard_count),
         )
         products = [product for product in products if _product_key(product) not in seen_keys]
         if not products:
@@ -283,6 +296,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true", help="Reprocess candidates even when product_assets_synced_at is set.")
     parser.add_argument("--snapshot-date-from", default="")
     parser.add_argument("--snapshot-date-to", default="")
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     return parser
 
 
@@ -298,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         sleep_seconds=args.sleep_seconds,
         snapshot_date_from=args.snapshot_date_from,
         snapshot_date_to=args.snapshot_date_to,
+        shard_index=args.shard_index,
+        shard_count=args.shard_count,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
     return 1 if summary.get("products_failed") else 0
