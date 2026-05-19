@@ -28,7 +28,7 @@ from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 
 DEFAULT_STORE_DOMAIN = settings.DEFAULT_SHOPIFY_DOMAIN
-DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE = "es"
+DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE = "en"
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
@@ -832,6 +832,22 @@ def fetch_storefront_detail_image_natural_sizes(
     return sizes
 
 
+def _normalize_detail_size_reference_locale(value: str | None) -> str:
+    normalized = str(value or "").strip().strip("/").lower()
+    if normalized in {"", "none", "off", "disabled"}:
+        return ""
+    if normalized in {"en", "en-us", "default", "root", "source"}:
+        return "en"
+    return normalized
+
+
+def _detail_size_reference_storefront_locale(value: str | None) -> str:
+    normalized = _normalize_detail_size_reference_locale(value)
+    if normalized == "en":
+        return ""
+    return normalized
+
+
 def _positive_size(size: dict[str, Any] | None) -> tuple[int, int]:
     if not size:
         return 0, 0
@@ -1098,12 +1114,14 @@ def run(
     if not args.skip_detail:
         cancellation.throw_if_cancelled(cancel_token)
         detail_html = str(target_product.get("description") or target_product.get("body_html") or "")
-        detail_size_reference_locale = str(getattr(args, "detail_size_reference_locale", "") or "").strip().lower()
+        detail_size_reference_locale = _normalize_detail_size_reference_locale(
+            getattr(args, "detail_size_reference_locale", "")
+        )
         if detail_size_reference_locale and detail_size_reference_locale != str(args.shop_locale or "").strip().lower():
             try:
                 reference_sizes = fetch_storefront_detail_image_natural_sizes(
                     product_code=args.product_code,
-                    locale=detail_size_reference_locale,
+                    locale=_detail_size_reference_storefront_locale(detail_size_reference_locale),
                     store_domain=args.store_domain,
                     cancel_token=cancel_token,
                 )
@@ -1306,7 +1324,7 @@ def main() -> None:
     args.taa_shop_locale = locales.translate_and_adapt_locale_for(
         str(args.taa_shop_locale or args.shop_locale).strip()
     )
-    args.detail_size_reference_locale = str(args.detail_size_reference_locale or "").strip().lower()
+    args.detail_size_reference_locale = _normalize_detail_size_reference_locale(args.detail_size_reference_locale)
     args.language = str(args.language or locales.english_name_for(args.lang)).strip()
     try:
         run(args)

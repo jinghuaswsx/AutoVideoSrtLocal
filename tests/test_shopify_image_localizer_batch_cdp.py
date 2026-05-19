@@ -967,16 +967,23 @@ def test_normalize_detail_candidate_sizes_resizes_to_reference_token(tmp_path):
 
     resized_count = run_product_cdp.normalize_detail_candidate_sizes_to_reference(
         rows,
-        {token: {"width": 1024, "height": 1024}},
+        {token: {"width": 800, "height": 800}},
         output_dir=tmp_path / "reference-size",
     )
 
     assert resized_count == 1
     assert rows[0]["local_path"] != str(local_path)
     assert rows[0]["original_local_path"] == str(local_path)
-    assert rows[0]["reference_size"] == {"width": 1024, "height": 1024}
+    assert rows[0]["reference_size"] == {"width": 800, "height": 800}
     with Image.open(rows[0]["local_path"]) as image:
-        assert image.size == (1024, 1024)
+        assert image.size == (800, 800)
+
+
+def test_detail_size_reference_locale_en_uses_root_storefront():
+    assert run_product_cdp._normalize_detail_size_reference_locale(" EN ") == "en"
+    assert run_product_cdp._detail_size_reference_storefront_locale("en") == ""
+    assert run_product_cdp._normalize_detail_size_reference_locale("es") == "es"
+    assert run_product_cdp._detail_size_reference_storefront_locale("es") == "es"
 
 
 def test_plan_body_html_replacements_re_replaces_same_filename_when_replace_shopify_cdn_true():
@@ -1379,7 +1386,7 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     assert captured_args[1] is token
     assert captured_args[0].replace_shopify_cdn is True
     assert captured_args[0].no_preserve_detail_size is False
-    assert captured_args[0].detail_size_reference_locale == "es"
+    assert captured_args[0].detail_size_reference_locale == "en"
     assert saved_config[0]["base_url"] == "http://172.30.254.14"
     assert browser_cleanups == []
     assert any("复用现有浏览器会话" in message for message in statuses)
