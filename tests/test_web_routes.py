@@ -3575,6 +3575,22 @@ def test_image_translate_detail_result_meta_shows_provider_and_model_id():
     assert ".it-item-model-meta" in styles
 
 
+def test_image_translate_detail_compare_rows_align_media_frames():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "function appendItemMedia" in scripts
+    assert "function alignCompareRowMedia" in scripts
+    assert "bindCompareRowMediaAlignment(row)" in scripts
+    assert "--it-item-media-height" in scripts
+    assert 'left.alt = "原图";' in scripts
+    assert 'imgOut.alt = "结果图";' in scripts
+    assert ".it-item-media" in styles
+    assert "align-items:start" in styles
+    assert "height:var(--it-item-media-height, auto)" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
@@ -3607,10 +3623,16 @@ def test_medias_edit_modal_contains_detail_image_zip_download_button():
 
 
 def test_medias_edit_modal_contains_detail_image_single_replace_control():
-    scripts = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     assert "data-detail-selection-replace" in scripts
     assert "替换选中" in scripts
+    assert "data-detail-image-replace" in scripts
+    assert "oc-detail-image-replace" in scripts
+    assert ".oc-detail-image-replace" in styles
+    assert "onCardSelect" in scripts
     assert "replaceSelectedDetailImage" in scripts
     assert "replace-bootstrap" in scripts
     assert "replace-complete" in scripts
@@ -3638,7 +3660,7 @@ def test_medias_edit_modal_contains_download_product_images_button():
     assert "edTypeNoLocalizedDetailImagesMessage" in scripts
     assert "oc-no-localized-images-message" in styles
     assert "color:var(--oc-danger-fg)" in styles
-    assert "download-localized-empty-modal-20260519" in styles
+    assert "detail-image-replace-card-20260519" in styles
     assert "material-filename-tail-20260513" not in styles
     assert "detail-images/download-localized-zip" in scripts
 

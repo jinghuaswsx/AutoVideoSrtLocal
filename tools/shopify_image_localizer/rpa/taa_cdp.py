@@ -40,6 +40,18 @@ def _url_sha256(url: str, *, timeout: float = 15.0) -> str:
         return ""
 
 
+def _local_image_size(path: str) -> tuple[int, int]:
+    if not path:
+        return 0, 0
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return int(image.width or 0), int(image.height or 0)
+    except Exception:
+        return 0, 0
+
+
 def _find_positional_fallback(localized_images: list[dict], src_idx: int) -> dict | None:
     target = f"from_url_en_{src_idx:02d}_"
     for row in localized_images:
@@ -874,6 +886,41 @@ def _normalize_persisted_display_size(width: int, height: int, size: dict[str, A
     return width, height
 
 
+def _replacement_target_display_size(row: dict[str, Any]) -> dict[str, Any] | None:
+    target_width = _positive_pixel(row.get("target_width") or row.get("reference_width"))
+    target_height = _positive_pixel(row.get("target_height") or row.get("reference_height"))
+    if (
+        target_width >= MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+        and target_height >= MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+    ):
+        return {
+            "width": target_width,
+            "height": target_height,
+            "naturalWidth": target_width,
+            "naturalHeight": target_height,
+        }
+    return None
+
+
+def _display_size_for_replacement(
+    row: dict[str, Any],
+    display_size_by_src: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    old_url = str(row.get("old") or "")
+    display_size = (display_size_by_src or {}).get(old_url)
+    target_size = _replacement_target_display_size(row)
+    if not target_size:
+        return display_size
+    display_width = _positive_pixel((display_size or {}).get("width"))
+    display_height = _positive_pixel((display_size or {}).get("height"))
+    if not display_size or (
+        display_width < MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+        or display_height < MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+    ):
+        return {**(display_size or {}), **target_size}
+    return display_size
+
+
 def _apply_display_size_to_img_tag(tag: str, size: dict[str, Any] | None) -> str:
     if not size:
         return tag
@@ -946,7 +993,7 @@ def apply_uploaded_replacements(
             updated,
             old_url,
             new_url,
-            display_size=(display_size_by_src or {}).get(old_url),
+            display_size=_display_size_for_replacement(row, display_size_by_src),
         )
     return updated
 
@@ -1009,6 +1056,7 @@ def replace_detail_images(
             cancellation.throw_if_cancelled(cancel_token)
             local_path = str(row["candidate"]["local_path"])
             candidate_sha = row.get("candidate_sha") or _file_sha256(local_path)
+            target_width, target_height = _local_image_size(local_path)
             print(
                 f"详情图：第 {upload_idx}/{total} 张 上传中 "
                 f"file={Path(local_path).name} "
@@ -1025,6 +1073,8 @@ def replace_detail_images(
                 "source_index": row["candidate"].get("source_index"),
                 "match_method": row.get("match_method"),
                 "candidate_sha": candidate_sha,
+                "target_width": target_width,
+                "target_height": target_height,
             })
             # 节流：避免 Shopify CDN 短时间大量上传被限流（之前实测会触发
             # WinError 10054 远程主机强迫关闭连接）。最后一张不需要等。

@@ -1055,6 +1055,7 @@
             <span></span>
           </label>
           <span class="oc-detail-image-idx">${idx + 1}</span>
+          <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>替换</button>
           <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round">
@@ -1100,6 +1101,15 @@
         replaceBtn.disabled = count !== 1;
       }
       if (deleteBtn) deleteBtn.disabled = count === 0;
+      const singleSelectedId = count === 1 ? Array.from(selectedDetailImageIds)[0] : 0;
+      [grid, gifGrid].filter(Boolean).forEach(container => {
+        container.querySelectorAll('[data-detail-image-replace]').forEach(btn => {
+          const card = btn.closest('.oc-detail-image');
+          const show = !!singleSelectedId && card && Number(card.dataset.id) === singleSelectedId;
+          btn.hidden = !show;
+          btn.disabled = !show;
+        });
+      });
     }
 
     function pruneSelection() {
@@ -1112,6 +1122,20 @@
     function selectedDetailImage() {
       const selected = items.filter(it => selectedDetailImageIds.has(Number(it.id)));
       return selected.length === 1 ? selected[0] : null;
+    }
+
+    function onCardSelect(e) {
+      if (e.target.closest('button, label, input, a')) return;
+      const card = e.currentTarget;
+      const imgId = Number(card.dataset.id);
+      if (!imgId) return;
+      const selected = !selectedDetailImageIds.has(imgId);
+      if (selected) selectedDetailImageIds.add(imgId);
+      else selectedDetailImageIds.delete(imgId);
+      const checkbox = card.querySelector('.oc-detail-image-select');
+      if (checkbox) checkbox.checked = selected;
+      card.classList.toggle('is-selected', selected);
+      updateSelectionToolbar();
     }
 
     function onToggleSelect(e) {
@@ -1132,8 +1156,14 @@
         targetGrid.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(emptyText)}</div>`;
       } else {
         targetGrid.innerHTML = list.map(renderItemHTML).join('');
+        targetGrid.querySelectorAll('.oc-detail-image').forEach(card => {
+          card.addEventListener('click', onCardSelect);
+        });
         targetGrid.querySelectorAll('.oc-detail-image-select').forEach(input => {
           input.addEventListener('change', onToggleSelect);
+        });
+        targetGrid.querySelectorAll('[data-detail-image-replace]').forEach(btn => {
+          btn.addEventListener('click', replaceSelectedDetailImage);
         });
         targetGrid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
           btn.addEventListener('click', onDelete);
