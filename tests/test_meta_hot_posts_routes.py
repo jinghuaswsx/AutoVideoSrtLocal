@@ -250,8 +250,15 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/favorites" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/favorite" in body
     assert "function toggleMetaHotPostFavorite" in body
-    assert "加入收藏夹" in body
+    assert "renderFavoriteButton(row, 'heart')" in body
+    assert "renderFavoriteButton(row, 'text')" in body
+    assert "data-favorite-variant" in body
+    assert "favoriteButtonLabel(favorited, variant)" in body
+    assert "♡" in body
+    assert "♥" in body
+    assert "收藏" in body
     assert "取消收藏" in body
+    assert "加入收藏夹" not in body
     assert "X-CSRFToken" in body
     assert "function loadUsTopMaterials" in body
     assert "function assessEuropeFitMaterials" in body
