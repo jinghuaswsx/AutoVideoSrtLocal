@@ -1325,6 +1325,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
         if parsed_openrouter_model is not None:
             openrouter_model, quality = parsed_openrouter_model
             extra_body["quality"] = quality
+            extra_body["image_config"] = {"image_size": "2K"}
         full_request = {
             "method": "POST",
             "url": url,

@@ -584,6 +584,7 @@ class ImageTranslateRuntime:
                     store.update(_task_id, items=_task["items"])
 
         apimart_size, apimart_resolution = gemini_image._resolve_apimart_output_params(src_bytes)
+        openrouter_image_size = "2K" if (task.get("preset") or "").strip().lower() == "cover" else "1K"
         return gemini_image.generate_image(
             prompt=task["prompt"],
             source_image=src_bytes,
@@ -595,6 +596,7 @@ class ImageTranslateRuntime:
             channel=channel or None,
             apimart_size=apimart_size,
             apimart_resolution=apimart_resolution,
+            openrouter_image_size=openrouter_image_size,
             on_apimart_submitted=on_submitted,
             timeout_seconds=_IMAGE_GENERATION_TIMEOUT_SECONDS,
         )

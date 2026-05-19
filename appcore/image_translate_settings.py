@@ -25,16 +25,16 @@ CHANNEL_LABELS: dict[str, str] = {
     "local_image_2": "本地 Image 2",
 }
 _CHANNEL_KEY = "image_translate.channel"
-_DEFAULT_CHANNEL = "aistudio"
+_DEFAULT_CHANNEL = "openrouter"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "local_image_2"
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gpt-image-2"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "openrouter"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "openai/gpt-5.4-image-2:low"
 
 # OpenRouter OpenAI Image 2 质量档位开关与默认值
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY = "image_translate.openrouter_openai_image2_default_quality"
 _OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low", "mid", "high")
-_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY = "mid"
+_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY = "low"
 
 
 def _key(preset: str, lang: str) -> str:
@@ -660,7 +660,7 @@ def update_prompt(preset: str, lang: str, value: str) -> None:
 
 
 def get_channel() -> str:
-    """返回当前图片翻译通道。未配置或不合法时回退到默认 aistudio。"""
+    """返回当前图片翻译通道。未配置或不合法时回退到默认 OpenRouter。"""
     return _normalize_channel(_read(_CHANNEL_KEY))
 
 
@@ -709,7 +709,10 @@ def set_default_model(channel: str, model_id: str) -> None:
 
 def is_openrouter_openai_image2_enabled() -> bool:
     """是否启用 OpenRouter 的 OpenAI Image 2 三档模型。"""
-    raw = (_read(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY) or "").strip().lower()
+    value = _read(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY)
+    if value is None:
+        return True
+    raw = str(value or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -718,7 +721,7 @@ def set_openrouter_openai_image2_enabled(value: bool) -> None:
 
 
 def get_openrouter_openai_image2_default_quality() -> str:
-    """返回默认质量（low/mid/high），非法/未设置时回到 mid。"""
+    """返回默认质量（low/mid/high），非法/未设置时回到 low。"""
     raw = (_read(_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY) or "").strip().lower()
     if raw in _OPENROUTER_OPENAI_IMAGE2_QUALITIES:
         return raw

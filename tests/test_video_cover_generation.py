@@ -171,8 +171,8 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
 
     assert result["product"]["title"] == "Portable Blender Pro"
     assert result["product"]["main_image_url"] == "https://cdn.example/blender.png"
-    assert result["model"]["channel"] == "local_image_2"
-    assert result["model"]["model_id"] == "gpt-image-2"
+    assert result["model"]["channel"] == "openrouter"
+    assert result["model"]["model_id"] == "openai/gpt-5.4-image-2:low"
     assert [cover["platform"] for cover in result["covers"]] == ["social_reels"]
     assert all(cover["width"] == 1080 and cover["height"] == 1920 for cover in result["covers"])
     assert all(local_media_storage.exists(cover["object_key"]) for cover in result["covers"])
@@ -195,9 +195,10 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert "{video_analysis}" not in calls[0]["prompt"]
     assert "{ad_copy_sets}" not in calls[0]["prompt"]
     assert "Portable Blender Pro" in calls[0]["prompt"]
-    assert calls[0]["kwargs"]["channel"] == "local_image_2"
-    assert calls[0]["kwargs"]["model"] == "gpt-image-2"
+    assert calls[0]["kwargs"]["channel"] == "openrouter"
+    assert calls[0]["kwargs"]["model"] == "openai/gpt-5.4-image-2:low"
     assert calls[0]["kwargs"]["service"] == "video_cover.generate"
+    assert calls[0]["kwargs"]["openrouter_image_size"] == "2K"
     assert [call["use_case_code"] for call in analysis_calls] == [
         "video_cover.product_analysis",
         "video_cover.video_analysis",
@@ -263,6 +264,7 @@ def test_generate_video_covers_respects_image_count_and_copy_metadata(tmp_path):
         video_analysis_text="<视频素材分析>demo</视频素材分析>",
         ad_copy_payload=copy_payload,
         image_count=3,
+        cover_execution_mode="serial",
         on_cover_done=lambda partial: progress.append([cover["index"] for cover in partial["covers"]]),
     )
 
@@ -577,6 +579,9 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     openrouter_image2 = resolve_cover_model_selection("openrouter", "openai_image_2_high")
     assert openrouter_image2.provider == "openrouter"
     assert openrouter_image2.model == "openai/gpt-5.4-image-2:high"
+    default_cover = resolve_cover_model_selection(None, None)
+    assert default_cover.provider == "openrouter"
+    assert default_cover.model == "openai/gpt-5.4-image-2:low"
     aistudio = resolve_cover_model_selection("gemini_aistudio", "nano_banana_2")
     assert aistudio.provider == "gemini_aistudio"
     assert aistudio.model == "gemini-3.1-flash-image-preview"
@@ -594,7 +599,7 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
-    assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
+    assert options["steps"]["cover_generation"]["default_provider"] == "openrouter"
     assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
     assert "gemini_vertex_adc" not in options["steps"]["video_analysis"]["providers"]
@@ -1116,6 +1121,13 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     assert normalize_cover_execution_mode("openrouter", "") == "parallel"
     assert normalize_cover_execution_mode("local", "parallel") == "serial"
     assert normalize_cover_execution_mode("apimart", "parallel") == "serial"
+
+    builtin = video_cover_settings.builtin_model_defaults()["cover_generation"]
+    assert builtin == {
+        "provider": "openrouter",
+        "model_id": "openai/gpt-5.4-image-2:low",
+        "execution_mode": "parallel",
+    }
 
     openrouter = video_cover_settings.normalize_model_defaults({
         "cover_generation": {
@@ -2468,6 +2480,7 @@ def test_video_cover_debug_payload_openrouter_uses_chat_json_without_replay(monk
     assert data["full_request"]["body"]["modalities"] == ["image", "text"]
     assert data["full_request"]["body"]["extra_body"]["usage"] == {"include": True}
     assert data["full_request"]["body"]["extra_body"]["quality"] == "high"
+    assert data["full_request"]["body"]["extra_body"]["image_config"] == {"image_size": "2K"}
     content = data["full_request"]["body"]["messages"][0]["content"]
     assert content[0] == {"type": "text", "text": "debug prompt text"}
     assert content[1]["type"] == "image_url"

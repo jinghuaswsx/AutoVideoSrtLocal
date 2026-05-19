@@ -369,7 +369,7 @@ def index():
     try:
         openrouter_openai_image2_default_quality = get_openrouter_openai_image2_default_quality()
     except Exception:
-        openrouter_openai_image2_default_quality = "mid"
+        openrouter_openai_image2_default_quality = "low"
 
     return render_template(
         "settings.html",
@@ -473,7 +473,7 @@ def _handle_providers_post() -> None:
     # 全局：图片翻译通道 + OpenAI Image 2 开关 / 默认质量
     image2_enabled_raw = (request.form.get("openrouter_openai_image2_enabled") or "").strip().lower()
     image2_enabled = image2_enabled_raw in {"1", "true", "on", "yes"}
-    image2_quality = (request.form.get("openrouter_openai_image2_default_quality") or "mid").strip().lower()
+    image2_quality = (request.form.get("openrouter_openai_image2_default_quality") or "low").strip().lower()
     try:
         set_openrouter_openai_image2_enabled(image2_enabled)
     except Exception:

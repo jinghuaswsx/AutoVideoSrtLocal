@@ -28,8 +28,8 @@ from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
 from pipeline.ffutil import extract_frame_at_timestamp, extract_thumbnail, probe_media_info
 
 
-DEFAULT_IMAGE_CHANNEL = "local_image_2"
-DEFAULT_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_IMAGE_CHANNEL = "openrouter"
+DEFAULT_IMAGE_MODEL = "openai/gpt-5.4-image-2:low"
 DEFAULT_COVER_EXECUTION_MODE = ""
 LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
 LOCAL_IMAGE_BASE_URL_DEFAULT = "http://172.30.254.14:82/v1"
@@ -139,7 +139,7 @@ TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
 
 COVER_MODEL_OPTIONS: dict[str, Any] = {
     "label": "封面生成",
-    "default_provider": "local_image_2",
+    "default_provider": "openrouter",
     "providers": {
         "local_image_2": "本地 Image 2",
         "openrouter": "OPENROUTER",
@@ -192,7 +192,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "gemini-2.5-flash-image-preview": "nano_banana_1",
         },
         "openrouter": {
-            "gpt_image_2": "openai_image_2_mid",
+            "gpt_image_2": "openai_image_2_low",
             "gemini-3.1-flash-image-preview": "nano_banana_2",
             "gemini-3-pro-image-preview": "nano_banana_pro",
             "gemini-2.5-flash-image-preview": "nano_banana_1",
@@ -1288,16 +1288,18 @@ def generate_cover_image(
     image_generate_fn: Callable[..., tuple[bytes, str]] | None = None,
 ) -> tuple[bytes, str]:
     if image_generate_fn is not None:
-        return image_generate_fn(
-            prompt,
-            source_image=source_image,
-            source_mime=source_mime,
-            model=selection.model,
-            user_id=user_id,
-            project_id=task_id,
-            service="video_cover.generate",
-            channel=selection.provider,
-        )
+        generate_kwargs: dict[str, Any] = {
+            "source_image": source_image,
+            "source_mime": source_mime,
+            "model": selection.model,
+            "user_id": user_id,
+            "project_id": task_id,
+            "service": "video_cover.generate",
+            "channel": selection.provider,
+        }
+        if selection.provider == "openrouter" and gemini_image.is_openrouter_openai_image2_model(selection.model):
+            generate_kwargs["openrouter_image_size"] = "2K"
+        return image_generate_fn(prompt, **generate_kwargs)
     if selection.provider in {"local", "local_image_2"}:
         return generate_local_cover_image(
             prompt,
@@ -1315,6 +1317,7 @@ def generate_cover_image(
             project_id=task_id,
             service="video_cover.generate",
             channel="openrouter",
+            openrouter_image_size="2K",
         )
     if selection.provider == "gemini_aistudio":
         return gemini_image.generate_image(
