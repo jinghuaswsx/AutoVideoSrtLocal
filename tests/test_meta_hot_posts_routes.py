@@ -385,13 +385,15 @@ def test_meta_hot_posts_template_has_ai_card_translate_zh_buttons(authed_client_
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "翻译中文" in body
-    assert "function renderAiTranslateZhButton(postId, mode)" in body
+    assert "function renderAiTranslateZhButton(postId, mode, hasChinese)" in body
+    assert "if (hasChinese) return '';" in body
+    assert "function metaHotAiAnalysisHasChinese(row, mode)" in body
     assert "function translateMetaHotAiAnalysisToChinese(event, postId, mode)" in body
     assert "/ai-analysis/${mode}/translate-zh" in body
-    assert "${renderAiTranslateZhButton(row.id, 'us_copyability')}" in body
-    assert "${renderAiTranslateZhButton(row.id, 'europe_translation')}" in body
+    assert "${renderAiTranslateZhButton(row.id, 'us_copyability', metaHotAiAnalysisHasChinese(row, 'us_copyability'))}" in body
+    assert "${renderAiTranslateZhButton(row.id, 'europe_translation', metaHotAiAnalysisHasChinese(row, 'europe_translation'))}" in body
     assert "function renderAiSummarySection(result, payload)" in body
-    assert "${renderAiTranslateZhButton((payload.item || {}).id, payload.mode)}" in body
+    assert "${renderAiTranslateZhButton((payload.item || {}).id, payload.mode, Boolean(String(result.summary_zh || '').trim()))}" in body
     assert "renderAiSummarySection(result, payload)" in body
     assert "mhAiState.postId === Number(postId) && mhAiState.mode === mode" in body
 

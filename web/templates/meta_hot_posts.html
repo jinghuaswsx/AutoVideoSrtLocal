@@ -836,6 +836,13 @@ function renderMarkOptions(row) {
 function listItems(items) {
   return (items || []).filter(Boolean).slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('');
 }
+function metaHotHasText(value) {
+  return Boolean(String(value || '').trim());
+}
+function metaHotListHasText(items) {
+  if (Array.isArray(items)) return items.some(metaHotHasText);
+  return metaHotHasText(items);
+}
 function recommendationLabel(value) {
   if (value === 'translate_and_launch') return '翻译后可投';
   if (value === 'adapt_before_translation') return '先改素材再翻译';
@@ -844,8 +851,23 @@ function recommendationLabel(value) {
   if (value === 'not_recommended') return '不建议';
   return fmt(value || '-');
 }
-function renderAiTranslateZhButton(postId, mode) {
+function metaHotAiAnalysisHasChinese(row, mode) {
+  if (!row) return false;
+  if (mode === 'us_copyability') {
+    const data = row.video_copyability || {};
+    return metaHotHasText(data.summary_zh);
+  }
+  if (mode === 'europe_translation') {
+    return metaHotHasText(row.europe_fit_reasoning_zh)
+      || metaHotListHasText(row.europe_fit_strengths_zh)
+      || metaHotListHasText(row.europe_fit_risks_zh)
+      || metaHotListHasText(row.europe_fit_required_changes_zh);
+  }
+  return false;
+}
+function renderAiTranslateZhButton(postId, mode, hasChinese) {
   const safeId = Number(postId || 0);
+  if (hasChinese) return '';
   if (!safeId || !mode) return '';
   return `<button class="mh-ai-translate-zh-btn" type="button" onclick="translateMetaHotAiAnalysisToChinese(event, ${safeId}, '${mode}')">翻译中文</button>`;
 }
@@ -857,7 +879,7 @@ function renderEuropeFitPanel(row) {
   const risks = listItems(row.europe_fit_risks_zh || row.europe_fit_risks);
   const changes = listItems(row.europe_fit_required_changes_zh || row.europe_fit_required_changes);
   return `<div class="mh-europe-panel">
-    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>${renderAiTranslateZhButton(row.id, 'europe_translation')}</div>
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>${renderAiTranslateZhButton(row.id, 'europe_translation', metaHotAiAnalysisHasChinese(row, 'europe_translation'))}</div>
     <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
     <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
     ${strengths ? `<ul class="mh-europe-list">${strengths}</ul>` : ''}
@@ -871,7 +893,7 @@ function copyabilityBlock(row) {
   if (!data) return '';
   const summary = data.summary_zh || data.summary || '';
   return `<div class="mh-copyability">
-    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>${renderAiTranslateZhButton(row.id, 'us_copyability')}</div>
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>${renderAiTranslateZhButton(row.id, 'us_copyability', metaHotAiAnalysisHasChinese(row, 'us_copyability'))}</div>
     <div class="mh-score-list">
       <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
       <span class="mh-score">可抄 ${fmt(data.copyability_score)}</span>
@@ -1471,7 +1493,7 @@ function renderAiSummarySection(result, payload) {
       <button class="mh-ai-summary-switch active" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'zh')">中文</button>
       <h4>摘要</h4>
       <button class="mh-ai-summary-switch" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'en')">English</button>
-      ${renderAiTranslateZhButton((payload.item || {}).id, payload.mode)}
+      ${renderAiTranslateZhButton((payload.item || {}).id, payload.mode, Boolean(String(result.summary_zh || '').trim()))}
     </div>
     <div class="mh-ai-summary-text">${esc(summaryZh || summaryEn)}</div>
   </div>`;
