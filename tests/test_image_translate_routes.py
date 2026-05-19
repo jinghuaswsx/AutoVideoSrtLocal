@@ -49,10 +49,9 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.get("/api/image-translate/models")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["channel"] == "cloud_adc"
-    assert data["default_model_id"] == "gemini-3.1-flash-image-preview"
-    assert any(m["id"] == "gemini-3.1-flash-image-preview" for m in data["items"])
-    assert any(m["id"] == "gemini-3-pro-image-preview" for m in data["items"])
+    assert data["channel"] == "local_image_2"
+    assert data["default_model_id"] == "gpt-image-2"
+    assert any(m["id"] == "gpt-image-2" for m in data["items"])
 
 
 def test_models_endpoint_uses_global_default_model_for_current_channel(authed_client_no_db, monkeypatch):
@@ -112,8 +111,8 @@ def test_models_endpoint_allows_vertex_adc_channel_override(authed_client_no_db,
     assert {"id": "cloud_adc", "name": "Google Vertex AI (ADC)"} in data["channels"]
 
 
-def test_medias_default_image_task_uses_vertex_adc_serial(authed_client_no_db, monkeypatch):
-    """从素材管理创建图片翻译任务：默认走 Vertex ADC 串行。"""
+def test_medias_default_image_task_uses_local_image2_low_serial(authed_client_no_db, monkeypatch):
+    """从素材管理创建图片翻译任务：默认走本地 Image 2 low 串行。"""
     from web.routes import medias as r
 
     created = {}
@@ -141,8 +140,8 @@ def test_medias_default_image_task_uses_vertex_adc_serial(authed_client_no_db, m
         json={"lang": "de"},
     )
     assert resp.status_code == 201
-    assert created["channel"] == "cloud_adc"
-    assert created["model_id"] == "gemini-3.1-flash-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
     assert created["concurrency_mode"] == "sequential"
 
 
@@ -179,8 +178,8 @@ def test_medias_default_image_task_ignores_global_default_model(authed_client_no
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "cloud_adc"
-    assert created["model_id"] == "gemini-3.1-flash-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_models_endpoint_returns_only_low_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
@@ -397,8 +396,8 @@ def test_medias_default_image_task_ignores_openrouter_default(authed_client_no_d
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "cloud_adc"
-    assert created["model_id"] == "gemini-3.1-flash-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_no_db, monkeypatch):
@@ -455,8 +454,8 @@ def test_medias_default_image_task_ignores_doubao_default(authed_client_no_db, m
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "cloud_adc"
-    assert created["model_id"] == "gemini-3.1-flash-image-preview"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
 
 
 def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):
@@ -563,7 +562,7 @@ def test_complete_creates_task(authed_client_no_db, monkeypatch):
         "task_id": tid,
         "preset": "cover",
         "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "把图中文字翻译成 {target_language_name}",
         "product_name": "测试产品",
         "uploaded": [{"idx": 0, "object_key": key, "filename": "a.jpg", "size": 100}],
@@ -572,7 +571,7 @@ def test_complete_creates_task(authed_client_no_db, monkeypatch):
     assert resp.get_json()["task_id"] == tid
 
 
-def test_complete_rejects_gemini_model_for_doubao_channel(authed_client_no_db, monkeypatch):
+def test_complete_rejects_unsupported_model_for_doubao_channel(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
 
     _patch_tos_and_runner(monkeypatch)
@@ -613,7 +612,7 @@ def test_complete_rejects_invalid_language(authed_client_no_db, monkeypatch):
         "task_id": b["task_id"],
         "preset": "cover",
         "target_language": "xx",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
@@ -639,7 +638,7 @@ def test_complete_rejects_bad_uploaded_items(authed_client_no_db, monkeypatch):
             "task_id": b["task_id"],
             "preset": "cover",
             "target_language": "de",
-            "model_id": "gemini-3-pro-image-preview",
+            "model_id": "gpt-image-2",
             "prompt": "x {target_language_name}",
             "product_name": "p",
             **payload,
@@ -663,7 +662,7 @@ def test_complete_rejects_missing_uploaded_item(authed_client_no_db, monkeypatch
         "task_id": b["task_id"],
         "preset": "cover",
         "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
@@ -687,7 +686,7 @@ def test_complete_rejects_duplicate_uploaded_idx(authed_client_no_db, monkeypatc
         "task_id": b["task_id"],
         "preset": "cover",
         "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "product_name": "p",
         "uploaded": [
@@ -707,7 +706,7 @@ def test_get_state(authed_client_no_db, monkeypatch):
     }).get_json()
     authed_client_no_db.post("/api/image-translate/upload/complete", json={
         "task_id": b["task_id"], "preset": "cover", "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "... {target_language_name} ...",
         "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
@@ -732,7 +731,7 @@ def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
         "preset": "detail",
         "target_language": "de",
         "target_language_name": "德语",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x",
         "product_name": "测试商品",
         "project_name": "测试项目",
@@ -952,7 +951,7 @@ def _prep_task(client, monkeypatch, with_done=True):
     tid = b["task_id"]
     client.post("/api/image-translate/upload/complete", json={
         "task_id": tid, "preset":"cover","target_language":"de",
-        "model_id":"gemini-3-pro-image-preview",
+        "model_id":"gpt-image-2",
         "prompt":"... {target_language_name} ...",
         "product_name": "p",
         "uploaded":[{"idx":0,"object_key":b["uploads"][0]["object_key"],"filename":"a.jpg","size":1}],
@@ -1174,7 +1173,7 @@ def test_complete_rejects_missing_product_name(authed_client_no_db, monkeypatch)
 
     resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
         "task_id": b["task_id"], "preset": "cover", "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
@@ -1192,7 +1191,7 @@ def test_complete_rejects_overlong_product_name(authed_client_no_db, monkeypatch
 
     resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
         "task_id": b["task_id"], "preset": "cover", "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "product_name": "x" * 61,
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
@@ -1230,7 +1229,7 @@ def test_complete_generates_project_name_with_product_lang_date(authed_client_no
     }).get_json()
     resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
         "task_id": b["task_id"], "preset": "cover", "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "x {target_language_name}",
         "product_name": "三轮童车",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
@@ -1649,7 +1648,7 @@ def _post_complete(client, body_extra=None):
         "product_name": "灯",
         "preset": "cover",
         "target_language": "de",
-        "model_id": "gemini-3-pro-image-preview",
+        "model_id": "gpt-image-2",
         "prompt": "p",
         "uploaded": [{
             "idx": bd["uploads"][0]["idx"],
@@ -1662,7 +1661,7 @@ def _post_complete(client, body_extra=None):
     return client.post("/api/image-translate/upload/complete", json=body)
 
 
-def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch):
+def test_upload_complete_defaults_to_channel_safe_mode(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
     mem = _patch_task_state(monkeypatch)
@@ -1670,6 +1669,8 @@ def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch
     resp = _post_complete(authed_client_no_db)
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
+    assert mem[task_id]["channel"] == "local_image_2"
+    assert mem[task_id]["model_id"] == "gpt-image-2"
     assert mem[task_id]["concurrency_mode"] == "sequential"
 
 

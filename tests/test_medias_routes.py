@@ -927,7 +927,8 @@ def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db,
     assert data["detail_url"] == f"/image-translate/{data['task_id']}"
     assert created["preset"] == "detail"
     assert created["target_language"] == "de"
-    assert created["channel"] == "apimart"
+    assert created["channel"] == "local_image_2"
+    assert created["model_id"] == "gpt-image-2"
     assert created["medias_context"]["entry"] == "medias_edit_detail"
     assert created["medias_context"]["product_id"] == 123
     assert created["medias_context"]["target_lang"] == "de"
