@@ -378,11 +378,13 @@
       return key;
     }
 
+    function taskModelOriginValid(state){
+      return !(state && state.model_origin_valid === false);
+    }
+
     function resultModelBadge(it, state){
       var source = it.result_source || "";
-      if (source === "copied_source") {
-        return {label: "大模型：未调用", tone: "copy", title: "复制原图时没有调用大模型"};
-      }
+      if (source === "copied_source") return null;
       var isDone = it.status === "done" && !!it.dst_tos_key;
       var channel = (it.result_channel || "").trim();
       var modelId = (it.result_model_id || "").trim();
@@ -390,12 +392,12 @@
         channel = channel || "aistudio";
         modelId = modelId || "gemini-3.1-flash-image-preview";
       }
-      if (isDone) {
+      if (isDone && taskModelOriginValid(state)) {
         channel = channel || ((state && state.channel) || "");
         modelId = modelId || ((state && state.model_id) || "");
       }
       if (!channel && !modelId) {
-        return {label: isDone ? "大模型：未知" : "大模型：待生成", tone: "pending"};
+        return null;
       }
       var provider = imageTranslateChannelLabel(channel, state);
       var parts = [];
@@ -405,6 +407,7 @@
     }
 
     function appendBadge(meta, badge, classBase){
+      if (!badge) return;
       var el = document.createElement("span");
       el.className = classBase + " is-" + badge.tone;
       el.textContent = badge.label;
@@ -422,7 +425,7 @@
       var modelMeta = document.createElement("div");
       modelMeta.className = "it-item-meta it-item-model-meta";
       appendBadge(modelMeta, resultModelBadge(it, state), "it-meta-chip it-meta-chip--model");
-      container.appendChild(modelMeta);
+      if (modelMeta.children.length) container.appendChild(modelMeta);
     }
 
     function setRerunError(message){
@@ -706,7 +709,14 @@
     function renderTaskMeta(state){
       if (!state) return;
       var modelEl = document.getElementById("itMetaModel");
-      if (modelEl) modelEl.textContent = state.model_id || "";
+      if (modelEl) {
+        var modelText = state.model_id || "";
+        if (modelText && state.model_origin_valid === false) {
+          modelText = "";
+        }
+        modelEl.title = "";
+        modelEl.textContent = modelText;
+      }
       var modeEl = document.getElementById("itMetaConcurrencyMode");
       if (modeEl) {
         var mode = state.concurrency_mode || "sequential";

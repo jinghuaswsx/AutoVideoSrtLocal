@@ -1,6 +1,7 @@
-"""Collect Dianxiaomi Listing full recent-sales archive for Mingkong selection.
+"""Collect Dianxiaomi Listing top recent-sales archive for Mingkong selection.
 
 Spec: docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md
+Spec: docs/superpowers/specs/2026-05-19-mingkong-product-assets-dedup-top500-design.md
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ LISTING_PAGE_URL = "https://www.dianxiaomi.com/web/stat/salesStatistics"
 LISTING_API_URL = "https://www.dianxiaomi.com/api/stat/product/statSalesPageListNew.json"
 
 DEFAULT_START_DATE = date(2026, 4, 23)
-DEFAULT_TARGET_ROWS = 0
+DEFAULT_TARGET_ROWS = 500
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_DAILY_OFFSET_DAYS = 1
 DEFAULT_SNAPSHOT_WINDOW_DAYS = 7
@@ -790,13 +791,122 @@ def _match_media_product_id(cursor, row: Mapping[str, Any]) -> int | None:
     return None
 
 
+def product_asset_key_for_row(row: Mapping[str, Any]) -> str:
+    product_url = str(row.get("product_url") or "").strip()
+    product_code = str(row.get("product_code") or product_code_from_url(product_url)).strip().lower()
+    if product_code:
+        return "code:" + hashlib.sha256(product_code.encode("utf-8")).hexdigest()
+    if product_url:
+        digest = hashlib.sha256(product_url.encode("utf-8")).hexdigest()
+        return f"url:{digest}"
+    product_id = str(row.get("product_id") or "").strip()
+    if product_id:
+        return "product_id:" + hashlib.sha256(product_id.encode("utf-8")).hexdigest()
+    return ""
+
+
+def _asset_db_value(value: Any) -> Any:
+    if value == "":
+        return None
+    return value
+
+
+def _merge_product_asset_record(target: dict[str, Any], source: Mapping[str, Any]) -> None:
+    for key, value in source.items():
+        if key == "asset_key":
+            continue
+        if value not in (None, ""):
+            target[key] = value
+
+
+def build_product_asset_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        asset_key = product_asset_key_for_row(row)
+        if not asset_key:
+            continue
+        product_url = str(row.get("product_url") or "").strip()
+        product_code = str(row.get("product_code") or product_code_from_url(product_url)).strip().lower()
+        record = {
+            "asset_key": asset_key,
+            "product_id": str(row.get("product_id") or "").strip(),
+            "product_code": product_code,
+            "product_url": product_url,
+            "product_name": str(row.get("product_name") or "").strip(),
+            "product_main_image_url": row.get("product_main_image_url") or None,
+            "product_main_image_object_key": row.get("product_main_image_object_key") or None,
+            "product_detail_images_json": row.get("product_detail_images_json") or None,
+            "product_assets_error": row.get("product_assets_error") or None,
+            "product_cn_name": row.get("product_cn_name") or None,
+            "mk_first_material_name": row.get("mk_first_material_name") or None,
+            "mk_first_material_path": row.get("mk_first_material_path") or None,
+            "mk_first_material_url": row.get("mk_first_material_url") or None,
+            "mk_material_error": row.get("mk_material_error") or None,
+        }
+        if asset_key not in records:
+            records[asset_key] = record
+        else:
+            _merge_product_asset_record(records[asset_key], record)
+    return list(records.values())
+
+
+def upsert_product_assets(cursor, rows: list[dict[str, Any]]) -> int:
+    records = build_product_asset_records(rows)
+    for record in records:
+        cursor.execute(
+            """
+            INSERT INTO dianxiaomi_product_assets
+                (asset_key, product_id, product_code, product_url, product_name,
+                 product_main_image_url, product_main_image_object_key, product_detail_images_json,
+                 product_assets_error, product_cn_name, mk_first_material_name,
+                 mk_first_material_path, mk_first_material_url, mk_material_error, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                product_id=COALESCE(NULLIF(VALUES(product_id), ''), product_id),
+                product_code=COALESCE(NULLIF(VALUES(product_code), ''), product_code),
+                product_url=COALESCE(NULLIF(VALUES(product_url), ''), product_url),
+                product_name=COALESCE(NULLIF(VALUES(product_name), ''), product_name),
+                product_main_image_url=COALESCE(NULLIF(VALUES(product_main_image_url), ''), product_main_image_url),
+                product_main_image_object_key=COALESCE(NULLIF(VALUES(product_main_image_object_key), ''), product_main_image_object_key),
+                product_detail_images_json=COALESCE(VALUES(product_detail_images_json), product_detail_images_json),
+                product_assets_error=VALUES(product_assets_error),
+                product_cn_name=COALESCE(NULLIF(VALUES(product_cn_name), ''), product_cn_name),
+                mk_first_material_name=COALESCE(NULLIF(VALUES(mk_first_material_name), ''), mk_first_material_name),
+                mk_first_material_path=COALESCE(NULLIF(VALUES(mk_first_material_path), ''), mk_first_material_path),
+                mk_first_material_url=COALESCE(NULLIF(VALUES(mk_first_material_url), ''), mk_first_material_url),
+                mk_material_error=VALUES(mk_material_error),
+                last_synced_at=VALUES(last_synced_at),
+                updated_at=NOW()
+            """,
+            (
+                record["asset_key"],
+                _asset_db_value(record.get("product_id")),
+                _asset_db_value(record.get("product_code")),
+                _asset_db_value(record.get("product_url")),
+                _asset_db_value(record.get("product_name")),
+                _asset_db_value(record.get("product_main_image_url")),
+                _asset_db_value(record.get("product_main_image_object_key")),
+                _asset_db_value(record.get("product_detail_images_json")),
+                _asset_db_value(record.get("product_assets_error")),
+                _asset_db_value(record.get("product_cn_name")),
+                _asset_db_value(record.get("mk_first_material_name")),
+                _asset_db_value(record.get("mk_first_material_path")),
+                _asset_db_value(record.get("mk_first_material_url")),
+                _asset_db_value(record.get("mk_material_error")),
+            ),
+        )
+    return len(records)
+
+
 def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[str, int]:
     conn = get_conn()
     matched = 0
+    product_assets_upserted = 0
     product_ids = sorted({str(row.get("product_id") or "").strip() for row in rows if row.get("product_id")})
     try:
         conn.begin()
         with conn.cursor() as cursor:
+            product_assets_upserted = upsert_product_assets(cursor, rows)
             for row in rows:
                 media_product_id = _match_media_product_id(cursor, row)
                 if media_product_id:
@@ -807,12 +917,8 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         (product_id, product_name, product_url, store, platform, parent_sku,
                          order_count, sales_count, revenue_main, revenue_split,
                          refund_orders, refund_qty, refund_amt, refund_rate,
-                         media_product_id, product_code, product_main_image_url,
-                         product_main_image_object_key, product_detail_images_json,
-                         product_assets_error, product_cn_name, mk_first_material_name,
-                         mk_first_material_path, mk_first_material_url, mk_material_error,
-                         product_assets_synced_at, snapshot_date, rank_position)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s)
+                         media_product_id, product_code, snapshot_date, rank_position)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         product_name=VALUES(product_name),
                         product_url=VALUES(product_url),
@@ -829,16 +935,6 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         refund_rate=VALUES(refund_rate),
                         media_product_id=VALUES(media_product_id),
                         product_code=VALUES(product_code),
-                        product_main_image_url=VALUES(product_main_image_url),
-                        product_main_image_object_key=VALUES(product_main_image_object_key),
-                        product_detail_images_json=VALUES(product_detail_images_json),
-                        product_assets_error=VALUES(product_assets_error),
-                        product_cn_name=VALUES(product_cn_name),
-                        mk_first_material_name=VALUES(mk_first_material_name),
-                        mk_first_material_path=VALUES(mk_first_material_path),
-                        mk_first_material_url=VALUES(mk_first_material_url),
-                        mk_material_error=VALUES(mk_material_error),
-                        product_assets_synced_at=VALUES(product_assets_synced_at),
                         rank_position=VALUES(rank_position)
                     """,
                     (
@@ -858,15 +954,6 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         row["refund_rate"],
                         media_product_id,
                         row.get("product_code") or None,
-                        row.get("product_main_image_url") or None,
-                        row.get("product_main_image_object_key") or None,
-                        row.get("product_detail_images_json") or None,
-                        row.get("product_assets_error") or None,
-                        row.get("product_cn_name") or None,
-                        row.get("mk_first_material_name") or None,
-                        row.get("mk_first_material_path") or None,
-                        row.get("mk_first_material_url") or None,
-                        row.get("mk_material_error") or None,
                         snapshot_date,
                         row["rank_position"],
                     ),
@@ -891,7 +978,11 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
         raise
     finally:
         conn.close()
-    return {"stored_rows": len(rows), "matched_media_products": matched}
+    return {
+        "stored_rows": len(rows),
+        "matched_media_products": matched,
+        "product_assets_upserted": product_assets_upserted,
+    }
 
 
 def guard_against_windows_local_mysql() -> None:
@@ -1108,7 +1199,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--daily-offset-days", type=int, default=DEFAULT_DAILY_OFFSET_DAYS)
     parser.add_argument("--rolling-days", type=int, default=7)
     parser.add_argument("--max-days-per-run", type=int, default=1)
-    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Manual safety cap; 0 means uncapped.")
+    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Rows per snapshot; default 500. Use 0 only for a manual uncapped archive.")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--snapshot-window-days", type=int, default=DEFAULT_SNAPSHOT_WINDOW_DAYS)
     parser.add_argument("--skip-product-assets", action="store_true")

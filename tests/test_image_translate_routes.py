@@ -49,10 +49,10 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.get("/api/image-translate/models")
     assert resp.status_code == 200
     data = resp.get_json()
+    assert data["channel"] == "openrouter"
+    assert data["default_model_id"] == "openai/gpt-5.4-image-2:low"
+    assert any(m["id"] == "openai/gpt-5.4-image-2:low" for m in data["items"])
     assert any(m["id"] == "gemini-3-pro-image-preview" for m in data["items"])
-    assert data["default_model_id"] == "gemini-3.1-flash-image-preview"
-    # 用户没有设置偏好时，前端 items[0] 就是默认模型 → 应是 Nano Banana 2 快速版
-    assert data["items"][0]["id"] == "gemini-3.1-flash-image-preview"
 
 
 def test_models_endpoint_uses_global_default_model_for_current_channel(authed_client_no_db, monkeypatch):
@@ -112,8 +112,8 @@ def test_models_endpoint_allows_vertex_adc_channel_override(authed_client_no_db,
     assert {"id": "cloud_adc", "name": "Google Vertex AI (ADC)"} in data["channels"]
 
 
-def test_medias_default_image_task_uses_local_image2_serial(authed_client_no_db, monkeypatch):
-    """从素材管理创建图片翻译任务：默认走本地 Image 2 串行。"""
+def test_medias_default_image_task_uses_openrouter_image2_low_parallel(authed_client_no_db, monkeypatch):
+    """从素材管理创建图片翻译任务：默认走 OpenRouter Image 2 Low 并行。"""
     from web.routes import medias as r
 
     created = {}
@@ -141,9 +141,9 @@ def test_medias_default_image_task_uses_local_image2_serial(authed_client_no_db,
         json={"lang": "de"},
     )
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
-    assert created["model_id"] == "gpt-image-2"
-    assert created["concurrency_mode"] == "sequential"
+    assert created["channel"] == "openrouter"
+    assert created["model_id"] == "openai/gpt-5.4-image-2:low"
+    assert created["concurrency_mode"] == "parallel"
 
 
 def test_medias_default_image_task_ignores_global_default_model(authed_client_no_db, monkeypatch):
@@ -179,8 +179,8 @@ def test_medias_default_image_task_ignores_global_default_model(authed_client_no
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
-    assert created["model_id"] == "gpt-image-2"
+    assert created["channel"] == "openrouter"
+    assert created["model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_client_no_db, monkeypatch):
@@ -367,8 +367,8 @@ def test_medias_default_image_task_ignores_openrouter_default(authed_client_no_d
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
-    assert created["model_id"] == "gpt-image-2"
+    assert created["channel"] == "openrouter"
+    assert created["model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_no_db, monkeypatch):
@@ -425,8 +425,8 @@ def test_medias_default_image_task_ignores_doubao_default(authed_client_no_db, m
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
-    assert created["model_id"] == "gpt-image-2"
+    assert created["channel"] == "openrouter"
+    assert created["model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):
@@ -996,6 +996,54 @@ def test_use_source_item_clears_result_model_origin(authed_client_no_db, monkeyp
     assert item["result_channel"] == ""
     assert item["result_model_id"] == ""
     assert written["data"] == b"SRC"
+
+
+def test_api_state_marks_legacy_invalid_task_model_origin(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "cloud_adc"
+    task["model_id"] = "gpt-image-2"
+    task["items"][0]["result_source"] = "image_translate"
+    task["items"][0]["result_channel"] = ""
+    task["items"][0]["result_model_id"] = ""
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["channel"] == "cloud_adc"
+    assert data["model_id"] == "gpt-image-2"
+    assert data["model_origin_valid"] is False
+
+
+def test_api_state_marks_valid_task_model_origin(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "cloud_adc"
+    task["model_id"] = "gemini-3.1-flash-image-preview"
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["model_origin_valid"] is True
+
+
+def test_api_state_keeps_openrouter_image2_history_model_valid(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "openrouter"
+    task["model_id"] = "openai/gpt-5.4-image-2:mid"
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["model_origin_valid"] is True
 
 
 def test_detail_page_renders_channel_rerun_controls(authed_client_no_db, monkeypatch):
@@ -1584,7 +1632,7 @@ def _post_complete(client, body_extra=None):
     return client.post("/api/image-translate/upload/complete", json=body)
 
 
-def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch):
+def test_upload_complete_defaults_to_parallel(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
     mem = _patch_task_state(monkeypatch)
@@ -1592,7 +1640,7 @@ def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch
     resp = _post_complete(authed_client_no_db)
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
-    assert mem[task_id]["concurrency_mode"] == "sequential"
+    assert mem[task_id]["concurrency_mode"] == "parallel"
 
 
 def test_upload_complete_accepts_openrouter_parallel(authed_client_no_db, monkeypatch):

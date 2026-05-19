@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a lab menu page named `浏览器监控` that displays DXM01-Meta, DXM02-MK, and DXM03-RJC noVNC sessions in a 2x2 monitor wall.
+**Goal:** Add a lab menu page named `浏览器监控` that displays DXM01-Meta, DXM02-MK, DXM03-RJC, TABCUT, and 采集程序 noVNC sessions in a 2x3 monitor wall.
 
 **Architecture:** Add one focused Flask blueprint for browser monitoring, one template for the wall, and one sidebar link inside the existing lab group. The route uses existing `lab` permission and reads `scheduled_tasks.latest_run("cdp_environment_watchdog")` as best-effort status context without creating new timers or tables.
 
@@ -13,7 +13,7 @@
 ## File Structure
 
 - Create `web/routes/browser_monitor.py`: owns DXM environment definitions, noVNC URL generation, status extraction from watchdog summaries, and the `/browser-monitor` route.
-- Create `web/templates/browser_monitor.html`: renders the 2x2 grid, three iframe windows, and status/action panel.
+- Create `web/templates/browser_monitor.html`: renders the 2x3 grid, five iframe windows, and status/action panel.
 - Modify `web/app.py`: imports and registers the new blueprint.
 - Modify `web/templates/layout.html`: adds `browser-monitor` to `lab_active` and inserts the `浏览器监控` menu item inside the lab group.
 - Modify `docs/server_browser_runtime.md`: documents the new Web entry.

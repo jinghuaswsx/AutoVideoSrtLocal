@@ -306,7 +306,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "row.europe_fit_required_changes_zh || row.europe_fit_required_changes" in body
     assert "copyabilityBlock(row)" in body
     assert "data.summary_zh || data.summary || ''" in body
-    assert "function renderAiSummarySection(result)" in body
+    assert "function renderAiSummarySection(result, payload)" in body
     assert "function setMetaHotAiSummaryLanguage(event, lang)" in body
     assert "result.summary_zh || result.summary || ''" in body
     assert "data-summary-zh" in body
@@ -323,6 +323,28 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "tos_video_cover_url" in body
     assert "firstFrameUrl" not in body
     assert "#t=0.1" not in body
+
+
+def test_meta_hot_posts_template_has_ai_card_translate_zh_buttons(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "翻译中文" in body
+    assert "function renderAiTranslateZhButton(postId, mode)" in body
+    assert "function translateMetaHotAiAnalysisToChinese(event, postId, mode)" in body
+    assert "/ai-analysis/${mode}/translate-zh" in body
+    assert "${renderAiTranslateZhButton(row.id, 'us_copyability')}" in body
+    assert "${renderAiTranslateZhButton(row.id, 'europe_translation')}" in body
+    assert "function renderAiSummarySection(result, payload)" in body
+    assert "${renderAiTranslateZhButton((payload.item || {}).id, payload.mode)}" in body
+    assert "renderAiSummarySection(result, payload)" in body
+    assert "mhAiState.postId === Number(postId) && mhAiState.mode === mode" in body
 
 
 def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
@@ -606,6 +628,28 @@ def test_meta_hot_posts_ai_analysis_run_api_passes_current_user(authed_client_no
     assert captured["args"][1] == "us_copyability"
     assert captured["args"][2]["force"] is True
     assert captured["args"][3]
+
+
+def test_meta_hot_posts_ai_analysis_translate_zh_api_passes_current_user(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_response(post_id, mode, user_id=None):
+        captured["args"] = (post_id, mode, user_id)
+        return type("Resp", (), {"payload": {"ok": True, "cached": False}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_ai_analysis_translate_zh_response", fake_response)
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/7/ai-analysis/us_copyability/translate-zh",
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+    assert captured["args"][0] == 7
+    assert captured["args"][1] == "us_copyability"
+    assert captured["args"][2]
 
 
 def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):

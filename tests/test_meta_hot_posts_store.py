@@ -593,6 +593,22 @@ def test_get_hot_post_ai_analysis_row_selects_card_context_and_both_ai_results()
     assert params == (7,)
 
 
+def test_get_hot_post_ai_analysis_row_selects_chinese_cache_fields():
+    calls = []
+
+    store.get_hot_post_ai_analysis_row(
+        7,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"id": 7}],
+    )
+
+    sql, _params = calls[0]
+    assert "va.summary_zh AS video_copyability_summary_zh" in sql
+    assert "e.strengths_zh_json AS europe_fit_strengths_zh_json" in sql
+    assert "e.risks_zh_json AS europe_fit_risks_zh_json" in sql
+    assert "e.required_changes_zh_json AS europe_fit_required_changes_zh_json" in sql
+    assert "e.reasoning_zh AS europe_fit_reasoning_zh" in sql
+
+
 def test_get_video_copyability_analysis_state_returns_attempt_state():
     calls = []
 

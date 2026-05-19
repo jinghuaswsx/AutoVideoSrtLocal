@@ -84,6 +84,9 @@ _OPENROUTER_OPENAI_IMAGE2_QUALITY_MAP: dict[str, str] = {
     "mid":  "medium",
     "high": "high",
 }
+_OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE = "1K"
+_OPENROUTER_OPENAI_IMAGE2_COVER_SIZE = "2K"
+_OPENROUTER_OPENAI_IMAGE2_SIZES = {"1K", "2K"}
 
 
 IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
@@ -138,6 +141,19 @@ def parse_openrouter_openai_image2_model(model_id: str | None) -> tuple[str, str
     return None
 
 
+def _normalize_openrouter_openai_image2_size(value: str | None) -> str:
+    normalized = str(value or "").strip().upper()
+    return normalized if normalized in _OPENROUTER_OPENAI_IMAGE2_SIZES else _OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE
+
+
+def _default_openrouter_openai_image2_size(service: str | None) -> str:
+    return (
+        _OPENROUTER_OPENAI_IMAGE2_COVER_SIZE
+        if str(service or "").strip().startswith("video_cover.")
+        else _OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE
+    )
+
+
 def _is_openrouter_openai_image2_enabled() -> bool:
     """读 system_settings，读取失败时回落 False。避免 gemini_image 对配置层硬依赖。"""
     try:
@@ -154,7 +170,7 @@ def _openrouter_openai_image2_default_quality() -> str:
         value = (get_openrouter_openai_image2_default_quality() or "").strip().lower()
     except Exception:
         value = ""
-    return value if value in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS else "mid"
+    return value if value in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS else "low"
 
 
 def _openrouter_models_with_optional_openai_image2() -> list[tuple[str, str]]:
@@ -640,6 +656,7 @@ def _generate_via_openrouter(
     *,
     api_key: str,
     base_url: str,
+    openrouter_image_size: str | None = None,
     timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
@@ -672,6 +689,9 @@ def _generate_via_openrouter(
     extra_body: dict[str, Any] = {"usage": {"include": True}}
     if image_quality is not None:
         extra_body["quality"] = image_quality
+        extra_body["image_config"] = {
+            "image_size": _normalize_openrouter_openai_image2_size(openrouter_image_size),
+        }
     try:
         resp = request_openrouter_image(
             client,
@@ -1062,6 +1082,7 @@ def generate_image(
     channel: str | None = None,
     apimart_size: str | None = None,
     apimart_resolution: str | None = None,
+    openrouter_image_size: str | None = None,
     on_apimart_submitted: Callable[[str], None] | None = None,
     timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str]:
@@ -1152,10 +1173,18 @@ def generate_image(
             else:
                 model_id = coerce_image_model(candidate_model, channel=channel)
             if channel == "openrouter":
+                if is_openrouter_openai_image2_model(model_id):
+                    resolved_openrouter_image_size = _normalize_openrouter_openai_image2_size(
+                        openrouter_image_size or _default_openrouter_openai_image2_size(service)
+                    )
+                    req_payload["openrouter_image_size"] = resolved_openrouter_image_size
+                else:
+                    resolved_openrouter_image_size = None
                 api_key, or_base_url = _resolve_openrouter_image_credentials()
                 image_bytes, mime, resp = _generate_via_openrouter(
                     prompt, source_image, source_mime, model_id,
                     api_key=api_key, base_url=or_base_url,
+                    openrouter_image_size=resolved_openrouter_image_size,
                     timeout_seconds=normalized_timeout,
                 )
                 input_tokens = output_tokens = None

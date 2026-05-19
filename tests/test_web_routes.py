@@ -3558,9 +3558,13 @@ def test_image_translate_detail_result_meta_shows_provider_and_model_id():
     assert "function resultModelBadge" in scripts
     assert "result_channel" in scripts
     assert "result_model_id" in scripts
+    assert "model_origin_valid" in scripts
+    assert "taskModelOriginValid" in scripts
     assert "供应商：" in scripts
     assert "模型ID：" in scripts
-    assert "大模型：未调用" in scripts
+    assert 'if (source === "copied_source") return null;' in scripts
+    assert "if (modelMeta.children.length) container.appendChild(modelMeta);" in scripts
+    assert 'modelText = "";' in scripts
     assert "it-item-meta--primary" in scripts
     assert "it-item-model-meta" in scripts
     primary_meta_block = scripts.split('primaryMeta.className = "it-item-meta it-item-meta--primary"', 1)[1].split("container.appendChild(primaryMeta)", 1)[0]

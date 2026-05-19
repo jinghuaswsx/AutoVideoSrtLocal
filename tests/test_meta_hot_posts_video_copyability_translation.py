@@ -30,6 +30,35 @@ def test_translate_summary_invokes_google_adc_flash_lite():
     assert "Strong hook" in kwargs["messages"][1]["content"]
 
 
+def test_translate_summary_accepts_manual_openrouter_flash_lite_override():
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        return {"text": "强钩子，清楚展示了产品效果。"}
+
+    translated = video_copyability_translation.translate_summary(
+        {
+            "analysis_id": 8,
+            "recommendation": "copy",
+            "summary": "Strong hook and clear product demonstration.",
+            "analysis_json": '{"copy_notes":["simple demo structure"]}',
+        },
+        user_id=7,
+        provider_override="openrouter",
+        model_override="google/gemini-3.1-flash-lite",
+        billing_source="meta_hot_posts_manual_us_ai_translate_zh",
+        invoke_chat_fn=fake_invoke,
+    )
+
+    use_case_code, kwargs = calls[0]
+    assert translated == "强钩子，清楚展示了产品效果。"
+    assert use_case_code == "meta_hot_posts.video_copyability_translate"
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite"
+    assert kwargs["billing_extra"] == {"source": "meta_hot_posts_manual_us_ai_translate_zh"}
+
+
 def test_run_pending_summary_translations_persists_success_failure_and_sleeps(monkeypatch):
     events = []
     sleeps = []

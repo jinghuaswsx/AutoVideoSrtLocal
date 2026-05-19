@@ -296,6 +296,116 @@ def test_collect_top_rankings_fetches_all_pages_and_filters_zero_sales_when_unca
     assert stats["rows_fetched"] == 4
 
 
+def test_collect_top_rankings_defaults_to_top_500():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    calls: list[int] = []
+
+    def fake_fetch_page(day: date, page_no: int, page_size: int):
+        del day
+        calls.append(page_no)
+        start = (page_no - 1) * page_size
+        return {
+            "code": 0,
+            "data": {
+                "page": {
+                    "pageNo": page_no,
+                    "pageSize": page_size,
+                    "totalSize": 800,
+                    "totalPage": 8,
+                    "list": [
+                        {
+                            "productId": str(start + index + 1),
+                            "productName": f"Product {start + index + 1}",
+                            "paidProductCount": 1000 - start - index,
+                        }
+                        for index in range(page_size)
+                    ],
+                }
+            },
+        }
+
+    rows, stats = sync.collect_top_rankings_for_date(
+        date(2026, 5, 18),
+        fetch_page=fake_fetch_page,
+        page_size=100,
+    )
+
+    assert sync.DEFAULT_TARGET_ROWS == 500
+    assert len(rows) == 500
+    assert calls == [1, 2, 3, 4, 5]
+    assert stats["rows_fetched"] == 500
+
+
+def test_persist_rankings_writes_assets_once_per_product_not_per_ranking_row(monkeypatch):
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    executed: list[tuple[str, tuple | list]] = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            executed.append((sql, args))
+
+    class FakeConn:
+        def begin(self):
+            return None
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    rows = []
+    for product_id in ("7540261912642", "7540261912642"):
+        row = sync.normalize_listing_row(
+            {
+                "productId": product_id,
+                "productName": "Fitness Band",
+                "sourceUrl": "https://shop.example/products/fitness-band",
+                "paidProductCount": "12",
+            },
+            snapshot_date=date(2026, 5, 18),
+            rank_position=len(rows) + 1,
+        )
+        row.update(
+            {
+                "product_main_image_url": "https://cdn.example/main.jpg",
+                "product_main_image_object_key": "xuanpin/product-main-images/fitness-band/main.jpg",
+                "product_detail_images_json": '["https://cdn.example/detail.jpg"]',
+                "product_cn_name": "Fitness Band CN",
+                "mk_first_material_name": "material.mp4",
+                "mk_first_material_path": "uploads/material.mp4",
+                "mk_first_material_url": "https://os.example/medias/uploads/material.mp4",
+            }
+        )
+        rows.append(row)
+
+    monkeypatch.setattr(sync, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(sync, "_match_media_product_id", lambda _cursor, _row: None)
+
+    stats = sync.persist_rankings(date(2026, 5, 18), rows)
+
+    ranking_insert_sql = next(sql for sql, _args in executed if "INSERT INTO dianxiaomi_rankings" in sql)
+    assert "product_main_image_url" not in ranking_insert_sql
+    assert "product_detail_images_json" not in ranking_insert_sql
+    asset_upserts = [sql for sql, _args in executed if "INSERT INTO dianxiaomi_product_assets" in sql]
+    assert len(asset_upserts) == 1
+    assert stats["product_assets_upserted"] == 1
+
+
 def test_daily_target_date_defaults_to_yesterday():
     from tools import dianxiaomi_listing_ranking_sync as sync
 

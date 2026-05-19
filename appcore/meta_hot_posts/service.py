@@ -9,9 +9,11 @@ from appcore import api_keys
 from appcore.meta_hot_posts import (
     categories,
     europe_fit,
+    europe_fit_translation,
     product_analysis,
     store,
     video_copyability,
+    video_copyability_translation,
     video_localization,
 )
 
@@ -19,6 +21,10 @@ MARK_STATUS_OK = "ok"
 MARK_STATUS_BAD = "bad"
 AI_VISIBILITY_PREF_SERVICE = "meta_hot_posts_ai_visibility"
 DEFAULT_AI_ANALYSIS_VISIBILITY = {"us": False, "europe": False}
+MANUAL_AI_TRANSLATE_PROVIDER = "openrouter"
+MANUAL_AI_TRANSLATE_MODEL = "google/gemini-3.1-flash-lite"
+MANUAL_US_AI_TRANSLATE_SOURCE = "meta_hot_posts_manual_us_ai_translate_zh"
+MANUAL_EUROPE_AI_TRANSLATE_SOURCE = "meta_hot_posts_manual_europe_ai_translate_zh"
 
 
 @dataclass(frozen=True)
@@ -814,6 +820,182 @@ def build_ai_analysis_result_response(post_id: int, mode: str) -> MetaHotPostsRe
     if not row:
         return MetaHotPostsResponse({"error": "not_found"}, 404)
     return MetaHotPostsResponse(_build_ai_analysis_result_payload(post_id, meta["mode"], row))
+
+
+def _has_us_copyability_zh_cache(item: Mapping[str, Any]) -> bool:
+    data = item.get("video_copyability") if isinstance(item, Mapping) else None
+    if not isinstance(data, Mapping):
+        return False
+    return bool(str(data.get("summary_zh") or "").strip())
+
+
+def _has_europe_fit_zh_cache(item: Mapping[str, Any]) -> bool:
+    if not isinstance(item, Mapping):
+        return False
+
+    def cached_for(source_key: str, translated_key: str) -> bool:
+        source = item.get(source_key)
+        translated = item.get(translated_key)
+        has_source = bool(source) if not isinstance(source, str) else bool(source.strip())
+        has_translation = bool(translated) if not isinstance(translated, str) else bool(translated.strip())
+        return (not has_source) or has_translation
+
+    has_any_translation = any(
+        bool(item.get(key))
+        for key in (
+            "europe_fit_strengths_zh",
+            "europe_fit_risks_zh",
+            "europe_fit_required_changes_zh",
+            "europe_fit_reasoning_zh",
+        )
+    )
+    return has_any_translation and all(
+        (
+            cached_for("europe_fit_strengths", "europe_fit_strengths_zh"),
+            cached_for("europe_fit_risks", "europe_fit_risks_zh"),
+            cached_for("europe_fit_required_changes", "europe_fit_required_changes_zh"),
+            cached_for("europe_fit_reasoning", "europe_fit_reasoning_zh"),
+        )
+    )
+
+
+def _video_copyability_translation_row(item: Mapping[str, Any]) -> dict[str, Any]:
+    data = item.get("video_copyability") if isinstance(item, Mapping) else None
+    payload = dict(data or {}) if isinstance(data, Mapping) else {}
+    return {
+        "analysis_id": payload.get("analysis_id"),
+        "recommendation": payload.get("recommendation"),
+        "summary": payload.get("summary"),
+        "analysis_json": payload.get("raw") or {},
+    }
+
+
+def _europe_fit_translation_row(post_id: int, row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "post_id": int(post_id),
+        "recommendation": row.get("europe_fit_recommendation"),
+        "best_countries_json": row.get("europe_fit_best_countries_json"),
+        "strengths_json": row.get("europe_fit_strengths_json"),
+        "risks_json": row.get("europe_fit_risks_json"),
+        "required_changes_json": row.get("europe_fit_required_changes_json"),
+        "reasoning": row.get("europe_fit_reasoning"),
+    }
+
+
+def _refreshed_ai_analysis_result(
+    post_id: int,
+    mode: str,
+    *,
+    cached: bool,
+    fallback_row: Mapping[str, Any],
+) -> MetaHotPostsResponse:
+    refreshed = _get_ai_analysis_row(post_id) or dict(fallback_row)
+    payload = _build_ai_analysis_result_payload(post_id, mode, refreshed)
+    payload["cached"] = bool(cached)
+    return MetaHotPostsResponse(payload)
+
+
+def _build_ai_translation_error_response(
+    mode: str,
+    exc: Exception,
+    *,
+    finish_error_fn,
+) -> MetaHotPostsResponse:
+    message = str(exc)[:1000]
+    finish_error_fn(message)
+    rate_limited = video_copyability_translation.is_rate_limited_error(exc)
+    return MetaHotPostsResponse(
+        {
+            "ok": False,
+            "mode": mode,
+            "error": message,
+            "rate_limited": bool(rate_limited),
+        },
+        429 if rate_limited else 500,
+    )
+
+
+def build_ai_analysis_translate_zh_response(
+    post_id: int,
+    mode: str,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    meta = _ai_analysis_mode_meta(mode)
+    if not meta:
+        return MetaHotPostsResponse({"error": "invalid_mode"}, 400)
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    if not _has_ai_analysis_result(row, meta["mode"]):
+        return MetaHotPostsResponse({"error": "missing_result", "mode": meta["mode"]}, 400)
+
+    item = _hydrate_ai_analysis_row(row)
+    if meta["mode"] == AI_ANALYSIS_MODE_US_COPYABILITY:
+        if _has_us_copyability_zh_cache(item):
+            result = _build_ai_analysis_result_payload(post_id, meta["mode"], row)
+            result["cached"] = True
+            return MetaHotPostsResponse(result)
+        translation_row = _video_copyability_translation_row(item)
+        analysis_id = translation_row.get("analysis_id")
+        if not analysis_id:
+            return MetaHotPostsResponse({"error": "missing_analysis_id", "mode": meta["mode"]}, 400)
+        store.mark_video_copyability_summary_translation_running(int(analysis_id))
+        try:
+            translated_summary = video_copyability_translation.translate_summary(
+                translation_row,
+                user_id=user_id,
+                provider_override=MANUAL_AI_TRANSLATE_PROVIDER,
+                model_override=MANUAL_AI_TRANSLATE_MODEL,
+                billing_source=MANUAL_US_AI_TRANSLATE_SOURCE,
+            )
+        except Exception as exc:
+            return _build_ai_translation_error_response(
+                meta["mode"],
+                exc,
+                finish_error_fn=lambda error: store.finish_video_copyability_summary_translation(
+                    int(analysis_id),
+                    translated_summary=None,
+                    error_message=error,
+                ),
+            )
+        store.finish_video_copyability_summary_translation(
+            int(analysis_id),
+            translated_summary=translated_summary,
+            error_message=None,
+        )
+        return _refreshed_ai_analysis_result(post_id, meta["mode"], cached=False, fallback_row=row)
+
+    if _has_europe_fit_zh_cache(item):
+        result = _build_ai_analysis_result_payload(post_id, meta["mode"], row)
+        result["cached"] = True
+        return MetaHotPostsResponse(result)
+    translation_row = _europe_fit_translation_row(post_id, row)
+    store.mark_europe_fit_translation_running(int(post_id))
+    try:
+        translated = europe_fit_translation.translate_assessment(
+            translation_row,
+            user_id=user_id,
+            provider_override=MANUAL_AI_TRANSLATE_PROVIDER,
+            model_override=MANUAL_AI_TRANSLATE_MODEL,
+            billing_source=MANUAL_EUROPE_AI_TRANSLATE_SOURCE,
+        )
+    except Exception as exc:
+        return _build_ai_translation_error_response(
+            meta["mode"],
+            exc,
+            finish_error_fn=lambda error: store.finish_europe_fit_translation(
+                int(post_id),
+                translated=None,
+                error_message=error,
+            ),
+        )
+    store.finish_europe_fit_translation(
+        int(post_id),
+        translated=translated,
+        error_message=None,
+    )
+    return _refreshed_ai_analysis_result(post_id, meta["mode"], cached=False, fallback_row=row)
 
 
 def _analysis_attempts_after_mark(state: Mapping[str, Any] | None) -> int:

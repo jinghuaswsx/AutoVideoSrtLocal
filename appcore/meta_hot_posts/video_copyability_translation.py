@@ -101,6 +101,9 @@ def translate_summary(
     row: Mapping[str, Any],
     *,
     user_id: int | None = None,
+    provider_override: str = TRANSLATE_PROVIDER,
+    model_override: str = TRANSLATE_MODEL,
+    billing_source: str = "meta_hot_posts_video_copyability_summary_zh",
     invoke_chat_fn: InvokeChatFn = llm_client.invoke_chat,
 ) -> str:
     source_text = _build_source_text(row)
@@ -111,12 +114,12 @@ def translate_summary(
     response = invoke_chat_fn(
         TRANSLATE_USE_CASE,
         messages=_build_messages(source_text),
-        provider_override=TRANSLATE_PROVIDER,
-        model_override=TRANSLATE_MODEL,
+        provider_override=provider_override,
+        model_override=model_override,
         user_id=user_id,
         temperature=0.0,
         max_tokens=512,
-        billing_extra={"source": "meta_hot_posts_video_copyability_summary_zh"},
+        billing_extra={"source": billing_source},
     )
     translated = _strip_code_fence(str(response.get("text") or ""))
     if not translated.strip():

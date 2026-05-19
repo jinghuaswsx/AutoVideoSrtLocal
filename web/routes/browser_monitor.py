@@ -47,6 +47,7 @@ ENVIRONMENTS: tuple[BrowserEnvironment, ...] = (
     BrowserEnvironment("DXM02-MK", "DXM02-MK", 6093, "明空选品店小秘"),
     BrowserEnvironment("DXM03-RJC", "DXM03-RJC", 6095, "荣锦成店小秘订单 / SKU / Shopify ID"),
     BrowserEnvironment("TABCUT", "TABCUT", 6097, "Tabcut 选品采集"),
+    BrowserEnvironment("采集程序", "采集程序", 5931, "采集程序 VNC 窗口"),
 )
 
 

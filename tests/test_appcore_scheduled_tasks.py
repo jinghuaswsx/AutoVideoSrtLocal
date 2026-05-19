@@ -669,7 +669,7 @@ def test_task_definitions_include_dianxiaomi_listing_ranking_sync():
     assert task["source_ref"] == "autovideosrt-dianxiaomi-listing-ranking-sync.timer"
     assert task["runner"] == "tools/dianxiaomi_listing_ranking_sync.py"
     assert task["log_table"] == "scheduled_task_runs"
-    assert "近7天有销量全量归档" in task["name"]
+    assert "近7天销量 Top500 归档" in task["name"]
     assert "2026-05-18-dianxiaomi-full-listing-archive-design.md" in task["description"]
 
 
