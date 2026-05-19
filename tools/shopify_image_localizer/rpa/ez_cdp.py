@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import time
+import unicodedata
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -388,6 +389,30 @@ def _find_plugin_frame(page):
     return None
 
 
+_EZ_PRODUCT_LOAD_ERROR_MARKERS = (
+    "impossible de charger les donnees du produit",
+    "unable to load product data",
+    "无法加载产品数据",
+    "无法加载商品数据",
+)
+
+
+def _fold_error_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).casefold()
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+
+def _ez_product_load_error_text(page) -> str:
+    try:
+        text = page.locator("body").inner_text(timeout=500) or ""
+    except Exception:
+        return ""
+    folded = _fold_error_text(text)
+    if not any(marker in folded for marker in _EZ_PRODUCT_LOAD_ERROR_MARKERS):
+        return ""
+    return " ".join(str(text).split())[:500]
+
+
 def _wait_plugin_frame(page, *, timeout_s: int = 30, cancel_token: cancellation.CancellationToken | None = None):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -399,6 +424,15 @@ def _wait_plugin_frame(page, *, timeout_s: int = 30, cancel_token: cancellation.
                     return frame
             except Exception:
                 pass
+        error_text = _ez_product_load_error_text(page)
+        if error_text:
+            page_url = str(getattr(page, "url", "") or "").strip()
+            url_hint = f" 当前 URL：{page_url}" if page_url else ""
+            raise RuntimeError(
+                "EZ 页面无法加载商品数据；通常是当前网站缓存的 Shopify 店铺编码与商品 ID 不匹配，"
+                "或该商品不属于当前店铺。请重新选择正确店铺并点击「已登录」刷新缓存后再试。"
+                f"{url_hint} EZ 提示：{error_text}"
+            )
         page.wait_for_timeout(500)
     raise RuntimeError("EZ freshify iframe 未加载或未出现图片按钮")
 

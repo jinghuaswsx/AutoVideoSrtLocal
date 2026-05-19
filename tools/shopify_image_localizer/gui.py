@@ -896,7 +896,10 @@ class ShopifyImageLocalizerApp:
             self.current_login_status_label.configure(fg="red")
             return
         try:
-            cached_slug = settings.cached_store_slug_for_domain(domain)
+            cached_slug = (
+                settings.known_store_slug_for_domain(domain)
+                or settings.cached_store_slug_for_domain(domain)
+            )
         except Exception:
             cached_slug = ""
 

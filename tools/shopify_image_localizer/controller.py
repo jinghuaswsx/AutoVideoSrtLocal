@@ -730,6 +730,16 @@ def confirm_shopify_login_capture_slug_from_url(
                 "请复制浏览器地址栏里当前 Shopify 后台店铺主页 URL 后再保存。"
             ),
         }
+    known_slug = settings.known_store_slug_for_domain(normalized_domain)
+    if known_slug and slug != known_slug:
+        return _store_slug_mismatch_result(
+            shopify_domain=normalized_domain,
+            browser_user_data_dir=effective_browser_dir,
+            url=url,
+            slug=slug,
+            expected_slug=known_slug,
+            source="manual_url",
+        )
     settings.cache_store_slug_for_domain(normalized_domain, slug)
     return {
         "status": "captured",
@@ -738,6 +748,31 @@ def confirm_shopify_login_capture_slug_from_url(
         "url": url,
         "slug": slug,
         "source": "manual_url",
+    }
+
+
+def _store_slug_mismatch_result(
+    *,
+    shopify_domain: str,
+    browser_user_data_dir: str,
+    url: str,
+    slug: str,
+    expected_slug: str,
+    source: str,
+) -> dict:
+    return {
+        "status": "mismatch",
+        "shopify_domain": shopify_domain,
+        "browser_user_data_dir": browser_user_data_dir,
+        "url": url,
+        "slug": slug,
+        "expected_slug": expected_slug,
+        "source": source,
+        "message": (
+            f"当前选择的网站 {shopify_domain} 已知 Shopify 编码应为 {expected_slug}，"
+            f"但当前浏览器 URL 识别到的是 {slug}。请在浏览器里切换到 {shopify_domain} "
+            "对应店铺后再点「已登录」，避免把其它店铺编码缓存到当前网站。"
+        ),
     }
 
 
@@ -767,6 +802,16 @@ def confirm_shopify_login_capture_slug(
                 "请确认浏览器已登录并停留在目标店铺主页，再点「已登录」。"
             ),
         }
+    known_slug = settings.known_store_slug_for_domain(normalized_domain)
+    if known_slug and slug != known_slug:
+        return _store_slug_mismatch_result(
+            shopify_domain=normalized_domain,
+            browser_user_data_dir=effective_browser_dir,
+            url=best_url,
+            slug=slug,
+            expected_slug=known_slug,
+            source=source,
+        )
     settings.cache_store_slug_for_domain(normalized_domain, slug)
     return {
         "status": "captured",

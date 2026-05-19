@@ -276,11 +276,22 @@ def test_gui_choose_domain_uses_visible_dropdown_for_single_domain(monkeypatch: 
         app.root.destroy()
 
 
-def test_gui_login_status_label_when_no_cached_slug_shows_pending(monkeypatch: pytest.MonkeyPatch) -> None:
-    """启动时如果本地 slug 缓存为空，显示橙色「当前网站：{domain}」提示用户去登录。"""
-    app = _make_app(monkeypatch, cached_slug="")
+def test_gui_login_status_label_when_unknown_domain_has_no_cached_slug_shows_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """未知 domain 没有 slug 缓存时，显示橙色「当前网站：{domain}」提示用户去登录。"""
+    app = _make_app(
+        monkeypatch,
+        cached_slug="",
+        runtime_config={
+            "base_url": "http://172.30.254.14",
+            "api_key": "demo-key",
+            "browser_user_data_dir": r"C:\chrome-shopify-image",
+            "shopify_domain": "omurio.com",
+        },
+    )
     try:
-        assert app.current_login_status_var.get() == "当前网站：newjoyloo.com"
+        assert app.current_login_status_var.get() == "当前网站：omurio.com"
         assert app.current_login_status_label["fg"] == "#cc7a00"
         font_spec = app.current_login_status_label["font"]
         assert "14" in str(font_spec)
