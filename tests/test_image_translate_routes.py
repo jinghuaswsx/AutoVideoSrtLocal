@@ -998,6 +998,54 @@ def test_use_source_item_clears_result_model_origin(authed_client_no_db, monkeyp
     assert written["data"] == b"SRC"
 
 
+def test_api_state_marks_legacy_invalid_task_model_origin(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "cloud_adc"
+    task["model_id"] = "gpt-image-2"
+    task["items"][0]["result_source"] = "image_translate"
+    task["items"][0]["result_channel"] = ""
+    task["items"][0]["result_model_id"] = ""
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["channel"] == "cloud_adc"
+    assert data["model_id"] == "gpt-image-2"
+    assert data["model_origin_valid"] is False
+
+
+def test_api_state_marks_valid_task_model_origin(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "cloud_adc"
+    task["model_id"] = "gemini-3.1-flash-image-preview"
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["model_origin_valid"] is True
+
+
+def test_api_state_keeps_openrouter_image2_history_model_valid(authed_client_no_db, monkeypatch):
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["channel"] = "openrouter"
+    task["model_id"] = "openai/gpt-5.4-image-2:mid"
+
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["model_origin_valid"] is True
+
+
 def test_detail_page_renders_channel_rerun_controls(authed_client_no_db, monkeypatch):
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
 
