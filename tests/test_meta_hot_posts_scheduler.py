@@ -1157,15 +1157,23 @@ def test_translation_tick_once_defaults_to_30_messages_with_no_spacing(monkeypat
         captured["per_item_delay_seconds"] = per_item_delay_seconds
         return {"scanned": 0, "done": 0, "failed": 0}
 
+    def fake_translate_pending_product_titles(*, limit, user_id=None, per_item_delay_seconds):
+        captured["title_limit"] = limit
+        captured["title_per_item_delay_seconds"] = per_item_delay_seconds
+        return {"scanned": 0, "done": 0, "failed": 0}
+
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 42)
     monkeypatch.setattr(scheduler.scheduled_tasks, "finish_run", lambda *args, **kwargs: None)
     monkeypatch.setattr(scheduler.scheduled_tasks, "latest_running_run", lambda task_code: None)
     monkeypatch.setattr(scheduler, "translate_pending_messages", fake_translate_pending_messages)
+    monkeypatch.setattr(scheduler, "translate_pending_product_titles", fake_translate_pending_product_titles)
 
     scheduler.translation_tick_once()
 
     assert captured["limit"] == 30
     assert captured["per_item_delay_seconds"] == 0
+    assert captured["title_limit"] == 30
+    assert captured["title_per_item_delay_seconds"] == 0
 
 
 def test_analysis_tick_once_skips_when_recent_run_is_still_running(monkeypatch):
@@ -1249,10 +1257,20 @@ def test_translation_tick_once_marks_stale_running_run_failed_then_starts(monkey
         "reset_stale_running_message_translations",
         lambda older_than_seconds: events.append(("reset_messages", older_than_seconds)) or 4,
     )
+    monkeypatch.setattr(
+        scheduler.store,
+        "reset_stale_running_product_title_translations",
+        lambda older_than_seconds: events.append(("reset_titles", older_than_seconds)) or 2,
+    )
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: 100)
     monkeypatch.setattr(
         scheduler,
         "translate_pending_messages",
+        lambda *, limit, user_id=None, per_item_delay_seconds: {"scanned": 0, "done": 0, "failed": 0},
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "translate_pending_product_titles",
         lambda *, limit, user_id=None, per_item_delay_seconds: {"scanned": 0, "done": 0, "failed": 0},
     )
 
@@ -1260,7 +1278,9 @@ def test_translation_tick_once_marks_stale_running_run_failed_then_starts(monkey
 
     assert summary["stale_run_replaced"] == 12
     assert summary["stale_messages_reset"] == 4
+    assert summary["stale_product_titles_reset"] == 2
     assert ("reset_messages", 3600) in events
+    assert ("reset_titles", 3600) in events
     stale_finish = next(event for event in events if event[0] == "finish" and event[1] == 12)
     assert stale_finish[2]["status"] == "failed"
     assert "exceeded 3600s" in stale_finish[2]["error_message"]
@@ -1407,6 +1427,50 @@ def test_translate_pending_messages_records_failures(monkeypatch):
 
     assert summary == {"scanned": 1, "done": 0, "failed": 1}
     assert finished == [(1, {"translated_html": None, "error_message": "provider failed"})]
+
+
+def test_translate_pending_product_titles_translates_and_saves(monkeypatch):
+    finished = []
+    marked = []
+    sleep_calls = []
+
+    monkeypatch.setattr(scheduler, "resolve_billing_user_id", lambda user_id=None: 7)
+    monkeypatch.setattr(
+        scheduler.store,
+        "next_pending_product_title_translations",
+        lambda limit: [
+            {"id": 1, "product_title": "Portable Lamp"},
+            {"id": 2, "product_title": "Garden Light"},
+        ],
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "mark_product_title_translation_running",
+        lambda analysis_id: marked.append(analysis_id),
+    )
+    monkeypatch.setattr(
+        scheduler.product_title_translation,
+        "translate_product_title",
+        lambda title, user_id=None: f"zh:{title}",
+    )
+    monkeypatch.setattr(
+        scheduler.store,
+        "finish_product_title_translation",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    summary = scheduler.translate_pending_product_titles(
+        limit=2,
+        user_id=9,
+        per_item_delay_seconds=3,
+        sleep_fn=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    assert summary == {"scanned": 2, "done": 2, "failed": 0}
+    assert marked == [1, 2]
+    assert finished[0] == (1, {"translated_title": "zh:Portable Lamp", "error_message": None})
+    assert finished[1] == (2, {"translated_title": "zh:Garden Light", "error_message": None})
+    assert sleep_calls == [3]
 
 
 def test_assess_europe_fit_materials_stops_when_run_is_superseded(monkeypatch):

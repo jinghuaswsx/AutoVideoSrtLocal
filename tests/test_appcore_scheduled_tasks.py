@@ -620,6 +620,8 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert translation_task["source_type"] == "apscheduler"
     assert translation_task["runner"] == "appcore.meta_hot_posts.scheduler.translation_tick_once"
     assert translation_task["log_table"] == "scheduled_task_runs"
+    assert "product_title_zh" in translation_task["description"]
+    assert "2026-05-19-meta-hot-posts-product-title-translation-design.md" in translation_task["description"]
     assert "30 条" in translation_task["description"]
     assert "中文" in translation_task["description"]
 

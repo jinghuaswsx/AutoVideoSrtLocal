@@ -18,6 +18,7 @@ from appcore.meta_hot_posts import (
     europe_fit,
     message_translation,
     product_analysis,
+    product_title_translation,
     store,
     tos_sync,
     video_copyability,
@@ -378,6 +379,61 @@ def translate_pending_messages(
     return summary
 
 
+def translate_pending_product_titles(
+    *,
+    limit: int = SCHEDULED_TRANSLATION_LIMIT,
+    user_id: int | None = None,
+    per_item_delay_seconds: float | int | str | None = SCHEDULED_TRANSLATION_DELAY_SECONDS,
+    sleep_fn: SleepFn | None = None,
+) -> dict[str, Any]:
+    summary = {"scanned": 0, "done": 0, "failed": 0}
+    billing_user_id = resolve_billing_user_id(user_id)
+    rows = store.next_pending_product_title_translations(limit=limit)
+    total = len(rows)
+    for index, row in enumerate(rows):
+        summary["scanned"] += 1
+        analysis_id = int(row["id"])
+        store.mark_product_title_translation_running(analysis_id)
+        try:
+            translated_title = product_title_translation.translate_product_title(
+                str(row.get("product_title") or ""),
+                user_id=billing_user_id,
+            )
+        except Exception as exc:
+            log.warning("meta hot post product title translation failed id=%s: %s", analysis_id, exc)
+            store.finish_product_title_translation(
+                analysis_id,
+                translated_title=None,
+                error_message=str(exc)[:1000],
+            )
+            summary["failed"] += 1
+            if _is_global_category_provider_error(exc):
+                summary["stopped"] = True
+                summary["stop_reason"] = "global_title_translation_provider_error"
+                break
+            _sleep_after_item(
+                index=index,
+                total=total,
+                per_item_delay_seconds=per_item_delay_seconds,
+                sleep_fn=sleep_fn,
+            )
+            continue
+
+        store.finish_product_title_translation(
+            analysis_id,
+            translated_title=translated_title,
+            error_message=None,
+        )
+        summary["done"] += 1
+        _sleep_after_item(
+            index=index,
+            total=total,
+            per_item_delay_seconds=per_item_delay_seconds,
+            sleep_fn=sleep_fn,
+        )
+    return summary
+
+
 def reanalyze_categories(
     *,
     limit: int = 100,
@@ -517,6 +573,9 @@ def _guard_translation_singleton(
     reset_count = store.reset_stale_running_message_translations(
         older_than_seconds=int(stale_after_seconds),
     )
+    title_reset_count = store.reset_stale_running_product_title_translations(
+        older_than_seconds=int(stale_after_seconds),
+    )
     scheduled_tasks.finish_run(
         running_id,
         status="failed",
@@ -524,6 +583,7 @@ def _guard_translation_singleton(
             "stale_run_replaced": running_id,
             "running_age_seconds": age_seconds,
             "stale_messages_reset": reset_count,
+            "stale_product_titles_reset": title_reset_count,
         },
         error_message=f"running message translation exceeded {int(stale_after_seconds)}s; superseded by a new run",
     )
@@ -531,6 +591,7 @@ def _guard_translation_singleton(
         "stale_run_replaced": running_id,
         "running_age_seconds": age_seconds,
         "stale_messages_reset": reset_count,
+        "stale_product_titles_reset": title_reset_count,
     }
 
 
@@ -725,11 +786,35 @@ def translation_tick_once(
     except Exception:
         log.debug("failed to start meta hot posts message translation run", exc_info=True)
     try:
-        summary = translate_pending_messages(
+        message_summary = translate_pending_messages(
             limit=limit,
             user_id=user_id,
             per_item_delay_seconds=per_item_delay_seconds,
         )
+        if message_summary.get("stopped"):
+            title_summary = {
+                "scanned": 0,
+                "done": 0,
+                "failed": 0,
+                "skipped": True,
+                "reason": "message_translation_stopped",
+            }
+        else:
+            title_summary = translate_pending_product_titles(
+                limit=limit,
+                user_id=user_id,
+                per_item_delay_seconds=per_item_delay_seconds,
+            )
+        summary = {
+            "scanned": int(message_summary.get("scanned", 0)) + int(title_summary.get("scanned", 0)),
+            "done": int(message_summary.get("done", 0)) + int(title_summary.get("done", 0)),
+            "failed": int(message_summary.get("failed", 0)) + int(title_summary.get("failed", 0)),
+            "messages": message_summary,
+            "product_titles": title_summary,
+        }
+        if message_summary.get("stopped") or title_summary.get("stopped"):
+            summary["stopped"] = True
+            summary["stop_reason"] = message_summary.get("stop_reason") or title_summary.get("stop_reason")
     except Exception as exc:
         if run_id:
             scheduled_tasks.finish_run(run_id, status="failed", summary={}, error_message=str(exc)[:1000])

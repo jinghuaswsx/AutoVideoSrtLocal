@@ -510,6 +510,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "meta_hot_posts.translate_product_title": _uc(
+        "meta_hot_posts.translate_product_title",
+        "xuanpin",
+        "Meta 热帖商品标题翻译",
+        "把 Meta 热帖商品页英文标题翻译为简体中文并缓存",
+        "openrouter",
+        "google/gemini-3.1-flash-lite",
+        "openrouter",
+        "tokens",
+    ),
     "meta_hot_posts.europe_fit": _uc(
         "meta_hot_posts.europe_fit",
         "xuanpin",
