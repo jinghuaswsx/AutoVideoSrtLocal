@@ -279,6 +279,10 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         mark_status = MARK_STATUS_BAD
     item["mark_status"] = mark_status
     item["is_marked"] = bool(mark_status)
+    if item.get("is_favorited") in (None, ""):
+        item["is_favorited"] = bool(item.get("favorited_at"))
+    else:
+        item["is_favorited"] = _bool_payload(item.get("is_favorited"))
     item["europe_fit_best_countries"] = _decode_json_list(
         item.pop("europe_fit_best_countries_json", None)
     )
@@ -314,24 +318,60 @@ def _hydrate_video_copyability_item(row: Mapping[str, Any]) -> dict[str, Any]:
     return item
 
 
-def build_list_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
-    payload = store.list_hot_posts(args)
+def build_list_response(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    payload = (
+        store.list_hot_posts(args, user_id=user_id)
+        if user_id
+        else store.list_hot_posts(args)
+    )
     payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
     return MetaHotPostsResponse(payload)
 
 
-def build_today_new_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
-    payload = store.list_today_new_hot_posts(args)
+def build_today_new_response(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    payload = (
+        store.list_today_new_hot_posts(args, user_id=user_id)
+        if user_id
+        else store.list_today_new_hot_posts(args)
+    )
     payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
     return MetaHotPostsResponse(payload)
 
 
-def build_europe_top_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+def build_favorites_response(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None,
+) -> MetaHotPostsResponse:
+    if not user_id:
+        return MetaHotPostsResponse({"error": "missing_user"}, 400)
+    payload = store.list_favorite_hot_posts(args, user_id=int(user_id))
+    payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
+    return MetaHotPostsResponse(payload)
+
+
+def build_europe_top_response(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
     try:
         limit = int(args.get("limit") or 50)
     except (TypeError, ValueError):
         limit = 50
-    items = store.list_top_europe_fit_materials(limit=limit)
+    items = (
+        store.list_top_europe_fit_materials(limit=limit, user_id=user_id)
+        if user_id
+        else store.list_top_europe_fit_materials(limit=limit)
+    )
     hydrated = [_hydrate_item(item) for item in items]
     return MetaHotPostsResponse({"items": hydrated, "total": len(hydrated), "limit": max(1, min(50, limit))})
 
@@ -393,6 +433,22 @@ def build_mark_response(
         return MetaHotPostsResponse({"error": "not_found"}, 404)
     return MetaHotPostsResponse(
         {"ok": True, "id": int(post_id), "mark_status": mark_status, "is_marked": bool(mark_status)}
+    )
+
+
+def build_favorite_response(
+    post_id: int,
+    payload: Mapping[str, Any] | None = None,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    if not user_id:
+        return MetaHotPostsResponse({"error": "missing_user"}, 400)
+    payload = payload or {}
+    favorited = _bool_payload(payload.get("favorited", True))
+    store.set_hot_post_favorite(post_id, user_id=int(user_id), favorited=favorited)
+    return MetaHotPostsResponse(
+        {"ok": True, "id": int(post_id), "is_favorited": bool(favorited)}
     )
 
 
@@ -966,14 +1022,23 @@ def build_video_copyability_response(payload: Mapping[str, Any] | None = None) -
     )
 
 
-def build_video_copyability_top50_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+def build_video_copyability_top50_response(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
     try:
         limit = int(args.get("limit") or 50)
     except (TypeError, ValueError):
         limit = 50
+    rows = (
+        store.list_top_video_copyability_analyses(limit=limit, user_id=user_id)
+        if user_id
+        else store.list_top_video_copyability_analyses(limit=limit)
+    )
     items = [
         _hydrate_video_copyability_item(row)
-        for row in store.list_top_video_copyability_analyses(limit=limit)
+        for row in rows
     ]
     return MetaHotPostsResponse({"items": items, "total": len(items), "limit": max(1, min(50, limit))})
 

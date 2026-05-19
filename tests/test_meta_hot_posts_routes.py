@@ -104,10 +104,13 @@ def test_meta_hot_posts_permission_allows_non_admin_page_and_api(monkeypatch):
         "appcore.meta_hot_posts.service.category_options",
         lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
     )
-    monkeypatch.setattr(
-        "appcore.meta_hot_posts.service.build_list_response",
-        lambda args: type("Resp", (), {"payload": {"items": [{"id": 1}], "total": 1}, "status_code": 200})(),
-    )
+    captured = {}
+
+    def fake_list_response(args, user_id=None):
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"items": [{"id": 1}], "total": 1}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_list_response", fake_list_response)
 
     page = client.get("/xuanpin/meta-hot-posts")
     api = client.get("/xuanpin/api/meta-hot-posts")
@@ -115,6 +118,7 @@ def test_meta_hot_posts_permission_allows_non_admin_page_and_api(monkeypatch):
     assert page.status_code == 200
     assert api.status_code == 200
     assert api.get_json()["items"] == [{"id": 1}]
+    assert captured["user_id"]
 
 
 def test_analyst_root_redirects_to_meta_hot_posts(monkeypatch):
@@ -239,6 +243,16 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/europe-top" in body
     assert 'id="mhUsSubtab"' in body
     assert "switchMetaHotSubtab('us')" in body
+    assert 'id="mhFavoritesSubtab"' in body
+    assert "switchMetaHotSubtab('favorites')" in body
+    assert 'id="mhFavoriteSort"' in body
+    assert "loadFavoriteMetaHotPosts" in body
+    assert "/xuanpin/api/meta-hot-posts/favorites" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/favorite" in body
+    assert "function toggleMetaHotPostFavorite" in body
+    assert "加入收藏夹" in body
+    assert "取消收藏" in body
+    assert "X-CSRFToken" in body
     assert "function loadUsTopMaterials" in body
     assert "function assessEuropeFitMaterials" in body
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
@@ -300,15 +314,19 @@ def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr(
-        "appcore.meta_hot_posts.service.build_list_response",
-        lambda args: type("Resp", (), {"payload": {"items": [{"id": 1}], "total": 1}, "status_code": 200})(),
-    )
+    captured = {}
+
+    def fake_response(args, user_id=None):
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"items": [{"id": 1}], "total": 1}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_list_response", fake_response)
 
     resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts?category=Kitchenware")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 1}]
+    assert captured["user_id"]
 
 
 def test_meta_hot_posts_category_prompt_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -399,27 +417,35 @@ def test_meta_hot_posts_europe_fit_api_passes_current_user(authed_client_no_db, 
 
 
 def test_meta_hot_posts_europe_top_api_delegates_to_service(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr(
-        "appcore.meta_hot_posts.service.build_europe_top_response",
-        lambda args: type("Resp", (), {"payload": {"items": [{"id": 2}], "total": 1}, "status_code": 200})(),
-    )
+    captured = {}
+
+    def fake_response(args, user_id=None):
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"items": [{"id": 2}], "total": 1}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_europe_top_response", fake_response)
 
     resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/europe-top?limit=50")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 2}]
+    assert captured["user_id"]
 
 
 def test_meta_hot_posts_today_new_api_delegates_to_service(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr(
-        "appcore.meta_hot_posts.service.build_today_new_response",
-        lambda args: type("Resp", (), {"payload": {"items": [{"id": 3}], "total": 1}, "status_code": 200})(),
-    )
+    captured = {}
+
+    def fake_response(args, user_id=None):
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"items": [{"id": 3}], "total": 1}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_today_new_response", fake_response)
 
     resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/today-new?page=1")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"id": 3}]
+    assert captured["user_id"]
 
 
 def test_meta_hot_posts_analyze_videos_api_passes_current_user_for_billing(authed_client_no_db, monkeypatch):
@@ -439,15 +465,26 @@ def test_meta_hot_posts_analyze_videos_api_passes_current_user_for_billing(authe
 
 
 def test_meta_hot_posts_video_copyability_top50_api_delegates_to_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(args, user_id=None):
+        captured["user_id"] = user_id
+        return type(
+            "Resp",
+            (),
+            {"payload": {"items": [{"analysis_id": 1}], "total": 1}, "status_code": 200},
+        )()
+
     monkeypatch.setattr(
         "appcore.meta_hot_posts.service.build_video_copyability_top50_response",
-        lambda args: type("Resp", (), {"payload": {"items": [{"analysis_id": 1}], "total": 1}, "status_code": 200})(),
+        fake_response,
     )
 
     resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/video-copyability/top50")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"analysis_id": 1}]
+    assert captured["user_id"]
 
 
 def test_meta_hot_posts_ai_analysis_request_preview_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -550,4 +587,50 @@ def test_meta_hot_posts_mark_api_passes_current_user_and_status(authed_client_no
     assert resp.get_json()["mark_status"] == "bad"
     assert captured["post_id"] == 7
     assert captured["payload"] == {"mark_status": "bad"}
+    assert captured["user_id"]
+
+
+def test_meta_hot_posts_favorites_api_passes_current_user_and_sort(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_response(args, user_id=None):
+        captured["sort"] = args.get("sort")
+        captured["user_id"] = user_id
+        return type("Resp", (), {"payload": {"items": [], "total": 0}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_favorites_response", fake_response)
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/favorites?sort=interactions")
+
+    assert resp.status_code == 200
+    assert captured["sort"] == "interactions"
+    assert captured["user_id"]
+
+
+def test_meta_hot_posts_favorite_api_passes_current_user(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_response(post_id, payload, user_id=None):
+        captured["post_id"] = post_id
+        captured["payload"] = payload
+        captured["user_id"] = user_id
+        return type(
+            "Resp",
+            (),
+            {"payload": {"ok": True, "id": post_id, "is_favorited": True}, "status_code": 200},
+        )()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_favorite_response", fake_response)
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/7/favorite",
+        json={"favorited": True},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["is_favorited"] is True
+    assert captured["post_id"] == 7
+    assert captured["payload"] == {"favorited": True}
     assert captured["user_id"]

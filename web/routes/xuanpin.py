@@ -219,7 +219,10 @@ def api_tabcut_refresh():
 def api_meta_hot_posts():
     if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
-    result = _meta_hot_posts().build_list_response(request.args)
+    result = _meta_hot_posts().build_list_response(
+        request.args,
+        user_id=getattr(current_user, "id", None),
+    )
     return jsonify(result.payload), result.status_code
 
 
@@ -255,7 +258,10 @@ def api_meta_hot_posts_failures():
 def api_meta_hot_posts_europe_top():
     if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
-    result = _meta_hot_posts().build_europe_top_response(request.args)
+    result = _meta_hot_posts().build_europe_top_response(
+        request.args,
+        user_id=getattr(current_user, "id", None),
+    )
     return jsonify(result.payload), result.status_code
 
 
@@ -264,7 +270,22 @@ def api_meta_hot_posts_europe_top():
 def api_meta_hot_posts_today_new():
     if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
-    result = _meta_hot_posts().build_today_new_response(request.args)
+    result = _meta_hot_posts().build_today_new_response(
+        request.args,
+        user_id=getattr(current_user, "id", None),
+    )
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/favorites", methods=["GET"])
+@login_required
+def api_meta_hot_posts_favorites():
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_favorites_response(
+        request.args,
+        user_id=getattr(current_user, "id", None),
+    )
     return jsonify(result.payload), result.status_code
 
 
@@ -275,6 +296,20 @@ def api_meta_hot_posts_mark(post_id: int):
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     result = _meta_hot_posts().build_mark_response(
+        post_id,
+        payload,
+        user_id=getattr(current_user, "id", None),
+    )
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/favorite", methods=["POST"])
+@login_required
+def api_meta_hot_posts_favorite(post_id: int):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    result = _meta_hot_posts().build_favorite_response(
         post_id,
         payload,
         user_id=getattr(current_user, "id", None),
@@ -349,7 +384,10 @@ def api_meta_hot_posts_analyze_videos():
 def api_meta_hot_posts_video_copyability_top50():
     if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
-    result = _meta_hot_posts().build_video_copyability_top50_response(request.args)
+    result = _meta_hot_posts().build_video_copyability_top50_response(
+        request.args,
+        user_id=getattr(current_user, "id", None),
+    )
     return jsonify(result.payload), result.status_code
 
 

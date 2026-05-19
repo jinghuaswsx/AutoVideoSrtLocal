@@ -60,6 +60,9 @@
 .mh-video-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:100%; color:#64748b; font-size:13px; font-weight:800; }
 .mh-video-badges { position:absolute; left:8px; bottom:8px; z-index:2; display:flex; align-items:center; gap:5px; }
 .mh-video-duration-badge { min-width:34px; min-height:20px; padding:0 7px; border:1px solid rgba(220,38,38,.38); border-radius:4px; background:#fee2e2; color:var(--mh-danger); font-size:12px; font-weight:900; line-height:20px; text-align:center; box-shadow:0 1px 3px rgba(15,23,42,.16); }
+.mh-favorite-btn { position:absolute; left:8px; top:8px; z-index:4; min-width:86px; height:28px; padding:0 9px; border:1px solid rgba(15,118,110,.42); border-radius:5px; background:rgba(255,255,255,.94); color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; box-shadow:0 1px 4px rgba(15,23,42,.14); }
+.mh-favorite-btn.is-favorited { border-color:#0f766e; background:#0f766e; color:#fff; }
+.mh-favorite-btn:disabled { opacity:.7; cursor:wait; }
 .mh-play-button { position:absolute; z-index:3; display:flex; align-items:center; justify-content:center; border:0; background:rgba(15,23,42,.72); box-shadow:0 2px 10px rgba(15,23,42,.25); pointer-events:none; }
 .mh-play-button::before { content:""; width:0; height:0; margin-left:3px; border-top:11px solid transparent; border-bottom:11px solid transparent; border-left:16px solid #fff; }
 .mh-play-button.center { left:50%; top:50%; width:58px; height:58px; border-radius:999px; transform:translate(-50%, -50%); }
@@ -110,6 +113,8 @@ button.mh-link-btn { cursor:pointer; }
 .mh-ai-chip-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
 .mh-ai-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
 .mh-ai-error { color:#b91c1c; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+.mh-favorite-sort { width:150px; }
+.mh-favorite-sort[hidden] { display:none; }
 .mh-category-list { display:flex; gap:6px; flex-wrap:wrap; }
 .mh-failure-list { display:grid; gap:10px; }
 .mh-failure-item { padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
@@ -273,6 +278,7 @@ button.mh-link-btn { cursor:pointer; }
     <button class="mh-subtab" id="mhTodayNewSubtab" type="button" onclick="switchMetaHotSubtab('today')">今日新增</button>
     <button class="mh-subtab" id="mhEuropeSubtab" type="button" onclick="switchMetaHotSubtab('europe')">欧洲Top50</button>
     <button class="mh-subtab" id="mhUsSubtab" type="button" onclick="switchMetaHotSubtab('us')">美国Top50</button>
+    <button class="mh-subtab" id="mhFavoritesSubtab" type="button" onclick="switchMetaHotSubtab('favorites')">我的收藏夹</button>
   </div>
 
   <div class="mh-tool-row">
@@ -345,6 +351,11 @@ button.mh-link-btn { cursor:pointer; }
   <div class="mh-status">
     <span id="mhStatus">Ready</span>
     <div class="mh-status-actions">
+      <select class="mh-select mh-favorite-sort" id="mhFavoriteSort" aria-label="收藏夹排序" hidden onchange="loadFavoriteMetaHotPosts(1)">
+        <option value="favorited_at">收藏时间</option>
+        <option value="interactions">互动量</option>
+        <option value="creation_time">帖子创建时间</option>
+      </select>
       <button class="mh-btn secondary mh-zoom-btn" id="mhCardZoomButton" type="button" aria-pressed="false" onclick="toggleMetaHotCardZoom()">卡片放大 2x</button>
     </div>
   </div>
@@ -420,6 +431,16 @@ const MH_AI_MODES = {
   europe_translation: {label: '欧洲翻译分析'}
 };
 const qs = id => document.getElementById(id);
+function metaHotCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? (meta.getAttribute('content') || '') : '';
+}
+function metaHotJsonHeaders() {
+  const headers = {'Content-Type': 'application/json'};
+  const token = metaHotCsrfToken();
+  if (token) headers['X-CSRFToken'] = token;
+  return headers;
+}
 const mhFilterBindings = [
   {param: 'category', inputId: 'mhCategory'},
   {param: 'mark_status', inputId: 'mhMarkStatus'},
@@ -520,6 +541,8 @@ function setVideoSource(source) {
     loadEuropeTopMaterials();
   } else if (mhSubtab === 'us') {
     loadUsTopMaterials();
+  } else if (mhSubtab === 'favorites') {
+    loadFavoriteMetaHotPosts(mhPage);
   }
 }
 
@@ -550,11 +573,21 @@ function restoreMetaHotCardZoom() {
   applyMetaHotCardZoom(localStorage.getItem('mhCardZoomed') === '1');
 }
 
+function isMetaHotPostFavorited(row) {
+  return row.is_favorited === true || row.is_favorited === 1 || row.is_favorited === '1';
+}
+function renderFavoriteButton(row) {
+  const postId = Number(row.id || 0);
+  if (!postId) return '';
+  const favorited = isMetaHotPostFavorited(row);
+  return `<button class="mh-favorite-btn${favorited ? ' is-favorited' : ''}" type="button" data-post-id="${postId}" data-favorited="${favorited ? '1' : '0'}" aria-pressed="${favorited ? 'true' : 'false'}" onclick="toggleMetaHotPostFavorite(event, ${postId})">${favorited ? '取消收藏' : '加入收藏夹'}</button>`;
+}
 function cardMedia(row) {
   const videoHtml = playbackVideoHtml(row);
-  if (videoHtml) return `<div class="mh-media">${renderVideoShell(row, videoHtml)}</div>`;
-  if (row.image_url) return `<div class="mh-media"><img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
-  return `<div class="mh-media"></div>`;
+  const favoriteButton = renderFavoriteButton(row);
+  if (videoHtml) return `<div class="mh-media">${favoriteButton}${renderVideoShell(row, videoHtml)}</div>`;
+  if (row.image_url) return `<div class="mh-media">${favoriteButton}<img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
+  return `<div class="mh-media">${favoriteButton}</div>`;
 }
 function isMetaHotPostMarked(row) {
   return row.is_marked === true || row.is_marked === 1 || row.is_marked === '1';
@@ -713,19 +746,33 @@ function syncMetaHotFiltersToUrl(page) {
   url.search = params.toString();
   history.replaceState(null, '', url.pathname + url.search + url.hash);
 }
+function setMetaHotSubtabState(tab) {
+  const ids = {
+    library: 'mhLibrarySubtab',
+    today: 'mhTodayNewSubtab',
+    europe: 'mhEuropeSubtab',
+    us: 'mhUsSubtab',
+    favorites: 'mhFavoritesSubtab'
+  };
+  Object.keys(ids).forEach(key => {
+    const node = qs(ids[key]);
+    if (node) node.classList.toggle('active', tab === key);
+  });
+  const favoriteSort = qs('mhFavoriteSort');
+  if (favoriteSort) favoriteSort.hidden = tab !== 'favorites';
+}
 function switchMetaHotSubtab(tab, options = {}) {
-  mhSubtab = ['today', 'europe', 'us'].includes(tab) ? tab : 'library';
+  mhSubtab = ['today', 'europe', 'us', 'favorites'].includes(tab) ? tab : 'library';
   location.hash = mhSubtab;
-  qs('mhLibrarySubtab').classList.toggle('active', mhSubtab === 'library');
-  qs('mhTodayNewSubtab').classList.toggle('active', mhSubtab === 'today');
-  qs('mhEuropeSubtab').classList.toggle('active', mhSubtab === 'europe');
-  qs('mhUsSubtab').classList.toggle('active', mhSubtab === 'us');
+  setMetaHotSubtabState(mhSubtab);
   if (mhSubtab === 'europe') {
     loadEuropeTopMaterials();
   } else if (mhSubtab === 'today') {
     loadTodayNewMaterials(1);
   } else if (mhSubtab === 'us') {
     loadUsTopMaterials();
+  } else if (mhSubtab === 'favorites') {
+    loadFavoriteMetaHotPosts(1);
   } else {
     loadMetaHotPosts(mhPage || 1, options);
   }
@@ -768,10 +815,7 @@ function renderMetaHotPageSummary(data, items, label = '') {
 }
 async function loadMetaHotPosts(page = 1, options = {}) {
   mhSubtab = 'library';
-  qs('mhLibrarySubtab').classList.add('active');
-  qs('mhTodayNewSubtab').classList.remove('active');
-  qs('mhEuropeSubtab').classList.remove('active');
-  qs('mhUsSubtab').classList.remove('active');
+  setMetaHotSubtabState('library');
   mhPage = safeMetaHotPage(page);
   qs('mhStatus').textContent = 'Loading...';
   if (options.syncUrl !== false) syncMetaHotFiltersToUrl(mhPage);
@@ -788,10 +832,7 @@ async function loadMetaHotPosts(page = 1, options = {}) {
 }
 async function loadTodayNewMaterials(page = 1) {
   mhSubtab = 'today';
-  qs('mhLibrarySubtab').classList.remove('active');
-  qs('mhTodayNewSubtab').classList.add('active');
-  qs('mhEuropeSubtab').classList.remove('active');
-  qs('mhUsSubtab').classList.remove('active');
+  setMetaHotSubtabState('today');
   mhPage = page;
   qs('mhStatus').textContent = 'Loading today new...';
   const res = await fetch(`/xuanpin/api/meta-hot-posts/today-new?page=${page}&page_size=${mhPageSize}`);
@@ -807,10 +848,7 @@ async function loadTodayNewMaterials(page = 1) {
 }
 async function loadEuropeTopMaterials() {
   mhSubtab = 'europe';
-  qs('mhLibrarySubtab').classList.remove('active');
-  qs('mhTodayNewSubtab').classList.remove('active');
-  qs('mhEuropeSubtab').classList.add('active');
-  qs('mhUsSubtab').classList.remove('active');
+  setMetaHotSubtabState('europe');
   qs('mhStatus').textContent = 'Loading Europe Top50...';
   const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');
   const data = await res.json();
@@ -824,9 +862,7 @@ async function loadEuropeTopMaterials() {
 }
 async function loadUsTopMaterials() {
   mhSubtab = 'us';
-  qs('mhLibrarySubtab').classList.remove('active');
-  qs('mhEuropeSubtab').classList.remove('active');
-  qs('mhUsSubtab').classList.add('active');
+  setMetaHotSubtabState('us');
   qs('mhStatus').textContent = 'Loading US Top50...';
   qs('mhPagerTop').innerHTML = '';
   qs('mhPagerBottom').innerHTML = '';
@@ -839,42 +875,119 @@ async function loadUsTopMaterials() {
     : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
   qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;
 }
+function favoriteSortValue() {
+  const select = qs('mhFavoriteSort');
+  return select && select.value ? select.value : 'favorited_at';
+}
+async function loadFavoriteMetaHotPosts(page = 1) {
+  mhSubtab = 'favorites';
+  setMetaHotSubtabState('favorites');
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading favorites...';
+  const params = new URLSearchParams({
+    page: mhPage,
+    page_size: mhPageSize,
+    sort: favoriteSortValue()
+  });
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/favorites?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">收藏夹暂无视频</div>';
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadFavoriteMetaHotPosts');
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '我的收藏夹');
+}
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
   loadMetaHotPosts(1);
 }
 async function refreshMetaHotPosts() {
   qs('mhStatus').textContent = 'Syncing...';
-  await fetch('/xuanpin/api/meta-hot-posts/refresh', {method:'POST', headers:{'Content-Type':'application/json'}});
+  await fetch('/xuanpin/api/meta-hot-posts/refresh', {method:'POST', headers:metaHotJsonHeaders()});
   loadMetaHotPosts(1);
 }
 async function analyzeMetaHotPosts() {
   qs('mhStatus').textContent = 'Analyzing...';
-  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
+  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
   loadMetaHotPosts(mhPage);
 }
 async function translateMetaHotPostMessages() {
   qs('mhStatus').textContent = '翻译中...';
-  await fetch('/xuanpin/api/meta-hot-posts/translate-messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:50, per_item_delay_seconds:3})});
+  await fetch('/xuanpin/api/meta-hot-posts/translate-messages', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:50, per_item_delay_seconds:3})});
   loadMetaHotPosts(mhPage);
 }
 async function localizeMetaHotPostVideos() {
   qs('mhStatus').textContent = '视频本地化中...';
-  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:30, min_delay_seconds:30})});
+  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:30, min_delay_seconds:30})});
   loadMetaHotPosts(mhPage);
 }
 async function assessEuropeFitMaterials() {
   qs('mhStatus').textContent = '欧洲评估中...';
-  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:10})});
+  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:10})});
   loadEuropeTopMaterials();
 }
 async function analyzeMetaHotPostVideos() {
   qs('mhStatus').textContent = 'Analyzing video...';
-  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit:10})});
+  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:10})});
   await loadUsTopMaterials();
 }
 async function showVideoCopyabilityTop50() {
   return loadUsTopMaterials();
+}
+function setMetaHotFavoriteDisabled(postId, disabled) {
+  document.querySelectorAll(`.mh-favorite-btn[data-post-id="${postId}"]`).forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+function setMetaHotFavoriteState(postId, favorited) {
+  document.querySelectorAll(`.mh-favorite-btn[data-post-id="${postId}"]`).forEach(button => {
+    button.classList.toggle('is-favorited', Boolean(favorited));
+    button.dataset.favorited = favorited ? '1' : '0';
+    button.setAttribute('aria-pressed', favorited ? 'true' : 'false');
+    button.textContent = favorited ? '取消收藏' : '加入收藏夹';
+  });
+  const item = mhItemsById.get(Number(postId));
+  if (item) item.is_favorited = Boolean(favorited);
+}
+function removeFavoriteCardFromCurrentList(postId) {
+  if (mhSubtab !== 'favorites') return;
+  const card = document.querySelector(`.mh-card[data-post-id="${Number(postId)}"]`);
+  if (card) card.remove();
+  mhItemsById.delete(Number(postId));
+  const remaining = document.querySelectorAll('.mh-card').length;
+  if (!remaining) qs('metaHotCardGrid').innerHTML = '<div class="mh-empty">收藏夹暂无视频</div>';
+  qs('mhStatus').textContent = `我的收藏夹 · 当前页 ${remaining} 条视频素材`;
+}
+async function toggleMetaHotPostFavorite(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  if (!postId || button.disabled) return;
+  const previous = button.dataset.favorited === '1';
+  const next = !previous;
+  setMetaHotFavoriteDisabled(postId, true);
+  setMetaHotFavoriteState(postId, next);
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/favorite`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({favorited: next})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'favorite_failed');
+    const serverFavorited = Boolean(data.is_favorited);
+    setMetaHotFavoriteState(postId, serverFavorited);
+    if (!serverFavorited) removeFavoriteCardFromCurrentList(postId);
+    qs('mhStatus').textContent = serverFavorited ? '已加入收藏夹' : '已取消收藏';
+  } catch (err) {
+    setMetaHotFavoriteState(postId, previous);
+    qs('mhStatus').textContent = '收藏夹操作失败';
+  } finally {
+    setMetaHotFavoriteDisabled(postId, false);
+  }
 }
 function markStatusLabel(markStatus) {
   if (markStatus === 'ok') return '行';
@@ -907,7 +1020,7 @@ async function toggleMetaHotPostMark(event, postId, requestedStatus) {
   try {
     const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/mark`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: metaHotJsonHeaders(),
       body: JSON.stringify({mark_status: nextStatus || null})
     });
     const data = await res.json().catch(() => ({}));

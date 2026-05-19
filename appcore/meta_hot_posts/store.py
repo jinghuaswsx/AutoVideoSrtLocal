@@ -87,12 +87,45 @@ def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
     return None
 
 
-def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
+def _favorite_sort_arg(args: Mapping[str, Any]) -> str:
+    value = str(args.get("sort") or "").strip().lower()
+    if value in {"interactions", "interaction", "latest_likes", "likes"}:
+        return "interactions"
+    if value in {"creation_time", "created_at", "post_creation_time", "post_created_at"}:
+        return "creation_time"
+    return "favorited_at"
+
+
+def _favorite_order_sql(sort: str) -> str:
+    if sort == "interactions":
+        return "COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC, fav.id DESC"
+    if sort == "creation_time":
+        return "p.creation_time DESC, fav.created_at DESC, fav.id DESC"
+    return "fav.created_at DESC, fav.id DESC"
+
+
+def _favorite_join(user_id: int | None) -> tuple[str, str, list[Any]]:
+    if not user_id:
+        return "", "NULL AS favorited_at", []
+    return (
+        "LEFT JOIN meta_hot_post_favorites fav ON fav.hot_post_id = p.id AND fav.user_id = %s",
+        "fav.created_at AS favorited_at",
+        [int(user_id)],
+    )
+
+
+def list_hot_posts(
+    args: Mapping[str, Any],
+    *,
+    user_id: int | None = None,
+    query_fn: QueryFn = query,
+) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 30, 10, 100)
     offset = (page - 1) * page_size
     where: list[str] = []
     params: list[Any] = []
+    favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
 
     category = _text_arg(args, "category")
     if category:
@@ -163,6 +196,7 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
@@ -191,11 +225,12 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
+        {favorite_join}
         {where_sql}
         ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
-        list(params + [page_size, offset]),
+        list(favorite_params + params + [page_size, offset]),
     )
     return {
         "items": rows,
@@ -205,15 +240,91 @@ def list_hot_posts(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dic
     }
 
 
-def list_today_new_hot_posts(
+def list_favorite_hot_posts(
     args: Mapping[str, Any] | None = None,
     *,
+    user_id: int,
     query_fn: QueryFn = query,
 ) -> dict[str, Any]:
     args = args or {}
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 100)
     offset = (page - 1) * page_size
+    sort = _favorite_sort_arg(args)
+    order_sql = _favorite_order_sql(sort)
+    actor_id = int(user_id or 0)
+    count_rows = query_fn(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM meta_hot_post_favorites fav
+        WHERE fav.user_id = %s
+        """,
+        [actor_id],
+    )
+    rows = query_fn(
+        f"""
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
+               p.post_url, p.ad_library_url, p.product_url, p.creation_time,
+               p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               fav.created_at AS favorited_at,
+               p.video_url, p.image_url, p.invisible, p.invisible_region,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
+               a.status AS analysis_status,
+               a.product_title, a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               a.last_error, a.analyzed_at,
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
+        FROM meta_hot_post_favorites fav
+        JOIN meta_hot_posts p ON p.id = fav.hot_post_id
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
+        WHERE fav.user_id = %s
+        ORDER BY {order_sql}
+        LIMIT %s OFFSET %s
+        """,
+        [actor_id, page_size, offset],
+    )
+    return {
+        "items": rows,
+        "total": int(count_rows[0]["cnt"] if count_rows else 0),
+        "page": page,
+        "page_size": page_size,
+        "sort": sort,
+    }
+
+
+def list_today_new_hot_posts(
+    args: Mapping[str, Any] | None = None,
+    *,
+    user_id: int | None = None,
+    query_fn: QueryFn = query,
+) -> dict[str, Any]:
+    args = args or {}
+    page = _int_arg(args, "page", 1, 1, 10000)
+    page_size = _int_arg(args, "page_size", 50, 10, 100)
+    offset = (page - 1) * page_size
+    favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
     where_sql = """
         WHERE p.first_seen_at >= CURDATE()
           AND p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
@@ -235,6 +346,7 @@ def list_today_new_hot_posts(
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
@@ -263,11 +375,12 @@ def list_today_new_hot_posts(
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
+        {favorite_join}
         {where_sql}
         ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
-        [page_size, offset],
+        list(favorite_params + [page_size, offset]),
     )
     return {
         "items": rows,
@@ -398,6 +511,35 @@ def set_hot_post_marked(
         mark_status="bad" if marked else None,
         user_id=user_id,
         execute_fn=execute_fn,
+    )
+
+
+def set_hot_post_favorite(
+    post_id: int,
+    *,
+    user_id: int,
+    favorited: bool,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    actor_id = int(user_id or 0)
+    target_id = int(post_id)
+    if actor_id <= 0 or target_id <= 0:
+        return 0
+    if favorited:
+        return execute_fn(
+            """
+            INSERT INTO meta_hot_post_favorites (user_id, hot_post_id)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE created_at=created_at
+            """,
+            (actor_id, target_id),
+        )
+    return execute_fn(
+        """
+        DELETE FROM meta_hot_post_favorites
+        WHERE user_id=%s AND hot_post_id=%s
+        """,
+        (actor_id, target_id),
     )
 
 
@@ -1076,11 +1218,13 @@ def reset_running_video_copyability_analyses(
 def list_top_video_copyability_analyses(
     *,
     limit: int = 50,
+    user_id: int | None = None,
     query_fn: QueryFn = query,
 ) -> list[dict[str, Any]]:
     safe_limit = max(1, min(50, int(limit)))
+    favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
     return query_fn(
-        """
+        f"""
         SELECT va.id AS analysis_id,
                va.hot_post_id AS id,
                va.hot_post_id,
@@ -1113,6 +1257,7 @@ def list_top_video_copyability_analyses(
                p.sync_period_likes,
                p.sync_period_hours,
                p.copycat,
+               {favorite_select},
                p.local_video_duration_seconds,
                p.local_video_cover_path,
                p.local_video_status,
@@ -1132,6 +1277,7 @@ def list_top_video_copyability_analyses(
         FROM meta_hot_post_video_copyability_analyses va
         JOIN meta_hot_posts p ON p.id = va.hot_post_id
         LEFT JOIN meta_hot_post_product_analyses pa ON pa.product_url_hash = p.product_url_hash
+        {favorite_join}
         WHERE va.status = 'done'
         ORDER BY va.overall_score DESC,
                  va.copyability_score DESC,
@@ -1140,7 +1286,7 @@ def list_top_video_copyability_analyses(
                  va.id DESC
         LIMIT %s
         """,
-        (safe_limit,),
+        tuple(favorite_params + [safe_limit]),
     )
 
 
@@ -1325,17 +1471,20 @@ def reset_running_europe_fit_assessments(
 def list_top_europe_fit_materials(
     *,
     limit: int = 50,
+    user_id: int | None = None,
     query_fn: QueryFn = query,
 ) -> list[dict[str, Any]]:
     safe_limit = max(1, min(50, int(limit)))
+    favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
     return query_fn(
-        """
+        f"""
         SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
                p.post_url, p.ad_library_url, p.product_url, p.creation_time,
                p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
                p.raw_json,
@@ -1378,6 +1527,7 @@ def list_top_europe_fit_materials(
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
+        {favorite_join}
         WHERE e.status = 'done'
         ORDER BY e.suitability_score DESC,
                  COALESCE(p.sync_period_likes, 0) DESC,
@@ -1385,7 +1535,7 @@ def list_top_europe_fit_materials(
                  p.id DESC
         LIMIT %s
         """,
-        (safe_limit,),
+        tuple(favorite_params + [safe_limit]),
     )
 
 

@@ -35,6 +35,75 @@ def test_build_list_response_adds_chinese_category_label(monkeypatch):
     assert item["category_l1_zh"] == "家居用品"
 
 
+def test_build_list_response_hydrates_user_favorite_state(monkeypatch):
+    captured = {}
+
+    def fake_list(args, user_id=None):
+        captured["args"] = args
+        captured["user_id"] = user_id
+        return {
+            "items": [
+                {
+                    "id": 7,
+                    "sku_prices_json": "[]",
+                    "favorited_at": "2026-05-19 10:00:00",
+                }
+            ],
+            "total": 1,
+        }
+
+    monkeypatch.setattr(service.store, "list_hot_posts", fake_list)
+
+    payload = service.build_list_response({"page": "1"}, user_id=88).payload
+
+    assert captured["user_id"] == 88
+    item = payload["items"][0]
+    assert item["is_favorited"] is True
+    assert item["favorited_at"] == "2026-05-19 10:00:00"
+
+
+def test_build_favorites_response_lists_current_user_favorites(monkeypatch):
+    captured = {}
+
+    def fake_list(args, user_id=None):
+        captured["args"] = args
+        captured["user_id"] = user_id
+        return {
+            "items": [{"id": 9, "sku_prices_json": "[]", "favorited_at": "2026-05-19"}],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+            "sort": "creation_time",
+        }
+
+    monkeypatch.setattr(service.store, "list_favorite_hot_posts", fake_list)
+
+    result = service.build_favorites_response({"sort": "creation_time"}, user_id=88)
+
+    assert result.status_code == 200
+    assert captured["user_id"] == 88
+    assert result.payload["sort"] == "creation_time"
+    assert result.payload["items"][0]["is_favorited"] is True
+
+
+def test_build_favorite_response_toggles_current_user_favorite(monkeypatch):
+    captured = {}
+
+    def fake_set(post_id, *, user_id, favorited):
+        captured["post_id"] = post_id
+        captured["user_id"] = user_id
+        captured["favorited"] = favorited
+        return 1
+
+    monkeypatch.setattr(service.store, "set_hot_post_favorite", fake_set)
+
+    result = service.build_favorite_response(7, {"favorited": True}, user_id=88)
+
+    assert result.status_code == 200
+    assert result.payload == {"ok": True, "id": 7, "is_favorited": True}
+    assert captured == {"post_id": 7, "user_id": 88, "favorited": True}
+
+
 def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
     monkeypatch.setattr(
         service.store,

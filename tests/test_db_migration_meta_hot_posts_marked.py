@@ -26,6 +26,22 @@ def test_meta_hot_posts_mark_status_migration_adds_two_choice_field():
     assert "is_marked = 1" in body
 
 
+def test_meta_hot_posts_user_favorites_migration_creates_user_scoped_table():
+    body = Path("db/migrations/2026_05_19_meta_hot_posts_user_favorites.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS meta_hot_post_favorites" in body
+    assert "user_id INT NOT NULL" in body
+    assert "hot_post_id BIGINT UNSIGNED NOT NULL" in body
+    assert "UNIQUE KEY uq_meta_hot_post_favorites_user_post" in body
+    assert "KEY idx_meta_hot_post_favorites_user_created" in body
+    assert "KEY idx_meta_hot_post_favorites_post" in body
+    assert "FOREIGN KEY (user_id) REFERENCES users(id)" in body
+    assert "FOREIGN KEY (hot_post_id) REFERENCES meta_hot_posts(id)" in body
+    assert "docs/superpowers/specs/2026-05-19-meta-hot-posts-user-favorites-design.md" in body
+
+
 def test_meta_hot_posts_message_translation_migration_adds_cached_chinese_fields():
     body = Path("db/migrations/2026_05_14_meta_hot_posts_message_translation.sql").read_text(
         encoding="utf-8"

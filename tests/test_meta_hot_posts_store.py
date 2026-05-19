@@ -161,6 +161,77 @@ def test_set_hot_post_mark_status_updates_local_mark_audit_fields():
     assert params == ("bad", 1, 1, 1, 88, 123)
 
 
+def test_set_hot_post_favorite_inserts_and_deletes_by_user():
+    calls = []
+
+    store.set_hot_post_favorite(
+        7,
+        user_id=88,
+        favorited=True,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.set_hot_post_favorite(
+        7,
+        user_id=88,
+        favorited=False,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    insert_sql, insert_params = calls[0]
+    delete_sql, delete_params = calls[1]
+    assert "INSERT INTO meta_hot_post_favorites" in insert_sql
+    assert "user_id, hot_post_id" in insert_sql
+    assert "ON DUPLICATE KEY UPDATE" in insert_sql
+    assert insert_params == (88, 7)
+    assert "DELETE FROM meta_hot_post_favorites" in delete_sql
+    assert "WHERE user_id=%s AND hot_post_id=%s" in delete_sql
+    assert delete_params == (88, 7)
+
+
+def test_list_hot_posts_hydrates_user_favorite_state_when_user_id_given():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 1}]
+        return [{"id": 7, "favorited_at": "2026-05-19 10:00:00"}]
+
+    payload = store.list_hot_posts({}, user_id=88, query_fn=fake_query)
+
+    data_sql, data_params = calls[-1]
+    assert payload["items"][0]["favorited_at"] == "2026-05-19 10:00:00"
+    assert "LEFT JOIN meta_hot_post_favorites fav" in data_sql
+    assert "fav.hot_post_id = p.id AND fav.user_id = %s" in data_sql
+    assert "fav.created_at AS favorited_at" in data_sql
+    assert data_params == [88, 30, 0]
+
+
+def test_list_favorite_hot_posts_sorts_by_user_choice():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 2}]
+        return [{"id": 9, "favorited_at": "2026-05-19 09:00:00"}]
+
+    payload = store.list_favorite_hot_posts(
+        {"sort": "interactions", "page": "2", "page_size": "20"},
+        user_id=88,
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert payload["total"] == 2
+    assert payload["items"][0]["id"] == 9
+    assert "FROM meta_hot_post_favorites fav" in data_sql
+    assert "JOIN meta_hot_posts p ON p.id = fav.hot_post_id" in data_sql
+    assert "WHERE fav.user_id = %s" in data_sql
+    assert "ORDER BY COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC" in data_sql
+    assert data_params == [88, 20, 20]
+
+
 def test_next_pending_message_translations_selects_untranslated_rows():
     calls = []
 
