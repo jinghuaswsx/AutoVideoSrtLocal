@@ -64,6 +64,7 @@ def build_detail_translate_task_payload(
     model_id: str,
     concurrency_mode: str,
     compose_project_name: Callable[[str, str, str], str],
+    channel: str = "",
 ) -> DetailTranslateTaskPayload:
     task_id = uuid.uuid4().hex
     task_dir = os.path.join(output_dir, task_id)
@@ -107,6 +108,7 @@ def build_detail_translate_task_payload(
             "project_name": compose_project_name(product_name, "detail", target_language_name),
             "medias_context": medias_context,
             "concurrency_mode": concurrency_mode,
+            "channel": (channel or "").strip().lower(),
         },
     )
 
@@ -129,6 +131,7 @@ def build_detail_translate_from_en_response(
     compose_project_name_fn: Callable[[str, str, str], str],
     create_image_translate_fn: Callable[..., object],
     start_image_translate_runner_fn: Callable[[str, int], object],
+    default_channel_fn: Callable[[], str] | None = None,
 ) -> DetailTranslateFromEnOutcome:
     if is_product_listed_fn is not None and not is_product_listed_fn(product):
         return DetailTranslateFromEnOutcome(
@@ -187,6 +190,7 @@ def build_detail_translate_from_en_response(
         source_rows=translatable_rows,
         model_id=str(body_dict.get("model_id") or "").strip() or default_model_id_fn(),
         concurrency_mode=mode,
+        channel=default_channel_fn() if default_channel_fn is not None else "",
         compose_project_name=compose_project_name_fn,
     )
     create_image_translate_fn(
