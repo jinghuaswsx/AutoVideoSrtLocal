@@ -359,7 +359,12 @@ def cache_product_main_image(
         payload.extend(chunk)
         if len(payload) > max_image_bytes:
             raise ValueError("product main image too large (>15MB)")
-    write_bytes_fn(object_key, bytes(payload))
+    try:
+        write_bytes_fn(object_key, bytes(payload))
+    except Exception:
+        if storage_exists_fn(object_key):
+            return object_key
+        raise
     return object_key
 
 
