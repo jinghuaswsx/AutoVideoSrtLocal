@@ -295,6 +295,17 @@
     var delBtn = document.getElementById("itDelete");
     var retryUnfinishedBtn = document.getElementById("itRetryUnfinished");
     var backfillImagesBtn = document.getElementById("itBackfillImages");
+    var rerunBtn = document.getElementById("itRerunChannel");
+    var rerunModal = document.getElementById("itChannelRerunModal");
+    var rerunChannelPills = document.getElementById("itRerunChannelPills");
+    var rerunModelPills = document.getElementById("itRerunModelPills");
+    var rerunConcurrencyPills = document.getElementById("itRerunConcurrencyPills");
+    var rerunChannelValue = document.getElementById("itRerunChannelValue");
+    var rerunModelValue = document.getElementById("itRerunModelValue");
+    var rerunConcurrencyValue = document.getElementById("itRerunConcurrencyValue");
+    var rerunSubmit = document.getElementById("itRerunSubmit");
+    var rerunError = document.getElementById("itRerunError");
+    var currentState = window.imageTranslateBootstrap || {};
 
     function textDetectBadge(it){
       var status = it.text_detect_status || "pending";
@@ -345,6 +356,150 @@
       appendBadge(meta, textDetectBadge(it), "it-meta-chip it-meta-chip--detect");
       appendBadge(meta, resultSourceBadge(it), "it-meta-chip it-meta-chip--source");
       container.appendChild(meta);
+    }
+
+    function setRerunError(message){
+      if (!rerunError) return;
+      rerunError.textContent = message || "";
+      rerunError.hidden = !message;
+    }
+
+    function setRerunPillActive(groupEl, value){
+      if (!groupEl) return;
+      groupEl.querySelectorAll(".it-pill").forEach(function(btn){
+        var active = btn.getAttribute("data-value") === value;
+        btn.classList.toggle("is-active", active);
+        btn.setAttribute("aria-checked", active ? "true" : "false");
+      });
+    }
+
+    function renderRerunPills(groupEl, items, selectedValue){
+      if (!groupEl) return;
+      groupEl.innerHTML = "";
+      (items || []).forEach(function(item, idx){
+        var value = item.id || item.value || "";
+        var label = item.name || item.label || value;
+        var selected = value === selectedValue || (!selectedValue && idx === 0);
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "it-pill" + (selected ? " is-active" : "");
+        btn.setAttribute("role", "radio");
+        btn.setAttribute("aria-checked", selected ? "true" : "false");
+        btn.setAttribute("data-value", value);
+        btn.textContent = label;
+        groupEl.appendChild(btn);
+      });
+    }
+
+    function bindRerunPillGroup(groupEl, hiddenInput, onChange){
+      if (!groupEl || !hiddenInput) return;
+      groupEl.addEventListener("click", function(ev){
+        var btn = ev.target.closest(".it-pill");
+        if (!btn || btn.disabled) return;
+        var value = btn.getAttribute("data-value") || "";
+        if (!value || hiddenInput.value === value) return;
+        hiddenInput.value = value;
+        setRerunPillActive(groupEl, value);
+        if (onChange) onChange(value);
+      });
+    }
+
+    function enforceRerunConcurrency(channel){
+      if (!rerunConcurrencyPills || !rerunConcurrencyValue) return;
+      var parallelBtn = rerunConcurrencyPills.querySelector('[data-value="parallel"]');
+      if (parallelBtn) {
+        parallelBtn.disabled = channel !== "apimart";
+        parallelBtn.title = channel === "apimart" ? "" : "只有 APIMART 可以并行";
+      }
+      if (channel !== "apimart" && rerunConcurrencyValue.value === "parallel") {
+        rerunConcurrencyValue.value = "sequential";
+      }
+      if (!rerunConcurrencyValue.value) rerunConcurrencyValue.value = "sequential";
+      setRerunPillActive(rerunConcurrencyPills, rerunConcurrencyValue.value);
+    }
+
+    function loadRerunModels(){
+      if (!rerunChannelValue || !rerunModelPills || !rerunModelValue) return Promise.resolve();
+      var channel = rerunChannelValue.value || "";
+      if (rerunSubmit) rerunSubmit.disabled = true;
+      setRerunError("");
+      return fetch("/api/image-translate/models?channel=" + encodeURIComponent(channel), {credentials:"same-origin"})
+        .then(parseJsonResponse)
+        .then(function(res){
+          if (!res.ok) {
+            renderRerunPills(rerunModelPills, [], "");
+            rerunModelValue.value = "";
+            setRerunError((res.body && res.body.error) || "模型列表加载失败");
+            return;
+          }
+          var body = res.body || {};
+          var models = body.items || [];
+          var currentModel = (currentState && currentState.model_id) || "";
+          var selected = models.some(function(item){ return item.id === currentModel; })
+            ? currentModel
+            : (body.default_model_id || (models[0] && models[0].id) || "");
+          rerunModelValue.value = selected;
+          renderRerunPills(rerunModelPills, models, selected);
+        })
+        .catch(function(){
+          renderRerunPills(rerunModelPills, [], "");
+          rerunModelValue.value = "";
+          setRerunError("模型列表加载失败");
+        })
+        .finally(function(){
+          if (rerunSubmit) rerunSubmit.disabled = !rerunModelValue.value;
+        });
+    }
+
+    function openRerunModal(){
+      if (!rerunModal) return;
+      currentState = currentState || window.imageTranslateBootstrap || {};
+      var channel = currentState.channel || "apimart";
+      var mode = currentState.concurrency_mode || "sequential";
+      rerunChannelValue.value = channel;
+      rerunModelValue.value = currentState.model_id || "";
+      rerunConcurrencyValue.value = mode;
+      renderRerunPills(rerunChannelPills, window.imageTranslateChannels || [], channel);
+      enforceRerunConcurrency(channel);
+      setRerunError("");
+      rerunModal.hidden = false;
+      loadRerunModels();
+    }
+
+    function closeRerunModal(){
+      if (rerunModal) rerunModal.hidden = true;
+    }
+
+    function submitRerunWithChannel(){
+      if (!rerunSubmit) return;
+      var channel = rerunChannelValue.value || "";
+      enforceRerunConcurrency(channel);
+      var payload = {
+        channel: channel,
+        model_id: rerunModelValue.value || "",
+        concurrency_mode: rerunConcurrencyValue.value || "sequential"
+      };
+      rerunSubmit.disabled = true;
+      fetch("/api/image-translate/" + taskId + "/rerun-unfinished", {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      })
+        .then(parseJsonResponse)
+        .then(function(res){
+          if (!res.ok) {
+            setRerunError((res.body && res.body.error) || "换通道重跑失败");
+            rerunSubmit.disabled = false;
+            return;
+          }
+          closeRerunModal();
+          refresh();
+        })
+        .catch(function(){
+          setRerunError("网络错误，稍后再试");
+          rerunSubmit.disabled = false;
+        });
     }
 
     function renderItems(state){
@@ -480,10 +635,35 @@
       document.getElementById("itMediasApplyStatus").textContent = describeMediasApplyStatus(ctx);
     };
 
+    function renderTaskMeta(state){
+      if (!state) return;
+      var modelEl = document.getElementById("itMetaModel");
+      if (modelEl) modelEl.textContent = state.model_id || "";
+      var modeEl = document.getElementById("itMetaConcurrencyMode");
+      if (modeEl) {
+        var mode = state.concurrency_mode || "sequential";
+        modeEl.textContent = state.concurrency_mode_label || (mode === "parallel" ? "并行" : "串行");
+        modeEl.setAttribute("data-concurrency-mode", mode);
+        modeEl.className = "it-pill it-mode-pill is-active is-" + mode;
+      }
+      var channelEl = document.getElementById("itMetaChannel");
+      if (channelEl) {
+        var channel = state.channel || "";
+        channelEl.textContent = state.channel_label || channel;
+        channelEl.className = "chip chip--backend is-" + channel;
+      }
+      if (rerunBtn) {
+        rerunBtn.disabled = state.is_running === true;
+        rerunBtn.title = state.is_running === true ? "任务正在跑，等跑完再换通道重跑" : "";
+      }
+    }
+
     function renderAll(state){
-      window.renderImageTranslateMediasContext(state);
-      renderItems(state);
-      renderProgress(state);
+      currentState = state || currentState || {};
+      renderTaskMeta(currentState);
+      window.renderImageTranslateMediasContext(currentState);
+      renderItems(currentState);
+      renderProgress(currentState);
     }
 
     function refresh(){
@@ -520,6 +700,22 @@
           refresh();
         })
         .catch(function(){ alert("网络错误，稍后再试"); });
+    }
+
+    bindRerunPillGroup(rerunChannelPills, rerunChannelValue, function(channel){
+      enforceRerunConcurrency(channel);
+      loadRerunModels();
+    });
+    bindRerunPillGroup(rerunModelPills, rerunModelValue);
+    bindRerunPillGroup(rerunConcurrencyPills, rerunConcurrencyValue, function(){
+      enforceRerunConcurrency(rerunChannelValue && rerunChannelValue.value);
+    });
+    if (rerunBtn) rerunBtn.onclick = openRerunModal;
+    if (rerunSubmit) rerunSubmit.onclick = submitRerunWithChannel;
+    if (rerunModal) {
+      rerunModal.querySelectorAll("[data-rerun-close]").forEach(function(el){
+        el.addEventListener("click", closeRerunModal);
+      });
     }
 
     if (backfillImagesBtn) {

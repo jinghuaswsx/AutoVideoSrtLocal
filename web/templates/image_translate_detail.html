@@ -4,6 +4,7 @@
 {% block content %}
 <script>
   window.imageTranslateBootstrap = {{ state | tojson }};
+  window.imageTranslateChannels = {{ image_translate_channels | tojson }};
 </script>
 <div class="it-shell" data-page="image-translate-detail" data-task-id="{{ task_id }}">
 
@@ -26,9 +27,10 @@
           {{ state.concurrency_mode_label or ('并行' if state.concurrency_mode == 'parallel' else '串行') }}
         </span>
       </div>
-      <div>
+      <div class="it-current-channel-cell">
         <label>当前通道</label>
-        <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
+        <span id="itMetaChannel" class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
+        <button id="itRerunChannel" class="btn btn-primary it-rerun-channel-btn" type="button">换通道重跑</button>
       </div>
     </div>
     <details class="it-prompt-snapshot" style="margin-top:12px">
@@ -69,6 +71,38 @@
       <button id="itDelete" class="btn btn-danger" style="margin-left:8px">删除任务</button>
     </div>
   </section>
+
+  <div id="itChannelRerunModal" class="it-rerun-modal" hidden>
+    <div class="it-rerun-modal__backdrop" data-rerun-close></div>
+    <div class="it-rerun-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="itRerunTitle">
+      <h3 id="itRerunTitle">换通道重跑</h3>
+      <p class="it-rerun-note">只会清空没有成功结果的行，已成功图片保持不变。</p>
+      <div class="it-rerun-step">
+        <label>供应商</label>
+        <div id="itRerunChannelPills" class="it-pill-group"></div>
+        <input id="itRerunChannelValue" type="hidden" value="{{ state.channel }}">
+      </div>
+      <div class="it-rerun-step">
+        <label>模型</label>
+        <div id="itRerunModelPills" class="it-pill-group"></div>
+        <input id="itRerunModelValue" type="hidden" value="{{ state.model_id }}">
+      </div>
+      <div class="it-rerun-step">
+        <label>处理模式</label>
+        <div id="itRerunConcurrencyPills" class="it-pill-group">
+          <button type="button" class="it-pill" role="radio" data-value="sequential">串行</button>
+          <button type="button" class="it-pill" role="radio" data-value="parallel">并行</button>
+        </div>
+        <input id="itRerunConcurrencyValue" type="hidden" value="{{ state.concurrency_mode or 'sequential' }}">
+        <p id="itRerunConcurrencyHint" class="it-rerun-hint">只有 APIMART 可以并行，其他供应商只能串行。</p>
+      </div>
+      <div id="itRerunError" class="inline-error" hidden></div>
+      <div class="it-rerun-actions">
+        <button id="itRerunCancel" class="btn" type="button" data-rerun-close>取消</button>
+        <button id="itRerunSubmit" class="btn btn-primary" type="button">重跑未成功图片</button>
+      </div>
+    </div>
+  </div>
 
 </div>
 {% include "_image_translate_styles.html" %}

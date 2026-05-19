@@ -162,6 +162,83 @@ def test_runtime_passes_task_channel_through_generate_image(tmp_path):
     assert gen.call_args.kwargs["channel"] == "doubao"
 
 
+def test_runtime_passes_two_minute_timeout_to_image_generation(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"IMG-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as gen:
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert gen.call_args.kwargs["timeout_seconds"] == 120
+
+
+def test_runtime_image_generation_timeout_fails_without_retry(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+    from appcore.gemini_image import GeminiImageTimeout
+
+    task = _fake_task([_item(0)])
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"IMG-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=GeminiImageTimeout("图片翻译请求超过 120s，已中断")) as gen:
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert gen.call_count == 1
+    assert task["items"][0]["attempts"] == 1
+    assert task["items"][0]["status"] == "failed"
+    assert "120s" in task["items"][0]["error"]
+
+
+def test_runtime_apimart_resume_timeout_fails_without_resubmit(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+    from appcore.gemini_image import GeminiImageTimeout
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["model_id"] = "gpt-image-2"
+    task["items"][0]["provider_task_id"] = "apimart-existing"
+    task["items"][0]["provider_task_submitted_at"] = 1.0
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"IMG-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="KEY"), \
+         patch.object(rt.gemini_image, "poll_apimart_task",
+                      side_effect=GeminiImageTimeout("APIMART 图片翻译请求超过 120s，已中断")) as poll, \
+         patch.object(rt.gemini_image, "generate_image",
+                      side_effect=AssertionError("timeout should not resubmit")) as gen:
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert poll.call_args.kwargs["timeout_seconds"] == 120
+    assert gen.call_count == 0
+    assert task["items"][0]["attempts"] == 1
+    assert task["items"][0]["status"] == "failed"
+    assert "120s" in task["items"][0]["error"]
+
+
 def test_runtime_skips_gif_source_without_text_detection_or_generate(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
