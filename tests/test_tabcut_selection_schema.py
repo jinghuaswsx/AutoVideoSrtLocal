@@ -49,6 +49,21 @@ def test_tabcut_video_candidate_video_id_dedup_migration_keeps_earliest_record()
     assert "UNIQUE KEY" in sql
 
 
+def test_tabcut_mark_status_migration_adds_video_and_goods_annotations():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_05_19_tabcut_mark_status.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER TABLE tabcut_videos" in sql
+    assert "ALTER TABLE tabcut_goods" in sql
+    assert "ADD COLUMN is_marked TINYINT(1) NOT NULL DEFAULT 0" in sql
+    assert "ADD COLUMN mark_status VARCHAR(16) NULL" in sql
+    assert "ADD COLUMN marked_at DATETIME DEFAULT NULL" in sql
+    assert "ADD COLUMN marked_by INT DEFAULT NULL" in sql
+    assert "idx_tabcut_videos_mark_status" in sql
+    assert "idx_tabcut_goods_mark_status" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

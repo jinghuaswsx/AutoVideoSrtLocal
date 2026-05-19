@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flask import jsonify, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from appcore.tabcut_selection import service
 from tools.tabcut_crawler.runner import collect_recent7
@@ -53,6 +53,38 @@ def api_tabcut_selection_refresh():
         return _json_response(service.build_admin_required_response())
     body = request.get_json(silent=True) or {}
     return _json_response(service.build_tabcut_refresh_response(body, runner_fn=_start_refresh))
+
+
+@bp.route("/api/tabcut-selection/videos/<path:video_id>/mark", methods=["POST"])
+@login_required
+def api_tabcut_selection_video_mark(video_id: str):
+    if not _routes_module()._is_admin():
+        return _json_response(service.build_admin_required_response())
+    body = request.get_json(silent=True) or {}
+    return _json_response(
+        service.build_mark_response(
+            "video",
+            video_id,
+            body,
+            user_id=getattr(current_user, "id", None),
+        )
+    )
+
+
+@bp.route("/api/tabcut-selection/goods/<path:item_id>/mark", methods=["POST"])
+@login_required
+def api_tabcut_selection_goods_mark(item_id: str):
+    if not _routes_module()._is_admin():
+        return _json_response(service.build_admin_required_response())
+    body = request.get_json(silent=True) or {}
+    return _json_response(
+        service.build_mark_response(
+            "goods",
+            item_id,
+            body,
+            user_id=getattr(current_user, "id", None),
+        )
+    )
 
 
 def _start_refresh(*, biz_date: str | None, target_date: str | None, days: int = 30) -> dict:

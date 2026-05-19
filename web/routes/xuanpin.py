@@ -219,6 +219,18 @@ def api_tabcut_refresh():
     return _tabcut_routes().api_tabcut_selection_refresh()
 
 
+@bp.route("/api/tabcut/videos/<path:video_id>/mark", methods=["POST"])
+@login_required
+def api_tabcut_video_mark(video_id: str):
+    return _tabcut_routes().api_tabcut_selection_video_mark(video_id)
+
+
+@bp.route("/api/tabcut/goods/<path:item_id>/mark", methods=["POST"])
+@login_required
+def api_tabcut_goods_mark(item_id: str):
+    return _tabcut_routes().api_tabcut_selection_goods_mark(item_id)
+
+
 @bp.route("/api/meta-hot-posts", methods=["GET"])
 @login_required
 def api_meta_hot_posts():

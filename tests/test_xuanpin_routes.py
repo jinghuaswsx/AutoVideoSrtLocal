@@ -133,10 +133,14 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert '<input class="tabcut-input" id="maxPrice" type="number"' in body
     assert '<input class="tabcut-input" id="minGoodsSales" type="number"' in body
     assert '<input class="tabcut-input" id="maxGoodsSales" type="number"' in body
+    assert 'id="markStatus"' in body
+    assert '<option value="ok">行</option>' in body
+    assert '<option value="bad">不行</option>' in body
     assert 'params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value)' in body
     assert 'params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value)' in body
     assert 'params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value)' in body
     assert 'params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value)' in body
+    assert 'params.set("mark_status", qs("markStatus").value)' in body
     assert "tabcut-video-grid" in body
 
 
@@ -391,6 +395,34 @@ def test_xuanpin_tabcut_categories_api_alias_delegates(authed_client_no_db, monk
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"value": "Beauty", "label": "Beauty"}]
+
+
+def test_xuanpin_tabcut_mark_api_alias_delegates(authed_client_no_db, monkeypatch):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    captured = {}
+
+    def fake_build(entity_type, entity_id, payload, *, user_id=None):
+        captured.update({"entity_type": entity_type, "entity_id": entity_id, "payload": payload})
+        return TabcutResponse({"ok": True, "mark_status": "ok"})
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.service.build_mark_response",
+        fake_build,
+    )
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/tabcut/videos/v1/mark",
+        json={"mark_status": "ok"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["mark_status"] == "ok"
+    assert captured == {
+        "entity_type": "video",
+        "entity_id": "v1",
+        "payload": {"mark_status": "ok"},
+    }
 
 
 def test_xuanpin_new_product_api_alias_delegates(authed_client_no_db, monkeypatch):

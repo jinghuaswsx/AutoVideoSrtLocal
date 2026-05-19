@@ -8,6 +8,10 @@ from .categories import goods_category_for_source
 from . import store
 
 
+MARK_STATUS_OK = "ok"
+MARK_STATUS_BAD = "bad"
+
+
 @dataclass(frozen=True)
 class TabcutResponse:
     payload: dict[str, Any]
@@ -24,6 +28,60 @@ def build_goods_response(args: Mapping[str, Any]) -> TabcutResponse:
 
 def build_category_options_response(args: Mapping[str, Any]) -> TabcutResponse:
     return TabcutResponse({"items": store.list_category_options(args)})
+
+
+def _bool_payload(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "checked", "marked"}
+    return False
+
+
+def _normalize_mark_status(value: Any) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {MARK_STATUS_OK, "pass", "yes", "行"}:
+        return MARK_STATUS_OK
+    if raw in {MARK_STATUS_BAD, "fail", "no", "不行"}:
+        return MARK_STATUS_BAD
+    return None
+
+
+def build_mark_response(
+    entity_type: str,
+    entity_id: str,
+    payload: Mapping[str, Any] | None,
+    *,
+    user_id: Any = None,
+) -> TabcutResponse:
+    normalized_type = str(entity_type or "").strip().lower()
+    normalized_id = str(entity_id or "").strip()
+    if normalized_type not in {"video", "goods"}:
+        return TabcutResponse({"ok": False, "error": "invalid_entity_type"}, 400)
+    if not normalized_id:
+        return TabcutResponse({"ok": False, "error": "missing_entity_id"}, 400)
+
+    payload = payload or {}
+    if "mark_status" in payload or "status" in payload:
+        mark_status = _normalize_mark_status(payload.get("mark_status", payload.get("status")))
+    else:
+        mark_status = MARK_STATUS_BAD if _bool_payload(payload.get("marked")) else None
+
+    if normalized_type == "video":
+        store.set_video_mark_status(normalized_id, mark_status=mark_status, user_id=user_id)
+    else:
+        store.set_goods_mark_status(normalized_id, mark_status=mark_status, user_id=user_id)
+    return TabcutResponse(
+        {
+            "ok": True,
+            "entity_type": normalized_type,
+            "entity_id": normalized_id,
+            "mark_status": mark_status,
+            "is_marked": bool(mark_status),
+        }
+    )
 
 
 def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:

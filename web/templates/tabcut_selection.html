@@ -4,7 +4,7 @@
 {% block extra_style %}
 {% include "_xuanpin_tabs_style.html" %}
 .tabcut-page { color:#1f2937; }
-.tabcut-toolbar { display:grid; grid-template-columns:repeat(9, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-toolbar { display:grid; grid-template-columns:repeat(10, minmax(118px, 1fr)) auto; gap:10px; align-items:end; padding:14px; margin-bottom:14px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-field label { display:block; margin-bottom:5px; color:#64748b; font-size:12px; font-weight:700; }
 .tabcut-input, .tabcut-select { width:100%; height:34px; padding:0 9px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; }
 .tabcut-range-field { grid-column:span 2; min-width:210px; }
@@ -43,6 +43,13 @@
 .tabcut-product-mini img, .tabcut-product-img-empty { width:52px; height:52px; border-radius:6px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
 .tabcut-product-title { min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#334155; font-size:12px; line-height:1.25; }
 .tabcut-product-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:#475569; font-size:10px; font-weight:700; }
+.tabcut-mark-options { display:flex; align-items:center; gap:10px; min-height:26px; }
+.tabcut-mark-option { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:12px; font-weight:800; cursor:pointer; }
+.tabcut-mark-option.bad { color:#dc2626; }
+.tabcut-mark-option:disabled { opacity:.65; cursor:wait; }
+.tabcut-mark-box { width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #94a3b8; border-radius:3px; background:#fff; color:#fff; line-height:1; }
+.tabcut-mark-option.is-marked .tabcut-mark-box { border-color:#0f766e; background:#0f766e; }
+.tabcut-mark-option.is-marked .tabcut-mark-box::after { content:"✓"; color:#fff; font-size:13px; font-weight:800; }
 .tabcut-table-wrap { overflow-x:auto; background:#fff; }
 .tabcut-table { width:100%; min-width:1400px; border-collapse:collapse; font-size:13px; }
 .tabcut-table th { position:sticky; top:0; padding:10px; border-bottom:1px solid #d8dee8; background:#f8fafc; color:#64748b; text-align:left; white-space:nowrap; }
@@ -85,6 +92,15 @@
         {% for category in tabcut_goods_categories %}
         <option value="{{ category.id }}">{{ category.label }}</option>
         {% endfor %}
+      </select>
+    </div>
+    <div class="tabcut-field">
+      <label for="markStatus">标注</label>
+      <select class="tabcut-select" id="markStatus">
+        <option value="">全部</option>
+        <option value="empty">空</option>
+        <option value="ok">行</option>
+        <option value="bad">不行</option>
       </select>
     </div>
     <div class="tabcut-field">
@@ -259,6 +275,31 @@ function renderProductMini(row) {
     ? `<a class="tabcut-product-mini" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Open TikTok product">${inner}</a>`
     : `<div class="tabcut-product-mini">${inner}</div>`;
 }
+function isTabcutMarked(row) {
+  return row.is_marked === true || row.is_marked === 1 || row.is_marked === "1";
+}
+function tabcutMarkStatus(row) {
+  const status = String(row.mark_status || "").toLowerCase();
+  if (status === "ok" || status === "bad") return status;
+  return isTabcutMarked(row) ? "bad" : "";
+}
+function markStatusLabel(markStatus) {
+  if (markStatus === "ok") return "行";
+  if (markStatus === "bad") return "不行";
+  return "";
+}
+function renderMarkOption(entityType, entityId, currentStatus, status, label) {
+  const marked = currentStatus === status;
+  const toneClass = status === "bad" ? " bad" : "";
+  const stateClass = marked ? " is-marked" : "";
+  return `<button class="tabcut-mark-option${toneClass}${stateClass}" type="button" data-entity-type="${esc(entityType)}" data-entity-id="${esc(entityId)}" data-mark-status="${status}" aria-pressed="${marked ? "true" : "false"}" onclick="toggleTabcutMark(event)"><span class="tabcut-mark-box" aria-hidden="true"></span><span>${label}</span></button>`;
+}
+function renderMarkOptions(row, entityType = "video") {
+  const entityId = entityType === "goods" ? row.item_id : row.video_id;
+  if (!entityId) return "";
+  const currentStatus = tabcutMarkStatus(row);
+  return `<div class="tabcut-mark-options" data-entity-type="${esc(entityType)}" data-entity-id="${esc(entityId)}" data-mark-status="${currentStatus}" aria-label="标注结果">${renderMarkOption(entityType, entityId, currentStatus, "ok", "行")}${renderMarkOption(entityType, entityId, currentStatus, "bad", "不行")}</div>`;
+}
 function renderVideoCard(row) {
   return `
     <article class="tabcut-video-card">
@@ -270,6 +311,7 @@ function renderVideoCard(row) {
         <span class="tabcut-tags">${renderTags(row)}</span>
       </div>
         <div class="tabcut-publish">发布时间：${esc(formatDateTime(row.create_time))}</div>
+        ${renderMarkOptions(row)}
         <div class="tabcut-stats">
           <div><div class="tabcut-stat-label">播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
           <div><div class="tabcut-stat-label">获赞数</div><div class="tabcut-stat-value">${fmtCompact(row.like_count)}</div></div>
@@ -313,6 +355,7 @@ function paramsFor(page) {
   if (qs("minGmv").value) params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
   if (qs("minPrice").value) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value);
   if (qs("maxPrice").value) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value);
+  if (qs("markStatus").value) params.set("mark_status", qs("markStatus").value);
   return params;
 }
 
@@ -342,12 +385,13 @@ function renderTabcut(data) {
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
-    qs("tabcutHead").innerHTML = "<tr><th></th><th>#</th><th>商品</th><th>数据日期</th><th>采集类目</th><th>原始类目</th><th class='tabcut-num'>销量</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>关联视频</th></tr>";
+    qs("tabcutHead").innerHTML = "<tr><th></th><th>#</th><th>商品</th><th>标注</th><th>数据日期</th><th>采集类目</th><th>原始类目</th><th class='tabcut-num'>销量</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>关联视频</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
         <td>${row.item_pic_url ? `<a href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt=""></a>` : ""}</td>
         <td>${(data.page - 1) * data.page_size + idx + 1}</td>
         <td class="tabcut-name"><a class="tabcut-product-link" href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><strong>${esc(row.item_name)}</strong></a><div class="tabcut-muted">${esc(row.item_id)}</div></td>
+        <td>${renderMarkOptions(row, "goods")}</td>
         <td>${esc(row.biz_date || "")}</td>
         <td>${esc(row.source_category_label || "")}</td>
         <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
@@ -355,7 +399,7 @@ function renderTabcut(data) {
         <td class="tabcut-num">${fmtMoney(row.gmv_7d || row.gmv_period)}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_total)}</td>
         <td class="tabcut-num">${fmtInt(row.related_video_count)}</td>
-      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='10'>No data</td></tr>";
+      </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='11'>No data</td></tr>";
   }
   renderPager(data);
 }
@@ -368,8 +412,71 @@ function renderPager(data) {
     <button class="tabcut-btn secondary" ${data.page >= totalPages ? "disabled" : ""} onclick="loadTabcut(${data.page + 1})">Next</button>`;
 }
 
+function matchingMarkElements(selector, entityType, entityId) {
+  return Array.from(document.querySelectorAll(selector)).filter(el => (
+    el.dataset.entityType === entityType && el.dataset.entityId === entityId
+  ));
+}
+function setTabcutMarkState(entityType, entityId, markStatus) {
+  matchingMarkElements(".tabcut-mark-options", entityType, entityId).forEach(group => {
+    group.dataset.markStatus = markStatus || "";
+  });
+  matchingMarkElements(".tabcut-mark-option", entityType, entityId).forEach(button => {
+    const selected = button.dataset.markStatus === markStatus;
+    button.classList.toggle("is-marked", Boolean(selected));
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+}
+function setTabcutMarkDisabled(entityType, entityId, disabled) {
+  matchingMarkElements(".tabcut-mark-option", entityType, entityId).forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+function tabcutMarkEndpoint(entityType, entityId) {
+  if (entityType === "goods") {
+    return `/xuanpin/api/tabcut/goods/${encodeURIComponent(entityId)}/mark`;
+  }
+  return `/xuanpin/api/tabcut/videos/${encodeURIComponent(entityId)}/mark`;
+}
+function tabcutJsonHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "X-CSRFToken": document.querySelector('meta[name="csrf-token"]')?.content || ""
+  };
+}
+async function toggleTabcutMark(event) {
+  const button = event.currentTarget;
+  const entityType = button.dataset.entityType || "video";
+  const entityId = button.dataset.entityId || "";
+  const requestedStatus = button.dataset.markStatus || "";
+  if (!entityId || button.disabled) return;
+  const group = button.closest(".tabcut-mark-options");
+  const previousStatus = group ? group.dataset.markStatus || "" : "";
+  const nextStatus = previousStatus === requestedStatus ? "" : requestedStatus;
+  setTabcutMarkDisabled(entityType, entityId, true);
+  setTabcutMarkState(entityType, entityId, nextStatus);
+  try {
+    const res = await fetch(tabcutMarkEndpoint(entityType, entityId), {
+      method: "POST",
+      headers: tabcutJsonHeaders(),
+      body: JSON.stringify({mark_status: nextStatus || null})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || "mark_failed");
+    const serverStatus = data.mark_status || "";
+    setTabcutMarkState(entityType, entityId, serverStatus);
+    const label = markStatusLabel(serverStatus);
+    qs("tabcutStatus").textContent = label ? `已标注：${label}` : "已取消标注";
+  } catch (err) {
+    setTabcutMarkState(entityType, entityId, previousStatus);
+    qs("tabcutStatus").textContent = "标注失败";
+  } finally {
+    setTabcutMarkDisabled(entityType, entityId, false);
+  }
+}
+
 function resetTabcut() {
-  ["categoryL1", "sourceCategory", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
+  ["categoryL1", "sourceCategory", "markStatus", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }

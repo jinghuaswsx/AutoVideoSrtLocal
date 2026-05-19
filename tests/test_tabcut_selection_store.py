@@ -167,6 +167,40 @@ def test_list_video_candidates_filters_by_goods_sales_range():
     assert data_params[:3] == ["US", 50, 500]
 
 
+def test_list_video_candidates_filters_by_mark_status_and_selects_mark_fields():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"mark_status": "ok"}, query_fn=fake_query)
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert "v.mark_status = %s" in count_sql
+    assert "v.mark_status = %s" in data_sql
+    assert "v.is_marked" in data_sql
+    assert "v.mark_status" in data_sql
+    assert count_params[:2] == ["US", "ok"]
+    assert data_params[:2] == ["US", "ok"]
+
+
+def test_list_video_candidates_filters_by_empty_mark_status():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({"mark_status": "empty"}, query_fn=fake_query)
+
+    data_sql, data_params = calls[-1]
+    assert "v.mark_status IS NULL OR v.mark_status = ''" in data_sql
+    assert "COALESCE(v.is_marked, 0) = 0" in data_sql
+    assert data_params[:1] == ["US"]
+
+
 def test_list_video_candidates_rejects_unknown_source_rank():
     calls = []
 
@@ -268,6 +302,25 @@ def test_list_goods_filters_by_display_sales_range():
     assert data_params[:3] == ["US", 50, 500]
 
 
+def test_list_goods_filters_by_mark_status_and_selects_mark_fields():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods({"mark_status": "bad"}, query_fn=fake_query)
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert "g.mark_status = %s" in count_sql
+    assert "g.mark_status = %s" in data_sql
+    assert "g.is_marked" in data_sql
+    assert "g.mark_status" in data_sql
+    assert count_params[:2] == ["US", "bad"]
+    assert data_params[:2] == ["US", "bad"]
+
+
 def test_build_goods_response_hydrates_source_category_label(monkeypatch):
     monkeypatch.setattr(
         store,
@@ -349,6 +402,40 @@ def test_upsert_video_candidate_uses_parameterized_execute():
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert params[0:4] == ["2026-05-11", "US", "v1", "i1"]
     assert params[4:7] == [12.34, 15.67, "$"]
+
+
+def test_set_tabcut_video_mark_status_updates_video_row():
+    calls = []
+
+    result = store.set_video_mark_status(
+        "v1",
+        mark_status="ok",
+        user_id=7,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "UPDATE tabcut_videos" in sql
+    assert "mark_status=%s" in sql
+    assert "is_marked=%s" in sql
+    assert params == ["ok", 1, 1, 1, 7, "v1"]
+
+
+def test_set_tabcut_goods_mark_status_clears_goods_row():
+    calls = []
+
+    result = store.set_goods_mark_status(
+        "i1",
+        mark_status=None,
+        user_id=7,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "UPDATE tabcut_goods" in sql
+    assert params == [None, 0, 0, 0, 7, "i1"]
 
 
 def test_build_tabcut_refresh_response_delegates_to_runner():

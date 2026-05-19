@@ -76,6 +76,33 @@ def _date_arg(args: Mapping[str, Any], name: str) -> str | None:
         return None
 
 
+def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
+    value = str(args.get("mark_status") or "").strip().lower()
+    if value in {"empty", "blank", "none", "unmarked", "空"}:
+        return "empty"
+    if value in {"ok", "pass", "yes", "行"}:
+        return "ok"
+    if value in {"bad", "fail", "no", "不行"}:
+        return "bad"
+    return None
+
+
+def _append_mark_status_filter(
+    where: list[str],
+    params: list[Any],
+    *,
+    alias: str,
+    mark_status: str | None,
+) -> None:
+    if mark_status == "empty":
+        where.append(
+            f"(({alias}.mark_status IS NULL OR {alias}.mark_status = '') AND COALESCE({alias}.is_marked, 0) = 0)"
+        )
+    elif mark_status:
+        where.append(f"{alias}.mark_status = %s")
+        params.append(mark_status)
+
+
 def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
@@ -168,6 +195,13 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         where.append("c.primary_item_price_min <= %s")
         params.append(max_item_price)
 
+    _append_mark_status_filter(
+        where,
+        params,
+        alias="v",
+        mark_status=_mark_status_arg(args),
+    )
+
     where_sql = " AND ".join(where)
     count_rows = query_fn(
         f"""
@@ -193,6 +227,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
                c.candidate_json, c.crawled_at,
                v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
                v.author_avatar_url, v.video_duration_ms, v.create_time,
+               v.is_marked, v.mark_status, v.marked_at, v.marked_by,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
                gs.primary_item_sold_count AS primary_item_sold_count
@@ -287,6 +322,13 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         where.append("COALESCE(s.price_min, s.price_max) <= %s")
         params.append(max_price)
 
+    _append_mark_status_filter(
+        where,
+        params,
+        alias="g",
+        mark_status=_mark_status_arg(args),
+    )
+
     where_sql = " AND ".join(where)
     count_rows = query_fn(
         f"""
@@ -299,7 +341,8 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     )
     rows = query_fn(
         f"""
-        SELECT s.*, g.item_name, g.item_pic_url, g.category_l1_name, g.category_l2_name,
+        SELECT s.*, g.item_name, g.item_pic_url, g.is_marked, g.mark_status, g.marked_at,
+               g.marked_by, g.category_l1_name, g.category_l2_name,
                g.category_l3_name, g.seller_name, g.seller_type
         FROM tabcut_goods_snapshots s
         JOIN tabcut_goods g ON g.item_id = s.item_id
@@ -645,4 +688,62 @@ def upsert_video_candidate(candidate: Mapping[str, Any], *, execute_fn: ExecuteF
             crawled_at=CURRENT_TIMESTAMP
         """,
         params,
+    )
+
+
+def _actor_id(user_id: Any) -> int | None:
+    if user_id is None:
+        return None
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_status_value(mark_status: str | None) -> str | None:
+    value = str(mark_status or "").strip().lower()
+    return value if value in {"ok", "bad"} else None
+
+
+def set_video_mark_status(
+    video_id: str,
+    *,
+    mark_status: str | None,
+    user_id: Any = None,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    status_value = _mark_status_value(mark_status)
+    mark_value = 1 if status_value else 0
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET mark_status=%s,
+            is_marked=%s,
+            marked_at=CASE WHEN %s = 1 THEN NOW() ELSE NULL END,
+            marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END
+        WHERE video_id=%s
+        """,
+        [status_value, mark_value, mark_value, mark_value, _actor_id(user_id), str(video_id)],
+    )
+
+
+def set_goods_mark_status(
+    item_id: str,
+    *,
+    mark_status: str | None,
+    user_id: Any = None,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    status_value = _mark_status_value(mark_status)
+    mark_value = 1 if status_value else 0
+    return execute_fn(
+        """
+        UPDATE tabcut_goods
+        SET mark_status=%s,
+            is_marked=%s,
+            marked_at=CASE WHEN %s = 1 THEN NOW() ELSE NULL END,
+            marked_by=CASE WHEN %s = 1 THEN %s ELSE NULL END
+        WHERE item_id=%s
+        """,
+        [status_value, mark_value, mark_value, mark_value, _actor_id(user_id), str(item_id)],
     )
