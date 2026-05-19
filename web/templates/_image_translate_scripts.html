@@ -428,6 +428,55 @@
       if (modelMeta.children.length) container.appendChild(modelMeta);
     }
 
+    function appendItemMedia(container, child, modifier){
+      var media = document.createElement("div");
+      media.className = "it-item-media" + (modifier ? " " + modifier : "");
+      media.appendChild(child);
+      container.appendChild(media);
+      return media;
+    }
+
+    function alignCompareRowMedia(row){
+      if (!row) return;
+      var frames = row.querySelectorAll(".it-item-media");
+      if (!frames.length) return;
+      row.style.removeProperty("--it-item-media-height");
+      window.requestAnimationFrame(function(){
+        var maxHeight = 0;
+        frames.forEach(function(frame){
+          var img = frame.querySelector("img");
+          if (!img) return;
+          var rect = img.getBoundingClientRect();
+          maxHeight = Math.max(maxHeight, rect.height || 0);
+        });
+        if (maxHeight > 0) {
+          row.style.setProperty("--it-item-media-height", Math.ceil(maxHeight) + "px");
+        }
+      });
+    }
+
+    function bindCompareRowMediaAlignment(row){
+      var imgs = row.querySelectorAll(".it-item-media img");
+      if (!imgs.length) return;
+      imgs.forEach(function(img){
+        if (!img.complete) {
+          img.addEventListener("load", function(){ alignCompareRowMedia(row); }, {once:true});
+          img.addEventListener("error", function(){ alignCompareRowMedia(row); }, {once:true});
+        }
+      });
+      alignCompareRowMedia(row);
+    }
+
+    function alignAllCompareRows(){
+      listEl.querySelectorAll(".it-item").forEach(alignCompareRowMedia);
+    }
+
+    var compareResizeTimer = null;
+    window.addEventListener("resize", function(){
+      window.clearTimeout(compareResizeTimer);
+      compareResizeTimer = window.setTimeout(alignAllCompareRows, 120);
+    });
+
     function setRerunError(message){
       if (!rerunError) return;
       rerunError.textContent = message || "";
@@ -583,7 +632,8 @@
         leftPane.className = "it-item-pane";
         var left = document.createElement("img");
         left.src = "/api/image-translate/"+taskId+"/artifact/source/"+it.idx;
-        leftPane.appendChild(left);
+        left.alt = "原图";
+        appendItemMedia(leftPane, left, "");
         var leftCaption = document.createElement("div");
         leftCaption.className = "it-item-caption";
         leftCaption.textContent = "原图";
@@ -594,7 +644,8 @@
         if (it.status === "done") {
           var imgOut = document.createElement("img");
           imgOut.src = "/api/image-translate/"+taskId+"/artifact/result/"+it.idx + "?t=" + Date.now();
-          right.appendChild(imgOut);
+          imgOut.alt = "结果图";
+          appendItemMedia(right, imgOut, "");
           var rightCaption = document.createElement("div");
           rightCaption.className = "it-item-caption";
           rightCaption.textContent = "结果图";
@@ -603,7 +654,7 @@
           var statusBox = document.createElement("div");
           statusBox.className = "it-item-status";
           statusBox.textContent = "状态：" + (it.status || "pending") + (it.error ? "；错误：" + it.error : "");
-          right.appendChild(statusBox);
+          appendItemMedia(right, statusBox, "it-item-media--status");
         }
         appendItemMeta(right, it, state);
         row.appendChild(right);
@@ -644,6 +695,7 @@
         }
         row.appendChild(actions);
         listEl.appendChild(row);
+        bindCompareRowMediaAlignment(row);
       });
     }
 
