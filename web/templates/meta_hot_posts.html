@@ -95,7 +95,11 @@ button.mh-link-btn { cursor:pointer; }
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
 .mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
 .mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
+.mh-analysis-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .mh-analysis-category { margin-bottom:6px; color:#64748b; font-size:12px; font-weight:800; }
+.mh-analysis-head .mh-analysis-category { margin-bottom:0; }
+.mh-ai-translate-zh-btn { flex:0 0 auto; height:24px; padding:0 8px; border:1px solid #67e8f9; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
+.mh-ai-translate-zh-btn:disabled { opacity:.6; cursor:not-allowed; }
 .mh-score-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:7px; }
 .mh-score { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #7dd3fc; border-radius:4px; color:#075985; background:#fff; font-size:12px; font-weight:700; }
 .mh-copy-summary { color:#334155; font-size:13px; line-height:1.45; }
@@ -122,7 +126,7 @@ button.mh-link-btn { cursor:pointer; }
 .mh-ai-section h4 { margin:0 0 8px; font-size:13px; color:#334155; }
 .mh-ai-chip-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
 .mh-ai-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
-.mh-ai-summary-head { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px; margin-bottom:8px; }
+.mh-ai-summary-head { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:8px; margin-bottom:8px; }
 .mh-ai-summary-head h4 { margin:0; text-align:center; }
 .mh-ai-summary-switch { height:26px; padding:0 9px; border:1px solid #99f6e4; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
 .mh-ai-summary-switch.active { background:#0f766e; color:#fff; }
@@ -802,6 +806,11 @@ function recommendationLabel(value) {
   if (value === 'not_recommended') return '不建议';
   return fmt(value || '-');
 }
+function renderAiTranslateZhButton(postId, mode) {
+  const safeId = Number(postId || 0);
+  if (!safeId || !mode) return '';
+  return `<button class="mh-ai-translate-zh-btn" type="button" onclick="translateMetaHotAiAnalysisToChinese(event, ${safeId}, '${mode}')">翻译中文</button>`;
+}
 function renderEuropeFitPanel(row) {
   if (!mhAiAnalysisVisibility.europe) return '';
   if (row.europe_fit_score === undefined || row.europe_fit_score === null || row.europe_fit_score === '') return '';
@@ -810,7 +819,7 @@ function renderEuropeFitPanel(row) {
   const risks = listItems(row.europe_fit_risks_zh || row.europe_fit_risks);
   const changes = listItems(row.europe_fit_required_changes_zh || row.europe_fit_required_changes);
   return `<div class="mh-europe-panel">
-    <div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>${renderAiTranslateZhButton(row.id, 'europe_translation')}</div>
     <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
     <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
     ${strengths ? `<ul class="mh-europe-list">${strengths}</ul>` : ''}
@@ -824,7 +833,7 @@ function copyabilityBlock(row) {
   if (!data) return '';
   const summary = data.summary_zh || data.summary || '';
   return `<div class="mh-copyability">
-    <div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>${renderAiTranslateZhButton(row.id, 'us_copyability')}</div>
     <div class="mh-score-list">
       <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
       <span class="mh-score">可抄 ${fmt(data.copyability_score)}</span>
@@ -925,6 +934,38 @@ function updateMetaHotCard(item) {
     const video = card.querySelector('video');
     if (video && !video.paused && !video.ended) video.pause();
     card.outerHTML = renderCard(item);
+  }
+}
+async function translateMetaHotAiAnalysisToChinese(event, postId, mode) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  if (!postId || !mode || (button && button.disabled)) return;
+  const originalText = button ? button.textContent : '翻译中文';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = 'AI分析翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) updateMetaHotCard(data.item);
+    if (mhAiState.postId === Number(postId) && mhAiState.mode === mode) {
+      mhAiState.result = data;
+      qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+    }
+    qs('mhStatus').textContent = data.cached ? '已有中文翻译' : 'AI分析翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = 'AI分析翻译失败';
   }
 }
 function buildParams(page) {
@@ -1313,7 +1354,7 @@ function renderAiRequestPreview(payload) {
     </div>
   </div>`;
 }
-function renderAiSummarySection(result) {
+function renderAiSummarySection(result, payload) {
   const summaryZh = result.summary_zh || result.summary || '';
   const summaryEn = result.summary || summaryZh;
   if (!summaryZh && !summaryEn) return '';
@@ -1322,6 +1363,7 @@ function renderAiSummarySection(result) {
       <button class="mh-ai-summary-switch active" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'zh')">中文</button>
       <h4>摘要</h4>
       <button class="mh-ai-summary-switch" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'en')">English</button>
+      ${renderAiTranslateZhButton((payload.item || {}).id, payload.mode)}
     </div>
     <div class="mh-ai-summary-text">${esc(summaryZh || summaryEn)}</div>
   </div>`;
@@ -1351,7 +1393,7 @@ function renderMetaHotAiResult(payload) {
     : '';
   return `<div>
     <div class="mh-ai-chip-list">${chips.join('')}</div>
-    ${renderAiSummarySection(result)}
+    ${renderAiSummarySection(result, payload)}
     ${(result.reasoning_zh || result.reasoning) ? `<div class="mh-ai-section"><h4>判断理由</h4><div>${esc(result.reasoning_zh || result.reasoning)}</div></div>` : ''}
     ${list('优势', result.strengths_zh || result.strengths)}
     ${list('风险', result.risks_zh || result.risks || result.risk_notes)}

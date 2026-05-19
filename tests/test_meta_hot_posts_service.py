@@ -353,6 +353,181 @@ def test_build_ai_analysis_result_response_prefers_europe_zh_visual_fields(monke
     assert payload["result"]["required_changes_zh"] == ["翻译字幕"]
 
 
+def test_build_ai_analysis_translate_zh_response_translates_us_with_openrouter(monkeypatch):
+    calls = []
+    rows = [
+        {
+            "id": 7,
+            "sku_prices_json": "[]",
+            "video_copyability_analysis_id": 8,
+            "video_copyability_status": "done",
+            "video_copyability_overall_score": 91,
+            "video_copyability_summary": "Strong hook.",
+            "video_copyability_summary_zh": "",
+            "video_copyability_analysis_json": '{"copy_notes":["simple demo"]}',
+        },
+        {
+            "id": 7,
+            "sku_prices_json": "[]",
+            "video_copyability_analysis_id": 8,
+            "video_copyability_status": "done",
+            "video_copyability_overall_score": 91,
+            "video_copyability_summary": "Strong hook.",
+            "video_copyability_summary_zh": "强钩子。",
+            "video_copyability_analysis_json": '{"copy_notes":["simple demo"]}',
+        },
+    ]
+
+    def fake_get_row(post_id):
+        calls.append(("get", post_id))
+        return rows.pop(0)
+
+    def fake_translate(row, **kwargs):
+        calls.append(("translate", row["analysis_id"], kwargs))
+        return "强钩子。"
+
+    monkeypatch.setattr(service.store, "get_hot_post_ai_analysis_row", fake_get_row)
+    monkeypatch.setattr(
+        service.store,
+        "mark_video_copyability_summary_translation_running",
+        lambda analysis_id: calls.append(("mark_us", analysis_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "finish_video_copyability_summary_translation",
+        lambda analysis_id, **kwargs: calls.append(("finish_us", analysis_id, kwargs)) or 1,
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.video_copyability_translation.translate_summary",
+        fake_translate,
+    )
+
+    result = service.build_ai_analysis_translate_zh_response(7, "us_copyability", user_id=3)
+
+    assert result.status_code == 200
+    assert result.payload["ok"] is True
+    assert result.payload["cached"] is False
+    assert result.payload["item"]["video_copyability"]["summary_zh"] == "强钩子。"
+    translate_call = next(call for call in calls if call[0] == "translate")
+    assert translate_call[2]["user_id"] == 3
+    assert translate_call[2]["provider_override"] == "openrouter"
+    assert translate_call[2]["model_override"] == "google/gemini-3.1-flash-lite"
+    assert ("mark_us", 8) in calls
+    finish_call = next(call for call in calls if call[0] == "finish_us")
+    assert finish_call[2]["translated_summary"] == "强钩子。"
+    assert finish_call[2]["error_message"] is None
+
+
+def test_build_ai_analysis_translate_zh_response_translates_europe_with_openrouter(monkeypatch):
+    calls = []
+    rows = [
+        {
+            "id": 7,
+            "sku_prices_json": "[]",
+            "europe_fit_status": "done",
+            "europe_fit_score": 86,
+            "europe_fit_recommendation": "translate_and_launch",
+            "europe_fit_strengths_json": '["Clear demo"]',
+            "europe_fit_risks_json": '["English captions"]',
+            "europe_fit_required_changes_json": '["Translate captions"]',
+            "europe_fit_reasoning": "Suitable after localization.",
+            "europe_fit_llm_response_json": '{"translation_fit_score":82}',
+        },
+        {
+            "id": 7,
+            "sku_prices_json": "[]",
+            "europe_fit_status": "done",
+            "europe_fit_score": 86,
+            "europe_fit_recommendation": "translate_and_launch",
+            "europe_fit_strengths_json": '["Clear demo"]',
+            "europe_fit_strengths_zh_json": '["演示清晰"]',
+            "europe_fit_risks_json": '["English captions"]',
+            "europe_fit_risks_zh_json": '["英文字幕需要替换"]',
+            "europe_fit_required_changes_json": '["Translate captions"]',
+            "europe_fit_required_changes_zh_json": '["翻译字幕"]',
+            "europe_fit_reasoning": "Suitable after localization.",
+            "europe_fit_reasoning_zh": "本土化后适合投放。",
+            "europe_fit_llm_response_json": '{"translation_fit_score":82}',
+        },
+    ]
+
+    def fake_get_row(post_id):
+        calls.append(("get", post_id))
+        return rows.pop(0)
+
+    translated = {
+        "strengths": ["演示清晰"],
+        "risks": ["英文字幕需要替换"],
+        "required_changes": ["翻译字幕"],
+        "reasoning": "本土化后适合投放。",
+    }
+
+    def fake_translate(row, **kwargs):
+        calls.append(("translate", row["post_id"], kwargs))
+        return translated
+
+    monkeypatch.setattr(service.store, "get_hot_post_ai_analysis_row", fake_get_row)
+    monkeypatch.setattr(
+        service.store,
+        "mark_europe_fit_translation_running",
+        lambda post_id: calls.append(("mark_eu", post_id)) or 1,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "finish_europe_fit_translation",
+        lambda post_id, **kwargs: calls.append(("finish_eu", post_id, kwargs)) or 1,
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.europe_fit_translation.translate_assessment",
+        fake_translate,
+    )
+
+    result = service.build_ai_analysis_translate_zh_response(7, "europe_translation", user_id=3)
+
+    assert result.status_code == 200
+    assert result.payload["ok"] is True
+    assert result.payload["cached"] is False
+    assert result.payload["item"]["europe_fit_strengths_zh"] == ["演示清晰"]
+    translate_call = next(call for call in calls if call[0] == "translate")
+    assert translate_call[2]["user_id"] == 3
+    assert translate_call[2]["provider_override"] == "openrouter"
+    assert translate_call[2]["model_override"] == "google/gemini-3.1-flash-lite"
+    assert ("mark_eu", 7) in calls
+    finish_call = next(call for call in calls if call[0] == "finish_eu")
+    assert finish_call[2]["translated"] == translated
+    assert finish_call[2]["error_message"] is None
+
+
+def test_build_ai_analysis_translate_zh_response_uses_existing_cache(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: {
+            "id": post_id,
+            "sku_prices_json": "[]",
+            "video_copyability_analysis_id": 8,
+            "video_copyability_status": "done",
+            "video_copyability_overall_score": 91,
+            "video_copyability_summary": "Strong hook.",
+            "video_copyability_summary_zh": "强钩子。",
+            "video_copyability_analysis_json": '{"overall_score":91}',
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.video_copyability_translation.translate_summary",
+        lambda *args, **kwargs: calls.append(("translate", args, kwargs)) or "不应调用",
+    )
+
+    result = service.build_ai_analysis_translate_zh_response(7, "us_copyability", user_id=3)
+
+    assert result.status_code == 200
+    assert result.payload["cached"] is True
+    assert result.payload["result"]["summary_zh"] == "强钩子。"
+    assert calls == []
+
+
 def test_build_ai_analysis_run_restores_state_on_rate_limit(monkeypatch):
     calls = []
 

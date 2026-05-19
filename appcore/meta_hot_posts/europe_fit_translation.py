@@ -130,6 +130,9 @@ def translate_assessment(
     row: Mapping[str, Any],
     *,
     user_id: int | None = None,
+    provider_override: str = TRANSLATE_PROVIDER,
+    model_override: str = TRANSLATE_MODEL,
+    billing_source: str = "meta_hot_posts_europe_fit_zh",
     invoke_chat_fn: InvokeChatFn = llm_client.invoke_chat,
 ) -> dict[str, Any]:
     source_text = _build_source_text(row)
@@ -138,12 +141,12 @@ def translate_assessment(
     response = invoke_chat_fn(
         TRANSLATE_USE_CASE,
         messages=_build_messages(source_text),
-        provider_override=TRANSLATE_PROVIDER,
-        model_override=TRANSLATE_MODEL,
+        provider_override=provider_override,
+        model_override=model_override,
         user_id=user_id,
         temperature=0.0,
         max_tokens=700,
-        billing_extra={"source": "meta_hot_posts_europe_fit_zh"},
+        billing_extra={"source": billing_source},
     )
     return _parse_translation(str(response.get("text") or ""))
 

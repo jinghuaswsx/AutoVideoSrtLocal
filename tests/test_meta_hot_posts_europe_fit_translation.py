@@ -43,6 +43,43 @@ def test_translate_europe_fit_invokes_google_adc_flash_lite_and_parses_json():
     }
 
 
+def test_translate_europe_fit_accepts_manual_openrouter_flash_lite_override():
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        return {
+            "text": (
+                '{"strengths":["演示清晰"],"risks":["英文字幕需要本土化"],'
+                '"required_changes":["翻译字幕"],"reasoning":"适合欧洲投放，但需要字幕本土化。"}'
+            )
+        }
+
+    translated = europe_fit_translation.translate_assessment(
+        {
+            "post_id": 8,
+            "recommendation": "adapt_before_use",
+            "best_countries_json": '["DE","FR"]',
+            "strengths_json": '["clear demo"]',
+            "risks_json": '["English captions"]',
+            "required_changes_json": '["translate captions"]',
+            "reasoning": "Good fit after localization.",
+        },
+        user_id=7,
+        provider_override="openrouter",
+        model_override="google/gemini-3.1-flash-lite",
+        billing_source="meta_hot_posts_manual_europe_ai_translate_zh",
+        invoke_chat_fn=fake_invoke,
+    )
+
+    use_case_code, kwargs = calls[0]
+    assert use_case_code == "meta_hot_posts.europe_fit_translate"
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite"
+    assert kwargs["billing_extra"] == {"source": "meta_hot_posts_manual_europe_ai_translate_zh"}
+    assert translated["strengths"] == ["演示清晰"]
+
+
 def test_run_pending_europe_fit_translations_persists_success_failure_and_sleeps(monkeypatch):
     events = []
     sleeps = []
