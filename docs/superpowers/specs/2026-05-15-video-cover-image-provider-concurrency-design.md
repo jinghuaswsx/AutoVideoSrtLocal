@@ -87,6 +87,8 @@
 
 OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local_image_2` 使用文案封面专用的 `video_cover_local_image` 凭据行，历史 `local` 配置归一到 `local_image_2`；本地 Image 2 封面生成固定提交 `size=1152x2048`（2K 竖图）和 `quality=low`。APIMART 模型 ID 按 APIMART 图片生成文档保存裸模型名。
 
+2026-05-19 默认策略更新：第四步封面生成默认切到 OpenRouter `openai/gpt-5.4-image-2:low`，并保持 `execution_mode=parallel`。OpenRouter OpenAI Image 2 封面请求固定透传 `extra_body.image_config.image_size = "2K"`，质量仍为 `low`。
+
 ### 默认配置结构
 
 保存到 `system_settings.video_cover_model_defaults` 的 `cover_generation` 示例：
@@ -95,7 +97,7 @@ OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local_im
 {
   "cover_generation": {
     "provider": "openrouter",
-    "model_id": "google/gemini-3.1-flash-image-preview",
+    "model_id": "openai/gpt-5.4-image-2:low",
     "execution_mode": "parallel"
   }
 }

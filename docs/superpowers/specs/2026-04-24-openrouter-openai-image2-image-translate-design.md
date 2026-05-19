@@ -117,10 +117,15 @@
 
 推荐语义：
 
-- `enabled`：布尔值，默认 `false`
-- `default_quality`：字符串，允许 `low / mid / high`，默认 `mid`
+- `enabled`：布尔值，默认 `true`
+- `default_quality`：字符串，允许 `low / mid / high`，默认 `low`
 
-不需要数据库迁移，只沿用现有 `system_settings` 读写机制。
+2026-05-19 默认策略更新：
+
+- 图片翻译全局默认通道改为 `openrouter`。
+- 商品图片翻译默认模型改为 `openai/gpt-5.4-image-2:low`，并默认并行执行。
+- OpenRouter OpenAI Image 2 请求必须透传 `extra_body.image_config.image_size`：商品详情图使用 `1K`，视频封面使用 `2K`。
+- 生产环境已有 `system_settings` 需要通过迁移覆盖默认通道、默认模型、开关和默认质量，避免历史保存值继续指向旧通道。
 
 ## 5.2 虚拟模型 ID
 
