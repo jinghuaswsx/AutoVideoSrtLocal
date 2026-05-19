@@ -167,6 +167,8 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert 'value="Kitchenware"' in body
     assert "厨房用品" in body
     assert "meta-hot-card-grid" in body
+    assert "grid-template-columns:108px minmax(0, 1fr)" in body
+    assert "width:108px; height:108px" in body
     assert 'id="mhCardZoomButton"' in body
     assert "卡片放大" in body
     assert "function toggleMetaHotCardZoom()" in body
