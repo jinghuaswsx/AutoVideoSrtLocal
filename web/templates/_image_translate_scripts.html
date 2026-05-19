@@ -413,12 +413,16 @@
     }
 
     function appendItemMeta(container, it, state){
-      var meta = document.createElement("div");
-      meta.className = "it-item-meta";
-      appendBadge(meta, textDetectBadge(it), "it-meta-chip it-meta-chip--detect");
-      appendBadge(meta, resultSourceBadge(it), "it-meta-chip it-meta-chip--source");
-      appendBadge(meta, resultModelBadge(it, state), "it-meta-chip it-meta-chip--model");
-      container.appendChild(meta);
+      var primaryMeta = document.createElement("div");
+      primaryMeta.className = "it-item-meta it-item-meta--primary";
+      appendBadge(primaryMeta, textDetectBadge(it), "it-meta-chip it-meta-chip--detect");
+      appendBadge(primaryMeta, resultSourceBadge(it), "it-meta-chip it-meta-chip--source");
+      container.appendChild(primaryMeta);
+
+      var modelMeta = document.createElement("div");
+      modelMeta.className = "it-item-meta it-item-model-meta";
+      appendBadge(modelMeta, resultModelBadge(it, state), "it-meta-chip it-meta-chip--model");
+      container.appendChild(modelMeta);
     }
 
     function setRerunError(message){

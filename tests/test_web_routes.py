@@ -3561,7 +3561,14 @@ def test_image_translate_detail_result_meta_shows_provider_and_model_id():
     assert "供应商：" in scripts
     assert "模型ID：" in scripts
     assert "大模型：未调用" in scripts
+    assert "it-item-meta--primary" in scripts
+    assert "it-item-model-meta" in scripts
+    primary_meta_block = scripts.split('primaryMeta.className = "it-item-meta it-item-meta--primary"', 1)[1].split("container.appendChild(primaryMeta)", 1)[0]
+    assert "it-meta-chip--detect" in primary_meta_block
+    assert "it-meta-chip--source" in primary_meta_block
+    assert "it-meta-chip--model" not in primary_meta_block
     assert "it-meta-chip--model" in styles
+    assert ".it-item-model-meta" in styles
 
 
 def test_medias_edit_modal_contains_detail_image_translation_controls():
