@@ -32,6 +32,10 @@ def _missing_assets_predicate() -> str:
     (
       product_assets_synced_at IS NULL
       OR ((product_code IS NULL OR product_code = '') AND product_url IS NOT NULL AND product_url <> '')
+      OR product_main_image_url IS NULL
+      OR product_main_image_url = ''
+      OR product_main_image_object_key IS NULL
+      OR product_main_image_object_key = ''
     )
     """
 

@@ -251,7 +251,7 @@ def extract_product_page_assets_from_html(html: str, *, base_url: str) -> dict[s
         for item in images
         if (item.get("kind") or "") == "detail" and str(item.get("source_url") or "").strip()
     ]
-    main_image_url = meta_image or (carousel_images[0] if carousel_images else "")
+    main_image_url = (carousel_images[0] if carousel_images else "") or meta_image
     return {
         "main_image_url": main_image_url,
         "detail_image_urls": detail_images,
