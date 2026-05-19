@@ -655,6 +655,43 @@ def test_process_video_analysis_queue_suspends_exhausted_rows_before_selecting_i
     ]
 
 
+def test_process_video_analysis_queue_falls_back_when_suspend_apis_missing(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        scheduler,
+        "resolve_billing_user_id",
+        lambda user_id=None: (_ for _ in ()).throw(AssertionError("empty queue should not resolve billing user")),
+    )
+    monkeypatch.setattr(scheduler.store, "ensure_video_copyability_candidates", lambda: 0)
+    monkeypatch.setattr(scheduler.store, "ensure_europe_fit_candidates", lambda: 0)
+    monkeypatch.delattr(scheduler.store, "suspend_exhausted_video_copyability_analyses", raising=False)
+    monkeypatch.delattr(scheduler.store, "suspend_exhausted_europe_fit_assessments", raising=False)
+    monkeypatch.setattr(
+        scheduler.store,
+        "_execute_rowcount",
+        lambda sql, params=(): calls.append((sql, params)) or (2 if "video_copyability" in sql else 1),
+    )
+    monkeypatch.setattr(scheduler.store, "next_pending_video_copyability_analyses", lambda limit: [])
+    monkeypatch.setattr(scheduler.store, "next_pending_europe_fit_materials", lambda limit: [])
+
+    summary = scheduler.process_video_analysis_queue(limit=2, user_id=7, run_id=42)
+
+    assert summary["exhausted_us_copyability_suspended"] == 2
+    assert summary["exhausted_europe_fit_suspended"] == 1
+    assert len(calls) == 2
+    us_sql, us_params = calls[0]
+    assert "UPDATE meta_hot_post_video_copyability_analyses" in us_sql
+    assert "status IN ('pending', 'failed')" in us_sql
+    assert "attempts >= %s" in us_sql
+    assert us_params == (scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,)
+    europe_sql, europe_params = calls[1]
+    assert "UPDATE meta_hot_post_europe_assessments" in europe_sql
+    assert "status IN ('pending', 'failed')" in europe_sql
+    assert "attempts >= %s" in europe_sql
+    assert europe_params == (scheduler.SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,)
+
+
 def test_process_video_analysis_queue_stops_when_run_is_superseded(monkeypatch):
     events = []
     latest_calls = []

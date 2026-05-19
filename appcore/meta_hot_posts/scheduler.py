@@ -810,6 +810,57 @@ def _fetch_next_pending_item() -> dict[str, Any] | None:
     return None
 
 
+def _store_execute_rowcount(sql: str, params: tuple[Any, ...]) -> int:
+    execute_fn = getattr(store, "_execute_rowcount", None)
+    if not callable(execute_fn):
+        execute_fn = getattr(store, "execute", None)
+    if not callable(execute_fn):
+        raise AttributeError("appcore.meta_hot_posts.store has no rowcount executor")
+    return int(execute_fn(sql, params) or 0)
+
+
+def _suspend_exhausted_video_copyability_analyses(*, max_attempts: int) -> int:
+    suspend_fn = getattr(store, "suspend_exhausted_video_copyability_analyses", None)
+    if callable(suspend_fn):
+        return int(suspend_fn(max_attempts=max_attempts) or 0)
+    log.warning("store.suspend_exhausted_video_copyability_analyses missing; using scheduler SQL fallback")
+    return _store_execute_rowcount(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET status='suspended',
+            last_error=CASE
+              WHEN last_error IS NULL OR TRIM(last_error) = ''
+                THEN 'video copyability attempts exhausted; suspended by queue guard'
+              ELSE last_error
+            END
+        WHERE status IN ('pending', 'failed')
+          AND attempts >= %s
+        """,
+        (int(max_attempts),),
+    )
+
+
+def _suspend_exhausted_europe_fit_assessments(*, max_attempts: int) -> int:
+    suspend_fn = getattr(store, "suspend_exhausted_europe_fit_assessments", None)
+    if callable(suspend_fn):
+        return int(suspend_fn(max_attempts=max_attempts) or 0)
+    log.warning("store.suspend_exhausted_europe_fit_assessments missing; using scheduler SQL fallback")
+    return _store_execute_rowcount(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET status='suspended',
+            last_error=CASE
+              WHEN last_error IS NULL OR TRIM(last_error) = ''
+                THEN 'Europe fit attempts exhausted; suspended by queue guard'
+              ELSE last_error
+            END
+        WHERE status IN ('pending', 'failed')
+          AND attempts >= %s
+        """,
+        (int(max_attempts),),
+    )
+
+
 def _video_analysis_queue_summary(queued_us: int, queued_eu: int = 0) -> dict[str, int]:
     return {
         "queued_us_copyability": queued_us,
@@ -1006,13 +1057,13 @@ def process_video_analysis_queue(
     queued_eu = int(store.ensure_europe_fit_candidates() or 0)
     summary: dict[str, Any] = _video_analysis_queue_summary(queued_us, queued_eu)
     exhausted_us = int(
-        store.suspend_exhausted_video_copyability_analyses(
+        _suspend_exhausted_video_copyability_analyses(
             max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
         )
         or 0
     )
     exhausted_eu = int(
-        store.suspend_exhausted_europe_fit_assessments(
+        _suspend_exhausted_europe_fit_assessments(
             max_attempts=SCHEDULED_VIDEO_ANALYSIS_MAX_ATTEMPTS,
         )
         or 0
