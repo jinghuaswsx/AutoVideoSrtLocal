@@ -470,7 +470,7 @@ def _ai_analysis_mode_meta(mode: str) -> dict[str, Any] | None:
     if normalized == AI_ANALYSIS_MODE_US_COPYABILITY:
         return {
             "mode": normalized,
-            "label": "美国市场搬运AI分析",
+            "label": "美国AI分析",
             "use_case": video_copyability.VIDEO_COPYABILITY_USE_CASE,
             "provider": video_copyability.VIDEO_COPYABILITY_PROVIDER,
             "model": video_copyability.VIDEO_COPYABILITY_MODEL,
@@ -482,7 +482,7 @@ def _ai_analysis_mode_meta(mode: str) -> dict[str, Any] | None:
     if normalized == AI_ANALYSIS_MODE_EUROPE_TRANSLATION:
         return {
             "mode": normalized,
-            "label": "欧洲市场翻译AI分析",
+            "label": "欧洲AI分析",
             "use_case": europe_fit.USE_CASE_CODE,
             "provider": europe_fit.EUROPE_FIT_PROVIDER,
             "model": europe_fit.EUROPE_FIT_MODEL,
