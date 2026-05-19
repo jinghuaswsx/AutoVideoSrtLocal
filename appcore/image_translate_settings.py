@@ -25,10 +25,10 @@ CHANNEL_LABELS: dict[str, str] = {
     "local_image_2": "本地 Image 2",
 }
 _CHANNEL_KEY = "image_translate.channel"
-_DEFAULT_CHANNEL = "openrouter"
+_DEFAULT_CHANNEL = "cloud_adc"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "openrouter"
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "openai/gpt-5.4-image-2:low"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "cloud_adc"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gemini-3.1-flash-image-preview"
 
 # OpenRouter OpenAI Image 2 质量档位开关与默认值
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
