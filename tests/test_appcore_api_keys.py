@@ -175,6 +175,12 @@ def test_set_key_allows_jianying_for_any_user(fake_stores):
     assert json.loads(row["extra_config"])["project_root"] == r"D:\Alice"
 
 
+def test_set_key_allows_meta_hot_posts_ai_visibility_for_any_user(fake_stores):
+    set_key(2, "meta_hot_posts_ai_visibility", '{"us":false,"europe":true}')
+
+    assert get_key(2, "meta_hot_posts_ai_visibility") == '{"us":false,"europe":true}'
+
+
 def test_set_key_allows_translate_pref_for_admin(fake_stores):
     set_key(1, "translate_pref", "vertex_gemini_31_pro")
     assert fake_stores.api_rows[(1, "translate_pref")]["key_value"] == "vertex_gemini_31_pro"

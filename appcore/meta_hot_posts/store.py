@@ -14,6 +14,30 @@ ExecuteFn = Callable[[str, tuple[Any, ...]], Any]
 
 LOCAL_VIDEO_MAX_ATTEMPTS = 5
 LOCAL_VIDEO_RETRY_AFTER_HOURS = 12
+EUROPE_FIT_SELECT_SQL = """
+               e.status AS europe_fit_status,
+               e.suitability_score AS europe_fit_score,
+               e.recommendation AS europe_fit_recommendation,
+               e.direct_reuse AS europe_fit_direct_reuse,
+               e.best_countries_json AS europe_fit_best_countries_json,
+               e.country_scores_json AS europe_fit_country_scores_json,
+               e.strengths_json AS europe_fit_strengths_json,
+               e.strengths_zh_json AS europe_fit_strengths_zh_json,
+               e.risks_json AS europe_fit_risks_json,
+               e.risks_zh_json AS europe_fit_risks_zh_json,
+               e.required_changes_json AS europe_fit_required_changes_json,
+               e.required_changes_zh_json AS europe_fit_required_changes_zh_json,
+               e.reasoning AS europe_fit_reasoning,
+               e.reasoning_zh AS europe_fit_reasoning_zh,
+               e.llm_provider AS europe_fit_provider,
+               e.llm_model AS europe_fit_model,
+               e.video_optimization_json AS europe_fit_video_optimization_json,
+               e.assessed_at AS europe_fit_assessed_at
+""".strip("\n")
+EUROPE_FIT_DONE_JOIN_SQL = """
+        LEFT JOIN meta_hot_post_europe_assessments e
+          ON e.post_id = p.id AND e.status = 'done'
+""".strip("\n")
 
 
 def _json(value: Any) -> str:
@@ -209,6 +233,7 @@ def list_hot_posts(
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
+               {EUROPE_FIT_SELECT_SQL},
                va.id AS video_copyability_analysis_id,
                va.overall_score AS video_copyability_overall_score,
                va.copyability_score AS video_copyability_copyability_score,
@@ -217,12 +242,14 @@ def list_hot_posts(
                va.compliance_risk_score AS video_copyability_compliance_risk_score,
                va.recommendation AS video_copyability_recommendation,
                va.summary AS video_copyability_summary,
+               va.summary_zh AS video_copyability_summary_zh,
                va.llm_provider AS video_copyability_provider,
                va.llm_model AS video_copyability_model,
                va.analysis_json AS video_copyability_analysis_json,
                va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {EUROPE_FIT_DONE_JOIN_SQL}
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
@@ -282,6 +309,7 @@ def list_favorite_hot_posts(
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
+               {EUROPE_FIT_SELECT_SQL},
                va.id AS video_copyability_analysis_id,
                va.overall_score AS video_copyability_overall_score,
                va.copyability_score AS video_copyability_copyability_score,
@@ -290,6 +318,7 @@ def list_favorite_hot_posts(
                va.compliance_risk_score AS video_copyability_compliance_risk_score,
                va.recommendation AS video_copyability_recommendation,
                va.summary AS video_copyability_summary,
+               va.summary_zh AS video_copyability_summary_zh,
                va.llm_provider AS video_copyability_provider,
                va.llm_model AS video_copyability_model,
                va.analysis_json AS video_copyability_analysis_json,
@@ -297,6 +326,7 @@ def list_favorite_hot_posts(
         FROM meta_hot_post_favorites fav
         JOIN meta_hot_posts p ON p.id = fav.hot_post_id
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {EUROPE_FIT_DONE_JOIN_SQL}
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
         WHERE fav.user_id = %s
@@ -359,6 +389,7 @@ def list_today_new_hot_posts(
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
+               {EUROPE_FIT_SELECT_SQL},
                va.id AS video_copyability_analysis_id,
                va.overall_score AS video_copyability_overall_score,
                va.copyability_score AS video_copyability_copyability_score,
@@ -367,12 +398,14 @@ def list_today_new_hot_posts(
                va.compliance_risk_score AS video_copyability_compliance_risk_score,
                va.recommendation AS video_copyability_recommendation,
                va.summary AS video_copyability_summary,
+               va.summary_zh AS video_copyability_summary_zh,
                va.llm_provider AS video_copyability_provider,
                va.llm_model AS video_copyability_model,
                va.analysis_json AS video_copyability_analysis_json,
                va.analyzed_at AS video_copyability_analyzed_at
         FROM meta_hot_posts p
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {EUROPE_FIT_DONE_JOIN_SQL}
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
@@ -1090,6 +1123,11 @@ def finish_video_copyability_analysis(
     status = status_override or ("failed" if error_message else "done")
     if status not in {"pending", "done", "failed", "suspended"}:
         status = "failed" if error_message else "done"
+    summary = str(payload.get("summary") or "")[:4000] or None
+    summary_zh = str(payload.get("summary_zh") or "")[:4000] or None
+    summary_zh_status = None
+    if status == "done":
+        summary_zh_status = "done" if summary_zh else ("pending" if summary else None)
     return execute_fn(
         """
         UPDATE meta_hot_post_video_copyability_analyses
@@ -1102,6 +1140,10 @@ def finish_video_copyability_analysis(
             compliance_risk_score=%s,
             recommendation=%s,
             summary=%s,
+            summary_zh=%s,
+            summary_zh_status=COALESCE(%s, summary_zh_status),
+            summary_zh_error=CASE WHEN %s = 'done' THEN NULL ELSE summary_zh_error END,
+            summary_zh_translated_at=CASE WHEN %s = 'done' AND %s IS NOT NULL THEN NOW() ELSE summary_zh_translated_at END,
             llm_provider=%s,
             llm_model=%s,
             compressed_video_path=%s,
@@ -1118,7 +1160,12 @@ def finish_video_copyability_analysis(
             _score(payload.get("product_fit_score")),
             _score(payload.get("compliance_risk_score")),
             str(payload.get("recommendation") or "")[:32] or None,
-            str(payload.get("summary") or "")[:4000] or None,
+            summary,
+            summary_zh,
+            summary_zh_status,
+            summary_zh_status,
+            summary_zh_status,
+            summary_zh,
             str(payload.get("provider") or "")[:64] or None,
             str(payload.get("model") or "")[:128] or None,
             str(payload.get("compressed_video_path") or "")[:2048] or None,
@@ -1126,6 +1173,86 @@ def finish_video_copyability_analysis(
             status,
             int(analysis_id),
         ),
+    )
+
+
+def next_pending_video_copyability_summary_translations(
+    *,
+    limit: int = 120,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(120, int(limit)))
+    return query_fn(
+        """
+        SELECT id AS analysis_id,
+               recommendation,
+               summary,
+               summary_zh_status,
+               summary_zh_attempts,
+               summary_zh_error,
+               analysis_json
+        FROM meta_hot_post_video_copyability_analyses
+        WHERE status = 'done'
+          AND summary IS NOT NULL
+          AND TRIM(summary) <> ''
+          AND (
+            summary_zh IS NULL
+            OR summary_zh = ''
+            OR summary_zh_status IN ('pending', 'failed')
+          )
+          AND summary_zh_attempts < %s
+        ORDER BY analyzed_at ASC, id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_video_copyability_summary_translation_running(
+    analysis_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET summary_zh_status='running',
+            summary_zh_attempts=summary_zh_attempts + 1,
+            summary_zh_error=NULL
+        WHERE id=%s
+        """,
+        (int(analysis_id),),
+    )
+
+
+def finish_video_copyability_summary_translation(
+    analysis_id: int,
+    *,
+    translated_summary: str | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE meta_hot_post_video_copyability_analyses
+            SET summary_zh_status='failed',
+                summary_zh_error=%s
+            WHERE id=%s
+            """,
+            (str(error_message)[:1000], int(analysis_id)),
+        )
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_video_copyability_analyses
+        SET summary_zh=%s,
+            summary_zh_status='done',
+            summary_zh_error=NULL,
+            summary_zh_translated_at=NOW()
+        WHERE id=%s
+        """,
+        (str(translated_summary or "")[:4000], int(analysis_id)),
     )
 
 
@@ -1239,6 +1366,7 @@ def list_top_video_copyability_analyses(
                va.compliance_risk_score,
                va.recommendation,
                va.summary,
+               va.summary_zh,
                va.llm_provider,
                va.llm_model,
                va.analysis_json,
@@ -1468,6 +1596,106 @@ def reset_running_europe_fit_assessments(
     )
 
 
+def next_pending_europe_fit_translations(
+    *,
+    limit: int = 120,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(120, int(limit)))
+    return query_fn(
+        """
+        SELECT post_id,
+               recommendation,
+               best_countries_json,
+               strengths_json,
+               risks_json,
+               required_changes_json,
+               reasoning,
+               zh_status,
+               zh_attempts,
+               zh_error
+        FROM meta_hot_post_europe_assessments
+        WHERE status = 'done'
+          AND (
+            strengths_json IS NOT NULL
+            OR risks_json IS NOT NULL
+            OR required_changes_json IS NOT NULL
+            OR reasoning IS NOT NULL
+          )
+          AND (
+            strengths_zh_json IS NULL
+            OR risks_zh_json IS NULL
+            OR required_changes_zh_json IS NULL
+            OR reasoning_zh IS NULL
+            OR reasoning_zh = ''
+            OR zh_status IN ('pending', 'failed')
+          )
+          AND zh_attempts < %s
+        ORDER BY assessed_at ASC, post_id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_europe_fit_translation_running(
+    post_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET zh_status='running',
+            zh_attempts=zh_attempts + 1,
+            zh_error=NULL
+        WHERE post_id=%s
+        """,
+        (int(post_id),),
+    )
+
+
+def finish_europe_fit_translation(
+    post_id: int,
+    *,
+    translated: Mapping[str, Any] | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE meta_hot_post_europe_assessments
+            SET zh_status='failed',
+                zh_error=%s
+            WHERE post_id=%s
+            """,
+            (str(error_message)[:1000], int(post_id)),
+        )
+    payload = dict(translated or {})
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_europe_assessments
+        SET strengths_zh_json=%s,
+            risks_zh_json=%s,
+            required_changes_zh_json=%s,
+            reasoning_zh=%s,
+            zh_status='done',
+            zh_error=NULL,
+            zh_translated_at=NOW()
+        WHERE post_id=%s
+        """,
+        (
+            _json(payload.get("strengths") or []),
+            _json(payload.get("risks") or []),
+            _json(payload.get("required_changes") or []),
+            str(payload.get("reasoning") or "")[:2000] or None,
+            int(post_id),
+        ),
+    )
+
+
 def list_top_europe_fit_materials(
     *,
     limit: int = 50,
@@ -1503,9 +1731,13 @@ def list_top_europe_fit_materials(
                e.best_countries_json AS europe_fit_best_countries_json,
                e.country_scores_json AS europe_fit_country_scores_json,
                e.strengths_json AS europe_fit_strengths_json,
+               e.strengths_zh_json AS europe_fit_strengths_zh_json,
                e.risks_json AS europe_fit_risks_json,
+               e.risks_zh_json AS europe_fit_risks_zh_json,
                e.required_changes_json AS europe_fit_required_changes_json,
+               e.required_changes_zh_json AS europe_fit_required_changes_zh_json,
                e.reasoning AS europe_fit_reasoning,
+               e.reasoning_zh AS europe_fit_reasoning_zh,
                e.llm_provider AS europe_fit_provider,
                e.llm_model AS europe_fit_model,
                e.video_optimization_json AS europe_fit_video_optimization_json,
@@ -1518,6 +1750,7 @@ def list_top_europe_fit_materials(
                va.compliance_risk_score AS video_copyability_compliance_risk_score,
                va.recommendation AS video_copyability_recommendation,
                va.summary AS video_copyability_summary,
+               va.summary_zh AS video_copyability_summary_zh,
                va.llm_provider AS video_copyability_provider,
                va.llm_model AS video_copyability_model,
                va.analysis_json AS video_copyability_analysis_json,

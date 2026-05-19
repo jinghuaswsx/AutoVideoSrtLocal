@@ -520,6 +520,16 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex_adc",
         "tokens",
     ),
+    "meta_hot_posts.europe_fit_translate": _uc(
+        "meta_hot_posts.europe_fit_translate",
+        "xuanpin",
+        "Meta 热帖欧洲分析中文解读",
+        "使用 Google Vertex ADC Gemini 3.1 Flash-Lite 把欧洲适配英文分析翻译为中文解读并缓存",
+        "gemini_vertex_adc",
+        "gemini-3.1-flash-lite",
+        "gemini_vertex_adc",
+        "tokens",
+    ),
     # 视频创作
     "meta_hot_posts.video_copyability": _uc(
         "meta_hot_posts.video_copyability",
@@ -528,6 +538,16 @@ USE_CASES: dict[str, UseCase] = {
         "使用 Google Vertex ADC Gemini 3 Flash 分析本地化热帖视频是否适合直接抄作业投放美国 Meta 市场广告",
         "gemini_vertex_adc",
         "gemini-3-flash-preview",
+        "gemini_vertex_adc",
+        "tokens",
+    ),
+    "meta_hot_posts.video_copyability_translate": _uc(
+        "meta_hot_posts.video_copyability_translate",
+        "xuanpin",
+        "Meta 热帖视频分析中文解读",
+        "使用 Google Vertex ADC Gemini 3.1 Flash-Lite 把视频可抄英文分析翻译为中文解读并缓存",
+        "gemini_vertex_adc",
+        "gemini-3.1-flash-lite",
         "gemini_vertex_adc",
         "tokens",
     ),

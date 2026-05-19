@@ -67,6 +67,30 @@ def test_response_schema_includes_translation_localization_fields():
     ]
 
 
+def test_europe_fit_prompt_requires_chinese_operator_content():
+    system_prompt = europe_fit.build_system_prompt()
+    user_prompt = europe_fit.build_prompt(
+        {
+            "product_url": "https://example.com/products/socket",
+            "product_title": "Flexible Socket Extender",
+            "category_l1": "Tools & Hardware",
+        }
+    )
+    schema = europe_fit.build_response_schema()
+
+    assert "Simplified Chinese" in system_prompt
+    assert "strengths" in user_prompt
+    assert "risks" in user_prompt
+    assert "required_changes" in user_prompt
+    assert "reasoning" in user_prompt
+    assert "简体中文" in user_prompt
+    assert schema["properties"]["recommendation"]["enum"] == [
+        "translate_and_launch",
+        "adapt_before_translation",
+        "not_recommended",
+    ]
+
+
 def test_normalize_response_clamps_score_and_maps_recommendation():
     result = europe_fit.normalize_assessment_response(
         {

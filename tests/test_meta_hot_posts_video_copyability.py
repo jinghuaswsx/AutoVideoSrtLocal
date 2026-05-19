@@ -63,6 +63,7 @@ def test_analyze_video_copyability_invokes_vertex_adc_with_product_and_video(tmp
                 "compliance_risk_score": 12,
                 "recommendation": "copy",
                 "summary": "Strong hook and clear product demonstration.",
+                "summary_zh": "强钩子，产品展示清晰。",
                 "winning_angles": ["fast before-after"],
                 "risk_notes": ["avoid guaranteed claims"],
             },
@@ -99,9 +100,30 @@ def test_analyze_video_copyability_invokes_vertex_adc_with_product_and_video(tmp
     assert "https://example.com/products/socket" in kwargs["prompt"]
     assert "US Meta ecosystem ads" in kwargs["prompt"]
     assert result["overall_score"] == 91
+    assert result["summary_zh"] == "强钩子，产品展示清晰。"
     assert result["provider"] == "gemini_vertex_adc"
     assert result["model"] == "gemini-3-flash-preview"
     assert result["compressed_video_path"] == "meta_hot_posts/analysis_videos/8.mp4"
+
+
+def test_video_copyability_contract_requires_chinese_operator_fields():
+    schema = video_copyability._response_schema()
+    prompt = video_copyability.build_prompt(
+        {
+            "product_url": "https://example.com/products/socket",
+            "product_title": "Flexible Charging Socket",
+            "post_url": "https://facebook.com/posts/8",
+            "message_html": "<p>Charge everything faster.</p>",
+        }
+    )
+
+    assert "summary_zh" in schema["required"]
+    assert "summary as English compatibility text" in prompt
+    assert "summary_zh" in prompt
+    assert "Simplified Chinese" in prompt
+    assert "winning_angles" in prompt
+    assert "copy_notes" in prompt
+    assert "risk_notes" in prompt
 
 
 def test_run_pending_video_copyability_analyses_persists_success_and_failure(monkeypatch):

@@ -28,6 +28,9 @@
 .mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
 .mh-status-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
 .mh-zoom-btn { min-width:104px; }
+.mh-ai-analysis-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mh-ai-analysis-toggle { min-width:126px; border-color:#99f6e4; color:#0f766e; }
+.mh-ai-analysis-toggle.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
 .mh-pager { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin:10px 0 12px; color:var(--mh-muted); font-size:13px; }
 .mh-pager button { height:32px; min-width:32px; padding:0 10px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
 .mh-pager button.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
@@ -224,6 +227,16 @@ button.mh-link-btn { cursor:pointer; }
   .mh-zoom-btn {
     display: none;
   }
+  .mh-status-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .mh-ai-analysis-actions {
+    width: 100%;
+  }
+  .mh-ai-analysis-toggle {
+    flex: 1;
+  }
 }
 
 /* 移动端视频源切换开关 */
@@ -359,6 +372,10 @@ button.mh-link-btn { cursor:pointer; }
         <option value="interactions">互动量</option>
         <option value="creation_time">帖子创建时间</option>
       </select>
+      <div class="mh-ai-analysis-actions" aria-label="AI分析显示设置">
+        <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhUsAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('us')">显示美国AI分析</button>
+        <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhEuropeAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('europe')">显示欧洲AI分析</button>
+      </div>
       <button class="mh-btn secondary mh-zoom-btn" id="mhCardZoomButton" type="button" aria-pressed="false" onclick="toggleMetaHotCardZoom()">卡片放大 2x</button>
     </div>
   </div>
@@ -426,6 +443,8 @@ let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('pa
 let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 let mhCardZoomed = false;
+const MH_INITIAL_AI_ANALYSIS_VISIBILITY = {{ (meta_hot_posts_ai_visibility or {'us': false, 'europe': false}) | tojson }};
+let mhAiAnalysisVisibility = {us: false, europe: false};
 let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 const mhPageSize = 50;
@@ -575,6 +594,63 @@ function toggleMetaHotCardZoom() {
 function restoreMetaHotCardZoom() {
   applyMetaHotCardZoom(localStorage.getItem('mhCardZoomed') === '1');
 }
+const MH_AI_ANALYSIS_TOGGLES = {
+  us: {buttonId: 'mhUsAiAnalysisToggle', showText: '显示美国AI分析', hideText: '隐藏美国AI分析'},
+  europe: {buttonId: 'mhEuropeAiAnalysisToggle', showText: '显示欧洲AI分析', hideText: '隐藏欧洲AI分析'}
+};
+function normalizeMetaHotAiAnalysisVisibility(value) {
+  return {
+    us: Boolean(value && value.us),
+    europe: Boolean(value && value.europe)
+  };
+}
+function updateMetaHotAiAnalysisToggle(kind) {
+  const config = MH_AI_ANALYSIS_TOGGLES[kind];
+  if (!config) return;
+  const button = qs(config.buttonId);
+  if (!button) return;
+  const enabled = Boolean(mhAiAnalysisVisibility[kind]);
+  button.textContent = enabled ? config.hideText : config.showText;
+  button.classList.toggle('active', enabled);
+  button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+}
+function applyMetaHotAiAnalysisVisibility(kind, show, options = {}) {
+  if (!Object.prototype.hasOwnProperty.call(MH_AI_ANALYSIS_TOGGLES, kind)) return;
+  mhAiAnalysisVisibility[kind] = Boolean(show);
+  updateMetaHotAiAnalysisToggle(kind);
+  if (options.rerender !== false) rerenderMetaHotCards();
+}
+async function persistMetaHotAiAnalysisVisibility(previous) {
+  const res = await fetch('/xuanpin/api/meta-hot-posts/ai-analysis-visibility', {
+    method: 'POST',
+    headers: metaHotJsonHeaders(),
+    body: JSON.stringify({preferences: mhAiAnalysisVisibility})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'visibility_save_failed');
+  mhAiAnalysisVisibility = normalizeMetaHotAiAnalysisVisibility(data.preferences);
+  updateMetaHotAiAnalysisToggle('us');
+  updateMetaHotAiAnalysisToggle('europe');
+}
+function setMetaHotAiAnalysisVisibility(kind, show) {
+  const previous = {...mhAiAnalysisVisibility};
+  applyMetaHotAiAnalysisVisibility(kind, show);
+  persistMetaHotAiAnalysisVisibility(previous).catch(() => {
+    mhAiAnalysisVisibility = previous;
+    updateMetaHotAiAnalysisToggle('us');
+    updateMetaHotAiAnalysisToggle('europe');
+    rerenderMetaHotCards();
+    qs('mhStatus').textContent = 'AI分析显示设置保存失败';
+  });
+}
+function toggleMetaHotAiAnalysis(kind) {
+  setMetaHotAiAnalysisVisibility(kind, !mhAiAnalysisVisibility[kind]);
+}
+function restoreMetaHotAiAnalysisVisibility() {
+  mhAiAnalysisVisibility = normalizeMetaHotAiAnalysisVisibility(MH_INITIAL_AI_ANALYSIS_VISIBILITY);
+  updateMetaHotAiAnalysisToggle('us');
+  updateMetaHotAiAnalysisToggle('europe');
+}
 
 function isMetaHotPostFavorited(row) {
   return row.is_favorited === true || row.is_favorited === 1 || row.is_favorited === '1';
@@ -633,11 +709,12 @@ function recommendationLabel(value) {
   return fmt(value || '-');
 }
 function renderEuropeFitPanel(row) {
+  if (!mhAiAnalysisVisibility.europe) return '';
   if (row.europe_fit_score === undefined || row.europe_fit_score === null || row.europe_fit_score === '') return '';
   const countries = (row.europe_fit_best_countries || []).join(', ') || '-';
-  const strengths = listItems(row.europe_fit_strengths);
-  const risks = listItems(row.europe_fit_risks);
-  const changes = listItems(row.europe_fit_required_changes);
+  const strengths = listItems(row.europe_fit_strengths_zh || row.europe_fit_strengths);
+  const risks = listItems(row.europe_fit_risks_zh || row.europe_fit_risks);
+  const changes = listItems(row.europe_fit_required_changes_zh || row.europe_fit_required_changes);
   return `<div class="mh-europe-panel">
     <div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>
     <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
@@ -648,8 +725,10 @@ function renderEuropeFitPanel(row) {
   </div>`;
 }
 function copyabilityBlock(row) {
+  if (!mhAiAnalysisVisibility.us) return '';
   const data = row.video_copyability || null;
   if (!data) return '';
+  const summary = data.summary_zh || data.summary || '';
   return `<div class="mh-copyability">
     <div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>
     <div class="mh-score-list">
@@ -659,7 +738,7 @@ function copyabilityBlock(row) {
       <span class="mh-score">风险 ${fmt(data.compliance_risk_score)}</span>
       <span class="mh-score">${fmt(data.recommendation || '-')}</span>
     </div>
-    <div class="mh-copy-summary">${esc(data.summary || '')}</div>
+    <div class="mh-copy-summary">${esc(summary)}</div>
   </div>`;
 }
 function renderMessageBlock(row) {
@@ -736,6 +815,11 @@ function cacheMetaHotItems(items) {
   (items || []).forEach(item => {
     if (item && item.id) mhItemsById.set(Number(item.id), item);
   });
+}
+function rerenderMetaHotCards() {
+  const grid = qs('metaHotCardGrid');
+  if (!grid || mhItemsById.size === 0) return;
+  grid.innerHTML = Array.from(mhItemsById.values()).map(renderCard).join('');
 }
 function updateMetaHotCard(item) {
   if (!item || !item.id) return;
@@ -1250,6 +1334,7 @@ async function showFailureRecords() {
 }
 restoreVideoSource();
 restoreMetaHotCardZoom();
+restoreMetaHotAiAnalysisVisibility();
 // 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us）
 function initMetaHotSubtabFromHash() {
   const tab = location.hash.replace('#', '') || 'library';

@@ -94,7 +94,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 55
+    assert len(USE_CASES) == 57
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -196,6 +196,26 @@ def test_meta_hot_posts_video_copyability_use_case_is_registered_for_billing():
     assert uc["units_type"] == "tokens"
 
 
+def test_meta_hot_posts_video_copyability_translate_uses_adc_flash_lite():
+    uc = USE_CASES["meta_hot_posts.video_copyability_translate"]
+
+    assert uc["module"] == "xuanpin"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["units_type"] == "tokens"
+
+
+def test_meta_hot_posts_europe_fit_translate_uses_adc_flash_lite():
+    uc = USE_CASES["meta_hot_posts.europe_fit_translate"]
+
+    assert uc["module"] == "xuanpin"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["units_type"] == "tokens"
+
+
 def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
     adc_defaults = {
         code
@@ -206,7 +226,9 @@ def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
 
     assert adc_defaults == {
         "meta_hot_posts.europe_fit",
+        "meta_hot_posts.europe_fit_translate",
         "meta_hot_posts.video_copyability",
+        "meta_hot_posts.video_copyability_translate",
     }
 
 

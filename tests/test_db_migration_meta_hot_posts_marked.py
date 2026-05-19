@@ -72,6 +72,40 @@ def test_meta_hot_posts_copy_translation_model_binding_migration():
     assert "enabled = VALUES(enabled)" in body
 
 
+def test_meta_hot_posts_video_copyability_summary_zh_migration():
+    body = Path(
+        "db/migrations/2026_05_18_meta_hot_posts_video_copyability_summary_zh.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-video-analysis-zh-backfill-design.md" in body
+    assert "ALTER TABLE meta_hot_post_video_copyability_analyses" in body
+    assert "summary_zh" in body
+    assert "summary_zh_status" in body
+    assert "summary_zh_attempts" in body
+    assert "summary_zh_translated_at" in body
+    assert "idx_meta_hot_post_video_copyability_summary_zh_status" in body
+
+
+def test_meta_hot_posts_europe_fit_zh_migration():
+    body = Path(
+        "db/migrations/2026_05_18_meta_hot_posts_europe_fit_zh.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-europe-analysis-zh-backfill-design.md" in body
+    assert "ALTER TABLE meta_hot_post_europe_assessments" in body
+    assert "strengths_zh_json" in body
+    assert "risks_zh_json" in body
+    assert "required_changes_zh_json" in body
+    assert "reasoning_zh" in body
+    assert "zh_status" in body
+    assert "zh_attempts" in body
+    assert "zh_translated_at" in body
+    assert "idx_meta_hot_post_europe_assessments_zh_status" in body
+    assert "'meta_hot_posts.europe_fit_translate'" in body
+    assert "'gemini_vertex_adc'" in body
+    assert "'gemini-3.1-flash-lite'" in body
+
+
 def test_meta_hot_posts_local_video_migration_adds_cache_fields():
     body = Path("db/migrations/2026_05_14_meta_hot_posts_local_video.sql").read_text(
         encoding="utf-8"

@@ -79,6 +79,32 @@ def test_resolve_keeps_meta_message_translation_adc_binding():
     assert result["model"] == "gemini-3-flash-preview"
 
 
+def test_resolve_keeps_meta_video_copyability_translate_adc_binding():
+    row = {
+        "provider_code": "gemini_vertex_adc",
+        "model_id": "gemini-3.1-flash-lite",
+        "extra_config": None,
+        "enabled": 1,
+    }
+    with patch("appcore.llm_bindings.query_one", return_value=row):
+        result = llm_bindings.resolve("meta_hot_posts.video_copyability_translate")
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3.1-flash-lite"
+
+
+def test_resolve_keeps_meta_europe_fit_translate_adc_binding():
+    row = {
+        "provider_code": "gemini_vertex_adc",
+        "model_id": "gemini-3.1-flash-lite",
+        "extra_config": None,
+        "enabled": 1,
+    }
+    with patch("appcore.llm_bindings.query_one", return_value=row):
+        result = llm_bindings.resolve("meta_hot_posts.europe_fit_translate")
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3.1-flash-lite"
+
+
 def test_resolve_disabled_falls_back_to_default_without_reseeding():
     """enabled=0 视为无绑定，返回默认，但不 seed（避免覆盖管理员意图）。"""
     row = {

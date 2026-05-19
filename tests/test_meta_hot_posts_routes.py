@@ -174,6 +174,16 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotCardZoom()" in body
     assert "mh-zoomed" in body
     assert "localStorage.setItem('mhCardZoomed'" in body
+    assert "显示美国AI分析" in body
+    assert "隐藏美国AI分析" in body
+    assert "显示欧洲AI分析" in body
+    assert "隐藏欧洲AI分析" in body
+    assert "mhAiAnalysisVisibility" in body
+    assert "function toggleMetaHotAiAnalysis(kind)" in body
+    assert "function restoreMetaHotAiAnalysisVisibility()" in body
+    assert "/xuanpin/api/meta-hot-posts/ai-analysis-visibility" in body
+    assert "if (!mhAiAnalysisVisibility.us) return '';" in body
+    assert "if (!mhAiAnalysisVisibility.europe) return '';" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body
     assert "美国AI分析" in body
@@ -209,6 +219,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert '<option value="empty"' in body
     assert ">空</option>" in body
     assert "{param: 'mark_status', inputId: 'mhMarkStatus'}" in body
+    assert "appendMetaHotFilterParams(params)" in body
     assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
     assert "function renderMetaHotPageSummary(data, items, label = '')" in body
     assert "当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材" in body
@@ -257,6 +268,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "loadFavoriteMetaHotPosts" in body
     assert "/xuanpin/api/meta-hot-posts/favorites" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/favorite" in body
+    assert "/xuanpin/api/meta-hot-posts/ai-analysis-visibility" in body
     assert "function toggleMetaHotPostFavorite" in body
     assert "renderFavoriteButton(row, 'heart')" in body
     assert "renderFavoriteButton(row, 'text')" in body
@@ -273,7 +285,11 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "/xuanpin/api/meta-hot-posts/europe-fit" in body
     assert "JSON.stringify({limit:10})" in body
     assert "renderEuropeFitPanel" in body
+    assert "row.europe_fit_strengths_zh || row.europe_fit_strengths" in body
+    assert "row.europe_fit_risks_zh || row.europe_fit_risks" in body
+    assert "row.europe_fit_required_changes_zh || row.europe_fit_required_changes" in body
     assert "copyabilityBlock(row)" in body
+    assert "data.summary_zh || data.summary || ''" in body
     assert "function formatVideoDuration" in body
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body
@@ -326,6 +342,22 @@ def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
     assert "function syncMetaHotFiltersToUrl(page)" in body
     assert "history.replaceState(null, '', url.pathname + url.search + url.hash);" in body
     assert "switchMetaHotSubtab(tab, {syncUrl: false});" in body
+
+
+def test_meta_hot_posts_page_embeds_user_ai_visibility(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("appcore.meta_hot_posts.service.category_options", lambda: [])
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.ai_analysis_visibility_for_user",
+        lambda user_id: {"us": True, "europe": False},
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "MH_INITIAL_AI_ANALYSIS_VISIBILITY" in body
+    assert '"us": true' in body
+    assert '"europe": false' in body
 
 
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
@@ -649,3 +681,35 @@ def test_meta_hot_posts_favorite_api_passes_current_user(authed_client_no_db, mo
     assert captured["post_id"] == 7
     assert captured["payload"] == {"favorited": True}
     assert captured["user_id"]
+
+
+def test_meta_hot_posts_ai_visibility_api_get_and_post_use_current_user(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_get(user_id):
+        captured["get_user_id"] = user_id
+        return type("Resp", (), {"payload": {"ok": True, "preferences": {"us": False, "europe": False}}, "status_code": 200})()
+
+    def fake_post(payload, user_id=None):
+        captured["post_payload"] = payload
+        captured["post_user_id"] = user_id
+        return type("Resp", (), {"payload": {"ok": True, "preferences": payload["preferences"]}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_ai_analysis_visibility_response", fake_get)
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_ai_analysis_visibility_update_response", fake_post)
+
+    get_resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/ai-analysis-visibility")
+    post_resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/ai-analysis-visibility",
+        json={"preferences": {"us": True, "europe": False}},
+    )
+
+    assert get_resp.status_code == 200
+    assert get_resp.get_json()["preferences"] == {"us": False, "europe": False}
+    assert post_resp.status_code == 200
+    assert post_resp.get_json()["preferences"] == {"us": True, "europe": False}
+    assert captured["get_user_id"]
+    assert captured["post_user_id"]
+    assert captured["post_payload"] == {"preferences": {"us": True, "europe": False}}

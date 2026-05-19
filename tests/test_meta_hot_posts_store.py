@@ -46,6 +46,12 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "va.status = 'done'" in data_sql
     assert "va.id AS video_copyability_analysis_id" in data_sql
     assert "va.overall_score AS video_copyability_overall_score" in data_sql
+    assert "va.summary_zh AS video_copyability_summary_zh" in data_sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e" in data_sql
+    assert "e.status = 'done'" in data_sql
+    assert "e.suitability_score AS europe_fit_score" in data_sql
+    assert "e.strengths_zh_json AS europe_fit_strengths_zh_json" in data_sql
+    assert "e.required_changes_zh_json AS europe_fit_required_changes_zh_json" in data_sql
     assert "(p.message_html LIKE %s OR p.message_zh_html LIKE %s" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:8] == ["Kitchenware", 10.0, 30.5, 1000, 50, "ok", "2026-05-01", "2026-05-13"]
@@ -93,6 +99,8 @@ def test_list_today_new_hot_posts_filters_by_first_seen_today():
     assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in data_sql
     assert "va.status = 'done'" in data_sql
     assert "va.id AS video_copyability_analysis_id" in data_sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e" in data_sql
+    assert "e.suitability_score AS europe_fit_score" in data_sql
     assert "ORDER BY p.first_seen_at DESC" in data_sql
     assert "COALESCE(p.sync_period_likes, 0) DESC" in data_sql
     assert data_params == [50, 0]
@@ -227,6 +235,9 @@ def test_list_favorite_hot_posts_sorts_by_user_choice():
     assert payload["items"][0]["id"] == 9
     assert "FROM meta_hot_post_favorites fav" in data_sql
     assert "JOIN meta_hot_posts p ON p.id = fav.hot_post_id" in data_sql
+    assert "LEFT JOIN meta_hot_post_europe_assessments e" in data_sql
+    assert "e.suitability_score AS europe_fit_score" in data_sql
+    assert "va.summary_zh AS video_copyability_summary_zh" in data_sql
     assert "WHERE fav.user_id = %s" in data_sql
     assert "ORDER BY COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC" in data_sql
     assert data_params == [88, 20, 20]
@@ -740,6 +751,7 @@ def test_video_copyability_status_transitions_are_recorded():
     assert "status=%s" in success_sql
     assert "overall_score=%s" in success_sql
     assert "analysis_json=%s" in success_sql
+    assert "summary_zh=%s" in success_sql
     assert "analyzed_at=CASE WHEN %s = 'done' THEN NOW() ELSE analyzed_at END" in success_sql
     assert success_params[0] == "done"
     assert success_params[2:7] == (91, 94, 89, 88, 12)
@@ -840,6 +852,56 @@ def test_list_top_video_copyability_analyses_orders_best_50():
     assert "va.copyability_score DESC" in sql
     assert "va.meta_us_ad_fit_score DESC" in sql
     assert params == (50,)
+
+
+def test_video_copyability_summary_zh_translation_queue_and_status_updates():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append(("query", sql, params))
+        return [{"analysis_id": 9, "summary": "Strong hook.", "analysis_json": '{"risk_notes":["policy"]}'}]
+
+    rows = store.next_pending_video_copyability_summary_translations(
+        limit=500,
+        query_fn=fake_query,
+    )
+    store.mark_video_copyability_summary_translation_running(
+        9,
+        execute_fn=lambda sql, params=(): calls.append(("execute", sql, params)) or 1,
+    )
+    store.finish_video_copyability_summary_translation(
+        9,
+        translated_summary="强钩子，产品展示清晰。",
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append(("execute", sql, params)) or 1,
+    )
+    store.finish_video_copyability_summary_translation(
+        10,
+        translated_summary=None,
+        error_message="quota exhausted",
+        execute_fn=lambda sql, params=(): calls.append(("execute", sql, params)) or 1,
+    )
+
+    select_sql, select_params = calls[0][1], calls[0][2]
+    assert rows[0]["analysis_id"] == 9
+    assert "FROM meta_hot_post_video_copyability_analyses" in select_sql
+    assert "status = 'done'" in select_sql
+    assert "summary_zh_status IN ('pending', 'failed')" in select_sql
+    assert "summary_zh_attempts < %s" in select_sql
+    assert select_params == (3, 120)
+    running_sql, running_params = calls[1][1], calls[1][2]
+    assert "summary_zh_status='running'" in running_sql
+    assert "summary_zh_attempts=summary_zh_attempts + 1" in running_sql
+    assert running_params == (9,)
+    success_sql, success_params = calls[2][1], calls[2][2]
+    assert "summary_zh=%s" in success_sql
+    assert "summary_zh_status='done'" in success_sql
+    assert "summary_zh_translated_at=NOW()" in success_sql
+    assert success_params == ("强钩子，产品展示清晰。", 9)
+    failure_sql, failure_params = calls[3][1], calls[3][2]
+    assert "summary_zh_status='failed'" in failure_sql
+    assert "summary_zh_error=%s" in failure_sql
+    assert failure_params == ("quota exhausted", 10)
 
 
 def test_next_pending_europe_fit_materials_selects_downloaded_video_rows():
@@ -984,6 +1046,58 @@ def test_reset_running_europe_fit_assessments_requeues_for_takeover():
     assert params == (3, 3)
 
 
+def test_europe_fit_zh_translation_queue_and_status_updates():
+    calls = []
+
+    rows = store.next_pending_europe_fit_translations(
+        limit=500,
+        query_fn=lambda sql, params=(): calls.append((sql, params)) or [{"post_id": 9}],
+    )
+    store.mark_europe_fit_translation_running(
+        9,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_europe_fit_translation(
+        9,
+        translated={
+            "strengths": ["演示清晰"],
+            "risks": ["英文字幕需要本土化"],
+            "required_changes": ["翻译字幕"],
+            "reasoning": "适合欧洲投放，但需要本土化字幕。",
+        },
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_europe_fit_translation(
+        10,
+        translated=None,
+        error_message="429 resource exhausted",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    select_sql, select_params = calls[0]
+    running_sql, running_params = calls[1]
+    success_sql, success_params = calls[2]
+    failure_sql, failure_params = calls[3]
+    assert rows == [{"post_id": 9}]
+    assert "FROM meta_hot_post_europe_assessments" in select_sql
+    assert "status = 'done'" in select_sql
+    assert "zh_attempts < %s" in select_sql
+    assert select_params == (3, 120)
+    assert "SET zh_status='running'" in running_sql
+    assert "zh_attempts=zh_attempts + 1" in running_sql
+    assert running_params == (9,)
+    assert "strengths_zh_json=%s" in success_sql
+    assert "risks_zh_json=%s" in success_sql
+    assert "required_changes_zh_json=%s" in success_sql
+    assert "reasoning_zh=%s" in success_sql
+    assert "zh_status='done'" in success_sql
+    assert success_params[3] == "适合欧洲投放，但需要本土化字幕。"
+    assert success_params[-1] == 9
+    assert "zh_status='failed'" in failure_sql
+    assert failure_params == ("429 resource exhausted", 10)
+
+
 def test_list_top_europe_fit_materials_orders_by_score():
     calls = []
 
@@ -1000,6 +1114,10 @@ def test_list_top_europe_fit_materials_orders_by_score():
     assert "LEFT JOIN meta_hot_post_video_copyability_analyses va" in sql
     assert "va.status = 'done'" in sql
     assert "va.id AS video_copyability_analysis_id" in sql
+    assert "e.strengths_zh_json AS europe_fit_strengths_zh_json" in sql
+    assert "e.risks_zh_json AS europe_fit_risks_zh_json" in sql
+    assert "e.required_changes_zh_json AS europe_fit_required_changes_zh_json" in sql
+    assert "e.reasoning_zh AS europe_fit_reasoning_zh" in sql
     assert "e.status = 'done'" in sql
     assert "ORDER BY e.suitability_score DESC" in sql
     assert params == (50,)

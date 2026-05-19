@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from appcore import api_keys
 from appcore.meta_hot_posts import (
     categories,
     europe_fit,
@@ -15,6 +17,8 @@ from appcore.meta_hot_posts import (
 
 MARK_STATUS_OK = "ok"
 MARK_STATUS_BAD = "bad"
+AI_VISIBILITY_PREF_SERVICE = "meta_hot_posts_ai_visibility"
+DEFAULT_AI_ANALYSIS_VISIBILITY = {"us": False, "europe": False}
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,7 @@ def _pop_video_copyability_payload(
             "compliance_risk_score": "video_copyability_compliance_risk_score",
             "recommendation": "video_copyability_recommendation",
             "summary": "video_copyability_summary",
+            "summary_zh": "video_copyability_summary_zh",
             "provider": "video_copyability_provider",
             "model": "video_copyability_model",
             "analyzed_at": "video_copyability_analyzed_at",
@@ -106,6 +111,7 @@ def _pop_video_copyability_payload(
             "compliance_risk_score": "compliance_risk_score",
             "recommendation": "recommendation",
             "summary": "summary",
+            "summary_zh": "summary_zh",
             "provider": "llm_provider",
             "model": "llm_model",
             "analyzed_at": "analyzed_at",
@@ -205,6 +211,55 @@ def _bool_payload(value: Any) -> bool:
     return False
 
 
+def _normalize_ai_visibility(value: Mapping[str, Any] | None) -> dict[str, bool]:
+    source = value or {}
+    return {
+        "us": _bool_payload(source.get("us", source.get("show_us", source.get("show_us_ai_analysis")))),
+        "europe": _bool_payload(
+            source.get("europe", source.get("show_europe", source.get("show_europe_ai_analysis")))
+        ),
+    }
+
+
+def ai_analysis_visibility_for_user(user_id: int | None) -> dict[str, bool]:
+    if not user_id:
+        return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
+    raw = api_keys.get_key(int(user_id), AI_VISIBILITY_PREF_SERVICE)
+    if not raw:
+        return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
+    return _normalize_ai_visibility(parsed if isinstance(parsed, Mapping) else {})
+
+
+def build_ai_analysis_visibility_response(user_id: int | None) -> MetaHotPostsResponse:
+    if not user_id:
+        return MetaHotPostsResponse({"error": "missing_user"}, 400)
+    return MetaHotPostsResponse(
+        {"ok": True, "preferences": ai_analysis_visibility_for_user(int(user_id))}
+    )
+
+
+def build_ai_analysis_visibility_update_response(
+    payload: Mapping[str, Any] | None,
+    *,
+    user_id: int | None,
+) -> MetaHotPostsResponse:
+    if not user_id:
+        return MetaHotPostsResponse({"error": "missing_user"}, 400)
+    payload = payload or {}
+    source = payload.get("preferences") if isinstance(payload.get("preferences"), Mapping) else payload
+    preferences = _normalize_ai_visibility(source if isinstance(source, Mapping) else {})
+    api_keys.set_key(
+        int(user_id),
+        AI_VISIBILITY_PREF_SERVICE,
+        json.dumps(preferences, ensure_ascii=False, sort_keys=True),
+    )
+    return MetaHotPostsResponse({"ok": True, "preferences": preferences})
+
+
 def _normalize_mark_status(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     if raw in {MARK_STATUS_OK, "pass", "yes", "行"}:
@@ -292,11 +347,20 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["europe_fit_strengths"] = _decode_json_list(
         item.pop("europe_fit_strengths_json", None)
     )
+    item["europe_fit_strengths_zh"] = _decode_json_list(
+        item.pop("europe_fit_strengths_zh_json", None)
+    )
     item["europe_fit_risks"] = _decode_json_list(
         item.pop("europe_fit_risks_json", None)
     )
+    item["europe_fit_risks_zh"] = _decode_json_list(
+        item.pop("europe_fit_risks_zh_json", None)
+    )
     item["europe_fit_required_changes"] = _decode_json_list(
         item.pop("europe_fit_required_changes_json", None)
+    )
+    item["europe_fit_required_changes_zh"] = _decode_json_list(
+        item.pop("europe_fit_required_changes_zh_json", None)
     )
     item["europe_fit_video_optimization"] = _decode_json_dict(
         item.pop("europe_fit_video_optimization_json", None)

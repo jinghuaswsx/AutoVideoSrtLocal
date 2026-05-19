@@ -104,6 +104,35 @@ def test_build_favorite_response_toggles_current_user_favorite(monkeypatch):
     assert captured == {"post_id": 7, "user_id": 88, "favorited": True}
 
 
+def test_ai_analysis_visibility_defaults_hidden_and_persists_per_user(monkeypatch):
+    stored = {}
+
+    monkeypatch.setattr(service.api_keys, "get_key", lambda user_id, service_code: stored.get((user_id, service_code)))
+
+    def fake_set_key(user_id, service_code, key_value):
+        stored[(user_id, service_code)] = key_value
+
+    monkeypatch.setattr(service.api_keys, "set_key", fake_set_key)
+
+    assert service.ai_analysis_visibility_for_user(88) == {"us": False, "europe": False}
+
+    result = service.build_ai_analysis_visibility_update_response(
+        {"preferences": {"us": True, "europe": False}},
+        user_id=88,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {"ok": True, "preferences": {"us": True, "europe": False}}
+    assert service.ai_analysis_visibility_for_user(88) == {"us": True, "europe": False}
+
+
+def test_build_ai_analysis_visibility_response_requires_user():
+    result = service.build_ai_analysis_visibility_response(None)
+
+    assert result.status_code == 400
+    assert result.payload == {"error": "missing_user"}
+
+
 def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
     monkeypatch.setattr(
         service.store,
@@ -121,6 +150,7 @@ def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
                     "video_copyability_compliance_risk_score": 12,
                     "video_copyability_recommendation": "copy",
                     "video_copyability_summary": "Strong hook.",
+                    "video_copyability_summary_zh": "强钩子，产品展示清晰。",
                     "video_copyability_provider": "gemini_vertex_adc",
                     "video_copyability_model": "gemini-3-flash-preview",
                     "video_copyability_analyzed_at": "2026-05-18 10:00:00",
@@ -142,10 +172,46 @@ def test_build_list_response_hydrates_completed_video_copyability(monkeypatch):
     assert copyability["compliance_risk_score"] == 12
     assert copyability["recommendation"] == "copy"
     assert copyability["summary"] == "Strong hook."
+    assert copyability["summary_zh"] == "强钩子，产品展示清晰。"
     assert copyability["provider"] == "gemini_vertex_adc"
     assert copyability["model"] == "gemini-3-flash-preview"
     assert copyability["analyzed_at"] == "2026-05-18 10:00:00"
     assert copyability["raw"] == {"hook": "clear"}
+
+
+def test_build_list_response_hydrates_europe_fit_fields(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "list_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 1,
+                    "sku_prices_json": "[]",
+                    "europe_fit_score": 88,
+                    "europe_fit_recommendation": "translate_and_launch",
+                    "europe_fit_best_countries_json": '["DE", "FR"]',
+                    "europe_fit_strengths_json": '["clear demo"]',
+                    "europe_fit_strengths_zh_json": '["演示清晰"]',
+                    "europe_fit_risks_json": '["English captions"]',
+                    "europe_fit_risks_zh_json": '["英文字幕需要替换"]',
+                    "europe_fit_required_changes_json": '["translate captions"]',
+                    "europe_fit_required_changes_zh_json": '["翻译字幕"]',
+                    "europe_fit_reasoning_zh": "适合欧洲翻译投放。",
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    item = service.build_list_response({}).payload["items"][0]
+
+    assert item["europe_fit_score"] == 88
+    assert item["europe_fit_best_countries"] == ["DE", "FR"]
+    assert item["europe_fit_strengths_zh"] == ["演示清晰"]
+    assert item["europe_fit_risks_zh"] == ["英文字幕需要替换"]
+    assert item["europe_fit_required_changes_zh"] == ["翻译字幕"]
+    assert item["europe_fit_reasoning_zh"] == "适合欧洲翻译投放。"
 
 
 def test_build_ai_analysis_request_preview_for_europe_translation(monkeypatch):
@@ -498,8 +564,12 @@ def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):
                 "europe_fit_recommendation": "direct_reuse",
                 "europe_fit_best_countries_json": '["DE", "FR"]',
                 "europe_fit_strengths_json": '["clear demo"]',
+                "europe_fit_strengths_zh_json": '["演示清晰"]',
                 "europe_fit_risks_json": '["minor English text"]',
+                "europe_fit_risks_zh_json": '["英文字幕需要本土化"]',
                 "europe_fit_required_changes_json": "[]",
+                "europe_fit_required_changes_zh_json": '["翻译字幕"]',
+                "europe_fit_reasoning_zh": "适合欧洲投放。",
             }
         ],
     )
@@ -513,8 +583,12 @@ def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):
     assert item["europe_fit_score"] == 94
     assert item["europe_fit_best_countries"] == ["DE", "FR"]
     assert item["europe_fit_strengths"] == ["clear demo"]
+    assert item["europe_fit_strengths_zh"] == ["演示清晰"]
     assert item["europe_fit_risks"] == ["minor English text"]
+    assert item["europe_fit_risks_zh"] == ["英文字幕需要本土化"]
     assert item["europe_fit_required_changes"] == []
+    assert item["europe_fit_required_changes_zh"] == ["翻译字幕"]
+    assert item["europe_fit_reasoning_zh"] == "适合欧洲投放。"
 
 
 def test_build_list_response_prefers_persisted_local_video_metadata(monkeypatch):

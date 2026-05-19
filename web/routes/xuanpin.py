@@ -96,6 +96,9 @@ def meta_hot_posts_page():
     return render_template(
         "meta_hot_posts.html",
         meta_hot_post_categories=_meta_hot_posts().category_options(),
+        meta_hot_posts_ai_visibility=_meta_hot_posts().ai_analysis_visibility_for_user(
+            getattr(current_user, "id", None)
+        ),
     )
 
 
@@ -316,6 +319,24 @@ def api_meta_hot_posts_favorite(post_id: int):
         payload,
         user_id=getattr(current_user, "id", None),
     )
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/ai-analysis-visibility", methods=["GET", "POST"])
+@login_required
+def api_meta_hot_posts_ai_analysis_visibility():
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        result = _meta_hot_posts().build_ai_analysis_visibility_update_response(
+            payload,
+            user_id=getattr(current_user, "id", None),
+        )
+    else:
+        result = _meta_hot_posts().build_ai_analysis_visibility_response(
+            getattr(current_user, "id", None),
+        )
     return jsonify(result.payload), result.status_code
 
 

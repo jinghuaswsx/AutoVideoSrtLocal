@@ -110,6 +110,7 @@ def build_response_schema() -> dict[str, Any]:
             "compliance_risk_score": score,
             "recommendation": {"type": "string", "enum": ["copy", "adapt", "avoid"]},
             "summary": {"type": "string"},
+            "summary_zh": {"type": "string"},
             "winning_angles": {"type": "array", "items": {"type": "string"}},
             "copy_notes": {"type": "array", "items": {"type": "string"}},
             "risk_notes": {"type": "array", "items": {"type": "string"}},
@@ -122,6 +123,7 @@ def build_response_schema() -> dict[str, Any]:
             "compliance_risk_score",
             "recommendation",
             "summary",
+            "summary_zh",
         ],
     }
 
@@ -167,6 +169,9 @@ Score 0-100:
 - compliance_risk_score: higher means more legal, policy, exaggerated claim, IP, medical, before-after, or unsafe-content risk.
 
 Return concise JSON only. Prefer "copy" only when the video has a clear hook, visible product demo, low compliance risk, and enough creative clarity to brief a new ad.
+Keep summary as English compatibility text for legacy exports.
+Fill summary_zh with a natural Simplified Chinese interpretation for Chinese ecommerce operators.
+Return winning_angles, copy_notes, and risk_notes as Simplified Chinese bullet-style strings. Keep terms such as Meta, Facebook, Instagram, Reels, SKU, and ROAS unchanged.
 """.strip()
 
 

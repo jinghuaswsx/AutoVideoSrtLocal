@@ -58,7 +58,8 @@ def build_system_prompt() -> str:
         "for Meta ads in Germany, France, Italy, Spain, and similar European markets. "
         "Be practical: consider product-market fit, visible product demo, spoken language, voiceover dependency, "
         "subtitle and on-screen text localization, claims/compliance risk, cultural fit, and localization effort before launch. "
-        "Return only valid JSON matching the schema."
+        "Return only valid JSON matching the schema. "
+        "All operator-facing explanation fields must be in Simplified Chinese."
     )
 
 
@@ -172,7 +173,10 @@ def build_prompt(row: Mapping[str, Any]) -> str:
         "The attached video has been compressed for LLM review. Decide if the material can be "
         "translated/localized and launched, adapted before translation, or rejected. Evaluate spoken language, "
         "subtitle needs, voiceover/dubbing needs, on-screen text replacement, product-market fit, ad-policy risk, "
-        "country-specific cultural risk, and how hard it would be to turn this into German, French, Italian, and Spanish variants."
+        "country-specific cultural risk, and how hard it would be to turn this into German, French, Italian, and Spanish variants.\n\n"
+        "Return strengths, risks, required_changes, and reasoning in 简体中文 for Chinese ecommerce operators. "
+        "Keep recommendation as one of translate_and_launch, adapt_before_translation, or not_recommended. "
+        "best_countries may use country names or country codes."
     )
 
 
