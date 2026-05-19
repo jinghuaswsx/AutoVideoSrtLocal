@@ -87,6 +87,19 @@ _OPENROUTER_OPENAI_IMAGE2_QUALITY_MAP: dict[str, str] = {
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE = "1K"
 _OPENROUTER_OPENAI_IMAGE2_COVER_SIZE = "2K"
 _OPENROUTER_OPENAI_IMAGE2_SIZES = {"1K", "2K"}
+_OPENROUTER_OPENAI_IMAGE2_IMAGE_TRANSLATE_SIZE = "1K"
+_OPENROUTER_OPENAI_IMAGE2_ASPECT_RATIOS: dict[str, tuple[int, int]] = {
+    "1:1": (1, 1),
+    "2:3": (2, 3),
+    "3:2": (3, 2),
+    "3:4": (3, 4),
+    "4:3": (4, 3),
+    "4:5": (4, 5),
+    "5:4": (5, 4),
+    "9:16": (9, 16),
+    "16:9": (16, 9),
+    "21:9": (21, 9),
+}
 
 
 IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
@@ -152,6 +165,31 @@ def _default_openrouter_openai_image2_size(service: str | None) -> str:
         if str(service or "").strip().startswith("video_cover.")
         else _OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE
     )
+
+
+def _is_image_translate_service(service: str | None) -> bool:
+    return str(service or "").strip().startswith("image_translate.")
+
+
+def _resolve_openrouter_openai_image2_aspect_ratio(source_image: bytes) -> str | None:
+    try:
+        with Image.open(io.BytesIO(source_image)) as img:
+            width, height = img.size
+        if width <= 0 or height <= 0:
+            return None
+        source_ratio = width / height
+        return min(
+            _OPENROUTER_OPENAI_IMAGE2_ASPECT_RATIOS,
+            key=lambda key: abs(
+                math.log(source_ratio / (
+                    _OPENROUTER_OPENAI_IMAGE2_ASPECT_RATIOS[key][0]
+                    / _OPENROUTER_OPENAI_IMAGE2_ASPECT_RATIOS[key][1]
+                ))
+            ),
+        )
+    except Exception:
+        logger.debug("解析 OpenRouter Image 2 原图比例失败，跳过 aspect_ratio", exc_info=True)
+        return None
 
 
 def _is_openrouter_openai_image2_enabled() -> bool:
@@ -657,6 +695,7 @@ def _generate_via_openrouter(
     api_key: str,
     base_url: str,
     openrouter_image_size: str | None = None,
+    openrouter_aspect_ratio: str | None = None,
     timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
@@ -689,9 +728,12 @@ def _generate_via_openrouter(
     extra_body: dict[str, Any] = {"usage": {"include": True}}
     if image_quality is not None:
         extra_body["quality"] = image_quality
-        extra_body["image_config"] = {
+        image_config = {
             "image_size": _normalize_openrouter_openai_image2_size(openrouter_image_size),
         }
+        if openrouter_aspect_ratio:
+            image_config["aspect_ratio"] = openrouter_aspect_ratio
+        extra_body["image_config"] = image_config
     try:
         resp = request_openrouter_image(
             client,
@@ -1173,18 +1215,33 @@ def generate_image(
             else:
                 model_id = coerce_image_model(candidate_model, channel=channel)
             if channel == "openrouter":
+                if _is_image_translate_service(service) and is_openrouter_openai_image2_model(model_id):
+                    model_id = _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS["low"]
                 if is_openrouter_openai_image2_model(model_id):
+                    if _is_image_translate_service(service):
+                        resolved_openrouter_image_size = _OPENROUTER_OPENAI_IMAGE2_IMAGE_TRANSLATE_SIZE
+                    else:
+                        resolved_openrouter_image_size = _normalize_openrouter_openai_image2_size(
+                            openrouter_image_size or _default_openrouter_openai_image2_size(service)
+                        )
+                    resolved_openrouter_aspect_ratio = _resolve_openrouter_openai_image2_aspect_ratio(
+                        source_image
+                    )
                     resolved_openrouter_image_size = _normalize_openrouter_openai_image2_size(
-                        openrouter_image_size or _default_openrouter_openai_image2_size(service)
+                        resolved_openrouter_image_size
                     )
                     req_payload["openrouter_image_size"] = resolved_openrouter_image_size
+                    if resolved_openrouter_aspect_ratio:
+                        req_payload["openrouter_aspect_ratio"] = resolved_openrouter_aspect_ratio
                 else:
                     resolved_openrouter_image_size = None
+                    resolved_openrouter_aspect_ratio = None
                 api_key, or_base_url = _resolve_openrouter_image_credentials()
                 image_bytes, mime, resp = _generate_via_openrouter(
                     prompt, source_image, source_mime, model_id,
                     api_key=api_key, base_url=or_base_url,
                     openrouter_image_size=resolved_openrouter_image_size,
+                    openrouter_aspect_ratio=resolved_openrouter_aspect_ratio,
                     timeout_seconds=normalized_timeout,
                 )
                 input_tokens = output_tokens = None

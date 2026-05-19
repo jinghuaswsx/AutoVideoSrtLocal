@@ -33,7 +33,7 @@ MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gemini-3.1-flash-image-preview"
 # OpenRouter OpenAI Image 2 质量档位开关与默认值
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY = "image_translate.openrouter_openai_image2_default_quality"
-_OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low", "mid", "high")
+_OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low",)
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY = "low"
 
 

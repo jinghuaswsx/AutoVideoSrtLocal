@@ -78,6 +78,7 @@ _BANANA_RETRY_CHANNEL = "aistudio"
 _BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
 _BANANA_RETRY_LABEL = "banana重新生成"
 _PARALLEL_CAPABLE_CHANNELS = {"openrouter", "apimart"}
+_OPENROUTER_IMAGE2_LOW_MODEL = "openai/gpt-5.4-image-2:low"
 
 
 def _safe_image_translate_channel() -> str:
@@ -98,6 +99,39 @@ def _safe_image_translate_default_model(channel: str) -> str:
 
 def _image_translate_channels_payload() -> list[dict]:
     return [{"id": code, "name": _channel_label(code)} for code in its.CHANNELS]
+
+
+def _list_image_translate_models(channel: str) -> list[tuple[str, str]]:
+    models = list_image_models(channel)
+    if (channel or "").strip().lower() != "openrouter":
+        return models
+    return [
+        (model_id, label)
+        for model_id, label in models
+        if not is_openrouter_openai_image2_model(model_id)
+        or model_id == _OPENROUTER_IMAGE2_LOW_MODEL
+    ]
+
+
+def _is_valid_new_image_translate_model(model_id: str, *, channel: str) -> bool:
+    normalized = (model_id or "").strip()
+    channel_key = (channel or "").strip().lower()
+    if channel_key == "openrouter" and is_openrouter_openai_image2_model(normalized):
+        return normalized == _OPENROUTER_IMAGE2_LOW_MODEL and is_valid_image_model(
+            normalized, channel=channel_key,
+        )
+    return is_valid_image_model(normalized, channel=channel_key)
+
+
+def _coerce_image_translate_default_model(channel: str, model_id: str) -> str:
+    models = _list_image_translate_models(channel)
+    ids = [mid for mid, _label in models]
+    normalized = (model_id or "").strip()
+    if normalized in ids:
+        return normalized
+    if _OPENROUTER_IMAGE2_LOW_MODEL in ids:
+        return _OPENROUTER_IMAGE2_LOW_MODEL
+    return ids[0] if ids else normalized
 
 
 def _requested_image_translate_channel(value: str | None) -> str:
@@ -441,8 +475,10 @@ def api_models():
     return image_translate_flask_response(
         build_image_translate_payload_response(
             {
-                "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
-                "default_model_id": _safe_image_translate_default_model(channel),
+                "items": [{"id": mid, "name": label} for mid, label in _list_image_translate_models(channel)],
+                "default_model_id": _coerce_image_translate_default_model(
+                    channel, _safe_image_translate_default_model(channel),
+                ),
                 "channel": channel,
                 "default_channel": default_channel,
                 "channels": _image_translate_channels_payload(),
@@ -555,7 +591,7 @@ def api_upload_complete():
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported channel", 400)
         )
-    if not is_valid_image_model(model_id, channel=channel):
+    if not _is_valid_new_image_translate_model(model_id, channel=channel):
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported model", 400)
         )

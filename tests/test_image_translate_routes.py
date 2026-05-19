@@ -183,7 +183,7 @@ def test_medias_default_image_task_ignores_global_default_model(authed_client_no
     assert created["model_id"] == "gemini-3.1-flash-image-preview"
 
 
-def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_client_no_db, monkeypatch):
+def test_models_endpoint_returns_only_low_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     from appcore import image_translate_settings as app_its
 
@@ -199,9 +199,9 @@ def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_clie
     data = resp.get_json()
     ids = [item["id"] for item in data["items"]]
     assert "openai/gpt-5.4-image-2:low" in ids
-    assert "openai/gpt-5.4-image-2:mid" in ids
-    assert "openai/gpt-5.4-image-2:high" in ids
-    assert data["default_model_id"] == "openai/gpt-5.4-image-2:high"
+    assert "openai/gpt-5.4-image-2:mid" not in ids
+    assert "openai/gpt-5.4-image-2:high" not in ids
+    assert data["default_model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_models_endpoint_hides_openai_image2_when_disabled(authed_client_no_db, monkeypatch):
@@ -270,14 +270,44 @@ def test_upload_complete_accepts_openai_image2_when_enabled(authed_client_no_db,
         "task_id": b["task_id"],
         "preset": "cover",
         "target_language": "de",
-        "model_id": "openai/gpt-5.4-image-2:mid",
+        "model_id": "openai/gpt-5.4-image-2:low",
         "prompt": "x",
         "product_name": "demo",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
 
     assert resp.status_code == 201
-    assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:mid"
+    assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:low"
+
+
+def test_upload_complete_rejects_openai_image2_mid_high_for_new_tasks(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    for model_id in ("openai/gpt-5.4-image-2:mid", "openai/gpt-5.4-image-2:high"):
+        resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+            "task_id": b["task_id"],
+            "preset": "cover",
+            "target_language": "de",
+            "model_id": model_id,
+            "prompt": "x",
+            "product_name": "demo",
+            "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+        })
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "unsupported model"
 
 
 def test_upload_complete_uses_requested_single_task_channel(authed_client_no_db, monkeypatch):

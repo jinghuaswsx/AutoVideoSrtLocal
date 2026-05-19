@@ -119,7 +119,7 @@ def test_runtime_uses_registered_billing_use_case(tmp_path):
     assert gen.call_args.kwargs["service"] == "image_translate.generate"
 
 
-def test_runtime_passes_2k_openrouter_image_size_for_cover_preset(tmp_path):
+def test_runtime_passes_1k_openrouter_image_size_for_cover_preset(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
 
@@ -139,7 +139,7 @@ def test_runtime_passes_2k_openrouter_image_size_for_cover_preset(tmp_path):
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as gen:
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
-    assert gen.call_args.kwargs["openrouter_image_size"] == "2K"
+    assert gen.call_args.kwargs["openrouter_image_size"] == "1K"
 
 
 def test_runtime_passes_1k_openrouter_image_size_for_detail_preset(tmp_path):
