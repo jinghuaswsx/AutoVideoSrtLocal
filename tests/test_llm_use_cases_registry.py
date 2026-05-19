@@ -94,7 +94,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 57
+    assert len(USE_CASES) == 58
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -164,6 +164,16 @@ def test_meta_hot_posts_translate_message_use_case_is_registered_for_billing():
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "openrouter"
     assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+
+
+def test_meta_hot_posts_translate_product_title_use_case_is_registered_for_billing():
+    uc = USE_CASES["meta_hot_posts.translate_product_title"]
+
+    assert uc["module"] == "xuanpin"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 

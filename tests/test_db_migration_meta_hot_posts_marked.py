@@ -55,6 +55,23 @@ def test_meta_hot_posts_message_translation_migration_adds_cached_chinese_fields
     assert "idx_meta_hot_posts_message_zh_status" in body
 
 
+def test_meta_hot_posts_product_title_translation_migration_adds_cached_chinese_fields():
+    body = Path(
+        "db/migrations/2026_05_19_meta_hot_posts_product_title_translation.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-19-meta-hot-posts-product-title-translation-design.md" in body
+    assert "ALTER TABLE meta_hot_post_product_analyses" in body
+    assert "ADD COLUMN product_title_zh TEXT NULL" in body
+    assert "ADD COLUMN product_title_zh_status VARCHAR(16) NOT NULL DEFAULT ''pending''" in body
+    assert "ADD COLUMN product_title_zh_attempts INT UNSIGNED NOT NULL DEFAULT 0" in body
+    assert "ADD COLUMN product_title_zh_translated_at DATETIME NULL" in body
+    assert "idx_meta_hot_post_product_title_zh_status" in body
+    assert "'meta_hot_posts.translate_product_title'" in body
+    assert "'openrouter'" in body
+    assert "'google/gemini-3.1-flash-lite'" in body
+
+
 def test_meta_hot_posts_copy_translation_model_binding_migration():
     body = Path(
         "db/migrations/2026_05_18_meta_hot_posts_copy_translation_flash_lite_binding.sql"

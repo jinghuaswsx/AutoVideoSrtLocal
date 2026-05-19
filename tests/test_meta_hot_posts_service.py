@@ -35,6 +35,31 @@ def test_build_list_response_adds_chinese_category_label(monkeypatch):
     assert item["category_l1_zh"] == "家居用品"
 
 
+def test_build_list_response_prefers_cached_chinese_product_title(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "list_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 1,
+                    "product_title": "Portable Camping Lantern",
+                    "product_title_zh": "便携式露营灯",
+                    "sku_prices_json": "[]",
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    item = service.build_list_response({}).payload["items"][0]
+
+    assert item["product_title"] == "Portable Camping Lantern"
+    assert item["product_title_zh"] == "便携式露营灯"
+    assert item["product_title_display"] == "便携式露营灯"
+    assert item["product_title_is_translated"] is True
+
+
 def test_build_list_response_hydrates_user_favorite_state(monkeypatch):
     captured = {}
 
@@ -102,6 +127,59 @@ def test_build_favorite_response_toggles_current_user_favorite(monkeypatch):
     assert result.status_code == 200
     assert result.payload == {"ok": True, "id": 7, "is_favorited": True}
     assert captured == {"post_id": 7, "user_id": 88, "favorited": True}
+
+
+def test_build_product_title_translate_zh_response_translates_and_returns_item(monkeypatch):
+    rows = [
+        {
+            "id": 7,
+            "product_analysis_id": 4,
+            "product_title": "Portable Camping Lantern",
+            "product_title_zh": "",
+            "sku_prices_json": "[]",
+        },
+        {
+            "id": 7,
+            "product_analysis_id": 4,
+            "product_title": "Portable Camping Lantern",
+            "product_title_zh": "便携式露营灯",
+            "sku_prices_json": "[]",
+        },
+    ]
+    marked = []
+    finished = []
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: rows.pop(0),
+    )
+    monkeypatch.setattr(
+        service.store,
+        "mark_product_title_translation_running",
+        lambda analysis_id: marked.append(analysis_id),
+    )
+    monkeypatch.setattr(
+        service.product_title_translation,
+        "translate_product_title",
+        lambda title, user_id=None: f"zh:{title}",
+    )
+    monkeypatch.setattr(
+        service.store,
+        "finish_product_title_translation",
+        lambda analysis_id, **kwargs: finished.append((analysis_id, kwargs)),
+    )
+
+    result = service.build_product_title_translate_zh_response(7, user_id=88)
+
+    assert result.status_code == 200
+    assert result.payload["cached"] is False
+    assert result.payload["item"]["product_title_zh"] == "便携式露营灯"
+    assert result.payload["item"]["product_title_display"] == "便携式露营灯"
+    assert marked == [4]
+    assert finished == [
+        (4, {"translated_title": "zh:Portable Camping Lantern", "error_message": None})
+    ]
 
 
 def test_ai_analysis_visibility_defaults_hidden_and_persists_per_user(monkeypatch):

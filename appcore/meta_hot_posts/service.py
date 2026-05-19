@@ -11,6 +11,7 @@ from appcore.meta_hot_posts import (
     europe_fit,
     europe_fit_translation,
     product_analysis,
+    product_title_translation,
     store,
     video_copyability,
     video_copyability_translation,
@@ -323,6 +324,12 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         else _extract_video_duration_seconds(raw_json)
     )
     item["category_l1_zh"] = categories.category_label_zh(item.get("category_l1"))
+    product_title = str(item.get("product_title") or "").strip()
+    product_title_zh = str(item.get("product_title_zh") or "").strip()
+    item["product_title"] = product_title
+    item["product_title_zh"] = product_title_zh
+    item["product_title_display"] = product_title_zh or product_title
+    item["product_title_is_translated"] = bool(product_title_zh)
     source_message = str(item.get("message_html") or "")
     translated_message = str(item.get("message_zh_html") or "").strip()
     item["message_source_html"] = source_message
@@ -554,6 +561,52 @@ def build_favorite_response(
     store.set_hot_post_favorite(post_id, user_id=int(user_id), favorited=favorited)
     return MetaHotPostsResponse(
         {"ok": True, "id": int(post_id), "is_favorited": bool(favorited)}
+    )
+
+
+def build_product_title_translate_zh_response(
+    post_id: int,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    item = _hydrate_ai_analysis_row(row)
+    product_title = str(item.get("product_title") or "").strip()
+    if not product_title:
+        return MetaHotPostsResponse({"error": "missing_product_title"}, 400)
+    if str(item.get("product_title_zh") or "").strip():
+        return MetaHotPostsResponse({"ok": True, "cached": True, "item": item})
+    analysis_id = _int_payload(row.get("product_analysis_id"))
+    if not analysis_id:
+        return MetaHotPostsResponse({"error": "missing_product_analysis"}, 400)
+
+    store.mark_product_title_translation_running(analysis_id)
+    try:
+        translated_title = product_title_translation.translate_product_title(
+            product_title,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        message = str(exc)[:1000]
+        store.finish_product_title_translation(
+            analysis_id,
+            translated_title=None,
+            error_message=message,
+        )
+        return MetaHotPostsResponse(
+            {"ok": False, "error": message, "item": item},
+            500,
+        )
+    store.finish_product_title_translation(
+        analysis_id,
+        translated_title=translated_title,
+        error_message=None,
+    )
+    refreshed = _get_ai_analysis_row(post_id) or row
+    return MetaHotPostsResponse(
+        {"ok": True, "cached": False, "item": _hydrate_ai_analysis_row(refreshed)}
     )
 
 

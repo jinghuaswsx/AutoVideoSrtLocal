@@ -52,10 +52,13 @@ def test_list_hot_posts_applies_category_price_interaction_comment_and_create_fi
     assert "e.suitability_score AS europe_fit_score" in data_sql
     assert "e.strengths_zh_json AS europe_fit_strengths_zh_json" in data_sql
     assert "e.required_changes_zh_json AS europe_fit_required_changes_zh_json" in data_sql
+    assert "a.product_title_zh" in data_sql
+    assert "a.product_title_zh_status" in data_sql
     assert "(p.message_html LIKE %s OR p.message_zh_html LIKE %s" in data_sql
+    assert "OR a.product_title_zh LIKE %s" in data_sql
     assert "ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC" in data_sql
     assert data_params[:8] == ["Kitchenware", 10.0, 30.5, 1000, 50, "ok", "2026-05-01", "2026-05-13"]
-    assert data_params[8:12] == ["%magic%", "%magic%", "%magic%", "%magic%"]
+    assert data_params[8:13] == ["%magic%", "%magic%", "%magic%", "%magic%", "%magic%"]
 
 
 def test_list_hot_posts_empty_mark_status_selects_unchecked_rows():
@@ -1169,6 +1172,49 @@ def test_next_pending_product_analyses_allows_100_per_tick():
     )
 
     assert calls[0][1] == (3, 100)
+
+
+def test_next_pending_product_title_translations_selects_titles_without_chinese_cache():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"id": 7, "product_title": "Portable Lamp"}]
+
+    rows = store.next_pending_product_title_translations(limit=500, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["id"] == 7
+    assert "product_title IS NOT NULL" in sql
+    assert "product_title_zh IS NULL" in sql
+    assert "product_title_zh_status IN ('pending', 'failed')" in sql
+    assert "product_title_zh_attempts < %s" in sql
+    assert params == (3, 100)
+
+
+def test_finish_product_title_translation_saves_success_and_failure():
+    calls = []
+
+    store.finish_product_title_translation(
+        9,
+        translated_title="便携灯",
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+    store.finish_product_title_translation(
+        10,
+        translated_title=None,
+        error_message="provider failed",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    success_sql, success_params = calls[0]
+    failure_sql, failure_params = calls[1]
+    assert "SET product_title_zh=%s" in success_sql
+    assert "product_title_zh_status='done'" in success_sql
+    assert success_params == ("便携灯", 9)
+    assert "product_title_zh_status='failed'" in failure_sql
+    assert failure_params == ("provider failed", 10)
 
 
 def test_list_failed_product_analyses_returns_recent_failures():

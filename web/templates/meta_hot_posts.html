@@ -38,16 +38,22 @@
 .mh-pager-info { min-width:190px; text-align:center; }
 .meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
 .mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
-.mh-post-id-bar { display:flex; align-items:center; gap:6px; min-height:30px; padding:8px 14px 0; color:#64748b; font-size:12px; font-weight:700; }
+.mh-post-id-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:30px; padding:8px 14px 0; color:#64748b; font-size:12px; font-weight:700; }
+.mh-post-id-main { display:flex; align-items:center; gap:6px; min-width:0; }
 .mh-post-id-value { min-width:0; max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#334155; font-family:ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-weight:800; }
 .mh-post-copy-btn { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:24px; height:24px; padding:0; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#0f766e; cursor:pointer; }
 .mh-post-copy-btn:hover { border-color:#0f766e; background:#f0fdfa; }
 .mh-post-copy-btn svg { width:14px; height:14px; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .mh-post-copy-done { color:#0f766e; font-size:13px; font-weight:900; line-height:1; }
-.mh-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:12px 14px; border-bottom:1px solid #edf2f7; }
-.mh-card-title { display:flex; align-items:center; gap:8px; font-size:18px; font-weight:700; }
+.mh-card-head { display:grid; gap:8px; padding:10px 14px 12px; border-bottom:1px solid #edf2f7; }
+.mh-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; font-size:15px; font-weight:800; line-height:1.35; }
+.mh-product-title-block { display:flex; align-items:flex-start; gap:8px; flex:1 1 auto; min-width:0; min-height:calc(1.35em * 2); }
+.mh-product-title-text { flex:1 1 auto; min-width:0; min-height:calc(1.35em * 2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; }
+.mh-product-title-toggle { flex:0 0 auto; height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.mh-product-title-toggle:disabled { opacity:.6; cursor:not-allowed; }
+.mh-card-title-actions { flex:0 0 auto; display:flex; align-items:center; }
 .mh-card-side { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
-.mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
 .mh-tag { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #e2e8f0; border-radius:4px; color:#475569; background:#f8fafc; font-size:12px; }
 .mh-mark-options { display:flex; align-items:center; gap:10px; min-height:28px; }
 .mh-mark-option { display:inline-flex; align-items:center; gap:5px; min-width:0; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
@@ -788,14 +794,18 @@ function renderMetaHotPostId(row) {
   const displayId = metaHotPostDisplayId(row);
   if (!displayId) return '';
   const postLink = metaHotPostLink(row);
+  const postId = Number(row.id || 0);
   const linkButton = postLink
     ? `<button class="mh-post-copy-btn mh-post-link-copy" type="button" data-copy-value="${esc(postLink)}" title="复制帖子链接" aria-label="复制帖子链接" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('link')}</button>`
     : '';
   return `<div class="mh-post-id-bar">
-    <span>帖子ID</span>
-    <span class="mh-post-id-value" title="${esc(displayId)}">${esc(displayId)}</span>
-    <button class="mh-post-copy-btn mh-post-id-copy" type="button" data-copy-value="${esc(displayId)}" title="复制帖子ID" aria-label="复制帖子ID" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('copy')}</button>
-    ${linkButton}
+    <div class="mh-post-id-main">
+      <span>帖子ID</span>
+      <span class="mh-post-id-value" title="${esc(displayId)}">${esc(displayId)}</span>
+      <button class="mh-post-copy-btn mh-post-id-copy" type="button" data-copy-value="${esc(displayId)}" title="复制帖子ID" aria-label="复制帖子ID" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('copy')}</button>
+      ${linkButton}
+    </div>
+    ${postId ? renderMarkOptions(row) : ''}
   </div>`;
 }
 function cardMedia(row) {
@@ -896,6 +906,79 @@ function toggleMetaHotPostSourceMessage(event) {
   wrap.dataset.messageShowing = showingOriginal ? 'translated' : 'original';
   button.textContent = showingOriginal ? '显示原文案' : '显示翻译文案';
 }
+function productTitleButtonLabel(mode, hasChinese) {
+  if (mode === 'zh') return '英文标题';
+  return hasChinese ? '显示中文' : '翻译中文';
+}
+function setMetaHotProductTitleMode(wrap, mode) {
+  const textNode = wrap ? wrap.querySelector('.mh-product-title-text') : null;
+  const button = wrap ? wrap.querySelector('.mh-product-title-toggle') : null;
+  if (!wrap || !textNode || !button) return;
+  const english = String(wrap.dataset.titleEn || '').trim();
+  const chinese = String(wrap.dataset.titleZh || '').trim();
+  const safeMode = mode === 'zh' && chinese ? 'zh' : 'en';
+  wrap.dataset.titleMode = safeMode;
+  textNode.textContent = safeMode === 'zh' ? chinese : english;
+  button.textContent = productTitleButtonLabel(safeMode, Boolean(chinese));
+}
+function renderProductTitleBlock(row) {
+  const postId = Number(row.id || 0);
+  const english = String(row.product_title || '').trim();
+  const chinese = String(row.product_title_zh || '').trim();
+  const mode = chinese ? 'zh' : 'en';
+  const text = chinese || english || '';
+  const button = postId && english
+    ? `<button class="mh-product-title-toggle" type="button" onclick="toggleMetaHotProductTitle(event, ${postId})">${productTitleButtonLabel(mode, Boolean(chinese))}</button>`
+    : '';
+  return `<div class="mh-product-title-block" data-title-mode="${mode}" data-title-en="${esc(english)}" data-title-zh="${esc(chinese)}">
+    <div class="mh-product-title-text" title="${esc(text)}">${esc(text)}</div>
+    ${button}
+  </div>`;
+}
+function toggleMetaHotProductTitle(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const wrap = button && button.closest ? button.closest('.mh-product-title-block') : null;
+  if (!wrap || !postId || button.disabled) return;
+  const mode = wrap.dataset.titleMode || 'en';
+  const hasChinese = Boolean(String(wrap.dataset.titleZh || '').trim());
+  if (mode === 'zh') {
+    setMetaHotProductTitleMode(wrap, 'en');
+    return;
+  }
+  if (hasChinese) {
+    setMetaHotProductTitleMode(wrap, 'zh');
+    return;
+  }
+  translateMetaHotProductTitleToChinese(event, postId);
+}
+async function translateMetaHotProductTitleToChinese(event, postId) {
+  const button = event.currentTarget;
+  const originalText = button ? button.textContent : '翻译中文';
+  if (!postId || (button && button.disabled)) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = '商品标题翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/product-title/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) updateMetaHotCard(data.item);
+    qs('mhStatus').textContent = data.cached ? '已有商品标题中文缓存' : '商品标题翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = '商品标题翻译失败';
+  }
+}
 function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
@@ -903,11 +986,8 @@ function renderCard(row) {
   return `<article class="mh-card" data-post-id="${postId}">
     ${renderMetaHotPostId(row)}
     <div class="mh-card-head">
-      <div class="mh-card-title"><span>帖子</span>${renderFavoriteButton(row, 'heart')}</div>
-      <div class="mh-card-side">
-        ${renderMarkOptions(row)}
-        <div class="mh-tags"><span class="mh-tag">互动变化: ${fmt(row.sync_period_likes)}</span><span class="mh-tag">变化周期: ${fmt(row.sync_period_hours)}h</span></div>
-      </div>
+      <div class="mh-card-title">${renderProductTitleBlock(row)}<div class="mh-card-title-actions">${renderFavoriteButton(row, 'heart')}</div></div>
+      <div class="mh-tags"><span class="mh-tag">互动变化: ${fmt(row.sync_period_likes)}</span><span class="mh-tag">变化周期: ${fmt(row.sync_period_hours)}h</span></div>
     </div>
     <div class="mh-card-body">
       <div class="mh-time">创建：${fmt(row.creation_time)}，抓取：${fmt(row.first_seen_at)}，更新：${fmt(row.last_synced_at)}</div>
@@ -919,7 +999,7 @@ function renderCard(row) {
       ${copyabilityBlock(row)}
       <div class="mh-analysis">
         <div class="mh-product">${productImg}<div>
-          <div class="mh-product-title">${fmt(row.product_title || '待分析商品')}</div>
+          <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
           <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
           <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
         </div></div>

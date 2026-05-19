@@ -197,10 +197,10 @@ def list_hot_posts(
     if keyword:
         where.append(
             "(p.message_html LIKE %s OR p.message_zh_html LIKE %s "
-            "OR a.product_title LIKE %s OR p.product_url LIKE %s)"
+            "OR a.product_title LIKE %s OR a.product_title_zh LIKE %s OR p.product_url LIKE %s)"
         )
         like = f"%{keyword}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
 
     where_sql = "WHERE " + " AND ".join(where) if where else ""
     count_rows = query_fn(
@@ -229,7 +229,10 @@ def list_hot_posts(
                p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
@@ -305,7 +308,10 @@ def list_favorite_hot_posts(
                p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
@@ -385,7 +391,10 @@ def list_today_new_hot_posts(
                p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
@@ -798,8 +807,12 @@ def get_hot_post_ai_analysis_row(
                p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
                p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
+               a.id AS product_analysis_id,
                a.status AS analysis_status,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
@@ -1072,6 +1085,7 @@ def next_pending_video_copyability_analyses(
                p.message_html,
                p.message_zh_html,
                pa.product_title,
+               pa.product_title_zh,
                pa.product_main_image_url,
                pa.price_min,
                pa.price_max,
@@ -1399,6 +1413,8 @@ def list_top_video_copyability_analyses(
                p.raw_json,
                pa.status AS analysis_status,
                pa.product_title,
+               pa.product_title_zh,
+               pa.product_title_zh_status,
                pa.product_main_image_url,
                pa.price_min,
                pa.price_max,
@@ -1438,7 +1454,7 @@ def next_pending_europe_fit_materials(
                p.sync_period_likes, p.sync_period_hours,
                p.video_url, p.local_video_path, p.local_video_status,
                p.message_html,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                e.status AS europe_fit_status,
@@ -1725,7 +1741,10 @@ def list_top_europe_fit_materials(
                p.local_video_status, p.local_video_error,
                p.local_video_downloaded_at, p.local_video_attempts,
                a.status AS analysis_status,
-               a.product_title, a.product_main_image_url, a.price_min,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
                a.price_max, a.currency, a.sku_prices_json,
                a.category_l1, a.category_confidence, a.category_reason,
                a.last_error, a.analyzed_at,
@@ -1916,6 +1935,96 @@ def reset_stale_running_product_analyses(
     )
 
 
+def next_pending_product_title_translations(
+    *,
+    limit: int = 50,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict]:
+    safe_limit = max(1, min(100, int(limit)))
+    return query_fn(
+        """
+        SELECT id, product_title
+        FROM meta_hot_post_product_analyses
+        WHERE product_title IS NOT NULL
+          AND TRIM(product_title) <> ''
+          AND (
+            product_title_zh IS NULL
+            OR product_title_zh = ''
+            OR product_title_zh_status IN ('pending', 'failed')
+          )
+          AND product_title_zh_attempts < %s
+        ORDER BY updated_at ASC, id ASC
+        LIMIT %s
+        """,
+        (int(max_attempts), safe_limit),
+    )
+
+
+def mark_product_title_translation_running(
+    analysis_id: int,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_product_analyses
+        SET product_title_zh_status='running',
+            product_title_zh_attempts=product_title_zh_attempts + 1,
+            product_title_zh_error=NULL
+        WHERE id=%s
+        """,
+        (int(analysis_id),),
+    )
+
+
+def finish_product_title_translation(
+    analysis_id: int,
+    *,
+    translated_title: str | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE meta_hot_post_product_analyses
+            SET product_title_zh_status='failed',
+                product_title_zh_error=%s
+            WHERE id=%s
+            """,
+            (str(error_message)[:1000], int(analysis_id)),
+        )
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_product_analyses
+        SET product_title_zh=%s,
+            product_title_zh_status='done',
+            product_title_zh_error=NULL,
+            product_title_zh_translated_at=NOW()
+        WHERE id=%s
+        """,
+        (translated_title or "", int(analysis_id)),
+    )
+
+
+def reset_stale_running_product_title_translations(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> int:
+    return execute_fn(
+        """
+        UPDATE meta_hot_post_product_analyses
+        SET product_title_zh_status='failed',
+            product_title_zh_error='product title translation stale running reset'
+        WHERE product_title_zh_status='running'
+          AND TIMESTAMPDIFF(SECOND, updated_at, NOW()) >= %s
+        """,
+        (int(older_than_seconds),),
+    )
+
+
 def mark_analysis_running(analysis_id: int, *, execute_fn: ExecuteFn = execute) -> int:
     return execute_fn(
         """
@@ -1943,6 +2052,11 @@ def finish_analysis(
         UPDATE meta_hot_post_product_analyses
         SET status=%s,
             last_error=%s,
+            product_title_zh=CASE WHEN product_title <=> %s THEN product_title_zh ELSE NULL END,
+            product_title_zh_status=CASE WHEN product_title <=> %s THEN product_title_zh_status ELSE 'pending' END,
+            product_title_zh_attempts=CASE WHEN product_title <=> %s THEN product_title_zh_attempts ELSE 0 END,
+            product_title_zh_error=CASE WHEN product_title <=> %s THEN product_title_zh_error ELSE NULL END,
+            product_title_zh_translated_at=CASE WHEN product_title <=> %s THEN product_title_zh_translated_at ELSE NULL END,
             product_title=%s,
             product_main_image_url=%s,
             price_min=%s,
@@ -1962,6 +2076,11 @@ def finish_analysis(
         (
             status,
             error_message,
+            result.get("title"),
+            result.get("title"),
+            result.get("title"),
+            result.get("title"),
+            result.get("title"),
             result.get("title"),
             result.get("main_image_url"),
             result.get("price_min"),
