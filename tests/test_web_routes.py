@@ -3593,6 +3593,24 @@ def test_image_translate_detail_compare_rows_align_media_frames():
     assert "height:var(--it-item-media-height, auto)" in styles
 
 
+def test_image_translate_templates_have_mobile_adaptation_contract():
+    root = Path(__file__).resolve().parents[1]
+    list_template = (root / "web" / "templates" / "image_translate_list.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "it-history-tabs" in list_template
+    assert "it-history-table-wrap" in list_template
+    assert "Docs-anchor: docs/superpowers/specs/2026-05-19-image-translate-mobile-adaptation-design.md" in styles
+    assert '@media (max-width: 767px)' in styles
+    assert '.it-shell[data-page="image-translate-list"] .card' in styles
+    assert ".it-pill-group" in styles
+    assert "overflow-x:auto" in styles
+    assert "white-space:nowrap" in styles
+    assert ".it-history-tabs" in styles
+    assert ".it-history-table-wrap" in styles
+    assert ".it-item-actions .btn" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

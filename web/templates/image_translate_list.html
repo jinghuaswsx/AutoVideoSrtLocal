@@ -92,18 +92,18 @@
         <h2>历史任务</h2>
 
         <!-- 标签页导航 -->
-        <div style="margin-bottom:16px;border-bottom:1px solid var(--border-subtle,#e5e7eb);">
-            <nav style="display:flex;gap:8px;">
+        <div class="it-history-tabs">
+            <nav class="it-history-tabs__nav">
                 <a href="{{ url_for('image_translate.page_list', tab='all') }}"
-                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'all' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'all' else 'var(--fg-subtle,#6b7280)' }};">
+                   class="it-history-tab {{ 'is-active' if tab == 'all' }}">
                     图片翻译
                 </a>
                 <a href="{{ url_for('image_translate.page_list', tab='product_detail') }}"
-                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'product_detail' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'product_detail' else 'var(--fg-subtle,#6b7280)' }};">
+                   class="it-history-tab {{ 'is-active' if tab == 'product_detail' }}">
                     商品图翻译任务
                 </a>
                 <a href="{{ url_for('image_translate.page_list', tab='video_cover') }}"
-                   style="padding:8px 16px;text-decoration:none;border-bottom:2px solid {{ 'var(--accent-primary,#3b82f6)' if tab == 'video_cover' else 'transparent' }};color:{{ 'var(--accent-primary,#3b82f6)' if tab == 'video_cover' else 'var(--fg-subtle,#6b7280)' }};">
+                   class="it-history-tab {{ 'is-active' if tab == 'video_cover' }}">
                     视频封面图任务
                 </a>
             </nav>
@@ -112,7 +112,8 @@
         {% if not history %}
             <div class="empty">暂无任务</div>
         {% else %}
-            <table class="table" id="itHistoryTable">
+            <div class="it-history-table-wrap">
+            <table class="table mobile-no-scroll" id="itHistoryTable">
                 <thead>
                     <tr>
                         <th>时间</th>
@@ -162,6 +163,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
         {% endif %}
     </section>
 
