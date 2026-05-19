@@ -97,6 +97,7 @@ def _build_batch_args(
         source_index_map="",
         replace_shopify_cdn=True,
         no_preserve_detail_size=False,
+        detail_size_reference_locale=run_product_cdp.DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE,
         no_original_detail_fallback=False,
         no_detail_reload_verify=False,
     )

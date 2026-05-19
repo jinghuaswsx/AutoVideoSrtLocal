@@ -10,6 +10,7 @@ This is the production batch path:
 """
 
 import argparse
+import io
 import json
 import time
 import urllib.request
@@ -27,6 +28,7 @@ from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 
 DEFAULT_STORE_DOMAIN = settings.DEFAULT_SHOPIFY_DOMAIN
+DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE = "es"
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
@@ -789,6 +791,98 @@ def fetch_storefront_image_display_sizes(
     return sizes
 
 
+def _remote_image_size(src: str, *, timeout_s: int = 30) -> tuple[int, int]:
+    from PIL import Image
+
+    request = urllib.request.Request(
+        _normalize_src(src),
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "image/*,*/*"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        payload = response.read()
+    with Image.open(io.BytesIO(payload)) as image:
+        width, height = image.size
+    return int(width or 0), int(height or 0)
+
+
+def fetch_storefront_detail_image_natural_sizes(
+    *,
+    product_code: str,
+    locale: str,
+    store_domain: str = DEFAULT_STORE_DOMAIN,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, dict[str, int]]:
+    cancellation.throw_if_cancelled(cancel_token)
+    product = fetch_storefront_product(product_code, locale=locale, store_domain=store_domain)
+    body_html = str(product.get("description") or product.get("body_html") or "")
+    sizes: dict[str, dict[str, int]] = {}
+    for src in taa_cdp.extract_image_srcs(body_html):
+        cancellation.throw_if_cancelled(cancel_token)
+        token = ez_cdp.md5_token(src)
+        if not token:
+            continue
+        try:
+            width, height = _remote_image_size(src)
+        except Exception as exc:
+            print(f"详情图：参考尺寸读取失败，跳过 token={token[:8]} src={src[:120]} err={exc}")
+            continue
+        if width > 0 and height > 0:
+            sizes[token] = {"width": width, "height": height}
+    cancellation.throw_if_cancelled(cancel_token)
+    return sizes
+
+
+def _positive_size(size: dict[str, Any] | None) -> tuple[int, int]:
+    if not size:
+        return 0, 0
+    try:
+        width = int(round(float(size.get("width") or 0)))
+        height = int(round(float(size.get("height") or 0)))
+    except (TypeError, ValueError):
+        return 0, 0
+    if width <= 0 or height <= 0:
+        return 0, 0
+    return width, height
+
+
+def normalize_detail_candidate_sizes_to_reference(
+    localized_images: list[dict[str, Any]],
+    reference_size_by_token: dict[str, dict[str, Any]],
+    *,
+    output_dir: Path,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> int:
+    from PIL import Image
+
+    resized_count = 0
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for row in localized_images:
+        cancellation.throw_if_cancelled(cancel_token)
+        if row.get("kind") and row.get("kind") != "detail":
+            continue
+        local_path = Path(str(row.get("local_path") or ""))
+        token = ez_cdp.md5_token(str(row.get("filename") or "")) or ez_cdp.md5_token(local_path.name)
+        width, height = _positive_size(reference_size_by_token.get(token or ""))
+        if not token or width <= 0 or height <= 0 or not local_path.is_file():
+            continue
+        with Image.open(local_path) as image:
+            if image.size == (width, height):
+                continue
+            image_format = image.format
+            resized = image.resize((width, height), Image.Resampling.LANCZOS)
+            if image_format == "JPEG" and resized.mode not in ("RGB", "L"):
+                resized = resized.convert("RGB")
+            suffix = local_path.suffix or ".png"
+            output_path = output_dir / f"{local_path.stem}_refsize_{width}x{height}{suffix}"
+            resized.save(output_path, format=image_format)
+        row["original_local_path"] = str(local_path)
+        row["local_path"] = str(output_path)
+        row["reference_size"] = {"width": width, "height": height}
+        resized_count += 1
+    cancellation.throw_if_cancelled(cancel_token)
+    return resized_count
+
+
 def _preload_chrome_tab_to_url(
     *,
     user_data_dir: str,
@@ -1004,6 +1098,30 @@ def run(
     if not args.skip_detail:
         cancellation.throw_if_cancelled(cancel_token)
         detail_html = str(target_product.get("description") or target_product.get("body_html") or "")
+        detail_size_reference_locale = str(getattr(args, "detail_size_reference_locale", "") or "").strip().lower()
+        if detail_size_reference_locale and detail_size_reference_locale != str(args.shop_locale or "").strip().lower():
+            try:
+                reference_sizes = fetch_storefront_detail_image_natural_sizes(
+                    product_code=args.product_code,
+                    locale=detail_size_reference_locale,
+                    store_domain=args.store_domain,
+                    cancel_token=cancel_token,
+                )
+                resized_count = normalize_detail_candidate_sizes_to_reference(
+                    downloaded,
+                    reference_sizes,
+                    output_dir=workspace.source_localized_dir / "_reference_size",
+                    cancel_token=cancel_token,
+                )
+                print(
+                    "详情图：参考语种尺寸归一化 "
+                    f"locale={detail_size_reference_locale} "
+                    f"matched={len(reference_sizes)} resized={resized_count}"
+                )
+            except cancellation.OperationCancelled:
+                raise
+            except Exception as exc:
+                print(f"详情图：参考语种尺寸不可用，已跳过尺寸归一化：{exc}")
         fallback_images: list[dict] = []
         if not args.no_original_detail_fallback:
             fallback_images = add_original_detail_fallbacks(
@@ -1172,6 +1290,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-index-map", default="")
     parser.add_argument("--replace-shopify-cdn", action="store_true")
     parser.add_argument("--no-preserve-detail-size", action="store_true")
+    parser.add_argument("--detail-size-reference-locale", default=DEFAULT_DETAIL_SIZE_REFERENCE_LOCALE)
     parser.add_argument("--no-original-detail-fallback", action="store_true")
     parser.add_argument("--no-detail-reload-verify", action="store_true")
     return parser
@@ -1187,6 +1306,7 @@ def main() -> None:
     args.taa_shop_locale = locales.translate_and_adapt_locale_for(
         str(args.taa_shop_locale or args.shop_locale).strip()
     )
+    args.detail_size_reference_locale = str(args.detail_size_reference_locale or "").strip().lower()
     args.language = str(args.language or locales.english_name_for(args.lang)).strip()
     try:
         run(args)
