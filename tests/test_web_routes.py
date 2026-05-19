@@ -3627,6 +3627,8 @@ def test_medias_edit_modal_contains_download_product_images_button():
     assert "edTypeNoLocalizedDetailImagesMessage" in scripts
     assert "oc-no-localized-images-message" in styles
     assert "color:var(--oc-danger-fg)" in styles
+    assert "download-localized-empty-modal-20260519" in styles
+    assert "material-filename-tail-20260513" not in styles
     assert "detail-images/download-localized-zip" in scripts
 
 
