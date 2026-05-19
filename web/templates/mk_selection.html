@@ -61,6 +61,14 @@
 .text-sm { font-size:12px; }
 .mb-0 { margin-bottom:0; }
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mk-product-image-frame { width:200px; height:200px; border:1px solid var(--oc-border); border-radius:var(--oc-r); background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; overflow:hidden; color:var(--oc-fg-subtle); font-size:13px; }
+.mk-product-image-frame img { width:100%; height:100%; object-fit:contain; display:block; background:#fff; }
+.mk-product-name-cell { min-width:260px; display:flex; flex-direction:column; gap:8px; }
+.mk-two-line-copy { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:end; gap:6px; }
+.mk-two-line-text { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.28; word-break:break-word; }
+.mk-two-line-text--code { font-family:"JetBrains Mono",monospace; font-size:14px; color:var(--oc-fg-muted); }
+.mk-copy-btn { height:24px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-fg-muted); font-size:12px; cursor:pointer; }
+.mk-copy-btn:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
 .mk-video-card { width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
 .mk-video-card-title { min-height:calc(1.45em * 3); font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); word-break:break-word; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
@@ -158,7 +166,8 @@
         <thead>
           <tr>
             <th style="width:50px">#</th>
-            <th style="width:220px; text-align:left;">产品名称</th>
+            <th style="width:220px">商品图</th>
+            <th style="width:280px; text-align:left;">产品名称</th>
             <th style="width:180px; text-align:left;">中文产品名</th>
             <th style="width:100px">店铺</th>
             <th style="width:90px" class="text-right">付款销量</th>
@@ -171,7 +180,7 @@
           </tr>
         </thead>
         <tbody id="tableBody">
-          <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
+          <tr><td colspan="12" class="oc-empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -268,6 +277,52 @@ function safeMediaSrc(value) {
   }
   if (/^https?:\/\//i.test(url)) return escapeHtml(url);
   return '';
+}
+
+async function copyMkText(value, button) {
+  const text = String(value || '').trim();
+  if (!text) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    if (button) {
+      const old = button.textContent;
+      button.textContent = '已复制';
+      setTimeout(() => { button.textContent = old || '复制'; }, 900);
+    }
+  } catch (_err) {
+    if (button) button.textContent = '复制失败';
+  }
+}
+
+function renderTwoLineCopyBlock(value, href, extraClass) {
+  const text = String(value || '').trim() || '--';
+  const safeHref = safeExternalHref(href || '');
+  const textHtml = safeHref
+    ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="oc-link">${escapeHtml(text)}</a>`
+    : escapeHtml(text);
+  const className = extraClass ? ` ${escapeHtml(extraClass)}` : '';
+  return `<div class="mk-two-line-copy${className}">
+    <div class="mk-two-line-text${extraClass === 'mk-product-code-block' ? ' mk-two-line-text--code' : ''}" title="${escapeHtml(text)}">${textHtml}</div>
+    <button type="button" class="mk-copy-btn" data-copy-text="${escapeHtml(text)}" onclick="copyMkText(this.dataset.copyText, this)">复制</button>
+  </div>`;
+}
+
+function renderProductImageCell(row) {
+  const coverSrc = safeMediaSrc(row.product_main_image_local_url || row.product_main_image_url || '');
+  const alt = String(row.product_cn_name || row.product_name || '商品图').trim();
+  return `<div class="mk-product-image-frame">${coverSrc ? `<img src="${coverSrc}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async">` : '<span>无图</span>'}</div>`;
 }
 
 function productCodeFromUrl(value) {
@@ -421,7 +476,7 @@ async function loadData(page) {
 
   const tbody = document.getElementById('tableBody');
   if (!data.items.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="oc-empty">无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="oc-empty">无数据</td></tr>';
     document.getElementById('pager').innerHTML = '';
     return;
   }
@@ -430,22 +485,21 @@ async function loadData(page) {
     const heat = heatLevel(r.mk_total_spends);
     const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted">未关联</span>`;
     const rawProductName = String(r.product_name || '');
-    const productName = rawProductName.length > 28 ? rawProductName.substring(0,28)+'...' : rawProductName;
-    const cnName = String(r.mk_product_name || r.mp_name || '--');
+    const cnName = String(r.product_cn_name || r.mk_product_name || r.mp_name || '--');
     const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
-    const safeProductUrl = safeExternalHref(r.product_url);
     const handle = r.product_url ? String(r.product_url).split('/products/')[1] || '' : '';
-    const productCode = productCodeFromUrl(r.product_url);
+    const productCode = String(r.product_code || productCodeFromUrl(r.product_url) || '').trim();
     const mkProductId = Number(r.mk_product_id) || 0;
     const mkNameArg = escapeHtml(JSON.stringify(r.mk_product_name || ""));
 
     return `<tr>
       <td class="text-mono text-muted">${Number(r.rank || i + 1)}</td>
+      <td>${renderProductImageCell(r)}</td>
       <td style="text-align:left;">
-        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(rawProductName)}">
-          ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" class="oc-link">${escapeHtml(productName)}</a>` : escapeHtml(productName)}
+        <div class="mk-product-name-cell">
+          ${renderTwoLineCopyBlock(rawProductName, r.product_url, 'mk-product-name-block')}
+          ${renderTwoLineCopyBlock(productCode || handle, '', 'mk-product-code-block')}
         </div>
-        <div class="text-muted" style="font-size:14px; font-family:monospace;">${escapeHtml(productCode || handle)}</div>
       </td>
       <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
       <td>${escapeHtml(r.store || '--')}</td>

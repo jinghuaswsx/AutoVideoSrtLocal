@@ -137,8 +137,9 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "description": (
             "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 个快照日；"
             "每个 snapshot_date 代表截至当日的近 7 天窗口，按 paidProductCount 倒序全量采集有销量 Listing，"
-            "写入 dianxiaomi_rankings；回补模式不再使用 1000 条阈值。Docs-anchor: "
-            "docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md"
+            "写入 dianxiaomi_rankings，并补齐商品主图、详情图和明空素材中文名；回补模式不再使用 1000 条阈值。"
+            "Docs-anchor: docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md；"
+            "docs/superpowers/specs/2026-05-19-mingkong-product-library-assets-design.md"
         ),
         "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
         "source_type": "systemd",

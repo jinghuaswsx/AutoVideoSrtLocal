@@ -64,6 +64,7 @@ def test_normalize_listing_row_maps_paid_sales_fields():
             "refundProductCount": "2",
             "refundAmountCny": "4.5",
             "refundRate": 5,
+            "imageUrl": "https://cdn.example.test/listing-main.jpg",
         },
         snapshot_date=date(2026, 4, 23),
         rank_position=7,
@@ -85,8 +86,111 @@ def test_normalize_listing_row_maps_paid_sales_fields():
         "refund_amt": "CNY 4.50",
         "refund_rate": "5%",
         "media_product_id": None,
+        "product_code": "tooth-cleaner",
+        "product_main_image_url": "https://cdn.example.test/listing-main.jpg",
+        "product_main_image_object_key": None,
+        "product_detail_images_json": None,
+        "product_assets_error": None,
+        "product_cn_name": "",
+        "mk_first_material_name": "",
+        "mk_first_material_path": "",
+        "mk_first_material_url": "",
+        "mk_material_error": None,
         "snapshot_date": date(2026, 4, 23),
         "rank_position": 7,
+    }
+
+
+def test_extract_product_page_assets_prefers_og_image_and_collects_detail_images():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    html = """
+    <html>
+      <head><meta property="og:image" content="//cdn.example.test/main.jpg"></head>
+      <body>
+        <div class="product__description">
+          <img src="/details/one.jpg">
+          <img data-src="//cdn.example.test/details/two.webp">
+        </div>
+      </body>
+    </html>
+    """
+
+    assets = sync.extract_product_page_assets_from_html(
+        html,
+        base_url="https://shop.example.test/products/tooth-cleaner",
+    )
+
+    assert assets == {
+        "main_image_url": "https://cdn.example.test/main.jpg",
+        "detail_image_urls": [
+            "https://shop.example.test/details/one.jpg",
+            "https://cdn.example.test/details/two.webp",
+        ],
+    }
+
+
+def test_cache_product_main_image_writes_deterministic_selection_object_key():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    writes = []
+
+    class FakeResponse:
+        headers = {"content-type": "image/jpeg"}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size):
+            del chunk_size
+            yield b"image-bytes"
+
+    object_key = sync.cache_product_main_image(
+        "https://cdn.example.test/main.jpg?width=800",
+        product_id="7540261912642",
+        product_code="tooth-cleaner",
+        storage_exists_fn=lambda _key: False,
+        write_bytes_fn=lambda key, payload: writes.append((key, payload)),
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert object_key.startswith("xuanpin/product-main-images/tooth-cleaner/")
+    assert object_key.endswith(".jpg")
+    assert writes == [(object_key, b"image-bytes")]
+
+
+def test_extract_product_cn_name_from_mingkong_first_material():
+    from tools import dianxiaomi_listing_ranking_sync as sync
+
+    result = sync.find_first_mingkong_material_for_product_code(
+        [
+            {
+                "id": 3719,
+                "product_links": ["https://shop.example/products/other-product"],
+                "videos": [{"name": "2025.01.01-错误产品-原素材.mp4", "path": "uploads/wrong.mp4"}],
+            },
+            {
+                "id": 3720,
+                "product_links": ["https://shop.example/products/fitness-band"],
+                "videos": [
+                    {
+                        "name": "2025.12.25-健身脚蹬拉力器-原素材-指派-傅博.mp4",
+                        "path": "uploads/fitness.mp4",
+                    }
+                ],
+            },
+        ],
+        "fitness-band-rjc",
+        base_url="https://os.wedev.vip",
+    )
+
+    assert result == {
+        "product_cn_name": "健身脚蹬拉力器",
+        "mk_first_material_name": "2025.12.25-健身脚蹬拉力器-原素材-指派-傅博.mp4",
+        "mk_first_material_path": "uploads/fitness.mp4",
+        "mk_first_material_url": "https://os.wedev.vip/medias/uploads/fitness.mp4",
     }
 
 

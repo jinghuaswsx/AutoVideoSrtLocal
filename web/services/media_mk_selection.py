@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import mimetypes
 import os
 from pathlib import Path
@@ -283,6 +284,27 @@ def _int_value(value: object, default: int = 0) -> int:
         return default
 
 
+def _json_list(value: object) -> list[str]:
+    if value is None or value == "":
+        return []
+    loaded = value
+    if isinstance(value, str):
+        try:
+            loaded = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(item or "").strip() for item in loaded if str(item or "").strip()]
+
+
+def _local_media_url(object_key: object) -> str:
+    key = str(object_key or "").strip()
+    if not key:
+        return ""
+    return f"/medias/object?object_key={quote(key, safe='')}"
+
+
 def _visible_mk_video_rows(item: dict) -> list[dict]:
     out = []
     for raw in item.get("videos") or []:
@@ -422,6 +444,14 @@ def build_mk_selection_response(
     has_mk_total_spends = "mk_total_spends" in ranking_columns
     has_mk_video_count = "mk_video_count" in ranking_columns
     has_mk_total_ads = "mk_total_ads" in ranking_columns
+    has_product_code = "product_code" in ranking_columns
+    has_product_main_image_url = "product_main_image_url" in ranking_columns
+    has_product_main_image_object_key = "product_main_image_object_key" in ranking_columns
+    has_product_detail_images_json = "product_detail_images_json" in ranking_columns
+    has_product_cn_name = "product_cn_name" in ranking_columns
+    has_mk_first_material_name = "mk_first_material_name" in ranking_columns
+    has_mk_first_material_path = "mk_first_material_path" in ranking_columns
+    has_mk_first_material_url = "mk_first_material_url" in ranking_columns
 
     where = "dr.snapshot_date = %s"
     params: list = [snapshot]
@@ -429,6 +459,12 @@ def build_mk_selection_response(
     if keyword:
         keyword_clauses = ["dr.product_name LIKE %s"]
         params.append(f"%{keyword}%")
+        if has_product_code:
+            keyword_clauses.append("dr.product_code LIKE %s")
+            params.append(f"%{keyword}%")
+        if has_product_cn_name:
+            keyword_clauses.append("dr.product_cn_name LIKE %s")
+            params.append(f"%{keyword}%")
         if has_mk_product_name:
             keyword_clauses.append("dr.mk_product_name LIKE %s")
             params.append(f"%{keyword}%")
@@ -439,6 +475,30 @@ def build_mk_selection_response(
     mk_total_spends_select = "dr.mk_total_spends" if has_mk_total_spends else "0 AS mk_total_spends"
     mk_video_count_select = "dr.mk_video_count" if has_mk_video_count else "0 AS mk_video_count"
     mk_total_ads_select = "dr.mk_total_ads" if has_mk_total_ads else "0 AS mk_total_ads"
+    product_code_select = "dr.product_code" if has_product_code else "NULL AS product_code"
+    product_main_image_url_select = (
+        "dr.product_main_image_url" if has_product_main_image_url else "NULL AS product_main_image_url"
+    )
+    product_main_image_object_key_select = (
+        "dr.product_main_image_object_key"
+        if has_product_main_image_object_key
+        else "NULL AS product_main_image_object_key"
+    )
+    product_detail_images_json_select = (
+        "dr.product_detail_images_json"
+        if has_product_detail_images_json
+        else "NULL AS product_detail_images_json"
+    )
+    product_cn_name_select = "dr.product_cn_name" if has_product_cn_name else "NULL AS product_cn_name"
+    mk_first_material_name_select = (
+        "dr.mk_first_material_name" if has_mk_first_material_name else "NULL AS mk_first_material_name"
+    )
+    mk_first_material_path_select = (
+        "dr.mk_first_material_path" if has_mk_first_material_path else "NULL AS mk_first_material_path"
+    )
+    mk_first_material_url_select = (
+        "dr.mk_first_material_url" if has_mk_first_material_url else "NULL AS mk_first_material_url"
+    )
     order_by = "dr.mk_total_spends DESC, dr.rank_position ASC" if has_mk_total_spends else "dr.rank_position ASC"
 
     count_row = db_query_fn(
@@ -456,6 +516,10 @@ def build_mk_selection_response(
             dr.revenue_main, dr.revenue_split,
             {mk_product_id_select}, {mk_product_name_select},
             {mk_total_spends_select}, {mk_video_count_select}, {mk_total_ads_select},
+            {product_code_select}, {product_main_image_url_select},
+            {product_main_image_object_key_select}, {product_detail_images_json_select},
+            {product_cn_name_select}, {mk_first_material_name_select},
+            {mk_first_material_path_select}, {mk_first_material_url_select},
             dr.media_product_id,
             mp.name AS mp_name, mp.product_code AS mp_code
         FROM dianxiaomi_rankings dr
@@ -469,11 +533,22 @@ def build_mk_selection_response(
 
     items = []
     for row in rows:
+        product_code = str(row.get("product_code") or "").strip() or _normalize_product_code(row.get("product_url") or "")
+        product_main_image_object_key = row.get("product_main_image_object_key")
         items.append({
             "rank": row["rank_position"],
             "shopify_id": row["shopify_id"],
             "product_name": row["product_name"],
             "product_url": row["product_url"],
+            "product_code": product_code,
+            "product_main_image_url": row.get("product_main_image_url") or "",
+            "product_main_image_object_key": product_main_image_object_key,
+            "product_main_image_local_url": _local_media_url(product_main_image_object_key),
+            "product_detail_image_urls": _json_list(row.get("product_detail_images_json")),
+            "product_cn_name": row.get("product_cn_name") or "",
+            "mk_first_material_name": row.get("mk_first_material_name") or "",
+            "mk_first_material_path": row.get("mk_first_material_path") or "",
+            "mk_first_material_url": row.get("mk_first_material_url") or "",
             "store": row["store"],
             "sales_count": row["sales_count"],
             "order_count": row["order_count"],
