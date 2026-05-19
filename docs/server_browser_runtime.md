@@ -30,6 +30,7 @@
 - `0.0.0.0:6093`：DXM02-MK noVNC web 入口
 - `0.0.0.0:6095`：DXM03-RJC noVNC web 入口
 - `0.0.0.0:6097`：TABCUT noVNC web 入口
+- `127.0.0.1:5931`：采集程序 VNC 入口（仅本机/SSH隧道访问）
 - `0.0.0.0:6082`：noVNC web 入口（websockify → `[::1]:5900` 上的 cjh:0 桌面 x11vnc）
 
 CDP 端口仅监听本机；noVNC 监听 `0.0.0.0:6082` 以便内网浏览器直接访问 cjh 桌面（LocalServer 无公网接口）。后续若需要暴露到公网，必须在 noVNC 之前加 token 鉴权。
