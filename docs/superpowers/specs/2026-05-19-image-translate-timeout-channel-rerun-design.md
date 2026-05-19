@@ -12,7 +12,7 @@ Image translation detail tasks can hang when an upstream image generation reques
 - Treat that timeout as a terminal per-item failure for the current run, not as another retryable transient error.
 - Add a detail-page channel-rerun action.
 - The action must guide the user through image channel first, model second, and sequential/parallel mode last.
-- Only APIMART may use parallel mode. Other channels must run sequentially, with both UI and backend validation enforcing that rule.
+- Only OpenRouter and APIMART may use parallel mode. Other channels must run sequentially, with both UI and backend coercion enforcing that rule.
 - It must keep successful rows untouched and reset only rows without a successful result.
 
 ## Backend Design
@@ -26,9 +26,11 @@ Image translation detail tasks can hang when an upstream image generation reques
 - Seedream HTTP calls use the matching requests timeout.
 - APIMART submit and poll use the same overall budget; poll timeout raises a non-retryable `GeminiImageTimeout`.
 
-`web.routes.image_translate` adds a new POST endpoint for channel reruns. It validates `channel`, `model_id`, and `concurrency_mode`, rejects parallel mode unless the channel is APIMART, then resets every item whose status is not `done` or whose `dst_tos_key` is empty. Successful items remain unchanged. The task's channel, model, and mode are updated before restarting the runner.
+`web.routes.image_translate` adds a new POST endpoint for channel reruns. It validates `channel`, `model_id`, and `concurrency_mode`, coerces parallel mode back to sequential unless the channel is OpenRouter or APIMART, then resets every item whose status is not `done` or whose `dst_tos_key` is empty. Successful items remain unchanged. The task's channel, model, and mode are updated before restarting the runner.
 
 ## Frontend Design
+
+The list-page new-task form applies the same channel rule before submission: the parallel pill is enabled only for OpenRouter or APIMART. Switching to any other channel disables the parallel pill and forces the hidden mode value back to sequential.
 
 The detail task info card gets a channel-rerun button in the current-channel area. Clicking it opens a small modal with existing pill-style controls in this order:
 
@@ -36,7 +38,7 @@ The detail task info card gets a channel-rerun button in the current-channel are
 - model list loaded from `/api/image-translate/models?channel=...`;
 - processing mode: sequential or parallel.
 
-When the selected channel is not APIMART, the parallel pill is disabled and the hidden mode value is forced back to sequential.
+When the selected channel is neither OpenRouter nor APIMART, the parallel pill is disabled and the hidden mode value is forced back to sequential.
 
 Submitting the modal calls the new rerun endpoint. The existing polling/socket refresh flow then updates progress.
 
@@ -48,5 +50,6 @@ Focused tests cover:
 - image generation timeout marks an item failed after one attempt;
 - APIMART resumed-task timeout fails without submitting a replacement request;
 - channel rerun resets only unfinished rows, updates task channel/model/mode, and starts the runner;
-- channel rerun rejects invalid model/channel/mode, non-APIMART parallel mode, and running tasks;
+- channel rerun rejects invalid model/channel/mode and running tasks, while coercing non-OpenRouter/non-APIMART parallel mode back to sequential;
 - detail templates contain the new button, modal, model loading, and endpoint call.
+- list-page new-task submission accepts OpenRouter/APIMART parallel mode and coerces other channels to sequential.
