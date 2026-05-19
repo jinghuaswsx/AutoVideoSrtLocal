@@ -224,6 +224,19 @@ def test_user_normal_default_permissions():
     assert u.has_permission("user_management") is False
 
 
+@pytest.mark.parametrize("username", ["zhangwei", "xj"])
+def test_user_english_redub_denylist_overrides_grants(username):
+    u = User(
+        _make_row(
+            ROLE_USER,
+            username=username,
+            permissions=json.dumps({"english_redub": True}),
+        )
+    )
+    assert u.has_permission("english_redub") is False
+    assert u.has_permission("multi_translate") is True
+
+
 def test_user_permissions_overlay_admin_revoke_lab():
     u = User(_make_row(ROLE_ADMIN, permissions=json.dumps({"lab": False})))
     assert u.has_permission("lab") is False
