@@ -182,6 +182,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotAiAnalysis(kind)" in body
     assert "function restoreMetaHotAiAnalysisVisibility()" in body
     assert "/xuanpin/api/meta-hot-posts/ai-analysis-visibility" in body
+    assert "const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
+    assert "let mhAiAnalysisVisibilitySaveVersion = 0;" in body
+    assert "const saveVersion = ++mhAiAnalysisVisibilitySaveVersion;" in body
+    assert "const preferences = {...mhAiAnalysisVisibility};" in body
+    assert "client_id: MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
+    assert "save_version: saveVersion" in body
+    assert body.count("if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;") >= 2
     assert "if (!mhAiAnalysisVisibility.us) return '';" in body
     assert "if (!mhAiAnalysisVisibility.europe) return '';" in body
     assert "类目分析提示词" in body

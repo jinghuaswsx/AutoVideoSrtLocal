@@ -449,7 +449,17 @@ let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 let mhCardZoomed = false;
 const MH_INITIAL_AI_ANALYSIS_VISIBILITY = {{ (meta_hot_posts_ai_visibility or {'us': false, 'europe': false}) | tojson }};
+const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
+  const key = 'mhAiAnalysisVisibilityClientId';
+  let saved = localStorage.getItem(key);
+  if (!saved) {
+    saved = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, saved);
+  }
+  return saved;
+})();
 let mhAiAnalysisVisibility = {us: false, europe: false};
+let mhAiAnalysisVisibilitySaveVersion = 0;
 let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 const mhPageSize = 50;
@@ -646,14 +656,19 @@ function applyMetaHotAiAnalysisVisibility(kind, show, options = {}) {
   updateMetaHotAiAnalysisToggle(kind);
   if (options.rerender !== false) rerenderMetaHotCards();
 }
-async function persistMetaHotAiAnalysisVisibility(previous) {
+async function persistMetaHotAiAnalysisVisibility(saveVersion, preferences) {
   const res = await fetch('/xuanpin/api/meta-hot-posts/ai-analysis-visibility', {
     method: 'POST',
     headers: metaHotJsonHeaders(),
-    body: JSON.stringify({preferences: mhAiAnalysisVisibility})
+    body: JSON.stringify({
+      preferences,
+      client_id: MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID,
+      save_version: saveVersion
+    })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error || 'visibility_save_failed');
+  if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;
   mhAiAnalysisVisibility = normalizeMetaHotAiAnalysisVisibility(data.preferences);
   updateMetaHotAiAnalysisToggle('us');
   updateMetaHotAiAnalysisToggle('europe');
@@ -661,7 +676,10 @@ async function persistMetaHotAiAnalysisVisibility(previous) {
 function setMetaHotAiAnalysisVisibility(kind, show) {
   const previous = {...mhAiAnalysisVisibility};
   applyMetaHotAiAnalysisVisibility(kind, show);
-  persistMetaHotAiAnalysisVisibility(previous).catch(() => {
+  const saveVersion = ++mhAiAnalysisVisibilitySaveVersion;
+  const preferences = {...mhAiAnalysisVisibility};
+  persistMetaHotAiAnalysisVisibility(saveVersion, preferences).catch(() => {
+    if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;
     mhAiAnalysisVisibility = previous;
     updateMetaHotAiAnalysisToggle('us');
     updateMetaHotAiAnalysisToggle('europe');

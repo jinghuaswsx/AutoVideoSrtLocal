@@ -211,6 +211,15 @@ def _bool_payload(value: Any) -> bool:
     return False
 
 
+def _int_payload(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_ai_visibility(value: Mapping[str, Any] | None) -> dict[str, bool]:
     source = value or {}
     return {
@@ -221,17 +230,23 @@ def _normalize_ai_visibility(value: Mapping[str, Any] | None) -> dict[str, bool]
     }
 
 
-def ai_analysis_visibility_for_user(user_id: int | None) -> dict[str, bool]:
+def _ai_analysis_visibility_payload_for_user(user_id: int | None) -> Mapping[str, Any]:
     if not user_id:
-        return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
+        return {}
     raw = api_keys.get_key(int(user_id), AI_VISIBILITY_PREF_SERVICE)
     if not raw:
-        return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
+        return {}
     try:
         parsed = json.loads(raw)
     except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, Mapping) else {}
+
+
+def ai_analysis_visibility_for_user(user_id: int | None) -> dict[str, bool]:
+    if not user_id:
         return dict(DEFAULT_AI_ANALYSIS_VISIBILITY)
-    return _normalize_ai_visibility(parsed if isinstance(parsed, Mapping) else {})
+    return _normalize_ai_visibility(_ai_analysis_visibility_payload_for_user(user_id))
 
 
 def build_ai_analysis_visibility_response(user_id: int | None) -> MetaHotPostsResponse:
@@ -252,10 +267,30 @@ def build_ai_analysis_visibility_update_response(
     payload = payload or {}
     source = payload.get("preferences") if isinstance(payload.get("preferences"), Mapping) else payload
     preferences = _normalize_ai_visibility(source if isinstance(source, Mapping) else {})
+    client_id = str(payload.get("client_id") or payload.get("clientId") or "").strip()
+    save_version = _int_payload(payload.get("save_version", payload.get("saveVersion")))
+    existing_payload = _ai_analysis_visibility_payload_for_user(int(user_id))
+    existing_client_id = str(existing_payload.get("_client_id") or "").strip()
+    existing_save_version = _int_payload(existing_payload.get("_save_version"))
+    if (
+        client_id
+        and client_id == existing_client_id
+        and save_version is not None
+        and existing_save_version is not None
+        and save_version < existing_save_version
+    ):
+        return MetaHotPostsResponse(
+            {"ok": True, "preferences": _normalize_ai_visibility(existing_payload)}
+        )
+    stored_preferences: dict[str, Any] = dict(preferences)
+    if client_id:
+        stored_preferences["_client_id"] = client_id
+    if save_version is not None:
+        stored_preferences["_save_version"] = save_version
     api_keys.set_key(
         int(user_id),
         AI_VISIBILITY_PREF_SERVICE,
-        json.dumps(preferences, ensure_ascii=False, sort_keys=True),
+        json.dumps(stored_preferences, ensure_ascii=False, sort_keys=True),
     )
     return MetaHotPostsResponse({"ok": True, "preferences": preferences})
 
