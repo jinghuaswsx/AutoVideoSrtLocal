@@ -3570,6 +3570,7 @@
     if ($('edFromUrlMask')) $('edFromUrlMask').hidden = true;
     if ($('edNewItemMask')) $('edNewItemMask').hidden = true;
     if ($('edDetailTranslateTaskMask')) $('edDetailTranslateTaskMask').hidden = true;
+    edCloseNoLocalizedDetailImagesModal();
     edState.current = null;
     edState.activeLang = 'en';
     edState.productData = null;
@@ -3580,6 +3581,101 @@
   }
 
   let edDetailImagesCtrl = null;
+  const NO_LOCALIZED_DETAIL_IMAGES_MESSAGE = '当前商品没有小语种商品详情图';
+  let edNoLocalizedDetailImagesTypeTimer = null;
+
+  function edStopNoLocalizedDetailImagesTyping() {
+    if (edNoLocalizedDetailImagesTypeTimer) {
+      window.clearTimeout(edNoLocalizedDetailImagesTypeTimer);
+      edNoLocalizedDetailImagesTypeTimer = null;
+    }
+  }
+
+  function edTypeNoLocalizedDetailImagesMessage(text) {
+    const target = $('edNoLocalizedDetailImagesMessage');
+    if (!target) return;
+    const message = String(text || '');
+    edStopNoLocalizedDetailImagesTyping();
+    target.textContent = '';
+    let index = 0;
+    const tick = () => {
+      index += 1;
+      target.textContent = message.slice(0, index);
+      if (index < message.length) {
+        edNoLocalizedDetailImagesTypeTimer = window.setTimeout(tick, 42);
+      } else {
+        edNoLocalizedDetailImagesTypeTimer = null;
+      }
+    };
+    tick();
+  }
+
+  function edCloseNoLocalizedDetailImagesModal() {
+    const mask = $('edNoLocalizedDetailImagesMask');
+    if (mask) mask.hidden = true;
+    edStopNoLocalizedDetailImagesTyping();
+  }
+
+  function edShowNoLocalizedDetailImagesModal() {
+    const mask = $('edNoLocalizedDetailImagesMask');
+    if (!mask) {
+      alert(NO_LOCALIZED_DETAIL_IMAGES_MESSAGE);
+      return;
+    }
+    mask.hidden = false;
+    edTypeNoLocalizedDetailImagesMessage(NO_LOCALIZED_DETAIL_IMAGES_MESSAGE);
+    const ok = $('edNoLocalizedDetailImagesOk');
+    if (ok) window.setTimeout(() => ok.focus(), 0);
+  }
+
+  function edZipFilenameFromContentDisposition(header, fallback) {
+    const value = String(header || '');
+    const encoded = value.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encoded && encoded[1]) {
+      try {
+        return decodeURIComponent(encoded[1].trim().replace(/^"|"$/g, ''));
+      } catch (_err) {
+        return encoded[1].trim().replace(/^"|"$/g, '') || fallback;
+      }
+    }
+    const plain = value.match(/filename="?([^";]+)"?/i);
+    return (plain && plain[1] ? plain[1].trim() : '') || fallback;
+  }
+
+  async function edDownloadProductImagesZip(pid, button) {
+    const url = `/medias/api/products/${pid}/detail-images/download-localized-zip`;
+    const previousDisabled = button ? button.disabled : false;
+    if (button) button.disabled = true;
+    try {
+      const resp = await fetch(url);
+      if (resp.redirected && resp.url && resp.url.includes('/login')) {
+        window.location.href = resp.url;
+        return;
+      }
+      if (resp.status === 404) {
+        edShowNoLocalizedDetailImagesModal();
+        return;
+      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const filename = edZipFilenameFromContentDisposition(
+        resp.headers && resp.headers.get ? resp.headers.get('Content-Disposition') : '',
+        `product-${pid}-localized-detail-images.zip`,
+      );
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    } catch (err) {
+      alert('下载商品图失败：' + ((err && err.message) || err));
+    } finally {
+      if (button) button.disabled = previousDisabled;
+    }
+  }
 
   function ensureEdDetailImagesCtrl() {
     if (edDetailImagesCtrl) return edDetailImagesCtrl;
@@ -6629,6 +6725,11 @@
     $('edSaveBtn').addEventListener('click', edSave);
     $('edNewItemOpenBtn') && $('edNewItemOpenBtn').addEventListener('click', edOpenNewItemModal);
     $('edNewItemClose') && $('edNewItemClose').addEventListener('click', edCloseNewItemModal);
+    $('edNoLocalizedDetailImagesClose') && $('edNoLocalizedDetailImagesClose').addEventListener('click', edCloseNoLocalizedDetailImagesModal);
+    $('edNoLocalizedDetailImagesOk') && $('edNoLocalizedDetailImagesOk').addEventListener('click', edCloseNoLocalizedDetailImagesModal);
+    $('edNoLocalizedDetailImagesMask') && $('edNoLocalizedDetailImagesMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edNoLocalizedDetailImagesMask') edCloseNoLocalizedDetailImagesModal();
+    });
     $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
     $('edNewItemMask') && $('edNewItemMask').addEventListener('click', (e) => {
       if (e.target.id === 'edNewItemMask') edCloseNewItemModal();
@@ -6887,7 +6988,7 @@
       edDownloadProductImagesBtn.addEventListener('click', () => {
         const pid = edState.productData && edState.productData.product && edState.productData.product.id;
         if (!pid || edDownloadProductImagesBtn.disabled) return;
-        window.location.href = `/medias/api/products/${pid}/detail-images/download-localized-zip`;
+        edDownloadProductImagesZip(pid, edDownloadProductImagesBtn);
       });
     }
 

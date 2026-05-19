@@ -3606,10 +3606,23 @@ def test_medias_edit_modal_contains_download_product_images_button():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
     scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     assert 'id="edDownloadProductImagesBtn"' in template
     assert "下载商品图" in template
     assert template.index('id="edDownloadProductImagesBtn"') < template.index('id="edClose"')
+    assert 'id="edNoLocalizedDetailImagesMask"' in template
+    assert 'id="edNoLocalizedDetailImagesMessage"' in template
+    assert "当前商品没有小语种商品详情图" in scripts
+    assert "const resp = await fetch(url)" in scripts
+    assert "resp.redirected" in scripts
+    assert "resp.status === 404" in scripts
+    assert "URL.createObjectURL(blob)" in scripts
+    assert "window.location.href = `/medias/api/products/${pid}/detail-images/download-localized-zip`" not in scripts
+    assert "edShowNoLocalizedDetailImagesModal" in scripts
+    assert "edTypeNoLocalizedDetailImagesMessage" in scripts
+    assert "oc-no-localized-images-message" in styles
+    assert "color:var(--oc-danger-fg)" in styles
     assert "detail-images/download-localized-zip" in scripts
 
 
