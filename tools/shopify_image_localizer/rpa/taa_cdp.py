@@ -874,7 +874,7 @@ def _positive_pixel(value: Any) -> int:
 MIN_PERSISTED_DETAIL_IMAGE_PIXEL = 800
 
 
-def _normalize_persisted_display_size(width: int, height: int, size: dict[str, Any]) -> tuple[int, int]:
+def _normalize_persisted_display_size(width: int, height: int, size: dict[str, Any]) -> tuple[int, int, bool]:
     natural_width = _positive_pixel(size.get("naturalWidth") or size.get("natural_width"))
     natural_height = _positive_pixel(size.get("naturalHeight") or size.get("natural_height"))
     if (
@@ -882,8 +882,8 @@ def _normalize_persisted_display_size(width: int, height: int, size: dict[str, A
         and natural_height >= MIN_PERSISTED_DETAIL_IMAGE_PIXEL
         and (width < MIN_PERSISTED_DETAIL_IMAGE_PIXEL or height < MIN_PERSISTED_DETAIL_IMAGE_PIXEL)
     ):
-        return natural_width, natural_height
-    return width, height
+        return natural_width, natural_height, True
+    return width, height, bool(size.get("responsive"))
 
 
 def _replacement_target_display_size(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -898,6 +898,7 @@ def _replacement_target_display_size(row: dict[str, Any]) -> dict[str, Any] | No
             "height": target_height,
             "naturalWidth": target_width,
             "naturalHeight": target_height,
+            "responsive": True,
         }
     return None
 
@@ -926,24 +927,38 @@ def _apply_display_size_to_img_tag(tag: str, size: dict[str, Any] | None) -> str
         return tag
     width = _positive_pixel(size.get("width"))
     height = _positive_pixel(size.get("height"))
-    width, height = _normalize_persisted_display_size(width, height, size)
+    width, height, responsive = _normalize_persisted_display_size(width, height, size)
     if width <= 0 and height <= 0:
         return tag
     declarations: dict[str, str] = {}
     if width > 0:
         tag = _set_or_append_attr(tag, "width", str(width))
-        declarations.update({
-            "width": f"{width}px",
-            "min-width": f"{width}px",
-            "max-width": f"{width}px",
-        })
+        if responsive:
+            declarations.update({
+                "width": f"{width}px",
+                "min-width": "",
+                "max-width": "100%",
+            })
+        else:
+            declarations.update({
+                "width": f"{width}px",
+                "min-width": f"{width}px",
+                "max-width": f"{width}px",
+            })
     if height > 0:
         tag = _set_or_append_attr(tag, "height", str(height))
-        declarations.update({
-            "height": f"{height}px",
-            "min-height": f"{height}px",
-            "max-height": f"{height}px",
-        })
+        if responsive:
+            declarations.update({
+                "height": "auto",
+                "min-height": "",
+                "max-height": "",
+            })
+        else:
+            declarations.update({
+                "height": f"{height}px",
+                "min-height": f"{height}px",
+                "max-height": f"{height}px",
+            })
     elif width > 0:
         declarations["height"] = "auto"
     return _set_or_append_style(tag, declarations)

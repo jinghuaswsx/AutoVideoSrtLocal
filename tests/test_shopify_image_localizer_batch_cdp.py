@@ -938,7 +938,12 @@ def test_apply_uploaded_replacements_uses_natural_size_when_rendered_size_is_too
     assert 'width="290"' not in updated
     assert 'height="290"' not in updated
     assert "width: 800px" in updated
-    assert "height: 800px" in updated
+    assert "max-width: 100%" in updated
+    assert "height: auto" in updated
+    assert "height: 800px" not in updated
+    assert "min-width" not in updated
+    assert "min-height" not in updated
+    assert "max-height" not in updated
     assert "290px" not in updated
 
 
@@ -974,7 +979,12 @@ def test_apply_uploaded_replacements_uses_target_size_when_display_size_url_miss
     assert 'width="800"' in updated
     assert 'height="800"' in updated
     assert "width: 800px" in updated
-    assert "height: 800px" in updated
+    assert "max-width: 100%" in updated
+    assert "height: auto" in updated
+    assert "height: 800px" not in updated
+    assert "min-width" not in updated
+    assert "min-height" not in updated
+    assert "max-height" not in updated
     assert "290px" not in updated
 
 
@@ -1455,7 +1465,12 @@ def test_replace_detail_images_uses_uploaded_target_size_when_display_size_url_m
     assert 'width="800"' in saved_html
     assert 'height="800"' in saved_html
     assert "width: 800px" in saved_html
-    assert "height: 800px" in saved_html
+    assert "max-width: 100%" in saved_html
+    assert "height: auto" in saved_html
+    assert "height: 800px" not in saved_html
+    assert "min-width" not in saved_html
+    assert "min-height" not in saved_html
+    assert "max-height" not in saved_html
     assert "290px" not in saved_html
 
 
