@@ -128,6 +128,12 @@
 - 生产环境已有 `system_settings` 需要通过迁移覆盖默认通道、默认模型、开关和默认质量，避免历史保存值继续指向旧通道。
 - API 账单价目表需要补 `ai_model_prices`：基础模型 `openai/gpt-5.4-image-2` 记录 OpenRouter token 价（input $8/M、output $15/M，汇率 6.8），虚拟模型 `:low/:mid/:high` 记录图片 fallback 价。OpenRouter 响应 `usage.cost` 优先，价目表只作为后台展示和 response cost 缺失时的兜底。
 
+2026-05-19 后续默认策略调整：
+
+- 图片翻译默认通道改回 `cloud_adc`，默认模型为 `gemini-3.1-flash-image-preview`，默认执行模式为串行。
+- OpenRouter OpenAI Image 2 继续保留为可选通道和视频封面默认模型；视频封面仍使用 `2K` + `low`。
+- 生产环境已有 `system_settings.image_translate.channel` 需要通过追加迁移覆盖为 `cloud_adc`，避免上一轮 OpenRouter 默认迁移继续生效。
+
 ## 5.2 虚拟模型 ID
 
 为保持任务链路兼容，OpenAI Image 2 的三档质量使用 3 个可解析的虚拟模型 ID：
