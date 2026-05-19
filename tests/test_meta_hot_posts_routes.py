@@ -371,6 +371,20 @@ def test_meta_hot_posts_page_embeds_user_ai_visibility(authed_client_no_db, monk
     assert '"europe": false' in body
 
 
+def test_meta_hot_posts_page_registers_single_active_video_handler(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr("appcore.meta_hot_posts.service.category_options", lambda: [])
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function pauseOtherMetaHotVideos(activeVideo)" in body
+    assert "function handleMetaHotVideoPlay(event)" in body
+    assert "document.addEventListener('play', handleMetaHotVideoPlay, true);" in body
+
+
 def test_meta_hot_posts_api_delegates_to_service(authed_client_no_db, monkeypatch):
     captured = {}
 
