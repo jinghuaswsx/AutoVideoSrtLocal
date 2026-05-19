@@ -85,7 +85,7 @@
 }
 ```
 
-OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local_image_2` 使用文案封面专用的 `video_cover_local_image` 凭据行，历史 `local` 配置归一到 `local_image_2`。APIMART 模型 ID 按 APIMART 图片生成文档保存裸模型名。
+OpenRouter 原有 `openai/gpt-5.4-image-2:low|mid|high` 继续保留。`local_image_2` 使用文案封面专用的 `video_cover_local_image` 凭据行，历史 `local` 配置归一到 `local_image_2`；本地 Image 2 封面生成固定提交 `size=1152x2048`（2K 竖图）和 `quality=low`。APIMART 模型 ID 按 APIMART 图片生成文档保存裸模型名。
 
 ### 默认配置结构
 

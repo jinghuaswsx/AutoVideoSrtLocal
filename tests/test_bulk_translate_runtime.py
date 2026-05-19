@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -80,6 +81,13 @@ def runtime_env(monkeypatch):
         },
     )
     return mod, fake_db
+
+
+def test_bulk_translate_image_children_use_global_serial_default():
+    source = Path("appcore/bulk_translate_runtime.py").read_text(encoding="utf-8")
+
+    assert 'concurrency_mode="parallel"' not in source
+    assert source.count("concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE") == 2
 
 
 def _item(

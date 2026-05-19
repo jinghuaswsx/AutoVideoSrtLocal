@@ -1102,7 +1102,7 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
         prompt=prompt,
         items=items,
         medias_context=medias_context,
-        concurrency_mode="parallel",
+        concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
         channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)
@@ -1158,7 +1158,7 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
         prompt=prompt,
         items=items,
         medias_context=medias_context,
-        concurrency_mode="parallel",
+        concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
         channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)

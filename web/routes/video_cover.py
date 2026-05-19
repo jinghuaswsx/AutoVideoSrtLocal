@@ -23,6 +23,8 @@ from appcore.project_state import resolve_project_display_name_conflict, save_pr
 from appcore.settings import get_retention_hours
 from appcore.task_recovery import try_register_active_task, unregister_active_task
 from appcore.video_cover_generation import (
+    LOCAL_IMAGE_2_QUALITY,
+    LOCAL_TIKTOK_COVER_2K_SIZE,
     SOCIAL_REELS_SPEC,
     VideoCoverGenerationError,
     build_ad_copy_prompt,
@@ -1298,7 +1300,8 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
                 "model": model,
                 "prompt": prompt,
                 "n": "1",
-                "size": "1024x1536",
+                "size": LOCAL_TIKTOK_COVER_2K_SIZE,
+                "quality": LOCAL_IMAGE_2_QUALITY,
             },
             "files": [{
                 "field": "image",
