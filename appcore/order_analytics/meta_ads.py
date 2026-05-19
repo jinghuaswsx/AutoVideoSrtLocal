@@ -429,6 +429,153 @@ def _aggregate_meta_ad_summary_rows(metric_rows: list[dict]) -> list[dict]:
     return rows
 
 
+def _summary_search_matches(row: dict, q_clean: str) -> bool:
+    if not q_clean:
+        return True
+    needle = q_clean.lower()
+    haystack = " ".join(
+        str(row.get(key) or "").lower()
+        for key in (
+            "campaign_name",
+            "normalized_campaign_code",
+            "matched_product_code",
+            "media_product_code",
+            "product_name",
+        )
+    )
+    return needle in haystack
+
+
+def _fetch_realtime_summary_metric_rows(
+    business_date: date,
+    *,
+    q: str | None = None,
+    ad_account_id: str | None = None,
+) -> list[dict]:
+    """Return overview-shaped rows from latest realtime snapshots for one open day.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-18-ads-overview-open-day-realtime-fallback.md
+    """
+    account_filter = _normalize_ad_account_filter(ad_account_id)
+    account_clause = "AND ad_account_id = %s " if account_filter else ""
+    latest_args: tuple[Any, ...] = (
+        (business_date, account_filter) if account_filter else (business_date,)
+    )
+    latest_rows = query(
+        "SELECT ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND data_completeness='realtime_partial' "
+        f"{account_clause}"
+        "GROUP BY ad_account_id",
+        latest_args,
+    ) or []
+
+    q_clean = (q or "").strip()
+    match_cache: dict[str, dict | None] = {}
+    metric_rows: list[dict] = []
+
+    for latest in latest_rows:
+        snapshot_at = latest.get("snapshot_at")
+        if not snapshot_at:
+            continue
+        latest_account_id = latest.get("ad_account_id")
+        if latest_account_id is None:
+            rows = query(
+                "SELECT MIN(id) AS id, ad_account_id, MAX(ad_account_name) AS ad_account_name, "
+                "campaign_name, normalized_campaign_code, SUM(result_count) AS result_count, "
+                "SUM(spend_usd) AS spend_usd, SUM(purchase_value_usd) AS purchase_value_usd, "
+                "SUM(impressions) AS impressions, SUM(clicks) AS clicks "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial' "
+                "GROUP BY ad_account_id, campaign_name, normalized_campaign_code "
+                "ORDER BY spend_usd DESC",
+                (business_date, snapshot_at),
+            )
+        else:
+            rows = query(
+                "SELECT MIN(id) AS id, ad_account_id, MAX(ad_account_name) AS ad_account_name, "
+                "campaign_name, normalized_campaign_code, SUM(result_count) AS result_count, "
+                "SUM(spend_usd) AS spend_usd, SUM(purchase_value_usd) AS purchase_value_usd, "
+                "SUM(impressions) AS impressions, SUM(clicks) AS clicks "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial' "
+                "GROUP BY ad_account_id, campaign_name, normalized_campaign_code "
+                "ORDER BY spend_usd DESC",
+                (business_date, latest_account_id, snapshot_at),
+            )
+
+        for row in rows or []:
+            code = str(
+                row.get("normalized_campaign_code") or row.get("campaign_name") or ""
+            ).strip().lower()
+            match = None
+            if code:
+                if code not in match_cache:
+                    match_cache[code] = _facade().resolve_ad_product_match(code)
+                match = match_cache[code]
+
+            metric = {
+                "id": row.get("id"),
+                "product_id": match.get("id") if match else None,
+                "product_name": (
+                    match.get("name") or match.get("product_name")
+                ) if match else None,
+                "media_product_code": match.get("product_code") if match else None,
+                "matched_product_code": match.get("product_code") if match else None,
+                "campaign_name": row.get("campaign_name"),
+                "normalized_campaign_code": row.get("normalized_campaign_code"),
+                "ad_account_id": row.get("ad_account_id"),
+                "ad_account_name": row.get("ad_account_name"),
+                "result_count": int(row.get("result_count") or 0),
+                "spend_usd": float(row.get("spend_usd") or 0),
+                "purchase_value_usd": float(row.get("purchase_value_usd") or 0),
+                "link_clicks": int(row.get("clicks") or 0),
+                "add_to_cart_count": 0,
+                "initiate_checkout_count": 0,
+                "impressions": int(row.get("impressions") or 0),
+            }
+            if _summary_search_matches(metric, q_clean):
+                metric_rows.append(metric)
+
+    return metric_rows
+
+
+def _format_realtime_unmatched_rows(metric_rows: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for row in metric_rows:
+        if row.get("product_id"):
+            continue
+        out.append({
+            "id": row.get("id"),
+            "campaign_name": row.get("campaign_name"),
+            "normalized_campaign_code": row.get("normalized_campaign_code"),
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "spend_usd": _money(row.get("spend_usd") or 0),
+            "result_count": int(row.get("result_count") or 0),
+            "purchase_value_usd": _money(row.get("purchase_value_usd") or 0),
+        })
+    return out
+
+
+def _summary_source_label(
+    *,
+    use_daily_metrics: bool,
+    daily_rows: list[dict],
+    realtime_rows: list[dict],
+) -> str:
+    if not use_daily_metrics:
+        return "meta_ad_campaign_metrics"
+    if realtime_rows and daily_rows:
+        return "meta_ad_daily_campaign_metrics+meta_ad_realtime_daily_campaign_metrics"
+    if realtime_rows:
+        return "meta_ad_realtime_daily_campaign_metrics"
+    return "meta_ad_daily_campaign_metrics"
+
+
 def get_meta_ad_summary(
     batch_id: int | None = None,
     start_date: str | None = None,
@@ -480,24 +627,44 @@ def get_meta_ad_summary(
             "OR LOWER(normalized_campaign_code) LIKE LOWER(%s) "
             "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)) "
         )
+    open_business_date = current_meta_business_date()
+    use_realtime_open_day = (
+        use_daily_metrics
+        and report_start <= open_business_date <= report_end
+    )
+    daily_report_end = report_end
+    if use_realtime_open_day:
+        daily_report_end = min(report_end, open_business_date - timedelta(days=1))
+    daily_range_available = report_start <= daily_report_end
+    daily_metric_rows: list[dict] = []
+    realtime_metric_rows: list[dict] = []
     if use_daily_metrics:
-        metric_rows = query(
-            "SELECT MIN(m.id) AS id, m.product_id, mp.name AS product_name, "
-            "mp.product_code AS media_product_code, "
-            "COALESCE(m.matched_product_code, m.product_code) AS matched_product_code, "
-            "m.campaign_name, SUM(m.result_count) AS result_count, "
-            "SUM(m.spend_usd) AS spend_usd, SUM(m.purchase_value_usd) AS purchase_value_usd, "
-            "0 AS link_clicks, 0 AS add_to_cart_count, 0 AS initiate_checkout_count, 0 AS impressions "
-            "FROM meta_ad_daily_campaign_metrics m "
-            "LEFT JOIN media_products mp ON mp.id = m.product_id "
-            "WHERE m.meta_business_date >= %s AND m.meta_business_date <= %s "
-            f"{daily_account_clause}"
-            f"{daily_search_clause}"
-            "GROUP BY m.product_id, mp.name, mp.product_code, "
-            "COALESCE(m.matched_product_code, m.product_code), m.campaign_name "
-            "ORDER BY spend_usd DESC",
-            (report_start, report_end) + account_args + search_args,
-        )
+        if daily_range_available:
+            daily_metric_rows = query(
+                "SELECT MIN(m.id) AS id, m.product_id, mp.name AS product_name, "
+                "mp.product_code AS media_product_code, "
+                "COALESCE(m.matched_product_code, m.product_code) AS matched_product_code, "
+                "m.campaign_name, SUM(m.result_count) AS result_count, "
+                "SUM(m.spend_usd) AS spend_usd, SUM(m.purchase_value_usd) AS purchase_value_usd, "
+                "0 AS link_clicks, 0 AS add_to_cart_count, 0 AS initiate_checkout_count, 0 AS impressions "
+                "FROM meta_ad_daily_campaign_metrics m "
+                "LEFT JOIN media_products mp ON mp.id = m.product_id "
+                "WHERE m.meta_business_date >= %s AND m.meta_business_date <= %s "
+                f"{daily_account_clause}"
+                f"{daily_search_clause}"
+                "GROUP BY m.product_id, mp.name, mp.product_code, "
+                "COALESCE(m.matched_product_code, m.product_code), m.campaign_name "
+                "ORDER BY spend_usd DESC",
+                (report_start, daily_report_end) + account_args + search_args,
+            ) or []
+        metric_rows = list(daily_metric_rows)
+        if use_realtime_open_day:
+            realtime_metric_rows = _fetch_realtime_summary_metric_rows(
+                open_business_date,
+                q=q_clean,
+                ad_account_id=account_filter,
+            )
+            metric_rows.extend(realtime_metric_rows)
     else:
         metric_rows = query(
             "SELECT m.id, m.product_id, mp.name AS product_name, mp.product_code AS media_product_code, "
@@ -558,18 +725,22 @@ def get_meta_ad_summary(
         row["dianxiaomi_roas"] = _roas(dxm_total_sales, float(row.get("spend_usd") or 0))
 
     if use_daily_metrics:
-        unmatched = query(
-            "SELECT MIN(id) AS id, campaign_name, normalized_campaign_code, "
-            "SUM(spend_usd) AS spend_usd, SUM(result_count) AS result_count, "
-            "SUM(purchase_value_usd) AS purchase_value_usd "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE meta_business_date >= %s AND meta_business_date <= %s AND product_id IS NULL "
-            f"{daily_unmatched_account_clause}"
-            f"{daily_unmatched_search_clause}"
-            "GROUP BY campaign_name, normalized_campaign_code "
-            "ORDER BY spend_usd DESC",
-            (report_start, report_end) + account_args + search_args[:3],
-        )
+        unmatched = []
+        if daily_range_available:
+            unmatched = query(
+                "SELECT MIN(id) AS id, campaign_name, normalized_campaign_code, "
+                "SUM(spend_usd) AS spend_usd, SUM(result_count) AS result_count, "
+                "SUM(purchase_value_usd) AS purchase_value_usd "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE meta_business_date >= %s AND meta_business_date <= %s AND product_id IS NULL "
+                f"{daily_unmatched_account_clause}"
+                f"{daily_unmatched_search_clause}"
+                "GROUP BY campaign_name, normalized_campaign_code "
+                "ORDER BY spend_usd DESC",
+                (report_start, daily_report_end) + account_args + search_args[:3],
+            ) or []
+        if realtime_metric_rows:
+            unmatched.extend(_format_realtime_unmatched_rows(realtime_metric_rows))
     else:
         unmatched = query(
             "SELECT id, campaign_name, normalized_campaign_code, spend_usd, result_count, purchase_value_usd "
@@ -584,7 +755,11 @@ def get_meta_ad_summary(
             "batch_id": resolved_batch_id,
             "report_start_date": report_start,
             "report_end_date": report_end,
-            "source": "meta_ad_daily_campaign_metrics" if use_daily_metrics else "meta_ad_campaign_metrics",
+            "source": _summary_source_label(
+                use_daily_metrics=use_daily_metrics,
+                daily_rows=daily_metric_rows,
+                realtime_rows=realtime_metric_rows,
+            ),
         },
         "rows": rows,
         "unmatched": unmatched,

@@ -480,6 +480,94 @@ def test_get_meta_ad_summary_filters_by_search_query(monkeypatch):
     )
 
 
+def test_get_meta_ad_summary_uses_realtime_for_open_business_day(monkeypatch):
+    from appcore.order_analytics import meta_ads as meta_ads_mod
+
+    today = oa._parse_meta_date("2026-05-18")
+    snapshot_at = __import__("datetime").datetime(2026, 5, 18, 17, 20)
+    queries = []
+
+    monkeypatch.setattr(meta_ads_mod, "current_meta_business_date", lambda: today)
+
+    def fake_match(code):
+        if code == "glow-rjc":
+            return {"id": 42, "product_code": "glow-rjc", "name": "Glow Product"}
+        return None
+
+    monkeypatch.setattr(oa, "resolve_ad_product_match", fake_match)
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM meta_ad_daily_campaign_metrics m" in sql and "LEFT JOIN media_products" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            return []
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "MAX(snapshot_at)" in sql:
+            return [{"ad_account_id": "1861285821213497", "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "snapshot_at=%s" in sql:
+            return [
+                {
+                    "id": 1001,
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_name": "Glow RJC",
+                    "normalized_campaign_code": "glow-rjc",
+                    "result_count": 3,
+                    "spend_usd": 50.0,
+                    "purchase_value_usd": 80.0,
+                    "impressions": 1000,
+                    "clicks": 10,
+                },
+                {
+                    "id": 1002,
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_name": "Unknown Campaign",
+                    "normalized_campaign_code": "unknown-campaign",
+                    "result_count": 1,
+                    "spend_usd": 20.0,
+                    "purchase_value_usd": 0.0,
+                    "impressions": 500,
+                    "clicks": 5,
+                },
+            ]
+        if "FROM shopify_orders" in sql:
+            return [{
+                "product_id": 42,
+                "shopify_order_count": 2,
+                "shopify_quantity": 3,
+                "shopify_revenue": 120.0,
+            }]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [{
+                "product_id": 42,
+                "dianxiaomi_order_count": 2,
+                "dianxiaomi_units": 3,
+                "dianxiaomi_total_sales": 150.0,
+            }]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(start_date="2026-05-18", end_date="2026-05-18")
+
+    assert any("FROM meta_ad_realtime_daily_campaign_metrics" in sql for sql, _args in queries)
+    assert summary["period"]["source"] == "meta_ad_realtime_daily_campaign_metrics"
+    assert len(summary["rows"]) == 2
+    row = next(r for r in summary["rows"] if r["product_id"] == 42)
+    assert row["product_id"] == 42
+    assert row["display_name"] == "Glow Product"
+    assert row["spend_usd"] == 50.0
+    assert row["purchase_value_usd"] == 80.0
+    assert row["result_count"] == 3
+    assert row["link_clicks"] == 10
+    assert row["impressions"] == 1000
+    assert row["shopify_order_count"] == 2
+    assert row["dianxiaomi_total_sales"] == 150.0
+    assert summary["unmatched"][0]["campaign_name"] == "Unknown Campaign"
+    assert summary["unmatched"][0]["spend_usd"] == 20.0
+
+
 def test_get_meta_ad_summary_filters_by_ad_account(monkeypatch):
     report_start = oa._parse_meta_date("2026-05-17")
     report_end = oa._parse_meta_date("2026-05-17")
