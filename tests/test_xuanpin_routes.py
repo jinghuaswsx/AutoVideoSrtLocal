@@ -104,6 +104,19 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "/xuanpin/api/mk-yesterday-top100" in body
 
 
+def test_xuanpin_mk_video_cards_clamp_copy_and_hide_missing_sales(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert ".mk-line-clamp--2" in body
+    assert ".mk-line-clamp--3" in body
+    assert ".mk-video-product-name" in body
+    assert ".mk-video-product-code" in body
+    assert 'class="mk-video-card-title mk-line-clamp mk-line-clamp--3"' in body
+    assert "· 销量 ${Number(r.sales_count || 0)}" not in body
+
+
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/tabcut")
 

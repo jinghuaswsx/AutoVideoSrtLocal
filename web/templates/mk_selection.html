@@ -63,7 +63,10 @@
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
 .mk-video-card { width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
-.mk-video-card-title { min-height:calc(1.45em * 3); font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); word-break:break-word; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
+.mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
+.mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
+.mk-video-card-title { font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); }
 .mk-video-summary-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--oc-sp-2) var(--oc-sp-3); }
 .mk-video-summary-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; line-height:1.4; color:var(--oc-fg-muted); }
 .mk-video-summary-item .value { color:var(--oc-fg); font-weight:600; }
@@ -123,9 +126,11 @@
 .mk-library-panel[hidden] { display:none; }
 .mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
 .mk-video-library-grid { min-height:180px; }
-.mk-video-product-line { display:flex; flex-direction:column; gap:2px; min-height:48px; font-size:12px; color:var(--oc-fg-muted); }
-.mk-video-product-line a { color:var(--oc-accent); text-decoration:none; font-weight:700; }
-.mk-video-product-line a:hover { text-decoration:underline; }
+.mk-video-product-line { display:flex; flex-direction:column; gap:4px; min-height:calc((1.35em * 4) + 4px); color:var(--oc-fg-muted); }
+.mk-video-product-name { color:var(--oc-accent); text-decoration:none; font-weight:700; font-size:13px; line-height:1.35; }
+.mk-video-product-name:hover { text-decoration:underline; }
+strong.mk-video-product-name { color:var(--oc-fg); }
+.mk-video-product-code { color:var(--oc-fg-muted); font-size:12px; line-height:1.35; }
 .mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
 .mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
 .mk-material-state { font-size:12px; line-height:1; }
@@ -559,8 +564,11 @@ function renderMkVideoMaterialCard(r) {
   const safeCoverUrl = escapeHtml(coverUrl);
   const safeVideoUrl = escapeHtml(videoUrl);
   const safeProductUrl = safeExternalHref(r.product_url || r.mk_product_link || '');
-  const safeProductName = escapeHtml(r.mk_product_name || r.product_name || '--');
-  const productHandle = escapeHtml(r.product_handle || r.product_code || '');
+  const rawProductName = r.mk_product_name || r.product_name || '--';
+  const rawProductHandle = r.product_handle || r.product_code || '';
+  const safeProductName = escapeHtml(rawProductName);
+  const productHandle = escapeHtml(rawProductHandle);
+  const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
   const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
@@ -578,10 +586,10 @@ function renderMkVideoMaterialCard(r) {
     : '';
   return `<div class="mk-video-card">
     <div class="mk-video-product-line">
-      ${safeProductUrl ? `<a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong title="${safeProductName}">${safeProductName}</strong>`}
-      <span>#${escapeHtml(r.rank_position || '--')} · ${productHandle} · 销量 ${Number(r.sales_count || 0)}</span>
+      ${safeProductUrl ? `<a class="mk-video-product-name mk-line-clamp mk-line-clamp--2" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong class="mk-video-product-name mk-line-clamp mk-line-clamp--2" title="${safeProductName}">${safeProductName}</strong>`}
+      <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
     </div>
-    <div class="mk-video-card-title" title="${videoName}">${videoName}</div>
+    <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
     <div class="mk-video-summary-row">
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
       <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
@@ -710,7 +718,7 @@ async function openDetail(mkId, mkName) {
       const author = escapeHtml(v.author || '--');
       const spendText = escapeHtml(fmtMkSpendText(v.spends, spends));
       html += `<div class="mk-video-card">
-        <div class="mk-video-card-title" title="${videoName}">${videoName}</div>
+        <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
         <div class="mk-video-summary-row">
           <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
           <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
