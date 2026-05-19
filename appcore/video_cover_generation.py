@@ -28,7 +28,7 @@ from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
 from pipeline.ffutil import extract_frame_at_timestamp, extract_thumbnail, probe_media_info
 
 
-DEFAULT_IMAGE_CHANNEL = "local"
+DEFAULT_IMAGE_CHANNEL = "local_image_2"
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_COVER_EXECUTION_MODE = ""
 LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
@@ -138,15 +138,15 @@ TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
 
 COVER_MODEL_OPTIONS: dict[str, Any] = {
     "label": "封面生成",
-    "default_provider": "local",
+    "default_provider": "local_image_2",
     "providers": {
-        "local": "本地接口",
+        "local_image_2": "本地 Image 2",
         "openrouter": "OPENROUTER",
         "gemini_aistudio": "GOOGLE AI STUDIO",
         "apimart": "APIMART",
     },
     "models": {
-        "local": {
+        "local_image_2": {
             "gpt_image_2": "gpt-image-2",
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
@@ -184,6 +184,12 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
         "apimart_nano_banana_pro": "Nano Banana Pro（APIMART）",
     },
     "model_aliases": {
+        "local_image_2": {
+            "gpt-image-2": "gpt_image_2",
+            "gemini-3.1-flash-image-preview": "nano_banana_2",
+            "gemini-3-pro-image-preview": "nano_banana_pro",
+            "gemini-2.5-flash-image-preview": "nano_banana_1",
+        },
         "openrouter": {
             "gpt_image_2": "openai_image_2_mid",
             "gemini-3.1-flash-image-preview": "nano_banana_2",
@@ -213,6 +219,12 @@ def _normalize_retired_adc_provider(provider_key: str, providers: dict[str, Any]
     if provider_key == "gemini_vertex_adc" and "gemini_aistudio" in providers:
         return "gemini_aistudio"
     return provider_key
+
+
+def _normalize_cover_provider(provider_key: str, providers: dict[str, Any]) -> str:
+    if provider_key in {"local", "local_image", "local_image2"} and "local_image_2" in providers:
+        return "local_image_2"
+    return _normalize_retired_adc_provider(provider_key, providers)
 
 
 def resolve_text_model_selection(step: str, provider: str | None, model: str | None) -> ModelSelection:
@@ -251,7 +263,7 @@ def resolve_text_model_selection(step: str, provider: str | None, model: str | N
 
 def resolve_cover_model_selection(provider: str | None, model: str | None) -> ModelSelection:
     provider_key = (provider or COVER_MODEL_OPTIONS["default_provider"]).strip().lower()
-    provider_key = _normalize_retired_adc_provider(provider_key, COVER_MODEL_OPTIONS["providers"])
+    provider_key = _normalize_cover_provider(provider_key, COVER_MODEL_OPTIONS["providers"])
     if provider_key not in COVER_MODEL_OPTIONS["providers"]:
         provider_key = COVER_MODEL_OPTIONS["default_provider"]
     model_options = COVER_MODEL_OPTIONS["models"][provider_key]
@@ -1176,7 +1188,7 @@ def _resolve_local_image_credentials() -> tuple[str, str]:
     base_url = str(getattr(cfg, "base_url", "") or "").strip() if cfg else ""
     if not api_key:
         raise VideoCoverGenerationError(
-            f"封面生成失败：缺少供应商配置 {LOCAL_IMAGE_PROVIDER_CODE}.api_key，请在设置页配置本地接口 API key"
+            f"封面生成失败：缺少供应商配置 {LOCAL_IMAGE_PROVIDER_CODE}.api_key，请在设置页配置本地 Image 2 API key"
         )
     return api_key, (base_url or LOCAL_IMAGE_BASE_URL_DEFAULT).rstrip("/")
 
@@ -1284,7 +1296,7 @@ def generate_cover_image(
             service="video_cover.generate",
             channel=selection.provider,
         )
-    if selection.provider == "local":
+    if selection.provider in {"local", "local_image_2"}:
         return generate_local_cover_image(
             prompt,
             source_image=source_image,

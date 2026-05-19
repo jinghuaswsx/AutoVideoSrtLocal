@@ -53,7 +53,7 @@ _KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
     "doubao_asr":            ("火山 ASR 语音识别",                   GROUP_ASR),
     "seedance_video":        ("Seedance 视频生成",                  GROUP_VIDEO),
     "apimart_image":         ("APIMART / GPT Image 2",              GROUP_IMAGE),
-    "video_cover_local_image": ("文案封面生成 · 本地图片接口",        GROUP_IMAGE),
+    "video_cover_local_image": ("文案封面生成 · 本地 Image 2",      GROUP_IMAGE),
     "elevenlabs_tts":        ("ElevenLabs 配音",                    GROUP_TTS),
     # subtitle_removal：goodline.simplemokey.com 第三方接口的备用通道。
     # 线上字幕移除一直走火山 VOD（appcore/subtitle_removal_runtime_vod.py，

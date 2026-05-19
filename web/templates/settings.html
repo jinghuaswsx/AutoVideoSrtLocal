@@ -164,7 +164,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       {% endfor %}
     </select>
     <p class="hint">
-      AI Studio / Google Cloud / OpenRouter 通道分别走独立的 provider 行；
+      AI Studio / Google Cloud / Vertex ADC / OpenRouter 通道分别走独立的 provider 行；
+      Vertex ADC 使用 <code>gemini_vertex_adc_image</code> 的 project/location 与服务器 ADC；
       豆包 ARK 通道走独立的 <code>doubao_seedream</code>，不再复用 <code>doubao_llm</code>。
     </p>
 

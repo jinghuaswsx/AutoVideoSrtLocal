@@ -522,6 +522,7 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
     assert 'name="image_translate_default_model"' in body
     assert 'value="gemini-3-pro-image-preview" selected' in body
     assert '"openrouter"' in body
+    assert "Google Vertex AI (ADC)" in body
     assert "Nano Banana Pro（高保真）" in body
 
 

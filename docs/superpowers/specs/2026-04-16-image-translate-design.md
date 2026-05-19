@@ -15,7 +15,7 @@
 - 模型可切换 Nano Banana 2 / Pro，记忆用户上次选择
 - 单张失败自动重试 3 次，失败后可手动重试，整任务不中止
 - 单张下载 + zip 打包下载
-- 遵守全局 `GEMINI_BACKEND` 切换（aistudio / cloud）
+- 遵守全局图片翻译通道切换（AI Studio / Google Cloud Vertex / Google Vertex ADC / OpenRouter / 豆包 / APIMART）
 
 ## 2. 范围与非目标
 
@@ -71,7 +71,7 @@
 
 ## 5. 模型与 Prompt
 
-### 可选模型
+### 可选模型与通道
 ```python
 IMAGE_MODELS = [
     ("gemini-3-pro-image-preview",   "Nano Banana Pro（高保真）"),
@@ -79,6 +79,8 @@ IMAGE_MODELS = [
 ]
 ```
 `model_id` 在实施阶段用 `google-genai` SDK 最新文档再确认一次。
+
+全局 `image_translate.channel` 允许 `cloud_adc`，展示为 Google Vertex AI (ADC)。该通道读取 `llm_provider_configs.gemini_vertex_adc_image` 的 project/location，默认模型与其他 Google 图片通道一致为 `gemini-3.1-flash-image-preview`（Nano Banana 2）。
 
 ### 用户默认偏好
 复用 `api_keys.extra_config`，service = `image_translate`：

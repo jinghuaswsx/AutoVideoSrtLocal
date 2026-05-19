@@ -98,6 +98,20 @@ def test_models_endpoint_allows_single_task_channel_override(authed_client_no_db
     assert any(channel["id"] == "doubao" for channel in data["channels"])
 
 
+def test_models_endpoint_allows_vertex_adc_channel_override(authed_client_no_db, monkeypatch):
+    resp = authed_client_no_db.get("/api/image-translate/models?channel=cloud_adc")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["channel"] == "cloud_adc"
+    assert data["default_model_id"] == "gemini-3.1-flash-image-preview"
+    assert data["items"][0] == {
+        "id": "gemini-3.1-flash-image-preview",
+        "name": "Nano Banana 2（快速）",
+    }
+    assert {"id": "cloud_adc", "name": "Google Vertex AI (ADC)"} in data["channels"]
+
+
 def test_medias_default_image_model_is_flash_when_no_user_preference(authed_client_no_db, monkeypatch):
     """从英语版一键翻译：用户没有保存偏好时，默认模型应是 Nano Banana 2（快速）。"""
     from web.routes import medias as r
