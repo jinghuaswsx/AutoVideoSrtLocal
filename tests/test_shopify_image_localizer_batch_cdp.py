@@ -942,6 +942,42 @@ def test_apply_uploaded_replacements_uses_natural_size_when_rendered_size_is_too
     assert "290px" not in updated
 
 
+def test_apply_uploaded_replacements_uses_target_size_when_display_size_url_misses():
+    old_src = "https://cdn.shopify.com/s/files/old_from_url_en_07_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_refsize_800x800.png?v=2"
+    storefront_src = "https://cdn.shopify.com/s/files/old_from_url_en_07_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png?v=1"
+    html = (
+        f'<p><img alt="demo" src="{old_src}" '
+        'width="290" height="290" '
+        'style="width: 290px; max-width: 290px; height: 290px;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [
+            {
+                "old": old_src,
+                "new": "https://cdn.shopify.com/s/files/new_refsize_800x800.png?v=3",
+                "target_width": 800,
+                "target_height": 800,
+            }
+        ],
+        display_size_by_src={
+            storefront_src: {
+                "width": 290,
+                "height": 290,
+                "naturalWidth": 1254,
+                "naturalHeight": 1254,
+            }
+        },
+    )
+
+    assert 'width="800"' in updated
+    assert 'height="800"' in updated
+    assert "width: 800px" in updated
+    assert "height: 800px" in updated
+    assert "290px" not in updated
+
+
 def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
     calls: list[tuple] = []
     html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"
@@ -1355,6 +1391,72 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
         "exit-success",
         "enter-reload",
     ]
+
+
+def test_replace_detail_images_uses_uploaded_target_size_when_display_size_url_misses(monkeypatch, tmp_path):
+    token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    original_src = f"https://cdn.shopify.com/s/files/old_from_url_en_07_{token}_refsize_800x800.png?v=2"
+    storefront_src = f"https://cdn.shopify.com/s/files/old_from_url_en_07_{token}.png?v=1"
+    cdn_src = f"https://cdn.shopify.com/s/files/new_from_url_en_07_{token}_refsize_800x800.png?v=3"
+    image_path = tmp_path / f"loc_from_url_en_07_{token}_refsize_800x800.png"
+    Image.new("RGB", (800, 800), "white").save(image_path)
+    html_before = (
+        f'<section><img src="{original_src}" width="290" height="290" '
+        'style="width: 290px; max-width: 290px; height: 290px;"></section>'
+    )
+    saved_html = ""
+
+    class SuccessfulTaa:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return html_before if not saved_html else saved_html
+
+        def upload_image(self, local_path):
+            assert Path(local_path) == image_path
+            return cdn_src
+
+        def close_modal(self):
+            return None
+
+        def set_body_html(self, html):
+            nonlocal saved_html
+            saved_html = html
+            return {"ok": True}
+
+        def click_save(self):
+            return []
+
+    monkeypatch.setattr(taa_cdp, "TaaSession", lambda **_kwargs: SuccessfulTaa())
+
+    result = taa_cdp.replace_detail_images(
+        product_id="9163925979348",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image-omurio",
+        localized_images=[{"filename": image_path.name, "local_path": str(image_path)}],
+        display_size_by_src={
+            storefront_src: {
+                "width": 290,
+                "height": 290,
+                "naturalWidth": 1254,
+                "naturalHeight": 1254,
+            }
+        },
+        replace_shopify_cdn=True,
+        verify_reload=False,
+    )
+
+    assert result["status"] == "done"
+    assert 'src="' + cdn_src + '"' in saved_html
+    assert 'width="800"' in saved_html
+    assert 'height="800"' in saved_html
+    assert "width: 800px" in saved_html
+    assert "height: 800px" in saved_html
+    assert "290px" not in saved_html
 
 
 def test_raw_cdp_collect_events_returns_after_quiet_window() -> None:
