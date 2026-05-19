@@ -293,6 +293,8 @@ def _mark_item_as_copied_source_result(task: dict, item: dict) -> str:
     item["generation_model_override"] = ""
     item["generation_override_label"] = ""
     item["result_source"] = "copied_source"
+    item["result_channel"] = ""
+    item["result_model_id"] = ""
     return dst_key
 
 
@@ -348,6 +350,8 @@ def _reset_item_processing_state(item: dict) -> None:
     item["text_detect_reason"] = ""
     item["text_detect_error"] = ""
     item["result_source"] = ""
+    item["result_channel"] = ""
+    item["result_model_id"] = ""
 
 
 def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object_key: str, filename: str) -> dict:
@@ -799,6 +803,8 @@ def api_use_source_item(task_id: str, idx: int):
                 "status": "done",
                 "dst_tos_key": dst_key,
                 "result_source": "copied_source",
+                "result_channel": "",
+                "result_model_id": "",
             }
         )
     )

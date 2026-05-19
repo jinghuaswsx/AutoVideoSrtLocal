@@ -342,6 +342,47 @@
       return {label: "结果来源：待生成", tone: "pending"};
     }
 
+    function imageTranslateChannelLabel(channel, state){
+      var key = (channel || "").trim().toLowerCase();
+      if (!key) return "";
+      var channels = window.imageTranslateChannels || [];
+      for (var i = 0; i < channels.length; i++) {
+        if ((channels[i].id || "").toLowerCase() === key) {
+          return channels[i].name || key;
+        }
+      }
+      if (state && (state.channel || "").toLowerCase() === key && state.channel_label) {
+        return state.channel_label;
+      }
+      return key;
+    }
+
+    function resultModelBadge(it, state){
+      var source = it.result_source || "";
+      if (source === "copied_source") {
+        return {label: "大模型：未调用", tone: "copy", title: "复制原图时没有调用大模型"};
+      }
+      var isDone = it.status === "done" && !!it.dst_tos_key;
+      var channel = (it.result_channel || "").trim();
+      var modelId = (it.result_model_id || "").trim();
+      if (source === "banana_regenerate") {
+        channel = channel || "aistudio";
+        modelId = modelId || "gemini-3.1-flash-image-preview";
+      }
+      if (isDone) {
+        channel = channel || ((state && state.channel) || "");
+        modelId = modelId || ((state && state.model_id) || "");
+      }
+      if (!channel && !modelId) {
+        return {label: isDone ? "大模型：未知" : "大模型：待生成", tone: "pending"};
+      }
+      var provider = imageTranslateChannelLabel(channel, state);
+      var parts = [];
+      if (provider) parts.push("供应商：" + provider);
+      if (modelId) parts.push("模型ID：" + modelId);
+      return {label: "大模型：" + parts.join("；"), tone: "translate", title: parts.join("\n")};
+    }
+
     function appendBadge(meta, badge, classBase){
       var el = document.createElement("span");
       el.className = classBase + " is-" + badge.tone;
@@ -350,11 +391,12 @@
       meta.appendChild(el);
     }
 
-    function appendItemMeta(container, it){
+    function appendItemMeta(container, it, state){
       var meta = document.createElement("div");
       meta.className = "it-item-meta";
       appendBadge(meta, textDetectBadge(it), "it-meta-chip it-meta-chip--detect");
       appendBadge(meta, resultSourceBadge(it), "it-meta-chip it-meta-chip--source");
+      appendBadge(meta, resultModelBadge(it, state), "it-meta-chip it-meta-chip--model");
       container.appendChild(meta);
     }
 
@@ -534,7 +576,7 @@
           statusBox.textContent = "状态：" + (it.status || "pending") + (it.error ? "；错误：" + it.error : "");
           right.appendChild(statusBox);
         }
-        appendItemMeta(right, it);
+        appendItemMeta(right, it, state);
         row.appendChild(right);
         var actions = document.createElement("div");
         actions.className = "it-item-actions";

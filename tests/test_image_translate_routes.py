@@ -962,6 +962,37 @@ def test_result_download_redirects_when_done(authed_client_no_db, monkeypatch):
     assert "out_0.png" in resp.headers["Location"]
 
 
+def test_use_source_item_clears_result_model_origin(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    item = task["items"][0]
+    item["result_channel"] = "doubao"
+    item["result_model_id"] = "doubao-seedream-5-0-260128"
+
+    def fake_download_to(key, local_path):
+        with open(local_path, "wb") as f:
+            f.write(b"SRC")
+        return local_path
+
+    written = {}
+    monkeypatch.setattr(r.local_media_storage, "download_to", fake_download_to)
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda key, data: written.update({"key": key, "data": data}))
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/use-source/0")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["result_source"] == "copied_source"
+    assert data["result_channel"] == ""
+    assert data["result_model_id"] == ""
+    assert item["result_channel"] == ""
+    assert item["result_model_id"] == ""
+    assert written["data"] == b"SRC"
+
+
 def test_detail_page_renders_channel_rerun_controls(authed_client_no_db, monkeypatch):
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
 

@@ -649,6 +649,8 @@ def create_image_translate(task_id: str, task_dir: str, *,
             "text_detect_reason": "",
             "text_detect_error": "",
             "result_source": "",
+            "result_channel": "",
+            "result_model_id": "",
             "error": "",
         })
     task = {

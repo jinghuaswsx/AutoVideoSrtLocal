@@ -92,8 +92,24 @@ def _reset_item_processing_state(item: dict) -> None:
     item["text_detect_reason"] = ""
     item["text_detect_error"] = ""
     item["result_source"] = ""
+    item["result_channel"] = ""
+    item["result_model_id"] = ""
     # Keep async provider snapshots across retries. The next run checks the
     # saved upstream task before submitting another paid generation.
+
+
+def _generation_origin_for_item(task: dict, item: dict) -> tuple[str, str]:
+    channel = (
+        item.get("generation_channel_override")
+        or task.get("channel")
+        or ""
+    ).strip().lower()
+    model_id = (
+        item.get("generation_model_override")
+        or task.get("model_id")
+        or ""
+    ).strip()
+    return channel, model_id
 
 
 def _item_source_is_gif(item: dict) -> bool:
@@ -385,6 +401,7 @@ class ImageTranslateRuntime:
                 else:
                     has_text = self._detect_source_text(task, task_id, item, src_path)
                 if has_text:
+                    result_channel, result_model_id = _generation_origin_for_item(task, item)
                     out_bytes, out_mime = self._generate_with_apimart_recovery(
                         task, task_id, item, idx, src_bytes, mime,
                     )
@@ -401,11 +418,15 @@ class ImageTranslateRuntime:
                     dst_key = self._build_dst_key(task, idx, dst_ext)
                     local_media_storage.write_bytes(dst_key, src_bytes)
                     result_source = "copied_source"
+                    result_channel = ""
+                    result_model_id = ""
 
                 with self._state_lock:
                     item["status"] = "done"
                     item["dst_tos_key"] = dst_key
                     item["result_source"] = result_source
+                    item["result_channel"] = result_channel
+                    item["result_model_id"] = result_model_id
                     item["error"] = ""
                     _update_progress(task)
                     store.update(task_id, items=task["items"], progress=task["progress"])
@@ -671,6 +692,8 @@ class ImageTranslateRuntime:
                 "text_detect_reason": item.get("text_detect_reason") or "",
                 "text_detect_error": item.get("text_detect_error") or "",
                 "result_source": item.get("result_source") or "",
+                "result_channel": item.get("result_channel") or "",
+                "result_model_id": item.get("result_model_id") or "",
             },
         ))
 
