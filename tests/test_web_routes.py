@@ -3623,10 +3623,16 @@ def test_medias_edit_modal_contains_detail_image_zip_download_button():
 
 
 def test_medias_edit_modal_contains_detail_image_single_replace_control():
-    scripts = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     assert "data-detail-selection-replace" in scripts
     assert "替换选中" in scripts
+    assert "data-detail-image-replace" in scripts
+    assert "oc-detail-image-replace" in scripts
+    assert ".oc-detail-image-replace" in styles
+    assert "onCardSelect" in scripts
     assert "replaceSelectedDetailImage" in scripts
     assert "replace-bootstrap" in scripts
     assert "replace-complete" in scripts
@@ -3654,7 +3660,7 @@ def test_medias_edit_modal_contains_download_product_images_button():
     assert "edTypeNoLocalizedDetailImagesMessage" in scripts
     assert "oc-no-localized-images-message" in styles
     assert "color:var(--oc-danger-fg)" in styles
-    assert "download-localized-empty-modal-20260519" in styles
+    assert "detail-image-replace-card-20260519" in styles
     assert "material-filename-tail-20260513" not in styles
     assert "detail-images/download-localized-zip" in scripts
 
