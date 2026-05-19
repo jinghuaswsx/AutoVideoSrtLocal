@@ -8,6 +8,9 @@
       return {ok:r.ok, body:d};
     });
   }
+  function channelAllowsParallel(channel) {
+    return channel === "openrouter" || channel === "apimart";
+  }
 
   if (pageType === "image-translate-list") {
     var state = { files: [] };
@@ -47,13 +50,28 @@
     function bindPillGroup(groupEl, hiddenInput, onChange) {
       groupEl.addEventListener("click", function(ev){
         var btn = ev.target.closest(".it-pill");
-        if (!btn) return;
+        if (!btn || btn.disabled) return;
         var value = btn.getAttribute("data-value") || "";
         if (!value || hiddenInput.value === value) return;
         hiddenInput.value = value;
         setPillActive(groupEl, value);
         if (onChange) onChange(value);
       });
+    }
+
+    function enforceListConcurrency(channel) {
+      if (!concurrencyPills || !concurrencyEl) return;
+      var canParallel = channelAllowsParallel(channel || "");
+      var parallelBtn = concurrencyPills.querySelector('[data-value="parallel"]');
+      if (parallelBtn) {
+        parallelBtn.disabled = !canParallel;
+        parallelBtn.title = canParallel ? "" : "只有 OpenRouter 和 APIMART 可以并行";
+      }
+      if (!canParallel && concurrencyEl.value === "parallel") {
+        concurrencyEl.value = "sequential";
+      }
+      if (!concurrencyEl.value) concurrencyEl.value = "sequential";
+      setPillActive(concurrencyPills, concurrencyEl.value);
     }
 
     function renderPills(groupEl, items) {
@@ -132,6 +150,7 @@
           if (d.channel && channelEl) {
             channelEl.value = d.channel;
             setPillActive(channelPills, d.channel);
+            enforceListConcurrency(d.channel);
           }
           if (items.length) {
             var defaultId = (d.default_model_id || "").trim();
@@ -144,8 +163,9 @@
 
     bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
     setPillActive(presetPills, presetEl.value || "cover");
-    bindPillGroup(channelPills, channelEl, function(){ loadModels(); });
+    bindPillGroup(channelPills, channelEl, function(value){ enforceListConcurrency(value); loadModels(); });
     setPillActive(channelPills, channelEl.value || "");
+    enforceListConcurrency(channelEl.value || "");
     bindPillGroup(concurrencyPills, concurrencyEl, null);
 
     fileInput.onchange = function(){
@@ -188,6 +208,7 @@
       if (!langEl.value) return showError("请选择目标语言");
       if (!modelEl.value) return showError("请选择模型");
       if (!promptEl.value.trim()) return showError("prompt 不能为空");
+      enforceListConcurrency(channelEl.value || "");
 
       submitBtn.disabled = true;
       submitBtn.textContent = "申请上传地址...";
@@ -449,11 +470,12 @@
     function enforceRerunConcurrency(channel){
       if (!rerunConcurrencyPills || !rerunConcurrencyValue) return;
       var parallelBtn = rerunConcurrencyPills.querySelector('[data-value="parallel"]');
+      var canParallel = channelAllowsParallel(channel || "");
       if (parallelBtn) {
-        parallelBtn.disabled = channel !== "apimart";
-        parallelBtn.title = channel === "apimart" ? "" : "只有 APIMART 可以并行";
+        parallelBtn.disabled = !canParallel;
+        parallelBtn.title = canParallel ? "" : "只有 OpenRouter 和 APIMART 可以并行";
       }
-      if (channel !== "apimart" && rerunConcurrencyValue.value === "parallel") {
+      if (!canParallel && rerunConcurrencyValue.value === "parallel") {
         rerunConcurrencyValue.value = "sequential";
       }
       if (!rerunConcurrencyValue.value) rerunConcurrencyValue.value = "sequential";

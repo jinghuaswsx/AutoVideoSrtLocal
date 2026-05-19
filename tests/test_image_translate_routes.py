@@ -1003,7 +1003,7 @@ def test_detail_page_renders_channel_rerun_controls(authed_client_no_db, monkeyp
     assert "换通道重跑" in body
     assert 'id="itChannelRerunModal"' in body
     assert 'id="itRerunChannelPills"' in body
-    assert "只有 APIMART 可以并行" in body
+    assert "只有 OpenRouter 和 APIMART 可以并行" in body
 
 
 def test_retry_failed_item_resets_and_triggers_runner(authed_client_no_db, monkeypatch):
@@ -1477,11 +1477,47 @@ def test_rerun_unfinished_with_channel_rejects_invalid_model(authed_client_no_db
     assert resp.get_json()["error"] == "unsupported model"
 
 
-def test_rerun_unfinished_with_channel_rejects_parallel_for_non_apimart(authed_client_no_db, monkeypatch):
+def test_rerun_unfinished_with_channel_accepts_openrouter_parallel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
     from web.services import image_translate_runner
+    from web import store
 
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    task = store.get(tid)
+    task["status"] = "error"
+    started: list[tuple[str, int]] = []
     monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+    monkeypatch.setattr(r, "_start_runner", lambda task_id, uid: started.append((task_id, uid)) or True)
+    monkeypatch.setattr(store, "update", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "parallel",
+            "channel": "openrouter",
+            "model_id": "gemini-3-pro-image-preview",
+        },
+    )
+
+    assert resp.status_code == 202
+    assert resp.get_json()["concurrency_mode"] == "parallel"
+    assert task["channel"] == "openrouter"
+    assert task["concurrency_mode"] == "parallel"
+    assert started
+
+
+def test_rerun_unfinished_with_channel_coerces_parallel_for_non_parallel_channel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    task = store.get(tid)
+    task["status"] = "error"
+    started: list[tuple[str, int]] = []
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+    monkeypatch.setattr(r, "_start_runner", lambda task_id, uid: started.append((task_id, uid)) or True)
+    monkeypatch.setattr(store, "update", lambda *args, **kwargs: None)
 
     resp = authed_client_no_db.post(
         f"/api/image-translate/{tid}/rerun-unfinished",
@@ -1492,8 +1528,12 @@ def test_rerun_unfinished_with_channel_rejects_parallel_for_non_apimart(authed_c
         },
     )
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "parallel mode requires APIMART channel"
+    assert resp.status_code == 202
+    assert resp.get_json()["channel"] == "doubao"
+    assert resp.get_json()["concurrency_mode"] == "sequential"
+    assert task["channel"] == "doubao"
+    assert task["concurrency_mode"] == "sequential"
+    assert started
 
 
 def test_rerun_unfinished_with_channel_409_when_runner_active(authed_client_no_db, monkeypatch):
@@ -1550,15 +1590,43 @@ def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch
     assert mem[task_id]["concurrency_mode"] == "sequential"
 
 
-def test_upload_complete_accepts_parallel(authed_client_no_db, monkeypatch):
+def test_upload_complete_accepts_openrouter_parallel(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
     mem = _patch_task_state(monkeypatch)
 
-    resp = _post_complete(authed_client_no_db, {"concurrency_mode": "parallel"})
+    resp = _post_complete(
+        authed_client_no_db,
+        {
+            "channel": "openrouter",
+            "model_id": "gemini-3-pro-image-preview",
+            "concurrency_mode": "parallel",
+        },
+    )
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
+    assert mem[task_id]["channel"] == "openrouter"
     assert mem[task_id]["concurrency_mode"] == "parallel"
+
+
+def test_upload_complete_coerces_parallel_to_sequential_for_non_parallel_channel(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+
+    resp = _post_complete(
+        authed_client_no_db,
+        {
+            "channel": "doubao",
+            "model_id": "doubao-seedream-5-0-260128",
+            "concurrency_mode": "parallel",
+        },
+    )
+
+    assert resp.status_code == 201, resp.get_json()
+    task_id = resp.get_json()["task_id"]
+    assert mem[task_id]["channel"] == "doubao"
+    assert mem[task_id]["concurrency_mode"] == "sequential"
 
 
 def test_upload_complete_rejects_invalid_mode(authed_client_no_db, monkeypatch):

@@ -60,6 +60,7 @@ _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
 _BANANA_RETRY_CHANNEL = "aistudio"
 _BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
 _BANANA_RETRY_LABEL = "banana重新生成"
+_PARALLEL_CAPABLE_CHANNELS = {"openrouter", "apimart"}
 
 
 def _safe_image_translate_channel() -> str:
@@ -105,6 +106,16 @@ def _compose_project_name(product_name: str, preset: str, lang_name: str) -> str
 def _normalize_concurrency_mode(value: str | None) -> str:
     raw = (value or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE).strip().lower()
     return raw if raw in {"sequential", "parallel"} else task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+
+
+def _channel_allows_parallel(channel: str | None) -> bool:
+    return (channel or "").strip().lower() in _PARALLEL_CAPABLE_CHANNELS
+
+
+def _coerce_concurrency_mode_for_channel(mode: str, channel: str | None) -> str:
+    if mode == "parallel" and not _channel_allows_parallel(channel):
+        return "sequential"
+    return mode
 
 
 def _concurrency_mode_label(value: str | None) -> str:
@@ -552,6 +563,7 @@ def api_upload_complete():
         return image_translate_flask_response(
             build_image_translate_error_response("concurrency_mode must be sequential or parallel", 400)
         )
+    mode_raw = _coerce_concurrency_mode_for_channel(mode_raw, channel)
     if not uploaded:
         return image_translate_flask_response(build_image_translate_error_response("uploaded required", 400))
 
@@ -1031,10 +1043,7 @@ def api_rerun_unfinished_with_channel(task_id: str):
         return image_translate_flask_response(
             build_image_translate_error_response("concurrency_mode must be sequential or parallel", 400)
         )
-    if concurrency_mode == "parallel" and channel != "apimart":
-        return image_translate_flask_response(
-            build_image_translate_error_response("parallel mode requires APIMART channel", 400)
-        )
+    concurrency_mode = _coerce_concurrency_mode_for_channel(concurrency_mode, channel)
 
     items = task.get("items") or []
     reset_count = 0

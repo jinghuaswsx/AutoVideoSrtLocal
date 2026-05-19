@@ -3492,6 +3492,7 @@ def test_image_translate_templates_show_concurrency_mode_pills():
     assert "处理模式" in detail_template
     assert 'id="itConcurrencyMode" value="sequential"' in list_template
     assert "串行（默认）" in list_template
+    assert "仅 OpenRouter 和 APIMART 可选" in list_template
     assert "itMetaConcurrencyMode" in detail_template
     assert "data-concurrency-mode" in list_template
     assert "data-concurrency-mode" in detail_template
@@ -3510,6 +3511,8 @@ def test_image_translate_list_template_has_task_channel_controls():
     assert "image_translate_channels" in list_template
     assert '"channel": channelEl.value' in scripts
     assert "channel=\" + encodeURIComponent(channelEl.value)" in scripts
+    assert "enforceListConcurrency" in scripts
+    assert "channelAllowsParallel" in scripts
 
 
 def test_image_translate_retry_fetch_handles_non_json_errors():
@@ -3540,7 +3543,7 @@ def test_image_translate_detail_has_channel_rerun_controls():
     assert 'id="itRerunChannelPills"' in detail_template
     assert 'id="itRerunModelPills"' in detail_template
     assert 'id="itRerunConcurrencyPills"' in detail_template
-    assert "只有 APIMART 可以并行" in detail_template
+    assert "只有 OpenRouter 和 APIMART 可以并行" in detail_template
     assert "/rerun-unfinished" in scripts
     assert "loadRerunModels" in scripts
     assert "enforceRerunConcurrency" in scripts
