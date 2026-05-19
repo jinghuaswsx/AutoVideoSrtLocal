@@ -173,7 +173,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "卡片放大" in body
     assert "function toggleMetaHotCardZoom()" in body
     assert "mh-zoomed" in body
-    assert "localStorage.setItem('mhCardZoomed'" in body
+    assert "localStorage.setItem(MH_CARD_ZOOM_STORAGE_KEY" in body
     assert "显示美国AI分析" in body
     assert "隐藏美国AI分析" in body
     assert "显示欧洲AI分析" in body
@@ -326,6 +326,33 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "tos_video_cover_url" in body
     assert "firstFrameUrl" not in body
     assert "#t=0.1" not in body
+
+
+def test_meta_hot_posts_page_keeps_default_zoom_and_2x_uses_50_item_pages(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "鍘ㄦ埧鐢ㄥ搧", "label_en": "Kitchenware"}],
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const MH_CARD_ZOOM_STORAGE_KEY = 'mhCardZoomed';" in body
+    assert "applyMetaHotCardZoom(localStorage.getItem(MH_CARD_ZOOM_STORAGE_KEY) === '1');" in body
+    assert "savedZoom === null ? true" not in body
+    assert "grid-template-columns:repeat(auto-fill, minmax(min(720px, 100%), 1fr));" in body
+    assert "aspect-ratio:267 / 476" in body
+    assert "width:min(534px, 100%)" in body
+    assert "height:952px" not in body
+    assert "const mhPageSize = 50;" in body
+    assert "new URLSearchParams({page, page_size: mhPageSize})" in body
+    assert "`/xuanpin/api/meta-hot-posts/today-new?page=${page}&page_size=${mhPageSize}`" in body
+    assert "/xuanpin/api/meta-hot-posts/europe-top?limit=50" in body
+    assert "/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50" in body
+    assert "page_size: mhPageSize" in body
 
 
 def test_meta_hot_posts_template_has_ai_card_translate_zh_buttons(authed_client_no_db, monkeypatch):

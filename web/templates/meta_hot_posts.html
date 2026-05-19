@@ -61,7 +61,7 @@
 .mh-metric b { color:#334155; }
 .mh-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .mh-ratio { color:var(--mh-danger); font-weight:800; }
-.mh-media { position:relative; width:267px; max-width:100%; height:476px; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; border-radius:6px; }
+.mh-media { position:relative; width:267px; max-width:100%; aspect-ratio:267 / 476; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; border-radius:6px; }
 .mh-media img, .mh-media iframe, .mh-media video { width:100%; height:100%; border:0; object-fit:cover; display:block; }
 .mh-video-shell { position:relative; width:100%; height:100%; cursor:pointer; background:#dbe3ee; outline:none; }
 .mh-video-shell:focus-visible { box-shadow:0 0 0 3px rgba(15,118,110,.24) inset; }
@@ -143,11 +143,11 @@ button.mh-link-btn { cursor:pointer; }
 .mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
 @media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
 @media (min-width: 769px) {
-  .meta-hot-page.mh-zoomed .meta-hot-card-grid { grid-template-columns:repeat(auto-fill, minmax(720px, 1fr)); gap:20px; }
+  .meta-hot-page.mh-zoomed .meta-hot-card-grid { grid-template-columns:repeat(auto-fill, minmax(min(720px, 100%), 1fr)); gap:20px; }
   .meta-hot-page.mh-zoomed .mh-card-head { padding:16px 18px; }
   .meta-hot-page.mh-zoomed .mh-card-title { font-size:22px; }
   .meta-hot-page.mh-zoomed .mh-card-body { padding:16px 18px; }
-  .meta-hot-page.mh-zoomed .mh-media { width:534px; height:952px; }
+  .meta-hot-page.mh-zoomed .mh-media { width:min(534px, 100%); }
   .meta-hot-page.mh-zoomed .mh-message { max-height:300px; font-size:15px; }
   .meta-hot-page.mh-zoomed .mh-analysis,
   .meta-hot-page.mh-zoomed .mh-copyability,
@@ -458,6 +458,7 @@ let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('pa
 let mhSubtab = 'library';
 let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
 let mhCardZoomed = false;
+const MH_CARD_ZOOM_STORAGE_KEY = 'mhCardZoomed';
 const MH_INITIAL_AI_ANALYSIS_VISIBILITY = {{ (meta_hot_posts_ai_visibility or {'us': false, 'europe': false}) | tojson }};
 const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
   const key = 'mhAiAnalysisVisibilityClientId';
@@ -632,13 +633,13 @@ function applyMetaHotCardZoom(zoomed) {
     button.textContent = mhCardZoomed ? '恢复卡片' : '卡片放大 2x';
     button.setAttribute('aria-pressed', mhCardZoomed ? 'true' : 'false');
   }
-  localStorage.setItem('mhCardZoomed', mhCardZoomed ? '1' : '0');
+  localStorage.setItem(MH_CARD_ZOOM_STORAGE_KEY, mhCardZoomed ? '1' : '0');
 }
 function toggleMetaHotCardZoom() {
   applyMetaHotCardZoom(!mhCardZoomed);
 }
 function restoreMetaHotCardZoom() {
-  applyMetaHotCardZoom(localStorage.getItem('mhCardZoomed') === '1');
+  applyMetaHotCardZoom(localStorage.getItem(MH_CARD_ZOOM_STORAGE_KEY) === '1');
 }
 const MH_AI_ANALYSIS_TOGGLES = {
   us: {buttonId: 'mhUsAiAnalysisToggle', showText: '显示美国AI分析', hideText: '隐藏美国AI分析'},
