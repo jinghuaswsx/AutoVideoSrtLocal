@@ -171,6 +171,7 @@ def test_build_ai_analysis_request_preview_for_europe_translation(monkeypatch):
     payload = result.payload["payload"]
     assert result.status_code == 200
     assert payload["mode"] == "europe_translation"
+    assert payload["label"] == "欧洲市场翻译AI分析"
     assert payload["use_case"] == "meta_hot_posts.europe_fit"
     assert payload["product"]["title"] == "Flexible Socket Extender"
     assert payload["media"][0]["role"] == "product_main_image"
@@ -180,6 +181,11 @@ def test_build_ai_analysis_request_preview_for_europe_translation(monkeypatch):
     assert "每个角落都能供电" in payload["prompts"]["user"]
     assert "translation_fit_score" in payload["response_schema"]["properties"]
     assert payload["full_payload_url"].endswith("/ai-analysis/europe_translation/request-payload")
+
+
+def test_ai_analysis_mode_labels_match_market_categories():
+    assert service._ai_analysis_mode_meta("us_copyability")["label"] == "美国市场搬运AI分析"
+    assert service._ai_analysis_mode_meta("europe_translation")["label"] == "欧洲市场翻译AI分析"
 
 
 def test_build_ai_analysis_run_short_circuits_existing_result(monkeypatch):

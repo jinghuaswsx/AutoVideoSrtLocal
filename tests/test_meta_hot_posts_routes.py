@@ -174,8 +174,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "localStorage.setItem('mhCardZoomed'" in body
     assert "类目分析提示词" in body
     assert "商品分析失败记录" in body
-    assert "美国操作分析" in body
-    assert "欧洲翻译分析" in body
+    assert "美国市场搬运AI分析" in body
+    assert "欧洲市场翻译AI分析" in body
+    assert "美国操作分析" not in body
+    assert "欧洲翻译分析" not in body
+    assert '<div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>' in body
+    assert '<div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>' in body
     assert 'id="mhAiAnalysisModal"' in body
     assert "请求数据" in body
     assert "结果数据" in body

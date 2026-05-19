@@ -88,6 +88,7 @@ button.mh-link-btn { cursor:pointer; }
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
 .mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
 .mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
+.mh-analysis-category { margin-bottom:6px; color:#64748b; font-size:12px; font-weight:800; }
 .mh-score-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:7px; }
 .mh-score { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #7dd3fc; border-radius:4px; color:#075985; background:#fff; font-size:12px; font-weight:700; }
 .mh-copy-summary { color:#334155; font-size:13px; line-height:1.45; }
@@ -429,8 +430,8 @@ let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 const mhPageSize = 50;
 const MH_AI_MODES = {
-  us_copyability: {label: '美国操作分析'},
-  europe_translation: {label: '欧洲翻译分析'}
+  us_copyability: {label: '美国市场搬运AI分析'},
+  europe_translation: {label: '欧洲市场翻译AI分析'}
 };
 const qs = id => document.getElementById(id);
 function metaHotCsrfToken() {
@@ -638,6 +639,7 @@ function renderEuropeFitPanel(row) {
   const risks = listItems(row.europe_fit_risks);
   const changes = listItems(row.europe_fit_required_changes);
   return `<div class="mh-europe-panel">
+    <div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>
     <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
     <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
     ${strengths ? `<ul class="mh-europe-list">${strengths}</ul>` : ''}
@@ -649,6 +651,7 @@ function copyabilityBlock(row) {
   const data = row.video_copyability || null;
   if (!data) return '';
   return `<div class="mh-copyability">
+    <div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>
     <div class="mh-score-list">
       <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
       <span class="mh-score">可抄 ${fmt(data.copyability_score)}</span>
@@ -714,8 +717,8 @@ function renderCard(row) {
     </div>
     <div class="mh-links">
       ${renderFavoriteButton(row, 'text')}
-      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">美国操作分析</button>
-      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">欧洲翻译分析</button>
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">${MH_AI_MODES.us_copyability.label}</button>
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">${MH_AI_MODES.europe_translation.label}</button>
       ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
       ${row.ad_library_url ? `<a class="mh-link-btn" href="${esc(row.ad_library_url)}" target="_blank" rel="noopener noreferrer">去主页广告</a>` : ''}
       ${row.product_url ? `<a class="mh-link-btn" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">去商品页</a>` : ''}
