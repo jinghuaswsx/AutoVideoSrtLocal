@@ -182,7 +182,7 @@ def test_medias_default_image_task_ignores_global_default_model(authed_client_no
     assert created["model_id"] == "gpt-image-2"
 
 
-def test_models_endpoint_returns_only_low_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
+def test_models_endpoint_returns_openrouter_gpt_image2_alias_when_enabled(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     from appcore import image_translate_settings as app_its
 
@@ -192,15 +192,36 @@ def test_models_endpoint_returns_only_low_openai_image2_when_enabled(authed_clie
     monkeypatch.setattr(app_its, "get_openrouter_openai_image2_default_quality", lambda: "low")
     monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
 
-    resp = authed_client_no_db.get("/api/image-translate/models")
+    resp = authed_client_no_db.get("/api/image-translate/models?channel=openrouter&preset=cover")
 
     assert resp.status_code == 200
     data = resp.get_json()
     ids = [item["id"] for item in data["items"]]
-    assert "openai/gpt-5.4-image-2:low" in ids
+    assert "gpt-image-2" in ids
+    assert "openai/gpt-5.4-image-2:low" not in ids
     assert "openai/gpt-5.4-image-2:mid" not in ids
     assert "openai/gpt-5.4-image-2:high" not in ids
-    assert data["default_model_id"] == "openai/gpt-5.4-image-2:low"
+    assert data["default_model_id"] == "gpt-image-2"
+
+
+def test_models_endpoint_returns_openrouter_gpt_image2_alias_for_detail_preset(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "openai/gpt-5.4-image-2:low")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+    monkeypatch.setattr(app_its, "get_openrouter_openai_image2_default_quality", lambda: "low")
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
+
+    resp = authed_client_no_db.get("/api/image-translate/models?channel=openrouter&preset=detail")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    ids = [item["id"] for item in data["items"]]
+    assert "gpt-image-2" in ids
+    assert "openai/gpt-5.4-image-2:low" not in ids
+    assert data["default_model_id"] == "gpt-image-2"
 
 
 def test_models_endpoint_hides_openai_image2_when_disabled(authed_client_no_db, monkeypatch):
@@ -216,6 +237,7 @@ def test_models_endpoint_hides_openai_image2_when_disabled(authed_client_no_db, 
 
     assert resp.status_code == 200
     ids = [item["id"] for item in resp.get_json()["items"]]
+    assert "gpt-image-2" not in ids
     assert "openai/gpt-5.4-image-2:low" not in ids
     assert "openai/gpt-5.4-image-2:mid" not in ids
     assert "openai/gpt-5.4-image-2:high" not in ids
@@ -277,6 +299,36 @@ def test_upload_complete_accepts_openai_image2_low_when_enabled(authed_client_no
 
     assert resp.status_code == 201
     assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:low"
+
+
+def test_upload_complete_maps_openrouter_gpt_image2_alias_to_low_for_cover_and_detail(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+
+    for preset in ("cover", "detail"):
+        b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+            "count": 1,
+            "files": [{"filename": f"{preset}.jpg", "size": 1, "content_type": "image/jpeg"}],
+        }).get_json()
+
+        resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+            "task_id": b["task_id"],
+            "preset": preset,
+            "target_language": "de",
+            "model_id": "gpt-image-2",
+            "prompt": "x",
+            "product_name": "demo",
+            "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": f"{preset}.jpg", "size": 1}],
+        })
+
+        assert resp.status_code == 201
+        assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_upload_complete_rejects_openai_image2_mid_high_for_new_tasks(authed_client_no_db, monkeypatch):
@@ -1584,6 +1636,38 @@ def test_rerun_unfinished_with_channel_accepts_openrouter_parallel(authed_client
     assert resp.status_code == 202
     assert resp.get_json()["concurrency_mode"] == "parallel"
     assert task["channel"] == "openrouter"
+    assert task["concurrency_mode"] == "parallel"
+    assert started
+
+
+def test_rerun_unfinished_with_channel_maps_openrouter_gpt_image2_alias(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    from web import store
+    from appcore import image_translate_settings as app_its
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    task = store.get(tid)
+    task["status"] = "error"
+    started: list[tuple[str, int]] = []
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+    monkeypatch.setattr(r, "_start_runner", lambda task_id, uid: started.append((task_id, uid)) or True)
+    monkeypatch.setattr(store, "update", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "parallel",
+            "channel": "openrouter",
+            "model_id": "gpt-image-2",
+        },
+    )
+
+    assert resp.status_code == 202
+    assert resp.get_json()["model_id"] == "openai/gpt-5.4-image-2:low"
+    assert task["channel"] == "openrouter"
+    assert task["model_id"] == "openai/gpt-5.4-image-2:low"
     assert task["concurrency_mode"] == "parallel"
     assert started
 

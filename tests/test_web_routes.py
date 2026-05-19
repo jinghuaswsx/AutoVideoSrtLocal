@@ -3511,6 +3511,8 @@ def test_image_translate_list_template_has_task_channel_controls():
     assert "image_translate_channels" in list_template
     assert '"channel": channelEl.value' in scripts
     assert "channel=\" + encodeURIComponent(channelEl.value)" in scripts
+    assert "preset=\" + encodeURIComponent(presetEl.value || \"cover\")" in scripts
+    assert "loadPromptForCurrent(); loadModels();" in scripts
     assert "enforceListConcurrency" in scripts
     assert "channelAllowsParallel" in scripts
 

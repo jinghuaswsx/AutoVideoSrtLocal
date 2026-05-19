@@ -79,6 +79,8 @@ _BANANA_RETRY_MODEL = "gemini-3.1-flash-image-preview"
 _BANANA_RETRY_LABEL = "banana重新生成"
 _PARALLEL_CAPABLE_CHANNELS = {"openrouter", "apimart"}
 _OPENROUTER_IMAGE2_LOW_MODEL = "openai/gpt-5.4-image-2:low"
+_OPENROUTER_IMAGE2_ALIAS_MODEL = "gpt-image-2"
+_OPENROUTER_IMAGE2_ALIAS_LABEL = "gpt-image-2 (low / 1K)"
 
 
 def _safe_image_translate_channel() -> str:
@@ -101,36 +103,60 @@ def _image_translate_channels_payload() -> list[dict]:
     return [{"id": code, "name": _channel_label(code)} for code in its.CHANNELS]
 
 
-def _list_image_translate_models(channel: str) -> list[tuple[str, str]]:
+def _list_image_translate_models(channel: str, *, preset: str | None = None) -> list[tuple[str, str]]:
+    del preset
     models = list_image_models(channel)
     if (channel or "").strip().lower() != "openrouter":
         return models
-    return [
-        (model_id, label)
-        for model_id, label in models
-        if not is_openrouter_openai_image2_model(model_id)
-        or model_id == _OPENROUTER_IMAGE2_LOW_MODEL
-    ]
+    image2_added = False
+    out: list[tuple[str, str]] = []
+    for model_id, label in models:
+        if not is_openrouter_openai_image2_model(model_id):
+            out.append((model_id, label))
+            continue
+        if model_id == _OPENROUTER_IMAGE2_LOW_MODEL and not image2_added:
+            out.append((_OPENROUTER_IMAGE2_ALIAS_MODEL, _OPENROUTER_IMAGE2_ALIAS_LABEL))
+            image2_added = True
+    return out
+
+
+def _normalize_new_image_translate_model(model_id: str, *, channel: str) -> str:
+    normalized = (model_id or "").strip()
+    channel_key = (channel or "").strip().lower()
+    if channel_key == "openrouter" and normalized == _OPENROUTER_IMAGE2_ALIAS_MODEL:
+        return (
+            _OPENROUTER_IMAGE2_LOW_MODEL
+            if is_valid_image_model(_OPENROUTER_IMAGE2_LOW_MODEL, channel=channel_key)
+            else ""
+        )
+    if channel_key == "openrouter" and is_openrouter_openai_image2_model(normalized):
+        return (
+            normalized
+            if normalized == _OPENROUTER_IMAGE2_LOW_MODEL
+            and is_valid_image_model(normalized, channel=channel_key)
+            else ""
+        )
+    return normalized if is_valid_image_model(normalized, channel=channel_key) else ""
 
 
 def _is_valid_new_image_translate_model(model_id: str, *, channel: str) -> bool:
-    normalized = (model_id or "").strip()
-    channel_key = (channel or "").strip().lower()
-    if channel_key == "openrouter" and is_openrouter_openai_image2_model(normalized):
-        return normalized == _OPENROUTER_IMAGE2_LOW_MODEL and is_valid_image_model(
-            normalized, channel=channel_key,
-        )
-    return is_valid_image_model(normalized, channel=channel_key)
+    return bool(_normalize_new_image_translate_model(model_id, channel=channel))
 
 
-def _coerce_image_translate_default_model(channel: str, model_id: str) -> str:
-    models = _list_image_translate_models(channel)
+def _coerce_image_translate_default_model(channel: str, model_id: str, *, preset: str | None = None) -> str:
+    models = _list_image_translate_models(channel, preset=preset)
     ids = [mid for mid, _label in models]
     normalized = (model_id or "").strip()
     if normalized in ids:
         return normalized
-    if _OPENROUTER_IMAGE2_LOW_MODEL in ids:
-        return _OPENROUTER_IMAGE2_LOW_MODEL
+    if (
+        (channel or "").strip().lower() == "openrouter"
+        and normalized == _OPENROUTER_IMAGE2_LOW_MODEL
+        and _OPENROUTER_IMAGE2_ALIAS_MODEL in ids
+    ):
+        return _OPENROUTER_IMAGE2_ALIAS_MODEL
+    if _OPENROUTER_IMAGE2_ALIAS_MODEL in ids:
+        return _OPENROUTER_IMAGE2_ALIAS_MODEL
     return ids[0] if ids else normalized
 
 
@@ -472,15 +498,22 @@ def api_models():
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported channel", 400)
         )
+    preset = (request.args.get("preset") or "cover").strip().lower()
+    if preset not in {"cover", "detail"}:
+        preset = "cover"
     return image_translate_flask_response(
         build_image_translate_payload_response(
             {
-                "items": [{"id": mid, "name": label} for mid, label in _list_image_translate_models(channel)],
+                "items": [
+                    {"id": mid, "name": label}
+                    for mid, label in _list_image_translate_models(channel, preset=preset)
+                ],
                 "default_model_id": _coerce_image_translate_default_model(
-                    channel, _safe_image_translate_default_model(channel),
+                    channel, _safe_image_translate_default_model(channel), preset=preset,
                 ),
                 "channel": channel,
                 "default_channel": default_channel,
+                "preset": preset,
                 "channels": _image_translate_channels_payload(),
             }
         )
@@ -591,7 +624,8 @@ def api_upload_complete():
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported channel", 400)
         )
-    if not _is_valid_new_image_translate_model(model_id, channel=channel):
+    model_id = _normalize_new_image_translate_model(model_id, channel=channel)
+    if not model_id:
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported model", 400)
         )
@@ -1082,8 +1116,11 @@ def api_rerun_unfinished_with_channel(task_id: str):
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported channel", 400)
         )
-    model_id = (body.get("model_id") or task.get("model_id") or "").strip()
-    if not is_valid_image_model(model_id, channel=channel):
+    model_id = _normalize_new_image_translate_model(
+        body.get("model_id") or task.get("model_id") or "",
+        channel=channel,
+    )
+    if not model_id:
         return image_translate_flask_response(
             build_image_translate_error_response("unsupported model", 400)
         )
