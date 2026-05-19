@@ -496,12 +496,12 @@ def test_openrouter_openai_image2_settings_round_trip(monkeypatch):
     _patch_store(monkeypatch, store)
 
     its.set_openrouter_openai_image2_enabled(True)
-    its.set_openrouter_openai_image2_default_quality("high")
+    its.set_openrouter_openai_image2_default_quality("low")
 
     assert store["image_translate.openrouter_openai_image2_enabled"] == "1"
-    assert store["image_translate.openrouter_openai_image2_default_quality"] == "high"
+    assert store["image_translate.openrouter_openai_image2_default_quality"] == "low"
     assert its.is_openrouter_openai_image2_enabled() is True
-    assert its.get_openrouter_openai_image2_default_quality() == "high"
+    assert its.get_openrouter_openai_image2_default_quality() == "low"
 
 
 def test_openrouter_openai_image2_enabled_accepts_truthy_strings(monkeypatch):
@@ -521,8 +521,9 @@ def test_openrouter_openai_image2_quality_rejects_invalid_value(monkeypatch):
 
     _patch_store(monkeypatch, {})
 
-    with pytest.raises(ValueError):
-        its.set_openrouter_openai_image2_default_quality("ultra")
+    for quality in ("mid", "high", "ultra"):
+        with pytest.raises(ValueError):
+            its.set_openrouter_openai_image2_default_quality(quality)
 
 
 def test_openrouter_openai_image2_quality_falls_back_when_corrupt(monkeypatch):
@@ -530,7 +531,7 @@ def test_openrouter_openai_image2_quality_falls_back_when_corrupt(monkeypatch):
 
     _patch_store(
         monkeypatch,
-        {"image_translate.openrouter_openai_image2_default_quality": "ultra"},
+        {"image_translate.openrouter_openai_image2_default_quality": "high"},
     )
 
     assert its.get_openrouter_openai_image2_default_quality() == "low"

@@ -615,7 +615,7 @@ def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_
                return_value="gemini-3-pro-image-preview"), \
          patch("web.routes.settings.is_openrouter_openai_image2_enabled", return_value=True), \
          patch("web.routes.settings.get_openrouter_openai_image2_default_quality",
-               return_value="high"):
+               return_value="low"):
         resp = admin_no_db_client.get("/settings?tab=providers")
 
     body = resp.get_data(as_text=True)
@@ -623,7 +623,9 @@ def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_
     assert "启用 OpenAI Image 2" in body
     assert 'name="openrouter_openai_image2_enabled"' in body
     assert 'name="openrouter_openai_image2_default_quality"' in body
-    assert 'value="high"' in body and 'selected' in body
+    assert '<option value="low" selected>Low</option>' in body
+    assert '<option value="mid"' not in body
+    assert '<option value="high"' not in body
     assert 'id="openrouterOpenaiImage2Enabled"' in body
     assert "checked" in body
 
@@ -667,7 +669,7 @@ def test_settings_post_providers_saves_provider_api_key_via_dao(admin_no_db_clie
             "image_translate_channel": "openrouter",
             "image_translate_default_model": "gemini-3-pro-image-preview",
             "openrouter_openai_image2_enabled": "1",
-            "openrouter_openai_image2_default_quality": "high",
+            "openrouter_openai_image2_default_quality": "low",
         })
 
     assert resp.status_code in (302, 303)
@@ -778,7 +780,7 @@ def test_settings_post_providers_persists_image2_off_when_checkbox_absent(admin_
             "translate_pref": "vertex_gemini_31_flash_lite",
             "image_translate_channel": "openrouter",
             "image_translate_default_model": "gemini-3-pro-image-preview",
-            "openrouter_openai_image2_default_quality": "mid",
+            "openrouter_openai_image2_default_quality": "low",
         })
 
     assert resp.status_code in (302, 303)

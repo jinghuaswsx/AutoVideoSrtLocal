@@ -188,9 +188,9 @@ def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_clie
     from appcore import image_translate_settings as app_its
 
     monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
-    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "openai/gpt-5.4-image-2:high")
+    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "openai/gpt-5.4-image-2:low")
     monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
-    monkeypatch.setattr(app_its, "get_openrouter_openai_image2_default_quality", lambda: "high")
+    monkeypatch.setattr(app_its, "get_openrouter_openai_image2_default_quality", lambda: "low")
     monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
 
     resp = authed_client_no_db.get("/api/image-translate/models")
@@ -199,9 +199,9 @@ def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_clie
     data = resp.get_json()
     ids = [item["id"] for item in data["items"]]
     assert "openai/gpt-5.4-image-2:low" in ids
-    assert "openai/gpt-5.4-image-2:mid" in ids
-    assert "openai/gpt-5.4-image-2:high" in ids
-    assert data["default_model_id"] == "openai/gpt-5.4-image-2:high"
+    assert "openai/gpt-5.4-image-2:mid" not in ids
+    assert "openai/gpt-5.4-image-2:high" not in ids
+    assert data["default_model_id"] == "openai/gpt-5.4-image-2:low"
 
 
 def test_models_endpoint_hides_openai_image2_when_disabled(authed_client_no_db, monkeypatch):
@@ -251,13 +251,13 @@ def test_upload_complete_rejects_openai_image2_when_disabled(authed_client_no_db
     assert resp.get_json()["error"] == "unsupported model"
 
 
-def test_upload_complete_accepts_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
+def test_upload_complete_rejects_openai_image2_mid_when_enabled(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     from appcore import image_translate_settings as app_its
 
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
-    mem = _patch_task_state(monkeypatch)
+    _patch_task_state(monkeypatch)
     monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
     monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
 
@@ -276,8 +276,8 @@ def test_upload_complete_accepts_openai_image2_when_enabled(authed_client_no_db,
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
 
-    assert resp.status_code == 201
-    assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:mid"
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported model"
 
 
 def test_upload_complete_uses_requested_single_task_channel(authed_client_no_db, monkeypatch):

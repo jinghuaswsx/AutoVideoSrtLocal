@@ -506,8 +506,8 @@ def test_list_image_models_openrouter_appends_openai_image2_when_enabled():
 
     ids = [mid for mid, _ in models]
     assert "openai/gpt-5.4-image-2:low" in ids
-    assert "openai/gpt-5.4-image-2:mid" in ids
-    assert "openai/gpt-5.4-image-2:high" in ids
+    assert "openai/gpt-5.4-image-2:mid" not in ids
+    assert "openai/gpt-5.4-image-2:high" not in ids
     assert "gemini-3.1-flash-image-preview" in ids
     assert "gemini-3-pro-image-preview" in ids
 
@@ -531,17 +531,17 @@ def test_list_image_models_other_channels_unaffected_when_enabled():
         cloud = [mid for mid, _ in gemini_image.list_image_models("cloud")]
         doubao = [mid for mid, _ in gemini_image.list_image_models("doubao")]
 
-    assert "openai/gpt-5.4-image-2:mid" not in aistudio
-    assert "openai/gpt-5.4-image-2:mid" not in cloud
-    assert "openai/gpt-5.4-image-2:mid" not in doubao
+    assert "openai/gpt-5.4-image-2:low" not in aistudio
+    assert "openai/gpt-5.4-image-2:low" not in cloud
+    assert "openai/gpt-5.4-image-2:low" not in doubao
 
 
-def test_default_image_model_uses_openai_image2_default_quality_when_enabled():
+def test_default_image_model_falls_back_to_low_when_default_quality_is_legacy():
     from appcore import gemini_image
 
     with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True), \
          patch("appcore.image_translate_settings.get_openrouter_openai_image2_default_quality", return_value="high"):
-        assert gemini_image.default_image_model("openrouter") == "openai/gpt-5.4-image-2:high"
+        assert gemini_image.default_image_model("openrouter") == "openai/gpt-5.4-image-2:low"
 
 
 def test_default_image_model_ignores_openai_image2_when_disabled():

@@ -66,13 +66,14 @@ _APIMART_SIZE_DIMENSIONS: dict[str, dict[str, tuple[int, int]]] = {
 }
 
 
-# OpenRouter OpenAI Image 2 真实模型 + 三档质量虚拟 ID
+# OpenRouter OpenAI Image 2 真实模型 + 历史三档质量虚拟 ID；新建入口只暴露 low。
 _OPENROUTER_OPENAI_IMAGE2_MODEL = "openai/gpt-5.4-image-2"
 _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS: dict[str, str] = {
     "low":  f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:low",
     "mid":  f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:mid",
     "high": f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:high",
 }
+_OPENROUTER_OPENAI_IMAGE2_SELECTABLE_QUALITIES: tuple[str, ...] = ("low",)
 _OPENROUTER_OPENAI_IMAGE2_LABELS: dict[str, str] = {
     "low":  "OpenAI Image 2（Low）",
     "mid":  "OpenAI Image 2（Mid）",
@@ -127,7 +128,7 @@ IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
 
 
 def is_openrouter_openai_image2_model(model_id: str | None) -> bool:
-    """是否是 OpenAI Image 2 三档质量的虚拟 model_id。"""
+    """是否是 OpenAI Image 2 历史质量档位的虚拟 model_id。"""
     normalized = (model_id or "").strip()
     return normalized in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS.values()
 
@@ -170,14 +171,14 @@ def _openrouter_openai_image2_default_quality() -> str:
         value = (get_openrouter_openai_image2_default_quality() or "").strip().lower()
     except Exception:
         value = ""
-    return value if value in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS else "low"
+    return value if value in _OPENROUTER_OPENAI_IMAGE2_SELECTABLE_QUALITIES else "low"
 
 
 def _openrouter_models_with_optional_openai_image2() -> list[tuple[str, str]]:
-    """OpenRouter 通道基础模型 + 可选的 OpenAI Image 2 三档质量。"""
+    """OpenRouter 通道基础模型 + 当前允许新建任务选择的 OpenAI Image 2 档位。"""
     models = list(IMAGE_MODELS_BY_CHANNEL["openrouter"])
     if _is_openrouter_openai_image2_enabled():
-        for quality in ("low", "mid", "high"):
+        for quality in _OPENROUTER_OPENAI_IMAGE2_SELECTABLE_QUALITIES:
             models.append(
                 (_OPENROUTER_OPENAI_IMAGE2_MODEL_IDS[quality],
                  _OPENROUTER_OPENAI_IMAGE2_LABELS[quality])
@@ -203,8 +204,12 @@ def default_image_model(channel: str | None = None) -> str:
     if normalized == "openrouter" and _is_openrouter_openai_image2_enabled():
         quality = _openrouter_openai_image2_default_quality()
         preferred = _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS.get(quality)
-        if preferred and any(mid == preferred for mid, _ in models):
+        selectable = {mid for mid, _ in models}
+        if preferred and preferred in selectable:
             return preferred
+        low_model = _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS["low"]
+        if low_model in selectable:
+            return low_model
     return models[0][0] if models else "gemini-3.1-flash-image-preview"
 
 

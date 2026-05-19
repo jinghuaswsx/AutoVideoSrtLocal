@@ -30,10 +30,10 @@ _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
 MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "openrouter"
 MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "openai/gpt-5.4-image-2:low"
 
-# OpenRouter OpenAI Image 2 质量档位开关与默认值
+# OpenRouter OpenAI Image 2 质量档位开关与默认值；新建入口只暴露 low。
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY = "image_translate.openrouter_openai_image2_default_quality"
-_OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low", "mid", "high")
+_OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low",)
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY = "low"
 
 
@@ -708,7 +708,7 @@ def set_default_model(channel: str, model_id: str) -> None:
 
 
 def is_openrouter_openai_image2_enabled() -> bool:
-    """是否启用 OpenRouter 的 OpenAI Image 2 三档模型。"""
+    """是否启用 OpenRouter 的 OpenAI Image 2 Low 模型。"""
     value = _read(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY)
     if value is None:
         return True
@@ -721,7 +721,7 @@ def set_openrouter_openai_image2_enabled(value: bool) -> None:
 
 
 def get_openrouter_openai_image2_default_quality() -> str:
-    """返回默认质量（low/mid/high），非法/未设置时回到 low。"""
+    """返回默认质量（当前只允许 low），非法/未设置时回到 low。"""
     raw = (_read(_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY) or "").strip().lower()
     if raw in _OPENROUTER_OPENAI_IMAGE2_QUALITIES:
         return raw
