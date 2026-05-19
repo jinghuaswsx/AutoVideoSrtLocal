@@ -3575,6 +3575,22 @@ def test_image_translate_detail_result_meta_shows_provider_and_model_id():
     assert ".it-item-model-meta" in styles
 
 
+def test_image_translate_detail_compare_rows_align_media_frames():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "function appendItemMedia" in scripts
+    assert "function alignCompareRowMedia" in scripts
+    assert "bindCompareRowMediaAlignment(row)" in scripts
+    assert "--it-item-media-height" in scripts
+    assert 'left.alt = "原图";' in scripts
+    assert 'imgOut.alt = "结果图";' in scripts
+    assert ".it-item-media" in styles
+    assert "align-items:start" in styles
+    assert "height:var(--it-item-media-height, auto)" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

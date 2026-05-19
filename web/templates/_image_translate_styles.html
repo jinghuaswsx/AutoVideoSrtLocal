@@ -66,9 +66,11 @@
 #itProgressFill { height:100%; background:linear-gradient(90deg,#1d6fe8,#0ea5e9);
                    width:0%; transition: width 200ms ease; }
 .it-items { display:grid; gap:12px; }
-.it-item { display:grid; grid-template-columns: 1fr 1fr auto; align-items:center; gap:12px;
+.it-item { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items:start; gap:12px;
            padding:12px; border:1px solid var(--border-main,#e5e7eb); border-radius:10px; }
-.it-item img { max-width:100%; max-height:240px; object-fit:contain; border-radius:6px;
+.it-item-media { display:flex; align-items:flex-start; justify-content:flex-start;
+                 width:100%; height:var(--it-item-media-height, auto); min-width:0; }
+.it-item img { display:block; max-width:100%; max-height:240px; object-fit:contain; border-radius:6px;
                background:#f8fafc; }
 .it-item-pane { display:grid; gap:8px; align-content:start; min-width:0; }
 .it-item-caption { color:var(--fg-muted,#64748b); font-size:12px; font-weight:600; }
