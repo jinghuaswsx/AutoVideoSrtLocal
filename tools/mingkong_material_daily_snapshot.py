@@ -23,6 +23,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sleep-seconds", type=float, default=30)
     parser.add_argument("--timeout-seconds", type=int, default=20)
     parser.add_argument("--snapshot-date", default="")
+    parser.add_argument("--snapshot-at", default="")
     return parser
 
 
@@ -35,6 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sleep_seconds=args.sleep_seconds,
         timeout_seconds=args.timeout_seconds,
         snapshot_date=args.snapshot_date or None,
+        snapshot_at=args.snapshot_at or None,
     )
     print(json.dumps(summary, ensure_ascii=False, default=str))
     return 0

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import appcore.mingkong_materials as mm
@@ -144,8 +144,12 @@ def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_z
     monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
 
     def fake_query_one(sql, args=()):
-        if "MAX(snapshot_date)" in sql:
-            return {"snapshot_date": date(2026, 5, 18)}
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
@@ -157,6 +161,8 @@ def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_z
             {
                 "id": 1,
                 "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
                 "ranking_snapshot_date": date(2026, 5, 17),
                 "material_key": "abc",
                 "product_code": "fitness-band",
@@ -186,7 +192,10 @@ def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_z
 def test_build_top100_rows_recovers_spend_from_raw_metadata_when_numeric_row_is_zero():
     rows = mm.build_top100_rows(
         snapshot_date="2026-05-18",
+        snapshot_at="2026-05-18 18:00:00",
         previous_snapshot_date=None,
+        previous_snapshot_at=None,
+        comparison_interval_seconds=None,
         current_rows=[
             {
                 "material_key": "fresh",
@@ -233,7 +242,10 @@ def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():
 
     rows = mm.build_top100_rows(
         snapshot_date="2026-05-18",
+        snapshot_at="2026-05-18 18:00:00",
         previous_snapshot_date="2026-05-17",
+        previous_snapshot_at="2026-05-17 18:02:00",
+        comparison_interval_seconds=86280,
         current_rows=current,
         previous_by_key=previous_by_key,
         previous_top100_keys=previous_top100_keys,
@@ -244,6 +256,9 @@ def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():
     assert rows[0]["yesterday_spend_delta"] == 500.0
     assert rows[0]["is_new_material"] is True
     assert rows[0]["is_new_top100_entry"] is True
+    assert rows[0]["snapshot_at"] == "2026-05-18 18:00:00"
+    assert rows[0]["previous_snapshot_at"] == "2026-05-17 18:02:00"
+    assert rows[0]["comparison_interval_seconds"] == 86280
     assert rows[0]["rank_position"] == 1
     assert rows[0]["display_position"] == 1
     assert rows[1]["material_key"] == "reset"
@@ -252,6 +267,34 @@ def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():
     assert rows[2]["material_key"] == "old"
     assert rows[2]["yesterday_spend_delta"] == 50.0
     assert rows[2]["is_new_top100_entry"] is False
+
+
+def test_choose_previous_snapshot_prefers_candidate_closest_to_24_hours():
+    chosen = mm.choose_previous_snapshot_for_24h(
+        "2026-05-19 18:03:00",
+        [
+            {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 6, 2, 0),
+                "snapshot_slot": "0600",
+            },
+            {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 1, 0),
+                "snapshot_slot": "1800",
+            },
+            {
+                "snapshot_date": date(2026, 5, 17),
+                "snapshot_at": datetime(2026, 5, 17, 18, 0, 0),
+                "snapshot_slot": "1800",
+            },
+        ],
+    )
+
+    assert chosen is not None
+    assert chosen["snapshot_at"] == "2026-05-18 18:01:00"
+    assert chosen["snapshot_slot"] == "1800"
+    assert chosen["comparison_interval_seconds"] == 86520
 
 
 def test_select_mingkong_product_prefers_spend_over_video_count_after_exact_match():
@@ -463,12 +506,22 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
 
     def fake_query_one(sql, args=()):
         captured.append(("query_one", sql, args))
-        if "MAX(snapshot_date)" in sql:
-            return {"snapshot_date": date(2026, 5, 18)}
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
-            return {"status": "success", "summary_json": '{"processed": 300}'}
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": '{"processed": 300}',
+            }
         raise AssertionError(sql)
 
     def fake_query(sql, args=()):
@@ -477,6 +530,8 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
             {
                 "id": 1,
                 "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
                 "ranking_snapshot_date": date(2026, 5, 17),
                 "material_key": "abc",
                 "product_code": "cool-widget",
@@ -501,6 +556,7 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
     result = mm.list_material_library(keyword="winner", page=1, page_size=100)
 
     assert result["snapshot"] == "2026-05-18"
+    assert result["snapshot_at"] == "2026-05-18 18:00:00"
     assert result["total"] == 1
     assert result["run_summary"]["summary"] == {"processed": 300}
     assert result["items"][0]["video_spends"] == 12000.0
@@ -518,8 +574,12 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
 
     def fake_query_one(sql, args=()):
         captured.append(("query_one", sql, args))
-        if "MAX(snapshot_date)" in sql:
-            return {"snapshot_date": "2026-05-18"}
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+            }
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
@@ -532,7 +592,12 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
             {
                 "id": 1,
                 "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
                 "previous_snapshot_date": "2026-05-17",
+                "previous_snapshot_at": "2026-05-17 18:01:00",
+                "previous_snapshot_slot": "1800",
+                "comparison_interval_seconds": 86340,
                 "material_key": "abc",
                 "rank_position": 4,
                 "display_position": 1,
@@ -556,7 +621,9 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
     result = mm.list_yesterday_top100(page=1, page_size=100)
 
     assert result["snapshot"] == "2026-05-18"
+    assert result["snapshot_at"] == "2026-05-18 18:00:00"
     assert result["previous_snapshot"] == "2026-05-17"
+    assert result["previous_snapshot_at"] == "2026-05-17 18:01:00"
     assert result["items"][0]["video_spends"] == 1000.0
     assert result["items"][0]["local_cover_url"] == (
         "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"

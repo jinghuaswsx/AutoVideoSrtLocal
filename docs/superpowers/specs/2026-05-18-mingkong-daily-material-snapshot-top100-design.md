@@ -1,6 +1,6 @@
 # Mingkong Daily Material Snapshot Top100 Design
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Context
 
@@ -23,7 +23,7 @@ Build a scheduled, local, historical Mingkong material library for `/xuanpin/mk`
 
 In scope:
 
-1. Every day at 06:00 Beijing time, start one long-running sync run.
+1. Every day at 06:00 and 18:00 Beijing time, start one long-running sync run.
 2. Select the latest available Dianxiaomi Listing snapshot and take `rank_position <= 300`.
 3. For each selected product, derive the product code/handle from `product_url`.
 4. Query Mingkong `/api/marketing/medias?q=<product_code>` and store the full visible
@@ -33,8 +33,8 @@ In scope:
    product code. Search-result links ending in `-rjc` must not be normalized into
    a match for the base code.
 5. Store daily per-material snapshots of the Mingkong cumulative 90-day spend value.
-6. Compare the current snapshot with the previous available material snapshot to compute
-   the latest one-day spend delta.
+6. Compare the current snapshot with the previous-date material snapshot whose timestamp
+   is closest to 24 hours earlier, then compute the latest one-day spend delta.
 7. Persist a daily "昨天消耗前100" result table.
 8. Change the `/xuanpin/mk` `视频素材库` inner tab so clicking it shows the latest
    locally archived material card list, including localized cover/video preview URLs and
@@ -70,6 +70,8 @@ LIMIT 300
 The run records both:
 
 - `snapshot_date`: the local material snapshot date being produced.
+- `snapshot_at`: the local material snapshot timestamp for the run.
+- `snapshot_slot`: the daily bucket, `0600` or `1800`, used to keep two snapshots per day.
 - `ranking_snapshot_date`: the Dianxiaomi Listing snapshot used as the Top300 source.
 
 ## Scheduler
@@ -78,13 +80,13 @@ Register one scheduled task in `appcore/scheduled_tasks.py`.
 
 - Code: `mingkong_material_daily_snapshot`
 - Name: `明空素材每日快照`
-- Schedule: every day at 06:00 Beijing time.
+- Schedule: every day at 06:00 and 18:00 Beijing time.
 - Source type: `systemd`.
 - Source ref: `autovideosrt-mingkong-material-daily-snapshot.timer`.
 - Runner: `tools/mingkong_material_daily_snapshot.py`.
 - Log table: `scheduled_task_runs`.
 
-The job is a single daily run, not a task that wakes every 10 minutes all day.
+The job is two scheduled daily runs, not a task that wakes every 10 minutes all day.
 
 Expected runtime is about 5 hours for 300 products.
 
@@ -98,9 +100,9 @@ The runner behavior:
 6. Finalize material snapshots and generate the Top100 archive.
 7. Finish the run with summary counters.
 
-If a previous run for the same `snapshot_date` is already complete, a new automatic run
-must not duplicate the work. Manual repair is out of scope for this change; the first
-version relies on safe idempotent upserts and clear run logs.
+If a previous run for the same `snapshot_date + snapshot_slot` is already complete,
+a new automatic run must not duplicate the work. Manual repair is out of scope for this
+change; the first version relies on safe idempotent upserts and clear run logs.
 
 ## Mingkong Fetch And Matching
 
@@ -149,6 +151,8 @@ Required fields:
 
 - `id`
 - `snapshot_date`
+- `snapshot_at`
+- `snapshot_slot`
 - `ranking_snapshot_date`
 - `status`
 - `source_product_limit`
@@ -163,7 +167,7 @@ Required fields:
 
 Unique key:
 
-- `uk_snapshot_date (snapshot_date)`
+- `uk_snapshot_slot (snapshot_date, snapshot_slot)`
 
 ### `mingkong_material_products`
 
@@ -174,6 +178,8 @@ Required fields:
 - `id`
 - `run_id`
 - `snapshot_date`
+- `snapshot_at`
+- `snapshot_slot`
 - `ranking_snapshot_date`
 - `rank_position`
 - `product_code`
@@ -204,6 +210,8 @@ Required fields:
 
 - `id`
 - `snapshot_date`
+- `snapshot_at`
+- `snapshot_slot`
 - `ranking_snapshot_date`
 - `run_id`
 - `material_key`
@@ -235,13 +243,13 @@ an earlier parser bug.
 
 Unique key:
 
-- `uk_snapshot_material (snapshot_date, material_key)`
+- `uk_snapshot_material (snapshot_at, material_key)`
 
 Indexes:
 
-- `(snapshot_date, cumulative_90_spend)`
-- `(product_code, snapshot_date)`
-- `(material_key, snapshot_date)`
+- `(snapshot_at, cumulative_90_spend)`
+- `(product_code, snapshot_at)`
+- `(material_key, snapshot_at)`
 
 ### `mingkong_material_daily_top100`
 
@@ -251,7 +259,12 @@ Required fields:
 
 - `id`
 - `snapshot_date`
+- `snapshot_at`
+- `snapshot_slot`
 - `previous_snapshot_date`
+- `previous_snapshot_at`
+- `previous_snapshot_slot`
+- `comparison_interval_seconds`
 - `ranking_snapshot_date`
 - `rank_position`
 - `display_position`
@@ -278,35 +291,40 @@ Required fields:
 
 Unique key:
 
-- `uk_snapshot_material (snapshot_date, material_key)`
+- `uk_snapshot_material (snapshot_at, material_key)`
 
 Indexes:
 
-- `(snapshot_date, display_position)`
-- `(snapshot_date, yesterday_spend_delta)`
-- `(material_key, snapshot_date)`
+- `(snapshot_at, display_position)`
+- `(snapshot_at, yesterday_spend_delta)`
+- `(material_key, snapshot_at)`
 
 ## Delta Calculation
 
-After the daily material snapshot is stored:
+After each 06:00 or 18:00 material snapshot is stored:
 
-1. Find the previous available `snapshot_date` from `mingkong_material_daily_snapshots`
-   where `snapshot_date < current_snapshot_date`.
-2. Join current rows to previous rows by `material_key`.
-3. Compute:
+1. Find previous snapshot candidates from `mingkong_material_daily_snapshots` where
+   `snapshot_date < current_snapshot_date`.
+2. Choose the previous candidate whose `snapshot_at` is closest to exactly 24 hours
+   before the current `snapshot_at`. For example, an 18:00 current snapshot should prefer
+   the previous day's 18:00 snapshot over the previous day's 06:00 snapshot.
+3. Store the chosen previous snapshot in Top100 rows as `previous_snapshot_date`,
+   `previous_snapshot_at`, `previous_snapshot_slot`, and `comparison_interval_seconds`.
+4. Join current rows to previous rows by `material_key`.
+5. Compute:
 
 ```text
 yesterday_spend_delta =
   max(0, current.cumulative_90_spend - previous.cumulative_90_spend)
 ```
 
-4. If no previous row exists for the material:
+6. If no previous row exists for the material:
    - `previous_cumulative_90_spend = NULL`
    - `is_new_material = 1`
    - `yesterday_spend_delta = current.cumulative_90_spend` for ranking purposes
-5. If the raw difference is negative, clamp to `0` and keep enough summary data for
+7. If the raw difference is negative, clamp to `0` and keep enough summary data for
    operators to notice possible upstream reset behavior.
-6. Take the Top100 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
+8. Take the Top100 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
    spend, ads count, product rank, and material key.
 
 ## New Top100 Entry Calculation
@@ -314,7 +332,7 @@ yesterday_spend_delta =
 `is_new_top100_entry` compares Top100 membership with the previous archived Top100:
 
 - Current Top100 contains `material_key`.
-- Previous Top100 for `previous_snapshot_date` does not contain `material_key`.
+- Previous Top100 for the chosen `previous_snapshot_at` does not contain `material_key`.
 
 This is different from `is_new_material`. A video can be old in the material library but
 new to the daily Top100.
@@ -351,6 +369,7 @@ GET /xuanpin/api/mk-material-library
 Query parameters:
 
 - `snapshot`: optional snapshot date; default latest material snapshot date.
+- `snapshot_at`: optional exact snapshot timestamp; default latest material snapshot time.
 - `page`: default `1`.
 - `page_size`: default `100`, max `100`.
 - `keyword`: optional product/material search term.
@@ -359,6 +378,7 @@ Response fields:
 
 - `items`
 - `snapshot`
+- `snapshot_at`
 - `total`
 - `run_summary`
 
@@ -371,6 +391,7 @@ GET /xuanpin/api/mk-yesterday-top100
 Query parameters:
 
 - `snapshot`: optional snapshot date; default latest archived Top100 date.
+- `snapshot_at`: optional exact snapshot timestamp; default latest archived Top100 time.
 - `page`: default `1`.
 - `page_size`: default `100`, max `100`.
 
@@ -378,7 +399,9 @@ Response fields:
 
 - `items`
 - `snapshot`
+- `snapshot_at`
 - `previous_snapshot`
+- `previous_snapshot_at`
 - `total`
 - `run_summary`
 
@@ -413,7 +436,7 @@ Focused automated checks:
 - Service tests cover Mingkong fetch flattening and upsert of all visible videos.
 - Service tests cover delta calculation, new-material handling, negative-delta clamp, and
   new Top100 membership.
-- Scheduler tests cover 06:00 registration and scheduled task registry metadata.
+- Scheduler tests cover 06:00/18:00 registration and scheduled task registry metadata.
 - Route tests cover `/xuanpin/api/mk-material-library` local archived material listing.
 - Route tests cover `/xuanpin/api/mk-yesterday-top100` admin behavior.
 - Template tests cover local `视频素材库` behavior and the new `昨天消耗前100` inner tab.

@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS mingkong_material_sync_runs (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   snapshot_date DATE NOT NULL,
+  snapshot_at DATETIME NOT NULL,
+  snapshot_slot VARCHAR(8) NOT NULL,
   ranking_snapshot_date DATE NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'running',
   source_product_limit INT NOT NULL DEFAULT 300,
@@ -12,7 +14,8 @@ CREATE TABLE IF NOT EXISTS mingkong_material_sync_runs (
   error_message TEXT NULL,
   started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at DATETIME NULL,
-  UNIQUE KEY uk_mk_material_run_snapshot (snapshot_date),
+  UNIQUE KEY uk_mk_material_run_snapshot_slot (snapshot_date, snapshot_slot),
+  KEY idx_mk_material_run_snapshot_at (snapshot_at),
   KEY idx_mk_material_run_status_started (status, started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -20,6 +23,8 @@ CREATE TABLE IF NOT EXISTS mingkong_material_products (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   run_id BIGINT NOT NULL,
   snapshot_date DATE NOT NULL,
+  snapshot_at DATETIME NOT NULL,
+  snapshot_slot VARCHAR(8) NOT NULL,
   ranking_snapshot_date DATE NULL,
   rank_position INT NULL,
   product_code VARCHAR(255) NOT NULL,
@@ -47,6 +52,8 @@ CREATE TABLE IF NOT EXISTS mingkong_material_products (
 CREATE TABLE IF NOT EXISTS mingkong_material_daily_snapshots (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   snapshot_date DATE NOT NULL,
+  snapshot_at DATETIME NOT NULL,
+  snapshot_slot VARCHAR(8) NOT NULL,
   ranking_snapshot_date DATE NULL,
   run_id BIGINT NULL,
   material_key CHAR(64) NOT NULL,
@@ -70,16 +77,22 @@ CREATE TABLE IF NOT EXISTS mingkong_material_daily_snapshots (
   mk_video_metadata_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_mk_material_snapshot_material (snapshot_date, material_key),
-  KEY idx_mk_material_snapshot_spend (snapshot_date, cumulative_90_spend),
-  KEY idx_mk_material_snapshot_product (product_code, snapshot_date),
-  KEY idx_mk_material_snapshot_key_date (material_key, snapshot_date)
+  UNIQUE KEY uk_mk_material_snapshot_at_material (snapshot_at, material_key),
+  KEY idx_mk_material_snapshot_spend (snapshot_at, cumulative_90_spend),
+  KEY idx_mk_material_snapshot_product (product_code, snapshot_at),
+  KEY idx_mk_material_snapshot_key_date (material_key, snapshot_at),
+  KEY idx_mk_material_snapshot_date_slot (snapshot_date, snapshot_slot)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS mingkong_material_daily_top100 (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   snapshot_date DATE NOT NULL,
+  snapshot_at DATETIME NOT NULL,
+  snapshot_slot VARCHAR(8) NOT NULL,
   previous_snapshot_date DATE NULL,
+  previous_snapshot_at DATETIME NULL,
+  previous_snapshot_slot VARCHAR(8) NULL,
+  comparison_interval_seconds INT NULL,
   ranking_snapshot_date DATE NULL,
   rank_position INT NOT NULL,
   display_position INT NOT NULL,
@@ -107,8 +120,9 @@ CREATE TABLE IF NOT EXISTS mingkong_material_daily_top100 (
   is_new_material TINYINT(1) NOT NULL DEFAULT 0,
   is_new_top100_entry TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_mk_material_top100_material (snapshot_date, material_key),
-  KEY idx_mk_material_top100_display (snapshot_date, display_position),
-  KEY idx_mk_material_top100_delta (snapshot_date, yesterday_spend_delta),
-  KEY idx_mk_material_top100_key_date (material_key, snapshot_date)
+  UNIQUE KEY uk_mk_material_top100_snapshot_at_material (snapshot_at, material_key),
+  KEY idx_mk_material_top100_display (snapshot_at, display_position),
+  KEY idx_mk_material_top100_delta (snapshot_at, yesterday_spend_delta),
+  KEY idx_mk_material_top100_key_date (material_key, snapshot_at),
+  KEY idx_mk_material_top100_date_slot (snapshot_date, snapshot_slot)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

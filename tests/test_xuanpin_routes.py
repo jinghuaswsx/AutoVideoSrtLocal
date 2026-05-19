@@ -324,6 +324,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
     assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
     assert captured == {
         "snapshot_date": "2026-05-18",
+        "snapshot_at": None,
         "keyword": "tooth",
         "page": "2",
         "page_size": "24",
@@ -358,6 +359,7 @@ def test_xuanpin_mk_yesterday_top100_api_reads_archive(
     assert resp.get_json()["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
     assert captured == {
         "snapshot_date": "2026-05-18",
+        "snapshot_at": None,
         "page": "1",
         "page_size": "100",
     }
