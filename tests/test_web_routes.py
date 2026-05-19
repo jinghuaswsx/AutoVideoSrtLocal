@@ -3490,8 +3490,8 @@ def test_image_translate_templates_show_concurrency_mode_pills():
 
     assert "处理模式" in list_template
     assert "处理模式" in detail_template
-    assert 'id="itConcurrencyMode" value="parallel"' in list_template
-    assert "并行（默认）" in list_template
+    assert 'id="itConcurrencyMode" value="sequential"' in list_template
+    assert "串行（默认）" in list_template
     assert "itMetaConcurrencyMode" in detail_template
     assert "data-concurrency-mode" in list_template
     assert "data-concurrency-mode" in detail_template
@@ -3536,8 +3536,8 @@ def test_medias_edit_modal_contains_detail_image_translation_controls():
     assert 'id="edDetailImagesTranslateBtn"' in template
     assert 'id="edDetailTranslateStatus"' in template
     assert 'id="edDetailTranslateHistory"' in template
-    assert "并行（默认）" in template
-    assert "ch.dataset.mode === 'parallel'" in scripts
+    assert "串行（默认）" in template
+    assert "ch.dataset.mode === 'sequential'" in scripts
     assert "detail-image-translate-tasks" in scripts
     assert "detail-images/translate-from-en" in scripts
     history_block = scripts.split("function edRenderDetailTranslateHistory", 1)[1].split("const LINK_CHECK_STATUS_LABELS", 1)[0]

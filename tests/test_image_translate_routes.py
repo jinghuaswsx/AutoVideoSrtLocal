@@ -1380,7 +1380,7 @@ def _post_complete(client, body_extra=None):
     return client.post("/api/image-translate/upload/complete", json=body)
 
 
-def test_upload_complete_defaults_to_parallel(authed_client_no_db, monkeypatch):
+def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
     mem = _patch_task_state(monkeypatch)
@@ -1388,7 +1388,7 @@ def test_upload_complete_defaults_to_parallel(authed_client_no_db, monkeypatch):
     resp = _post_complete(authed_client_no_db)
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
-    assert mem[task_id]["concurrency_mode"] == "parallel"
+    assert mem[task_id]["concurrency_mode"] == "sequential"
 
 
 def test_upload_complete_accepts_parallel(authed_client_no_db, monkeypatch):
