@@ -5,20 +5,28 @@ Spec: docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.m
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import mimetypes
 import os
 import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import quote, urljoin, urlparse, urlunparse
+
+import requests
+from bs4 import BeautifulSoup
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore import local_media_storage, pushes
 from appcore import scheduled_tasks
 from appcore.db import get_conn, query
+from appcore.link_check_fetcher import extract_images_from_html
 from tools.shopifyid_dianxiaomi_sync import _connect_existing_browser_context
 
 
@@ -36,6 +44,35 @@ DEFAULT_PAGE_SIZE = 100
 DEFAULT_DAILY_OFFSET_DAYS = 1
 DEFAULT_SNAPSHOT_WINDOW_DAYS = 7
 OUTPUT_DIR = REPO_ROOT / "output" / "dianxiaomi_listing_ranking_sync"
+PRODUCT_MAIN_IMAGE_CACHE_PREFIX = "xuanpin/product-main-images"
+MAX_PRODUCT_IMAGE_BYTES = 15 * 1024 * 1024
+PRODUCT_ASSET_USER_AGENT = "Mozilla/5.0 AutoVideoSrt-XuanpinAssets"
+_RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
+_IMAGE_EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+_LISTING_IMAGE_FIELDS = (
+    "imageUrl",
+    "image_url",
+    "imgUrl",
+    "img_url",
+    "mainImage",
+    "main_image",
+    "mainImageUrl",
+    "main_image_url",
+    "productImage",
+    "product_image",
+    "productImageUrl",
+    "product_image_url",
+    "pictureUrl",
+    "picUrl",
+    "thumbnail",
+    "thumbUrl",
+    "image",
+)
 
 
 ListingFetchPage = Callable[[date, int, int], dict[str, Any]]
@@ -150,6 +187,405 @@ def _format_percent(value: Any) -> str:
     return f"{amount:g}%"
 
 
+def _strip_rjc(value: Any) -> str:
+    return _RJC_SUFFIX_RE.sub("", str(value or "").strip()).lower()
+
+
+def _absolute_url(value: Any, base_url: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("//"):
+        text = "https:" + text
+    absolute = urljoin(base_url, text)
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+
+
+def _meta_content(soup: BeautifulSoup, *names: str) -> str:
+    for name in names:
+        node = soup.find("meta", {"property": name}) or soup.find("meta", {"name": name})
+        if node and node.get("content"):
+            return str(node.get("content") or "").strip()
+    return ""
+
+
+def _first_listing_image_url(row: Mapping[str, Any], *, base_url: str = "") -> str:
+    for field in _LISTING_IMAGE_FIELDS:
+        value = row.get(field)
+        if isinstance(value, Mapping):
+            value = value.get("url") or value.get("src") or value.get("imageUrl")
+        elif isinstance(value, list):
+            value = value[0] if value else ""
+            if isinstance(value, Mapping):
+                value = value.get("url") or value.get("src") or value.get("imageUrl")
+        url = _absolute_url(value, base_url or str(row.get("sourceUrl") or row.get("productUrl") or ""))
+        if url:
+            return url
+    return ""
+
+
+def product_code_from_url(value: Any) -> str:
+    parsed = urlparse(str(value or "").strip())
+    parts = [part for part in parsed.path.replace("\\", "/").split("/") if part]
+    if "products" in parts:
+        index = parts.index("products")
+        if index + 1 < len(parts):
+            return _strip_rjc(parts[index + 1])
+    return ""
+
+
+def extract_product_page_assets_from_html(html: str, *, base_url: str) -> dict[str, Any]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    meta_image = _absolute_url(_meta_content(soup, "og:image", "twitter:image"), base_url)
+    images = extract_images_from_html(html or "", base_url=base_url)
+    carousel_images = [
+        str(item.get("source_url") or "").strip()
+        for item in images
+        if (item.get("kind") or "") == "carousel" and str(item.get("source_url") or "").strip()
+    ]
+    detail_images = [
+        str(item.get("source_url") or "").strip()
+        for item in images
+        if (item.get("kind") or "") == "detail" and str(item.get("source_url") or "").strip()
+    ]
+    main_image_url = meta_image or (carousel_images[0] if carousel_images else "")
+    return {
+        "main_image_url": main_image_url,
+        "detail_image_urls": detail_images,
+    }
+
+
+def fetch_product_page_assets(
+    product_url: str,
+    *,
+    session: requests.Session,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    if not str(product_url or "").strip():
+        return {"main_image_url": "", "detail_image_urls": []}
+    resp = session.get(
+        str(product_url).strip(),
+        timeout=timeout_seconds,
+        headers={"User-Agent": PRODUCT_ASSET_USER_AGENT, "Accept": "text/html,*/*"},
+    )
+    resp.raise_for_status()
+    return extract_product_page_assets_from_html(resp.text, base_url=getattr(resp, "url", None) or product_url)
+
+
+def _content_type_for_image_response(response, image_url: str) -> str:
+    content_type = (response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if not content_type:
+        content_type = mimetypes.guess_type(urlparse(image_url).path)[0] or "image/jpeg"
+    return content_type
+
+
+def _image_extension(content_type: str, image_url: str) -> str:
+    parsed_suffix = Path(urlparse(image_url).path).suffix.lower()
+    if parsed_suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        return ".jpg" if parsed_suffix == ".jpeg" else parsed_suffix
+    return _IMAGE_EXTENSIONS.get(content_type, ".jpg")
+
+
+def _safe_product_asset_slug(*, product_code: str, product_id: str) -> str:
+    source = product_code or product_id or "unknown-product"
+    slug = re.sub(r"[^a-z0-9-]+", "-", source.lower()).strip("-")
+    return slug or "unknown-product"
+
+
+def product_main_image_object_key(
+    image_url: str,
+    *,
+    product_id: str,
+    product_code: str,
+    content_type: str = "",
+) -> str:
+    parsed = urlparse(str(image_url or ""))
+    content_type = content_type or mimetypes.guess_type(parsed.path)[0] or "image/jpeg"
+    ext = _image_extension(content_type, image_url)
+    slug = _safe_product_asset_slug(product_code=product_code, product_id=product_id)
+    digest = hashlib.sha256(
+        "|".join([str(product_id or ""), str(product_code or ""), str(image_url or "")]).encode("utf-8")
+    ).hexdigest()[:24]
+    return f"{PRODUCT_MAIN_IMAGE_CACHE_PREFIX}/{slug}/{digest}{ext}"
+
+
+def cache_product_main_image(
+    image_url: str,
+    *,
+    product_id: str,
+    product_code: str,
+    storage_exists_fn=local_media_storage.exists,
+    write_bytes_fn=local_media_storage.write_bytes,
+    http_get_fn=requests.get,
+    max_image_bytes: int = MAX_PRODUCT_IMAGE_BYTES,
+    timeout_seconds: int = 20,
+) -> str:
+    parsed = urlparse(str(image_url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    object_key = product_main_image_object_key(
+        image_url,
+        product_id=str(product_id or ""),
+        product_code=str(product_code or ""),
+    )
+    if storage_exists_fn(object_key):
+        return object_key
+
+    resp = http_get_fn(
+        image_url,
+        timeout=timeout_seconds,
+        stream=True,
+        headers={"User-Agent": PRODUCT_ASSET_USER_AGENT},
+    )
+    resp.raise_for_status()
+    content_type = _content_type_for_image_response(resp, image_url)
+    if not content_type.startswith("image/"):
+        raise ValueError(f"product main image is not an image: {content_type}")
+    object_key = product_main_image_object_key(
+        image_url,
+        product_id=str(product_id or ""),
+        product_code=str(product_code or ""),
+        content_type=content_type,
+    )
+    if storage_exists_fn(object_key):
+        return object_key
+    payload = bytearray()
+    for chunk in resp.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        payload.extend(chunk)
+        if len(payload) > max_image_bytes:
+            raise ValueError("product main image too large (>15MB)")
+    write_bytes_fn(object_key, bytes(payload))
+    return object_key
+
+
+def extract_product_cn_name_from_material_filename(filename: Any) -> str:
+    basename = os.path.basename(str(filename or "").replace("\\", "/")).strip()
+    if not basename:
+        return ""
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", basename)
+    rest = re.sub(r"^\d{4}\.\d{2}\.\d{2}-", "", stem)
+    marker = "-原素材"
+    if marker in rest:
+        return rest.split(marker, 1)[0].strip()
+    parts = [part.strip() for part in rest.split("-") if part.strip()]
+    return parts[0] if parts else rest.strip()
+
+
+def _normalize_mk_media_path(raw_path: Any) -> str:
+    path = str(raw_path or "").strip().replace("\\", "/")
+    if path.startswith(("http://", "https://")):
+        return ""
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.lstrip("/")
+    if path.startswith("medias/"):
+        path = path[len("medias/"):]
+    if not path or ".." in path.split("/"):
+        return ""
+    return path
+
+
+def _mk_material_url(video: Mapping[str, Any], *, base_url: str) -> str:
+    for key in ("url", "href"):
+        raw_url = str(video.get(key) or "").strip()
+        parsed = urlparse(raw_url)
+        if parsed.scheme in {"http", "https"}:
+            return raw_url
+    media_path = _normalize_mk_media_path(video.get("path"))
+    if not media_path or not base_url:
+        return ""
+    return f"{base_url.rstrip('/')}/medias/{quote(media_path, safe='/')}"
+
+
+def _mingkong_item_product_codes(item: Mapping[str, Any]) -> set[str]:
+    codes = {
+        _strip_rjc(item.get(key))
+        for key in ("product_code", "code", "handle")
+        if str(item.get(key) or "").strip()
+    }
+    for link in item.get("product_links") or []:
+        code = product_code_from_url(link)
+        if code:
+            codes.add(code)
+    return {code for code in codes if code}
+
+
+def find_first_mingkong_material_for_product_code(
+    items: list[dict[str, Any]],
+    product_code: str,
+    *,
+    base_url: str = "",
+) -> dict[str, Any]:
+    target = _strip_rjc(product_code)
+    empty = {
+        "product_cn_name": "",
+        "mk_first_material_name": "",
+        "mk_first_material_path": "",
+        "mk_first_material_url": "",
+    }
+    if not target:
+        return empty
+    for item in items or []:
+        if target not in _mingkong_item_product_codes(item):
+            continue
+        for video in item.get("videos") or []:
+            if not isinstance(video, Mapping) or video.get("hidden"):
+                continue
+            name = str(video.get("name") or os.path.basename(str(video.get("path") or ""))).strip()
+            path = _normalize_mk_media_path(video.get("path"))
+            if not name and not path:
+                continue
+            return {
+                "product_cn_name": extract_product_cn_name_from_material_filename(name or path),
+                "mk_first_material_name": name,
+                "mk_first_material_path": path,
+                "mk_first_material_url": _mk_material_url(video, base_url=base_url),
+            }
+    return empty
+
+
+def _build_mingkong_headers() -> dict[str, str]:
+    headers = dict(pushes.build_localized_texts_headers())
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "application/json"
+    return headers
+
+
+def _mingkong_base_url() -> str:
+    return (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+
+
+def search_mingkong_materials_for_product_code(
+    product_code: str,
+    *,
+    session: requests.Session,
+    headers: dict[str, str],
+    base_url: str,
+    timeout_seconds: int,
+) -> list[dict[str, Any]]:
+    if not product_code or ("Authorization" not in headers and "Cookie" not in headers):
+        return []
+    resp = session.get(
+        f"{base_url}/api/marketing/medias",
+        params={"page": 1, "q": product_code, "source": "", "level": "", "show_attention": 0},
+        headers=headers,
+        timeout=timeout_seconds,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+        raise RuntimeError("Mingkong credentials expired")
+    return [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
+
+
+def enrich_listing_rows(
+    rows: list[dict[str, Any]],
+    *,
+    timeout_seconds: int = 20,
+) -> list[dict[str, Any]]:
+    page_session = requests.Session()
+    mk_session = requests.Session()
+    try:
+        mk_headers = _build_mingkong_headers()
+    except Exception:
+        mk_headers = {}
+    base_url = _mingkong_base_url()
+    product_asset_cache: dict[str, dict[str, Any]] = {}
+    mingkong_cache: dict[str, dict[str, Any]] = {}
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        product_url = str(item.get("product_url") or "").strip()
+        product_id = str(item.get("product_id") or "").strip()
+        product_code = str(item.get("product_code") or product_code_from_url(product_url)).strip().lower()
+        item["product_code"] = product_code
+
+        asset_cache_key = product_url or product_id or product_code
+        if asset_cache_key and asset_cache_key in product_asset_cache:
+            item.update(product_asset_cache[asset_cache_key])
+        else:
+            asset_update = {
+                "product_main_image_url": item.get("product_main_image_url") or "",
+                "product_main_image_object_key": item.get("product_main_image_object_key"),
+                "product_detail_images_json": item.get("product_detail_images_json"),
+                "product_assets_error": None,
+            }
+            try:
+                page_assets = fetch_product_page_assets(
+                    product_url,
+                    session=page_session,
+                    timeout_seconds=timeout_seconds,
+                ) if product_url else {"main_image_url": "", "detail_image_urls": []}
+                if page_assets.get("main_image_url"):
+                    asset_update["product_main_image_url"] = page_assets["main_image_url"]
+                detail_urls = page_assets.get("detail_image_urls") or []
+                if detail_urls:
+                    asset_update["product_detail_images_json"] = json.dumps(
+                        detail_urls,
+                        ensure_ascii=False,
+                    )
+            except Exception as exc:
+                asset_update["product_assets_error"] = str(exc)[:1000]
+
+            image_url = str(asset_update.get("product_main_image_url") or "").strip()
+            if image_url:
+                try:
+                    asset_update["product_main_image_object_key"] = cache_product_main_image(
+                        image_url,
+                        product_id=product_id,
+                        product_code=product_code,
+                        timeout_seconds=timeout_seconds,
+                    )
+                except Exception as exc:
+                    error = str(exc)[:1000]
+                    existing_error = str(asset_update.get("product_assets_error") or "").strip()
+                    asset_update["product_assets_error"] = "; ".join(
+                        [part for part in (existing_error, error) if part]
+                    )
+            if asset_cache_key:
+                product_asset_cache[asset_cache_key] = asset_update
+            item.update(asset_update)
+
+        if product_code and product_code in mingkong_cache:
+            item.update(mingkong_cache[product_code])
+        else:
+            mk_update = {
+                "product_cn_name": item.get("product_cn_name") or "",
+                "mk_first_material_name": item.get("mk_first_material_name") or "",
+                "mk_first_material_path": item.get("mk_first_material_path") or "",
+                "mk_first_material_url": item.get("mk_first_material_url") or "",
+                "mk_material_error": None,
+            }
+            try:
+                mk_items = search_mingkong_materials_for_product_code(
+                    product_code,
+                    session=mk_session,
+                    headers=mk_headers,
+                    base_url=base_url,
+                    timeout_seconds=timeout_seconds,
+                )
+                mk_update.update(
+                    find_first_mingkong_material_for_product_code(
+                        mk_items,
+                        product_code,
+                        base_url=base_url,
+                    )
+                )
+            except Exception as exc:
+                mk_update["mk_material_error"] = str(exc)[:1000]
+            if product_code:
+                mingkong_cache[product_code] = mk_update
+            item.update(mk_update)
+        out.append(item)
+    return out
+
+
 def normalize_listing_row(
     row: Mapping[str, Any],
     *,
@@ -161,6 +597,7 @@ def normalize_listing_row(
     product_url = str(row.get("sourceUrl") or row.get("productUrl") or row.get("onlineUrl") or "").strip()
     store = str(row.get("shopName") or row.get("store") or row.get("shopId") or "").strip()
     platform = str(row.get("platform") or row.get("platformName") or "").strip()
+    product_code = product_code_from_url(product_url)
 
     return {
         "product_id": product_id,
@@ -178,6 +615,16 @@ def normalize_listing_row(
         "refund_amt": _format_cny(row.get("refundAmountCny", row.get("refundAmt"))),
         "refund_rate": _format_percent(row.get("refundRate")),
         "media_product_id": None,
+        "product_code": product_code,
+        "product_main_image_url": _first_listing_image_url(row, base_url=product_url),
+        "product_main_image_object_key": None,
+        "product_detail_images_json": None,
+        "product_assets_error": None,
+        "product_cn_name": "",
+        "mk_first_material_name": "",
+        "mk_first_material_path": "",
+        "mk_first_material_url": "",
+        "mk_material_error": None,
         "snapshot_date": snapshot_date,
         "rank_position": int(rank_position),
     }
@@ -355,8 +802,12 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         (product_id, product_name, product_url, store, platform, parent_sku,
                          order_count, sales_count, revenue_main, revenue_split,
                          refund_orders, refund_qty, refund_amt, refund_rate,
-                         media_product_id, snapshot_date, rank_position)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         media_product_id, product_code, product_main_image_url,
+                         product_main_image_object_key, product_detail_images_json,
+                         product_assets_error, product_cn_name, mk_first_material_name,
+                         mk_first_material_path, mk_first_material_url, mk_material_error,
+                         product_assets_synced_at, snapshot_date, rank_position)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s)
                     ON DUPLICATE KEY UPDATE
                         product_name=VALUES(product_name),
                         product_url=VALUES(product_url),
@@ -372,6 +823,17 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         refund_amt=VALUES(refund_amt),
                         refund_rate=VALUES(refund_rate),
                         media_product_id=VALUES(media_product_id),
+                        product_code=VALUES(product_code),
+                        product_main_image_url=VALUES(product_main_image_url),
+                        product_main_image_object_key=VALUES(product_main_image_object_key),
+                        product_detail_images_json=VALUES(product_detail_images_json),
+                        product_assets_error=VALUES(product_assets_error),
+                        product_cn_name=VALUES(product_cn_name),
+                        mk_first_material_name=VALUES(mk_first_material_name),
+                        mk_first_material_path=VALUES(mk_first_material_path),
+                        mk_first_material_url=VALUES(mk_first_material_url),
+                        mk_material_error=VALUES(mk_material_error),
+                        product_assets_synced_at=VALUES(product_assets_synced_at),
                         rank_position=VALUES(rank_position)
                     """,
                     (
@@ -390,6 +852,16 @@ def persist_rankings(snapshot_date: date, rows: list[dict[str, Any]]) -> dict[st
                         row["refund_amt"],
                         row["refund_rate"],
                         media_product_id,
+                        row.get("product_code") or None,
+                        row.get("product_main_image_url") or None,
+                        row.get("product_main_image_object_key") or None,
+                        row.get("product_detail_images_json") or None,
+                        row.get("product_assets_error") or None,
+                        row.get("product_cn_name") or None,
+                        row.get("mk_first_material_name") or None,
+                        row.get("mk_first_material_path") or None,
+                        row.get("mk_first_material_url") or None,
+                        row.get("mk_material_error") or None,
                         snapshot_date,
                         row["rank_position"],
                     ),
@@ -592,6 +1064,11 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
                 target_rows=args.target_rows,
                 page_size=args.page_size,
             )
+            if not args.skip_product_assets:
+                rows = enrich_listing_rows(
+                    rows,
+                    timeout_seconds=args.asset_timeout_seconds,
+                )
             if not rows and args.mode == "rolling":
                 summary["incomplete_dates"].append({
                     "date": snapshot_date.isoformat(),
@@ -629,6 +1106,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Manual safety cap; 0 means uncapped.")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--snapshot-window-days", type=int, default=DEFAULT_SNAPSHOT_WINDOW_DAYS)
+    parser.add_argument("--skip-product-assets", action="store_true")
+    parser.add_argument("--asset-timeout-seconds", type=int, default=20)
     parser.add_argument(
         "--browser-cdp-url",
         default=os.environ.get("DXM_LISTING_BROWSER_CDP_URL", DXM02_BROWSER_CDP_URL),

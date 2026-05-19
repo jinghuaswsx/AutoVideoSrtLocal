@@ -171,19 +171,35 @@ def test_mk_selection_product_rows_include_material_library_button():
     assert "function openProductMaterialLibrary(productCode, productName)" in template
     assert "data-mk-material-button" in template
     assert "data-product-code" in template
-    assert "const productCode = productCodeFromUrl(r.product_url);" in template
+    assert "const productCode = String(r.product_code || productCodeFromUrl(r.product_url) || '').trim();" in template
     assert "renderProductMaterialButton(productCode, rawProductName, linked)" in template
     assert "openProductMaterialLibrary(materialButton.dataset.productCode || '', materialButton.dataset.productName || '')" in template
     assert "activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}`" in template
+
+
+def test_mk_selection_product_rows_show_200_cover_and_copy_buttons():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "<th style=\"width:220px\">商品图</th>" in template
+    assert ".mk-product-image-frame { width:200px; height:200px;" in template
+    assert "function renderProductImageCell(row)" in template
+    assert "const coverSrc = safeMediaSrc(row.product_main_image_local_url || row.product_main_image_url || '');" in template
+    assert "function copyMkText(value, button)" in template
+    assert "renderTwoLineCopyBlock(rawProductName, r.product_url" in template
+    assert "renderTwoLineCopyBlock(productCode || handle, ''" in template
+    assert "data-copy-text" in template
+    assert "product_cn_name" in template
 
 
 def test_mk_selection_dynamic_html_escapes_api_fields():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert "function safeExternalHref(value)" in template
-    assert 'title="${escapeHtml(rawProductName)}"' in template
-    assert 'href="${safeProductUrl}"' in template
-    assert "${escapeHtml(productName)}" in template
+    assert 'title="${escapeHtml(text)}"' in template
+    assert 'href="${safeHref}"' in template
+    assert "${escapeHtml(text)}</a>" in template
+    assert 'data-copy-text="${escapeHtml(text)}"' in template
+    assert 'alt="${escapeHtml(alt)}"' in template
     assert "${escapeHtml(cnNameShort)}" in template
     assert "${escapeHtml(r.store || '--')}" in template
     assert "${escapeHtml(r.revenue_main || '--')}" in template
