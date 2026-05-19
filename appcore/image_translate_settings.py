@@ -27,6 +27,8 @@ CHANNEL_LABELS: dict[str, str] = {
 _CHANNEL_KEY = "image_translate.channel"
 _DEFAULT_CHANNEL = "aistudio"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "local_image_2"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gpt-image-2"
 
 # OpenRouter OpenAI Image 2 质量档位开关与默认值
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
@@ -676,6 +678,21 @@ def get_default_model(channel: str | None = None) -> str:
     from appcore.gemini_image import coerce_image_model
 
     return coerce_image_model(value, channel=normalized_channel)
+
+
+def get_material_image_translate_default_channel() -> str:
+    """素材管理入口创建图片翻译任务时使用的默认通道。"""
+    return MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL
+
+
+def get_material_image_translate_default_model() -> str:
+    """素材管理入口创建图片翻译任务时使用的默认模型。"""
+    from appcore.gemini_image import coerce_image_model
+
+    return coerce_image_model(
+        MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID,
+        channel=MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL,
+    )
 
 
 def set_default_model(channel: str, model_id: str) -> None:
