@@ -1146,7 +1146,7 @@ def _json_safe(value):
 
 def _cover_provider_config_code(provider: str) -> str:
     normalized = (provider or "").strip()
-    if normalized in {"", "local"}:
+    if normalized in {"", "local", "local_image_2"}:
         return "video_cover_local_image"
     if normalized == "openrouter":
         return "openrouter_image"
@@ -1219,7 +1219,7 @@ def _provider_config_values(provider: str) -> tuple[str, str]:
 
 def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str]:
     normalized = (provider or "").strip()
-    if normalized in {"", "local"}:
+    if normalized in {"", "local", "local_image_2"}:
         api_base = base_url or "http://172.30.254.14:82/v1"
         return f"{api_base.rstrip('/')}/images/edits", "multipart/form-data"
     if normalized == "openrouter":
@@ -1264,7 +1264,7 @@ def _base_cover_request_parts(request_payload: dict, prompt_index: int) -> tuple
 def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: int) -> tuple[dict, dict]:
     provider, model, prompt, resolved_prompt_index_raw, image_prompts = _base_cover_request_parts(request_payload, prompt_index)
     api_key, base_url = _provider_config_values(provider)
-    if provider in {"local", "openrouter", "apimart", "gemini_aistudio"} and not api_key:
+    if provider in {"local", "local_image_2", "openrouter", "apimart", "gemini_aistudio"} and not api_key:
         raise VideoCoverGenerationError(f"缺少供应商配置 {_cover_provider_config_code(provider)}.api_key")
     object_key = _cover_reference_object_key(state)
     if not object_key:
@@ -1278,13 +1278,13 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
     resolved_prompt_index = _parse_prompt_index(resolved_prompt_index_raw)
 
     replay = {
-        "supported": provider == "local",
+        "supported": provider in {"local", "local_image_2"},
         "prompt_index": resolved_prompt_index,
         "prompt_indexes": prompt_indexes or [prompt_index],
     }
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    if provider == "local":
+    if provider in {"local", "local_image_2"}:
         url, content_type = _cover_full_request_endpoint(provider, base_url)
         full_request = {
             "method": "POST",

@@ -29,10 +29,11 @@ Meta 热帖素材库普通列表目前只带出了美国市场搬运分析字段
 - 使用 `api_keys` 表新增用户级 service：`meta_hot_posts_ai_visibility`，保存 JSON：`{"us": false, "europe": false}`。
 - 新增 `/xuanpin/api/meta-hot-posts/ai-analysis-visibility` GET/POST，读取和保存当前用户设置。
 - `web/templates/meta_hot_posts.html` 拆分 `copyabilityBlock()` 与 `renderEuropeFitPanel()` 的显示判断，默认隐藏，美国/欧洲按钮点击后分别持久化并重绘当前卡片。
+- 显示设置保存按“最后一次点击”生效：前端允许乐观重绘，但每次保存请求必须带本地会话 ID 和单调版本号。后端对同一会话 ID 拒绝旧版本覆盖新版本；前端也要忽略旧请求的成功响应和失败回滚。
 
 ## 验证
 
 - Store 测试覆盖普通列表、今日新增、收藏夹都 select/join 欧洲分析字段。
 - Service 测试覆盖普通列表 hydrate 欧洲中文字段。
-- Route/template 测试覆盖两个按钮文案、默认隐藏、用户级设置接口。
+- Route/template 测试覆盖两个按钮文案、默认隐藏、用户级设置接口，以及保存请求“最后一次点击优先”的旧响应/旧失败忽略逻辑。
 - 发布后确认生产服务 active，页面未登录 302，登录后按钮默认显示“显示美国AI分析”“显示欧洲AI分析”。
