@@ -13,7 +13,12 @@ from flask_login import login_required
 from appcore import local_media_storage, pushes
 
 from . import bp
-from ._helpers import _MAX_MK_VIDEO_BYTES, _MK_VIDEO_CACHE_PREFIX, _dianxiaomi_rankings_columns
+from ._helpers import (
+    _MAX_MK_VIDEO_BYTES,
+    _MK_VIDEO_CACHE_PREFIX,
+    _dianxiaomi_product_assets_exists,
+    _dianxiaomi_rankings_columns,
+)
 from web.services.media_mk_selection import (
     build_mk_video_proxy_flask_response as _build_mk_video_proxy_flask_response,
     build_mk_video_proxy_response as _build_mk_video_proxy_response_impl,
@@ -60,6 +65,7 @@ def _build_mk_selection_response(args):
     return _build_mk_selection_response_impl(
         args,
         ranking_columns_fn=_dianxiaomi_rankings_columns,
+        product_assets_table_exists_fn=_dianxiaomi_product_assets_exists,
         db_query_fn=db_query,
     )
 

@@ -202,6 +202,17 @@ def _dianxiaomi_rankings_columns() -> frozenset[str]:
     )
 
 
+@lru_cache(maxsize=1)
+def _dianxiaomi_product_assets_exists() -> bool:
+    route_mod = sys.modules.get("web.routes.medias")
+    query_fn = getattr(route_mod, "db_query", db_query)
+    try:
+        rows = query_fn("SHOW TABLES LIKE 'dianxiaomi_product_assets'")
+    except Exception:
+        return False
+    return bool(rows)
+
+
 def _language_name_map() -> dict[str, str]:
     return {
         str(row.get("code") or "").strip().lower(): str(row.get("name_zh") or "").strip()
