@@ -859,11 +859,27 @@ def _positive_pixel(value: Any) -> int:
     return pixel if pixel > 0 else 0
 
 
+MIN_PERSISTED_DETAIL_IMAGE_PIXEL = 800
+
+
+def _normalize_persisted_display_size(width: int, height: int, size: dict[str, Any]) -> tuple[int, int]:
+    natural_width = _positive_pixel(size.get("naturalWidth") or size.get("natural_width"))
+    natural_height = _positive_pixel(size.get("naturalHeight") or size.get("natural_height"))
+    if (
+        natural_width >= MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+        and natural_height >= MIN_PERSISTED_DETAIL_IMAGE_PIXEL
+        and (width < MIN_PERSISTED_DETAIL_IMAGE_PIXEL or height < MIN_PERSISTED_DETAIL_IMAGE_PIXEL)
+    ):
+        return natural_width, natural_height
+    return width, height
+
+
 def _apply_display_size_to_img_tag(tag: str, size: dict[str, Any] | None) -> str:
     if not size:
         return tag
     width = _positive_pixel(size.get("width"))
     height = _positive_pixel(size.get("height"))
+    width, height = _normalize_persisted_display_size(width, height, size)
     if width <= 0 and height <= 0:
         return tag
     declarations: dict[str, str] = {}

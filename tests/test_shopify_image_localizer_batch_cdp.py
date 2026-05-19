@@ -912,6 +912,36 @@ def test_apply_uploaded_replacements_overrides_conflicting_display_size():
     assert "height: auto" not in updated
 
 
+def test_apply_uploaded_replacements_uses_natural_size_when_rendered_size_is_too_small():
+    html = (
+        '<p><img alt="demo" src="https://old.example.com/a.jpg" '
+        'width="290" height="290" '
+        'style="width: 290px; max-width: 290px; height: 290px;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [{"old": "https://old.example.com/a.jpg", "new": "https://cdn.shopify.com/a.jpg"}],
+        display_size_by_src={
+            "https://old.example.com/a.jpg": {
+                "width": 290,
+                "height": 290,
+                "naturalWidth": 800,
+                "naturalHeight": 800,
+            }
+        },
+    )
+
+    assert 'src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'width="800"' in updated
+    assert 'height="800"' in updated
+    assert 'width="290"' not in updated
+    assert 'height="290"' not in updated
+    assert "width: 800px" in updated
+    assert "height: 800px" in updated
+    assert "290px" not in updated
+
+
 def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
     calls: list[tuple] = []
     html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"
