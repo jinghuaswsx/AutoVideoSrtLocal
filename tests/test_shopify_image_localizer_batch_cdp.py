@@ -1309,6 +1309,39 @@ def test_fetch_bootstrap_ready_honors_pre_cancelled_token(monkeypatch):
         raise AssertionError("expected OperationCancelled")
 
 
+def test_fetch_bootstrap_ready_does_not_retry_localized_images_not_ready(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        run_product_cdp.settings,
+        "load_runtime_config",
+        lambda root=None: {"base_url": "http://172.30.254.14", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
+    )
+
+    def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):
+        calls.append((product_code, lang, kwargs))
+        raise api_client.ApiError(409, {"error": "localized images not ready"})
+
+    monkeypatch.setattr(run_product_cdp.api_client, "fetch_bootstrap", fake_fetch_bootstrap)
+    monkeypatch.setattr(
+        run_product_cdp.cancellation,
+        "cancellable_sleep",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("bootstrap should not retry not-ready languages")),
+    )
+
+    with pytest.raises(api_client.ApiError) as exc_info:
+        run_product_cdp.fetch_bootstrap_ready(
+            product_code="sonic-lens-refresher-rjc",
+            lang="it",
+            timeout_s=60,
+            shopify_product_id="8559391932589",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.payload["error"] == "localized images not ready"
+    assert len(calls) == 1
+
+
 def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     saved_config = []
     captured_args = []

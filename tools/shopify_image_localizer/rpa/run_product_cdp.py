@@ -29,7 +29,20 @@ from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 DEFAULT_STORE_DOMAIN = settings.DEFAULT_SHOPIFY_DOMAIN
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
+BOOTSTRAP_NOT_READY_ERRORS = frozenset(
+    {
+        "english references not ready",
+        "localized images not ready",
+    }
+)
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
+
+
+def is_bootstrap_not_ready_error(exc: BaseException) -> bool:
+    if not isinstance(exc, api_client.ApiError) or exc.status_code != 409:
+        return False
+    error_code = str(exc.payload.get("error") or "").strip().lower()
+    return error_code in BOOTSTRAP_NOT_READY_ERRORS
 
 
 def _normalize_src(src: str) -> str:
@@ -622,6 +635,9 @@ def fetch_bootstrap_ready(
             last_error = exc
             error_code = str(exc.payload.get("error") or "")
             print(f"bootstrap 接口异常 {exc.status_code} {error_code}：{exc}")
+            if is_bootstrap_not_ready_error(exc):
+                print(f"bootstrap not ready for {product_code}/{lang}; skipping current language")
+                raise
             if error_code == "shopify_product_id_missing":
                 raise
         except Exception as exc:

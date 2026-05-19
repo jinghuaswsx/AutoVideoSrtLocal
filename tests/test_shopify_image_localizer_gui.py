@@ -11,7 +11,7 @@ import pytest
 
 tk = pytest.importorskip("tkinter")
 
-from tools.shopify_image_localizer import cancellation, gui
+from tools.shopify_image_localizer import api_client, cancellation, gui
 
 
 def _make_app(
@@ -753,6 +753,69 @@ def test_gui_batch_restarts_browser_once_after_language_failure(monkeypatch: pyt
 
         assert calls == ["de", "fr"]
         assert killed_profiles == [r"C:\chrome-shopify-image"]
+    finally:
+        app.root.destroy()
+
+
+def test_gui_batch_skips_bootstrap_not_ready_without_browser_restart(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        calls: list[str] = []
+        killed_profiles: list[str] = []
+
+        monkeypatch.setattr(app, "_ui_after", lambda _delay_ms, callback, *args: callback(*args))
+        monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
+        monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+                log_path=rf"C:\work\{product_code}\{lang}\run.log",
+            ),
+        )
+        monkeypatch.setattr(gui.storage, "append_log", lambda *args, **kwargs: None)
+
+        def fake_run_shopify_localizer(**kwargs):
+            calls.append(kwargs["lang"])
+            if kwargs["lang"] == "de":
+                raise api_client.ApiError(409, {"error": "localized images not ready"})
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}",
+                "download_dir": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\source\localized",
+                "manifest_path": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\shopify_batch_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+        app._set_language_items(
+            [
+                {"code": "de", "label": "German", "shop_locale": "de", "shopify_language_name": "German"},
+                {"code": "fr", "label": "French", "shop_locale": "fr", "shopify_language_name": "French"},
+            ]
+        )
+
+        app._run_batch(
+            base_url="http://172.30.254.14",
+            api_key="demo-key",
+            browser_dir=r"C:\chrome-shopify-image",
+            product_code="sonic-lens-refresher-rjc",
+            language_labels=["German (de)", "French (fr)"],
+            shopify_product_id="8559391932589",
+            shopify_domain="newjoyloo.com",
+            cancel_token=cancellation.CancellationToken(),
+        )
+
+        summary_rows = [app.summary_tree.item(iid, "values") for iid in app.summary_tree.get_children()]
+        summary = {item: value for item, value in summary_rows}
+
+        assert calls == ["de", "fr"]
+        assert killed_profiles == []
+        assert summary["批量任务状态"] == "完成: 成功 1, 跳过 1, 失败 0"
+        assert summary["跳过语言"] == "German (de)"
     finally:
         app.root.destroy()
 
