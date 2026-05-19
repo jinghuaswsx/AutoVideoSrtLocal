@@ -195,6 +195,13 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "商品分析失败记录" in body
     assert "美国AI分析" in body
     assert "欧洲AI分析" in body
+    assert ".mh-ai-card--pass" in body
+    assert ".mh-ai-card--warn" in body
+    assert ".mh-ai-card--reject" in body
+    assert "function usAiAnalysisTone(recommendation)" in body
+    assert "function europeAiAnalysisTone(recommendation)" in body
+    assert "usAiAnalysisTone(data.recommendation)" in body
+    assert "europeAiAnalysisTone(row.europe_fit_recommendation)" in body
     assert "美国市场搬运AI分析" not in body
     assert "欧洲市场翻译AI分析" not in body
     assert "美国操作分析" not in body

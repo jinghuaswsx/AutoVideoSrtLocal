@@ -94,7 +94,16 @@
 button.mh-link-btn { cursor:pointer; }
 .mh-ai-link { border-color:#99f6e4; color:#0f766e; font-weight:800; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
-.mh-europe-panel { margin-top:10px; padding:10px; border:1px solid #bbf7d0; border-radius:6px; background:#f0fdf4; }
+.mh-europe-panel, .mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
+.mh-ai-card--pass { border-color:#bbf7d0; background:#f0fdf4; }
+.mh-ai-card--warn { border-color:#fde68a; background:#fffbeb; }
+.mh-ai-card--reject { border-color:#fecaca; background:#fef2f2; }
+.mh-ai-card--pass .mh-analysis-category, .mh-ai-card--pass .mh-europe-head { color:#166534; }
+.mh-ai-card--warn .mh-analysis-category, .mh-ai-card--warn .mh-europe-head { color:#854d0e; }
+.mh-ai-card--reject .mh-analysis-category, .mh-ai-card--reject .mh-europe-head { color:#991b1b; }
+.mh-ai-card--pass .mh-score { border-color:#86efac; color:#166534; }
+.mh-ai-card--warn .mh-score { border-color:#facc15; color:#854d0e; }
+.mh-ai-card--reject .mh-score { border-color:#fca5a5; color:#991b1b; }
 .mh-europe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:13px; font-weight:800; color:#166534; }
 .mh-score { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:26px; padding:0 8px; border-radius:6px; background:#166534; color:#fff; font-size:14px; }
 .mh-europe-list { margin:5px 0 0; padding-left:18px; color:#365349; font-size:12px; line-height:1.45; }
@@ -102,7 +111,6 @@ button.mh-link-btn { cursor:pointer; }
 .mh-product img, .mh-product-empty { width:108px; height:108px; border-radius:6px; object-fit:cover; background:#e2e8f0; }
 .mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
 .mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
-.mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
 .mh-analysis-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
 .mh-analysis-category { margin-bottom:6px; color:#64748b; font-size:12px; font-weight:800; }
 .mh-analysis-head .mh-analysis-category { margin-bottom:0; }
@@ -865,6 +873,26 @@ function metaHotAiAnalysisHasChinese(row, mode) {
   }
   return false;
 }
+function aiAnalysisToneClass(tone) {
+  if (tone === 'pass') return ' mh-ai-card--pass';
+  if (tone === 'warn') return ' mh-ai-card--warn';
+  if (tone === 'reject') return ' mh-ai-card--reject';
+  return '';
+}
+function usAiAnalysisTone(recommendation) {
+  const value = String(recommendation || '').trim().toLowerCase();
+  if (value === 'copy') return 'pass';
+  if (value === 'adapt') return 'warn';
+  if (value === 'avoid') return 'reject';
+  return '';
+}
+function europeAiAnalysisTone(recommendation) {
+  const value = String(recommendation || '').trim().toLowerCase();
+  if (value === 'translate_and_launch' || value === 'direct_reuse') return 'pass';
+  if (value === 'adapt_before_translation' || value === 'adapt_before_use') return 'warn';
+  if (value === 'not_recommended') return 'reject';
+  return '';
+}
 function renderAiTranslateZhButton(postId, mode, hasChinese) {
   const safeId = Number(postId || 0);
   if (hasChinese) return '';
@@ -878,7 +906,8 @@ function renderEuropeFitPanel(row) {
   const strengths = listItems(row.europe_fit_strengths_zh || row.europe_fit_strengths);
   const risks = listItems(row.europe_fit_risks_zh || row.europe_fit_risks);
   const changes = listItems(row.europe_fit_required_changes_zh || row.europe_fit_required_changes);
-  return `<div class="mh-europe-panel">
+  const toneClass = aiAnalysisToneClass(europeAiAnalysisTone(row.europe_fit_recommendation));
+  return `<div class="mh-europe-panel${toneClass}">
     <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>${renderAiTranslateZhButton(row.id, 'europe_translation', metaHotAiAnalysisHasChinese(row, 'europe_translation'))}</div>
     <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
     <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
@@ -892,7 +921,8 @@ function copyabilityBlock(row) {
   const data = row.video_copyability || null;
   if (!data) return '';
   const summary = data.summary_zh || data.summary || '';
-  return `<div class="mh-copyability">
+  const toneClass = aiAnalysisToneClass(usAiAnalysisTone(data.recommendation));
+  return `<div class="mh-copyability${toneClass}">
     <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>${renderAiTranslateZhButton(row.id, 'us_copyability', metaHotAiAnalysisHasChinese(row, 'us_copyability'))}</div>
     <div class="mh-score-list">
       <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
