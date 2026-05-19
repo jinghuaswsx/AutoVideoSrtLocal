@@ -1224,6 +1224,61 @@ def test_detail_images_reorder_route_delegates_response_building(authed_client_n
     assert captured == {"pid": 123, "body": {"lang": "de", "ids": [2, 1]}}
 
 
+def test_detail_image_replace_bootstrap_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_build(pid, image_id, body, user_id):
+        captured.update({"pid": pid, "image_id": image_id, "body": body, "user_id": user_id})
+        return SimpleNamespace(payload={"upload": {"object_key": "new.jpg"}}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_image_replace_bootstrap_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/9/replace-bootstrap",
+        json={"file": {"filename": "new.jpg", "content_type": "image/jpeg", "size": 12}},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"upload": {"object_key": "new.jpg"}}
+    assert captured == {
+        "pid": 123,
+        "image_id": 9,
+        "body": {"file": {"filename": "new.jpg", "content_type": "image/jpeg", "size": 12}},
+        "user_id": 1,
+    }
+
+
+def test_detail_image_replace_complete_route_delegates_response_building(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_build(pid, image_id, body):
+        captured.update({"pid": pid, "image_id": image_id, "body": body})
+        return SimpleNamespace(payload={"item": {"id": image_id}}, status_code=200)
+
+    monkeypatch.setattr(r, "_build_detail_image_replace_complete_response", fake_build)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/9/replace-complete",
+        json={"image": {"object_key": "new.jpg", "content_type": "image/jpeg"}},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"item": {"id": 9}}
+    assert captured == {
+        "pid": 123,
+        "image_id": 9,
+        "body": {"image": {"object_key": "new.jpg", "content_type": "image/jpeg"}},
+    }
+
+
 def test_detail_images_cleanup_loop_exits_without_tick_when_shutdown_requested(monkeypatch):
     from appcore import medias_detail_fetch_tasks as mdf
     from appcore import shutdown_coordinator

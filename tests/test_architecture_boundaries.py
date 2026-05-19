@@ -657,7 +657,12 @@ def test_detail_image_upload_responses_live_outside_route_module():
     module_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
     route_sources = []
-    for function_name in ("api_detail_images_bootstrap", "api_detail_images_complete"):
+    for function_name in (
+        "api_detail_images_bootstrap",
+        "api_detail_images_complete",
+        "api_detail_image_replace_bootstrap",
+        "api_detail_image_replace_complete",
+    ):
         route_function = next(
             node
             for node in module.body
@@ -676,6 +681,7 @@ def test_detail_image_upload_responses_live_outside_route_module():
                 "build_media_object_key",
                 "add_detail_image",
                 "get_detail_image",
+                "replace_detail_image_asset",
             }
         ]
         assert direct_detail_calls == []
@@ -688,6 +694,8 @@ def test_detail_image_upload_responses_live_outside_route_module():
     assert "jsonify(" not in route_source
     assert "_build_detail_images_bootstrap_response" in route_source
     assert "_build_detail_images_complete_response" in route_source
+    assert "_build_detail_image_replace_bootstrap_response" in route_source
+    assert "_build_detail_image_replace_complete_response" in route_source
     assert "_detail_image_json_flask_response" in route_source
     assert Path("web/services/media_detail_uploads.py").exists()
 

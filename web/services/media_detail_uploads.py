@@ -91,6 +91,31 @@ def optional_int(value) -> int | None:
     return _optional_int(value)
 
 
+def _active_detail_image(
+    product_id: int,
+    image_id: int,
+    get_detail_image_fn: Callable[[int], Mapping[str, object] | None],
+) -> Mapping[str, object] | None:
+    row = get_detail_image_fn(image_id)
+    if (
+        not isinstance(row, Mapping)
+        or _optional_int(row.get("product_id")) != int(product_id)
+        or row.get("deleted_at") is not None
+    ):
+        return None
+    return row
+
+
+def _best_effort_delete(object_key: object, delete_media_object_fn: Callable[[str], object]) -> None:
+    key = str(object_key or "").strip()
+    if not key:
+        return
+    try:
+        delete_media_object_fn(key)
+    except Exception:
+        pass
+
+
 def build_detail_images_bootstrap_response(
     product_id: int,
     user_id: int,
@@ -179,3 +204,88 @@ def build_detail_images_complete_response(
             created.append(serialize_detail_image_fn(row))
 
     return DetailImageUploadResponse({"items": created}, 201)
+
+
+def build_detail_image_replace_bootstrap_response(
+    product_id: int,
+    image_id: int,
+    user_id: int,
+    body: Mapping[str, object] | None,
+    *,
+    get_detail_image_fn: Callable[[int], Mapping[str, object] | None],
+    reserve_local_media_upload_fn: Callable[[str], dict],
+    build_media_object_key_fn: Callable[[int, int, str], str],
+) -> DetailImageUploadResponse:
+    row = _active_detail_image(product_id, image_id, get_detail_image_fn)
+    if row is None:
+        return DetailImageUploadResponse({"error": "detail image not found"}, 404)
+
+    body_dict = dict(body or {})
+    file_info = body_dict.get("file")
+    if not isinstance(file_info, Mapping):
+        return DetailImageUploadResponse({"error": "file required"}, 400)
+    validation = validate_upload_files([dict(file_info)])
+    if validation.error:
+        return DetailImageUploadResponse({"error": validation.error.replace("files[0]", "file")}, 400)
+    item = validation.items[0]
+
+    lang = str(row.get("lang") or "en").strip().lower() or "en"
+    object_key = build_media_object_key_fn(
+        user_id,
+        product_id,
+        f"detail_{lang}_replace_{int(image_id)}_{item['filename']}",
+    )
+    upload = {
+        "idx": 0,
+        "object_key": object_key,
+        "upload_url": reserve_local_media_upload_fn(object_key)["upload_url"],
+    }
+    return DetailImageUploadResponse({
+        "upload": upload,
+        "storage_backend": "local",
+    })
+
+
+def build_detail_image_replace_complete_response(
+    product_id: int,
+    image_id: int,
+    body: Mapping[str, object] | None,
+    *,
+    get_detail_image_fn: Callable[[int], Mapping[str, object] | None],
+    is_media_available_fn: Callable[[str], bool],
+    replace_detail_image_asset_fn: Callable[..., int],
+    serialize_detail_image_fn: Callable[[Mapping[str, object]], dict],
+    delete_media_object_fn: Callable[[str], object],
+) -> DetailImageUploadResponse:
+    row = _active_detail_image(product_id, image_id, get_detail_image_fn)
+    if row is None:
+        return DetailImageUploadResponse({"error": "detail image not found"}, 404)
+
+    body_dict = dict(body or {})
+    image_info = body_dict.get("image")
+    validation = validate_completed_images(
+        [dict(image_info)] if isinstance(image_info, Mapping) else [],
+        is_media_available=is_media_available_fn,
+    )
+    if validation.error:
+        return DetailImageUploadResponse({"error": validation.error.replace("images[0]", "image")}, 400)
+    image = validation.items[0]
+
+    replace_detail_image_asset_fn(
+        image_id,
+        object_key=image["object_key"],
+        content_type=image.get("content_type") or None,
+        file_size=optional_int(image.get("file_size") or image.get("size")),
+        width=optional_int(image.get("width")),
+        height=optional_int(image.get("height")),
+    )
+    updated = get_detail_image_fn(image_id)
+    if not isinstance(updated, Mapping):
+        return DetailImageUploadResponse({"error": "detail image not found"}, 404)
+
+    old_key = str(row.get("object_key") or "").strip()
+    new_key = str(image.get("object_key") or "").strip()
+    if old_key and old_key != new_key:
+        _best_effort_delete(old_key, delete_media_object_fn)
+
+    return DetailImageUploadResponse({"item": serialize_detail_image_fn(updated)})
