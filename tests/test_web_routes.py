@@ -3528,6 +3528,25 @@ def test_image_translate_detail_script_has_banana_regenerate_action():
     assert "/banana-retry/" in scripts
 
 
+def test_image_translate_detail_has_channel_rerun_controls():
+    root = Path(__file__).resolve().parents[1]
+    detail_template = (root / "web" / "templates" / "image_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert 'id="itRerunChannel"' in detail_template
+    assert "换通道重跑" in detail_template
+    assert 'id="itChannelRerunModal"' in detail_template
+    assert 'id="itRerunChannelPills"' in detail_template
+    assert 'id="itRerunModelPills"' in detail_template
+    assert 'id="itRerunConcurrencyPills"' in detail_template
+    assert "只有 APIMART 可以并行" in detail_template
+    assert "/rerun-unfinished" in scripts
+    assert "loadRerunModels" in scripts
+    assert "enforceRerunConcurrency" in scripts
+    assert "it-rerun-modal" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

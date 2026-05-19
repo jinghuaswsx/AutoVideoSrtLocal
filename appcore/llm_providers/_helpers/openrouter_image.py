@@ -12,9 +12,17 @@ from typing import Any
 from openai import OpenAI
 
 
-def make_openrouter_image_client(api_key: str, base_url: str) -> OpenAI:
+def make_openrouter_image_client(
+    api_key: str,
+    base_url: str,
+    *,
+    timeout: float | None = None,
+) -> OpenAI:
     """创建 OpenRouter image 通道用的 OpenAI 兼容客户端。"""
-    return OpenAI(api_key=api_key, base_url=base_url)
+    kwargs = {"api_key": api_key, "base_url": base_url}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return OpenAI(**kwargs)
 
 
 def request_openrouter_image(

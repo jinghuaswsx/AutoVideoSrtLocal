@@ -68,6 +68,31 @@ def test_generate_image_returns_bytes_and_mime():
     assert kwargs["success"] is True
 
 
+def test_generate_image_passes_timeout_to_genai_request():
+    from appcore import gemini_image
+
+    client = MagicMock()
+    client.models.generate_content.return_value = _fake_response(b"PNG-BYTES", "image/png")
+    with patch.object(gemini_image, "_get_image_client", return_value=client), \
+         patch.object(
+             gemini_image,
+             "_resolve_gemini_image_credentials",
+             return_value=("KEY", "", "", "gemini-3-pro-image-preview"),
+         ), \
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image.ai_billing, "log_request"):
+        gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="gemini-3-pro-image-preview",
+            timeout_seconds=120,
+        )
+
+    config = client.models.generate_content.call_args.kwargs["config"]
+    assert config.http_options.timeout == 120_000
+
+
 def test_generate_image_cloud_channel_uses_vertex_backend():
     from appcore import gemini_image
 
@@ -404,6 +429,25 @@ def test_generate_via_seedream_maps_401_to_error():
                 "doubao-seedream-5-0-260128",
                 api_key="DB-KEY",
                 base_url="https://ark.example.com",
+            )
+
+
+def test_generate_via_seedream_timeout_is_terminal():
+    from appcore import gemini_image
+
+    with patch(
+        "appcore.gemini_image.requests.post",
+        side_effect=gemini_image.requests.Timeout("read timed out"),
+    ):
+        with pytest.raises(gemini_image.GeminiImageTimeout):
+            gemini_image._generate_via_seedream(
+                "translate",
+                b"RAW",
+                "image/jpeg",
+                "doubao-seedream-5-0-260128",
+                api_key="DB-KEY",
+                base_url="https://ark.example.com",
+                timeout_seconds=120,
             )
 
 

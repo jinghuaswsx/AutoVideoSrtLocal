@@ -962,6 +962,19 @@ def test_result_download_redirects_when_done(authed_client_no_db, monkeypatch):
     assert "out_0.png" in resp.headers["Location"]
 
 
+def test_detail_page_renders_channel_rerun_controls(authed_client_no_db, monkeypatch):
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+
+    resp = authed_client_no_db.get(f"/image-translate/{tid}")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "换通道重跑" in body
+    assert 'id="itChannelRerunModal"' in body
+    assert 'id="itRerunChannelPills"' in body
+    assert "只有 APIMART 可以并行" in body
+
+
 def test_retry_failed_item_resets_and_triggers_runner(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
@@ -1353,6 +1366,121 @@ def test_retry_unfinished_409_when_all_done(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-unfinished")
     assert resp.status_code == 409
     assert "没有" in resp.get_json().get("error", "")
+
+
+def test_rerun_unfinished_with_channel_updates_task_and_keeps_successes(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["items"] = [
+        {"idx": 0, "filename": "a.jpg", "src_tos_key": "s/a", "dst_tos_key": "d/success",
+         "status": "done", "attempts": 1, "error": ""},
+        {"idx": 1, "filename": "b.jpg", "src_tos_key": "s/b", "dst_tos_key": "d/failed-old",
+         "status": "failed", "attempts": 3, "error": "timeout"},
+        {"idx": 2, "filename": "c.jpg", "src_tos_key": "s/c", "dst_tos_key": "",
+         "status": "running", "attempts": 1, "error": ""},
+        {"idx": 3, "filename": "d.jpg", "src_tos_key": "s/d", "dst_tos_key": "",
+         "status": "done", "attempts": 1, "error": "missing result"},
+    ]
+    task["progress"] = {"total": 4, "done": 1, "failed": 1, "running": 1}
+    task["channel"] = "apimart"
+    task["model_id"] = "gpt-image-2"
+    task["concurrency_mode"] = "parallel"
+    task["status"] = "error"
+    deleted: list[str] = []
+    started: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda key: deleted.append(key))
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+    monkeypatch.setattr(r, "_start_runner", lambda task_id, uid: started.append((task_id, uid)) or True)
+    monkeypatch.setattr(store, "update", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "sequential",
+            "channel": "doubao",
+            "model_id": "doubao-seedream-5-0-260128",
+        },
+    )
+
+    assert resp.status_code == 202
+    data = resp.get_json()
+    assert data["reset"] == 3
+    assert data["channel"] == "doubao"
+    assert data["model_id"] == "doubao-seedream-5-0-260128"
+    assert data["concurrency_mode"] == "sequential"
+    assert task["channel"] == "doubao"
+    assert task["model_id"] == "doubao-seedream-5-0-260128"
+    assert task["concurrency_mode"] == "sequential"
+    assert task["items"][0]["status"] == "done"
+    assert task["items"][0]["dst_tos_key"] == "d/success"
+    assert all(item["status"] == "pending" for item in task["items"][1:])
+    assert task["items"][1]["dst_tos_key"] == ""
+    assert task["items"][1]["error"] == ""
+    assert task["progress"] == {"total": 4, "done": 1, "failed": 0, "running": 0}
+    assert task["status"] == "queued"
+    assert deleted == ["d/failed-old"]
+    assert started
+
+
+def test_rerun_unfinished_with_channel_rejects_invalid_model(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "parallel",
+            "channel": "doubao",
+            "model_id": "gemini-3-pro-image-preview",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported model"
+
+
+def test_rerun_unfinished_with_channel_rejects_parallel_for_non_apimart(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: False)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "parallel",
+            "channel": "doubao",
+            "model_id": "doubao-seedream-5-0-260128",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "parallel mode requires APIMART channel"
+
+
+def test_rerun_unfinished_with_channel_409_when_runner_active(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda task_id: True)
+
+    resp = authed_client_no_db.post(
+        f"/api/image-translate/{tid}/rerun-unfinished",
+        json={
+            "concurrency_mode": "parallel",
+            "channel": "doubao",
+            "model_id": "doubao-seedream-5-0-260128",
+        },
+    )
+
+    assert resp.status_code == 409
 
 
 def _post_complete(client, body_extra=None):

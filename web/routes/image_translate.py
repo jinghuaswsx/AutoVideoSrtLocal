@@ -133,7 +133,11 @@ def _task_belongs_to_current_user(task: dict) -> bool:
 
 
 def _is_superadmin_user() -> bool:
-    return getattr(current_user, "is_superadmin", False)
+    return (
+        bool(getattr(current_user, "is_superadmin", False))
+        or bool(getattr(current_user, "is_admin", False))
+        or (getattr(current_user, "role", "") == "admin")
+    )
 
 
 def _get_owned_task(task_id: str) -> dict:
@@ -300,6 +304,10 @@ def _update_task_progress_from_items(task: dict) -> None:
         "failed": sum(1 for it in items if it.get("status") == "failed"),
         "running": sum(1 for it in items if it.get("status") == "running"),
     }
+
+
+def _item_has_success_result(item: dict) -> bool:
+    return item.get("status") == "done" and bool((item.get("dst_tos_key") or "").strip())
 
 
 def _auto_apply_if_all_done(task: dict) -> None:
@@ -987,6 +995,95 @@ def api_retry_unfinished(task_id: str):
     )
 
 
+@bp.route("/api/image-translate/<task_id>/rerun-unfinished", methods=["POST"])
+@login_required
+def api_rerun_unfinished_with_channel(task_id: str):
+    task = _get_retryable_task(task_id)
+    if image_translate_runner.is_running(task_id):
+        return image_translate_flask_response(
+            build_image_translate_error_response("任务正在跑，等跑完再重跑", 409)
+        )
+
+    body = request.get_json(silent=True) or {}
+    channel = _requested_image_translate_channel(body.get("channel") or task.get("channel"))
+    if not channel:
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported channel", 400)
+        )
+    model_id = (body.get("model_id") or task.get("model_id") or "").strip()
+    if not is_valid_image_model(model_id, channel=channel):
+        return image_translate_flask_response(
+            build_image_translate_error_response("unsupported model", 400)
+        )
+    mode_raw = (
+        body.get("concurrency_mode")
+        or task.get("concurrency_mode")
+        or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+    )
+    concurrency_mode = str(mode_raw).strip().lower()
+    if concurrency_mode not in {"sequential", "parallel"}:
+        return image_translate_flask_response(
+            build_image_translate_error_response("concurrency_mode must be sequential or parallel", 400)
+        )
+    if concurrency_mode == "parallel" and channel != "apimart":
+        return image_translate_flask_response(
+            build_image_translate_error_response("parallel mode requires APIMART channel", 400)
+        )
+
+    items = task.get("items") or []
+    reset_count = 0
+    for item in items:
+        if _item_has_success_result(item):
+            continue
+        old_dst = (item.get("dst_tos_key") or "").strip()
+        if old_dst:
+            _delete_artifact_object(old_dst)
+        _reset_item_processing_state(item)
+        reset_count += 1
+    if reset_count == 0:
+        return image_translate_flask_response(
+            build_image_translate_error_response("没有需要重跑的图片", 409)
+        )
+
+    task["channel"] = channel
+    task["model_id"] = model_id
+    task["concurrency_mode"] = concurrency_mode
+    task["status"] = "queued"
+    task["error"] = ""
+    task.setdefault("steps", {})["process"] = "pending"
+    task["progress"] = {
+        "total": len(items),
+        "done": sum(1 for it in items if _item_has_success_result(it)),
+        "failed": 0,
+        "running": 0,
+    }
+    store.update(
+        task_id,
+        items=items,
+        progress=task["progress"],
+        status="queued",
+        channel=channel,
+        model_id=model_id,
+        concurrency_mode=concurrency_mode,
+        steps=task.get("steps", {}),
+        error="",
+    )
+    _start_runner(task_id, _task_runner_user_id(task))
+    return image_translate_flask_response(
+        build_image_translate_payload_response(
+            {
+                "task_id": task_id,
+                "reset": reset_count,
+                "status": "queued",
+                "channel": channel,
+                "model_id": model_id,
+                "concurrency_mode": concurrency_mode,
+            },
+            status_code=202,
+        )
+    )
+
+
 @bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
 @login_required
 def api_download_zip(task_id: str):
@@ -1142,6 +1239,7 @@ def page_detail(task_id: str):
         task_id=task_id,
         state=_state_payload(task),
         gemini_backend=_backend_badge(task.get("channel")),
+        image_translate_channels=_image_translate_channels_payload(),
     )
 
 
