@@ -807,6 +807,52 @@ def test_sentence_units_subtitle_triggers_quality_assessment(
     }]
 
 
+def test_compose_recovers_av_srt_path_from_preview_file(
+    monkeypatch,
+    tmp_path,
+    omni_runner,
+):
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    task_id = "omni-compose-preview-srt"
+    video_path = tmp_path / "video.mp4"
+    audio_path = tmp_path / "tts_full.av.mp3"
+    srt_path = tmp_path / "subtitle.av.srt"
+    hard_video_path = tmp_path / "hard.mp4"
+    video_path.write_bytes(b"video")
+    audio_path.write_bytes(b"audio")
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nBonjour\n", encoding="utf-8")
+
+    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4", user_id=1)
+    task_state.update(
+        task_id,
+        plugin_config=CFG_AV_SYNC_CURRENT,
+        preview_files={"srt": str(srt_path), "tts_full_audio": str(audio_path)},
+        variants={"av": {"label": "av", "tts_audio_path": str(audio_path)}},
+    )
+
+    captured: dict = {}
+
+    def fake_compose_video(**kwargs):
+        captured.update(kwargs)
+        return {"hard_video": str(hard_video_path), "soft_video": ""}
+
+    monkeypatch.setattr("pipeline.compose.compose_video", fake_compose_video)
+    try:
+        omni_runner._step_compose(task_id, str(video_path), str(tmp_path))
+        updated = task_state.get(task_id)
+    finally:
+        with task_state._lock:
+            task_state._tasks.pop(task_id, None)
+
+    assert captured["srt_path"] == str(srt_path)
+    assert updated["variants"]["av"]["srt_path"] == str(srt_path)
+
+
 def test_sentence_units_subtitle_applies_safe_splitting(
     monkeypatch, tmp_path, omni_runner,
 ):

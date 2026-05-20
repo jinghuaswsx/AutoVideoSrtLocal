@@ -118,6 +118,70 @@ def test_omni_translate_voice_library_accepts_pagination(authed_client_no_db, mo
     }
 
 
+def test_omni_task_get_keeps_active_memory_state_over_stale_db_hydrate(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import task_state
+
+    task_id = "task-hydrate-race"
+    srt_path = str(tmp_path / "subtitle.av.srt")
+    audio_path = str(tmp_path / "tts_full.av.mp3")
+    (tmp_path / "subtitle.av.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nBonjour\n", encoding="utf-8")
+    (tmp_path / "tts_full.av.mp3").write_bytes(b"audio")
+
+    active_local_state = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "omni_translate",
+        "status": "running",
+        "steps": {"subtitle": "done", "compose": "pending"},
+        "plugin_config": {
+            **CFG_DYNAMIC_ALL,
+            "tts_strategy": "sentence_reconcile",
+            "subtitle": "sentence_units",
+        },
+        "preview_files": {"srt": srt_path, "tts_full_audio": audio_path},
+        "variants": {
+            "av": {
+                "label": "av",
+                "srt_path": srt_path,
+                "tts_audio_path": audio_path,
+            }
+        },
+    }
+    stale_db_state = {
+        **active_local_state,
+        "preview_files": {},
+        "variants": {"av": {"label": "av", "tts_audio_path": audio_path}},
+    }
+
+    def fake_query_viewable_project(_task_id, columns="*", *, include_deleted=True):
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "state_json": json.dumps(stale_db_state),
+            "task_dir": str(tmp_path),
+        }
+
+    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_query_viewable_project)
+    monkeypatch.setattr("web.routes.omni_translate.is_task_active", lambda project_type, _task_id: True)
+    with task_state._lock:
+        task_state._tasks[task_id] = active_local_state
+    try:
+        resp = authed_client_no_db.get(f"/api/omni-translate/{task_id}")
+    finally:
+        with task_state._lock:
+            task_state._tasks.pop(task_id, None)
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["variants"]["av"]["srt_path"] == srt_path
+    assert payload["preview_files"]["srt"] == srt_path
+
+
 def test_omni_rematch_uses_speed_aware_voice_match(authed_client_no_db):
     normalized_utterances = [{"text": "hello world", "start_time": 0, "end_time": 1}]
     state = {
