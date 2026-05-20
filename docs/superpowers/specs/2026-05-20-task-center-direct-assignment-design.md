@@ -64,6 +64,10 @@
 
 - 只改说明文案，把“认领后自动提交牛马”改成“指派后自动提交牛马”
 
+### `scheduled_tasks.py`
+
+- 定时任务登记中的牛马监听说明同步为“指派触发”，避免后台仍展示旧的认领流程。
+
 ## 测试
 
 1. 服务层：父任务创建后的 `status / assignee_id / claimed_at / event payload`

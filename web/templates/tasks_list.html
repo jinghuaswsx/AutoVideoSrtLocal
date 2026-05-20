@@ -305,7 +305,7 @@ function tcEventPayloadUserDisplay(event, payload, key) {
   return name ? String(name) : '用户 #' + idText;
 }
 const TC_EVENT_TEXT = {
-  created: { title: '创建任务', progress: '待认领/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
+  created: { title: '创建任务', progress: '已指派/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
   claimed: { title: '认领原始视频任务', progress: '原始视频处理中', tone: 'info', summary: '处理人已接手原始视频处理。' },
   raw_niuma_submitted: { title: '提交牛马去字幕', progress: '自动去字幕中', tone: 'info', summary: '原始视频已提交到牛马去字幕流程。' },
   raw_niuma_done: { title: '牛马去字幕完成', progress: '等待提交审核', tone: 'success', summary: '自动去字幕已完成，可以进入原始视频审核。' },
