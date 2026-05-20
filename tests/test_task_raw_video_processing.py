@@ -119,6 +119,7 @@ def test_start_niuma_processing_prepares_subtitle_task_and_watcher(monkeypatch, 
     assert runner_calls == [("tcraw-5-fixed", 9)]
     assert watcher_calls[0]["parent_task_id"] == 5
     assert events[0][1] == "raw_niuma_submitted"
+    assert events[0][3]["subtitle_backend"] == "niuma"
 
 
 def test_start_niuma_processing_rejects_runner_start_failure(monkeypatch, tmp_path):
