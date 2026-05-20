@@ -239,6 +239,101 @@ def _material_status_lookup_key(video_path: Any) -> str:
     return normalize_mk_media_path(str(video_path or ""))
 
 
+def _legacy_material_name_key(value: Any) -> str:
+    raw = normalize_mk_media_path(str(value or ""))
+    if not raw:
+        return ""
+    raw = raw.split("?", 1)[0].split("#", 1)[0]
+    return re.sub(r"\s+", " ", os.path.basename(raw).strip().lower())
+
+
+def _legacy_material_match_keys(item: dict[str, Any]) -> set[str]:
+    metadata = item.get("mk_video_metadata") if isinstance(item.get("mk_video_metadata"), dict) else {}
+    values = [
+        item.get("video_name"),
+        item.get("video_path"),
+        metadata.get("name"),
+        metadata.get("filename"),
+        metadata.get("video_path"),
+        metadata.get("path"),
+    ]
+    return {key for key in (_legacy_material_name_key(value) for value in values) if key}
+
+
+def _legacy_media_row_match_keys(row: dict[str, Any]) -> set[str]:
+    return {
+        key
+        for key in (
+            _legacy_material_name_key(row.get("filename")),
+            _legacy_material_name_key(row.get("display_name")),
+            _legacy_material_name_key(row.get("object_key")),
+        )
+        if key
+    }
+
+
+def _legacy_keys_match(card_key: str, media_key: str) -> bool:
+    if not card_key or not media_key:
+        return False
+    return media_key == card_key or media_key.endswith(card_key)
+
+
+def _legacy_material_rows_by_product(product_ids: set[int]) -> dict[int, list[dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if pid})
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = query(
+        "SELECT i.id AS media_item_id, i.product_id AS media_product_id, "
+        "       p.product_code, i.filename, i.display_name, i.object_key, i.created_at "
+        "FROM media_items i "
+        "JOIN media_products p ON p.id=i.product_id "
+        f"WHERE i.product_id IN ({placeholders}) "
+        "  AND i.lang='en' "
+        "  AND i.deleted_at IS NULL "
+        "  AND p.deleted_at IS NULL",
+        tuple(ids),
+    )
+    out: dict[int, list[dict[str, Any]]] = {}
+    for row in rows or []:
+        pid = _as_int(row.get("media_product_id"))
+        if pid:
+            out.setdefault(pid, []).append(row)
+    return out
+
+
+def _legacy_material_status_for_item(
+    item: dict[str, Any],
+    *,
+    product_status: dict[str, Any],
+    rows_by_product: dict[int, list[dict[str, Any]]],
+    lookup_key: str,
+) -> dict[str, Any] | None:
+    product_id = _as_int(product_status.get("media_product_id"))
+    if not product_id:
+        return None
+    card_keys = _legacy_material_match_keys(item)
+    if not card_keys:
+        return None
+    for row in rows_by_product.get(product_id, []):
+        media_keys = _legacy_media_row_match_keys(row)
+        if any(_legacy_keys_match(card_key, media_key) for card_key in card_keys for media_key in media_keys):
+            return {
+                "status_scope": _AD_STATUS_SCOPE_MATERIAL,
+                "lookup_key": lookup_key,
+                "product_code": str(row.get("product_code") or product_status.get("product_code") or ""),
+                "media_product_id": product_id,
+                "media_item_id": row.get("media_item_id"),
+                "has_local_match": True,
+                "has_running_ad": False,
+                "ad_spend_usd": 0.0,
+                "latest_activity_at": _iso_datetime(row.get("created_at")),
+                "summary": {"source": "media_items_legacy_product_scope"},
+                "refreshed_at": None,
+            }
+    return None
+
+
 def _media_search_url(media_search_code: str) -> str:
     return f"/medias/?q={quote(media_search_code, safe='')}" if media_search_code else ""
 
@@ -315,6 +410,8 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
     product_cache = _status_cache_by_hash(_AD_STATUS_SCOPE_PRODUCT, product_hashes)
     material_cache = _status_cache_by_hash(_AD_STATUS_SCOPE_MATERIAL, material_hashes)
 
+    matched_product_ids: set[int] = set()
+    preliminary: list[tuple[dict[str, Any], str, str, str, str, dict[str, Any], dict[str, Any]]] = []
     for item, media_code, material_key, product_hash, material_hash in per_item:
         product_status = _serialize_ad_status_row(
             product_cache.get(product_hash),
@@ -326,10 +423,28 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
             scope=_AD_STATUS_SCOPE_MATERIAL,
             lookup_key=material_key,
         )
+        product_id = _as_int(product_status.get("media_product_id"))
+        if product_id and not material_status["has_local_match"]:
+            matched_product_ids.add(product_id)
+        preliminary.append((item, media_code, material_key, product_hash, material_hash, product_status, material_status))
+
+    legacy_rows_by_product = _legacy_material_rows_by_product(matched_product_ids)
+
+    for item, media_code, material_key, _product_hash, _material_hash, product_status, material_status in preliminary:
+        if not material_status["has_local_match"]:
+            legacy_status = _legacy_material_status_for_item(
+                item,
+                product_status=product_status,
+                rows_by_product=legacy_rows_by_product,
+                lookup_key=material_key,
+            )
+            if legacy_status:
+                material_status = legacy_status
         item["media_search_code"] = media_code
         item["media_search_url"] = _media_search_url(media_code)
         item["product_ad_status"] = product_status
         item["material_ad_status"] = material_status
+        item["has_local_product_in_library"] = bool(product_status["has_local_match"])
         item["has_local_product_running_ad"] = bool(
             product_status["has_local_match"] and product_status["has_running_ad"]
         )

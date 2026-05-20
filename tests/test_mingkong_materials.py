@@ -935,6 +935,128 @@ def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
     assert any("mingkong_material_ad_status_cache" in entry[1] for entry in captured if entry[0] == "query")
 
 
+def test_material_library_marks_video_in_library_only_within_matched_product(monkeypatch):
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 2}
+        if "mingkong_material_sync_runs" in sql:
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        if "FROM mingkong_material_ad_status_cache" in sql:
+            if args and args[0] == "product":
+                return [
+                    {
+                        "status_scope": "product",
+                        "lookup_hash": mm.status_lookup_hash("cool-widget-rjc"),
+                        "lookup_key": "cool-widget-rjc",
+                        "product_code": "cool-widget-rjc",
+                        "media_product_id": 7,
+                        "media_item_id": None,
+                        "has_local_match": 1,
+                        "has_running_ad": 1,
+                        "ad_spend_usd": 42,
+                        "latest_activity_at": None,
+                        "summary_json": "{}",
+                        "refreshed_at": datetime(2026, 5, 18, 12, 0, 0),
+                    },
+                    {
+                        "status_scope": "product",
+                        "lookup_hash": mm.status_lookup_hash("other-widget-rjc"),
+                        "lookup_key": "other-widget-rjc",
+                        "product_code": "other-widget-rjc",
+                        "media_product_id": 8,
+                        "media_item_id": None,
+                        "has_local_match": 1,
+                        "has_running_ad": 0,
+                        "ad_spend_usd": 0,
+                        "latest_activity_at": None,
+                        "summary_json": "{}",
+                        "refreshed_at": datetime(2026, 5, 18, 12, 0, 0),
+                    },
+                ]
+            return []
+        if "FROM media_items" in sql:
+            return [
+                {
+                    "media_item_id": 11,
+                    "media_product_id": 7,
+                    "product_code": "cool-widget-rjc",
+                    "filename": "winner.mp4",
+                    "display_name": "winner.mp4",
+                    "object_key": "7/medias/winner.mp4",
+                    "created_at": datetime(2026, 5, 18, 13, 0, 0),
+                }
+            ]
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "video_name": "winner.mp4",
+                "video_path": "/medias/uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "cumulative_90_spend": 12000,
+                "video_ads_count": 9,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            },
+            {
+                "id": 2,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "def",
+                "product_code": "other-widget",
+                "rank_position": 8,
+                "video_name": "winner.mp4",
+                "video_path": "/medias/uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "cumulative_90_spend": 8000,
+                "video_ads_count": 3,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            },
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(keyword="winner", page=1, page_size=100)
+    by_code = {item["product_code"]: item for item in result["items"]}
+
+    assert by_code["cool-widget"]["has_local_material_in_library"] is True
+    assert by_code["cool-widget"]["material_ad_status"]["media_item_id"] == 11
+    assert by_code["cool-widget"]["material_ad_status"]["summary"]["source"] == "media_items_legacy_product_scope"
+    assert by_code["other-widget"]["has_local_product_in_library"] is True
+    assert by_code["other-widget"]["has_local_product_running_ad"] is False
+    assert by_code["other-widget"]["has_local_material_in_library"] is False
+    assert by_code["other-widget"]["material_ad_status"]["media_item_id"] is None
+
+
 def test_refresh_ad_status_cache_materializes_product_and_material_rows(monkeypatch):
     writes = []
     finishes = []

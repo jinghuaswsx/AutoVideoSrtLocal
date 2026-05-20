@@ -471,8 +471,10 @@ function mkStatusIconSvg(type) {
 
 function renderMkStatusIconCluster(r) {
   const icons = [];
-  if (r.has_local_product_running_ad) {
-    icons.push(`<span class="mk-status-icon mk-status-icon--product" title="产品已在素材库且有消耗广告计划" aria-label="产品已在素材库且有消耗广告计划">${mkStatusIconSvg('product')}</span>`);
+  const hasProductInLibrary = Boolean(r.has_local_product_in_library || (r.product_ad_status && r.product_ad_status.has_local_match));
+  if (hasProductInLibrary) {
+    const productTitle = r.has_local_product_running_ad ? '产品已在素材库且有消耗广告计划' : '产品已在素材库';
+    icons.push(`<span class="mk-status-icon mk-status-icon--product" title="${productTitle}" aria-label="${productTitle}">${mkStatusIconSvg('product')}</span>`);
   }
   if (r.has_local_material_in_library) {
     icons.push(`<span class="mk-status-icon mk-status-icon--video" title="视频素材已在素材库" aria-label="视频素材已在素材库">${mkStatusIconSvg('video')}</span>`);
@@ -769,6 +771,7 @@ function renderMkVideoMaterialCard(r) {
   const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
   const statusIconsHtml = renderMkStatusIconCluster(r);
   const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
+  const isMaterialImported = Boolean(r.has_local_material_in_library);
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
   const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
@@ -813,7 +816,7 @@ function renderMkVideoMaterialCard(r) {
       <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
       <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
     </div>
-    <button class="mki-btn mki-btn--add"
+    <button class="mki-btn mki-btn--add ${isMaterialImported ? 'mki-btn--disabled' : ''}"
         data-mki-filename="${escapeHtml(r.video_name || '')}"
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
@@ -823,8 +826,9 @@ function renderMkVideoMaterialCard(r) {
         data-mki-main-image="${escapeHtml(r.main_image || '')}"
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        ${isMaterialImported ? 'disabled' : ''}
         onclick="mkiHandleClick(this)">
-      加入素材库
+      ${isMaterialImported ? '已入库' : '加入素材库'}
     </button>
     <button class="mki-btn mki-btn--xiao"
         data-mki-filename="${escapeHtml(r.video_name || '')}"
