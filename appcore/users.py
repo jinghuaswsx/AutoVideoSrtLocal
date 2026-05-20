@@ -141,6 +141,23 @@ def list_translation_work_users() -> list[dict]:
     return users
 
 
+def list_raw_processors() -> list[dict]:
+    expr = _user_display_name_expr()
+    rows = query(
+        f"SELECT id, username, {expr} AS display_name, role, permissions "
+        "FROM users WHERE is_active=1 ORDER BY display_name ASC, id ASC",
+    )
+    users = []
+    for row in rows:
+        if _has_effective_bool_permission(row, "can_process_raw_video"):
+            users.append({
+                "id": int(row["id"]),
+                "username": row["username"],
+                "display_name": row.get("display_name") or row["username"],
+            })
+    return users
+
+
 def ensure_translation_work_user(user_id: int) -> dict:
     expr = _user_display_name_expr()
     row = query_one(
@@ -156,6 +173,22 @@ def ensure_translation_work_user(user_id: int) -> dict:
         raise ValueError("该用户没有翻译能力")
     if not _has_effective_bool_permission(row, "work_scope_translation"):
         raise ValueError("该用户不在翻译工作范围")
+    return row
+
+
+def ensure_raw_processor_user(user_id: int) -> dict:
+    expr = _user_display_name_expr()
+    row = query_one(
+        f"SELECT id, username, {expr} AS display_name, role, permissions, is_active "
+        "FROM users WHERE id=%s",
+        (int(user_id),),
+    )
+    if not row:
+        raise ValueError("原视频处理人不存在")
+    if not row.get("is_active"):
+        raise ValueError("原视频处理人已停用")
+    if not _has_effective_bool_permission(row, "can_process_raw_video"):
+        raise ValueError("该用户没有原视频处理能力")
     return row
 
 

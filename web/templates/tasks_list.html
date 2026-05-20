@@ -522,19 +522,22 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
   body.innerHTML = '加载中...';
   document.getElementById('tcCreateModal').style.display = 'block';
   try {
-    const [itemsResp, transResp, langsResp] = await Promise.all([
+    const [itemsResp, transResp, rawResp, langsResp] = await Promise.all([
       tcFetchJson('/tasks/api/product/' + pid + '/en_items'),
       tcFetchJson('/tasks/api/translation-work-users'),
+      tcFetchJson('/tasks/api/raw-processors'),
       tcFetchJson('/tasks/api/languages'),
     ]);
     const items = itemsResp.items || [];
     const translators = transResp.users || transResp.translators || [];
+    const rawProcessors = rawResp.users || [];
     const langs = langsResp.languages || [];
     tcRegisterLanguageLabels(langs);
     const itemOpts = items.map(i => `<option value="${i.id}">${tcEsc(i.filename)}</option>`).join('');
     const isOldProduct = ownerId && translators.some(t => t.id === ownerId);
     const transOpts = translators.map(t => `<option value="${t.id}" ${t.id === ownerId ? 'selected' : ''}>${tcEsc(t.display_name || t.username)}</option>`).join('');
     const langChecks = langs.map(l => `<label style="display:inline-block; padding:4px 8px;"><input type="checkbox" value="${tcEsc(l.code)}"> ${tcEsc(tcLanguageLabel(l.code))}</label>`).join('');
+    const rawOpts = rawProcessors.map(t => `<option value="${t.id}">${tcEsc(t.display_name || t.username)}</option>`).join('');
     body.innerHTML = `
       <div style="margin-bottom:12px;"><strong>${tcEsc(pname)}</strong></div>
       <div style="margin-bottom:12px;">
@@ -551,6 +554,12 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
         </select>
       </div>
       <div style="margin-bottom:12px;">
+        <label>原视频处理人：</label>
+        <select id="tcCreateRawProcessor" class="tc-input" style="width:100%;">
+          ${rawOpts || '<option value="">没有可用的原视频处理人（请确保有用户拥有 can_process_raw_video 权限）</option>'}
+        </select>
+      </div>
+      <div style="margin-bottom:12px;">
         <label>目标国家（≥1）：</label>
         <div id="tcCreateLangs">${langChecks || '<span style="color:var(--tc-fg-muted);">没有已启用的小语种</span>'}</div>
       </div>
@@ -564,16 +573,19 @@ async function tcSubmitCreate() {
   if (!TC_CREATE_CTX) return;
   const itemEl = document.getElementById('tcCreateItem');
   const transEl = document.getElementById('tcCreateTranslator');
+  const rawEl = document.getElementById('tcCreateRawProcessor');
   const item_id = itemEl && itemEl.value ? parseInt(itemEl.value) : null;
   const translator_id = transEl && transEl.value ? parseInt(transEl.value) : null;
+  const raw_processor_id = rawEl && rawEl.value ? parseInt(rawEl.value) : null;
   const countries = Array.from(document.querySelectorAll('#tcCreateLangs input:checked')).map(cb => cb.value);
   if (!item_id) { alert('请选英文素材'); return; }
   if (!translator_id) { alert('请选翻译员'); return; }
+  if (!raw_processor_id) { alert('请选原视频处理人'); return; }
   if (!countries.length) { alert('至少勾一个国家'); return; }
   try {
     await tcFetchJson('/tasks/api/parent', {
       method: 'POST',
-      body: JSON.stringify({media_product_id: TC_CREATE_CTX.product_id, media_item_id: item_id, countries, translator_id}),
+      body: JSON.stringify({media_product_id: TC_CREATE_CTX.product_id, media_item_id: item_id, countries, translator_id, raw_processor_id}),
     });
     tcCloseCreateModal();
     tcRender();
@@ -710,7 +722,6 @@ function tcDetailButtons(task, isParent) {
   const status = task.status;
   const btns = [];
   if (isParent) {
-    if (status === 'pending' && TC_CAPS.can_process_raw_video) btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'claim')">认领</button>`);
     if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">去原始素材任务库处理</button>`);
     if (status === 'raw_review' && TC_IS_ADMIN) {
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'approve')">通过</button>`);

@@ -12,7 +12,9 @@ from appcore import mk_import as mk_import_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
 from appcore.users import (
+    ensure_raw_processor_user,
     ensure_translation_work_user,
+    list_raw_processors,
     list_translation_work_users,
     list_translators,
 )
@@ -146,10 +148,12 @@ def api_create_parent():
         item_id = int(item_id) if item_id is not None else None
         countries = payload.get("countries") or []
         translator_id = int(payload["translator_id"])
+        raw_processor_id = int(payload["raw_processor_id"])
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
         ensure_translation_work_user(translator_id)
+        ensure_raw_processor_user(raw_processor_id)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
     try:
@@ -158,10 +162,28 @@ def api_create_parent():
             media_item_id=item_id,
             countries=countries,
             translator_id=translator_id,
+            raw_processor_id=raw_processor_id,
             created_by=int(current_user.id),
         )
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
+    from appcore import task_raw_video_processing
+
+    try:
+        raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
+            task_id=parent_id,
+            actor_user_id=raw_processor_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        try:
+            task_raw_video_processing.record_niuma_start_failed(
+                parent_task_id=parent_id,
+                actor_user_id=raw_processor_id,
+                error=str(exc),
+            )
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("record niuma start failure failed task_id=%s", parent_id)
+        raw_processing = {"status": "start_failed", "error": str(exc)}
     _audit_task_action(
         parent_id,
         "task_parent_created",
@@ -170,9 +192,10 @@ def api_create_parent():
             "media_item_id": item_id,
             "countries": countries,
             "translator_id": translator_id,
+            "raw_processor_id": raw_processor_id,
         },
     )
-    return _json_response({"parent_task_id": parent_id})
+    return _json_response({"parent_task_id": parent_id, "raw_processing": raw_processing})
 
 
 @bp.route("/api/import-and-create", methods=["POST"])
@@ -395,6 +418,13 @@ def api_events(tid: int):
 @login_required
 def api_translators():
     return _json_response({"translators": list_translators()})
+
+
+@bp.route("/api/raw-processors", methods=["GET"])
+@login_required
+@admin_required
+def api_raw_processors():
+    return _json_response({"users": list_raw_processors()})
 
 
 @bp.route("/api/translation-work-users", methods=["GET"])

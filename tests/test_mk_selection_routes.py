@@ -146,7 +146,8 @@ def test_mk_import_progress_modal_present():
     assert "创建小语种翻译任务" in template
     assert "去任务中心" in template
     assert "去素材管理" in template
-    assert "原视频处理人认领后会自动提交牛马去字幕" in template
+    assert "原视频处理人指派后会自动提交牛马去字幕" in template
+    assert "原视频处理人认领后会自动提交牛马去字幕" not in template
 
 
 def test_mk_selection_import_modals_use_active_user_display_names():

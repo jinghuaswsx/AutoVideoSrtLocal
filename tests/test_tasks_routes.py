@@ -232,6 +232,7 @@ def test_create_parent_rejects_non_translation_work_user(authed_client_no_db, mo
             "media_item_id": 2,
             "countries": ["DE"],
             "translator_id": 9,
+            "raw_processor_id": 8,
         },
     )
 
@@ -263,6 +264,76 @@ def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db
     assert resp.status_code == 400
     assert "翻译工作范围" in resp.get_json()["error"]
     assert calls == []
+
+
+def test_create_parent_requires_raw_processor_id(authed_client_no_db, monkeypatch):
+    called = []
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: called.append(kwargs) or 123,
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "raw_processor_id" in resp.get_json()["error"]
+    assert called == []
+
+
+def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypatch):
+    audit_calls = []
+    ensure_calls = []
+
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: ensure_calls.append(("translator", user_id)) or None)
+    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: ensure_calls.append(("raw", user_id)) or None)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: 123,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
+        lambda **kwargs: {"status": "submitted", "subtitle_task_id": "tcraw-123"},
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+            "raw_processor_id": 8,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "parent_task_id": 123,
+        "raw_processing": {"status": "submitted", "subtitle_task_id": "tcraw-123"},
+    }
+    assert ensure_calls == [("translator", 9), ("raw", 8)]
+    assert audit_calls == [
+        (123, "task_parent_created", {
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+            "raw_processor_id": 8,
+        })
+    ]
 
 
 def test_import_and_create_returns_product_link_warnings(authed_client_no_db, monkeypatch):
@@ -496,6 +567,9 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert 'data-tab="mine"' in body
     assert 'data-tab="all"' in body
     assert "tcRender" in body  # JS bootstrapped
+    assert "tcCreateRawProcessor" in body
+    assert "原视频处理人" in body
+    assert ">认领</button>" not in body
 
 
 def test_create_modal_supporting_endpoints_registered(authed_client_no_db):
@@ -521,6 +595,11 @@ def test_api_translators_delegates_to_users_dao(authed_client_no_db, monkeypatch
     assert rsp.status_code == 200
     assert rsp.get_json() == {"translators": [{"id": 7, "username": "translator"}]}
     assert captured == [True]
+
+
+def test_api_raw_processors_forbidden_for_non_admin(authed_user_client_no_db):
+    rsp = authed_user_client_no_db.get("/tasks/api/raw-processors")
+    assert rsp.status_code == 403
 
 
 def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypatch):

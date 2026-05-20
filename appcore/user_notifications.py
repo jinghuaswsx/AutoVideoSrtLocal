@@ -118,6 +118,23 @@ def notify_pending_raw_task(cur, *, task_id: int, product_name: str) -> int:
     )
 
 
+def notify_parent_assigned(
+    cur,
+    *,
+    task_id: int,
+    assignee_id: int,
+    product_name: str,
+) -> int:
+    return _insert_for_users(
+        cur,
+        [int(assignee_id)],
+        source_id=int(task_id),
+        event_type="task_parent_assigned",
+        title="有新的原始素材任务",
+        body=f"{product_name} 已直接指派给你处理",
+    )
+
+
 def notify_child_blocked(
     cur,
     *,

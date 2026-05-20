@@ -376,6 +376,7 @@ def create_parent_task(
     media_item_id: int | None,
     countries: list[str],
     translator_id: int,
+    raw_processor_id: int | None = None,
     created_by: int,
 ) -> int:
     """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
@@ -390,24 +391,53 @@ def create_parent_task(
         conn.begin()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO tasks "
-                    "(parent_task_id, media_product_id, media_item_id, status, created_by) "
-                    "VALUES (NULL, %s, %s, %s, %s)",
-                    (int(media_product_id),
-                     int(media_item_id) if media_item_id is not None else None,
-                     PARENT_PENDING, int(created_by)),
-                )
+                if raw_processor_id is not None:
+                    cur.execute(
+                        "INSERT INTO tasks "
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, NOW(), %s)",
+                        (
+                            int(media_product_id),
+                            int(media_item_id) if media_item_id is not None else None,
+                            int(raw_processor_id),
+                            PARENT_RAW_IN_PROGRESS,
+                            int(created_by),
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO tasks "
+                        "(parent_task_id, media_product_id, media_item_id, status, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s)",
+                        (
+                            int(media_product_id),
+                            int(media_item_id) if media_item_id is not None else None,
+                            PARENT_PENDING,
+                            int(created_by),
+                        ),
+                    )
                 parent_id = cur.lastrowid
-                _write_event(cur, parent_id, "created", created_by,
-                             {"countries": norm_countries,
-                              "translator_id": int(translator_id)})
+                created_payload = {
+                    "countries": norm_countries,
+                    "translator_id": int(translator_id),
+                }
+                if raw_processor_id is not None:
+                    created_payload["raw_processor_id"] = int(raw_processor_id)
+                _write_event(cur, parent_id, "created", created_by, created_payload)
                 product_name = _product_name_for_notification(cur, int(media_product_id))
-                notifications_svc.notify_pending_raw_task(
-                    cur,
-                    task_id=parent_id,
-                    product_name=product_name,
-                )
+                if raw_processor_id is not None:
+                    notifications_svc.notify_parent_assigned(
+                        cur,
+                        task_id=parent_id,
+                        assignee_id=int(raw_processor_id),
+                        product_name=product_name,
+                    )
+                else:
+                    notifications_svc.notify_pending_raw_task(
+                        cur,
+                        task_id=parent_id,
+                        product_name=product_name,
+                    )
                 for country in norm_countries:
                     cur.execute(
                         "INSERT INTO tasks "
@@ -476,6 +506,7 @@ def import_and_create_task(
         media_item_id=item_id,
         countries=countries,
         translator_id=int(translator_id),
+        raw_processor_id=None,
         created_by=int(actor_user_id),
     )
     result = {

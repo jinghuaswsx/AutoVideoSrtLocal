@@ -127,6 +127,22 @@ def db_user_translator():
 
 
 @pytest.fixture
+def db_user_raw_processor():
+    from appcore.users import create_user, get_by_username
+
+    username = "_t_tc_raw"
+    execute("DELETE FROM users WHERE username=%s", (username,))
+    create_user(username, "x", role="user")
+    uid = get_by_username(username)["id"]
+    execute(
+        "UPDATE users SET permissions=JSON_SET(COALESCE(permissions, '{}'), '$.can_process_raw_video', true) WHERE id=%s",
+        (uid,),
+    )
+    yield uid
+    execute("DELETE FROM users WHERE username=%s", (username,))
+
+
+@pytest.fixture
 def db_product(db_user_admin):
     """Make a media product owned by db_user_admin."""
     # Pre-clean any leftover rows from prior failed runs (no UNIQUE on name but be safe)
@@ -149,7 +165,7 @@ def db_product(db_user_admin):
 
 
 def test_create_parent_task_inserts_parent_and_children(
-    db_user_admin, db_user_translator, db_product
+    db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
     from appcore import tasks
     parent_id = tasks.create_parent_task(
@@ -157,12 +173,14 @@ def test_create_parent_task_inserts_parent_and_children(
         media_item_id=db_product["item_id"],
         countries=["DE", "FR"],
         translator_id=db_user_translator,
+        raw_processor_id=db_user_raw_processor,
         created_by=db_user_admin,
     )
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
     assert parent["parent_task_id"] is None
-    assert parent["status"] == tasks.PARENT_PENDING
-    assert parent["assignee_id"] is None
+    assert parent["status"] == tasks.PARENT_RAW_IN_PROGRESS
+    assert parent["assignee_id"] == db_user_raw_processor
+    assert parent["claimed_at"] is not None
     assert parent["media_item_id"] == db_product["item_id"]
 
     children = query_all(
@@ -188,7 +206,7 @@ def test_create_parent_task_inserts_parent_and_children(
 
 
 def test_create_parent_task_rejects_empty_countries(
-    db_user_admin, db_user_translator, db_product
+    db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
     from appcore import tasks
     with pytest.raises(ValueError, match="countries"):
@@ -197,12 +215,13 @@ def test_create_parent_task_rejects_empty_countries(
             media_item_id=db_product["item_id"],
             countries=[],
             translator_id=db_user_translator,
+            raw_processor_id=db_user_raw_processor,
             created_by=db_user_admin,
         )
 
 
 def test_create_parent_task_uppercases_countries(
-    db_user_admin, db_user_translator, db_product
+    db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
     from appcore import tasks
     parent_id = tasks.create_parent_task(
@@ -210,6 +229,7 @@ def test_create_parent_task_uppercases_countries(
         media_item_id=db_product["item_id"],
         countries=["de", "fr"],
         translator_id=db_user_translator,
+        raw_processor_id=db_user_raw_processor,
         created_by=db_user_admin,
     )
     children = query_all(

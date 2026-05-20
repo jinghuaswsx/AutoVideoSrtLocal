@@ -68,9 +68,9 @@ def test_create_parent_task_emits_pending_and_child_notifications(monkeypatch):
         "FakeNotifications",
         (),
         {
-            "notify_pending_raw_task": staticmethod(
-                lambda cur, *, task_id, product_name: calls.append(
-                    ("pending", task_id, product_name)
+            "notify_parent_assigned": staticmethod(
+                lambda cur, *, task_id, assignee_id, product_name: calls.append(
+                    ("parent_assigned", task_id, assignee_id, product_name)
                 )
             ),
             "notify_child_blocked": staticmethod(
@@ -90,12 +90,17 @@ def test_create_parent_task_emits_pending_and_child_notifications(monkeypatch):
         media_item_id=8,
         countries=["DE", "FR"],
         translator_id=9,
+        raw_processor_id=6,
         created_by=1,
     )
 
     assert parent_id == 100
+    parent_insert_sql, parent_insert_args = cursor.executed[0]
+    assert "assignee_id" in parent_insert_sql
+    assert "claimed_at" in parent_insert_sql
+    assert parent_insert_args == (7, 8, 6, tasks.PARENT_RAW_IN_PROGRESS, 1)
     assert calls == [
-        ("pending", 100, "保温杯"),
+        ("parent_assigned", 100, 6, "保温杯"),
         ("child_blocked", 101, 9, "保温杯", "DE"),
         ("child_blocked", 102, 9, "保温杯", "FR"),
     ]
