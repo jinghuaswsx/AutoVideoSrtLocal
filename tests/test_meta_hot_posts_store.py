@@ -290,6 +290,44 @@ def test_list_favorite_hot_posts_sorts_by_user_choice():
     assert data_params == [88, 20, 20]
 
 
+def test_list_product_summaries_groups_by_product_url_hash():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT(DISTINCT p.product_url_hash)" in sql:
+            return [{"cnt": 3}]
+        return [
+            {
+                "product_url_hash": "hash-a",
+                "product_url": "https://example.com/a",
+                "category_l1": "Home Supplies",
+                "product_title": "Storage Box",
+                "product_title_zh": "收纳盒",
+                "material_count": 4,
+            }
+        ]
+
+    payload = store.list_product_summaries(
+        {"page": "2", "page_size": "25"},
+        query_fn=fake_query,
+    )
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[1]
+    assert payload["total"] == 3
+    assert payload["items"][0]["material_count"] == 4
+    assert "COUNT(DISTINCT p.product_url_hash)" in count_sql
+    assert "p.product_url_hash IS NOT NULL" in count_sql
+    assert "p.product_url_hash <> ''" in count_sql
+    assert "COUNT(*) AS material_count" in data_sql
+    assert "LEFT JOIN meta_hot_post_product_analyses a" in data_sql
+    assert "GROUP BY p.product_url_hash" in data_sql
+    assert "ORDER BY material_count DESC, product_title_display ASC" in data_sql
+    assert count_params == []
+    assert data_params == [25, 25]
+
+
 def test_next_pending_message_translations_selects_untranslated_rows():
     calls = []
 

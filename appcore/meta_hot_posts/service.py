@@ -431,6 +431,21 @@ def _hydrate_video_copyability_item(row: Mapping[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _hydrate_product_summary(row: Mapping[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    category = str(item.get("category_l1") or "").strip()
+    product_title = str(item.get("product_title") or "").strip()
+    product_title_zh = str(item.get("product_title_zh") or "").strip()
+    product_url = str(item.get("product_url") or "").strip()
+    item["category_l1"] = category
+    item["category_l1_zh"] = categories.category_label_zh(category) or "未分类"
+    item["product_title"] = product_title
+    item["product_title_zh"] = product_title_zh
+    item["product_title_display"] = product_title_zh or product_title or product_url or "未命名产品"
+    item["material_count"] = _int_payload(item.get("material_count")) or 0
+    return item
+
+
 def build_list_response(
     args: Mapping[str, Any],
     *,
@@ -468,6 +483,15 @@ def build_favorites_response(
         return MetaHotPostsResponse({"error": "missing_user"}, 400)
     payload = store.list_favorite_hot_posts(args, user_id=int(user_id))
     payload["items"] = [_hydrate_item(item) for item in payload.get("items") or []]
+    return MetaHotPostsResponse(payload)
+
+
+def build_product_list_response(args: Mapping[str, Any]) -> MetaHotPostsResponse:
+    payload = store.list_product_summaries(args)
+    payload["items"] = [
+        _hydrate_product_summary(item)
+        for item in payload.get("items") or []
+    ]
     return MetaHotPostsResponse(payload)
 
 

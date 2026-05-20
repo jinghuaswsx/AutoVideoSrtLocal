@@ -37,6 +37,15 @@
 .mh-pager button:disabled { opacity:.45; cursor:not-allowed; }
 .mh-pager-info { min-width:190px; text-align:center; }
 .meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
+.mh-product-list-panel { padding:12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-product-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.mh-product-table th, .mh-product-table td { padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; font-size:13px; }
+.mh-product-table th { color:#475569; background:#f8fafc; font-weight:800; }
+.mh-product-table tr:last-child td { border-bottom:0; }
+.mh-product-theme { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-product-name-link { color:#0f766e; font-weight:800; text-decoration:none; word-break:break-word; }
+.mh-product-name-link:hover { text-decoration:underline; }
+.mh-product-count { width:96px; color:#111827; font-weight:900; text-align:right; }
 .mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
 .mh-post-id-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:34px; padding:6px 14px 2px; color:#64748b; font-size:12px; font-weight:700; }
 .mh-post-id-main { display:flex; align-items:center; gap:6px; min-width:0; }
@@ -326,6 +335,7 @@ button.mh-link-btn { cursor:pointer; }
     <button class="mh-subtab" id="mhEuropeSubtab" type="button" onclick="switchMetaHotSubtab('europe')">欧洲Top50</button>
     <button class="mh-subtab" id="mhUsSubtab" type="button" onclick="switchMetaHotSubtab('us')">美国Top50</button>
     <button class="mh-subtab" id="mhFavoritesSubtab" type="button" onclick="switchMetaHotSubtab('favorites')">我的收藏夹</button>
+    <button class="mh-subtab" id="mhProductsSubtab" type="button" onclick="switchMetaHotSubtab('products')">产品列表</button>
   </div>
 
   <div class="mh-tool-row">
@@ -421,6 +431,10 @@ button.mh-link-btn { cursor:pointer; }
 
   <div class="mh-pager" id="mhPagerTop" aria-label="Meta热帖分页"></div>
 
+  <div id="mhProductListPanel" class="mh-product-list-panel" hidden>
+    <div class="mh-empty">加载中...</div>
+  </div>
+
   <div id="metaHotCardGrid" class="meta-hot-card-grid">
     <div class="mh-empty">加载中...</div>
   </div>
@@ -498,6 +512,7 @@ let mhAiAnalysisVisibilitySaveVersion = 0;
 let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 const mhPageSize = 50;
+const mhProductPageSize = 100;
 const MH_AI_MODES = {
   us_copyability: {label: '美国AI分析'},
   europe_translation: {label: '欧洲AI分析'}
@@ -637,6 +652,8 @@ function setVideoSource(source) {
     loadUsTopMaterials();
   } else if (mhSubtab === 'favorites') {
     loadFavoriteMetaHotPosts(mhPage);
+  } else if (mhSubtab === 'products') {
+    loadMetaHotProductList(mhPage);
   }
 }
 
@@ -1168,7 +1185,8 @@ function setMetaHotSubtabState(tab) {
     today: 'mhTodayNewSubtab',
     europe: 'mhEuropeSubtab',
     us: 'mhUsSubtab',
-    favorites: 'mhFavoritesSubtab'
+    favorites: 'mhFavoritesSubtab',
+    products: 'mhProductsSubtab'
   };
   Object.keys(ids).forEach(key => {
     const node = qs(ids[key]);
@@ -1176,9 +1194,13 @@ function setMetaHotSubtabState(tab) {
   });
   const favoriteSort = qs('mhFavoriteSort');
   if (favoriteSort) favoriteSort.hidden = tab !== 'favorites';
+  const productPanel = qs('mhProductListPanel');
+  const cardGrid = qs('metaHotCardGrid');
+  if (productPanel) productPanel.hidden = tab !== 'products';
+  if (cardGrid) cardGrid.hidden = tab === 'products';
 }
 function switchMetaHotSubtab(tab, options = {}) {
-  mhSubtab = ['today', 'europe', 'us', 'favorites'].includes(tab) ? tab : 'library';
+  mhSubtab = ['today', 'europe', 'us', 'favorites', 'products'].includes(tab) ? tab : 'library';
   location.hash = mhSubtab;
   setMetaHotSubtabState(mhSubtab);
   if (mhSubtab === 'europe') {
@@ -1189,6 +1211,8 @@ function switchMetaHotSubtab(tab, options = {}) {
     loadUsTopMaterials();
   } else if (mhSubtab === 'favorites') {
     loadFavoriteMetaHotPosts(1);
+  } else if (mhSubtab === 'products') {
+    loadMetaHotProductList(1);
   } else {
     loadMetaHotPosts(mhPage || 1, options);
   }
@@ -1320,6 +1344,48 @@ async function loadFavoriteMetaHotPosts(page = 1) {
   mhPage = safeMetaHotPage(data.page || page || 1);
   renderMetaHotPager(data, 'loadFavoriteMetaHotPosts');
   qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '我的收藏夹');
+}
+function renderMetaHotProductRow(row) {
+  const theme = row.category_l1_zh || row.category_l1 || '未分类';
+  const name = row.product_title_display || row.product_title_zh || row.product_title || row.product_url || '未命名产品';
+  const nameHtml = row.product_url
+    ? `<a class="mh-product-name-link" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">${esc(name)}</a>`
+    : esc(name);
+  return `<tr>
+    <td><span class="mh-product-theme">${esc(theme)}</span></td>
+    <td>${nameHtml}</td>
+    <td class="mh-product-count">${fmt(row.material_count || 0)}</td>
+  </tr>`;
+}
+function renderMetaHotProductList(items) {
+  if (!items.length) return '<div class="mh-empty">暂无产品</div>';
+  return `<table class="mh-product-table">
+    <thead><tr><th style="width:180px">产品主题</th><th>产品名称</th><th class="mh-product-count">素材数</th></tr></thead>
+    <tbody>${items.map(renderMetaHotProductRow).join('')}</tbody>
+  </table>`;
+}
+function renderMetaHotProductSummary(data, items) {
+  const total = Number(data.total || 0);
+  const currentCount = (items || []).length;
+  const pageSize = Math.max(1, Number(data.page_size || mhProductPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  return `产品列表 · 当前页 ${currentCount} 个产品 · 共 ${totalPages} 页 · 总 ${total} 个产品`;
+}
+async function loadMetaHotProductList(page = 1) {
+  mhSubtab = 'products';
+  setMetaHotSubtabState('products');
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading products...';
+  const params = new URLSearchParams({page: mhPage, page_size: mhProductPageSize});
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/products?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems([]);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('mhProductListPanel').innerHTML = renderMetaHotProductList(data.items || []);
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadMetaHotProductList');
+  qs('mhStatus').textContent = renderMetaHotProductSummary(data, data.items || []);
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
@@ -1698,7 +1764,7 @@ async function showFailureRecords() {
 restoreVideoSource();
 restoreMetaHotCardZoom();
 restoreMetaHotAiAnalysisVisibility();
-// 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us）
+// 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us / #favorites / #products）
 function initMetaHotSubtabFromHash() {
   const tab = location.hash.replace('#', '') || 'library';
   switchMetaHotSubtab(tab, {syncUrl: false});

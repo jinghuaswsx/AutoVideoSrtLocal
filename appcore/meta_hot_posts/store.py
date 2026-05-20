@@ -449,6 +449,63 @@ def list_today_new_hot_posts(
     }
 
 
+def list_product_summaries(
+    args: Mapping[str, Any] | None = None,
+    *,
+    query_fn: QueryFn = query,
+) -> dict[str, Any]:
+    args = args or {}
+    page = _int_arg(args, "page", 1, 1, 10000)
+    page_size = _int_arg(args, "page_size", 100, 10, 500)
+    offset = (page - 1) * page_size
+    where_sql = """
+        WHERE p.product_url_hash IS NOT NULL
+          AND p.product_url_hash <> ''
+    """
+    count_rows = query_fn(
+        f"""
+        SELECT COUNT(DISTINCT p.product_url_hash) AS cnt
+        FROM meta_hot_posts p
+        {where_sql}
+        """,
+        [],
+    )
+    rows = query_fn(
+        f"""
+        SELECT p.product_url_hash,
+               MAX(p.product_url) AS product_url,
+               a.category_l1,
+               a.product_title,
+               a.product_title_zh,
+               COALESCE(
+                 NULLIF(a.product_title_zh, ''),
+                 NULLIF(a.product_title, ''),
+                 MAX(p.product_url),
+                 ''
+               ) AS product_title_display,
+               a.product_main_image_url,
+               COUNT(*) AS material_count
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {where_sql}
+        GROUP BY p.product_url_hash,
+                 a.category_l1,
+                 a.product_title,
+                 a.product_title_zh,
+                 a.product_main_image_url
+        ORDER BY material_count DESC, product_title_display ASC
+        LIMIT %s OFFSET %s
+        """,
+        [page_size, offset],
+    )
+    return {
+        "items": rows,
+        "total": int(count_rows[0]["cnt"] if count_rows else 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> int:
     product_url = str(row.get("product_url") or "").strip()
     url_hash = str(row.get("product_url_hash") or "").strip() or (product_url_hash(product_url) if product_url else None)

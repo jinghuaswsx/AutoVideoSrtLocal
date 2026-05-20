@@ -132,6 +132,51 @@ def test_build_favorites_response_lists_current_user_favorites(monkeypatch):
     assert result.payload["items"][0]["is_favorited"] is True
 
 
+def test_build_product_list_response_hydrates_theme_title_and_material_count(monkeypatch):
+    captured = {}
+
+    def fake_list(args):
+        captured["args"] = args
+        return {
+            "items": [
+                {
+                    "product_url_hash": "hash-a",
+                    "product_url": "https://example.com/a",
+                    "category_l1": "Home Supplies",
+                    "product_title": "Storage Box",
+                    "product_title_zh": "收纳盒",
+                    "material_count": "4",
+                },
+                {
+                    "product_url_hash": "hash-b",
+                    "product_url": "https://example.com/b",
+                    "category_l1": "",
+                    "product_title": "",
+                    "product_title_zh": "",
+                    "material_count": None,
+                },
+            ],
+            "total": 2,
+            "page": 1,
+            "page_size": 100,
+        }
+
+    monkeypatch.setattr(service.store, "list_product_summaries", fake_list)
+
+    result = service.build_product_list_response({"page": "1"})
+
+    assert result.status_code == 200
+    assert captured["args"]["page"] == "1"
+    first = result.payload["items"][0]
+    second = result.payload["items"][1]
+    assert first["category_l1_zh"] == "家居用品"
+    assert first["product_title_display"] == "收纳盒"
+    assert first["material_count"] == 4
+    assert second["category_l1_zh"] == "未分类"
+    assert second["product_title_display"] == "https://example.com/b"
+    assert second["material_count"] == 0
+
+
 def test_build_favorite_response_toggles_current_user_favorite(monkeypatch):
     captured = {}
 

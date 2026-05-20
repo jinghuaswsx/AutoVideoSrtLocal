@@ -252,6 +252,15 @@ def api_meta_hot_posts_categories():
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/products", methods=["GET"])
+@login_required
+def api_meta_hot_posts_products():
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_product_list_response(request.args)
+    return jsonify(result.payload), result.status_code
+
+
 @bp.route("/api/meta-hot-posts/category-prompt", methods=["GET"])
 @login_required
 def api_meta_hot_posts_category_prompt():

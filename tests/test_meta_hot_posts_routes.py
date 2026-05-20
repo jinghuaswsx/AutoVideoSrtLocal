@@ -309,6 +309,16 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "switchMetaHotSubtab('us')" in body
     assert 'id="mhFavoritesSubtab"' in body
     assert "switchMetaHotSubtab('favorites')" in body
+    assert 'id="mhProductsSubtab"' in body
+    assert "switchMetaHotSubtab('products')" in body
+    assert "产品列表" in body
+    assert "产品主题" in body
+    assert "产品名称" in body
+    assert "素材数" in body
+    assert 'id="mhProductListPanel"' in body
+    assert "function loadMetaHotProductList" in body
+    assert "/xuanpin/api/meta-hot-posts/products" in body
+    assert "renderMetaHotProductList(data.items || [])" in body
     assert 'id="mhFavoriteSort"' in body
     assert "loadFavoriteMetaHotPosts" in body
     assert "/xuanpin/api/meta-hot-posts/favorites" in body
@@ -830,6 +840,34 @@ def test_meta_hot_posts_favorites_api_passes_current_user_and_sort(
     assert resp.status_code == 200
     assert captured["sort"] == "interactions"
     assert captured["user_id"]
+
+
+def test_meta_hot_posts_products_api_uses_product_list_response(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_response(args):
+        captured["page"] = args.get("page")
+        return type(
+            "Resp",
+            (),
+            {
+                "payload": {
+                    "items": [{"product_url_hash": "hash-a", "material_count": 4}],
+                    "total": 1,
+                },
+                "status_code": 200,
+            },
+        )()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_product_list_response", fake_response)
+
+    resp = authed_client_no_db.get("/xuanpin/api/meta-hot-posts/products?page=2")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"product_url_hash": "hash-a", "material_count": 4}]
+    assert captured["page"] == "2"
 
 
 def test_meta_hot_posts_favorite_api_passes_current_user(authed_client_no_db, monkeypatch):
