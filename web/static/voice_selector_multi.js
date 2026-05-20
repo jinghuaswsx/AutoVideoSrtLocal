@@ -769,7 +769,7 @@
       <div class="vs-row-speed">
         ${sourceRate ? `<span>原视频 ${escapeHtml(sourceRate)} 词/秒</span>` : ""}
         <span>Preview ${escapeHtml(previewRate)} 词/秒</span>
-        ${speedScore ? `<span>语速匹配 ${escapeHtml(speedScore)}</span>` : ""}
+        ${speedScore ? `<span class="vs-speed-match-pill"><span class="vs-speed-match-label">语速匹配</span><span class="vs-speed-match-value">${escapeHtml(speedScore)}</span></span>` : ""}
       </div>
     `;
   }
