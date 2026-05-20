@@ -48,6 +48,12 @@
 .oc-badge--med  { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
 .oc-badge--low  { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
 .oc-badge--linked { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.mk-library-row--green td { background:oklch(97% 0.030 165); }
+.mk-library-row--green:hover td { background:oklch(95% 0.040 165); }
+.mk-library-row--red td { background:oklch(97% 0.030 25); }
+.mk-library-row--red:hover td { background:oklch(95% 0.040 25); }
+.mk-library-row--yellow td { background:oklch(98% 0.040 85); }
+.mk-library-row--yellow:hover td { background:oklch(96% 0.050 85); }
 .oc-link { color:var(--oc-accent); text-decoration:none; }
 .oc-link:hover { text-decoration:underline; }
 .oc-pager { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-3); padding:var(--oc-sp-4) 0; font-size:18px; color:var(--oc-fg-muted); }
@@ -187,6 +193,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
             <th style="width:220px">商品图</th>
             <th style="width:280px; text-align:left;">产品名称</th>
             <th style="width:180px; text-align:left;">中文产品名</th>
+            <th style="width:100px">是否入库</th>
             <th style="width:100px">店铺</th>
             <th style="width:90px" class="text-right">付款销量</th>
             <th style="width:110px" class="text-right">销售额</th>
@@ -198,7 +205,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
           </tr>
         </thead>
         <tbody id="tableBody">
-          <tr><td colspan="12" class="oc-empty">加载中...</td></tr>
+          <tr><td colspan="13" class="oc-empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -376,6 +383,40 @@ function renderProductMaterialButton(productCode, rawProductName, linkedHtml) {
   </div>`;
 }
 
+function libraryStatusTitle(status) {
+  if (!status || !status.in_library) return '未进入素材管理产品库';
+  const parts = [];
+  if (status.window_start && status.window_end) {
+    parts.push(`${status.window_start} ~ ${status.window_end}`);
+  }
+  if (Number(status.ad_spend_usd || 0) > 0) {
+    parts.push(`消耗 $${Number(status.ad_spend_usd || 0).toFixed(2)}`);
+  } else {
+    parts.push('近30日无广告消耗');
+  }
+  if (status.roas !== null && status.roas !== undefined) {
+    parts.push(`ROAS ${Number(status.roas).toFixed(2)}`);
+  }
+  if (status.breakeven_roas !== null && status.breakeven_roas !== undefined) {
+    parts.push(`保本 ${Number(status.breakeven_roas).toFixed(2)}`);
+  } else if (status.in_library) {
+    parts.push('保本待补');
+  }
+  return parts.join(' · ');
+}
+
+function renderLibraryStatusBadge(status) {
+  const s = status || {};
+  const label = s.in_library ? '已入库' : '未入库';
+  const title = libraryStatusTitle(s);
+  if (!s.in_library) {
+    return `<span class="text-muted" title="${escapeHtml(title)}">${label}</span>`;
+  }
+  const clsMap = {green: 'linked', red: 'high', yellow: 'med'};
+  const cls = clsMap[s.card_status] || 'low';
+  return `<span class="oc-badge oc-badge--${cls}" title="${escapeHtml(title)}">${label}</span>`;
+}
+
 function fmtMkSpendText(raw, parsed) {
   const text = String(raw || '').trim();
   if (text && text !== '0') return text;
@@ -526,14 +567,18 @@ async function loadData(page) {
 
   const tbody = document.getElementById('tableBody');
   if (!data.items.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="oc-empty">无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="oc-empty">无数据</td></tr>';
     document.getElementById('pager').innerHTML = '';
     return;
   }
 
   tbody.innerHTML = data.items.map((r, i) => {
     const heat = heatLevel(r.mk_total_spends);
-    const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted">未关联</span>`;
+    const libraryStatus = r.library_status || {};
+    const rowStatusClass = libraryStatus.card_status && libraryStatus.card_status !== 'none'
+      ? ` class="mk-library-row--${escapeHtml(libraryStatus.card_status)}"`
+      : '';
+    const linked = libraryStatus.in_library ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted">未关联</span>`;
     const rawProductName = String(r.product_name || '');
     const cnName = String(r.product_cn_name || r.mk_product_name || r.mp_name || '--');
     const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
@@ -542,7 +587,7 @@ async function loadData(page) {
     const mkProductId = Number(r.mk_product_id) || 0;
     const mkNameArg = escapeHtml(JSON.stringify(r.mk_product_name || ""));
 
-    return `<tr>
+    return `<tr${rowStatusClass}>
       <td class="text-mono text-muted">${Number(r.rank || i + 1)}</td>
       <td>${renderProductImageCell(r)}</td>
       <td style="text-align:left;">
@@ -552,6 +597,7 @@ async function loadData(page) {
         </div>
       </td>
       <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
+      <td>${renderLibraryStatusBadge(libraryStatus)}</td>
       <td>${escapeHtml(r.store || '--')}</td>
       <td class="text-right text-mono">${Number(r.sales_count || 0).toLocaleString()}</td>
       <td class="text-right text-mono">${escapeHtml(r.revenue_main || '--')}</td>

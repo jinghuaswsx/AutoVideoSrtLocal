@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import hashlib
 
 
@@ -268,8 +269,10 @@ def test_build_mk_selection_response_returns_product_asset_fields_when_schema_ha
                     "mk_first_material_name": "2025.12.25-健身脚蹬拉力器-原素材.mp4",
                     "mk_first_material_path": "uploads/fitness.mp4",
                     "mk_first_material_url": "https://os.wedev.vip/medias/uploads/fitness.mp4",
-                }
-            ]
+                    }
+                ]
+        if "FROM media_products" in sql:
+            return []
         raise AssertionError(sql)
 
     result = build_mk_selection_response(
@@ -350,8 +353,10 @@ def test_build_mk_selection_response_prefers_product_asset_table_over_legacy_col
                     "mk_first_material_name": "material.mp4",
                     "mk_first_material_path": "uploads/material.mp4",
                     "mk_first_material_url": "https://os.example/medias/uploads/material.mp4",
-                }
-            ]
+                    }
+                ]
+        if "FROM media_products" in sql:
+            return []
         raise AssertionError(sql)
 
     result = build_mk_selection_response(
@@ -368,6 +373,252 @@ def test_build_mk_selection_response_prefers_product_asset_table_over_legacy_col
     )
     assert item["product_detail_image_urls"] == ["https://cdn.example/detail.jpg"]
     assert item["product_cn_name"] == "Fitness Band CN"
+
+
+def test_build_mk_selection_response_adds_library_status_and_roas_colors():
+    from web.services.media_mk_selection import build_mk_selection_response
+
+    def fake_ranking_columns():
+        return {
+            "id",
+            "product_id",
+            "product_name",
+            "product_url",
+            "store",
+            "sales_count",
+            "order_count",
+            "revenue_main",
+            "revenue_split",
+            "media_product_id",
+            "snapshot_date",
+            "rank_position",
+            "product_code",
+        }
+
+    ranking_rows = [
+        {
+            "rank_position": 1,
+            "shopify_id": "gid-1",
+            "product_name": "Green Widget",
+            "product_url": "https://shop.example/products/green-widget",
+            "store": "newjoy",
+            "sales_count": 20,
+            "order_count": 18,
+            "revenue_main": "CNY 2000",
+            "revenue_split": "",
+            "mk_product_id": None,
+            "mk_product_name": None,
+            "mk_total_spends": 0,
+            "mk_video_count": 0,
+            "mk_total_ads": 0,
+            "media_product_id": 10,
+            "mp_name": "Green Local",
+            "mp_code": "green-widget",
+            "product_code": "green-widget",
+            "product_main_image_url": "",
+            "product_main_image_object_key": None,
+            "product_detail_images_json": None,
+            "product_cn_name": "",
+            "mk_first_material_name": "",
+            "mk_first_material_path": "",
+            "mk_first_material_url": "",
+        },
+        {
+            "rank_position": 2,
+            "shopify_id": "gid-2",
+            "product_name": "Red Widget",
+            "product_url": "https://shop.example/products/red-widget",
+            "store": "newjoy",
+            "sales_count": 10,
+            "order_count": 9,
+            "revenue_main": "CNY 1000",
+            "revenue_split": "",
+            "mk_product_id": None,
+            "mk_product_name": None,
+            "mk_total_spends": 0,
+            "mk_video_count": 0,
+            "mk_total_ads": 0,
+            "media_product_id": None,
+            "mp_name": None,
+            "mp_code": None,
+            "product_code": "red-widget",
+            "product_main_image_url": "",
+            "product_main_image_object_key": None,
+            "product_detail_images_json": None,
+            "product_cn_name": "",
+            "mk_first_material_name": "",
+            "mk_first_material_path": "",
+            "mk_first_material_url": "",
+        },
+        {
+            "rank_position": 3,
+            "shopify_id": "gid-3",
+            "product_name": "Yellow Widget",
+            "product_url": "https://shop.example/products/yellow-widget-rjc",
+            "store": "newjoy",
+            "sales_count": 5,
+            "order_count": 4,
+            "revenue_main": "CNY 500",
+            "revenue_split": "",
+            "mk_product_id": None,
+            "mk_product_name": None,
+            "mk_total_spends": 0,
+            "mk_video_count": 0,
+            "mk_total_ads": 0,
+            "media_product_id": None,
+            "mp_name": None,
+            "mp_code": None,
+            "product_code": "",
+            "product_main_image_url": "",
+            "product_main_image_object_key": None,
+            "product_detail_images_json": None,
+            "product_cn_name": "",
+            "mk_first_material_name": "",
+            "mk_first_material_path": "",
+            "mk_first_material_url": "",
+        },
+        {
+            "rank_position": 4,
+            "shopify_id": "gid-4",
+            "product_name": "Missing Breakeven Widget",
+            "product_url": "https://shop.example/products/missing-breakeven-widget",
+            "store": "newjoy",
+            "sales_count": 3,
+            "order_count": 3,
+            "revenue_main": "CNY 300",
+            "revenue_split": "",
+            "mk_product_id": None,
+            "mk_product_name": None,
+            "mk_total_spends": 0,
+            "mk_video_count": 0,
+            "mk_total_ads": 0,
+            "media_product_id": None,
+            "mp_name": None,
+            "mp_code": None,
+            "product_code": "missing-breakeven-widget",
+            "product_main_image_url": "",
+            "product_main_image_object_key": None,
+            "product_detail_images_json": None,
+            "product_cn_name": "",
+            "mk_first_material_name": "",
+            "mk_first_material_path": "",
+            "mk_first_material_url": "",
+        },
+        {
+            "rank_position": 5,
+            "shopify_id": "gid-5",
+            "product_name": "New Widget",
+            "product_url": "https://shop.example/products/new-widget",
+            "store": "newjoy",
+            "sales_count": 1,
+            "order_count": 1,
+            "revenue_main": "CNY 100",
+            "revenue_split": "",
+            "mk_product_id": None,
+            "mk_product_name": None,
+            "mk_total_spends": 0,
+            "mk_video_count": 0,
+            "mk_total_ads": 0,
+            "media_product_id": None,
+            "mp_name": None,
+            "mp_code": None,
+            "product_code": "new-widget",
+            "product_main_image_url": "",
+            "product_main_image_object_key": None,
+            "product_detail_images_json": None,
+            "product_cn_name": "",
+            "mk_first_material_name": "",
+            "mk_first_material_path": "",
+            "mk_first_material_url": "",
+        },
+    ]
+
+    def product_row(pid, code, purchase):
+        return {
+            "id": pid,
+            "product_code": code,
+            "name": code,
+            "purchase_price": purchase,
+            "packet_cost_estimated": 10,
+            "packet_cost_actual": 12,
+            "standalone_price": 100,
+            "standalone_shipping_fee": 0,
+        }
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-18"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            return [{"cnt": len(ranking_rows)}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            return ranking_rows
+        if "FROM media_products" in sql and "id IN" in sql:
+            return [product_row(10, "green-widget", 1)]
+        if "FROM media_products" in sql and "REGEXP_REPLACE" in sql:
+            return [
+                product_row(20, "red-widget-rjc", 2),
+                product_row(30, "yellow-widget", 3),
+                product_row(40, "missing-breakeven-widget", 4),
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            assert args[-2:] == [date(2026, 4, 20), date(2026, 5, 19)]
+            return [
+                {"product_id": 10, "ad_spend_usd": 50},
+                {"product_id": 20, "ad_spend_usd": 50},
+                {"product_id": 40, "ad_spend_usd": 25},
+            ]
+        if "FROM order_profit_lines" in sql:
+            assert args[-2:] == [date(2026, 4, 20), date(2026, 5, 19)]
+            return [
+                {"product_id": 10, "revenue_usd": 150},
+                {"product_id": 20, "revenue_usd": 100},
+                {"product_id": 40, "revenue_usd": 100},
+            ]
+        raise AssertionError(sql)
+
+    def fake_calculate_break_even_roas(**kwargs):
+        by_purchase = {1: 2.0, 2: 3.0, 3: 1.5, 4: None}
+        return {"effective_roas": by_purchase[int(kwargs["purchase_price"])]}
+
+    result = build_mk_selection_response(
+        {},
+        ranking_columns_fn=fake_ranking_columns,
+        db_query_fn=fake_db_query,
+        today_fn=lambda: date(2026, 5, 20),
+        get_rmb_per_usd_fn=lambda: 7,
+        calculate_break_even_roas_fn=fake_calculate_break_even_roas,
+    )
+
+    assert result.status_code == 200
+    items = result.payload["items"]
+
+    assert items[0]["library_status"] == {
+        "in_library": True,
+        "status_label": "已入库",
+        "media_product_id": 10,
+        "matched_by": "media_product_id",
+        "card_status": "green",
+        "status_reason": "roas_meets_breakeven",
+        "ad_spend_usd": 50.0,
+        "revenue_usd": 150.0,
+        "roas": 3.0,
+        "breakeven_roas": 2.0,
+        "window_start": "2026-04-20",
+        "window_end": "2026-05-19",
+    }
+    assert items[1]["library_status"]["media_product_id"] == 20
+    assert items[1]["library_status"]["matched_by"] == "product_code"
+    assert items[1]["library_status"]["card_status"] == "red"
+    assert items[1]["library_status"]["roas"] == 2.0
+    assert items[2]["library_status"]["media_product_id"] == 30
+    assert items[2]["library_status"]["card_status"] == "yellow"
+    assert items[2]["library_status"]["status_reason"] == "no_ad_spend"
+    assert items[3]["library_status"]["media_product_id"] == 40
+    assert items[3]["library_status"]["card_status"] == "yellow"
+    assert items[3]["library_status"]["status_reason"] == "missing_breakeven_roas"
+    assert items[4]["library_status"]["in_library"] is False
+    assert items[4]["library_status"]["status_label"] == "未入库"
+    assert items[4]["library_status"]["card_status"] == "none"
 
 
 def test_build_mk_selection_response_rejects_invalid_pagination_without_db_query():

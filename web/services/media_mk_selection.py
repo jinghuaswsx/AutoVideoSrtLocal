@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 import hashlib
 import json
 import mimetypes
@@ -9,7 +10,7 @@ from pathlib import Path
 import re
 import tempfile
 from urllib.parse import quote, urlparse
-from typing import Callable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import requests
 from flask import Response, jsonify, send_file
@@ -245,6 +246,10 @@ def _normalize_product_code(value: str) -> str:
     return _strip_rjc(path)
 
 
+def normalize_library_product_code(value: object) -> str:
+    return _normalize_product_code(str(value or ""))
+
+
 def _link_tail(value: str) -> str:
     return _raw_product_handle(value)
 
@@ -303,6 +308,276 @@ def _local_media_url(object_key: object) -> str:
     if not key:
         return ""
     return f"/medias/object?object_key={quote(key, safe='')}"
+
+
+def _positive_int_or_none(value: object) -> int | None:
+    try:
+        parsed = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _round4(value: float | None) -> float | None:
+    return None if value is None else round(float(value), 4)
+
+
+def _library_window(today_fn: Callable[[], date] | None) -> tuple[date, date]:
+    today = today_fn() if today_fn else date.today()
+    window_end = today - timedelta(days=1)
+    window_start = window_end - timedelta(days=29)
+    return window_start, window_end
+
+
+def _default_library_status(*, window_start: date, window_end: date) -> dict[str, Any]:
+    return {
+        "in_library": False,
+        "status_label": "未入库",
+        "media_product_id": None,
+        "matched_by": "",
+        "card_status": "none",
+        "status_reason": "not_in_library",
+        "ad_spend_usd": 0.0,
+        "revenue_usd": 0.0,
+        "roas": None,
+        "breakeven_roas": None,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+    }
+
+
+def _query_media_products_by_ids(
+    product_ids: Sequence[int],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> list[dict]:
+    ids = [int(pid) for pid in dict.fromkeys(product_ids) if int(pid) > 0]
+    if not ids:
+        return []
+    placeholders = ",".join(["%s"] * len(ids))
+    return db_query_fn(
+        f"""
+        SELECT id, product_code, name, purchase_price, packet_cost_estimated,
+               packet_cost_actual, standalone_price, standalone_shipping_fee
+        FROM media_products
+        WHERE deleted_at IS NULL AND id IN ({placeholders})
+        """,
+        ids,
+    )
+
+
+def _query_media_products_by_codes(
+    product_codes: Sequence[str],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> list[dict]:
+    codes = [code for code in dict.fromkeys(product_codes) if code]
+    if not codes:
+        return []
+    placeholders = ",".join(["%s"] * len(codes))
+    return db_query_fn(
+        f"""
+        SELECT id, product_code, name, purchase_price, packet_cost_estimated,
+               packet_cost_actual, standalone_price, standalone_shipping_fee
+        FROM media_products
+        WHERE deleted_at IS NULL
+          AND LOWER(REGEXP_REPLACE(COALESCE(product_code, ''), '-rjc$', '')) IN ({placeholders})
+        """,
+        codes,
+    )
+
+
+def _query_ad_spend_by_product(
+    product_ids: Sequence[int],
+    *,
+    window_start: date,
+    window_end: date,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> dict[int, float]:
+    ids = [int(pid) for pid in dict.fromkeys(product_ids) if int(pid) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = db_query_fn(
+        f"""
+        SELECT product_id, COALESCE(SUM(spend_usd), 0) AS ad_spend_usd
+        FROM meta_ad_daily_campaign_metrics
+        WHERE product_id IN ({placeholders})
+          AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s
+        GROUP BY product_id
+        """,
+        ids + [window_start, window_end],
+    )
+    return {
+        int(row["product_id"]): float(row.get("ad_spend_usd") or 0)
+        for row in rows or []
+        if row.get("product_id") is not None
+    }
+
+
+def _query_revenue_by_product(
+    product_ids: Sequence[int],
+    *,
+    window_start: date,
+    window_end: date,
+    db_query_fn: Callable[[str, list], list[dict]],
+) -> dict[int, float]:
+    ids = [int(pid) for pid in dict.fromkeys(product_ids) if int(pid) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = db_query_fn(
+        f"""
+        SELECT opl.product_id, COALESCE(SUM(opl.revenue_usd), 0) AS revenue_usd
+        FROM order_profit_lines opl
+        JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id
+        WHERE opl.product_id IN ({placeholders})
+          AND dol.meta_business_date BETWEEN %s AND %s
+        GROUP BY opl.product_id
+        """,
+        ids + [window_start, window_end],
+    )
+    return {
+        int(row["product_id"]): float(row.get("revenue_usd") or 0)
+        for row in rows or []
+        if row.get("product_id") is not None
+    }
+
+
+def _product_breakeven_roas(
+    product: dict[str, Any],
+    *,
+    rmb_per_usd: Any,
+    calculate_break_even_roas_fn: Callable[..., dict],
+) -> float | None:
+    try:
+        result = calculate_break_even_roas_fn(
+            purchase_price=product.get("purchase_price"),
+            estimated_packet_cost=product.get("packet_cost_estimated"),
+            actual_packet_cost=product.get("packet_cost_actual"),
+            standalone_price=product.get("standalone_price"),
+            standalone_shipping_fee=product.get("standalone_shipping_fee"),
+            rmb_per_usd=rmb_per_usd,
+        )
+    except Exception:
+        return None
+    value = result.get("effective_roas") if isinstance(result, dict) else None
+    return None if value is None else float(value)
+
+
+def build_library_status_index(
+    items: Sequence[dict],
+    *,
+    db_query_fn: Callable[[str, list], list[dict]],
+    today_fn: Callable[[], date] | None = None,
+    get_rmb_per_usd_fn: Callable[[], Any] | None = None,
+    calculate_break_even_roas_fn: Callable[..., dict] | None = None,
+) -> dict[int, dict[str, Any]]:
+    from appcore import product_roas
+
+    window_start, window_end = _library_window(today_fn)
+    statuses = {
+        index: _default_library_status(window_start=window_start, window_end=window_end)
+        for index, _item in enumerate(items)
+    }
+    if not items:
+        return statuses
+
+    direct_ids = [
+        pid
+        for item in items
+        if (pid := _positive_int_or_none(item.get("media_product_id"))) is not None
+    ]
+    item_codes = [
+        normalize_library_product_code(item.get("product_code") or item.get("product_url") or "")
+        for item in items
+    ]
+    code_candidates = [code for code in item_codes if code]
+
+    products = _query_media_products_by_ids(direct_ids, db_query_fn=db_query_fn)
+    products.extend(_query_media_products_by_codes(code_candidates, db_query_fn=db_query_fn))
+
+    products_by_id: dict[int, dict] = {}
+    products_by_code: dict[str, dict] = {}
+    for product in products or []:
+        pid = _positive_int_or_none(product.get("id"))
+        if pid is None or pid in products_by_id:
+            continue
+        products_by_id[pid] = product
+        normalized_code = normalize_library_product_code(product.get("product_code") or "")
+        if normalized_code and normalized_code not in products_by_code:
+            products_by_code[normalized_code] = product
+
+    matched: dict[int, tuple[dict, str]] = {}
+    for index, item in enumerate(items):
+        direct_id = _positive_int_or_none(item.get("media_product_id"))
+        if direct_id is not None and direct_id in products_by_id:
+            matched[index] = (products_by_id[direct_id], "media_product_id")
+            continue
+        code = item_codes[index]
+        if code and code in products_by_code:
+            matched[index] = (products_by_code[code], "product_code")
+
+    matched_ids = [
+        int(product["id"])
+        for product, _matched_by in matched.values()
+        if _positive_int_or_none(product.get("id")) is not None
+    ]
+    ad_spend_by_product = _query_ad_spend_by_product(
+        matched_ids,
+        window_start=window_start,
+        window_end=window_end,
+        db_query_fn=db_query_fn,
+    )
+    revenue_by_product = _query_revenue_by_product(
+        matched_ids,
+        window_start=window_start,
+        window_end=window_end,
+        db_query_fn=db_query_fn,
+    )
+    rmb_per_usd = (get_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd)()
+    calculate_break_even_roas_fn = (
+        calculate_break_even_roas_fn or product_roas.calculate_break_even_roas
+    )
+
+    for index, (product, matched_by) in matched.items():
+        pid = int(product["id"])
+        ad_spend = float(ad_spend_by_product.get(pid, 0.0) or 0.0)
+        revenue = float(revenue_by_product.get(pid, 0.0) or 0.0)
+        roas = revenue / ad_spend if ad_spend > 0 else None
+        breakeven = _product_breakeven_roas(
+            product,
+            rmb_per_usd=rmb_per_usd,
+            calculate_break_even_roas_fn=calculate_break_even_roas_fn,
+        )
+        if ad_spend <= 0:
+            card_status = "yellow"
+            status_reason = "no_ad_spend"
+        elif breakeven is None:
+            card_status = "yellow"
+            status_reason = "missing_breakeven_roas"
+        elif roas is not None and roas >= breakeven:
+            card_status = "green"
+            status_reason = "roas_meets_breakeven"
+        else:
+            card_status = "red"
+            status_reason = "roas_below_breakeven"
+
+        statuses[index] = {
+            "in_library": True,
+            "status_label": "已入库",
+            "media_product_id": pid,
+            "matched_by": matched_by,
+            "card_status": card_status,
+            "status_reason": status_reason,
+            "ad_spend_usd": _round4(ad_spend),
+            "revenue_usd": _round4(revenue),
+            "roas": _round4(roas),
+            "breakeven_roas": _round4(breakeven),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+        }
+    return statuses
 
 
 def _visible_mk_video_rows(item: dict) -> list[dict]:
@@ -423,6 +698,9 @@ def build_mk_selection_response(
     ranking_columns_fn: Callable[[], Sequence[str] | set[str]],
     product_assets_table_exists_fn: Callable[[], bool] | None = None,
     db_query_fn: Callable[[str, list], list[dict]],
+    today_fn: Callable[[], date] | None = None,
+    get_rmb_per_usd_fn: Callable[[], Any] | None = None,
+    calculate_break_even_roas_fn: Callable[..., dict] | None = None,
 ) -> MkSelectionResponse:
     keyword = (args.get("keyword") or "").strip()
     try:
@@ -619,6 +897,16 @@ def build_mk_selection_response(
             "mp_name": row["mp_name"],
             "mp_code": row["mp_code"],
         })
+
+    library_statuses = build_library_status_index(
+        items,
+        db_query_fn=db_query_fn,
+        today_fn=today_fn,
+        get_rmb_per_usd_fn=get_rmb_per_usd_fn,
+        calculate_break_even_roas_fn=calculate_break_even_roas_fn,
+    )
+    for index, item in enumerate(items):
+        item["library_status"] = library_statuses.get(index)
 
     return MkSelectionResponse(
         {
