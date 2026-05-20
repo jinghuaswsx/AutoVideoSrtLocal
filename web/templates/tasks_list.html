@@ -149,6 +149,19 @@ const TC_CAPS = {
 let TC_CURRENT_TAB = 'mine';
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function tcInlineArg(s) {
+  return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+function tcMediasUrl(taskId, productId, lang, productCode, action) {
+  const params = new URLSearchParams();
+  productCode = String(productCode || '').trim();
+  if (productCode) params.set('q', productCode);
+  if (taskId) params.set('from_task', String(taskId || ''));
+  if (productId) params.set('product', String(productId || ''));
+  if (lang) params.set('lang', String(lang || '').toLowerCase());
+  if (action) params.set('action', action);
+  return '/medias/?' + params.toString();
+}
 
 async function tcFetchJson(url, opts) {
   const rsp = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts || {}));
@@ -310,11 +323,12 @@ async function tcOpenDetail(id) {
         panel.style.display = 'block';
         wrap.innerHTML = items.map(function(it) {
           const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
+          const href = tcMediasUrl(it.task_id || '', it.product_id || '', it.lang || '', it.product_code || '', 'history');
           return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border);">'
             + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(it.lang || '--') + '</span>'
             + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
             + pushedBadge
-            + '<a href="/medias/?from_task=' + (it.task_id || '') + '&product=' + tcEsc(it.product_id || '') + '&lang=' + tcEsc(it.lang || '') + '" target="_blank" rel="noopener" class="tc-btn" style="font-size:10px; height:22px; padding:0 6px;">素材库</a>'
+            + '<a href="' + tcEsc(href) + '" target="_blank" rel="noopener" class="tc-btn" style="font-size:10px; height:22px; padding:0 6px;">素材库</a>'
             + '</div>';
         }).join('');
       })
@@ -330,17 +344,41 @@ async function tcOpenDetail(id) {
           const wrap = document.getElementById('tcReadinessRows');
           if (!wrap) return;
           if (data.error) { wrap.textContent = data.error; return; }
+          const mediaUrl = data.media_search_url || tcMediasUrl(id, task.media_product_id, data.country_code || task.country_code, data.product_code || task.product_code || '', 'translate');
+          const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
+          if (Array.isArray(data.checks) && data.checks.length) {
+            wrap.innerHTML = jump + data.checks.map(function(check) {
+              const ok = !!check.ok || (!check.required && check.ok !== false);
+              const icon = ok ? '✓' : '✗';
+              const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
+              const counts = (check.source_count !== undefined || check.target_count !== undefined)
+                ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
+                : '';
+              const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
+              const links = Array.isArray(check.links) && check.links.length
+                ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
+                    const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
+                    return tcEsc(label);
+                  }).join('<br>') + '</div>'
+                : '';
+              return '<div style="padding:5px 0; border-bottom:1px dashed var(--tc-border);">'
+                + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+                + reason + links
+                + '</div>';
+            }).join('');
+            return;
+          }
           const labels = {
-            has_video: '视频', has_cover: '封面',
+            has_object: '视频', has_video: '视频', has_cover: '封面',
             has_copywriting: '文案', has_push_texts: '推送文案',
-            is_listed: '商品在架',
+            is_listed: '商品在架', lang_supported: '广告语言', shopify_image_confirmed: '链接商品图替换',
           };
           const entries = Object.entries(data.readiness || {});
           if (!entries.length) {
-            wrap.innerHTML = '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(data.country_code) + ' 添加视频</span>';
+            wrap.innerHTML = jump + '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(data.country_code) + ' 添加视频</span>';
             return;
           }
-          wrap.innerHTML = entries.map(([k, v]) => {
+          wrap.innerHTML = jump + entries.map(([k, v]) => {
             const label = labels[k] || k;
             const icon = v ? '✓' : '✗';
             const color = v ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
@@ -404,8 +442,11 @@ function tcDetailButtons(task, isParent) {
     }
   } else {
     if (status === 'assigned') {
-      btns.push(`<button class="tc-btn" onclick="tcChildJumpTranslate(${id}, '${tcEsc(task.country_code)}', ${task.media_product_id})">翻译</button>`);
-      btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${tcEsc(task.country_code)}', ${task.media_product_id})">翻译任务记录</button>`);
+      const country = tcInlineArg(task.country_code);
+      const productCode = tcInlineArg(task.product_code || '');
+      const productId = Number(task.media_product_id || 0);
+      btns.push(`<button class="tc-btn" onclick="tcChildJumpTranslate(${id}, '${country}', ${productId}, '${productCode}')">翻译</button>`);
+      btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${country}', ${productId}, '${productCode}')">翻译任务记录</button>`);
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'submit')">提交完成</button>`);
     }
     if (status === 'review' && TC_IS_ADMIN) {
@@ -436,24 +477,12 @@ async function tcAction(kind, id, action) {
   }
 }
 
-function tcChildJumpTranslate(taskId, country, productId) {
-  const params = new URLSearchParams({
-    from_task: String(taskId || ''),
-    product: String(productId || ''),
-    lang: String(country || '').toLowerCase(),
-    action: 'translate',
-  });
-  const url = `/medias/?${params.toString()}`;
+function tcChildJumpTranslate(taskId, country, productId, productCode) {
+  const url = tcMediasUrl(taskId, productId, country, productCode, 'translate');
   window.open(url, '_blank', 'noopener,noreferrer');
 }
-function tcChildJumpHistory(taskId, country, productId) {
-  const params = new URLSearchParams({
-    from_task: String(taskId || ''),
-    product: String(productId || ''),
-    lang: String(country || '').toLowerCase(),
-    action: 'history',
-  });
-  const url = `/medias/?${params.toString()}`;
+function tcChildJumpHistory(taskId, country, productId, productCode) {
+  const url = tcMediasUrl(taskId, productId, country, productCode, 'history');
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 function tcParentUploadDone(id, productId) {

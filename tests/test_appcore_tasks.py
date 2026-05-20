@@ -433,10 +433,21 @@ def test_submit_child_passes_with_ready(
     monkeypatch.setattr(tasks, "_find_target_lang_item",
                         lambda product_id, lang: {"id": 1, "object_key": "x", "cover_object_key": "c", "lang": lang, "product_id": product_id})
     monkeypatch.setattr("appcore.pushes.compute_readiness",
-                        lambda i, p: {"has_video": True, "has_cover": True,
+                        lambda i, p: {"has_object": True, "has_cover": True,
                                       "has_copywriting": True, "has_push_texts": True,
-                                      "is_listed": True})
+                                      "is_listed": True, "lang_supported": True,
+                                      "shopify_image_confirmed": True})
     monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": ""},
+    )
 
     tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     row = query_one("SELECT * FROM tasks WHERE id=%s", (child_id,))
@@ -469,12 +480,84 @@ def test_submit_child_fails_when_not_ready(
                         lambda i, p: {"has_video": True, "has_cover": False,
                                       "has_copywriting": False})
     monkeypatch.setattr("appcore.pushes.is_ready", lambda r: False)
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": ""},
+    )
 
     with pytest.raises(tasks.NotReadyError) as exc:
         tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     assert "has_cover" in str(exc.value.missing) or "has_cover" in str(exc.value)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "parent_task_id": 10,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_ASSIGNED,
+            "assignee_id": 2,
+        },
+    )
+
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 1,
+            "object_key": "x",
+            "cover_object_key": "c",
+            "lang": lang,
+            "product_id": product_id,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.compute_readiness",
+        lambda i, p: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {
+            "ok": False,
+            "required": True,
+            "reason": "英文详情图 2 张，目标语种详情图 0 张",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": ""},
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+
+    with pytest.raises(tasks.NotReadyError) as exc:
+        tasks.submit_child(task_id=44, actor_user_id=2)
+
+    assert "detail_images" in exc.value.missing
 
 
 def test_submit_child_fails_when_target_lang_item_missing(

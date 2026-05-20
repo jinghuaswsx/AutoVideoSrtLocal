@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Iterable
+from urllib.parse import urlencode
 
 from appcore import mk_import as mk_import_svc
 from appcore import user_notifications as notifications_svc
@@ -148,7 +149,7 @@ def list_task_center_items(
         args.append(PARENT_CANCELLED)
 
     sql = (
-        "SELECT t.*, p.name AS product_name, "
+        "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
         "       u.username AS assignee_username "
         "FROM tasks t "
         "JOIN media_products p ON p.id=t.media_product_id "
@@ -165,6 +166,7 @@ def list_task_center_items(
                 "parent_task_id": row["parent_task_id"],
                 "media_product_id": row["media_product_id"],
                 "product_name": row["product_name"],
+                "product_code": row.get("product_code"),
                 "country_code": row["country_code"],
                 "assignee_id": row["assignee_id"],
                 "assignee_username": row["assignee_username"],
@@ -578,12 +580,271 @@ def _find_product(product_id: int) -> dict | None:
     )
 
 
+def _medias_search_url(
+    *,
+    product_code: str | None,
+    task_id: int | None,
+    product_id: int | None,
+    lang: str | None,
+    action: str = "translate",
+) -> str:
+    params: list[tuple[str, str]] = []
+    code = (product_code or "").strip()
+    if code:
+        params.append(("q", code))
+    if task_id:
+        params.append(("from_task", str(int(task_id))))
+    if product_id:
+        params.append(("product", str(int(product_id))))
+    lang_code = (lang or "").strip().lower()
+    if lang_code:
+        params.append(("lang", lang_code))
+    if action:
+        params.append(("action", action))
+    return "/medias/?" + urlencode(params)
+
+
+def _acceptance_check(
+    key: str,
+    label: str,
+    ok: bool,
+    *,
+    required: bool = True,
+    reason: str = "",
+    **extra: Any,
+) -> dict:
+    payload = {
+        "key": key,
+        "label": label,
+        "ok": bool(ok),
+        "required": bool(required),
+        "reason": reason or "",
+    }
+    payload.update(extra)
+    return payload
+
+
+def _readiness_bool(readiness: dict, key: str) -> bool:
+    return bool((readiness or {}).get(key))
+
+
+def _detail_images_status(product_id: int, lang: str) -> dict:
+    from appcore import medias
+
+    def _static(rows: list[dict]) -> list[dict]:
+        return [row for row in rows if not medias.detail_image_is_gif(row)]
+
+    source_rows = _static(medias.list_detail_images(int(product_id), "en") or [])
+    target_rows = _static(medias.list_detail_images(int(product_id), (lang or "").lower()) or [])
+    source_count = len(source_rows)
+    target_count = len(target_rows)
+    required = source_count > 0
+    ok = (not required) or target_count > 0
+    if ok:
+        reason = "" if required else "英文无静态详情图，不要求"
+    else:
+        reason = f"英文详情图 {source_count} 张，目标语种详情图 {target_count} 张"
+    return {
+        "ok": ok,
+        "required": required,
+        "source_count": source_count,
+        "target_count": target_count,
+        "reason": reason,
+    }
+
+
+def _product_link_availability_status(
+    product_id: int,
+    lang: str,
+    product: dict | None,
+) -> dict:
+    from appcore import link_availability, product_link_domains, pushes
+
+    link_rows = pushes.resolve_product_page_urls(lang, product or {})
+    if not link_rows:
+        return {
+            "ok": False,
+            "required": True,
+            "reason": "未配置目标语种商品链接",
+            "links": [],
+        }
+
+    latest_rows = link_availability.list_results(int(product_id), lang) or []
+    latest_by_domain = {
+        str(row.get("domain") or "").strip().lower(): row
+        for row in latest_rows
+    }
+    links: list[dict] = []
+    failures: list[str] = []
+    for row in link_rows:
+        url = str(row.get("url") or "").strip()
+        domain = (
+            str(row.get("domain") or "").strip().lower()
+            or product_link_domains.domain_from_url(url)
+        )
+        latest = latest_by_domain.get(domain)
+        ok = bool(latest and latest.get("ok"))
+        error = ""
+        http_status = None
+        checked_at = ""
+        if latest:
+            error = latest.get("error") or ""
+            http_status = latest.get("http_status")
+            checked_at = latest.get("checked_at") or ""
+        else:
+            error = "missing_probe"
+        if not ok:
+            failures.append(f"{domain or url} 未探活" if error == "missing_probe" else f"{domain or url} {error}")
+        links.append(
+            {
+                "domain": domain,
+                "url": url,
+                "ok": ok,
+                "error": error or None,
+                "http_status": http_status,
+                "checked_at": checked_at,
+            }
+        )
+
+    return {
+        "ok": not failures,
+        "required": True,
+        "reason": "；".join(failures),
+        "links": links,
+    }
+
+
+def _child_acceptance_payload(
+    *,
+    task_id: int,
+    row: dict,
+    item: dict | None,
+    product: dict | None,
+    readiness: dict,
+) -> dict:
+    product_id = int(row["media_product_id"])
+    lang = (row.get("country_code") or "").strip().lower()
+    product_code = (
+        (product or {}).get("product_code")
+        or row.get("product_code")
+        or ""
+    )
+
+    if not item:
+        checks = [
+            _acceptance_check(
+                "localized_media_item",
+                "目标语种素材",
+                False,
+                reason="未找到该语种 media_item",
+            )
+        ]
+        return {
+            "ready": False,
+            "missing": ["lang_item_missing"],
+            "readiness": {},
+            "checks": checks,
+            "country_code": row["country_code"],
+            "product_code": product_code,
+            "media_search_url": _medias_search_url(
+                product_code=product_code,
+                task_id=task_id,
+                product_id=product_id,
+                lang=lang,
+            ),
+        }
+
+    detail_status = _detail_images_status(product_id, lang)
+    link_status = _product_link_availability_status(product_id, lang, product)
+    checks = [
+        _acceptance_check("localized_media_item", "目标语种素材", True),
+        _acceptance_check(
+            "translated_video",
+            "视频翻译结果",
+            _readiness_bool(readiness, "has_object"),
+        ),
+        _acceptance_check(
+            "translated_cover",
+            "封面翻译结果",
+            _readiness_bool(readiness, "has_cover"),
+        ),
+        _acceptance_check(
+            "translated_copywriting",
+            "文案翻译结果",
+            _readiness_bool(readiness, "has_copywriting"),
+        ),
+        _acceptance_check(
+            "push_texts",
+            "推送文案格式",
+            _readiness_bool(readiness, "has_push_texts"),
+        ),
+        _acceptance_check(
+            "product_listed",
+            "商品在架状态",
+            _readiness_bool(readiness, "is_listed"),
+        ),
+        _acceptance_check(
+            "language_supported",
+            "广告语言配置",
+            _readiness_bool(readiness, "lang_supported"),
+        ),
+        _acceptance_check(
+            "detail_images",
+            "产品详情图翻译",
+            bool(detail_status.get("ok")),
+            required=bool(detail_status.get("required")),
+            reason=detail_status.get("reason") or "",
+            source_count=int(detail_status.get("source_count") or 0),
+            target_count=int(detail_status.get("target_count") or 0),
+        ),
+        _acceptance_check(
+            "shopify_images",
+            "链接商品图替换",
+            _readiness_bool(readiness, "shopify_image_confirmed"),
+            reason=(readiness or {}).get("shopify_image_reason") or "",
+        ),
+        _acceptance_check(
+            "product_links",
+            "商品链接探活",
+            bool(link_status.get("ok")),
+            required=bool(link_status.get("required")),
+            reason=link_status.get("reason") or "",
+            links=link_status.get("links") or [],
+        ),
+    ]
+    missing = [
+        check["key"]
+        for check in checks
+        if check.get("required") and not check.get("ok")
+    ]
+    return {
+        "ready": not missing,
+        "missing": missing,
+        "readiness": {
+            key: bool(value)
+            for key, value in (readiness or {}).items()
+            if not str(key).endswith("_reason") and key != "shopify_image_domain_details"
+        },
+        "checks": checks,
+        "country_code": row["country_code"],
+        "product_code": product_code,
+        "media_item_id": item["id"],
+        "media_search_url": _medias_search_url(
+            product_code=product_code,
+            task_id=task_id,
+            product_id=product_id,
+            lang=lang,
+        ),
+    }
+
+
 def get_child_readiness(task_id: int) -> dict:
     from appcore import pushes
 
     row = query_one(
-        "SELECT t.media_product_id, t.country_code "
-        "FROM tasks t WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
+        "SELECT t.media_product_id, t.country_code, p.product_code "
+        "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
+        "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
         (int(task_id),),
     )
     if not row:
@@ -591,31 +852,23 @@ def get_child_readiness(task_id: int) -> dict:
 
     item = _find_target_lang_item(row["media_product_id"], row["country_code"])
     if not item:
-        return {
-            "ready": False,
-            "missing": ["lang_item_missing"],
-            "country_code": row["country_code"],
-            "readiness": {},
-        }
+        return _child_acceptance_payload(
+            task_id=int(task_id),
+            row=row,
+            item=None,
+            product=None,
+            readiness={},
+        )
 
     product = _find_product(row["media_product_id"])
     readiness = pushes.compute_readiness(item, product)
-    missing = [
-        key
-        for key, value in readiness.items()
-        if not str(key).endswith("_reason") and not value
-    ]
-    return {
-        "ready": pushes.is_ready(readiness),
-        "missing": missing,
-        "readiness": {
-            key: bool(value)
-            for key, value in readiness.items()
-            if not str(key).endswith("_reason")
-        },
-        "country_code": row["country_code"],
-        "media_item_id": item["id"],
-    }
+    return _child_acceptance_payload(
+        task_id=int(task_id),
+        row=row,
+        item=item,
+        product=product,
+        readiness=readiness,
+    )
 
 
 def list_unbound_items_for_task(task_id: int) -> list[dict]:
@@ -664,7 +917,7 @@ def list_task_artifacts(
     """
     if not is_parent:
         rows = query_all(
-            "SELECT mi.*, p.name AS product_name "
+            "SELECT mi.*, p.name AS product_name, p.product_code AS product_code "
             "FROM media_items mi JOIN media_products p ON p.id=mi.product_id "
             "WHERE mi.task_id=%s AND mi.deleted_at IS NULL "
             "ORDER BY mi.lang, mi.id DESC",
@@ -682,7 +935,7 @@ def list_task_artifacts(
             return []
         placeholders = ",".join(["%s"] * len(child_ids))
         rows = query_all(
-            f"SELECT mi.*, p.name AS product_name "
+            f"SELECT mi.*, p.name AS product_name, p.product_code AS product_code "
             f"FROM media_items mi JOIN media_products p ON p.id=mi.product_id "
             f"WHERE mi.task_id IN ({placeholders}) AND mi.deleted_at IS NULL "
             f"ORDER BY mi.lang, mi.id DESC",
@@ -711,9 +964,15 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
                             detail=f"missing: lang_item_missing (no media_item with lang={row['country_code']})")
     product = _find_product(row["media_product_id"])
     readiness = pushes.compute_readiness(item, product)
-    if not pushes.is_ready(readiness):
-        missing = [k for k, v in readiness.items()
-                   if not str(k).endswith("_reason") and not v]
+    payload = _child_acceptance_payload(
+        task_id=int(task_id),
+        row=row,
+        item=item,
+        product=product,
+        readiness=readiness,
+    )
+    if not payload["ready"]:
+        missing = payload["missing"]
         raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
 
     conn = get_conn()

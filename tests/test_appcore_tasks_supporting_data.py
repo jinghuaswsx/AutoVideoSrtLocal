@@ -138,6 +138,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "parent_task_id": None,
                 "media_product_id": 9,
                 "product_name": "Product A",
+                "product_code": "product-a-rjc",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -168,6 +169,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "parent_task_id": None,
                 "media_product_id": 9,
                 "product_name": "Product A",
+                "product_code": "product-a-rjc",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -209,7 +211,11 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
     def fake_query_one(sql, args=()):
         captured["sql"] = sql
         captured["args"] = args
-        return {"media_product_id": 9, "country_code": "DE"}
+        return {
+            "media_product_id": 9,
+            "country_code": "DE",
+            "product_code": "robot-kit-rjc",
+        }
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
     monkeypatch.setattr(tasks, "_find_target_lang_item", lambda product_id, lang: None)
@@ -218,7 +224,20 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "ready": False,
         "missing": ["lang_item_missing"],
         "country_code": "DE",
+        "product_code": "robot-kit-rjc",
+        "media_search_url": (
+            "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+        ),
         "readiness": {},
+        "checks": [
+            {
+                "key": "localized_media_item",
+                "label": "目标语种素材",
+                "ok": False,
+                "required": True,
+                "reason": "未找到该语种 media_item",
+            }
+        ],
     }
     assert "FROM tasks t" in captured["sql"]
     assert "parent_task_id IS NOT NULL" in captured["sql"]
@@ -231,7 +250,11 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     monkeypatch.setattr(
         tasks,
         "query_one",
-        lambda sql, args=(): {"media_product_id": 9, "country_code": "DE"},
+        lambda sql, args=(): {
+            "media_product_id": 9,
+            "country_code": "DE",
+            "product_code": "robot-kit-rjc",
+        },
     )
     monkeypatch.setattr(
         tasks,
@@ -243,20 +266,153 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         pushes,
         "compute_readiness",
         lambda item, product: {
-            "title": True,
-            "cover": False,
-            "cover_reason": "missing",
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
         },
     )
-    monkeypatch.setattr(pushes, "is_ready", lambda readiness: False)
+    monkeypatch.setattr(pushes, "is_ready", lambda readiness: True)
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {
+            "ok": False,
+            "required": True,
+            "source_count": 3,
+            "target_count": 0,
+            "reason": "英文详情图 3 张，目标语种详情图 0 张",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {
+            "ok": False,
+            "required": True,
+            "reason": "newjoyloo.com 未探活",
+            "links": [
+                {
+                    "domain": "newjoyloo.com",
+                    "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+                    "ok": False,
+                    "error": "missing_probe",
+                    "http_status": None,
+                    "checked_at": "",
+                }
+            ],
+        },
+    )
 
-    assert tasks.get_child_readiness(44) == {
+    payload = tasks.get_child_readiness(44)
+    assert payload == {
         "ready": False,
-        "missing": ["cover"],
-        "readiness": {"title": True, "cover": False},
+        "missing": ["detail_images", "product_links"],
+        "readiness": {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
         "country_code": "DE",
+        "product_code": "robot-kit-rjc",
         "media_item_id": 5,
+        "media_search_url": (
+            "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+        ),
+        "checks": [
+            {
+                "key": "localized_media_item",
+                "label": "目标语种素材",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "translated_video",
+                "label": "视频翻译结果",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "translated_cover",
+                "label": "封面翻译结果",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "translated_copywriting",
+                "label": "文案翻译结果",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "push_texts",
+                "label": "推送文案格式",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "product_listed",
+                "label": "商品在架状态",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "language_supported",
+                "label": "广告语言配置",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "detail_images",
+                "label": "产品详情图翻译",
+                "ok": False,
+                "required": True,
+                "reason": "英文详情图 3 张，目标语种详情图 0 张",
+                "source_count": 3,
+                "target_count": 0,
+            },
+            {
+                "key": "shopify_images",
+                "label": "链接商品图替换",
+                "ok": True,
+                "required": True,
+                "reason": "",
+            },
+            {
+                "key": "product_links",
+                "label": "商品链接探活",
+                "ok": False,
+                "required": True,
+                "reason": "newjoyloo.com 未探活",
+                "links": [
+                    {
+                        "domain": "newjoyloo.com",
+                        "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+                        "ok": False,
+                        "error": "missing_probe",
+                        "http_status": None,
+                        "checked_at": "",
+                    }
+                ],
+            },
+        ],
     }
+    assert payload["checks"][7]["key"] == "detail_images"
+    assert payload["checks"][9]["key"] == "product_links"
 
 
 def test_bind_parent_media_item_validates_product_and_updates(monkeypatch):

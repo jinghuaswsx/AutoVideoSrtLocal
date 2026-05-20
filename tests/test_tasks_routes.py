@@ -4,6 +4,15 @@ def test_index_renders_for_admin(authed_client_no_db):
     assert b"\xe4\xbb\xbb\xe5\x8a\xa1\xe4\xb8\xad\xe5\xbf\x83" in rsp.data  # "任务中心" in UTF-8
 
 
+def test_task_center_child_translate_jump_uses_product_code_search(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+    assert "function tcMediasUrl" in body
+    assert "params.set('q', productCode)" in body
+    assert "params.set('from_task', String(taskId || ''))" in body
+    assert "tcChildJumpTranslate(taskId, country, productId, productCode)" in body
+
+
 def test_index_requires_login():
     from web.app import create_app
     app = create_app()
