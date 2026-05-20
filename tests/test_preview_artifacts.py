@@ -128,6 +128,15 @@ def test_shot_translate_artifact_uses_asr_translation_units_as_process_rows():
         "Opening hook keeps speaking",
         "Second ASR sentence continues",
     ]
+    full_text = artifact["items"][2]
+    pairs = artifact["items"][3]
+    assert full_text["type"] == "side_by_side"
+    assert full_text["label"] == "第一轮全文翻译对照"
+    assert pairs["type"] == "translation_pairs"
+    assert pairs["label"] == "第一轮逐句翻译对照"
+    assert pairs["pairs"][0]["source_text"] == "Opening hook keeps speaking"
+    assert pairs["pairs"][0]["target_text"] == "Gancho inicial"
+    assert pairs["pairs"][0]["shot_context"] == [{"index": 1}, {"index": 2}]
 
 
 def test_build_tts_artifact_does_not_embed_duration_rounds():

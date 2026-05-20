@@ -551,15 +551,23 @@ def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
 
     assert "buildTranslateArtifactFromTask" in script
+    assert "augmentTranslateArtifactFromTask" in script
+    assert "buildTranslationPairsFromTask" in script
     assert "buildAsrPrimaryShotTranslationRows" in script
     assert "translation.source_text" in script
     assert "shot_context" in script
     assert 'item.type === "shot_translation_summary"' in script
     assert 'item.type === "shot_translations"' in script
+    assert 'item.type === "translation_pairs"' in script
+    assert "第一轮全文翻译对照" in script
+    assert "第一轮逐句翻译对照" in script
+    assert "全文翻译对照" in script
+    assert "逐句翻译对照" in script
     assert "时间轴分段翻译过程" in script
     assert "时间轴分段过程和结果" in script
     assert "镜头级翻译过程" not in script
     assert ".shot-translation-grid" in styles
+    assert ".translation-pair-grid" in styles
 
 
 def test_shot_char_limit_legacy_translate_message_is_normalized_for_display():

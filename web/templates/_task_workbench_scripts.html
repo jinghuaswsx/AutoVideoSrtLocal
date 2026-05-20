@@ -1210,6 +1210,85 @@
     return isTerminalStepStatus(status);
   }
 
+  function localizedSentenceText(sentence) {
+    if (!sentence || typeof sentence !== "object") return "";
+    return String(sentence.text || sentence.translated || sentence.target_text || sentence.tts_text || "").trim();
+  }
+
+  function sentenceIndexValue(sentence, fallbackIndex) {
+    const sourceIndices = Array.isArray(sentence?.source_segment_indices) ? sentence.source_segment_indices : [];
+    const raw = sentence?.asr_index ?? sentence?.index ?? sourceIndices[0] ?? fallbackIndex;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : fallbackIndex;
+  }
+
+  function sourceTextFromTaskForSentence(task, sentence, fallbackIndex) {
+    const wanted = sentenceIndexValue(sentence, fallbackIndex);
+    const byIndexSources = [
+      ...(Array.isArray(task?.translations) ? task.translations : []),
+      ...(Array.isArray(task?.script_segments) ? task.script_segments : []),
+      ...(Array.isArray(task?.utterances) ? task.utterances : []),
+      ...(Array.isArray(task?.utterances_en) ? task.utterances_en : []),
+    ];
+    const matched = byIndexSources.find(item => {
+      if (!item || typeof item !== "object") return false;
+      const raw = item.asr_index ?? item.unit_index ?? item.index;
+      return Number(raw) === wanted;
+    }) || byIndexSources[fallbackIndex] || {};
+    return String(
+      sentence?.source_text
+      || matched.source_text
+      || matched.text
+      || matched.asr_text
+      || ""
+    ).trim();
+  }
+
+  function buildTranslationPairsFromTask(task, sentences = null) {
+    if (!task) return [];
+    const translations = Array.isArray(task.translations) ? task.translations : [];
+    const translationRows = translations
+      .filter(row => row && (row.source_text || row.translated_text))
+      .map((row, pos) => ({
+        index: row.asr_index ?? row.unit_index ?? row.shot_index ?? pos,
+        start_time: row.start_time ?? row.start,
+        end_time: row.end_time ?? row.end,
+        source_text: String(row.source_text || "").trim(),
+        target_text: String(row.translated_text || "").trim(),
+        description: row.description || "",
+        shot_context: Array.isArray(row.shot_context) ? row.shot_context : [],
+      }))
+      .filter(row => row.source_text || row.target_text);
+    if (translationRows.length) return translationRows;
+
+    const localized = sentences
+      || task.localized_translation?.sentences
+      || task.variants?.normal?.localized_translation?.sentences
+      || task.variants?.av?.localized_translation?.sentences
+      || [];
+    if (!Array.isArray(localized) || !localized.length) return [];
+    return localized.map((sentence, pos) => ({
+      index: sentenceIndexValue(sentence, pos),
+      source_text: sourceTextFromTaskForSentence(task, sentence, pos),
+      target_text: localizedSentenceText(sentence),
+      source_segment_indices: Array.isArray(sentence?.source_segment_indices) ? sentence.source_segment_indices : [],
+    })).filter(row => row.source_text || row.target_text);
+  }
+
+  function translationPairItemFromTask(task) {
+    const pairs = buildTranslationPairsFromTask(task);
+    if (!pairs.length) return null;
+    const sourceLang = task?.source_language || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "";
+    const targetLang = task?.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
+    return {
+      type: "translation_pairs",
+      label: "第一轮逐句翻译对照",
+      source_label: langLabel(sourceLang, sourceLang || "原文"),
+      target_label: langLabel(targetLang, (targetLang || "").toUpperCase() || "译文"),
+      pairs,
+    };
+  }
+
   function buildTranslateArtifactFromTask(task) {
     if (!task) return null;
     const translations = Array.isArray(task.translations) ? task.translations : [];
@@ -1255,11 +1334,14 @@
     if (sourceFullText || translatedFullText) {
       items.push({
         type: "side_by_side",
+        label: "第一轮全文翻译对照",
         show_retranslate: true,
         left: { type: "text", label: `整段${langLabel(sourceLang, "原文")}`, content: sourceFullText },
         right: { type: "text", label: `整段本土化${langLabel(targetLang, targetLang.toUpperCase())}`, content: translatedFullText },
       });
     }
+    const pairItem = translationPairItemFromTask(task);
+    if (pairItem) items.push(pairItem);
     if (localized?.sentences?.length) {
       items.push({
         type: "sentences",
@@ -1268,6 +1350,29 @@
       });
     }
     return { title: "翻译本土化", layout: "shot_translate", items };
+  }
+
+  function augmentTranslateArtifactFromTask(artifact, task) {
+    if (!artifact || !task) return artifact;
+    const items = Array.isArray(artifact.items) ? artifact.items.map(item => Object.assign({}, item)) : [];
+    if (!items.length) return artifact;
+    items.forEach(item => {
+      if (item.type === "side_by_side" && !item.label) item.label = "第一轮全文翻译对照";
+    });
+    const pairItem = translationPairItemFromTask(task);
+    if (pairItem) {
+      const existingIndex = items.findIndex(item => item.type === "translation_pairs");
+      if (existingIndex >= 0) {
+        items[existingIndex] = pairItem;
+      } else {
+        const shotIndex = items.findIndex(item => item.type === "shot_translations");
+        const fullIndex = items.findIndex(item => item.type === "side_by_side");
+        const insertAfter = fullIndex >= 0 ? fullIndex : shotIndex;
+        if (insertAfter >= 0) items.splice(insertAfter + 1, 0, pairItem);
+        else items.push(pairItem);
+      }
+    }
+    return Object.assign({}, artifact, { items });
   }
 
   function buildAsrPrimaryShotTranslationRows(translations) {
@@ -1340,6 +1445,8 @@
       if (step === "translate" && (!artifact || (!artifact.items && !artifact.layout))) {
         const fallbackArtifact = buildTranslateArtifactFromTask(currentTask);
         if (fallbackArtifact) artifact = fallbackArtifact;
+      } else if (step === "translate" && artifact) {
+        artifact = augmentTranslateArtifactFromTask(artifact, currentTask);
       }
       if (step === "asr_clean" && !artifact) {
         const fallbackArtifact = synthesizeAsrCleanArtifact(currentTask);
@@ -2074,10 +2181,12 @@
     if (item.type === "action") return `<div class="preview-block">${label}<button class="download-btn" onclick="triggerAction('${escapeJs(item.url)}','${escapeJs(item.method || "POST")}');return false;">${escapeHtml(item.label || "执行")}</button></div>`;
     if (item.type === "side_by_side") {
       const centerHtml = item.show_retranslate ? `<div class="preview-side-center"><button class="btn btn-primary btn-sm side-retranslate-btn" id="sideRetranslateBtn" onclick="doRetranslate(this)">重新翻译</button></div>` : '';
-      return `<div class="preview-side-by-side${centerHtml ? '' : ' no-center'}""><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div>${centerHtml}<div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
+      const heading = item.label ? `<div class="preview-comparison-heading">${escapeHtml(item.label)}</div>` : "";
+      return `${heading}<div class="preview-side-by-side${centerHtml ? '' : ' no-center'}"><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div>${centerHtml}<div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
     }
     if (item.type === "shot_translation_summary") return renderShotTranslationSummary(item);
     if (item.type === "shot_translations") return renderShotTranslations(item);
+    if (item.type === "translation_pairs") return renderTranslationPairs(item);
     if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
     if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
     if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -2111,6 +2220,48 @@
     return `<div class="preview-block">
       <div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div>
       <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
+    </div>`;
+  }
+
+  function renderTranslationPairs(item) {
+    const pairs = Array.isArray(item.pairs) ? item.pairs : [];
+    if (!pairs.length) {
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "第一轮逐句翻译对照")}</div><div class="preview-note">暂无逐句翻译对照。</div></div>`;
+    }
+    return `<div class="preview-block">
+      <div class="preview-label">${escapeHtml(item.label || "第一轮逐句翻译对照")}</div>
+      <div class="translation-pair-grid">${pairs.map(pair => renderTranslationPairRow(pair, item)).join("")}</div>
+    </div>`;
+  }
+
+  function renderTranslationPairRow(pair, item) {
+    const start = pair.start_time ?? pair.start;
+    const end = pair.end_time ?? pair.end;
+    const hasTime = start !== undefined && start !== null && end !== undefined && end !== null;
+    const title = `句 ${escapeHtml(pair.index ?? "")}`;
+    const sourceLabel = item.source_label || "原文";
+    const targetLabel = item.target_label || "译文";
+    const contextRows = Array.isArray(pair.shot_context) ? pair.shot_context : [];
+    const contextText = pair.description || contextRows
+      .map(ctx => ctx && ctx.description ? ctx.description : "")
+      .filter(Boolean)
+      .join(" / ");
+    return `<div class="translation-pair-row">
+      <div class="translation-pair-head">
+        <span class="shot-translation-index">${title}</span>
+        ${hasTime ? `<span class="preview-time">${fmtTime(start)} → ${fmtTime(end)}</span>` : ""}
+      </div>
+      <div class="shot-translation-columns">
+        <div>
+          <div class="shot-translation-col-label">${escapeHtml(sourceLabel)}</div>
+          <div class="preview-original">${escapeHtml(pair.source_text || "—")}</div>
+        </div>
+        <div>
+          <div class="shot-translation-col-label">${escapeHtml(targetLabel)}</div>
+          <div class="preview-translated">${escapeHtml(pair.target_text || "—")}</div>
+        </div>
+      </div>
+      ${contextText ? `<div class="shot-translation-desc">画面：${escapeHtml(contextText)}</div>` : ""}
     </div>`;
   }
 
@@ -2163,6 +2314,17 @@
   function renderSentencePreview(sentence) {
     const notes = [];
     if ((sentence.source_segment_indices || []).length) notes.push(`源分段：${sentence.source_segment_indices.join(", ")}`);
+    const sourceText = sourceTextFromTaskForSentence(currentTask, sentence, Number(sentence.index ?? 0));
+    if (sourceText) {
+      return `<div class="preview-block">
+        <div class="preview-note">句子 ${Number(sentence.index ?? 0) + 1}</div>
+        <div class="shot-translation-columns">
+          <div><div class="shot-translation-col-label">原文</div><div class="preview-original">${escapeHtml(sourceText)}</div></div>
+          <div><div class="shot-translation-col-label">译文</div><div class="preview-translated">${escapeHtml(localizedSentenceText(sentence))}</div></div>
+        </div>
+        ${renderPreviewNotes(notes)}
+      </div>`;
+    }
     return `<div class="preview-block"><div class="preview-note">句子 ${Number(sentence.index ?? 0) + 1}</div><div class="preview-original">${escapeHtml(sentence.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
   }
 

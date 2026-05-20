@@ -687,6 +687,12 @@ video.media-player {
 .preview-side-by-side .preview-list { max-height: 320px; overflow: auto; flex: 1; }
 .preview-side-center { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 .side-retranslate-btn { writing-mode: horizontal-tb; white-space: nowrap; }
+.preview-comparison-heading {
+  margin: 4px 0 8px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 800;
+}
 .shot-translation-summary {
   display: flex;
   flex-wrap: wrap;
@@ -726,6 +732,26 @@ video.media-player {
   border-radius: 10px;
   background: var(--bg-card);
   padding: 12px;
+}
+.translation-pair-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 560px;
+  overflow: auto;
+}
+.translation-pair-row {
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  background: var(--bg-card);
+  padding: 12px;
+}
+.translation-pair-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 .shot-translation-head {
   display: flex;

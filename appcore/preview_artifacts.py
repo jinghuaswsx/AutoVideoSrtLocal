@@ -110,6 +110,11 @@ def build_alignment_artifact(
         "title": "分段确认",
         "items": [
             {
+                "type": "scene_cuts",
+                "label": "镜头切换点",
+                "values": scene_cuts or [],
+            },
+            {
                 "type": "segments",
                 "label": "翻译分段",
                 "segments": script_segments or [],
@@ -133,7 +138,7 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
                     "break_after": [],
                 }
             ],
-        }
+    }
 
     translation = localized_translation or {}
     return {
@@ -141,6 +146,7 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
         "items": [
             {
                 "type": "side_by_side",
+                "label": "第一轮全文翻译对照",
                 "show_retranslate": True,
                 "left": text_item(f"整段{sl}", str(source_or_segments or "")),
                 "right": text_item(f"整段本土化{tl}", translation.get("full_text", "")),
@@ -192,11 +198,87 @@ def build_shot_translate_artifact(
                 target_language=target_language,
             )["items"]
         )
+    pairs = _build_translation_pairs_from_rows(shot_rows, localized_translation or {})
+    if pairs:
+        pair_item = {
+            "type": "translation_pairs",
+            "label": "第一轮逐句翻译对照",
+            "source_label": _lang(source_language),
+            "target_label": _lang(target_language),
+            "pairs": pairs,
+        }
+        for item_index, item in enumerate(items):
+            if item.get("type") == "translation_pairs":
+                items[item_index] = pair_item
+                break
+        else:
+            side_index = next(
+                (idx for idx, item in enumerate(items) if item.get("type") == "side_by_side"),
+                -1,
+            )
+            if side_index >= 0:
+                items.insert(side_index + 1, pair_item)
+            else:
+                items.append(pair_item)
     return {
         "title": "翻译本土化",
         "layout": "shot_translate",
         "items": items,
     }
+
+
+def _localized_sentence_texts(localized_translation: dict | None) -> list[str]:
+    translation = localized_translation or {}
+    sentences = translation.get("sentences")
+    if isinstance(sentences, list) and sentences:
+        values = []
+        for sentence in sentences:
+            if not isinstance(sentence, dict):
+                continue
+            text = str(
+                sentence.get("text")
+                or sentence.get("translated")
+                or sentence.get("target_text")
+                or ""
+            ).strip()
+            if text:
+                values.append(text)
+        if values:
+            return values
+    return [
+        line.strip()
+        for line in str(translation.get("full_text") or "").splitlines()
+        if line.strip()
+    ]
+
+
+def _build_translation_pairs_from_rows(
+    rows: list[dict],
+    localized_translation: dict | None,
+) -> list[dict]:
+    target_lines = _localized_sentence_texts(localized_translation)
+    pairs = []
+    for pos, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            continue
+        source_text = str(row.get("source_text") or "").strip()
+        target_text = str(row.get("translated_text") or "").strip()
+        if not target_text and pos < len(target_lines):
+            target_text = target_lines[pos]
+        if not source_text and not target_text:
+            continue
+        pairs.append(
+            {
+                "index": row.get("index", pos),
+                "start_time": row.get("start_time"),
+                "end_time": row.get("end_time"),
+                "source_text": source_text,
+                "target_text": target_text,
+                "description": row.get("description") or "",
+                "shot_context": row.get("shot_context") or [],
+            }
+        )
+    return pairs
 
 
 def _has_asr_translation_rows(translations: list[dict]) -> bool:

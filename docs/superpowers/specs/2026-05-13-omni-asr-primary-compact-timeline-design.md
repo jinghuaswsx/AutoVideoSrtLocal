@@ -111,6 +111,16 @@ Task-level AV state should include:
 }
 ```
 
+## 2026-05-20 Translation Debug Display
+
+Omni `shot_char_limit` / ASR-primary translation must keep the first-pass localization result debuggable on the detail page. The `translate` step preview is required to show:
+
+- A full-text source/target comparison, labeled as `第一轮全文翻译对照`.
+- A sentence-level source/target comparison, labeled as `第一轮逐句翻译对照`, keyed by ASR translation units.
+- Each sentence row must include the source sentence, localized target sentence, timing, and visual shot context when available.
+- Existing completed tasks whose stored `artifacts.translate` predate this display contract must be augmented from `task.translations`, `task.localized_translation`, `task.script_segments`, and `task.utterances` in the frontend without rerunning the pipeline.
+- The old target-only `sentences` preview is not sufficient for debugging; it may remain as a fallback only when no source text exists.
+
 ## Verification
 
 Unit tests must cover:
@@ -122,6 +132,7 @@ Unit tests must cover:
 5. Subtitle units follow `audio_start_time` in compact mode.
 6. `shot_char_limit` no longer disables rewrite in `sentence_reconcile`.
 7. Alignment preview artifacts keep the `scene_cuts` item before the segment list so the shared workbench renderer can show detected cut points and confirmed script segments together.
+8. The translate preview exposes full-text and sentence-level source/target comparisons for ASR-primary Omni tasks, including legacy task artifacts that only stored target sentences.
 
 Regression evidence for task `d8aba350-231a-45f4-909a-fb4ed77b6d75`:
 
