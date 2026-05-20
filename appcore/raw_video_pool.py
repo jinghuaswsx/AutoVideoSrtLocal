@@ -7,9 +7,10 @@ from __future__ import annotations
 import logging
 import json
 import os
+from pathlib import Path
 from typing import Any
 
-from appcore import local_media_storage
+from appcore import local_media_storage, task_raw_video_processing
 from appcore.db import execute, query_all, query_one
 
 log = logging.getLogger(__name__)
@@ -51,12 +52,45 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                 WHERE te.task_id = t.id
                   AND te.event_type IN (
                     'raw_niuma_submitted',
+                    'raw_niuma_result_ready',
+                    'raw_niuma_result_accepted',
                     'raw_niuma_done',
                     'raw_niuma_failed',
                     'raw_niuma_timeout',
                     'raw_manual_uploaded'
                   )
                 ORDER BY te.id DESC LIMIT 1) AS raw_processing_event,
+               (SELECT te.payload_json
+                FROM task_events te
+                WHERE te.task_id = t.id
+                  AND te.event_type IN (
+                    'raw_niuma_submitted',
+                    'raw_niuma_result_ready',
+                    'raw_niuma_result_accepted',
+                    'raw_niuma_done',
+                    'raw_niuma_failed',
+                    'raw_niuma_timeout',
+                    'raw_manual_uploaded'
+                  )
+                ORDER BY te.id DESC LIMIT 1) AS raw_processing_payload_json,
+               (SELECT te.created_at
+                FROM task_events te
+                WHERE te.task_id = t.id
+                  AND te.event_type IN (
+                    'raw_niuma_submitted',
+                    'raw_niuma_result_ready',
+                    'raw_niuma_result_accepted',
+                    'raw_niuma_done',
+                    'raw_niuma_failed',
+                    'raw_niuma_timeout',
+                    'raw_manual_uploaded'
+                  )
+                ORDER BY te.id DESC LIMIT 1) AS raw_processing_event_at,
+               (SELECT te.created_at
+                FROM task_events te
+                WHERE te.task_id = t.id
+                  AND te.event_type = 'raw_niuma_submitted'
+                ORDER BY te.id DESC LIMIT 1) AS raw_niuma_submitted_at,
                (SELECT GROUP_CONCAT(country_code ORDER BY country_code SEPARATOR ',')
                 FROM tasks c WHERE c.parent_task_id = t.id) AS country_codes
         FROM tasks t
@@ -91,6 +125,8 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
     def _shape(rows):
         out = []
         for r in rows:
+            processing_payload = _raw_processing_payload(r)
+            processing_status = _raw_processing_status(r)
             out.append({
                 "task_id": r["task_id"],
                 "media_product_id": r["media_product_id"],
@@ -101,7 +137,14 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                 "mp4_size": r["mp4_size"],
                 "raw_source_id": r.get("raw_source_id"),
                 "raw_source_status": _raw_source_status(r),
-                "raw_processing_status": _raw_processing_status(r),
+                "raw_processing_status": processing_status,
+                "raw_processing_submitted_at": _iso(r.get("raw_niuma_submitted_at")),
+                "raw_processing_updated_at": _iso(r.get("raw_processing_event_at")),
+                "raw_processing_completed_at": _iso(r.get("raw_processing_event_at")) if processing_status in {"niuma_result_ready", "niuma_accepted"} else None,
+                "raw_processing_error": str(processing_payload.get("error") or ""),
+                "raw_processing_stage": str(processing_payload.get("stage") or ""),
+                "raw_processing_subtitle_task_id": str(processing_payload.get("subtitle_task_id") or ""),
+                "raw_processing_result_available": processing_status == "niuma_result_ready",
                 "country_codes": r["country_codes"] or "",
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 "claimed_at": r["claimed_at"].isoformat() if r["claimed_at"] else None,
@@ -125,11 +168,32 @@ def _raw_processing_status(row: dict) -> str:
     event_type = (row.get("raw_processing_event") or "").strip()
     return {
         "raw_niuma_submitted": "niuma_running",
-        "raw_niuma_done": "niuma_done",
+        "raw_niuma_result_ready": "niuma_result_ready",
+        "raw_niuma_result_accepted": "niuma_accepted",
+        "raw_niuma_done": "niuma_accepted",
         "raw_niuma_failed": "niuma_failed",
         "raw_niuma_timeout": "niuma_timeout",
         "raw_manual_uploaded": "manual_uploaded",
     }.get(event_type, "not_started")
+
+
+def _raw_processing_payload(row: dict) -> dict:
+    payload = row.get("raw_processing_payload_json")
+    if payload is None:
+        payload = row.get("payload_json")
+    if not payload:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    try:
+        parsed = json.loads(payload)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _iso(value) -> str | None:
+    return value.isoformat() if value else None
 
 
 def _write_event(task_id: int, event_type: str, actor_user_id: int | None, payload: dict | None = None) -> None:
@@ -146,11 +210,7 @@ def _write_event(task_id: int, event_type: str, actor_user_id: int | None, paylo
 
 
 def _resolve_local_path(object_key: str) -> str | None:
-    """媒体文件本地路径解析。
-
-    新素材链路会把 media_items.object_key 写进 local_media_storage；
-    旧链路仍保留 UPLOAD_DIR + object_key 惯例。
-    """
+    """Resolve media item path, preferring local media storage with legacy fallback."""
     try:
         if local_media_storage.exists(object_key):
             safe_path = local_media_storage.safe_local_path_for(object_key)
@@ -190,6 +250,51 @@ def stream_original_video(task_id: int, viewer_user_id: int) -> tuple[str, str]:
     if not local_path:
         raise StateError("cannot resolve local path")
     return local_path, item["filename"]
+
+
+def stream_niuma_result_video(task_id: int, viewer_user_id: int) -> tuple[str, str]:
+    _check_view_permission(task_id, viewer_user_id)
+    item = query_one(
+        "SELECT i.filename FROM tasks t JOIN media_items i ON i.id=t.media_item_id "
+        "WHERE t.id=%s AND t.parent_task_id IS NULL",
+        (int(task_id),),
+    )
+    payload = _load_latest_niuma_result_ready_payload(task_id)
+    if not payload:
+        raise StateError("niuma result not ready")
+    local_path = str(payload.get("result_video_path") or "")
+    if not local_path:
+        raise StateError("niuma result path missing")
+    filename = _niuma_result_filename((item or {}).get("filename") or f"task-{int(task_id)}.mp4")
+    return local_path, filename
+
+
+def _load_latest_niuma_result_ready_payload(task_id: int) -> dict | None:
+    row = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type='raw_niuma_result_ready' "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id),),
+    )
+    if not row:
+        return None
+    return _raw_processing_payload(row)
+
+
+def _niuma_result_filename(filename: str) -> str:
+    path = Path(filename or "result.mp4")
+    suffix = path.suffix or ".mp4"
+    return f"{path.stem}.niuma{suffix}"
+
+
+def accept_niuma_result(*, task_id: int, actor_user_id: int) -> dict:
+    try:
+        return task_raw_video_processing.accept_niuma_result_for_parent_task(
+            parent_task_id=int(task_id),
+            actor_user_id=int(actor_user_id),
+        )
+    except task_raw_video_processing.RawVideoProcessingError as exc:
+        raise StateError(str(exc)) from exc
 
 
 def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) -> int:

@@ -479,7 +479,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "task_center_raw_niuma_watch": {
         "code": "task_center_raw_niuma_watch",
         "name": "任务中心原视频牛马处理监听",
-        "description": "原视频处理人认领任务后，进程内提交牛马去字幕任务，并在 10 分钟内轮询结果；完成后进入人工审核。",
+        "description": "原视频处理人认领任务后，进程内提交牛马去字幕任务，并在 10 分钟内轮询结果；完成后等待处理人审验并采用。",
         "schedule": "按任务认领触发，最长轮询 10 分钟",
         "source_type": "in_process",
         "source_label": "任务中心认领触发",

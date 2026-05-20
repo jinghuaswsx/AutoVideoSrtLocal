@@ -50,10 +50,13 @@
 .rvp-processing-status { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:6px; font-size:12px; border:1px solid var(--rvp-border); white-space:nowrap; }
 .rvp-processing-status--not_started { color:var(--rvp-fg-muted); background:var(--rvp-bg-subtle); }
 .rvp-processing-status--niuma_running { color:var(--rvp-accent-hover); background:var(--rvp-accent-subtle); border-color:transparent; }
-.rvp-processing-status--niuma_done { color:var(--rvp-success-fg); background:var(--rvp-success-bg); border-color:transparent; }
+.rvp-processing-status--niuma_done,
+.rvp-processing-status--niuma_result_ready,
+.rvp-processing-status--niuma_accepted { color:var(--rvp-success-fg); background:var(--rvp-success-bg); border-color:transparent; }
 .rvp-processing-status--niuma_failed,
 .rvp-processing-status--niuma_timeout { color:var(--rvp-danger-fg); background:oklch(96% 0.04 25); border-color:transparent; }
 .rvp-processing-status--manual_uploaded { color:var(--rvp-warning-fg); background:var(--rvp-warning-bg); border-color:transparent; }
+.rvp-processing-detail { margin-top:4px; color:var(--rvp-fg-muted); font-size:11px; line-height:1.4; max-width:260px; white-space:normal; }
 {% endblock %}
 {% block content %}
 <div id="rvpRoot" class="rvp">
@@ -127,6 +130,8 @@ function rvpRawStatusClass(status) {
 }
 function rvpProcessingStatusLabel(status) {
   if (status === 'niuma_running') return '牛马处理中';
+  if (status === 'niuma_result_ready') return '结果待审验';
+  if (status === 'niuma_accepted') return '已采用牛马结果';
   if (status === 'niuma_done') return '牛马完成';
   if (status === 'niuma_failed') return '牛马失败';
   if (status === 'niuma_timeout') return '牛马超时';
@@ -134,10 +139,18 @@ function rvpProcessingStatusLabel(status) {
   return '未提交';
 }
 function rvpProcessingStatusClass(status) {
-  if (['niuma_running', 'niuma_done', 'niuma_failed', 'niuma_timeout', 'manual_uploaded'].includes(status)) {
+  if (['niuma_running', 'niuma_result_ready', 'niuma_accepted', 'niuma_done', 'niuma_failed', 'niuma_timeout', 'manual_uploaded'].includes(status)) {
     return status;
   }
   return 'not_started';
+}
+function rvpProcessingDetail(t) {
+  const bits = [];
+  if (t.raw_processing_submitted_at) bits.push('提交：' + rvpFmtTime(t.raw_processing_submitted_at));
+  if (t.raw_processing_completed_at) bits.push('结果：' + rvpFmtTime(t.raw_processing_completed_at));
+  if (t.raw_processing_subtitle_task_id) bits.push('任务：' + t.raw_processing_subtitle_task_id);
+  if (t.raw_processing_error) bits.push('错误：' + t.raw_processing_error);
+  return bits.length ? `<div class="rvp-processing-detail">${rvpEsc(bits.join(' · '))}</div>` : '';
 }
 
 async function rvpRender() {
@@ -171,10 +184,19 @@ function rvpRenderSection(elId, countId, items, kind) {
       actions = `<button class="rvp-btn rvp-btn--primary" onclick="rvpClaim(${t.task_id}, this)">认领</button>`;
       }
     } else if (kind === 'in_progress') {
-      actions = `<div class="rvp-action-group">
-        <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始带字幕英文视频</button>
-        <button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${t.task_id}, '${rvpEsc(t.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>
-      </div>`;
+      const uploadAction = `<button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${t.task_id}, '${rvpEsc(t.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>`;
+      if (t.raw_processing_status === 'niuma_result_ready') {
+        actions = `<div class="rvp-action-group">
+          <button class="rvp-btn" onclick="rvpDownloadNiumaResult(${t.task_id})">下载牛马结果</button>
+          <button class="rvp-btn rvp-btn--primary" onclick="rvpAcceptNiumaResult(${t.task_id}, this)">采用牛马结果</button>
+          ${uploadAction}
+        </div>`;
+      } else {
+        actions = `<div class="rvp-action-group">
+          <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始带字幕英文视频</button>
+          ${uploadAction}
+        </div>`;
+      }
     } else if (kind === 'review') {
       actions = `<button class="rvp-btn" disabled>待人工审核，通过后入库</button>`;
     }
@@ -188,7 +210,7 @@ function rvpRenderSection(elId, countId, items, kind) {
       <td title="${rvpEsc(t.mp4_filename || '')}" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${rvpEsc(t.mp4_filename || '—')}</td>
       <td>${rvpFmtSize(t.mp4_size)}</td>
       <td>${rvpFmtTime(t.created_at)}</td>
-      <td><span class="rvp-processing-status rvp-processing-status--${processingClass}">${rvpEsc(processingLabel)}</span></td>
+      <td><span class="rvp-processing-status rvp-processing-status--${processingClass}">${rvpEsc(processingLabel)}</span>${rvpProcessingDetail(t)}</td>
       <td><span class="rvp-raw-status rvp-raw-status--${rawClass}">${rvpEsc(rawLabel)}</span></td>
       <td>${actions}</td>
     </tr>`;
@@ -220,6 +242,27 @@ async function rvpClaim(tid, btn) {
 function rvpDownload(tid) {
   // Browser GET with auth cookie — server triggers download via send_file
   window.location.href = "/raw-video-pool/api/task/" + encodeURIComponent(tid || "") + "/download";
+}
+
+function rvpDownloadNiumaResult(tid) {
+  window.location.href = "/raw-video-pool/api/task/" + encodeURIComponent(tid || "") + "/niuma-result/download";
+}
+
+async function rvpAcceptNiumaResult(tid, btn) {
+  if (!confirm('确认采用牛马结果并送入待审核？')) return;
+  btn.disabled = true;
+  btn.textContent = '采用中...';
+  try {
+    const r = await fetch(`/raw-video-pool/api/task/${tid}/niuma-result/accept`, {method: 'POST'});
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || body.error || r.statusText);
+    rvpRender();
+    alert('已采用牛马结果，任务进入待审核');
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '采用牛马结果';
+    alert('采用失败：' + e.message);
+  }
 }
 
 let _rvpUploadCtx = null;
@@ -279,5 +322,6 @@ function rvpUploadOK() {
 }
 
 rvpRender();
+setInterval(rvpRender, 15000);
 </script>
 {% endblock %}
