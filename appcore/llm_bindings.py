@@ -21,14 +21,16 @@ VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
     "meta_hot_posts.europe_fit_translate",
     "meta_hot_posts.video_copyability",
     "meta_hot_posts.video_copyability_translate",
+    "voice_selection.assess",
 })
 
 
 def _normalize_binding_provider(use_case_code: str, provider: str, model: str) -> tuple[str, str]:
     provider = (provider or "").strip()
     model = (model or "").strip()
-    if provider == "gemini_vertex_adc" and use_case_code not in VERTEX_ADC_ALLOWED_USE_CASES:
-        provider = "gemini_aistudio"
+    if provider == "gemini_vertex_adc":
+        if use_case_code not in VERTEX_ADC_ALLOWED_USE_CASES:
+            provider = "gemini_aistudio"
         if model.startswith("google/"):
             model = model.split("/", 1)[1]
     return provider, model

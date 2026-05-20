@@ -15,6 +15,7 @@ from appcore.voice_ai_ranking import (
     VOICE_AI_PROVIDER,
     VOICE_AI_USE_CASE,
     rank_voice_candidates,
+    resolve_voice_ai_model_selection,
 )
 
 log = logging.getLogger(__name__)
@@ -47,14 +48,15 @@ def queue_voice_ai_ranking(
     task_dir: str | Path,
     user_id: int | None,
 ) -> bool:
+    model_selection = resolve_voice_ai_model_selection()
     candidates_snapshot = [dict(item) for item in list(candidates or [])]
     if not candidates_snapshot or not source_audio_path:
         task_state.update(
             task_id,
             voice_ai_rankings=[],
             voice_ai_rank_status="skipped",
-            voice_ai_rank_model=VOICE_AI_MODEL,
-            voice_ai_rank_provider=VOICE_AI_PROVIDER,
+            voice_ai_rank_model=model_selection["model"],
+            voice_ai_rank_provider=model_selection["provider"],
             voice_ai_rank_debug=None,
         )
         return False
@@ -68,8 +70,8 @@ def queue_voice_ai_ranking(
         voice_match_candidates=candidates_snapshot,
         voice_ai_rankings=[],
         voice_ai_rank_status="running",
-        voice_ai_rank_model=VOICE_AI_MODEL,
-        voice_ai_rank_provider=VOICE_AI_PROVIDER,
+        voice_ai_rank_model=model_selection["model"],
+        voice_ai_rank_provider=model_selection["provider"],
         voice_ai_rank_debug=None,
         voice_ai_rank_candidate_signature=signature,
     )
@@ -92,6 +94,7 @@ def queue_voice_ai_ranking(
                 task_dir=task_dir_path,
                 user_id=user_id,
                 signature=signature,
+                model_selection=model_selection,
             )
         finally:
             with _running_lock:
@@ -120,7 +123,10 @@ def queue_voice_ai_ranking(
         task_state.update(
             task_id,
             voice_ai_rank_status="failed",
-            voice_ai_rank_debug=_failure_debug("background thread did not start"),
+            voice_ai_rank_debug=_failure_debug(
+                "background thread did not start",
+                model_selection=model_selection,
+            ),
         )
         return False
     return True
@@ -135,6 +141,7 @@ def run_voice_ai_ranking_job(
     task_dir: str | Path,
     user_id: int | None,
     signature: str,
+    model_selection: dict | None = None,
 ) -> None:
     if not _is_current_signature(task_id, signature):
         return
@@ -153,7 +160,10 @@ def run_voice_ai_ranking_job(
             task_state.update(
                 task_id,
                 voice_ai_rank_status="failed",
-                voice_ai_rank_debug=_failure_debug(str(exc)),
+                voice_ai_rank_debug=_failure_debug(
+                    str(exc),
+                    model_selection=model_selection,
+                ),
             )
         return
 
@@ -186,11 +196,13 @@ def _stable_number(value: object) -> float | None:
         return None
 
 
-def _failure_debug(message: str) -> dict:
+def _failure_debug(message: str, *, model_selection: dict | None = None) -> dict:
+    selection = model_selection or resolve_voice_ai_model_selection()
     return {
         "status": "failed",
-        "provider": VOICE_AI_PROVIDER,
-        "model": VOICE_AI_MODEL,
+        "provider": selection["provider"],
+        "model": selection["model"],
+        "binding_source": selection.get("source"),
         "use_case": VOICE_AI_USE_CASE,
         "request": {"visual": {"media": [], "candidates": []}, "raw": {}},
         "result": {

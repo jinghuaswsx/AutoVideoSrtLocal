@@ -1,6 +1,24 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _default_voice_ai_binding(monkeypatch):
+    from appcore import voice_ai_ranking
+
+    monkeypatch.setattr(
+        voice_ai_ranking.llm_bindings,
+        "resolve",
+        lambda code: {
+            "provider": "openrouter",
+            "model": "google/gemini-3.5-flash",
+            "source": "default",
+            "extra": {},
+        },
+    )
+
 
 def test_normalize_voice_ai_rankings_keeps_top10_unique_and_trims_reason():
     from appcore.voice_ai_ranking import (
@@ -157,6 +175,96 @@ def test_rank_voice_candidates_invokes_openrouter_gemini_35_flash_with_audio_med
     assert kwargs["max_output_tokens"] == 4096
     assert "v1" in kwargs["prompt"]
     assert any(call.get("min_seconds") == 3.0 and call.get("max_seconds") == 10.0 for call in trim_calls)
+
+
+def test_rank_voice_candidates_defaults_to_top10_candidate_limit(tmp_path):
+    from appcore.voice_ai_ranking import rank_voice_candidates
+
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"source-audio")
+    candidates = [
+        {"voice_id": f"v{i}", "name": f"Voice {i}", "similarity": 1 - i / 100}
+        for i in range(1, 13)
+    ]
+
+    def fake_trim(src: Path, dest: Path, **kwargs) -> Path:
+        dest.write_bytes(src.read_bytes())
+        return dest
+
+    with patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+        m_generate.return_value = {
+            "json": {
+                "rankings": [
+                    {"candidate_key": f"C{i}", "llm_rank": i, "reason_summary": f"摘要{i}"}
+                    for i in range(1, 11)
+                ]
+            }
+        }
+        result = rank_voice_candidates(
+            task_id="task-1",
+            task={"target_lang": "en", "utterances": [{"text": "hello"}]},
+            candidates=candidates,
+            source_audio_path=source,
+            task_dir=tmp_path,
+            user_id=7,
+            audio_trimmer=fake_trim,
+        )
+
+    kwargs = m_generate.call_args.kwargs
+    assert result["candidate_limit"] == 10
+    assert len(result["rankings"]) == 10
+    assert result["rankings"][-1]["voice_id"] == "v10"
+    assert '"candidate_count": 10' in kwargs["prompt"]
+    assert '"candidate_key": "C10"' in kwargs["prompt"]
+    assert "v11" not in kwargs["prompt"]
+    assert kwargs["response_schema"]["properties"]["rankings"]["minItems"] == 10
+    assert kwargs["response_schema"]["properties"]["rankings"]["maxItems"] == 10
+
+
+def test_rank_voice_candidates_uses_configured_voice_ai_binding(tmp_path):
+    from appcore.voice_ai_ranking import rank_voice_candidates
+
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"source-audio")
+
+    def fake_trim(src: Path, dest: Path, **kwargs) -> Path:
+        dest.write_bytes(src.read_bytes())
+        return dest
+
+    with patch(
+        "appcore.voice_ai_ranking.llm_bindings.resolve",
+        return_value={
+            "provider": "gemini_vertex_adc",
+            "model": "google/gemini-3.5-flash",
+            "source": "db",
+            "extra": {},
+        },
+    ), patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+        m_generate.return_value = {
+            "json": {
+                "rankings": [
+                    {"candidate_key": "C1", "llm_rank": 1, "reason_summary": "贴近原声"},
+                ]
+            }
+        }
+        result = rank_voice_candidates(
+            task_id="task-1",
+            task={"target_lang": "en", "utterances": [{"text": "hello"}]},
+            candidates=[{"voice_id": "v1", "name": "Voice 1", "similarity": 0.91}],
+            source_audio_path=source,
+            task_dir=tmp_path,
+            user_id=7,
+            audio_trimmer=fake_trim,
+        )
+
+    kwargs = m_generate.call_args.kwargs
+    assert kwargs["provider_override"] == "gemini_vertex_adc"
+    assert kwargs["model_override"] == "gemini-3.5-flash"
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3.5-flash"
+    assert result["debug"]["provider"] == "gemini_vertex_adc"
+    assert result["debug"]["request"]["raw"]["provider"] == "gemini_vertex_adc"
+    assert result["debug"]["request"]["raw"]["model"] == "gemini-3.5-flash"
 
 
 def test_rank_voice_candidates_can_limit_smoke_run_to_top3(tmp_path):

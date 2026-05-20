@@ -16,8 +16,9 @@
 ## 模型与通道
 
 - use case：`voice_selection.assess`
-- provider：`openrouter`
-- model：`google/gemini-3.5-flash`
+- 默认 provider：`openrouter`
+- 默认 model：`google/gemini-3.5-flash`
+- 可配置通道：`openrouter`、`gemini_vertex_adc`、`gemini_aistudio`
 - 调用方式：单轮结构化 JSON 输出。
 
 ## 输出
@@ -51,3 +52,10 @@
 - Prompt 明确要求每条 ranking 必须包含 `candidate_key`、`llm_rank`、`reason_summary`，并给出 JSON 示例，降低 OpenRouter/Gemini 忽略 schema 的概率。
 - Live Top3 smoke found Gemini may truncate long ElevenLabs `voice_id`; the request now assigns stable short `candidate_key` values (`C1`..`C10`), and backend normalization maps the key back to the real `voice_id`.
 - Live Top10 smoke found low output-token caps could stop before all rows; the request now uses a per-call response schema with `minItems`/`maxItems` equal to the candidate count and raises the output cap to 4096.
+
+## 2026-05-20 配置化补充
+
+- Top10 调通后，默认 `candidate_limit` 恢复为 10；临时 smoke 仍可用 `VOICE_AI_RANK_CANDIDATE_LIMIT` 或重跑接口 body 覆盖。
+- 音色大模型排名不再硬编码 provider/model，运行时读取 `/settings?tab=bindings` 的 `voice_selection.assess`。
+- `voice_selection.assess` 在模块模型分配里只允许三个通道：`openrouter`、`gemini_vertex_adc`、`gemini_aistudio`；默认仍为 `openrouter` + `google/gemini-3.5-flash`。
+- 切到 `gemini_vertex_adc` 或 `gemini_aistudio` 时，运行时会把 `google/gemini-3.5-flash` 规范化为 `gemini-3.5-flash`，避免 Google 原生通道收到 OpenRouter 模型 ID。

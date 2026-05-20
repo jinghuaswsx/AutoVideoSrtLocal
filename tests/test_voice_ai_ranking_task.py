@@ -1,6 +1,23 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _default_voice_ai_model_selection(monkeypatch):
+    from appcore import voice_ai_ranking_task
+
+    monkeypatch.setattr(
+        voice_ai_ranking_task,
+        "resolve_voice_ai_model_selection",
+        lambda: {
+            "provider": "openrouter",
+            "model": "google/gemini-3.5-flash",
+            "source": "default",
+        },
+    )
+
 
 def test_queue_voice_ai_ranking_marks_running_and_starts_background(tmp_path):
     from appcore.voice_ai_ranking_task import queue_voice_ai_ranking

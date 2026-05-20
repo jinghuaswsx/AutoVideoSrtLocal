@@ -95,6 +95,10 @@ BINDING_PROVIDER_LABELS = {
     "gemini_vertex": "Google Cloud (Vertex AI)",
     "gemini_vertex_adc": "Google Vertex AI (ADC)",
 }
+VOICE_SELECTION_ASSESS_USE_CASE = "voice_selection.assess"
+VOICE_SELECTION_ASSESS_PROVIDERS = (
+    "openrouter", "gemini_vertex_adc", "gemini_aistudio",
+)
 IMAGE_TEXT_DETECT_PROVIDERS = (
     "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc", "openrouter",
 )
@@ -194,6 +198,14 @@ def _meta_hot_posts_translate_binding_view(bindings_rows: list[dict] | None = No
             for key, label in META_HOT_POSTS_TRANSLATE_MODEL_OPTIONS
         ],
     }
+
+
+def _binding_allowed_providers_for_code(code: str) -> tuple[str, ...]:
+    if code == "image_translate.detect":
+        return IMAGE_TEXT_DETECT_PROVIDERS
+    if code == VOICE_SELECTION_ASSESS_USE_CASE:
+        return VOICE_SELECTION_ASSESS_PROVIDERS
+    return BINDING_ALLOWED_PROVIDERS
 
 
 def _mask_secret(value: str | None) -> str:
@@ -345,18 +357,14 @@ def index():
     for row in bindings_rows:
         if row["code"] in HIDDEN_BINDING_CODES:
             continue
-        if row["code"] == "image_translate.detect":
-            row["provider_options"] = [
-                (p, BINDING_PROVIDER_LABELS.get(p, p))
-                for p in IMAGE_TEXT_DETECT_PROVIDERS
-            ]
-            row["model_suggestions"] = [IMAGE_TEXT_DETECT_MODEL]
-        else:
-            row["provider_options"] = [
-                (p, BINDING_PROVIDER_LABELS.get(p, p))
-                for p in BINDING_ALLOWED_PROVIDERS
-            ]
-            row["model_suggestions"] = []
+        row["provider_options"] = [
+            (p, BINDING_PROVIDER_LABELS.get(p, p))
+            for p in _binding_allowed_providers_for_code(row["code"])
+        ]
+        row["model_suggestions"] = (
+            [IMAGE_TEXT_DETECT_MODEL]
+            if row["code"] == "image_translate.detect" else []
+        )
         bindings_grouped.setdefault(row["module"], []).append(row)
 
     is_admin = getattr(current_user, "is_admin", False)
@@ -569,10 +577,7 @@ def _handle_bindings_post() -> None:
             continue
         provider = (request.form.get(f"binding_{code}_provider") or "").strip()
         model = (request.form.get(f"binding_{code}_model") or "").strip()
-        allowed_providers = (
-            IMAGE_TEXT_DETECT_PROVIDERS
-            if code == "image_translate.detect" else BINDING_ALLOWED_PROVIDERS
-        )
+        allowed_providers = _binding_allowed_providers_for_code(code)
         if code == "image_translate.detect" and not model:
             model = IMAGE_TEXT_DETECT_MODEL
         if not provider or not model:

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from appcore import voice_preview_archive
+from appcore import llm_bindings, voice_preview_archive
 from appcore.llm_client import invoke_generate
 
 log = logging.getLogger(__name__)
@@ -22,8 +22,14 @@ log = logging.getLogger(__name__)
 VOICE_AI_USE_CASE = "voice_selection.assess"
 VOICE_AI_MODEL = "google/gemini-3.5-flash"
 VOICE_AI_PROVIDER = "openrouter"
+VOICE_AI_ALLOWED_PROVIDERS = ("openrouter", "gemini_vertex_adc", "gemini_aistudio")
+VOICE_AI_PROVIDER_DEFAULT_MODELS = {
+    "openrouter": VOICE_AI_MODEL,
+    "gemini_vertex_adc": "gemini-3.5-flash",
+    "gemini_aistudio": "gemini-3.5-flash",
+}
 MAX_VOICE_AI_CANDIDATES = 10
-DEFAULT_VOICE_AI_CANDIDATES = 3
+DEFAULT_VOICE_AI_CANDIDATES = MAX_VOICE_AI_CANDIDATES
 VOICE_AI_CANDIDATE_LIMIT_ENV = "VOICE_AI_RANK_CANDIDATE_LIMIT"
 VOICE_AI_MAX_OUTPUT_TOKENS = 4096
 VOICE_AI_REASON_LIMIT = 30
@@ -55,6 +61,31 @@ VOICE_AI_RESPONSE_SCHEMA = {
     },
     "required": ["rankings"],
 }
+
+
+def resolve_voice_ai_model_selection() -> dict:
+    binding = llm_bindings.resolve(VOICE_AI_USE_CASE)
+    provider = str(binding.get("provider") or "").strip()
+    model = str(binding.get("model") or "").strip()
+    provider, model = _normalize_voice_ai_provider_model(provider, model)
+    return {
+        "provider": provider,
+        "model": model,
+        "source": binding.get("source") or "default",
+    }
+
+
+def _normalize_voice_ai_provider_model(provider: str, model: str) -> tuple[str, str]:
+    if provider not in VOICE_AI_ALLOWED_PROVIDERS:
+        return VOICE_AI_PROVIDER, VOICE_AI_MODEL
+    normalized = (model or "").strip()
+    if provider == "openrouter":
+        if normalized.startswith("gemini-"):
+            normalized = f"google/{normalized}"
+        return provider, normalized or VOICE_AI_PROVIDER_DEFAULT_MODELS[provider]
+    if normalized.startswith("google/"):
+        normalized = normalized.split("/", 1)[1]
+    return provider, normalized or VOICE_AI_PROVIDER_DEFAULT_MODELS[provider]
 
 
 def normalize_voice_ai_rankings(
@@ -152,12 +183,13 @@ def rank_voice_candidates(
     audio_trimmer: Callable[[Path, Path], str | Path] | None = None,
     candidate_limit: int | None = None,
 ) -> dict:
+    model_selection = resolve_voice_ai_model_selection()
     effective_limit = _resolve_candidate_limit(candidate_limit)
     top_candidates = list(candidates or [])[:effective_limit]
     if not top_candidates:
-        return _empty_result("skipped", candidates)
+        return _empty_result("skipped", candidates, model_selection=model_selection)
     if not source_audio_path:
-        return _empty_result("skipped", candidates)
+        return _empty_result("skipped", candidates, model_selection=model_selection)
 
     work_dir = Path(task_dir) / "voice_ai_ranking"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -247,6 +279,7 @@ def rank_voice_candidates(
         prompt_candidates=prompt_candidates,
         task=task,
         response_schema=response_schema,
+        model_selection=model_selection,
     )
     result = invoke_generate(
         VOICE_AI_USE_CASE,
@@ -257,8 +290,8 @@ def rank_voice_candidates(
         response_schema=response_schema,
         temperature=0.2,
         max_output_tokens=VOICE_AI_MAX_OUTPUT_TOKENS,
-        provider_override=VOICE_AI_PROVIDER,
-        model_override=VOICE_AI_MODEL,
+        provider_override=model_selection["provider"],
+        model_override=model_selection["model"],
         billing_extra={
             "task_id": task_id,
             "candidate_count": len(top_candidates),
@@ -281,8 +314,9 @@ def rank_voice_candidates(
     ]
     debug = {
         "status": "done",
-        "provider": VOICE_AI_PROVIDER,
-        "model": VOICE_AI_MODEL,
+        "provider": model_selection["provider"],
+        "model": model_selection["model"],
+        "binding_source": model_selection.get("source"),
         "use_case": VOICE_AI_USE_CASE,
         "candidate_limit": effective_limit,
         "request": request_debug,
@@ -292,24 +326,35 @@ def rank_voice_candidates(
         "status": "done",
         "rankings": rankings,
         "candidates": enriched_candidates,
-        "model": VOICE_AI_MODEL,
-        "provider": VOICE_AI_PROVIDER,
+        "model": model_selection["model"],
+        "provider": model_selection["provider"],
         "candidate_limit": effective_limit,
         "debug": debug,
     }
 
 
-def _empty_result(status: str, candidates: Iterable[dict]) -> dict:
+def _empty_result(
+    status: str,
+    candidates: Iterable[dict],
+    *,
+    model_selection: dict | None = None,
+) -> dict:
+    selection = model_selection or {
+        "provider": VOICE_AI_PROVIDER,
+        "model": VOICE_AI_MODEL,
+        "source": "default",
+    }
     return {
         "status": status,
         "rankings": [],
         "candidates": [dict(candidate) for candidate in candidates or []],
-        "model": VOICE_AI_MODEL,
-        "provider": VOICE_AI_PROVIDER,
+        "model": selection["model"],
+        "provider": selection["provider"],
         "debug": {
             "status": status,
-            "provider": VOICE_AI_PROVIDER,
-            "model": VOICE_AI_MODEL,
+            "provider": selection["provider"],
+            "model": selection["model"],
+            "binding_source": selection.get("source"),
             "use_case": VOICE_AI_USE_CASE,
             "request": {"visual": {"media": [], "candidates": []}, "raw": {}},
             "result": {"visual": {"rankings": []}, "raw": {}},
@@ -446,6 +491,7 @@ def _build_request_debug(
     prompt_candidates: list[dict],
     task: dict,
     response_schema: dict,
+    model_selection: dict,
 ) -> dict:
     raw_messages = [{
         "role": "user",
@@ -462,8 +508,9 @@ def _build_request_debug(
     }]
     raw = {
         "use_case": VOICE_AI_USE_CASE,
-        "provider": VOICE_AI_PROVIDER,
-        "model": VOICE_AI_MODEL,
+        "provider": model_selection["provider"],
+        "model": model_selection["model"],
+        "binding_source": model_selection.get("source"),
         "temperature": 0.2,
         "max_output_tokens": VOICE_AI_MAX_OUTPUT_TOKENS,
         "response_schema": response_schema,
