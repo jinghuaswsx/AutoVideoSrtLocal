@@ -1790,6 +1790,7 @@ function mkiImportProgressComplete(data, btn) {
     textEl.textContent = `产品 #${productId}，素材 #${itemId} 已入库。请确认该产品的发布域名。`;
   }
   if (resultEl) resultEl.hidden = false;
+  mkiImportProgressSetMediasHref(btn);
   mkiImportProgressHideNextActions();
   document.getElementById('mkiImportProgressRetry').hidden = true;
   mkiImportProgressButton = btn || mkiImportProgressButton;
