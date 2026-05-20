@@ -110,6 +110,7 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "mk-video-media-frame" not in template
     assert "投放热度" in template
     assert "90天消耗" in template
+    assert "昨日消耗" in template
 
 
 def test_mk_selection_modal_preview_tokens_available_globally():

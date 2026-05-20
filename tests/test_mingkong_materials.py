@@ -196,6 +196,77 @@ def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_z
     assert item["video_spends_text"] == "3.05万"
 
 
+def test_material_library_includes_yesterday_spend_delta(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        if "SELECT snapshot_date, snapshot_at, snapshot_slot" in sql:
+            return [
+                {
+                    "snapshot_date": date(2026, 5, 17),
+                    "snapshot_at": datetime(2026, 5, 17, 18, 2, 0),
+                    "snapshot_slot": "1800",
+                }
+            ]
+        if "material_key IN" in sql:
+            return [
+                {
+                    "material_key": "abc",
+                    "cumulative_90_spend": 11800,
+                    "mk_video_metadata_json": "{}",
+                }
+            ]
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "fitness-band",
+                "rank_position": 7,
+                "video_name": "2026.03.03.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "cumulative_90_spend": 12300,
+                "video_ads_count": 12,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(keyword="fitness-band")
+
+    item = result["items"][0]
+    assert item["current_cumulative_90_spend"] == 12300.0
+    assert item["previous_cumulative_90_spend"] == 11800.0
+    assert item["yesterday_spend_delta"] == 500.0
+    assert item["previous_snapshot_at"] == "2026-05-17 18:02:00"
+    assert any("material_key IN" in entry[1] for entry in captured if entry[0] == "query")
+
+
 def test_build_top100_rows_recovers_spend_from_raw_metadata_when_numeric_row_is_zero():
     rows = mm.build_top100_rows(
         snapshot_date="2026-05-18",

@@ -679,7 +679,7 @@ function renderMkVideoMaterialCard(r) {
   const hasYesterdayDelta = Object.prototype.hasOwnProperty.call(r, 'yesterday_spend_delta');
   const yesterdayDelta = Number(r.yesterday_spend_delta || 0);
   const yesterdayDeltaHtml = hasYesterdayDelta
-    ? `<span class="mk-video-summary-item"><span class="label">昨天消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
+    ? `<span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
     : '';
   const newTop100Html = r.is_new_top100_entry
     ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top100</span></span></span>'

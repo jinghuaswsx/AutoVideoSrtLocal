@@ -980,6 +980,73 @@ def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _enrich_material_yesterday_delta(
+    items: list[dict[str, Any]],
+    *,
+    snapshot_date: str,
+    snapshot_at: str,
+) -> list[dict[str, Any]]:
+    if not items:
+        return items
+
+    resolved_snapshot_at = _coerce_datetime(snapshot_at)
+    previous_snapshot = (
+        _previous_material_snapshot_for(
+            snapshot_date=_coerce_date(snapshot_date),
+            snapshot_at=resolved_snapshot_at,
+        )
+        if snapshot_date and resolved_snapshot_at
+        else None
+    )
+    previous_by_key: dict[str, dict[str, Any]] = {}
+    if previous_snapshot:
+        keys = sorted(
+            {str(item.get("material_key") or "") for item in items if item.get("material_key")}
+        )
+        if keys:
+            placeholders = ",".join(["%s"] * len(keys))
+            rows = query(
+                f"""
+                SELECT material_key, cumulative_90_spend, mk_video_metadata_json
+                FROM mingkong_material_daily_snapshots
+                WHERE snapshot_at = %s
+                  AND material_key IN ({placeholders})
+                """,
+                tuple([previous_snapshot["snapshot_at"]] + keys),
+            )
+            previous_by_key = {
+                str(row.get("material_key") or ""): row
+                for row in rows or []
+                if row.get("material_key")
+            }
+
+    for item in items:
+        current_spend = _spend_from_row(item, "cumulative_90_spend", _metadata_for_row(item))
+        previous_row = previous_by_key.get(str(item.get("material_key") or ""))
+        previous_spend = (
+            None
+            if previous_row is None
+            else _spend_from_row(previous_row, "cumulative_90_spend", _metadata_for_row(previous_row))
+        )
+        delta = current_spend if previous_spend is None else max(0.0, current_spend - previous_spend)
+        item["current_cumulative_90_spend"] = current_spend
+        item["previous_cumulative_90_spend"] = previous_spend
+        item["yesterday_spend_delta"] = round(delta, 2)
+        item["previous_snapshot_date"] = (
+            _coerce_date(previous_snapshot.get("snapshot_date")) if previous_snapshot else ""
+        )
+        item["previous_snapshot_at"] = (
+            _coerce_datetime(previous_snapshot.get("snapshot_at")) if previous_snapshot else ""
+        )
+        item["previous_snapshot_slot"] = (
+            str(previous_snapshot.get("snapshot_slot") or "") if previous_snapshot else ""
+        )
+        item["comparison_interval_seconds"] = (
+            _as_int(previous_snapshot.get("comparison_interval_seconds")) if previous_snapshot else None
+        )
+    return items
+
+
 def _serialize_top100_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["snapshot_date"] = _coerce_date(out.get("snapshot_date"))
@@ -1150,7 +1217,14 @@ def list_material_library(
         """,
         tuple(args + [size, offset]),
     )
-    items = _enrich_cached_ad_statuses([_serialize_material_row(row) for row in rows or []])
+    serialized = [_serialize_material_row(row) for row in rows or []]
+    items = _enrich_cached_ad_statuses(
+        _enrich_material_yesterday_delta(
+            serialized,
+            snapshot_date=snapshot,
+            snapshot_at=selected_snapshot_at,
+        )
+    )
     return {
         "items": items,
         "snapshot": snapshot,
