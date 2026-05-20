@@ -19,6 +19,13 @@
   --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
   --mk-video-card-w: 248px; --mk-video-media-w: 216px; --mk-video-media-h: 384px;
+  /* Layout anchor: docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md */
+  --mk-products-table-min-w: 1690px; --mk-product-image-size: 200px;
+  --mk-col-rank: 50px; --mk-col-image: 220px; --mk-col-name: 280px;
+  --mk-col-cn: 180px; --mk-col-status: 190px; --mk-col-store: 100px;
+  --mk-col-sales: 90px; --mk-col-revenue: 110px; --mk-col-spend: 110px;
+  --mk-col-video: 80px; --mk-col-ads: 80px; --mk-col-material: 100px;
+  --mk-col-action: 100px;
 }
 .oc, #detailPanel {
   font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -40,6 +47,22 @@
 .oc-btn--ghost { background:var(--oc-bg); border:1px solid var(--oc-border-strong); color:var(--oc-fg); }
 .oc-btn--ghost:hover { background:var(--oc-bg-muted); }
 .oc-table { width:100%; border-collapse:collapse; font-size:19px; }
+.mk-products-table-shell { overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff; }
+.mk-products-table { table-layout:fixed; min-width:var(--mk-products-table-min-w); }
+.mk-col-rank { width:var(--mk-col-rank); }
+.mk-col-image { width:var(--mk-col-image); }
+.mk-col-name { width:var(--mk-col-name); }
+.mk-col-cn { width:var(--mk-col-cn); }
+.mk-col-status { width:var(--mk-col-status); }
+.mk-col-store { width:var(--mk-col-store); }
+.mk-col-sales { width:var(--mk-col-sales); }
+.mk-col-revenue { width:var(--mk-col-revenue); }
+.mk-col-spend { width:var(--mk-col-spend); }
+.mk-col-video { width:var(--mk-col-video); }
+.mk-col-ads { width:var(--mk-col-ads); }
+.mk-col-material { width:var(--mk-col-material); }
+.mk-col-action { width:var(--mk-col-action); }
+.mk-th-left { text-align:left !important; }
 .oc-table th { text-align:center; padding:12px 14px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:18px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
 .oc-table td { padding:12px 14px; border-bottom:1px solid var(--oc-border); vertical-align:middle; text-align:center; }
 .oc-table tr:hover td { background:var(--oc-bg-subtle); }
@@ -69,14 +92,84 @@
 .text-sm { font-size:12px; }
 .mb-0 { margin-bottom:0; }
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mk-product-image-frame { width:200px; height:200px; border:1px solid var(--oc-border); border-radius:var(--oc-r); background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; overflow:hidden; color:var(--oc-fg-subtle); font-size:13px; }
+.mk-product-image-frame { width:var(--mk-product-image-size); height:var(--mk-product-image-size); border:1px solid var(--oc-border); border-radius:var(--oc-r); background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; overflow:hidden; color:var(--oc-fg-subtle); font-size:13px; }
 .mk-product-image-frame img { width:100%; height:100%; object-fit:contain; display:block; background:#fff; }
 .mk-product-name-cell { min-width:260px; display:flex; flex-direction:column; gap:8px; }
+.mk-cn-name { display:block; line-height:1.35; word-break:break-word; }
 .mk-two-line-copy { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:end; gap:6px; }
 .mk-two-line-text { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.28; word-break:break-word; }
 .mk-two-line-text--code { font-family:"JetBrains Mono",monospace; font-size:14px; color:var(--oc-fg-muted); }
 .mk-copy-btn { height:24px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-fg-muted); font-size:12px; cursor:pointer; }
 .mk-copy-btn:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
+.mk-detail-btn { height:30px; font-size:16px; padding:0 10px; }
+@media (min-width: 769px) and (max-width: 1760px) {
+  .oc {
+    --mk-products-table-min-w: 100%; --mk-product-image-size: 148px;
+    --mk-col-rank: 42px; --mk-col-image: 164px; --mk-col-name: 230px;
+    --mk-col-cn: 140px; --mk-col-status: 150px; --mk-col-store: 82px;
+    --mk-col-sales: 72px; --mk-col-revenue: 92px; --mk-col-spend: 92px;
+    --mk-col-video: 56px; --mk-col-ads: 56px; --mk-col-material: 82px;
+    --mk-col-action: 80px;
+  }
+  .main-content { padding-left:22px; padding-right:22px; }
+  .oc-table { font-size:16px; }
+  .oc-table th { padding:10px 8px; font-size:14px; line-height:1.2; }
+  .oc-table td { padding:10px 8px; font-size:15px; line-height:1.28; }
+  .mk-product-name-cell { min-width:0; gap:6px; }
+  .mk-library-status-cell { min-width:0; }
+  .mk-library-status-metrics { max-width:142px; }
+  #searchInput { width:220px !important; }
+}
+@media (min-width: 769px) and (orientation: portrait) {
+  .sidebar { transform:translateX(-100%); }
+  body.sidebar-open .sidebar { transform:translateX(0); }
+  body.sidebar-open { overflow:hidden; }
+  .sidebar-backdrop { display:block; }
+  .sidebar-collapse-toggle { display:none; }
+  .main-wrap { margin-left:0; max-width:100vw; }
+  .sidebar-toggle { display:inline-flex; }
+  .main-content { padding:14px 10px 36px; }
+  .topbar { padding:0 12px; }
+  .topbar-title .selection-center-title-note { display:none; }
+  .topbar-user { padding:4px 10px 4px 6px; }
+  .topbar-logout-btn { margin-left:6px; padding:6px 10px; }
+  .oc {
+    --mk-products-table-min-w: 100%; --mk-product-image-size: 64px;
+    --mk-col-rank: 30px; --mk-col-image: 72px; --mk-col-name: 150px;
+    --mk-col-cn: 78px; --mk-col-status: 98px; --mk-col-store: 50px;
+    --mk-col-sales: 48px; --mk-col-revenue: 64px; --mk-col-spend: 64px;
+    --mk-col-video: 38px; --mk-col-ads: 38px; --mk-col-material: 56px;
+    --mk-col-action: 58px;
+  }
+  .xuanpin-tabs { margin-bottom:10px; }
+  .mk-library-tabs { margin-bottom:10px; }
+  .mk-library-tab { height:28px; min-width:82px; padding:0 8px; font-size:12px; }
+  .oc-header { margin-bottom:12px; }
+  .oc-header--actions { justify-content:flex-start; }
+  .oc-search { width:100%; align-items:center; gap:6px; flex-wrap:nowrap; }
+  .oc-input { height:32px; padding:0 8px; font-size:13px; }
+  .oc-select { width:118px; font-size:12px; }
+  #searchInput { width:min(190px, 22vw) !important; }
+  .oc-btn { height:32px; padding:0 9px; font-size:13px; }
+  .mk-products-table-shell { overflow-x:visible; border-radius:var(--oc-r); }
+  .oc-table { font-size:12px; }
+  .oc-table th { padding:6px 3px; font-size:11px; line-height:1.18; }
+  .oc-table td { padding:6px 3px; font-size:12px; line-height:1.22; }
+  .text-mono { font-size:11px; }
+  .mk-product-name-cell { gap:3px; }
+  .mk-two-line-copy { grid-template-columns:minmax(0, 1fr); align-items:start; gap:2px; }
+  .mk-two-line-text { line-height:1.18; }
+  .mk-two-line-text--code { font-size:10px; }
+  .mk-copy-btn { justify-self:start; width:max-content; height:18px; padding:0 4px; font-size:10px; }
+  .mk-cn-name { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; line-height:1.18; }
+  .mk-library-status-cell { gap:2px; line-height:1.18; }
+  .mk-library-status-metrics { max-width:92px; font-size:10px; line-height:1.18; }
+  .oc-badge { padding:2px 4px; font-size:11px; line-height:1.15; }
+  .mk-material-cell { gap:2px; }
+  .mk-product-material-btn { height:20px; padding:0 4px; font-size:10px; }
+  .mk-material-state { font-size:10px; }
+  .mk-detail-btn { height:22px; padding:0 4px; font-size:10px; }
+}
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
 .mk-video-card { position:relative; width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
 .mk-video-status-icons { position:absolute; top:8px; right:8px; z-index:3; display:flex; align-items:center; gap:4px; }
@@ -195,23 +288,38 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   </div>
 
   <section id="mkProductsPanel" class="mk-library-panel">
-    <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
-      <table class="oc-table" id="mainTable">
+    <div class="mk-products-table-shell">
+      <table class="oc-table mk-products-table" id="mainTable">
+        <colgroup>
+          <col class="mk-col-rank">
+          <col class="mk-col-image">
+          <col class="mk-col-name">
+          <col class="mk-col-cn">
+          <col class="mk-col-status">
+          <col class="mk-col-store">
+          <col class="mk-col-sales">
+          <col class="mk-col-revenue">
+          <col class="mk-col-spend">
+          <col class="mk-col-video">
+          <col class="mk-col-ads">
+          <col class="mk-col-material">
+          <col class="mk-col-action">
+        </colgroup>
         <thead>
           <tr>
-            <th style="width:50px">#</th>
-            <th style="width:220px">商品图</th>
-            <th style="width:280px; text-align:left;">产品名称</th>
-            <th style="width:180px; text-align:left;">中文产品名</th>
-            <th style="width:190px">产品状态</th>
-            <th style="width:100px">店铺</th>
-            <th style="width:90px" class="text-right">付款销量</th>
-            <th style="width:110px" class="text-right">销售额</th>
-            <th style="width:110px" class="text-right">明空消耗</th>
-            <th style="width:80px" class="text-right">视频数</th>
-            <th style="width:80px" class="text-right">广告数</th>
-            <th style="width:100px">素材库</th>
-            <th style="width:100px">操作</th>
+            <th>#</th>
+            <th>商品图</th>
+            <th class="mk-th-left">产品名称</th>
+            <th class="mk-th-left">中文产品名</th>
+            <th>产品状态</th>
+            <th>店铺</th>
+            <th class="text-right">付款销量</th>
+            <th class="text-right">销售额</th>
+            <th class="text-right">明空消耗</th>
+            <th class="text-right">视频数</th>
+            <th class="text-right">广告数</th>
+            <th>素材库</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody id="tableBody">
@@ -651,7 +759,7 @@ async function loadData(page) {
           ${renderTwoLineCopyBlock(productCode || handle, '', 'mk-product-code-block')}
         </div>
       </td>
-      <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
+      <td title="${escapeHtml(cnName)}" style="text-align:left;"><span class="mk-cn-name">${escapeHtml(cnNameShort)}</span></td>
       <td>${renderLibraryStatusCell(libraryStatus)}</td>
       <td>${escapeHtml(r.store || '--')}</td>
       <td class="text-right text-mono">${Number(r.sales_count || 0).toLocaleString()}</td>
@@ -663,7 +771,7 @@ async function loadData(page) {
       <td class="text-right text-mono">${Number(r.mk_total_ads || 0)}</td>
       <td>${renderProductMaterialButton(productCode, rawProductName, linked)}</td>
       <td>
-        ${mkProductId ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${mkProductId},${mkNameArg})'>查看素材</button>` : '--'}
+        ${mkProductId ? `<button class="oc-btn oc-btn--ghost mk-detail-btn" onclick='openDetail(${mkProductId},${mkNameArg})'>查看素材</button>` : '--'}
       </td>
     </tr>`;
   }).join('');
