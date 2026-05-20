@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -22,7 +23,11 @@ VOICE_AI_USE_CASE = "voice_selection.assess"
 VOICE_AI_MODEL = "google/gemini-3.5-flash"
 VOICE_AI_PROVIDER = "openrouter"
 MAX_VOICE_AI_CANDIDATES = 10
+DEFAULT_VOICE_AI_CANDIDATES = 3
+VOICE_AI_CANDIDATE_LIMIT_ENV = "VOICE_AI_RANK_CANDIDATE_LIMIT"
+VOICE_AI_MAX_OUTPUT_TOKENS = 4096
 VOICE_AI_REASON_LIMIT = 30
+VOICE_AI_MISSING_REASON = "模型未给原因"
 SOURCE_SAMPLE_MIN_SECONDS = 3.0
 SOURCE_SAMPLE_MAX_SECONDS = 10.0
 PREVIEW_SAMPLE_MIN_SECONDS = 3.0
@@ -39,11 +44,12 @@ VOICE_AI_RESPONSE_SCHEMA = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
+                    "candidate_key": {"type": "string"},
                     "voice_id": {"type": "string"},
                     "llm_rank": {"type": "integer", "minimum": 1},
                     "reason_summary": {"type": "string"},
                 },
-                "required": ["voice_id", "llm_rank", "reason_summary"],
+                "required": ["candidate_key", "llm_rank", "reason_summary"],
             },
         },
     },
@@ -58,10 +64,17 @@ def normalize_voice_ai_rankings(
     max_candidates: int = MAX_VOICE_AI_CANDIDATES,
     reason_limit: int = VOICE_AI_REASON_LIMIT,
 ) -> list[dict]:
-    allowed = [
-        str(candidate.get("voice_id") or "").strip()
-        for candidate in list(candidates)[:max_candidates]
-    ]
+    candidate_rows = list(candidates)[:max_candidates]
+    allowed = []
+    voice_id_by_key: dict[str, str] = {}
+    for index, candidate in enumerate(candidate_rows, start=1):
+        voice_id = str(candidate.get("voice_id") or "").strip()
+        if not voice_id:
+            continue
+        allowed.append(voice_id)
+        candidate_key = _normalize_candidate_key(candidate.get("candidate_key") or _candidate_key(index))
+        if candidate_key:
+            voice_id_by_key[candidate_key] = voice_id
     allowed_set = {voice_id for voice_id in allowed if voice_id}
     if not allowed_set:
         return []
@@ -72,25 +85,42 @@ def normalize_voice_ai_rankings(
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
-        voice_id = str(row.get("voice_id") or "").strip()
+        candidate_key = _normalize_candidate_key(
+            row.get("candidate_key") or row.get("candidate_id") or row.get("match_key")
+        )
+        voice_id = voice_id_by_key.get(candidate_key, "") if candidate_key else ""
+        if not voice_id:
+            voice_id = str(row.get("voice_id") or "").strip()
         if not voice_id or voice_id in seen or voice_id not in allowed_set:
             continue
         rank = _coerce_rank(row.get("llm_rank", row.get("rank")))
+        if rank is None:
+            rank = index + 1
         if rank is None:
             continue
         reason = _trim_reason(
             row.get("reason_summary") or row.get("reason") or row.get("summary") or "",
             limit=reason_limit,
         )
+        if not reason:
+            reason = VOICE_AI_MISSING_REASON
         seen.add(voice_id)
+        normalized_row = {"voice_id": voice_id, "llm_rank": rank, "reason_summary": reason}
+        if candidate_key:
+            normalized_row["candidate_key"] = candidate_key
         normalized.append((
             rank,
             index,
-            {"voice_id": voice_id, "llm_rank": rank, "reason_summary": reason},
+            normalized_row,
         ))
 
     normalized.sort(key=lambda item: (item[0], item[1]))
-    return [item[2] for item in normalized]
+    rebased = []
+    for rank, item in enumerate((item[2] for item in normalized), start=1):
+        row = dict(item)
+        row["llm_rank"] = rank
+        rebased.append(row)
+    return rebased
 
 
 def apply_voice_ai_rankings(candidates: Iterable[dict], rankings: Iterable[dict]) -> list[dict]:
@@ -120,8 +150,10 @@ def rank_voice_candidates(
     user_id: int | None,
     preview_downloader: Callable[[str, Path], str | Path] | None = None,
     audio_trimmer: Callable[[Path, Path], str | Path] | None = None,
+    candidate_limit: int | None = None,
 ) -> dict:
-    top_candidates = list(candidates or [])[:MAX_VOICE_AI_CANDIDATES]
+    effective_limit = _resolve_candidate_limit(candidate_limit)
+    top_candidates = list(candidates or [])[:effective_limit]
     if not top_candidates:
         return _empty_result("skipped", candidates)
     if not source_audio_path:
@@ -207,12 +239,14 @@ def rank_voice_candidates(
             prompt_candidate["audio_ref"] = "preview_unavailable"
         prompt_candidates.append(prompt_candidate)
 
+    response_schema = _voice_ai_response_schema(len(top_candidates))
     prompt = _build_prompt(task=task, candidates=prompt_candidates)
     request_debug = _build_request_debug(
         prompt=prompt,
         media_items=media_items,
         prompt_candidates=prompt_candidates,
         task=task,
+        response_schema=response_schema,
     )
     result = invoke_generate(
         VOICE_AI_USE_CASE,
@@ -220,9 +254,9 @@ def rank_voice_candidates(
         user_id=user_id,
         project_id=task_id,
         media=media,
-        response_schema=VOICE_AI_RESPONSE_SCHEMA,
+        response_schema=response_schema,
         temperature=0.2,
-        max_output_tokens=1200,
+        max_output_tokens=VOICE_AI_MAX_OUTPUT_TOKENS,
         provider_override=VOICE_AI_PROVIDER,
         model_override=VOICE_AI_MODEL,
         billing_extra={
@@ -232,18 +266,25 @@ def rank_voice_candidates(
         },
     )
     raw = result.get("json") if isinstance(result, dict) else None
-    rankings = normalize_voice_ai_rankings(raw, top_candidates)
+    rankings = normalize_voice_ai_rankings(
+        raw,
+        top_candidates,
+        max_candidates=effective_limit,
+    )
     enriched_top = apply_voice_ai_rankings(top_candidates, rankings)
     for item in enriched_top:
         asset = preview_assets_by_voice_id.get(str(item.get("voice_id") or "").strip())
         if asset:
             item["voice_ai_preview_audio_relpath"] = asset.get("relative_path")
-    enriched_candidates = enriched_top + [dict(candidate) for candidate in list(candidates or [])[MAX_VOICE_AI_CANDIDATES:]]
+    enriched_candidates = enriched_top + [
+        dict(candidate) for candidate in list(candidates or [])[effective_limit:]
+    ]
     debug = {
         "status": "done",
         "provider": VOICE_AI_PROVIDER,
         "model": VOICE_AI_MODEL,
         "use_case": VOICE_AI_USE_CASE,
+        "candidate_limit": effective_limit,
         "request": request_debug,
         "result": _build_result_debug(raw=raw, rankings=rankings, result=result),
     }
@@ -253,6 +294,7 @@ def rank_voice_candidates(
         "candidates": enriched_candidates,
         "model": VOICE_AI_MODEL,
         "provider": VOICE_AI_PROVIDER,
+        "candidate_limit": effective_limit,
         "debug": debug,
     }
 
@@ -275,6 +317,26 @@ def _empty_result(status: str, candidates: Iterable[dict]) -> dict:
     }
 
 
+def _resolve_candidate_limit(candidate_limit: int | None) -> int:
+    raw = candidate_limit
+    if raw is None:
+        raw = os.getenv(VOICE_AI_CANDIDATE_LIMIT_ENV, str(DEFAULT_VOICE_AI_CANDIDATES))
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        limit = DEFAULT_VOICE_AI_CANDIDATES
+    return max(1, min(MAX_VOICE_AI_CANDIDATES, limit))
+
+
+def _voice_ai_response_schema(candidate_count: int) -> dict:
+    schema = json.loads(json.dumps(VOICE_AI_RESPONSE_SCHEMA))
+    count = max(1, min(MAX_VOICE_AI_CANDIDATES, int(candidate_count or 1)))
+    rankings = schema["properties"]["rankings"]
+    rankings["minItems"] = count
+    rankings["maxItems"] = count
+    return schema
+
+
 def _extract_ranking_rows(raw: object) -> list:
     if isinstance(raw, dict):
         rows = raw.get("rankings")
@@ -290,6 +352,20 @@ def _coerce_rank(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return rank if rank > 0 else None
+
+
+def _candidate_key(index: int) -> str:
+    return f"C{index}"
+
+
+def _normalize_candidate_key(value: object) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    match = re.fullmatch(r"(?:C|CANDIDATE[\s_-]*)?0*(\d+)", text)
+    if match:
+        return _candidate_key(int(match.group(1)))
+    return text
 
 
 def _trim_reason(value: object, *, limit: int) -> str:
@@ -320,7 +396,7 @@ def _candidate_prompt_payload(candidate: dict, index: int) -> dict:
         "preview_duration_seconds",
         "preview_transcript_text",
     )
-    payload = {"match_order": index}
+    payload = {"candidate_key": _candidate_key(index), "match_order": index}
     for key in keys:
         value = candidate.get(key)
         if value is not None and value != "":
@@ -330,26 +406,36 @@ def _candidate_prompt_payload(candidate: dict, index: int) -> dict:
 
 def _build_prompt(*, task: dict, candidates: list[dict]) -> str:
     source_text = _task_text_sample(task)
+    candidate_count = len(candidates)
     context = {
         "target_lang": task.get("target_lang"),
         "source_language": task.get("source_language"),
         "source_text_sample": source_text,
-        "candidate_count": len(candidates),
+        "candidate_count": candidate_count,
         "candidates": candidates,
     }
     return (
         "You are evaluating TTS voices for video translation. "
         "Use the source speaker audio, the candidate preview audios, speed metadata, "
         "voice similarity, content, emotional tone, and expressiveness. "
-        "Rank only the provided Top10 candidates. Penalize voices that sound strange, "
+        "Rank only the provided candidates. Penalize voices that sound strange, "
         "too sharp, harsh, unusable, emotionally mismatched, or clearly unsuitable. "
-        "Do not change voice_id values.\n\n"
+        "Use candidate_key for the answer; voice_id is only a reference and must not "
+        "be copied into the output.\n\n"
         "Media order: item 1 is the source speaker sample. Subsequent audio files are "
         "candidate previews in the same order as candidates whose audio_ref is "
         "candidate_audio_N.\n\n"
-        "Return JSON only with rankings[]. Each row must contain voice_id, llm_rank, "
+        f"Return exactly {candidate_count} ranking rows, one per candidate_key, "
+        "with no omissions.\n\n"
+        "Return JSON only with rankings[]. Each row must contain candidate_key, llm_rank, "
         "and reason_summary. reason_summary must be Chinese and no more than 30 characters.\n\n"
-        f"Top10 context:\n{json.dumps(context, ensure_ascii=False, default=str)}"
+        "Every ranking row MUST include all three keys. Do not return rows with only "
+        "candidate_key. Use candidate_key exactly as C1, C2, C3, etc. "
+        "If you are uncertain, still assign llm_rank by preference order and "
+        "write a short Chinese reason_summary.\n"
+        "Example: {\"rankings\":[{\"candidate_key\":\"C1\",\"llm_rank\":1,"
+        "\"reason_summary\":\"更贴近原声\"}]}\n\n"
+        f"Candidate context:\n{json.dumps(context, ensure_ascii=False, default=str)}"
     )
 
 
@@ -359,6 +445,7 @@ def _build_request_debug(
     media_items: list[dict],
     prompt_candidates: list[dict],
     task: dict,
+    response_schema: dict,
 ) -> dict:
     raw_messages = [{
         "role": "user",
@@ -378,8 +465,8 @@ def _build_request_debug(
         "provider": VOICE_AI_PROVIDER,
         "model": VOICE_AI_MODEL,
         "temperature": 0.2,
-        "max_output_tokens": 1200,
-        "response_schema": VOICE_AI_RESPONSE_SCHEMA,
+        "max_output_tokens": VOICE_AI_MAX_OUTPUT_TOKENS,
+        "response_schema": response_schema,
         "messages": raw_messages,
     }
     return {
@@ -581,6 +668,11 @@ def _prepare_audio_sample(
 ) -> Path:
     if not src.is_file():
         raise RuntimeError(f"audio file does not exist: {src}")
+    try:
+        if src.resolve() == dest.resolve():
+            return src
+    except OSError:
+        pass
     dest.parent.mkdir(parents=True, exist_ok=True)
     if audio_trimmer is not None:
         result = audio_trimmer(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 
 def _denylisted_english_redub_user(username: str) -> dict:
@@ -213,3 +214,90 @@ def test_english_redub_voice_library_accepts_pagination(
         "page_size": 150,
     }
     assert resp.get_json()["items"][0]["voice_id"] == "voice-page-3"
+
+
+def test_english_redub_voice_ai_ranking_rerun_uses_saved_candidates(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "voice_ai_ranking" / "source_sample.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"source-audio")
+    state = {
+        "task_dir": str(tmp_path),
+        "target_lang": "en",
+        "utterances": [{"text": "hello"}],
+        "voice_match_candidates": [
+            {"voice_id": "v1", "name": "A"},
+            {"voice_id": "v2", "name": "B"},
+            {"voice_id": "v3", "name": "C"},
+            {"voice_id": "v4", "name": "D"},
+        ],
+        "voice_ai_rank_debug": {
+            "request": {
+                "visual": {
+                    "media": [{
+                        "role": "source_sample",
+                        "relative_path": "voice_ai_ranking/source_sample.mp3",
+                    }]
+                }
+            }
+        },
+    }
+    saved = {}
+    seen = {}
+
+    monkeypatch.setattr(
+        "web.routes.english_redub._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps(state),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr(
+        "appcore.task_state.update",
+        lambda task_id, **kwargs: seen.setdefault("state_update", kwargs),
+    )
+
+    def fake_rank_voice_candidates(**kwargs):
+        seen.update(kwargs)
+        return {
+            "status": "done",
+            "rankings": [{"voice_id": "v2", "llm_rank": 1, "reason_summary": "更贴近原声"}],
+            "candidates": [
+                {"voice_id": "v1", "name": "A"},
+                {"voice_id": "v2", "name": "B", "llm_rank": 1, "llm_reason_summary": "更贴近原声"},
+            ],
+            "model": "google/gemini-3.5-flash",
+            "provider": "openrouter",
+            "candidate_limit": 3,
+            "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
+        }
+
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking.rank_voice_candidates",
+        fake_rank_voice_candidates,
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/english-redub/task-ai/voice-ai-ranking",
+        json={"candidate_limit": 3},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert seen["candidate_limit"] == 3
+    assert seen["source_audio_path"] == source
+    assert len(seen["candidates"]) == 4
+    assert saved["voice_ai_rankings"][0]["voice_id"] == "v2"
+    assert saved["voice_match_candidates"][1]["llm_rank"] == 1
+    assert saved["voice_ai_rank_provider"] == "openrouter"
+    assert saved["voice_ai_rank_candidate_limit"] == 3
+    assert payload["voice_ai_rank_status"] == "done"
+    assert payload["voice_ai_rankings"][0]["llm_rank"] == 1
+    assert payload["candidate_limit"] == 3
