@@ -24,6 +24,9 @@
         <option value="">加载中...</option>
       </select>
     </label>
+    <button type="button" class="vs-open-modal-btn" id="vs-open-modal-btn">
+      弹窗选音色
+    </button>
     <div class="vs-gender-pills" id="vs-gender-filter" role="group" aria-label="性别筛选">
       <button type="button" class="vs-pill vs-pill-male" data-gender="male"
               aria-pressed="false">男声</button>
@@ -34,6 +37,22 @@
     <label style="font-size:12px;color:var(--text-user-badge);margin-left:auto;">
       <input type="checkbox" id="vs-recommended-only"/> 只看推荐
     </label>
+  </div>
+
+  <div class="vs-modal" id="vs-voice-modal" hidden role="dialog" aria-modal="true" aria-labelledby="vs-modal-title">
+    <div class="vs-modal-backdrop" data-vs-modal-close></div>
+    <div class="vs-modal-panel">
+      <div class="vs-modal-head">
+        <div>
+          <strong id="vs-modal-title">选择音色</strong>
+          <span class="vs-modal-count" id="vs-modal-count">0</span>
+        </div>
+        <button type="button" class="vs-modal-close" id="vs-modal-close-btn" aria-label="关闭">×</button>
+      </div>
+      <div class="vs-modal-list" id="vs-modal-list">
+        <div class="vs-loading">加载中...</div>
+      </div>
+    </div>
   </div>
 
   <div class="vs-list-scroll" id="vs-list">
@@ -165,6 +184,58 @@
   #vs-voice-select:disabled {
     opacity: 0.65; cursor: wait;
   }
+  .vs-open-modal-btn {
+    padding: 6px 14px; border: 1px solid var(--border-main);
+    background: var(--bg-card); border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-family: inherit; white-space: nowrap;
+  }
+  .vs-open-modal-btn:hover,
+  .vs-open-modal-btn:focus-visible {
+    border-color: oklch(56% 0.16 230);
+    outline: none;
+  }
+
+  .vs-modal[hidden] { display: none; }
+  .vs-modal {
+    position: fixed; inset: 0; z-index: 1200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .vs-modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(8, 15, 32, 0.45);
+  }
+  .vs-modal-panel {
+    position: relative; z-index: 1;
+    width: min(980px, calc(100vw - 32px));
+    max-height: min(760px, calc(100vh - 48px));
+    display: flex; flex-direction: column;
+    background: var(--bg-card); border: 1px solid var(--border-main);
+    border-radius: 10px; box-shadow: var(--shadow-lg, 0 20px 50px rgba(8, 15, 32, 0.2));
+  }
+  .vs-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 14px 16px;
+    border-bottom: 1px solid var(--border-main);
+  }
+  .vs-modal-count {
+    margin-left: 8px; color: var(--text-user-badge); font-size: 12px;
+  }
+  .vs-modal-close {
+    width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border-main); border-radius: 6px;
+    background: var(--bg-card); color: var(--text-main);
+    font-size: 20px; line-height: 1; cursor: pointer;
+  }
+  .vs-modal-close:hover,
+  .vs-modal-close:focus-visible {
+    border-color: oklch(56% 0.16 230); outline: none;
+  }
+  .vs-modal-list {
+    overflow-y: auto; padding: 10px;
+    background: var(--bg-body);
+  }
+  body.vs-modal-open { overflow: hidden; }
 
   /* 性别胶囊按钮组 */
   .vs-gender-pills { display: flex; gap: 6px; }
@@ -211,6 +282,7 @@
     border: 1.5px solid transparent; transition: all 0.12s;
   }
   .vs-row:hover { border-color: oklch(56% 0.16 230); }
+  .vs-row:focus-visible { outline: 2px solid oklch(56% 0.16 230 / 0.35); outline-offset: 2px; }
   .vs-row.selected { border-color: oklch(56% 0.16 230); background: oklch(94% 0.04 225); }
   .vs-row.recommended { background: linear-gradient(90deg, oklch(95% 0.04 225) 0%, var(--bg-card) 50%); }
   .vs-row.pinned-default {
@@ -437,5 +509,17 @@
     background: oklch(50% 0.17 230);
     box-shadow: 0 6px 16px oklch(56% 0.16 230 / 0.5);
     transform: translateY(-1px);
+  }
+  @media (max-width: 767px) {
+    .vs-modal { padding: 12px; align-items: stretch; }
+    .vs-modal-panel {
+      width: 100%; max-height: calc(100vh - 24px);
+    }
+    .vs-modal-list .vs-row {
+      align-items: stretch; flex-direction: column;
+    }
+    .vs-modal-list .vs-row audio {
+      max-width: 100%; width: 100%;
+    }
   }
 </style>

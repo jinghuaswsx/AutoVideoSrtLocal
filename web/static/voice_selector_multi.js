@@ -45,6 +45,11 @@
   const launchBtn = document.getElementById("vs-launch-btn");
   const searchInput = document.getElementById("vs-search");
   const voiceSelect = document.getElementById("vs-voice-select");
+  const openModalBtn = document.getElementById("vs-open-modal-btn");
+  const modalEl = document.getElementById("vs-voice-modal");
+  const modalListEl = document.getElementById("vs-modal-list");
+  const modalCountEl = document.getElementById("vs-modal-count");
+  const modalCloseBtn = document.getElementById("vs-modal-close-btn");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
 
@@ -401,11 +406,131 @@
   const POLL_TIMEOUT_MS = 5 * 60 * 1000;
   let activeGender = null;       // null | "male" | "female"（由胶囊按钮驱动）
   let rematching = false;
+  let modalTriggerEl = null;
+  let pendingReloadState = null;
+  let libraryRequestSeq = 0;
+  const VOICE_PAGE_SIZE = 200;
+  const RELOAD_STATE_KEY = `voice-selector-state:${taskId || "unknown"}`;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[ch]));
+  }
+
+  function findActiveVoiceElement() {
+    const active = document.activeElement;
+    if (!active || typeof active.closest !== "function") return null;
+    const row = active.closest(".vs-row[data-voice-id]");
+    if (!row) return null;
+    if (listEl && listEl.contains(row)) return row;
+    if (modalListEl && modalListEl.contains(row)) return row;
+    return null;
+  }
+
+  function cssEscapeValue(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/["\\]/g, "\\$&");
+  }
+
+  function captureRenderState() {
+    const activeVoiceElement = findActiveVoiceElement();
+    return {
+      listScrollTop: listEl ? listEl.scrollTop : 0,
+      modalScrollTop: modalListEl ? modalListEl.scrollTop : 0,
+      activeVoiceId: activeVoiceElement ? activeVoiceElement.dataset.voiceId : null,
+      activeInModal: !!(activeVoiceElement && modalListEl && modalListEl.contains(activeVoiceElement)),
+    };
+  }
+
+  function focusVoiceRow(container, voiceId) {
+    if (!container || !voiceId) return false;
+    const row = container.querySelector(`.vs-row[data-voice-id="${cssEscapeValue(voiceId)}"]`);
+    if (!row) return false;
+    try {
+      row.focus({ preventScroll: true });
+    } catch (_err) {
+      row.focus();
+    }
+    return true;
+  }
+
+  function restoreRenderState(state) {
+    if (!state) return;
+    requestAnimationFrame(() => {
+      if (listEl) listEl.scrollTop = state.listScrollTop || 0;
+      if (modalListEl) modalListEl.scrollTop = state.modalScrollTop || 0;
+      const focusContainer = state.activeInModal ? modalListEl : listEl;
+      focusVoiceRow(focusContainer, state.activeVoiceId);
+    });
+  }
+
+  function updateGenderPills() {
+    if (!genderFilter) return;
+    genderFilter.querySelectorAll(".vs-pill").forEach(b => {
+      const on = b.dataset.gender === activeGender;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+  }
+
+  function currentModalOpen() {
+    return !!(modalEl && !modalEl.hidden);
+  }
+
+  function saveReloadState() {
+    try {
+      sessionStorage.setItem(RELOAD_STATE_KEY, JSON.stringify({
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        listScrollTop: listEl ? listEl.scrollTop : 0,
+        modalScrollTop: modalListEl ? modalListEl.scrollTop : 0,
+        selectedVoiceId,
+        selectedVoiceName,
+        activeGender,
+        search: searchInput ? searchInput.value : "",
+        recommendedOnly: recommendedOnly ? recommendedOnly.checked : false,
+        modalOpen: currentModalOpen(),
+        activeVoiceId: (findActiveVoiceElement() || {}).dataset?.voiceId || selectedVoiceId,
+      }));
+    } catch (_err) {
+      // sessionStorage may be unavailable in private or restricted browser contexts.
+    }
+  }
+
+  function restoreReloadState() {
+    let saved = null;
+    try {
+      const raw = sessionStorage.getItem(RELOAD_STATE_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(RELOAD_STATE_KEY);
+      saved = JSON.parse(raw) || null;
+    } catch (_err) {
+      return null;
+    }
+    if (!saved) return null;
+    if (searchInput && typeof saved.search === "string") searchInput.value = saved.search;
+    if (recommendedOnly) recommendedOnly.checked = !!saved.recommendedOnly;
+    activeGender = saved.activeGender === "male" || saved.activeGender === "female" ? saved.activeGender : null;
+    selectedVoiceId = saved.selectedVoiceId || selectedVoiceId;
+    selectedVoiceName = saved.selectedVoiceName || selectedVoiceName;
+    updateGenderPills();
+    return saved;
+  }
+
+  function applyPendingReloadState() {
+    const saved = pendingReloadState;
+    if (!saved) return;
+    pendingReloadState = null;
+    if (saved.modalOpen) openVoiceModal({ restoreFocus: false });
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: saved.scrollY || 0, left: 0, behavior: "auto" });
+      if (listEl) listEl.scrollTop = saved.listScrollTop || 0;
+      if (modalListEl) modalListEl.scrollTop = saved.modalScrollTop || 0;
+      const focusContainer = saved.modalOpen ? modalListEl : listEl;
+      focusVoiceRow(focusContainer, saved.activeVoiceId || saved.selectedVoiceId);
+    });
   }
 
   function describePipeline(pipeline) {
@@ -419,15 +544,53 @@
     return "管道等待启动…";
   }
 
+  function mergeVoiceItems(target, incoming, seen) {
+    (incoming || []).forEach(item => {
+      const id = String(item && item.voice_id || "").trim();
+      if (!id || seen.has(id)) return;
+      target.push(item);
+      seen.add(id);
+    });
+  }
+
+  async function fetchVoiceLibraryPage(page) {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(VOICE_PAGE_SIZE),
+    });
+    const resp = await fetch(`${apiBase}/${taskId}/voice-library?${params.toString()}`);
+    if (!resp.ok) {
+      const detail = escapeHtml(await resp.text());
+      listEl.innerHTML = `<div class="vs-loading">加载失败：${detail}</div>`;
+      if (modalListEl) modalListEl.innerHTML = `<div class="vs-loading">加载失败：${detail}</div>`;
+      return null;
+    }
+    return resp.json();
+  }
+
+  async function fetchFullVoiceLibrary(seq) {
+    const first = await fetchVoiceLibraryPage(1);
+    if (!first || seq !== libraryRequestSeq) return null;
+    const items = [];
+    const seen = new Set();
+    mergeVoiceItems(items, first.items, seen);
+
+    const total = Number(first.total || 0);
+    const maxPages = total > 0 ? Math.ceil(total / VOICE_PAGE_SIZE) : 1;
+    for (let page = 2; page <= maxPages; page += 1) {
+      const next = await fetchVoiceLibraryPage(page);
+      if (!next || seq !== libraryRequestSeq) return null;
+      mergeVoiceItems(items, next.items, seen);
+    }
+    first.items = items;
+    return first;
+  }
+
   async function loadLibrary() {
+    const seq = ++libraryRequestSeq;
     try {
-      const resp = await fetch(`${apiBase}/${taskId}/voice-library`);
-      if (!resp.ok) {
-        const detail = escapeHtml(await resp.text());
-        listEl.innerHTML = `<div class="vs-loading">加载失败：${detail}</div>`;
-        return;
-      }
-      const data = await resp.json();
+      const data = await fetchFullVoiceLibrary(seq);
+      if (!data || seq !== libraryRequestSeq) return;
       allItems = data.items || [];
       candidatesMap.clear();
       (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
@@ -457,9 +620,11 @@
       }
 
       updateLaunchState();
+      applyPendingReloadState();
     } catch (err) {
       console.error("[voice-selector] load failed:", err);
       listEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
+      if (modalListEl) modalListEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
       schedulePoll(5000);
     }
   }
@@ -494,7 +659,8 @@
     const speedMeta = voiceSpeedMetaHtml(rec);
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
-           data-voice-name="${escapeHtml(v.name || '')}">
+           data-voice-name="${escapeHtml(v.name || '')}" tabindex="0"
+           aria-selected="${isSelected ? "true" : "false"}">
         <div class="vs-row-main">
           <div class="vs-row-name">${badge || ""}${escapeHtml(v.name || v.voice_id)}</div>
           <div class="vs-row-meta">${meta}</div>
@@ -657,6 +823,89 @@
     updateLaunchState();
   }
 
+  function bindVoiceRows(container) {
+    if (!container) return;
+    container.querySelectorAll(".vs-row").forEach(row => {
+      row.addEventListener("click", e => {
+        if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
+        try {
+          row.focus({ preventScroll: true });
+        } catch (_err) {
+          row.focus();
+        }
+        selectVoice(row.dataset.voiceId, row.dataset.voiceName, {
+          closeModal: container === modalListEl,
+        });
+      });
+      row.addEventListener("keydown", e => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
+        e.preventDefault();
+        selectVoice(row.dataset.voiceId, row.dataset.voiceName, {
+          closeModal: container === modalListEl,
+        });
+      });
+    });
+  }
+
+  function rowsHtml(rows, waitingProgress) {
+    let html = "";
+    rows.forEach(({ v, rec }) => {
+      const isRec = !!rec;
+      const isSelected = selectedVoiceId === v.voice_id;
+      const classes = [];
+      if (isRec) classes.push("recommended");
+      const badge = isRec
+        ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
+        : "";
+      html += rowHtml(v, {
+        badge, pinClass: classes.join(" "), isSelected, rec,
+      });
+    });
+
+    if (!html) {
+      html = `<div class="vs-loading">${waitingProgress || "没有匹配的音色"}</div>`;
+    } else if (waitingProgress) {
+      html = `<div class="vs-waiting-banner">等待 ${escapeHtml(waitingProgress)}
+        <small style="color:var(--text-user-badge);">可先浏览和试听；向量推荐将在 ASR 完成后自动出现</small></div>` + html;
+    }
+    return html;
+  }
+
+  function renderRowsInto(container, rows, waitingProgress) {
+    if (!container) return;
+    container.innerHTML = rowsHtml(rows, waitingProgress);
+    bindVoiceRows(container);
+  }
+
+  function renderVoiceModal(waitingProgress) {
+    if (!modalListEl) return;
+    const filtered = filteredVoiceRows();
+    if (modalCountEl) {
+      modalCountEl.textContent = `${filtered.length}/${allItems.length}`;
+    }
+    renderRowsInto(modalListEl, filtered, waitingProgress);
+  }
+
+  function render(waitingProgress) {
+    const renderState = captureRenderState();
+    const filtered = filteredVoiceRows();
+    syncVoiceSelectOptions(filtered, waitingProgress);
+    renderRowsInto(listEl, filtered, waitingProgress);
+    renderVoiceModal(waitingProgress);
+    restoreRenderState(renderState);
+    saveReloadState();
+  }
+
+  function selectVoice(voiceId, voiceName, opts) {
+    if (launched) return;
+    selectedVoiceId = voiceId;
+    selectedVoiceName = voiceName;
+    render();
+    updateLaunchState();
+    if (opts && opts.closeModal) closeVoiceModal();
+  }
+
   function selectVoiceFromControl() {
     if (!voiceSelect) return;
     const option = voiceSelect.selectedOptions && voiceSelect.selectedOptions[0];
@@ -675,6 +924,46 @@
     } else {
       selectionText.textContent = "请从列表里选择一个音色";
     }
+  }
+
+  function openVoiceModal() {
+    const options = arguments[0] && Object.prototype.hasOwnProperty.call(arguments[0], "restoreFocus")
+      ? arguments[0]
+      : null;
+    if (!modalEl) return;
+    modalTriggerEl = document.activeElement;
+    modalEl.hidden = false;
+    document.body.classList.add("vs-modal-open");
+    renderVoiceModal();
+    requestAnimationFrame(() => {
+      const selectedRow = selectedVoiceId
+        ? modalListEl && modalListEl.querySelector(`.vs-row[data-voice-id="${cssEscapeValue(selectedVoiceId)}"]`)
+        : null;
+      const focusTarget = selectedRow || (modalListEl && modalListEl.querySelector(".vs-row")) || modalCloseBtn;
+      if (selectedRow) selectedRow.scrollIntoView({ block: "center" });
+      if (focusTarget && (!options || options.restoreFocus !== false)) {
+        try {
+          focusTarget.focus({ preventScroll: true });
+        } catch (_err) {
+          focusTarget.focus();
+        }
+      }
+      saveReloadState();
+    });
+  }
+
+  function closeVoiceModal() {
+    if (!modalEl) return;
+    modalEl.hidden = true;
+    document.body.classList.remove("vs-modal-open");
+    if (modalTriggerEl && typeof modalTriggerEl.focus === "function") {
+      try {
+        modalTriggerEl.focus({ preventScroll: true });
+      } catch (_err) {
+        modalTriggerEl.focus();
+      }
+    }
+    saveReloadState();
   }
 
   async function launch() {
@@ -703,6 +992,7 @@
       launched = true;
       launchBtn.textContent = "✓ 已启动";
       updateLaunchState();
+      saveReloadState();
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       console.error("[voice-selector] launch failed:", err);
@@ -712,9 +1002,28 @@
     }
   }
 
-  searchInput.addEventListener("input", () => render());
-  recommendedOnly.addEventListener("change", () => render());
+  searchInput.addEventListener("input", () => {
+    render();
+    saveReloadState();
+  });
+  recommendedOnly.addEventListener("change", () => {
+    render();
+    saveReloadState();
+  });
   if (voiceSelect) voiceSelect.addEventListener("change", selectVoiceFromControl);
+  if (openModalBtn) openModalBtn.addEventListener("click", openVoiceModal);
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVoiceModal);
+  if (modalEl) {
+    modalEl.addEventListener("click", e => {
+      if (e.target && e.target.hasAttribute("data-vs-modal-close")) closeVoiceModal();
+    });
+  }
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && currentModalOpen()) closeVoiceModal();
+  });
+  if (listEl) listEl.addEventListener("scroll", saveReloadState, { passive: true });
+  if (modalListEl) modalListEl.addEventListener("scroll", saveReloadState, { passive: true });
+  window.addEventListener("beforeunload", saveReloadState);
 
   // 性别胶囊：toggle + 触发后端重算 top-10（不重新 embed，走 /rematch）
   async function onGenderPillClick(btn) {
@@ -722,11 +1031,7 @@
     const clicked = btn.dataset.gender;
     activeGender = (activeGender === clicked) ? null : clicked;
 
-    genderFilter.querySelectorAll(".vs-pill").forEach(b => {
-      const on = b.dataset.gender === activeGender;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", String(on));
-    });
+    updateGenderPills();
 
     render();  // 先本地渲染一次（按 activeGender 过滤）
 
@@ -773,5 +1078,6 @@
   });
   launchBtn.addEventListener("click", launch);
 
+  pendingReloadState = restoreReloadState();
   loadLibrary();
 })();
