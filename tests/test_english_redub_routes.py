@@ -305,3 +305,53 @@ def test_english_redub_voice_ai_ranking_rerun_uses_saved_candidates(
     assert payload["voice_ai_rankings"][0]["llm_rank"] == 1
     assert payload["voice_ai_rank_usage_log_id"] == 34567
     assert payload["candidate_limit"] == 3
+
+
+def test_english_redub_analysis_route_starts_runner(
+    authed_client_no_db,
+    monkeypatch,
+):
+    calls = []
+    monkeypatch.setattr(
+        "web.routes.english_redub.translation_route_store.get_active_project_id",
+        lambda task_id, user_id, project_type, query_one_func=None: {"id": task_id},
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.store.get",
+        lambda task_id: {"steps": {"analysis": "idle"}, "_user_id": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.english_redub_pipeline_runner.run_analysis",
+        lambda task_id, user_id=None: calls.append((task_id, user_id)) or True,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post("/api/english-redub/task-analysis/analysis/run")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "started"
+    assert calls == [("task-analysis", 1)]
+
+
+def test_english_redub_analysis_route_returns_409_when_runner_is_active(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.english_redub.translation_route_store.get_active_project_id",
+        lambda task_id, user_id, project_type, query_one_func=None: {"id": task_id},
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.store.get",
+        lambda task_id: {"steps": {"analysis": "idle"}, "_user_id": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.english_redub_pipeline_runner.run_analysis",
+        lambda task_id, user_id=None: False,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post("/api/english-redub/task-analysis/analysis/run")
+
+    assert resp.status_code == 409
+    assert "正在运行" in resp.get_json()["error"]

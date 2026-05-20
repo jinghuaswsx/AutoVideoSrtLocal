@@ -47,3 +47,25 @@ def resume(task_id: str, start_step: str, user_id: int | None = None) -> bool:
         args=(runner, task_id, start_step),
         daemon=False,
     )
+
+
+def run_analysis(task_id: str, user_id: int | None = None) -> bool:
+    """手动触发单次 AI 视频分析，不影响任务整体 status。"""
+    from appcore.runtime import run_analysis_only
+    from appcore.runtime_english_redub import EnglishRedubRunner
+
+    bus = EventBus()
+    bus.subscribe(_handler(task_id))
+    runner = EnglishRedubRunner(bus=bus, user_id=user_id)
+    return start_tracked_thread(
+        project_type=runner.project_type,
+        task_id=task_id,
+        target=run_analysis_only,
+        args=(task_id, runner),
+        daemon=False,
+        user_id=user_id,
+        runner="appcore.runtime.run_analysis_only",
+        entrypoint="web.services.english_redub_pipeline_runner.run_analysis",
+        stage="analysis",
+        details={"action": "manual_analysis"},
+    )

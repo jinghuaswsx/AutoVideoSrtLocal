@@ -1138,7 +1138,7 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 @bp.route("/api/english-redub/<task_id>/analysis/run", methods=["POST"])
 @login_required
 def run_ai_analysis(task_id):
-    """手动触发多语种项目 AI 视频分析，不影响任务整体 status。"""
+    """手动触发英语重新配音项目 AI 视频分析，不影响任务整体 status。"""
     row = translation_route_store.get_active_project_id(
         task_id,
         current_user.id,
@@ -1155,8 +1155,11 @@ def run_ai_analysis(task_id):
     if (task.get("steps") or {}).get("analysis") == "running":
         return _json_response({"error": "AI 分析正在运行中"}, 409)
 
-    # multi_pipeline_runner does not expose run_analysis yet; placeholder
-    return _json_response({"error": "analysis not supported for multi_translate"}, 501)
+    owner_id = task.get("_user_id") or current_user.id
+    if not english_redub_pipeline_runner.run_analysis(task_id, user_id=owner_id):
+        return _json_response({"error": "AI 分析正在运行中"}, 409)
+
+    return _json_response({"status": "started"})
 
 
 @bp.route("/api/english-redub/user-default-voice", methods=["PUT"])

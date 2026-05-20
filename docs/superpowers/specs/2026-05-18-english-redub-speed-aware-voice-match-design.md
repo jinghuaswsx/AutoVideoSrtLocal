@@ -35,6 +35,14 @@
 6. 管理员后台提供音色推荐开关：旧推荐逻辑和新推荐逻辑二选一；默认旧逻辑。
 7. 旧的 `/omni-translate`、`/multi-translate`、`/ja-translate` 行为完全不动。
 
+### 2026-05-20 AI 视频分析手动触发修复
+
+英语重新配音详情页复用通用任务工作台的“AI 视频分析”按钮，按钮请求必须落在
+`/api/english-redub/<task_id>/analysis/run` 并按 `project_type=english_redub`
+启动单次 `analysis` 步骤。该入口不得继续返回
+`analysis not supported for multi_translate` 占位错误，也不得串到
+multi-translate 的项目类型或 active key。
+
 ## 非目标
 
 - 不把现有 Omni 默认推荐逻辑改成语速感知。
