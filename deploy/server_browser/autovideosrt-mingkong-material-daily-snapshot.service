@@ -7,5 +7,5 @@ Type=oneshot
 User=root
 WorkingDirectory=/opt/autovideosrt
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/autovideosrt/venv/bin/python tools/mingkong_material_daily_snapshot.py --sleep-after-products 10 --sleep-seconds 10
+ExecStart=/opt/autovideosrt/venv/bin/python tools/mingkong_material_daily_snapshot.py --sleep-after-products 0 --sleep-seconds 0
 TimeoutStartSec=21600
