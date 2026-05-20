@@ -1132,7 +1132,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         onclick="mkiXiaoHandleClick(this)">
-      做小语种
+      创建小语种翻译任务
     </button>
   </div>`;
 }
@@ -1263,7 +1263,7 @@ async function openDetail(mkId, mkName) {
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
             data-mki-mk-id="${escapeHtml(item.id || '')}"
             onclick="mkiXiaoHandleClick(this)">
-          做小语种
+          创建小语种翻译任务
         </button>
       </div>`;
     });
@@ -1592,6 +1592,10 @@ const MKI_IMPORT_STEPS = [
 let mkiImportProgressButton = null;
 let mkiImportProgressFailedStep = 'product';
 let mkiImportProgressProductId = null;
+let mkiImportProgressItemId = null;
+let mkiImportProgressTranslatorId = null;
+let mkiImportProgressTaskId = null;
+let mkiImportProgressDomainOptions = [];
 
 function mkiImportProgressStatusText(status) {
   return {
@@ -1621,7 +1625,11 @@ function mkiImportProgressShowNextActions() {
   const continueBtn = document.getElementById('mkiImportProgressContinue');
   const tasksBtn = document.getElementById('mkiImportProgressTasks');
   const mediasBtn = document.getElementById('mkiImportProgressMedias');
-  if (continueBtn) continueBtn.hidden = false;
+  if (continueBtn) {
+    continueBtn.hidden = false;
+    continueBtn.disabled = false;
+    continueBtn.textContent = '下一步：创建小语种任务';
+  }
   if (tasksBtn) tasksBtn.hidden = false;
   mkiImportProgressSetMediasHref(mkiImportProgressButton);
   if (mediasBtn) mediasBtn.hidden = false;
@@ -1649,7 +1657,10 @@ function mkiImportProgressOpen(meta) {
   document.getElementById('mkiImportProgressResultText').textContent = '';
   document.getElementById('mkiImportProgressRetry').hidden = true;
   mkiImportProgressHideNextActions();
-  document.getElementById('mkiImportProgressContinue').dataset.href = '/tasks/';
+  const continueBtn = document.getElementById('mkiImportProgressContinue');
+  continueBtn.dataset.href = '/tasks/';
+  continueBtn.disabled = false;
+  continueBtn.textContent = '下一步：创建小语种任务';
   document.getElementById('mkiImportProgressTasks').dataset.href = '/tasks/';
   const mediasBtn = document.getElementById('mkiImportProgressMedias');
   if (mediasBtn) {
@@ -1657,6 +1668,10 @@ function mkiImportProgressOpen(meta) {
     mediasBtn.dataset.href = '/medias';
   }
   mkiImportProgressProductId = null;
+  mkiImportProgressItemId = null;
+  mkiImportProgressTranslatorId = null;
+  mkiImportProgressTaskId = null;
+  mkiImportProgressDomainOptions = [];
   const domainsPanel = document.getElementById('mkiImportProgressDomains');
   if (domainsPanel) domainsPanel.hidden = true;
   const domainList = document.getElementById('mkiImportProgressDomainList');
@@ -1737,6 +1752,26 @@ function mkiImportProgressSelectedDomainIds() {
     .filter(value => Number.isFinite(value) && value > 0);
 }
 
+function mkiImportProgressDefaultDomainIds() {
+  const enabledDomains = (mkiImportProgressDomainOptions || [])
+    .filter(item => item && item.enabled);
+  const idsFrom = predicate => enabledDomains
+    .filter(predicate)
+    .map(item => Number(item.id || 0))
+    .filter(value => Number.isFinite(value) && value > 0);
+  const defaultIds = idsFrom(item => item.is_default);
+  if (defaultIds.length) return defaultIds;
+  const productDefaultIds = idsFrom(item => item.product_enabled);
+  if (productDefaultIds.length) return productDefaultIds;
+  const firstId = enabledDomains.length ? Number(enabledDomains[0].id || 0) : 0;
+  return Number.isFinite(firstId) && firstId > 0 ? [firstId] : [];
+}
+
+function mkiImportProgressEffectiveDomainIds() {
+  const selectedIds = mkiImportProgressSelectedDomainIds();
+  return selectedIds.length ? selectedIds : mkiImportProgressDefaultDomainIds();
+}
+
 async function mkiImportProgressLoadDomains(productId) {
   const panel = document.getElementById('mkiImportProgressDomains');
   const list = document.getElementById('mkiImportProgressDomainList');
@@ -1752,7 +1787,8 @@ async function mkiImportProgressLoadDomains(productId) {
     const rsp = await fetch(`/medias/api/products/${encodeURIComponent(productId)}/product-link-domains`);
     const data = await rsp.json().catch(() => ({}));
     if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
-    list.innerHTML = mkiImportProgressRenderDomainRows(data.domains || []);
+    mkiImportProgressDomainOptions = data.domains || [];
+    list.innerHTML = mkiImportProgressRenderDomainRows(mkiImportProgressDomainOptions);
     submit.disabled = false;
     mkiImportProgressSetStep('domains', 'running', '请确认该产品后续要发布到哪些域名');
   } catch (err) {
@@ -1768,10 +1804,11 @@ async function mkiImportProgressSaveDomains() {
   const productId = mkiImportProgressProductId;
   const submit = document.getElementById('mkiImportProgressDomainSubmit');
   if (!productId || !submit) return;
-  const enabledIds = mkiImportProgressSelectedDomainIds();
+  const selectedIds = mkiImportProgressSelectedDomainIds();
+  const enabledIds = mkiImportProgressEffectiveDomainIds();
   submit.disabled = true;
   submit.textContent = '保存中...';
-  mkiImportProgressSetDomainNotice(enabledIds.length ? '' : '当前未勾选任何发布域名，保存后该产品后续不会进入任何域名的推送。');
+  mkiImportProgressSetDomainNotice(selectedIds.length ? '' : '未选择发布域名，已按默认域名继续。');
   try {
     const rsp = await fetch(`/medias/api/products/${encodeURIComponent(productId)}/product-link-domains`, {
       method: 'POST',
@@ -1781,14 +1818,15 @@ async function mkiImportProgressSaveDomains() {
     const data = await rsp.json().catch(() => ({}));
     if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
     const list = document.getElementById('mkiImportProgressDomainList');
-    if (list) list.innerHTML = mkiImportProgressRenderDomainRows(data.domains || []);
+    mkiImportProgressDomainOptions = data.domains || [];
+    if (list) list.innerHTML = mkiImportProgressRenderDomainRows(mkiImportProgressDomainOptions);
     const domainDetail = enabledIds.length
       ? `已同步 ${enabledIds.length} 个发布域名到链接管理`
-      : '已同步为空发布域名配置';
+      : '未找到默认发布域名';
     mkiImportProgressSetStep('domains', 'done', domainDetail);
-    mkiImportProgressSetStep('next', 'done', '发布域名已确认，可以继续后续流程');
+    mkiImportProgressSetStep('next', 'done', '发布域名已确认，可以创建小语种任务');
     mkiImportProgressShowNextActions();
-    mkiImportProgressSetDomainNotice(enabledIds.length ? '发布域名已同步到产品链接管理。' : '已保存为空发布域名配置。');
+    mkiImportProgressSetDomainNotice(enabledIds.length ? '发布域名已同步到产品链接管理。' : '没有可用默认域名，请稍后到链接管理补充。', enabledIds.length ? '' : 'danger');
   } catch (err) {
     const message = err.message || '保存失败';
     mkiImportProgressSetStep('domains', 'error', message);
@@ -1807,6 +1845,7 @@ function mkiImportProgressComplete(data, btn) {
   const productId = data?.media_product_id || data?.product_id || '--';
   const itemId = data?.media_item_id || data?.item_id || '--';
   const numericProductId = Number(data?.media_product_id || data?.product_id || 0);
+  const numericItemId = Number(data?.media_item_id || data?.item_id || 0);
   const warningMessage = mkiWarningMessageFromResponse(data);
   const productDetail = (data?.is_new_product ? '新建产品完成' : '复用已有产品')
     + '，产品 ID：' + productId
@@ -1815,7 +1854,7 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
   mkiImportProgressSetStep('domains', 'running', '正在加载产品发布域名');
-  mkiImportProgressSetStep('next', 'pending', '确认发布域名后开放下一步入口');
+  mkiImportProgressSetStep('next', 'pending', '确认发布域名后创建小语种任务');
 
   const resultEl = document.getElementById('mkiImportProgressResult');
   const textEl = document.getElementById('mkiImportProgressResultText');
@@ -1828,6 +1867,7 @@ function mkiImportProgressComplete(data, btn) {
   document.getElementById('mkiImportProgressRetry').hidden = true;
   mkiImportProgressButton = btn || mkiImportProgressButton;
   mkiImportProgressProductId = numericProductId > 0 ? numericProductId : null;
+  mkiImportProgressItemId = numericItemId > 0 ? numericItemId : null;
   if (mkiImportProgressProductId) {
     mkiImportProgressLoadDomains(mkiImportProgressProductId);
   } else {
@@ -1848,9 +1888,61 @@ function mkiImportProgressRetry() {
   if (btn && !btn.disabled) btn.click();
 }
 
-function mkiImportProgressContinueTask() {
+async function mkiImportProgressCreateSmallLangTask() {
   const continueBtn = document.getElementById('mkiImportProgressContinue');
-  mkiImportProgressOpenTab((continueBtn && continueBtn.dataset.href) || '/tasks/');
+  if (!mkiImportProgressProductId || !mkiImportProgressItemId) {
+    mkiToast('error', '缺少产品或素材 ID，无法创建小语种任务');
+    mkiImportProgressSetStep('next', 'error', '缺少产品或素材 ID');
+    return;
+  }
+  if (!mkiImportProgressTranslatorId) {
+    mkiToast('error', '缺少翻译员，请重新加入素材库后创建任务');
+    mkiImportProgressSetStep('next', 'error', '缺少翻译员');
+    return;
+  }
+  const selection = await mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true, title: '创建小语种翻译任务'});
+  if (!selection) return;
+  if (!selection.countries.length) {
+    mkiToast('error', '请至少勾选一个国家');
+    return;
+  }
+  continueBtn.disabled = true;
+  continueBtn.textContent = '创建中...';
+  mkiImportProgressSetStep('next', 'running', '正在创建小语种翻译父任务');
+  try {
+    const rsp = await fetch('/tasks/api/parent', {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({
+        media_product_id: mkiImportProgressProductId,
+        media_item_id: mkiImportProgressItemId,
+        translator_id: mkiImportProgressTranslatorId,
+        countries: selection.countries
+      })
+    });
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw new Error(data.error || data.detail || rsp.statusText);
+    const taskId = Number(data.parent_task_id || 0);
+    mkiImportProgressTaskId = taskId > 0 ? taskId : null;
+    const taskText = mkiImportProgressTaskId ? `小语种任务已创建，父任务 #${mkiImportProgressTaskId}` : '小语种任务已创建';
+    mkiImportProgressSetStep('next', 'done', taskText);
+    continueBtn.textContent = mkiImportProgressTaskId ? `已创建任务 #${mkiImportProgressTaskId}` : '已创建任务';
+    const tasksBtn = document.getElementById('mkiImportProgressTasks');
+    if (tasksBtn && mkiImportProgressTaskId) {
+      tasksBtn.dataset.href = `/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`;
+    }
+    mkiToast('success', taskText);
+  } catch (err) {
+    const message = err.message || '创建失败';
+    continueBtn.disabled = false;
+    continueBtn.textContent = '下一步：创建小语种任务';
+    mkiImportProgressSetStep('next', 'error', message);
+    mkiToast('error', '创建失败：' + message);
+  }
+}
+
+function mkiImportProgressContinueTask() {
+  mkiImportProgressCreateSmallLangTask();
 }
 
 async function mkiHandleClick(btn) {
@@ -1877,12 +1969,13 @@ async function mkiHandleClick(btn) {
     };
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
+    mkiImportProgressTranslatorId = translatorId;
     mkiImportProgressSetStep('prepare', 'done', '素材字段已读取，准备提交服务端入库');
     mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
     mkiImportProgressSetStep('download', 'pending', '产品确认后下载明空原视频');
     mkiImportProgressSetStep('store', 'pending', '视频下载完成后写入素材库');
     mkiImportProgressSetStep('domains', 'pending', '入库完成后选择发布域名');
-    mkiImportProgressSetStep('next', 'pending', '发布域名确认后开放下一步入口');
+    mkiImportProgressSetStep('next', 'pending', '发布域名确认后创建小语种任务');
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     const headers = {'Content-Type': 'application/json'};
     if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
@@ -1921,7 +2014,7 @@ async function mkiHandleClick(btn) {
   }
 }
 
-// ---- 做小语种：一键导入 + 创建任务 ----
+// ---- 创建小语种翻译任务：一键导入 + 创建任务 ----
 let mkiXiaoResolve = null;
 let mkiXiaoTranslatorsCache = null;
 let mkiXiaoLangsCache = null;
@@ -1933,7 +2026,7 @@ function mkiXiaoLangCode(lang) {
   return String(lang || '').trim().toUpperCase();
 }
 
-async function mkiXiaoOpenModal() {
+async function mkiXiaoOpenModal(options = {}) {
   // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
@@ -1946,6 +2039,10 @@ async function mkiXiaoOpenModal() {
   }
   const sel = document.getElementById('mkiXiaoTranslator');
   sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
+  if (options.translatorId) sel.value = String(options.translatorId);
+  sel.disabled = !!options.lockTranslator;
+  const titleEl = document.getElementById('mkiXiaoTitle');
+  if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
 
   // Load languages
   if (!mkiXiaoLangsCache) {
@@ -1987,7 +2084,7 @@ function mkiXiaoCancel() {
 }
 
 async function mkiXiaoHandleClick(btn) {
-  var selection = await mkiXiaoOpenModal();
+  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务'});
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
   if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
@@ -2060,7 +2157,7 @@ async function mkiXiaoHandleClick(btn) {
       <div id="mkiImportProgressResult" class="mki-progress-result" hidden>
         <div class="mki-progress-result-title">入库完成</div>
         <div id="mkiImportProgressResultText"></div>
-        <p>下一步继续做小语种任务；原视频处理人认领后会自动提交牛马去字幕，并进入人工审核。</p>
+        <p>下一步创建小语种任务；原视频处理人认领后会自动提交牛马去字幕，并进入人工审核。</p>
       </div>
       <div id="mkiImportProgressDomains" class="mki-progress-domains" hidden>
         <div class="mki-progress-domain-head">
@@ -2078,7 +2175,7 @@ async function mkiXiaoHandleClick(btn) {
       </div>
       <div class="mki-progress-actions">
         <button id="mkiImportProgressRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>
-        <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>继续做小语种任务</button>
+        <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>下一步：创建小语种任务</button>
         <button id="mkiImportProgressTasks" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenTasks()" hidden>去任务中心</button>
         <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenMedias()" hidden>去素材管理</button>
         <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressClose()">关闭</button>
@@ -2100,10 +2197,10 @@ async function mkiXiaoHandleClick(btn) {
   </div>
 </div>
 
-<!-- 做小语种 modal -->
+<!-- 创建小语种翻译任务 modal -->
 <div id="mkiXiaoModal" class="mki-xiao-backdrop">
   <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
-    <h3 id="mkiXiaoTitle" class="mki-xiao-title">做小语种 — 创建翻译任务</h3>
+    <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
     <div class="mki-xiao-field">
       <label class="mki-xiao-label" for="mkiXiaoTranslator">翻译员：</label>
       <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:36px;"></select>

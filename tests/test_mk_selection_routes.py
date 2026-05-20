@@ -141,7 +141,9 @@ def test_mk_import_progress_modal_present():
     assert 'id="mkiImportProgressError"' in template
     for label in ("准备素材信息", "检查产品与链接", "下载明空原视频", "写入素材库", "后续任务入口"):
         assert label in template
-    assert "继续做小语种任务" in template
+    assert "下一步：创建小语种任务" in template
+    assert "继续做小语种任务" not in template
+    assert "创建小语种翻译任务" in template
     assert "去任务中心" in template
     assert "去素材管理" in template
     assert "原视频处理人认领后会自动提交牛马去字幕" in template
@@ -287,6 +289,12 @@ def test_mk_import_progress_footer_actions_open_new_tabs():
     assert "window.open(targetHref, '_blank', 'noopener,noreferrer')" in template
     assert "function mkiImportProgressOpenTasks()" in template
     assert "function mkiImportProgressContinueTask()" in template
+    assert "async function mkiImportProgressCreateSmallLangTask()" in template
+    assert "fetch('/tasks/api/parent'" in template
+    assert "media_product_id: mkiImportProgressProductId" in template
+    assert "media_item_id: mkiImportProgressItemId" in template
+    assert "translator_id: mkiImportProgressTranslatorId" in template
+    assert "mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true" in template
     assert 'onclick="mkiImportProgressContinueTask()"' in template
     assert 'onclick="mkiImportProgressOpenTasks()"' in template
     assert 'onclick="mkiImportProgressOpenMedias()"' in template
