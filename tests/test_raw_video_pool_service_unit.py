@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def test_list_visible_tasks_includes_raw_source_status(monkeypatch):
@@ -114,6 +115,22 @@ def test_replace_processed_video_records_manual_upload_event(monkeypatch, tmp_pa
     payload = json.loads(event_args[3])
     assert payload["filename"] == "manual.mp4"
     assert payload["new_size"] == len(b"manual-video")
+
+
+def test_resolve_local_path_uses_local_media_storage(monkeypatch, tmp_path):
+    from appcore import raw_video_pool
+
+    media_path = tmp_path / "output" / "media_store" / "33" / "medias" / "590" / "demo.mp4"
+    object_key = "33/medias/590/demo.mp4"
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        raw_video_pool,
+        "local_media_storage",
+        SimpleNamespace(safe_local_path_for=lambda key: media_path if key == object_key else None),
+        raising=False,
+    )
+
+    assert raw_video_pool._resolve_local_path(object_key) == str(media_path)
 
 
 def test_raw_video_pool_template_exposes_raw_source_progress():

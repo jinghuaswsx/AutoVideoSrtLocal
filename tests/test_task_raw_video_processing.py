@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,6 +53,22 @@ def test_start_niuma_processing_prepares_subtitle_task_and_watcher(monkeypatch, 
     assert runner_calls == [("tcraw-5-fixed", 9)]
     assert watcher_calls[0]["parent_task_id"] == 5
     assert events[0][1] == "raw_niuma_submitted"
+
+
+def test_resolve_media_item_path_uses_local_media_storage(monkeypatch, tmp_path):
+    from appcore import task_raw_video_processing as processing
+
+    media_path = tmp_path / "output" / "media_store" / "33" / "medias" / "590" / "demo.mp4"
+    object_key = "33/medias/590/demo.mp4"
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        processing,
+        "local_media_storage",
+        SimpleNamespace(safe_local_path_for=lambda key: media_path if key == object_key else None),
+        raising=False,
+    )
+
+    assert processing._resolve_media_item_path(object_key) == media_path
 
 
 def test_start_niuma_processing_rejects_runner_start_failure(monkeypatch, tmp_path):

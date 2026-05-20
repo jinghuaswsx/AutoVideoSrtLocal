@@ -9,6 +9,7 @@ import json
 import os
 from typing import Any
 
+from appcore import local_media_storage
 from appcore.db import execute, query_all, query_one
 
 log = logging.getLogger(__name__)
@@ -145,13 +146,8 @@ def _write_event(task_id: int, event_type: str, actor_user_id: int | None, paylo
 
 
 def _resolve_local_path(object_key: str) -> str | None:
-    """媒体文件本地路径解析。
-
-    复用 UPLOAD_DIR + object_key 惯例。如果素材管理 (appcore/medias.py) 有
-    专门的路径解析 helper（实施时 grep 一下），优先用那个。
-    """
-    upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
-    return os.path.join(upload_dir, object_key)
+    """Resolve a media item object key to the local media-store path."""
+    return str(local_media_storage.safe_local_path_for(object_key))
 
 
 def _check_view_permission(task_id: int, viewer_user_id: int) -> dict:
