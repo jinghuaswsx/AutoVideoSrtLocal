@@ -158,7 +158,7 @@ library match and should not be interpreted as a pushed-ad-material signal.
 
 `renderMkVideoMaterialCard()` renders an absolute top-right status cluster:
 
-- Product status icon: uses a product/package symbol and is shown only when
+- Product status icon: uses the parcel/package symbol `📦` and is shown only when
   `has_local_product_running_ad` is true.
 - Video status icon: uses a video/play symbol and is shown only when
   `has_local_material_in_library` is true.

@@ -175,6 +175,8 @@ def test_mk_selection_video_cards_include_cached_ad_status_icons_and_media_searc
     assert "mk-status-icon--inactive" not in template
     assert "mk-status-icon--product" in template
     assert "mkStatusIconSvg('product')" in template
+    assert "mk-status-icon-emoji" in template
+    assert "📦" in template
     assert "mk-status-icon--video" in template
     assert "mkStatusIconSvg('video')" in template
     assert "if (r.has_local_product_running_ad)" in template
