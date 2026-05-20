@@ -8,21 +8,22 @@
 
 ## 1. 背景与目标
 
-字幕移除模块已经有两种处理方式：
+字幕移除模块原设计先隔离两种处理方式，后续补充了牛马入口：
 
 - `火山`：云端字幕移除能力，需要将源视频放到可被云端接口访问的 TOS URL。
 - `本地 VSR`：本机 SubtitleRemover/VSR 服务，直接读取本地上传文件。
+- 2026-05-20 补充：前端上传面板已经接入 `牛马` 处理方式，进入字幕移除功能菜单时默认选中 `牛马`；`火山` 保留为补充工具，在牛马效果不好时供手工选择。
 
-这两种方式不是同一套流程的参数变体，而是两条独立处理链路。页面需要清楚地区分任务类型、上传方式、可配置项和列表筛选范围。
+这些方式不是同一套流程的参数变体，而是独立处理链路。页面需要清楚地区分任务类型、上传方式、可配置项和列表筛选范围。
 
 本次目标：
 
 - 把处理方式筛选放到 `/subtitle-removal` 右侧内容区顶部，与“字幕移除”标题同一行，展示为胶囊按钮。
-- 列表可按处理方式筛选：选 `火山` 只看火山任务，选 `本地 VSR` 只看本地 VSR 任务，两个都不选时显示全部。
-- 列表每个任务都显示处理方式，明确标出 `火山` 或 `本地 VSR`。
-- 新建任务时默认 `火山`，可改选 `本地 VSR`。
-- 火山任务使用 TOS 上传源文件；本地 VSR 任务使用本地上传源文件。
-- 本地 VSR 不展示、不提交、不保存“擦除类型”设置。
+- 列表可按处理方式筛选：选 `火山` 只看火山任务，选 `牛马` 只看牛马任务，选 `本地 VSR` 只看本地 VSR 任务，全部不选时显示全部。
+- 列表每个任务都显示处理方式，明确标出 `火山`、`牛马` 或 `本地 VSR`。
+- 新建任务时前端默认选中 `牛马`，可手工改选 `火山`；历史任务或缺省 API 兼容仍按 `火山` 解释。
+- 火山 / 牛马任务使用 TOS 可访问源文件；本地 VSR 任务使用本地上传源文件。
+- 牛马 / 本地 VSR 不展示、不提交、不保存“擦除类型”设置。
 
 ## 2. 范围与非目标
 
@@ -37,10 +38,10 @@
 - 任务提交时：
   - `volc` 任务确保 `source_tos_key` 存在，并继续通过 TOS 签名 URL 调云端。
   - `local_vsr` 任务不做 TOS staging，runtime 直接读取 `video_path`。
-- 上传面板里 `火山` 默认选中；切换到 `本地 VSR` 时隐藏擦除类型。
+- 上传面板里 `牛马` 默认选中；切换到 `火山` 时才展示擦除类型，切换到非火山处理方式时隐藏擦除类型。
 - 本地 VSR 的本地 PUT 仍走页面同源接口，CSRF header 由 `layout.html` 全局 XHR 包装统一注入；上传脚本不得再手动设置 `X-CSRFToken`，避免同名 header 被浏览器合并成重复 token 后被后端判为 invalid。
-- 详情页中本地 VSR 任务隐藏擦除类型，只展示处理方式。
-- 列表接口支持 `subtitle_backend=volc|local_vsr` 过滤。
+- 详情页中牛马 / 本地 VSR 任务隐藏擦除类型，只展示处理方式。
+- 列表接口支持 `subtitle_backend=volc|niuma|local_vsr` 过滤。
 - 列表表格新增/展示 `处理方式` 字段。
 
 ### 2.2 非目标
@@ -59,9 +60,9 @@
 
 | 字段 | 取值 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `subtitle_backend` | `volc` / `local_vsr` | `volc` | 处理方式 |
-| `erase_text_type` | `subtitle` / `text` / 空 | `subtitle` | 仅火山任务有效；本地 VSR 应为空或忽略 |
-| `source_tos_key` | string | `""` | 火山任务必须有值；本地 VSR 为空 |
+| `subtitle_backend` | `volc` / `niuma` / `local_vsr` | 前端新建默认 `niuma`；缺省 API / 历史任务兼容为 `volc` | 处理方式 |
+| `erase_text_type` | `subtitle` / `text` / 空 | `subtitle` | 仅火山任务有效；牛马 / 本地 VSR 应为空或忽略 |
+| `source_tos_key` | string | `""` | 火山 / 牛马任务必须有值；本地 VSR 为空 |
 
 ### 3.2 `POST /api/subtitle-removal/upload/bootstrap`
 
@@ -90,7 +91,7 @@
 规则：
 
 - `subtitle_backend` 缺省为 `volc`。
-- 非法值返回 `400`，错误信息为 `subtitle_backend must be volc or local_vsr`。
+- 非法值返回 `400`，错误信息为 `subtitle_backend must be volc, niuma or local_vsr`。
 - `volc` 返回 TOS signed PUT URL，`upload_backend="tos"`。
 - `local_vsr` 返回本地 PUT URL，`upload_backend="local"`。
 
@@ -115,7 +116,7 @@
 新增 query 参数：
 
 ```text
-subtitle_backend=volc|local_vsr
+subtitle_backend=volc|niuma|local_vsr
 ```
 
 过滤规则在解析 `state_json` 后执行，避免新增 DB schema。非法值返回 `400`。
@@ -136,32 +137,32 @@ subtitle_backend=volc|local_vsr
 右侧内容区顶部改为：
 
 ```text
-字幕移除                                      [火山] [本地 VSR]  新建任务
+字幕移除                                      [火山] [牛马] [本地 VSR]  新建任务
 ```
 
-- `火山` / `本地 VSR` 是胶囊按钮，不默认选中。
+- `火山` / `牛马` / `本地 VSR` 是胶囊按钮，不默认选中。
 - 胶囊按钮使用明显的 segmented control 选中态：选中项为蓝底白字，字号约为原来的 2 倍并加粗，避免筛选状态不明显。
 - 选中某个胶囊时给列表 API 增加 `subtitle_backend` 参数。
 - 再次点击已选胶囊会取消筛选，显示全部。
-- 列表行展示 `处理方式`，取值为 `火山` 或 `本地 VSR`。
+- 列表行展示 `处理方式`，取值为 `火山`、`牛马` 或 `本地 VSR`。
 
 ### 4.2 上传面板
 
-- 新建任务默认选中 `火山`。
+- 新建任务默认选中 `牛马`。
 - 选择 `火山` 时展示擦除类型胶囊，默认 `仅字幕`。
-- 新建任务里的 `火山` / `本地 VSR` 处理方式按钮也使用明显的蓝底选中态，标题字号加大并加粗。
+- 新建任务里的 `火山` / `牛马` / `本地 VSR` 处理方式按钮也使用明显的蓝底选中态，标题字号加大并加粗。
 - 擦除类型必须放在 `火山` 按钮下方，体现它只属于火山处理方式。
-- 选择 `本地 VSR` 时隐藏擦除类型，上传和 complete 不提交有效擦除类型。
+- 选择 `牛马` 或 `本地 VSR` 时隐藏擦除类型，上传和 complete 不提交有效擦除类型。
 
 ### 4.3 详情页
 
 - `处理方式` 状态项继续显示。
-- 如果任务是 `local_vsr`，隐藏擦除类型选择和擦除类型状态项。
+- 如果任务是 `niuma` 或 `local_vsr`，隐藏擦除类型选择和擦除类型状态项。
 - 如果任务是 `volc`，保留原擦除类型行为。
 
 ## 5. 测试要点
 
-- bootstrap 默认 `volc`，返回 TOS signed URL。
+- API bootstrap 缺省仍默认 `volc`，前端新建入口显式传 `niuma`。
 - bootstrap `local_vsr` 返回本地 upload URL。
 - bootstrap 非法 `subtitle_backend` 返回 400。
 - complete `volc` 从 TOS 下载源文件到本地，创建任务时保留 `source_tos_key`。

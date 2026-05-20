@@ -3,13 +3,13 @@
     <div class="sr-erase-type-label">处理方式</div>
     <div class="sr-backend-tabs">
       <div class="sr-backend-column is-volc">
-        <label class="sr-backend-tab is-active" data-role="subtitle-backend-tab">
-          <input type="radio" name="subtitle_backend" value="volc" checked>
+        <label class="sr-backend-tab" data-role="subtitle-backend-tab">
+          <input type="radio" name="subtitle_backend" value="volc">
           <span class="sr-backend-title">火山</span>
           <span class="sr-backend-hint">沿用原字幕移除版本</span>
         </label>
 
-        <div class="sr-erase-type-group" role="radiogroup" aria-label="擦除类型">
+        <div class="sr-erase-type-group sr-hidden" role="radiogroup" aria-label="擦除类型" hidden>
           <div class="sr-erase-type-label">擦除类型</div>
           <div class="sr-erase-type-options">
             <label class="sr-erase-type-option" data-role="erase-type-option">
@@ -26,8 +26,8 @@
         </div>
       </div>
       <div class="sr-backend-column is-niuma">
-        <label class="sr-backend-tab" data-role="subtitle-backend-tab">
-          <input type="radio" name="subtitle_backend" value="niuma">
+        <label class="sr-backend-tab is-active" data-role="subtitle-backend-tab">
+          <input type="radio" name="subtitle_backend" value="niuma" checked>
           <span class="sr-backend-title">牛马</span>
           <span class="sr-backend-hint">走牛马去字幕 API</span>
         </label>

@@ -318,8 +318,19 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert 'id="srPickVideoButton"' in template
     assert 'data-subtitle-removal-page="upload"' in template
     assert 'data-role="subtitle-backend-tab"' in template
-    assert 'value="volc" checked' in template
-    assert 'value="niuma"' in template
+    assert 'value="volc" checked' not in template
+    assert 'value="niuma" checked' in template
+    volc_column = template[
+        template.index('class="sr-backend-column is-volc"'):template.index('class="sr-backend-column is-niuma"')
+    ]
+    niuma_column = template[
+        template.index('class="sr-backend-column is-niuma"'):template.index('class="sr-backend-column is-local-vsr"')
+    ]
+    assert 'class="sr-backend-tab is-active"' not in volc_column
+    assert 'class="sr-backend-tab is-active"' in niuma_column
+    erase_group_idx = template.index("sr-erase-type-group")
+    erase_group_open = template[template.rfind("<div", 0, erase_group_idx):template.index(">", erase_group_idx) + 1]
+    assert " hidden" in erase_group_open
     assert 'value="local_vsr"' in template
     assert "火山" in template
     assert "牛马" in template
@@ -483,8 +494,9 @@ def test_subtitle_removal_upload_places_erase_type_under_volc_backend():
 
     assert 'class="sr-backend-column is-volc"' in template
     assert 'class="sr-backend-column is-local-vsr"' in template
-    assert template.index('class="sr-backend-column is-volc"') < template.index('class="sr-erase-type-group"')
-    assert template.index('class="sr-erase-type-group"') < template.index('class="sr-backend-column is-local-vsr"')
+    erase_type_idx = template.index("sr-erase-type-group")
+    assert template.index('class="sr-backend-column is-volc"') < erase_type_idx
+    assert erase_type_idx < template.index('class="sr-backend-column is-local-vsr"')
     assert ".sr-backend-title { font-size: 28px; font-weight: 800;" in styles
     assert ".sr-backend-tab.is-active .sr-backend-title" in styles
 
