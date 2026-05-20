@@ -127,6 +127,15 @@ def ad_library_url(row: dict[str, Any]) -> str:
 
 
 def _is_pushed(row: dict[str, Any]) -> bool:
+    selected_at = _text(row.get("selected_at")).lower()
+    if selected_at and selected_at not in {"0", "false", "none", "null"}:
+        return True
+    select_payload = row.get("select")
+    if isinstance(select_payload, dict):
+        if _int(select_payload.get("id")):
+            return True
+        if _int(select_payload.get("is_done")):
+            return True
     direct_keys = (
         "is_pushed",
         "pushed",

@@ -89,6 +89,17 @@ def test_normalize_hot_post_captures_wedev_pushed_marker():
         assert normalized["is_pushed"] is True
 
 
+def test_normalize_hot_post_treats_wedev_selected_marker_as_pushed():
+    for row in (
+        {"id": 99, "selected_at": "2026-05-13T17:29:50+08:00"},
+        {"id": 99, "select": {"id": 10000000}},
+        {"id": 99, "select": {"is_done": 11}},
+    ):
+        normalized = client.normalize_hot_post(row)
+
+        assert normalized["is_pushed"] is True
+
+
 def test_normalize_hot_post_does_not_treat_numeric_generic_status_as_pushed():
     normalized = client.normalize_hot_post({"id": 99, "status": 1})
 
