@@ -84,6 +84,19 @@ Do not modify:
 - Existing default voice exclusion remains active for initial match and rematch.
 - Existing tests for English redub speed-aware matching continue to pass.
 
+## 2026-05-20 Multi/Omni Shared Selector Service
+
+- Multi (`/api/multi-translate`) and Omni (`/api/omni-translate`) must reuse the
+  same TTS voice-selection backend service for gender rematch, candidate
+  `extra_items` hydration, speed-aware candidate generation, and task-state
+  update payloads.
+- Route files may keep project-specific access control, project lookup, response
+  wrapping, and artifact endpoints, but they must not fork the core TTS
+  voice-selection behavior.
+- A regression in either product is unacceptable when the other product still
+  works. Tests must cover the shared service directly and route contracts for
+  both Multi and Omni so the modules cannot drift apart during merges.
+
 ## Verification
 
 Run:

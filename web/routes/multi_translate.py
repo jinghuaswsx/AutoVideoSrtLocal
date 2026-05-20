@@ -6,7 +6,6 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
@@ -17,16 +16,6 @@ from appcore.runtime_multi import MultiTranslateRunner
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.project_state import save_project_state, update_project_state
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
-from appcore.voice_ai_rank_cache import (
-    VOICE_AI_RANK_NOT_RUN_STATUS,
-    apply_cached_rank_result,
-    cache_rank_result,
-    derive_rank_result_from_all_cache,
-    ensure_current_rank_cached,
-    get_cached_rank_result,
-    normalize_rank_condition,
-    set_active_unranked_candidates,
-)
 from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
     SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
@@ -47,6 +36,11 @@ from web.services.translate_detail_protocol import (
 from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
+)
+from web.services.translate_voice_selector import (
+    VoiceSelectorServiceError,
+    rematch_voice_selection,
+    rerun_voice_ai_ranking_for_state,
 )
 
 log = logging.getLogger(__name__)
@@ -935,164 +929,27 @@ def rematch_voice(task_id: str):
         abort(404)
     state = json.loads(row["state_json"] or "{}")
     owner_user_id = row.get("user_id") or current_user.id
-    is_owner = str(owner_user_id) == str(current_user.id)
-    lang = state.get("target_lang")
-    if not lang:
-        return _json_response({"error": "task has no target_lang"}, 400)
-
     body = request.get_json(silent=True) or {}
-    gender = (body.get("gender") or "").strip().lower() or None
-    if gender and gender not in {"male", "female"}:
-        return _json_response({"error": "gender must be male|female|null"}, 400)
-    rank_key = normalize_rank_condition(gender)
-    ensure_current_rank_cached(state, "all")
-
-    embedding_b64 = state.get("voice_match_query_embedding")
-    if not embedding_b64:
-        return _json_response({
-            "error": "voice_match 尚未完成，无法重算；请等待向量匹配就绪"
-        }, 409)
-
-    import base64
-    from appcore.video_translate_defaults import resolve_default_voice
-    from appcore.voice_library_browse import fetch_voices_by_ids
-    from pipeline.voice_embedding import deserialize_embedding
-    from pipeline.voice_match_speed import match_candidates_speed_aware
-
     try:
-        vec = deserialize_embedding(base64.b64decode(embedding_b64))
-    except Exception:
-        return _json_response({"error": "query embedding 解码失败"}, 500)
+        result = rematch_voice_selection(
+            state=state,
+            owner_user_id=owner_user_id,
+            current_user_id=current_user.id,
+            gender=body.get("gender"),
+        )
+    except VoiceSelectorServiceError as exc:
+        return _json_response(exc.payload, exc.status_code)
 
-    # 用 owner 的默认音色排除规则，保证 admin 浏览时算出的候选与 owner 看到的一致
-    default_voice_id = resolve_default_voice(lang, user_id=owner_user_id)
-    candidates = match_candidates_speed_aware(
-        vec,
-        language=lang,
-        gender=gender,
-        source_utterances=state.get("utterances_en") or state.get("utterances") or [],
-        candidate_pool_size=20,
-        top_k=20,
-        exclude_voice_ids={default_voice_id} if default_voice_id else None,
-    ) or []
-    for c in candidates:
-        c["similarity"] = float(c.get("similarity", 0.0))
-
-    # 拉这些候选音色的完整行返回给前端，让它合并进 allItems。
-    # 否则筛性别后的新候选可能不在前端 list_voices 拿到的前 200 里，
-    # join 失败 → 用户看到 0 个推荐。
-    candidate_ids = [c["voice_id"] for c in candidates if c.get("voice_id")]
-    extra_items = (
-        fetch_voices_by_ids(language=lang, voice_ids=candidate_ids)
-        if candidate_ids else []
-    )
-    cached_entry = get_cached_rank_result(state, rank_key, candidates)
-    cached = cached_entry is not None
-    if cached_entry:
-        apply_cached_rank_result(state, rank_key, cached_entry)
-        candidates = state.get("voice_match_candidates") or candidates
-    else:
-        derived_entry = derive_rank_result_from_all_cache(state, key=rank_key, candidates=candidates)
-        if derived_entry:
-            apply_cached_rank_result(state, rank_key, derived_entry)
-            candidates = state.get("voice_match_candidates") or candidates
-        else:
-            set_active_unranked_candidates(
-                state,
-                key=rank_key,
-                candidates=candidates,
-                status=VOICE_AI_RANK_NOT_RUN_STATUS,
-            )
-
-    if is_owner:
+    if result.should_persist:
         save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
             from appcore import task_state as _ts
-            _ts.update(task_id, **_voice_ai_rank_state_updates(state))
+            _ts.update(task_id, **result.state_updates)
         except Exception:
             pass
 
-    return _json_response({
-        "ok": True, "gender": gender,
-        "candidates": candidates, "extra_items": extra_items,
-        **_voice_ai_rank_response_fields(state, cached=cached),
-    })
-
-
-def _candidate_audio_path(raw_path: object, task_dir: Path) -> Path | None:
-    raw = str(raw_path or "").strip()
-    if not raw:
-        return None
-    path = Path(raw)
-    candidates = [path]
-    if not path.is_absolute() and str(task_dir):
-        candidates.append(task_dir / path)
-    for candidate in candidates:
-        try:
-            if candidate.is_file():
-                return candidate
-        except OSError:
-            continue
-    return None
-
-
-def _resolve_voice_ai_source_audio_path(state: dict) -> Path | None:
-    task_dir = Path(str(state.get("task_dir") or ""))
-    debug = state.get("voice_ai_rank_debug") or {}
-    request_debug = debug.get("request") if isinstance(debug, dict) else {}
-    visual = (request_debug or {}).get("visual") if isinstance(request_debug, dict) else {}
-    media = visual.get("media") if isinstance(visual, dict) else []
-    for item in media if isinstance(media, list) else []:
-        if not isinstance(item, dict) or item.get("role") != "source_sample":
-            continue
-        for key in ("path", "relative_path"):
-            path = _candidate_audio_path(item.get(key), task_dir)
-            if path:
-                return path
-
-    separation = state.get("separation") if isinstance(state.get("separation"), dict) else {}
-    for raw_path in (
-        task_dir / "voice_ai_ranking" / "source_sample.mp3",
-        state.get("voice_match_source_audio_path"),
-        state.get("voice_match_sample_audio_path"),
-        separation.get("vocals_path"),
-    ):
-        path = _candidate_audio_path(raw_path, task_dir)
-        if path:
-            return path
-    return None
-
-
-def _voice_ai_rank_state_updates(state: dict) -> dict:
-    return {
-        "voice_match_candidates": state.get("voice_match_candidates") or [],
-        "voice_ai_rankings": state.get("voice_ai_rankings") or [],
-        "voice_ai_rank_status": state.get("voice_ai_rank_status") or "",
-        "voice_ai_rank_model": state.get("voice_ai_rank_model") or "",
-        "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
-        "voice_ai_rank_candidate_limit": state.get("voice_ai_rank_candidate_limit"),
-        "voice_ai_rank_debug": state.get("voice_ai_rank_debug"),
-        "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
-        "voice_ai_rank_candidate_signature": state.get("voice_ai_rank_candidate_signature"),
-        "voice_ai_rank_active_key": state.get("voice_ai_rank_active_key") or "all",
-        "voice_ai_rank_cache": state.get("voice_ai_rank_cache") or {},
-    }
-
-
-def _voice_ai_rank_response_fields(state: dict, *, cached: bool) -> dict:
-    return {
-        "voice_ai_rankings": state.get("voice_ai_rankings") or [],
-        "voice_ai_rank_status": state.get("voice_ai_rank_status") or "",
-        "voice_ai_rank_model": state.get("voice_ai_rank_model") or "",
-        "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
-        "voice_ai_rank_debug": state.get("voice_ai_rank_debug"),
-        "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
-        "voice_ai_rank_cache_key": state.get("voice_ai_rank_active_key") or "all",
-        "voice_ai_rank_cached": cached,
-        "candidate_limit": state.get("voice_ai_rank_candidate_limit"),
-        "candidates": state.get("voice_match_candidates") or [],
-    }
+    return _json_response(result.payload)
 
 
 @bp.route("/api/multi-translate/<task_id>/voice-ai-ranking", methods=["POST"])
@@ -1104,67 +961,20 @@ def rerun_voice_ai_ranking(task_id: str):
         abort(404)
     state = json.loads(row["state_json"] or "{}")
     body = request.get_json(silent=True) or {}
-    rank_key = normalize_rank_condition(
-        body.get("gender") if "gender" in body else state.get("voice_ai_rank_active_key")
-    )
-    ensure_current_rank_cached(state, "all")
-    candidates = state.get("voice_match_candidates") or []
-    if not candidates:
-        return _json_response({"error": "voice_match_candidates is empty"}, 400)
+    try:
+        result = rerun_voice_ai_ranking_for_state(
+            task_id=task_id,
+            state=state,
+            body=body,
+            user_id=row.get("user_id") or current_user.id,
+        )
+    except VoiceSelectorServiceError as exc:
+        return _json_response(exc.payload, exc.status_code)
 
-    cached_entry = get_cached_rank_result(state, rank_key, candidates)
-    if cached_entry:
-        apply_cached_rank_result(state, rank_key, cached_entry)
-        save_project_state(task_id, state, execute_func=db_execute)
-        task_state.update(task_id, **_voice_ai_rank_state_updates(state))
-        return _json_response({
-            "ok": True,
-            **_voice_ai_rank_response_fields(state, cached=True),
-        })
-
-    source_audio_path = _resolve_voice_ai_source_audio_path(state)
-    if not source_audio_path:
-        return _json_response({"error": "voice_ai_source_audio_not_found"}, 400)
-
-    from appcore.voice_ai_ranking import rank_voice_candidates
-
-    ai_result = rank_voice_candidates(
-        task_id=task_id,
-        task=state,
-        candidates=candidates,
-        source_audio_path=source_audio_path,
-        task_dir=state.get("task_dir") or "",
-        user_id=row.get("user_id") or current_user.id,
-        candidate_limit=body.get("candidate_limit"),
-    )
-    updated_candidates = ai_result.get("candidates") or candidates
-    rankings = ai_result.get("rankings") or []
-    status = ai_result.get("status") or "done"
-    model = ai_result.get("model")
-    provider = ai_result.get("provider")
-    candidate_limit = ai_result.get("candidate_limit")
-    debug = ai_result.get("debug")
-    usage_log_id = ai_result.get("usage_log_id")
-
-    cache_rank_result(
-        state,
-        key=rank_key,
-        candidates=updated_candidates,
-        rankings=rankings,
-        status=status,
-        model=model,
-        provider=provider,
-        debug=debug,
-        candidate_limit=candidate_limit,
-        usage_log_id=usage_log_id,
-    )
     save_project_state(task_id, state, execute_func=db_execute)
-    task_state.update(task_id, **_voice_ai_rank_state_updates(state))
+    task_state.update(task_id, **result.state_updates)
 
-    return _json_response({
-        "ok": True,
-        **_voice_ai_rank_response_fields(state, cached=False),
-    })
+    return _json_response(result.payload)
 
 
 @bp.route("/api/multi-translate/<task_id>/confirm-voice", methods=["POST"])

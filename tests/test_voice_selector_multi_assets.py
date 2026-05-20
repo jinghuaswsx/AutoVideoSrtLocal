@@ -165,6 +165,7 @@ def test_voice_selector_multi_keeps_ai_rank_controls_visible_and_adds_rerank_but
     assert "AI音色选择 已失败" in SCRIPT
     assert "aiRankDebugBtn.hidden = false;" in SCRIPT
     assert "aiRankRunBtn.hidden = false;" in SCRIPT
+    assert ".vs-ai-rank-run-btn.is-loading::before" in TEMPLATE
 
 
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
@@ -182,7 +183,7 @@ def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads
     assert "applyVoiceAiRankPayload(data);" in rematch_block
 
 
-def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_translate():
+def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_and_omni_translate():
     supports_block = SCRIPT[
         SCRIPT.index("function supportsManualVoiceAiRanking"):
         SCRIPT.index("function updateVoiceAiRankControls")
@@ -190,7 +191,7 @@ def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_translate():
 
     assert '"/api/english-redub"' in supports_block
     assert '"/api/multi-translate"' in supports_block
-    assert '"/api/omni-translate"' not in supports_block
+    assert '"/api/omni-translate"' in supports_block
 
 
 def test_voice_selector_multi_ai_rank_request_status_does_not_mutate_cards_on_failure():
@@ -224,16 +225,23 @@ def test_voice_selector_multi_ai_rank_request_status_does_not_mutate_cards_on_fa
     assert 'setVoiceAiRankRequestState("success");' in success_block
 
 
-def test_voice_selector_multi_status_pill_only_reflects_current_request_state():
+def test_voice_selector_multi_status_pill_reflects_request_and_background_running_state():
     display_block = SCRIPT[
         SCRIPT.index("function voiceAiRankDisplayState"):
         SCRIPT.index("function updateVoiceAiRankStatusPill")
     ]
+    controls_block = SCRIPT[
+        SCRIPT.index("function updateVoiceAiRankControls"):
+        SCRIPT.index("function applyVoiceAiRankPayload")
+    ]
 
     assert "voiceAiRankRequestState" in display_block
-    assert "voiceAiRankStatus" not in display_block
+    assert "normalizedVoiceAiRankStatus(voiceAiRankStatus)" in display_block
+    assert 'status === "running" || status === "queued"' in display_block
     assert "isVoiceAiRankSuccessStatus" not in display_block
-    assert "isVoiceAiRankFailureStatus" not in display_block
+    assert 'const rankingBusy = voiceAiRankRerunning || shouldPollVoiceAiRanking();' in controls_block
+    assert "aiRankRunBtn.disabled = rankingBusy || !supportsManualVoiceAiRanking();" in controls_block
+    assert 'aiRankRunBtn.classList.toggle("is-loading", rankingBusy);' in controls_block
 
 
 def test_voice_selector_multi_exposes_full_voice_modal():
