@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config import OUTPUT_DIR
-from appcore import subtitle_removal_source_storage, task_state
+from appcore import local_media_storage, subtitle_removal_source_storage, task_state
 from appcore.db import execute, query_one
 from pipeline.ffutil import probe_media_info
 
@@ -225,6 +225,11 @@ def _load_parent_task_payload(task_id: int) -> dict | None:
 
 
 def _resolve_media_item_path(object_key: str) -> Path:
+    try:
+        if local_media_storage.exists(object_key):
+            return local_media_storage.safe_local_path_for(object_key)
+    except Exception:
+        pass
     upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
     return Path(upload_dir) / str(object_key or "")
 
