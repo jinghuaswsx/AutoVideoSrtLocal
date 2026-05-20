@@ -307,6 +307,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
         voice_ai_rank_model = None
         voice_ai_rank_provider = None
         voice_ai_rank_debug = None
+        voice_ai_rank_usage_log_id = None
         if utterances and video_path:
             try:
                 separation = task.get("separation") or {}
@@ -368,6 +369,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
             voice_ai_rank_model=voice_ai_rank_model,
             voice_ai_rank_provider=voice_ai_rank_provider,
             voice_ai_rank_debug=voice_ai_rank_debug,
+            voice_ai_rank_usage_log_id=voice_ai_rank_usage_log_id,
         )
         if candidates and clip:
             try:
@@ -386,6 +388,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
                 task_state.update(
                     task_id,
                     voice_ai_rank_status="failed",
+                    voice_ai_rank_usage_log_id=None,
                     voice_ai_rank_debug={
                         "status": "failed",
                         "provider": "openrouter",

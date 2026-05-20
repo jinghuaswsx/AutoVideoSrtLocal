@@ -53,6 +53,28 @@ def test_invoke_generate_routes_to_adapter_generate():
     fake_adapter.generate.assert_called_once()
 
 
+def test_invoke_generate_returns_usage_log_id_from_billing_log():
+    fake_adapter = MagicMock()
+    fake_adapter.generate.return_value = {
+        "text": None,
+        "json": {"score": 80},
+        "raw": None,
+        "usage": {"input_tokens": 10, "output_tokens": 4},
+    }
+    with patch("appcore.llm_client.llm_bindings.resolve",
+               return_value=_fake_binding("openrouter", "google/gemini-3.5-flash")), \
+         patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
+         patch("appcore.llm_client._log_usage", return_value=12345):
+        result = llm_client.invoke_generate(
+            "video_score.run",
+            prompt="score this",
+            user_id=1,
+            project_id="proj-1",
+        )
+
+    assert result["usage_log_id"] == 12345
+
+
 def test_invoke_generate_logs_media_network_estimate(tmp_path):
     media_path = tmp_path / "clip.mp4"
     media_path.write_bytes(b"12345")
@@ -237,6 +259,28 @@ def test_log_usage_calls_ai_billing_with_error_extra():
     assert kwargs["response_cost_cny"] is None
     assert kwargs["extra"]["use_case"] == "copywriting.generate"
     assert kwargs["extra"]["error"] == "boom"
+
+
+def test_log_usage_returns_log_id_and_records_payload():
+    request_payload = {"prompt": "hi"}
+    response_payload = {"text": "ok"}
+    with patch("appcore.llm_client.ai_billing.log_request", return_value=678) as m_log_request, \
+         patch("appcore.llm_client._save_payload") as m_save_payload:
+        log_id = llm_client._log_usage(
+            use_case_code="copywriting.generate",
+            user_id=7,
+            project_id="proj-x",
+            provider="openrouter",
+            model="anthropic/claude-haiku-4.5",
+            success=True,
+            usage={"input_tokens": 2, "output_tokens": 3},
+            request_payload=request_payload,
+            response_payload=response_payload,
+        )
+
+    assert log_id == 678
+    assert m_log_request.called
+    m_save_payload.assert_called_once_with(678, request_payload, response_payload)
 
 
 def test_log_usage_records_image_detect_as_one_image_unit():

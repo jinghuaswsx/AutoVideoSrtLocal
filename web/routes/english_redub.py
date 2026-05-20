@@ -1272,6 +1272,7 @@ def rerun_voice_ai_ranking(task_id: str):
     provider = ai_result.get("provider")
     candidate_limit = ai_result.get("candidate_limit")
     debug = ai_result.get("debug")
+    usage_log_id = ai_result.get("usage_log_id")
 
     state["voice_match_candidates"] = updated_candidates
     state["voice_ai_rankings"] = rankings
@@ -1280,6 +1281,7 @@ def rerun_voice_ai_ranking(task_id: str):
     state["voice_ai_rank_provider"] = provider
     state["voice_ai_rank_candidate_limit"] = candidate_limit
     state["voice_ai_rank_debug"] = debug
+    state["voice_ai_rank_usage_log_id"] = usage_log_id
     save_project_state(task_id, state, execute_func=db_execute)
     task_state.update(
         task_id,
@@ -1290,6 +1292,7 @@ def rerun_voice_ai_ranking(task_id: str):
         voice_ai_rank_provider=provider,
         voice_ai_rank_candidate_limit=candidate_limit,
         voice_ai_rank_debug=debug,
+        voice_ai_rank_usage_log_id=usage_log_id,
     )
 
     return _json_response({
@@ -1299,6 +1302,7 @@ def rerun_voice_ai_ranking(task_id: str):
         "voice_ai_rank_model": model,
         "voice_ai_rank_provider": provider,
         "voice_ai_rank_debug": debug,
+        "voice_ai_rank_usage_log_id": usage_log_id,
         "candidate_limit": candidate_limit,
         "candidates": updated_candidates,
     })
@@ -1433,6 +1437,7 @@ def rematch_voice(task_id: str):
         state["voice_ai_rankings"] = []
         state["voice_ai_rank_status"] = "stale_after_rematch"
         state["voice_ai_rank_debug"] = None
+        state["voice_ai_rank_usage_log_id"] = None
         save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
@@ -1443,6 +1448,7 @@ def rematch_voice(task_id: str):
                 voice_ai_rankings=[],
                 voice_ai_rank_status="stale_after_rematch",
                 voice_ai_rank_debug=None,
+                voice_ai_rank_usage_log_id=None,
             )
         except Exception:
             pass

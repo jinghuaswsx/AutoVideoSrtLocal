@@ -128,8 +128,10 @@ def test_rank_voice_candidates_invokes_openrouter_gemini_35_flash_with_audio_med
         dest.write_bytes(src.read_bytes())
         return dest
 
-    with patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+    with patch("appcore.voice_ai_ranking._resolve_voice_preview_archive", return_value=None), \
+         patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
         m_generate.return_value = {
+            "usage_log_id": 34567,
             "json": {
                 "rankings": [
                     {"voice_id": "v2", "llm_rank": 1, "reason_summary": "more expressive"},
@@ -154,9 +156,12 @@ def test_rank_voice_candidates_invokes_openrouter_gemini_35_flash_with_audio_med
     assert result["candidates"][0]["voice_ai_preview_audio_relpath"].endswith("_sample.mp3")
     assert result["candidates"][1]["llm_rank"] == 1
     assert result["rankings"][0]["voice_id"] == "v2"
+    assert result["usage_log_id"] == 34567
+    assert result["debug"]["usage_log_id"] == 34567
     assert result["debug"]["request"]["visual"]["media"][1]["role"] == "candidate_preview"
     assert result["debug"]["request"]["raw"]["max_output_tokens"] == 4096
     assert result["debug"]["result"]["visual"]["rankings"][0]["voice_id"] == "v2"
+    assert result["debug"]["result"]["raw"]["usage_log_id"] == 34567
     assert m_generate.call_args.args == ("voice_selection.assess",)
     kwargs = m_generate.call_args.kwargs
     assert kwargs["provider_override"] == "openrouter"
@@ -173,6 +178,11 @@ def test_rank_voice_candidates_invokes_openrouter_gemini_35_flash_with_audio_med
     assert kwargs["response_schema"]["properties"]["rankings"]["minItems"] == 2
     assert kwargs["response_schema"]["properties"]["rankings"]["maxItems"] == 2
     assert kwargs["max_output_tokens"] == 4096
+    assert kwargs["billing_extra"]["source"] == "voice_ai_ranking"
+    assert kwargs["billing_extra"]["task_id"] == "task-1"
+    assert kwargs["billing_extra"]["candidate_limit"] == 10
+    assert kwargs["billing_extra"]["candidate_count"] == 2
+    assert kwargs["billing_extra"]["media_count"] == 3
     assert "v1" in kwargs["prompt"]
     assert any(call.get("min_seconds") == 3.0 and call.get("max_seconds") == 10.0 for call in trim_calls)
 
@@ -281,7 +291,8 @@ def test_rank_voice_candidates_can_limit_smoke_run_to_top3(tmp_path):
         dest.write_bytes(src.read_bytes())
         return dest
 
-    with patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+    with patch("appcore.voice_ai_ranking._resolve_voice_preview_archive", return_value=None), \
+         patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
         m_generate.return_value = {
             "json": {
                 "rankings": [
@@ -330,6 +341,7 @@ def test_rank_voice_candidates_skips_when_no_candidates(tmp_path):
     assert result["status"] == "skipped"
     assert result["rankings"] == []
     assert result["candidates"] == []
+    assert result["usage_log_id"] is None
 
 
 def test_rank_voice_candidates_prefers_local_preview_audio_over_download(tmp_path):
@@ -348,7 +360,8 @@ def test_rank_voice_candidates_prefers_local_preview_audio_over_download(tmp_pat
         dest.write_bytes(src.read_bytes())
         return dest
 
-    with patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+    with patch("appcore.voice_ai_ranking._resolve_voice_preview_archive", return_value=None), \
+         patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
         m_generate.return_value = {
             "json": {
                 "rankings": [

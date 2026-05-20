@@ -58,6 +58,7 @@ def queue_voice_ai_ranking(
             voice_ai_rank_model=model_selection["model"],
             voice_ai_rank_provider=model_selection["provider"],
             voice_ai_rank_debug=None,
+            voice_ai_rank_usage_log_id=None,
         )
         return False
 
@@ -73,6 +74,7 @@ def queue_voice_ai_ranking(
         voice_ai_rank_model=model_selection["model"],
         voice_ai_rank_provider=model_selection["provider"],
         voice_ai_rank_debug=None,
+        voice_ai_rank_usage_log_id=None,
         voice_ai_rank_candidate_signature=signature,
     )
 
@@ -127,6 +129,7 @@ def queue_voice_ai_ranking(
                 "background thread did not start",
                 model_selection=model_selection,
             ),
+            voice_ai_rank_usage_log_id=None,
         )
         return False
     return True
@@ -164,6 +167,7 @@ def run_voice_ai_ranking_job(
                     str(exc),
                     model_selection=model_selection,
                 ),
+                voice_ai_rank_usage_log_id=None,
             )
         return
 
@@ -177,6 +181,7 @@ def run_voice_ai_ranking_job(
         voice_ai_rank_model=result.get("model") or VOICE_AI_MODEL,
         voice_ai_rank_provider=result.get("provider") or VOICE_AI_PROVIDER,
         voice_ai_rank_debug=result.get("debug"),
+        voice_ai_rank_usage_log_id=result.get("usage_log_id"),
         voice_ai_rank_candidate_signature=signature,
     )
 

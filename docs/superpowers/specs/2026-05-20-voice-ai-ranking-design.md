@@ -59,3 +59,9 @@
 - 音色大模型排名不再硬编码 provider/model，运行时读取 `/settings?tab=bindings` 的 `voice_selection.assess`。
 - `voice_selection.assess` 在模块模型分配里只允许三个通道：`openrouter`、`gemini_vertex_adc`、`gemini_aistudio`；默认仍为 `openrouter` + `google/gemini-3.5-flash`。
 - 切到 `gemini_vertex_adc` 或 `gemini_aistudio` 时，运行时会把 `google/gemini-3.5-flash` 规范化为 `gemini-3.5-flash`，避免 Google 原生通道收到 OpenRouter 模型 ID。
+
+## 2026-05-20 API 调用日志与账单追踪
+
+- 音色大模型排名继续走统一入口 `appcore.llm_client.invoke_generate`，由 `appcore.ai_billing.log_request` 写入 `usage_logs`，并将脱敏请求/响应写入 `usage_log_payloads`。
+- `llm_client` 会把本次调用写入后的 `usage_log_id` 放回结果；业务层写入 `voice_ai_rank_usage_log_id`，并同步放入 `voice_ai_rank_debug.usage_log_id` 与结果原始调试信息，方便从任务页面反查 API 调用日志。
+- 账单 `billing_extra` 固定标记 `source=voice_ai_ranking`，并携带 `task_id`、`candidate_limit`、`candidate_count`、`media_count`。use case 仍为 `voice_selection.assess`，价格表沿用 `openrouter / google/gemini-3.5-flash` token 计费；若 OpenRouter 响应返回 cost，则账单优先使用响应成本。

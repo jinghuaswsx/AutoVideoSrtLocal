@@ -293,11 +293,14 @@ def rank_voice_candidates(
         provider_override=model_selection["provider"],
         model_override=model_selection["model"],
         billing_extra={
+            "source": "voice_ai_ranking",
             "task_id": task_id,
+            "candidate_limit": effective_limit,
             "candidate_count": len(top_candidates),
             "media_count": len(media),
         },
     )
+    usage_log_id = result.get("usage_log_id") if isinstance(result, dict) else None
     raw = result.get("json") if isinstance(result, dict) else None
     rankings = normalize_voice_ai_rankings(
         raw,
@@ -319,6 +322,7 @@ def rank_voice_candidates(
         "binding_source": model_selection.get("source"),
         "use_case": VOICE_AI_USE_CASE,
         "candidate_limit": effective_limit,
+        "usage_log_id": usage_log_id,
         "request": request_debug,
         "result": _build_result_debug(raw=raw, rankings=rankings, result=result),
     }
@@ -329,6 +333,7 @@ def rank_voice_candidates(
         "model": model_selection["model"],
         "provider": model_selection["provider"],
         "candidate_limit": effective_limit,
+        "usage_log_id": usage_log_id,
         "debug": debug,
     }
 
@@ -350,6 +355,7 @@ def _empty_result(
         "candidates": [dict(candidate) for candidate in candidates or []],
         "model": selection["model"],
         "provider": selection["provider"],
+        "usage_log_id": None,
         "debug": {
             "status": status,
             "provider": selection["provider"],
@@ -529,15 +535,18 @@ def _build_request_debug(
 
 def _build_result_debug(*, raw: object, rankings: list[dict], result: dict) -> dict:
     usage = result.get("usage") if isinstance(result, dict) else None
+    usage_log_id = result.get("usage_log_id") if isinstance(result, dict) else None
     return {
         "visual": {
             "rankings": rankings,
             "usage": usage or {},
+            "usage_log_id": usage_log_id,
         },
         "raw": {
             "json": raw,
             "text": result.get("text") if isinstance(result, dict) else None,
             "usage": usage or {},
+            "usage_log_id": usage_log_id,
             "json_parse_error": result.get("json_parse_error") if isinstance(result, dict) else None,
         },
     }

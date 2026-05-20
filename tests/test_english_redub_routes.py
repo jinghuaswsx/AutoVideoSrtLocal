@@ -277,6 +277,7 @@ def test_english_redub_voice_ai_ranking_rerun_uses_saved_candidates(
             "provider": "openrouter",
             "candidate_limit": 3,
             "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
+            "usage_log_id": 34567,
         }
 
     monkeypatch.setattr(
@@ -298,6 +299,9 @@ def test_english_redub_voice_ai_ranking_rerun_uses_saved_candidates(
     assert saved["voice_match_candidates"][1]["llm_rank"] == 1
     assert saved["voice_ai_rank_provider"] == "openrouter"
     assert saved["voice_ai_rank_candidate_limit"] == 3
+    assert saved["voice_ai_rank_usage_log_id"] == 34567
+    assert seen["state_update"]["voice_ai_rank_usage_log_id"] == 34567
     assert payload["voice_ai_rank_status"] == "done"
     assert payload["voice_ai_rankings"][0]["llm_rank"] == 1
+    assert payload["voice_ai_rank_usage_log_id"] == 34567
     assert payload["candidate_limit"] == 3

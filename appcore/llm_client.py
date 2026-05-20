@@ -122,9 +122,9 @@ def _log_usage(*, use_case_code: str, user_id: int | None,
                error: Exception | None = None,
                billing_extra: dict | None = None,
                request_payload: dict | None = None,
-               response_payload: dict | None = None) -> None:
+               response_payload: dict | None = None) -> int | None:
     if user_id is None:
-        return
+        return None
 
     usage_data = usage or {}
     extra: dict[str, Any] = {"use_case": use_case_code}
@@ -164,6 +164,7 @@ def _log_usage(*, use_case_code: str, user_id: int | None,
 
     if log_id and (request_payload is not None or response_payload is not None):
         _save_payload(log_id, request_payload, response_payload)
+    return log_id
 
 
 def invoke_chat(
@@ -225,12 +226,14 @@ def invoke_chat(
             k: str(v) for k, v in result["usage"].items()
         }
 
-    _log_usage(use_case_code=use_case_code, user_id=user_id,
-               project_id=project_id, provider=provider, model=model,
-               success=True, usage=result.get("usage"),
-               billing_extra=billing_extra,
-               request_payload=req_payload,
-               response_payload=resp_payload)
+    log_id = _log_usage(use_case_code=use_case_code, user_id=user_id,
+                        project_id=project_id, provider=provider, model=model,
+                        success=True, usage=result.get("usage"),
+                        billing_extra=billing_extra,
+                        request_payload=req_payload,
+                        response_payload=resp_payload)
+    if log_id is not None:
+        result["usage_log_id"] = log_id
     return result
 
 
@@ -316,10 +319,12 @@ def invoke_generate(
             k: str(v) for k, v in result["usage"].items()
         }
 
-    _log_usage(use_case_code=use_case_code, user_id=user_id,
-               project_id=project_id, provider=provider, model=model,
-               success=True, usage=result.get("usage"),
-               billing_extra=billing_extra,
-               request_payload=req_payload,
-               response_payload=resp_payload)
+    log_id = _log_usage(use_case_code=use_case_code, user_id=user_id,
+                        project_id=project_id, provider=provider, model=model,
+                        success=True, usage=result.get("usage"),
+                        billing_extra=billing_extra,
+                        request_payload=req_payload,
+                        response_payload=resp_payload)
+    if log_id is not None:
+        result["usage_log_id"] = log_id
     return result

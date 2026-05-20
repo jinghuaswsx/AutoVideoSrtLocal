@@ -979,6 +979,7 @@ def rematch_voice(task_id: str):
         state["voice_ai_rankings"] = []
         state["voice_ai_rank_status"] = "stale_after_rematch"
         state["voice_ai_rank_debug"] = None
+        state["voice_ai_rank_usage_log_id"] = None
         save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
@@ -989,6 +990,7 @@ def rematch_voice(task_id: str):
                 voice_ai_rankings=[],
                 voice_ai_rank_status="stale_after_rematch",
                 voice_ai_rank_debug=None,
+                voice_ai_rank_usage_log_id=None,
             )
         except Exception:
             pass

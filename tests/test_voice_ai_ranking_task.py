@@ -67,6 +67,7 @@ def test_run_voice_ai_ranking_job_persists_result_for_current_candidate_signatur
             "model": "google/gemini-3.5-flash",
             "provider": "openrouter",
             "debug": {"status": "done"},
+            "usage_log_id": 34567,
         },
     ) as m_rank, patch("appcore.voice_ai_ranking_task.task_state.update") as m_update:
         run_voice_ai_ranking_job(
@@ -85,6 +86,7 @@ def test_run_voice_ai_ranking_job_persists_result_for_current_candidate_signatur
     assert payload["voice_ai_rankings"] == [{"voice_id": "v2", "llm_rank": 1, "reason_summary": "更贴合"}]
     assert payload["voice_ai_rank_status"] == "done"
     assert payload["voice_ai_rank_provider"] == "openrouter"
+    assert payload["voice_ai_rank_usage_log_id"] == 34567
 
 
 def test_run_voice_ai_ranking_job_ignores_stale_candidates(tmp_path):
