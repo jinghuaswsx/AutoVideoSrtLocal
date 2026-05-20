@@ -7,7 +7,7 @@ from typing import Any
 
 from flask import jsonify
 
-from appcore import medias, product_roas, shopify_image_localizer_release
+from appcore import medias, product_roas, shopify_image_localizer_release, users as appusers
 
 
 def media_page_flask_response(payload: dict[str, Any], status_code: int = 200):
@@ -41,9 +41,9 @@ def build_medias_page_context(
 
 def build_active_users_response(
     *,
-    list_active_users_fn: Callable[[], list[dict[str, Any]]] | None = None,
+    list_translation_work_users_fn: Callable[[], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    list_fn = list_active_users_fn or medias.list_active_users
+    list_fn = list_translation_work_users_fn or appusers.list_translation_work_users
     return {"users": list_fn()}
 
 

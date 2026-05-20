@@ -705,6 +705,76 @@ def test_update_product_owner_rejects_inactive_user(ephemeral_users):
         medias.soft_delete_product(pid)
 
 
+def test_update_product_owner_uses_translation_scope_validation(monkeypatch):
+    def fake_ensure_translation_work_user(user_id: int):
+        assert user_id == 7
+        raise ValueError("该用户不在翻译工作范围")
+
+    monkeypatch.setattr(medias, "ensure_translation_work_user", fake_ensure_translation_work_user)
+
+    with pytest.raises(ValueError, match="该用户不在翻译工作范围"):
+        medias.update_product_owner(42, 7)
+
+
+def test_update_product_owner_syncs_tables_and_triggers_task_cascade_unit(monkeypatch):
+    calls = []
+    cascade_calls = []
+
+    def fake_query_one(sql, args=None):
+        if "FROM media_products" in sql:
+            return {"id": 42}
+        raise AssertionError(f"unexpected query_one: {sql}")
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args):
+            calls.append((sql, args))
+
+    class FakeConn:
+        def begin(self):
+            calls.append(("begin", None))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit", None))
+
+        def rollback(self):
+            calls.append(("rollback", None))
+
+        def close(self):
+            calls.append(("close", None))
+
+    monkeypatch.setattr(medias, "ensure_translation_work_user", lambda uid: {"id": uid})
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias, "get_conn", lambda: FakeConn())
+
+    from appcore import tasks
+    monkeypatch.setattr(tasks, "on_product_owner_changed", lambda **kw: cascade_calls.append(kw))
+
+    medias.update_product_owner(42, 7)
+
+    assert calls == [
+        ("begin", None),
+        ("UPDATE media_products SET user_id=%s WHERE id=%s AND deleted_at IS NULL", (7, 42)),
+        ("UPDATE media_items SET user_id=%s WHERE product_id=%s AND deleted_at IS NULL", (7, 42)),
+        ("UPDATE media_raw_sources SET user_id=%s WHERE product_id=%s AND deleted_at IS NULL", (7, 42)),
+        ("commit", None),
+        ("close", None),
+    ]
+    assert cascade_calls == [{
+        "product_id": 42,
+        "new_user_id": 7,
+        "actor_user_id": None,
+    }]
+
+
 def test_update_product_owner_rejects_unknown_product(ephemeral_users):
     _, uid_b = ephemeral_users
     with pytest.raises(ValueError):

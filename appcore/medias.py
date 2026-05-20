@@ -7,6 +7,7 @@ from typing import Any
 from appcore import product_link_domains, product_roas
 from appcore.db import query, query_one, execute, get_conn
 from appcore.material_filename_rules import validate_video_filename_no_spaces
+from appcore.users import ensure_translation_work_user
 
 
 LISTING_STATUS_ON = "上架"
@@ -666,16 +667,12 @@ def update_product_owner(product_id: int, new_user_id: int) -> None:
     IS NOT NULL）不更新，保留历史溯源。
 
     Raises:
-        ValueError: 项目不存在 / new_user_id 不存在或 is_active=0。
+        ValueError: 项目不存在 / new_user_id 不满足翻译工作用户约束。
     """
     pid = int(product_id)
     uid = int(new_user_id)
 
-    if not query_one(
-        "SELECT id FROM users WHERE id=%s AND is_active=1",
-        (uid,),
-    ):
-        raise ValueError("user not found or inactive")
+    ensure_translation_work_user(uid)
     if not query_one(
         "SELECT id FROM media_products WHERE id=%s AND deleted_at IS NULL",
         (pid,),

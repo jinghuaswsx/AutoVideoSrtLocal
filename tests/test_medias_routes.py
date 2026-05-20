@@ -2609,10 +2609,11 @@ def test_delete_product_delegates_to_response_builder(authed_client_no_db, monke
 
 def test_list_active_users_admin_ok(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
+    from web.services import media_pages
 
     monkeypatch.setattr(
-        r.medias,
-        "list_active_users",
+        media_pages.appusers,
+        "list_translation_work_users",
         lambda: [
             {"id": 1, "display_name": "张三"},
             {"id": 2, "display_name": "李四"},
@@ -2630,10 +2631,14 @@ def test_list_active_users_admin_ok(authed_client_no_db, monkeypatch):
 
 
 def test_list_active_users_rejects_non_admin(authed_user_client_no_db, monkeypatch):
-    from web.routes import medias as r
+    from web.services import media_pages
 
     called = []
-    monkeypatch.setattr(r.medias, "list_active_users", lambda: called.append(1) or [])
+    monkeypatch.setattr(
+        media_pages.appusers,
+        "list_translation_work_users",
+        lambda: called.append(1) or [],
+    )
 
     resp = authed_user_client_no_db.get("/medias/api/users/active")
 
@@ -2805,3 +2810,26 @@ def test_update_product_owner_maps_user_not_found_to_400(authed_client_no_db, mo
 
     assert resp.status_code == 400
     assert "user" in (resp.get_json() or {}).get("error", "")
+
+
+def test_update_product_owner_maps_translation_scope_error_to_400(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 10, "deleted_at": None},
+    )
+
+    def raise_user(_pid, _uid):
+        raise ValueError("该用户不在翻译工作范围")
+
+    monkeypatch.setattr(r.medias, "update_product_owner", raise_user)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": 7},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "该用户不在翻译工作范围"}
