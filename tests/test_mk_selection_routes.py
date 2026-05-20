@@ -129,6 +129,23 @@ def test_mk_selection_import_success_warnings_are_toasted():
     assert "product_link_unavailable" in template
 
 
+def test_mk_import_progress_modal_present():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert 'id="mkiImportProgressModal"' in template
+    assert "function mkiImportProgressOpen(meta)" in template
+    assert "function mkiImportProgressSetStep(stepKey, status, detail)" in template
+    assert "function mkiImportProgressFail(message)" in template
+    assert "function mkiImportProgressComplete(data, btn)" in template
+    assert 'id="mkiImportProgressError"' in template
+    for label in ("准备素材信息", "检查产品与链接", "下载明空原视频", "写入素材库", "后续任务入口"):
+        assert label in template
+    assert "继续做小语种任务" in template
+    assert "去任务中心" in template
+    assert "去素材管理" in template
+    assert "原视频处理人认领后会自动提交牛马去字幕" in template
+
+
 def test_mk_selection_import_modals_use_active_user_display_names():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

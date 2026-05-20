@@ -236,6 +236,82 @@
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--warning { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+.mki-progress-backdrop {
+  position: fixed; inset: 0; z-index: 2100; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(15, 23, 42, .46);
+}
+.mki-progress-backdrop[hidden] { display: none; }
+.mki-progress-modal {
+  width: min(560px, 94vw); max-height: 90vh; overflow: auto; background: #fff; color: var(--oc-fg);
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+}
+.mki-progress-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 18px 20px 14px; border-bottom: 1px solid var(--oc-border);
+}
+.mki-progress-title { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 800; }
+.mki-progress-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--oc-fg-muted); line-height: 1.45; }
+.mki-progress-close {
+  width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--oc-border); border-radius: var(--oc-r);
+  background: #fff; color: var(--oc-fg-muted); cursor: pointer; font-size: 18px; line-height: 1;
+}
+.mki-progress-close:hover { color: var(--oc-fg); background: var(--oc-bg-muted); }
+.mki-progress-body { padding: 16px 20px 18px; }
+.mki-progress-meta {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;
+}
+.mki-progress-meta-item {
+  min-width: 0; padding: 10px 12px; border: 1px solid var(--oc-border); border-radius: var(--oc-r);
+  background: var(--oc-bg-muted);
+}
+.mki-progress-meta-label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--oc-fg-muted); }
+.mki-progress-meta-value { display: block; font-size: 13px; line-height: 1.45; color: var(--oc-fg); overflow-wrap: anywhere; }
+.mki-progress-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.mki-progress-step {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--oc-border); border-radius: var(--oc-r); background: #fff;
+}
+.mki-progress-step-mark {
+  width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--oc-border-strong);
+  display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 12px;
+}
+.mki-progress-step-title { font-size: 13px; line-height: 1.35; font-weight: 800; color: var(--oc-fg); }
+.mki-progress-step-detail { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--oc-fg-muted); overflow-wrap: anywhere; }
+.mki-progress-step-status {
+  align-self: center; min-width: 48px; padding: 3px 8px; border-radius: 999px;
+  text-align: center; font-size: 12px; line-height: 1.2; background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+}
+.mki-progress-step.running { border-color: oklch(72% .13 230); background: oklch(97% .02 230); }
+.mki-progress-step.running .mki-progress-step-mark { border-color: var(--oc-accent); border-top-color: transparent; animation: mkiProgressSpin .8s linear infinite; }
+.mki-progress-step.running .mki-progress-step-status { background: oklch(92% .05 230); color: var(--oc-accent); }
+.mki-progress-step.done { border-color: oklch(76% .12 160); background: oklch(97% .03 160); }
+.mki-progress-step.done .mki-progress-step-mark { border-color: oklch(58% .15 160); background: oklch(58% .15 160); }
+.mki-progress-step.done .mki-progress-step-mark::after { content: "✓"; }
+.mki-progress-step.done .mki-progress-step-status { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-progress-step.warning { border-color: oklch(78% .13 78); background: var(--oc-warning-bg); }
+.mki-progress-step.warning .mki-progress-step-mark { border-color: oklch(64% .14 78); background: oklch(64% .14 78); }
+.mki-progress-step.warning .mki-progress-step-mark::after { content: "!"; font-weight: 800; }
+.mki-progress-step.warning .mki-progress-step-status { background: oklch(92% .08 78); color: var(--oc-warning-fg); }
+.mki-progress-step.error { border-color: oklch(70% .14 25); background: oklch(97% .04 25); }
+.mki-progress-step.error .mki-progress-step-mark { border-color: oklch(55% .18 25); background: oklch(55% .18 25); }
+.mki-progress-step.error .mki-progress-step-mark::after { content: "!"; font-weight: 800; }
+.mki-progress-step.error .mki-progress-step-status { background: oklch(92% .07 25); color: oklch(42% .14 25); }
+.mki-progress-error, .mki-progress-result {
+  margin-top: 14px; padding: 12px; border-radius: var(--oc-r); font-size: 13px; line-height: 1.55;
+}
+.mki-progress-error { border: 1px solid oklch(76% .13 25); background: oklch(97% .04 25); color: oklch(40% .14 25); overflow-wrap: anywhere; }
+.mki-progress-result { border: 1px solid oklch(76% .12 160); background: oklch(97% .03 160); color: var(--oc-success-fg); }
+.mki-progress-result-title { font-weight: 800; margin-bottom: 4px; color: var(--oc-fg); }
+.mki-progress-result p { margin: 6px 0 0; color: var(--oc-fg); }
+.mki-progress-actions {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px;
+}
+@keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
+@media (max-width: 560px) {
+  .mki-progress-meta { grid-template-columns: 1fr; }
+  .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
+}
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
 .mk-library-tab.active { background:var(--oc-accent); color:#fff; }
@@ -1282,6 +1358,136 @@ function mkiWarningMessageFromResponse(data) {
   return '商品链接可能不可访问' + detail;
 }
 
+const MKI_IMPORT_STEPS = [
+  {key: 'prepare', title: '准备素材信息', detail: '等待读取明空卡片字段'},
+  {key: 'product', title: '检查产品与链接', detail: '等待服务端创建或复用产品'},
+  {key: 'download', title: '下载明空原视频', detail: '等待服务端下载原视频'},
+  {key: 'store', title: '写入素材库', detail: '等待写入英文素材库'},
+  {key: 'next', title: '后续任务入口', detail: '入库完成后继续创建小语种任务'}
+];
+let mkiImportProgressButton = null;
+let mkiImportProgressFailedStep = 'product';
+
+function mkiImportProgressStatusText(status) {
+  return {
+    pending: '待处理',
+    running: '处理中',
+    done: '完成',
+    warning: '需关注',
+    error: '失败'
+  }[status] || status || '待处理';
+}
+
+function mkiImportProgressOpen(meta) {
+  const modal = document.getElementById('mkiImportProgressModal');
+  if (!modal) return;
+  const stepsEl = document.getElementById('mkiImportProgressSteps');
+  stepsEl.innerHTML = MKI_IMPORT_STEPS.map(step => `
+    <li class="mki-progress-step pending" data-mki-progress-step="${escapeHtml(step.key)}">
+      <span class="mki-progress-step-mark" aria-hidden="true"></span>
+      <div>
+        <div class="mki-progress-step-title">${escapeHtml(step.title)}</div>
+        <div class="mki-progress-step-detail" data-mki-progress-detail>${escapeHtml(step.detail)}</div>
+      </div>
+      <span class="mki-progress-step-status" data-mki-progress-status>待处理</span>
+    </li>
+  `).join('');
+  document.getElementById('mkiImportProgressFile').textContent = meta.filename || '--';
+  document.getElementById('mkiImportProgressProduct').textContent = meta.product_name || meta.product_code || '--';
+  document.getElementById('mkiImportProgressError').hidden = true;
+  document.getElementById('mkiImportProgressError').textContent = '';
+  document.getElementById('mkiImportProgressResult').hidden = true;
+  document.getElementById('mkiImportProgressResultText').textContent = '';
+  document.getElementById('mkiImportProgressRetry').hidden = true;
+  document.getElementById('mkiImportProgressContinue').hidden = true;
+  document.getElementById('mkiImportProgressTasks').hidden = true;
+  document.getElementById('mkiImportProgressMedias').hidden = true;
+  mkiImportProgressFailedStep = 'product';
+  modal.hidden = false;
+  mkiImportProgressSetStep('prepare', 'running', '正在读取文件名、产品码、产品图和链接');
+}
+
+function mkiImportProgressSetStep(stepKey, status, detail) {
+  const stepEl = document.querySelector(`[data-mki-progress-step="${stepKey}"]`);
+  if (!stepEl) return;
+  stepEl.classList.remove('pending', 'running', 'done', 'warning', 'error');
+  stepEl.classList.add(status || 'pending');
+  const detailEl = stepEl.querySelector('[data-mki-progress-detail]');
+  if (detailEl && detail !== undefined) detailEl.textContent = detail || '';
+  const statusEl = stepEl.querySelector('[data-mki-progress-status]');
+  if (statusEl) statusEl.textContent = mkiImportProgressStatusText(status);
+}
+
+function mkiImportProgressStepForError(errorCode) {
+  if (errorCode === 'download_failed') return 'download';
+  if (errorCode === 'storage_failed') return 'store';
+  if (errorCode === 'duplicate_filename') return 'store';
+  if (errorCode === 'db_failed') return 'product';
+  if (errorCode === 'bad_payload' || errorCode === 'invalid_translator' || errorCode === 'admin_required') return 'prepare';
+  return 'product';
+}
+
+function mkiImportProgressFail(message) {
+  const errorText = message || '未知错误';
+  mkiImportProgressSetStep(mkiImportProgressFailedStep || 'product', 'error', errorText);
+  const errorEl = document.getElementById('mkiImportProgressError');
+  if (errorEl) {
+    errorEl.textContent = '入库失败：' + errorText;
+    errorEl.hidden = false;
+  }
+  const retryBtn = document.getElementById('mkiImportProgressRetry');
+  if (retryBtn) retryBtn.hidden = false;
+}
+
+function mkiImportProgressComplete(data, btn) {
+  const productId = data?.media_product_id || data?.product_id || '--';
+  const itemId = data?.media_item_id || data?.item_id || '--';
+  const warningMessage = mkiWarningMessageFromResponse(data);
+  const productDetail = (data?.is_new_product ? '新建产品完成' : '复用已有产品')
+    + '，产品 ID：' + productId
+    + (warningMessage ? '；' + warningMessage : '');
+  mkiImportProgressSetStep('product', warningMessage ? 'warning' : 'done', productDetail);
+  mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
+  mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
+  mkiImportProgressSetStep('next', 'done', '继续做小语种任务会进入任务中心流程');
+
+  const resultEl = document.getElementById('mkiImportProgressResult');
+  const textEl = document.getElementById('mkiImportProgressResultText');
+  if (textEl) {
+    textEl.textContent = `产品 #${productId}，素材 #${itemId} 已入库。`;
+  }
+  if (resultEl) resultEl.hidden = false;
+  document.getElementById('mkiImportProgressContinue').hidden = false;
+  document.getElementById('mkiImportProgressTasks').hidden = false;
+  document.getElementById('mkiImportProgressMedias').hidden = false;
+  document.getElementById('mkiImportProgressRetry').hidden = true;
+  mkiImportProgressButton = btn || mkiImportProgressButton;
+}
+
+function mkiImportProgressClose() {
+  const modal = document.getElementById('mkiImportProgressModal');
+  if (modal) modal.hidden = true;
+}
+
+function mkiImportProgressRetry() {
+  const btn = mkiImportProgressButton;
+  mkiImportProgressClose();
+  if (btn && !btn.disabled) btn.click();
+}
+
+function mkiImportProgressContinueTask() {
+  const btn = mkiImportProgressButton;
+  mkiImportProgressClose();
+  if (!btn) return;
+  const card = btn.closest('.mk-video-card');
+  const xiaoBtn = card ? card.querySelector('.mki-btn--xiao') : null;
+  if (xiaoBtn && !xiaoBtn.disabled) {
+    xiaoBtn.click();
+    return;
+  }
+  window.location.href = '/tasks/';
+}
+
 async function mkiHandleClick(btn) {
   const translatorId = await mkiOpenTranslatorModal();
   if (translatorId === null) return;
@@ -1301,19 +1507,31 @@ async function mkiHandleClick(btn) {
       product_code: btn.dataset.mkiProductCode,
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
     };
+    mkiImportProgressButton = btn;
+    mkiImportProgressOpen(meta);
+    mkiImportProgressSetStep('prepare', 'done', '素材字段已读取，准备提交服务端入库');
+    mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
+    mkiImportProgressSetStep('download', 'pending', '产品确认后下载明空原视频');
+    mkiImportProgressSetStep('store', 'pending', '视频下载完成后写入素材库');
+    mkiImportProgressSetStep('next', 'pending', '入库完成后开放下一步入口');
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const headers = {'Content-Type': 'application/json'};
+    if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
     const rsp = await fetch('/mk-import/video', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: headers,
       body: JSON.stringify({mk_video_metadata: meta, translator_id: translatorId}),
     });
     if (!rsp.ok) {
       const err = await rsp.json().catch(() => ({error: rsp.statusText}));
+      mkiImportProgressFailedStep = mkiImportProgressStepForError(err.error);
       throw new Error(err.detail || err.error || rsp.statusText);
     }
     const data = await rsp.json();
     btn.textContent = '已入库';
     btn.classList.add('mki-btn--disabled');
     MKI_CHECKED_FILENAMES.add(btn.dataset.mkiFilename);  // dedup cache update
+    mkiImportProgressComplete(data, btn);
     const tag = data.is_new_product ? '（新建产品）' : '（老品 append）';
     mkiToast('success', `素材已入库 ${tag}`);
     const warningMessage = mkiWarningMessageFromResponse(data);
@@ -1321,6 +1539,7 @@ async function mkiHandleClick(btn) {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;
+    mkiImportProgressFail(e.message);
     mkiToast('error', '入库失败：' + e.message);
   }
 }
@@ -1436,6 +1655,44 @@ async function mkiXiaoHandleClick(btn) {
   }
 }
 </script>
+
+<div id="mkiImportProgressModal" class="mki-progress-backdrop" hidden>
+  <div class="mki-progress-modal" role="dialog" aria-modal="true" aria-labelledby="mkiImportProgressTitle">
+    <div class="mki-progress-head">
+      <div>
+        <h3 id="mkiImportProgressTitle" class="mki-progress-title">入库工作进程</h3>
+        <p id="mkiImportProgressSubtitle" class="mki-progress-subtitle">把明空原视频写入英文素材库，完成后继续进入任务中心流程。</p>
+      </div>
+      <button type="button" class="mki-progress-close" onclick="mkiImportProgressClose()" aria-label="关闭">×</button>
+    </div>
+    <div class="mki-progress-body">
+      <div class="mki-progress-meta">
+        <div class="mki-progress-meta-item">
+          <span class="mki-progress-meta-label">素材</span>
+          <strong id="mkiImportProgressFile" class="mki-progress-meta-value">--</strong>
+        </div>
+        <div class="mki-progress-meta-item">
+          <span class="mki-progress-meta-label">产品</span>
+          <strong id="mkiImportProgressProduct" class="mki-progress-meta-value">--</strong>
+        </div>
+      </div>
+      <ol id="mkiImportProgressSteps" class="mki-progress-steps"></ol>
+      <div id="mkiImportProgressError" class="mki-progress-error" hidden></div>
+      <div id="mkiImportProgressResult" class="mki-progress-result" hidden>
+        <div class="mki-progress-result-title">入库完成</div>
+        <div id="mkiImportProgressResultText"></div>
+        <p>下一步继续做小语种任务；原视频处理人认领后会自动提交牛马去字幕，并进入人工审核。</p>
+      </div>
+      <div class="mki-progress-actions">
+        <button id="mkiImportProgressRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>
+        <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>继续做小语种任务</button>
+        <button id="mkiImportProgressTasks" type="button" class="oc-btn oc-btn--ghost" onclick="window.location.href='/tasks/'" hidden>去任务中心</button>
+        <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="window.location.href='/medias'" hidden>去素材管理</button>
+        <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressClose()">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- mk-import: Task 10 翻译员选择 modal -->
 <div id="mkiTranslatorModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
