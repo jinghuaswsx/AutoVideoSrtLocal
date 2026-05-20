@@ -25,6 +25,9 @@
 .mh-actions { display:flex; gap:8px; }
 .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
 .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
+.mh-sticky-controls { position:sticky; top:68px; z-index:35; display:grid; gap:8px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#f8fafc; }
+.mh-sticky-controls .mh-status { margin-bottom:0; }
+.mh-sticky-controls .mh-pager { margin:0; }
 .mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
 .mh-status-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
 .mh-zoom-btn { min-width:104px; }
@@ -284,6 +287,11 @@ button.mh-link-btn { cursor:pointer; }
   .mh-ai-analysis-toggle {
     flex: 1;
   }
+  .mh-sticky-controls {
+    top:60px;
+    gap:6px;
+    padding:8px;
+  }
 }
 
 /* 移动端视频源切换开关 */
@@ -420,23 +428,25 @@ button.mh-link-btn { cursor:pointer; }
     </div>
   </section>
 
-  <div class="mh-status">
-    <span id="mhStatus">Ready</span>
-    <div class="mh-status-actions">
-      <select class="mh-select mh-favorite-sort" id="mhFavoriteSort" aria-label="收藏夹排序" hidden onchange="loadFavoriteMetaHotPosts(1)">
-        <option value="favorited_at">收藏时间</option>
-        <option value="interactions">互动量</option>
-        <option value="creation_time">帖子创建时间</option>
-      </select>
-      <div class="mh-ai-analysis-actions" aria-label="AI分析显示设置">
-        <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhUsAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('us')">显示美国AI分析</button>
-        <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhEuropeAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('europe')">显示欧洲AI分析</button>
+  <div class="mh-sticky-controls">
+    <div class="mh-status">
+      <span id="mhStatus">Ready</span>
+      <div class="mh-status-actions">
+        <select class="mh-select mh-favorite-sort" id="mhFavoriteSort" aria-label="收藏夹排序" hidden onchange="loadFavoriteMetaHotPosts(1)">
+          <option value="favorited_at">收藏时间</option>
+          <option value="interactions">互动量</option>
+          <option value="creation_time">帖子创建时间</option>
+        </select>
+        <div class="mh-ai-analysis-actions" aria-label="AI分析显示设置">
+          <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhUsAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('us')">显示美国AI分析</button>
+          <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhEuropeAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('europe')">显示欧洲AI分析</button>
+        </div>
+        <button class="mh-btn secondary mh-zoom-btn" id="mhCardZoomButton" type="button" aria-pressed="false" onclick="toggleMetaHotCardZoom()">卡片放大 2x</button>
       </div>
-      <button class="mh-btn secondary mh-zoom-btn" id="mhCardZoomButton" type="button" aria-pressed="false" onclick="toggleMetaHotCardZoom()">卡片放大 2x</button>
     </div>
-  </div>
 
-  <div class="mh-pager" id="mhPagerTop" aria-label="Meta热帖分页"></div>
+    <div class="mh-pager" id="mhPagerTop" aria-label="Meta热帖分页"></div>
+  </div>
 
   <div id="mhProductListPanel" class="mh-product-list-panel" hidden>
     <div class="mh-empty">加载中...</div>

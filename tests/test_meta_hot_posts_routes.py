@@ -233,6 +233,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "const mhPageSize = 50;" in body
     assert 'id="mhPagerTop"' in body
     assert 'id="mhPagerBottom"' in body
+    assert 'class="mh-sticky-controls"' in body
+    assert ".mh-sticky-controls { position:sticky;" in body
+    assert "top:68px" in body
+    assert ".mh-sticky-controls .mh-status { margin-bottom:0; }" in body
+    assert ".mh-sticky-controls .mh-pager { margin:0;" in body
+    assert "id=\"mhPagerTop\" aria-label=\"Meta热帖分页\"" in body
     assert 'id="mhMarkStatus"' in body
     assert "标注" in body
     assert '<option value="empty"' in body
