@@ -60,6 +60,26 @@ def _float(value: Any) -> float | None:
         return None
 
 
+def _bool_marker(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = _text(value).lower()
+    if not text:
+        return False
+    return text in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "pushed",
+        "already_pushed",
+        "已推送",
+        "素材已推送",
+    }
+
+
 def _datetime_text(value: Any) -> str | None:
     if isinstance(value, (int, float)):
         timestamp = float(value)
@@ -106,6 +126,34 @@ def ad_library_url(row: dict[str, Any]) -> str:
     return "https://www.facebook.com/ads/library/?" + urlencode(params)
 
 
+def _is_pushed(row: dict[str, Any]) -> bool:
+    direct_keys = (
+        "is_pushed",
+        "pushed",
+        "has_pushed",
+        "material_pushed",
+        "push_status",
+        "pushed_status",
+        "pushStatus",
+        "status",
+        "pushed_at",
+    )
+    for key in direct_keys:
+        if key not in row:
+            continue
+        if key == "status":
+            text = _text(row.get(key)).lower()
+            if text in {"pushed", "already_pushed", "已推送", "素材已推送"}:
+                return True
+            continue
+        if _bool_marker(row.get(key)):
+            return True
+    for key, value in row.items():
+        if "push" in str(key).lower() and _bool_marker(value):
+            return True
+    return False
+
+
 def normalize_hot_post(row: dict[str, Any]) -> dict[str, Any]:
     product_url = normalize_product_url(row.get("product_url"))
     metrics = {
@@ -138,6 +186,7 @@ def normalize_hot_post(row: dict[str, Any]) -> dict[str, Any]:
         "sync_period_likes": metrics["sync_period_likes"],
         "sync_period_hours": metrics["sync_period_hours"],
         "copycat": bool(row.get("copycat")),
+        "is_pushed": _is_pushed(row),
         "select_json": row.get("select") or {},
         "video_url": _text(row.get("video")),
         "image_url": _text(row.get("image")),

@@ -55,6 +55,8 @@
 .mh-card-side { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
 .mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
 .mh-tag { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #e2e8f0; border-radius:4px; color:#475569; background:#f8fafc; font-size:12px; }
+.mh-card-flags { display:inline-flex; align-items:center; justify-content:flex-end; gap:6px; min-height:22px; }
+.mh-push-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #86efac; border-radius:4px; background:#dcfce7; color:#15803d; font-size:12px; font-weight:800; white-space:nowrap; }
 .mh-mark-options { display:flex; align-items:center; gap:10px; min-height:28px; }
 .mh-mark-option { display:inline-flex; align-items:center; gap:5px; min-width:0; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
 .mh-mark-option.bad { color:var(--mh-danger); }
@@ -364,6 +366,14 @@ button.mh-link-btn { cursor:pointer; }
       </select>
     </div>
     <div class="mh-field">
+      <label for="mhPushStatus">推送</label>
+      <select class="mh-select" id="mhPushStatus">
+        <option value="">全部</option>
+        <option value="pushed" {{ 'selected' if mh_query.get('push_status') == 'pushed' }}>已推送</option>
+        <option value="unpushed" {{ 'selected' if mh_query.get('push_status') == 'unpushed' }}>未推送</option>
+      </select>
+    </div>
+    <div class="mh-field">
       <label>价格</label>
       <div class="mh-range">
         <input class="mh-input" id="mhMinPrice" type="number" min="0" step="0.01" placeholder="最低" value="{{ mh_query.get('min_price', '') }}">
@@ -506,6 +516,7 @@ function metaHotJsonHeaders() {
 const mhFilterBindings = [
   {param: 'category', inputId: 'mhCategory'},
   {param: 'mark_status', inputId: 'mhMarkStatus'},
+  {param: 'push_status', inputId: 'mhPushStatus'},
   {param: 'min_price', inputId: 'mhMinPrice'},
   {param: 'max_price', inputId: 'mhMaxPrice'},
   {param: 'min_interactions', inputId: 'mhMinInteractions'},
@@ -816,6 +827,9 @@ function renderMetaHotPostId(row) {
     ${postId ? renderMarkOptions(row) : ''}
   </div>`;
 }
+function renderMetaHotPushedBadge(row) {
+  return row.is_pushed ? '<span class="mh-push-badge">已推送</span>' : '';
+}
 function cardMedia(row) {
   const videoHtml = playbackVideoHtml(row);
   if (videoHtml) return `<div class="mh-media">${renderVideoShell(row, videoHtml)}</div>`;
@@ -1035,6 +1049,7 @@ function renderCard(row) {
   const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
   const postId = Number(row.id || 0);
+  const cardFlags = `${row.copycat ? '<span>产品观察</span>' : ''}${renderMetaHotPushedBadge(row)}`;
   return `<article class="mh-card" data-post-id="${postId}">
     ${renderMetaHotPostId(row)}
     <div class="mh-card-head">
@@ -1045,7 +1060,7 @@ function renderCard(row) {
       <div class="mh-time">创建：${fmt(row.creation_time)}，抓取：${fmt(row.first_seen_at)}，更新：${fmt(row.last_synced_at)}</div>
       <div class="mh-metric">交互数：<b>${fmt(row.likes)}</b>，评论数：<b>${fmt(row.comments)}</b>，分享数：<b>${fmt(row.shares)}</b></div>
       <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
-      <div class="mh-row"><span class="mh-ratio">${ratio}</span><span>${row.copycat ? '产品观察' : ''}</span></div>
+      <div class="mh-row"><span class="mh-ratio">${ratio}</span><span class="mh-card-flags">${cardFlags}</span></div>
       ${cardMedia(row)}
       ${renderMessageBlock(row)}
       ${copyabilityBlock(row)}
@@ -1307,7 +1322,7 @@ async function loadFavoriteMetaHotPosts(page = 1) {
   qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '我的收藏夹');
 }
 function resetMetaHotPosts() {
-  ['mhCategory','mhMarkStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
+  ['mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
   loadMetaHotPosts(1);
 }
 async function refreshMetaHotPosts() {

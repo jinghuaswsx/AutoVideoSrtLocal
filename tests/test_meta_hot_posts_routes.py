@@ -417,6 +417,7 @@ def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
         "/xuanpin/meta-hot-posts"
         "?category=Kitchenware"
         "&mark_status=ok"
+        "&push_status=pushed"
         "&min_price=12.5"
         "&max_price=99"
         "&min_interactions=1000"
@@ -430,6 +431,7 @@ def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
     body = resp.get_data(as_text=True)
     assert '<option value="Kitchenware" selected>厨房用品</option>' in body
     assert '<option value="ok" selected>行</option>' in body
+    assert '<option value="pushed" selected>已推送</option>' in body
     for input_id, value in [
         ("mhMinPrice", "12.5"),
         ("mhMaxPrice", "99"),
@@ -442,9 +444,23 @@ def test_meta_hot_posts_page_prefills_filters_from_query_and_syncs_url(
         assert input_tag, input_id
         assert f'value="{value}"' in input_tag.group(0)
     assert "let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('page'));" in body
+    assert "{param: 'push_status', inputId: 'mhPushStatus'}" in body
+    assert "'mhPushStatus'" in body
     assert "function syncMetaHotFiltersToUrl(page)" in body
     assert "history.replaceState(null, '', url.pathname + url.search + url.hash);" in body
     assert "switchMetaHotSubtab(tab, {syncUrl: false});" in body
+
+
+def test_meta_hot_posts_template_renders_pushed_badge(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("appcore.meta_hot_posts.service.category_options", lambda: [])
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function renderMetaHotPushedBadge(row)" in body
+    assert "row.is_pushed" in body
+    assert "已推送" in body
 
 
 def test_meta_hot_posts_page_embeds_user_ai_visibility(authed_client_no_db, monkeypatch):

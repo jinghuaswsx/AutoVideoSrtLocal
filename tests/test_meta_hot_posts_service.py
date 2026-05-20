@@ -87,6 +87,27 @@ def test_build_list_response_hydrates_user_favorite_state(monkeypatch):
     assert item["favorited_at"] == "2026-05-19 10:00:00"
 
 
+def test_build_list_response_normalizes_pushed_marker(monkeypatch):
+    monkeypatch.setattr(
+        service.store,
+        "list_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 7,
+                    "sku_prices_json": "[]",
+                    "is_pushed": 1,
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    item = service.build_list_response({}).payload["items"][0]
+
+    assert item["is_pushed"] is True
+
+
 def test_build_favorites_response_lists_current_user_favorites(monkeypatch):
     captured = {}
 

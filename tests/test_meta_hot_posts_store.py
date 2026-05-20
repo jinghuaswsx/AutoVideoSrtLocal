@@ -82,6 +82,46 @@ def test_list_hot_posts_empty_mark_status_selects_unchecked_rows():
     assert data_params == [30, 0]
 
 
+def test_list_hot_posts_applies_push_status_filter():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 1}]
+        return [{"id": 1, "is_pushed": 1}]
+
+    payload = store.list_hot_posts(
+        {"push_status": "pushed"},
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert payload["total"] == 1
+    assert "COALESCE(p.is_pushed, 0) = %s" in data_sql
+    assert "p.is_pushed" in data_sql
+    assert data_params == [1, 30, 0]
+
+
+def test_list_hot_posts_applies_unpushed_filter():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 1}]
+        return [{"id": 1, "is_pushed": 0}]
+
+    store.list_hot_posts(
+        {"push_status": "unpushed"},
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "COALESCE(p.is_pushed, 0) = %s" in data_sql
+    assert data_params == [0, 30, 0]
+
+
 def test_list_today_new_hot_posts_filters_by_first_seen_today():
     calls = []
 
@@ -132,6 +172,7 @@ def test_upsert_hot_post_uses_wedev_post_unique_key():
             "sync_period_likes": 7,
             "sync_period_hours": 8.5,
             "copycat": False,
+            "is_pushed": True,
             "select_json": {},
             "video_url": "",
             "image_url": "",
@@ -149,7 +190,10 @@ def test_upsert_hot_post_uses_wedev_post_unique_key():
     assert "message_zh_html=CASE WHEN VALUES(message_html) <=> message_html" in sql
     assert "message_zh_status=CASE WHEN VALUES(message_html) <=> message_html" in sql
     assert "message_zh_attempts=CASE WHEN VALUES(message_html) <=> message_html" in sql
+    assert "is_pushed" in sql
+    assert "is_pushed=VALUES(is_pushed)" in sql
     assert params[0] == 123
+    assert 1 in params
 
 
 def test_set_hot_post_mark_status_updates_local_mark_audit_fields():

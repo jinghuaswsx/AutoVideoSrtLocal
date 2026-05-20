@@ -77,6 +77,24 @@ def test_normalize_hot_post_derives_links_and_card_fields():
     assert normalized["raw_json"]["id"] == 99
 
 
+def test_normalize_hot_post_captures_wedev_pushed_marker():
+    for key, value in (
+        ("is_pushed", True),
+        ("pushed", 1),
+        ("push_status", "pushed"),
+        ("status", "已推送"),
+    ):
+        normalized = client.normalize_hot_post({"id": 99, key: value})
+
+        assert normalized["is_pushed"] is True
+
+
+def test_normalize_hot_post_does_not_treat_numeric_generic_status_as_pushed():
+    normalized = client.normalize_hot_post({"id": 99, "status": 1})
+
+    assert normalized["is_pushed"] is False
+
+
 def test_normalize_hot_post_accepts_millisecond_timestamps():
     normalized = client.normalize_hot_post(
         {
