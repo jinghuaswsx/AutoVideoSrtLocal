@@ -23,6 +23,7 @@
   --tc-r: 6px; --tc-r-md: 8px; --tc-r-lg: 12px;
   --tc-sp-2: 8px; --tc-sp-3: 12px; --tc-sp-4: 16px;
   --tc-sp-5: 20px; --tc-sp-6: 24px;
+  --tc-detail-drawer-w: min(960px, 50vw);
 }
 .tc { font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--tc-fg); }
 .tc * { box-sizing: border-box; }
@@ -47,6 +48,47 @@
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
 .tc-badge--terminated { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 .tc-empty { padding:60px 20px; text-align:center; color:var(--tc-fg-muted); }
+#tcDetailDrawer {
+  display:none;
+  position:fixed;
+  top:0;
+  right:0;
+  bottom:0;
+  width: var(--tc-detail-drawer-w);
+  min-width:720px;
+  max-width:100vw;
+  background:var(--tc-bg);
+  border-left:1px solid var(--tc-border);
+  box-shadow:-8px 0 24px rgba(15, 23, 42, 0.12);
+  z-index:999;
+  overflow-y:auto;
+  padding:32px;
+}
+.tc-drawer-close { position:absolute; top:16px; right:16px; }
+.tc-process-timeline { position:relative; padding-left:20px; }
+.tc-process-timeline::before { content:""; position:absolute; left:7px; top:4px; bottom:4px; width:2px; background:var(--tc-border); }
+.tc-event { position:relative; margin:0 0 12px; padding:12px 14px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
+.tc-event-dot { position:absolute; left:-19px; top:17px; width:10px; height:10px; border-radius:999px; background:var(--tc-accent); box-shadow:0 0 0 3px var(--tc-accent-subtle); }
+.tc-event--success .tc-event-dot { background:var(--tc-success-fg); box-shadow:0 0 0 3px var(--tc-success-bg); }
+.tc-event--danger .tc-event-dot { background:var(--tc-danger); box-shadow:0 0 0 3px var(--tc-danger-bg); }
+.tc-event--warning .tc-event-dot { background:var(--tc-warning-fg); box-shadow:0 0 0 3px var(--tc-warning-bg); }
+.tc-event-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+.tc-event-title { font-weight:700; font-size:14px; }
+.tc-event-step { color:var(--tc-fg-muted); font-size:12px; }
+.tc-event-meta { color:var(--tc-fg-muted); font-size:12px; margin-bottom:8px; }
+.tc-event-summary { font-size:13px; margin-bottom:8px; }
+.tc-event-facts { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-top:8px; }
+.tc-event-fact { background:var(--tc-bg-subtle); border:1px solid var(--tc-border); border-radius:var(--tc-r); padding:6px 8px; font-size:12px; min-width:0; }
+.tc-event-fact strong { display:block; color:var(--tc-fg-muted); font-weight:600; margin-bottom:2px; }
+.tc-event-fact span { overflow-wrap:anywhere; }
+.tc-event-tech { margin-top:8px; color:var(--tc-fg-muted); font-size:12px; }
+.tc-event-tech summary { cursor:pointer; }
+.tc-event-tech pre { margin:6px 0 0; padding:8px; max-height:180px; overflow:auto; border-radius:var(--tc-r); background:var(--tc-bg-muted); white-space:pre-wrap; }
+
+@media (max-width: 1100px) {
+  #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
+  .tc-event-facts { grid-template-columns:1fr; }
+}
 
 /* ── 移动端适配 ── */
 @media (max-width: 768px) {
@@ -59,7 +101,7 @@
   .tc-filters #tcStatus { flex: 1 1 calc(50% - 4px); min-width: 120px; }
   .tc-filters #tcRefresh { flex: 0 0 auto; }
   /* 详情抽屉移动端全宽 */
-  #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
+  #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
   .tc-table { font-size: 12px; }
   .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
@@ -112,8 +154,8 @@
 
   <div id="tcTableWrap"></div>
 
-  <div id="tcDetailDrawer" style="display:none; position:fixed; top:0; right:0; bottom:0; width:540px; max-width:90vw; background:#fff; border-left:1px solid var(--tc-border); box-shadow:-4px 0 12px rgba(0,0,0,0.08); z-index:999; overflow-y:auto; padding:24px;">
-    <button class="tc-btn" style="position:absolute; top:12px; right:12px;" onclick="tcCloseDetail()">关闭</button>
+  <div id="tcDetailDrawer">
+    <button class="tc-btn tc-drawer-close" onclick="tcCloseDetail()">关闭</button>
     <div id="tcDetailBody"></div>
   </div>
 
@@ -151,6 +193,127 @@ let TC_CURRENT_TAB = 'mine';
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcInlineArg(s) {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+function tcFormatTime(s) {
+  if (!s) return '时间未知';
+  return String(s).replace('T', ' ').slice(0, 19);
+}
+function tcParsePayload(payload) {
+  let value = payload;
+  for (let i = 0; i < 2 && typeof value === 'string'; i += 1) {
+    const text = value.trim();
+    if (!text || !['{', '[', '"'].includes(text[0])) break;
+    try { value = JSON.parse(text); } catch (e) { break; }
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === '') return {};
+  return { message: String(value) };
+}
+function tcFormatBytes(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = n;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return (unit === 0 ? String(Math.round(size)) : size.toFixed(1)) + ' ' + units[unit];
+}
+function tcExtractFilenameFromError(errorText) {
+  const text = String(errorText || '');
+  const match = text.match(/([^\\/\s"']+\.(?:mp4|mov|avi|mkv|webm|zip|jpg|jpeg|png))/i);
+  return match ? match[1] : '';
+}
+const TC_EVENT_TEXT = {
+  created: { title: '创建任务', progress: '待认领/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
+  claimed: { title: '认领原始视频任务', progress: '原始视频处理中', tone: 'info', summary: '处理人已接手原始视频处理。' },
+  raw_niuma_submitted: { title: '提交牛马去字幕', progress: '自动去字幕中', tone: 'info', summary: '原始视频已提交到牛马去字幕流程。' },
+  raw_niuma_done: { title: '牛马去字幕完成', progress: '等待提交审核', tone: 'success', summary: '自动去字幕已完成，可以进入原始视频审核。' },
+  raw_niuma_failed: { title: '牛马去字幕失败', progress: '需要人工处理', tone: 'danger', summary: '自动去字幕没有成功，需要查看失败原因或改走手动上传。' },
+  raw_niuma_timeout: { title: '牛马去字幕超时', progress: '需要人工确认', tone: 'danger', summary: '自动去字幕等待超时，需要确认外部任务状态。' },
+  raw_manual_uploaded: { title: '手动上传原始视频', progress: '原始视频已补传', tone: 'success', summary: '处理人已手动上传处理后的原始视频文件。' },
+  raw_uploaded: { title: '提交原始视频审核', progress: '等待管理员审核', tone: 'info', summary: '处理人已提交原始视频，等待管理员通过或打回。' },
+  approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
+  rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
+  cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
+  unblocked: { title: '子任务解锁', progress: '可开始翻译', tone: 'success', summary: '原始视频审核通过后，翻译子任务已解锁。' },
+  submitted: { title: '提交翻译验收', progress: '等待管理员验收', tone: 'info', summary: '翻译员已提交产物，等待管理员审核通过或打回。' },
+  completed: { title: '任务完成', progress: '已完成', tone: 'success', summary: '任务已经完成。' },
+  raw_source_created: { title: '原始素材入库', progress: '已生成素材库记录', tone: 'success', summary: '审核通过后，系统已把原始视频同步到原始素材库。' },
+  raw_source_updated: { title: '原始素材更新', progress: '已更新素材库记录', tone: 'success', summary: '审核通过后，系统已更新原始素材库记录。' },
+  assignee_changed: { title: '负责人变更', progress: '负责人已同步', tone: 'info', summary: '产品负责人变化后，未完成任务的负责人已同步。' },
+};
+function tcEventFacts(payload) {
+  const facts = [];
+  const add = (label, value) => {
+    if (value === undefined || value === null || value === '') return;
+    facts.push({label, value: String(value)});
+  };
+  if (Array.isArray(payload.countries)) add('目标国家', payload.countries.join('、'));
+  add('目标国家', payload.country);
+  add('翻译员 ID', payload.translator_id);
+  add('任务 ID', payload.task_id);
+  add('素材 ID', payload.media_item_id);
+  add('原始素材 ID', payload.raw_source_id);
+  add('处理阶段', payload.stage);
+  add('文件', payload.filename || tcExtractFilenameFromError(payload.error));
+  add('文件大小', tcFormatBytes(payload.new_size || payload.size));
+  add('失败原因', payload.error);
+  add('打回/取消原因', payload.reason);
+  add('说明', payload.message);
+  return facts;
+}
+function tcHumanEvent(event, index) {
+  const payload = tcParsePayload(event.payload_json);
+  const meta = TC_EVENT_TEXT[event.event_type] || {
+    title: '系统记录',
+    progress: event.event_type || '未知事件',
+    tone: 'info',
+    summary: '系统记录了一条任务过程事件。',
+  };
+  const actor = event.actor_username || '系统';
+  const facts = tcEventFacts(payload);
+  return {
+    step: index + 1,
+    title: meta.title,
+    progress: meta.progress,
+    tone: meta.tone,
+    summary: meta.summary,
+    actor,
+    time: tcFormatTime(event.created_at),
+    facts,
+    tech: Object.keys(payload).length ? JSON.stringify(payload, null, 2) : '',
+  };
+}
+function tcRenderEventTimeline(events) {
+  if (!events.length) {
+    return '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无审核流程记录</div>';
+  }
+  return '<div class="tc-process-timeline">' + events.map(function(event, index) {
+    const h = tcHumanEvent(event, index);
+    const facts = h.facts.length
+      ? '<div class="tc-event-facts">' + h.facts.map(function(fact) {
+          return '<div class="tc-event-fact"><strong>' + tcEsc(fact.label) + '</strong><span>' + tcEsc(fact.value) + '</span></div>';
+        }).join('') + '</div>'
+      : '';
+    const tech = h.tech
+      ? '<details class="tc-event-tech"><summary>技术详情</summary><pre>' + tcEsc(h.tech) + '</pre></details>'
+      : '';
+    return '<div class="tc-event tc-event--' + tcEsc(h.tone) + '">'
+      + '<span class="tc-event-dot"></span>'
+      + '<div class="tc-event-head">'
+      + '<span class="tc-event-step">第 ' + h.step + ' 步</span>'
+      + '<span class="tc-event-title">' + tcEsc(h.title) + '</span>'
+      + '<span class="tc-badge tc-badge--in_progress">' + tcEsc(h.progress) + '</span>'
+      + '</div>'
+      + '<div class="tc-event-meta">' + tcEsc(h.actor) + ' · ' + tcEsc(h.time) + '</div>'
+      + '<div class="tc-event-summary">' + tcEsc(h.summary) + '</div>'
+      + facts
+      + tech
+      + '</div>';
+  }).join('') + '</div>';
 }
 function tcMediasUrl(taskId, productId, lang, productCode, action) {
   const params = new URLSearchParams();
@@ -399,11 +562,7 @@ function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.displ
 function tcRenderDetail(task, events) {
   const isParent = !task.parent_task_id;
   const buttons = tcDetailButtons(task, isParent);
-  const evRows = events.map(e => `<div style="padding:6px 0; border-bottom:1px dashed var(--tc-border); font-size:12px;">
-    <div><strong>${tcEsc(e.event_type)}</strong> by ${tcEsc(e.actor_username || '系统')}</div>
-    <div style="color:var(--tc-fg-muted);">${tcEsc(e.created_at)}</div>
-    ${e.payload_json ? `<pre style="margin:4px 0; font-size:11px; color:var(--tc-fg-muted); white-space:pre-wrap;">${tcEsc(JSON.stringify(e.payload_json))}</pre>` : ''}
-  </div>`).join('');
+  const eventTimeline = tcRenderEventTimeline(events);
   return `
     <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(task.high_level)}</span> · ${tcEsc(task.status)}</div>
@@ -421,8 +580,8 @@ function tcRenderDetail(task, events) {
   <div id="tcReadinessRows">加载中...</div>
 </div>` : ''}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
-    <h4 style="margin:0 0 8px; font-size:13px;">审计流</h4>
-    <div>${evRows || '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无事件</div>'}</div>
+    <h4 style="margin:0 0 10px; font-size:14px;">审核流程</h4>
+    ${eventTimeline}
   `;
 }
 

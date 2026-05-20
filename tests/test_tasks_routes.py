@@ -13,6 +13,20 @@ def test_task_center_child_translate_jump_uses_product_code_search(authed_client
     assert "tcChildJumpTranslate(taskId, country, productId, productCode)" in body
 
 
+def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "--tc-detail-drawer-w: min(960px, 50vw);" in body
+    assert "width: var(--tc-detail-drawer-w)" in body
+    assert "function tcRenderEventTimeline" in body
+    assert "function tcHumanEvent" in body
+    assert "审核流程" in body
+    assert "牛马去字幕失败" in body
+    assert "手动上传原始视频" in body
+    assert "技术详情" in body
+
+
 def test_index_requires_login():
     from web.app import create_app
     app = create_app()
