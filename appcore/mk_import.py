@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
-from appcore import product_link_domains
+from appcore import product_link_domains, pushes
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class DBError(MkImportError):
 
 # ---- helpers ----
 _RJC_SUFFIX_RE = re.compile(r"-rjc$", re.IGNORECASE)
+_MK_VIDEO_PROXY_PATHS = {"/xuanpin/api/mk-video", "/medias/api/mk-video"}
+_MK_MEDIA_PROXY_PATHS = {"/xuanpin/api/mk-media", "/medias/api/mk-media"}
 
 
 def _normalize_product_code(code: str | None) -> str:
@@ -136,10 +139,55 @@ def list_imported_filenames(filenames: list[str]) -> set[str]:
     return {row["filename"] for row in rows}
 
 
+def _normalize_mk_media_path(raw_path: str) -> str:
+    path = str(raw_path or "").strip().replace("\\", "/")
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.lstrip("/")
+    if path.startswith("medias/"):
+        path = path[len("medias/"):]
+    return path
+
+
+def _mk_proxy_media_path(value: str | None, allowed_paths: set[str]) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.path in allowed_paths:
+        path_values = parse_qs(parsed.query).get("path") or []
+        return _normalize_mk_media_path(path_values[0] if path_values else "")
+    if not parsed.scheme and not parsed.netloc and not raw.startswith("/"):
+        return _normalize_mk_media_path(raw)
+    return ""
+
+
+def _mk_media_download_request(value: str, *, allowed_paths: set[str], accept: str) -> tuple[str, dict | None]:
+    media_path = _mk_proxy_media_path(value, allowed_paths)
+    if not media_path:
+        return value, None
+
+    base_url = (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+    headers = dict(pushes.build_localized_texts_headers())
+    headers.pop("Content-Type", None)
+    headers["Accept"] = accept
+    if "Authorization" not in headers and "Cookie" not in headers:
+        raise DownloadError("明空凭据未配置，请先在设置页同步 wedev 凭据")
+    return f"{base_url}/medias/{quote(media_path, safe='/')}", headers
+
+
 def _download_mp4(url: str, dest_path: str, timeout: int = 120) -> int:
     """Stream MP4 to dest_path. Returns bytes written. Raises DownloadError."""
     try:
-        with requests.get(url, stream=True, timeout=timeout) as resp:
+        download_url, headers = _mk_media_download_request(
+            url,
+            allowed_paths=_MK_VIDEO_PROXY_PATHS,
+            accept="video/*,*/*;q=0.8",
+        )
+        request_kwargs = {"stream": True, "timeout": timeout}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        with requests.get(download_url, **request_kwargs) as resp:
             resp.raise_for_status()
             total = 0
             with open(dest_path, "wb") as f:
@@ -148,6 +196,8 @@ def _download_mp4(url: str, dest_path: str, timeout: int = 120) -> int:
                         f.write(chunk)
                         total += len(chunk)
             return total
+    except DownloadError:
+        raise
     except requests.RequestException as e:
         raise DownloadError(f"download failed: {e}") from e
 
@@ -157,14 +207,22 @@ def _download_cover(url: str | None, dest_path: str, timeout: int = 30) -> str |
     if not url:
         return None
     try:
-        with requests.get(url, stream=True, timeout=timeout) as resp:
+        download_url, headers = _mk_media_download_request(
+            url,
+            allowed_paths=_MK_MEDIA_PROXY_PATHS,
+            accept="image/*,*/*;q=0.8",
+        )
+        request_kwargs = {"stream": True, "timeout": timeout}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        with requests.get(download_url, **request_kwargs) as resp:
             resp.raise_for_status()
             with open(dest_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=16 * 1024):
                     if chunk:
                         f.write(chunk)
         return dest_path
-    except requests.RequestException as e:
+    except (DownloadError, requests.RequestException) as e:
         log.warning("cover download failed url=%s: %s", url, e)
         return None  # cover 下载失败不阻塞，只记日志
 
