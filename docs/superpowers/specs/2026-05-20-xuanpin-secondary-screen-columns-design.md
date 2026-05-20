@@ -31,9 +31,9 @@ columns are pushed out of view.
 The Mingkong product table uses three density bands:
 
 1. Wide desktop keeps the existing generous layout.
-2. Narrow desktop (`<= 1760px` CSS viewport) reduces image, text, padding, and
-   numeric column widths so the full 13-column table can fit in a typical main
-   content area.
+2. Secondary half-screen / narrow desktop (`<= 2100px` CSS viewport) reduces
+   image, text, padding, and numeric column widths so the full 13-column table
+   can fit when Chrome is snapped to a narrower secondary-screen region.
 3. Portrait desktop (`min-width: 769px` and `orientation: portrait`) auto-collapses
    the sidebar, trims page padding, and applies a tighter 13-column budget tuned
    for about `960px` CSS width.
