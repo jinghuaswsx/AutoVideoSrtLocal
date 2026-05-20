@@ -6,6 +6,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
@@ -23,7 +24,7 @@ from pipeline.languages.registry import (
     normalize_enabled_target_langs,
 )
 from web import store
-from web.auth import permission_required
+from web.auth import admin_required, permission_required
 from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
@@ -998,6 +999,116 @@ def rematch_voice(task_id: str):
     return _json_response({
         "ok": True, "gender": gender,
         "candidates": candidates, "extra_items": extra_items,
+    })
+
+
+def _candidate_audio_path(raw_path: object, task_dir: Path) -> Path | None:
+    raw = str(raw_path or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    candidates = [path]
+    if not path.is_absolute() and str(task_dir):
+        candidates.append(task_dir / path)
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _resolve_voice_ai_source_audio_path(state: dict) -> Path | None:
+    task_dir = Path(str(state.get("task_dir") or ""))
+    debug = state.get("voice_ai_rank_debug") or {}
+    request_debug = debug.get("request") if isinstance(debug, dict) else {}
+    visual = (request_debug or {}).get("visual") if isinstance(request_debug, dict) else {}
+    media = visual.get("media") if isinstance(visual, dict) else []
+    for item in media if isinstance(media, list) else []:
+        if not isinstance(item, dict) or item.get("role") != "source_sample":
+            continue
+        for key in ("path", "relative_path"):
+            path = _candidate_audio_path(item.get(key), task_dir)
+            if path:
+                return path
+
+    separation = state.get("separation") if isinstance(state.get("separation"), dict) else {}
+    for raw_path in (
+        task_dir / "voice_ai_ranking" / "source_sample.mp3",
+        state.get("voice_match_source_audio_path"),
+        state.get("voice_match_sample_audio_path"),
+        separation.get("vocals_path"),
+    ):
+        path = _candidate_audio_path(raw_path, task_dir)
+        if path:
+            return path
+    return None
+
+
+@bp.route("/api/multi-translate/<task_id>/voice-ai-ranking", methods=["POST"])
+@login_required
+@admin_required
+def rerun_voice_ai_ranking(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+    candidates = state.get("voice_match_candidates") or []
+    if not candidates:
+        return _json_response({"error": "voice_match_candidates is empty"}, 400)
+    source_audio_path = _resolve_voice_ai_source_audio_path(state)
+    if not source_audio_path:
+        return _json_response({"error": "voice_ai_source_audio_not_found"}, 400)
+
+    body = request.get_json(silent=True) or {}
+    from appcore.voice_ai_ranking import rank_voice_candidates
+
+    ai_result = rank_voice_candidates(
+        task_id=task_id,
+        task=state,
+        candidates=candidates,
+        source_audio_path=source_audio_path,
+        task_dir=state.get("task_dir") or "",
+        user_id=row.get("user_id") or current_user.id,
+        candidate_limit=body.get("candidate_limit"),
+    )
+    updated_candidates = ai_result.get("candidates") or candidates
+    rankings = ai_result.get("rankings") or []
+    status = ai_result.get("status") or "done"
+    model = ai_result.get("model")
+    provider = ai_result.get("provider")
+    candidate_limit = ai_result.get("candidate_limit")
+    debug = ai_result.get("debug")
+
+    state["voice_match_candidates"] = updated_candidates
+    state["voice_ai_rankings"] = rankings
+    state["voice_ai_rank_status"] = status
+    state["voice_ai_rank_model"] = model
+    state["voice_ai_rank_provider"] = provider
+    state["voice_ai_rank_candidate_limit"] = candidate_limit
+    state["voice_ai_rank_debug"] = debug
+    save_project_state(task_id, state, execute_func=db_execute)
+    task_state.update(
+        task_id,
+        voice_match_candidates=updated_candidates,
+        voice_ai_rankings=rankings,
+        voice_ai_rank_status=status,
+        voice_ai_rank_model=model,
+        voice_ai_rank_provider=provider,
+        voice_ai_rank_candidate_limit=candidate_limit,
+        voice_ai_rank_debug=debug,
+    )
+
+    return _json_response({
+        "ok": True,
+        "voice_ai_rankings": rankings,
+        "voice_ai_rank_status": status,
+        "voice_ai_rank_model": model,
+        "voice_ai_rank_provider": provider,
+        "voice_ai_rank_debug": debug,
+        "candidate_limit": candidate_limit,
+        "candidates": updated_candidates,
     })
 
 

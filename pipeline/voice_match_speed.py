@@ -151,8 +151,8 @@ def rank_speed_aware_candidates(
         ranked.append(row)
     ranked.sort(
         key=lambda row: (
+            float(row.get("combined_score") or 0.0),
             row.get("speed_match_score") is not None,
-            float(row.get("speed_match_score") if row.get("speed_match_score") is not None else -1.0),
             float(row.get("similarity") or 0.0),
         ),
         reverse=True,

@@ -83,11 +83,11 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "preview_words_per_second" in SCRIPT
     assert "speed_match_score" in SCRIPT
     assert "combined_score" not in SCRIPT
-    assert "语速未维护，已按音色排序" in SCRIPT
-    assert "语速匹配" in SCRIPT
+    assert "语速未维护，按音色排序" in SCRIPT
+    assert "语速参考" in SCRIPT
     assert ".vs-row-speed" in TEMPLATE
     assert 'class="vs-speed-match-pill"' in SCRIPT
-    assert '<span class="vs-speed-match-label">语速匹配</span>' in SCRIPT
+    assert '<span class="vs-speed-match-label">语速参考</span>' in SCRIPT
     assert '<span class="vs-speed-match-value">${escapeHtml(speedScore)}</span>' in SCRIPT
     assert ".vs-speed-match-pill" in TEMPLATE
     assert ".vs-speed-match-value" in TEMPLATE

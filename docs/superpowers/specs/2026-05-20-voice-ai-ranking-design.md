@@ -65,3 +65,16 @@
 - 音色大模型排名继续走统一入口 `appcore.llm_client.invoke_generate`，由 `appcore.ai_billing.log_request` 写入 `usage_logs`，并将脱敏请求/响应写入 `usage_log_payloads`。
 - `llm_client` 会把本次调用写入后的 `usage_log_id` 放回结果；业务层写入 `voice_ai_rank_usage_log_id`，并同步放入 `voice_ai_rank_debug.usage_log_id` 与结果原始调试信息，方便从任务页面反查 API 调用日志。
 - 账单 `billing_extra` 固定标记 `source=voice_ai_ranking`，并携带 `task_id`、`candidate_limit`、`candidate_count`、`media_count`。use case 仍为 `voice_selection.assess`，价格表沿用 `openrouter / google/gemini-3.5-flash` token 计费；若 OpenRouter 响应返回 cost，则账单优先使用响应成本。
+## 2026-05-20 Multi / Omni 补充
+
+- Multi-language video translation and Omni video translation use the same
+  `voice_ai_ranking` sidecar as English Redub after TTS voice-match candidates
+  are available.
+- The LLM ranking is reference-only: it writes `voice_ai_rankings`,
+  `voice_ai_rank_debug`, and `llm_rank` / `llm_reason_summary` on candidate
+  rows for display, but it does not change the timbre/speed recommendation
+  order, auto-select a voice, resume the pipeline, or alter TTS generation.
+- Admin rerun endpoints are available at
+  `/api/multi-translate/<task_id>/voice-ai-ranking` and
+  `/api/omni-translate/<task_id>/voice-ai-ranking`, matching the English Redub
+  rerun contract and accepting optional `candidate_limit`.

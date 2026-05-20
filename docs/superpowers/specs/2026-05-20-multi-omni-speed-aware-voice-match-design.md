@@ -7,7 +7,8 @@ Date: 2026-05-20
 English redub already has a speed-aware voice recommendation path:
 
 - First collect the top 20 voices by timbre similarity.
-- Rerank only that 20-voice pool by preview speech-rate closeness.
+- Rerank only that 20-voice pool by a timbre-dominant combined score. Preview
+  speech-rate closeness is a weak secondary signal, not the primary rank key.
 - Return the final top 20 candidates to the user.
 
 The original English redub spec explicitly scoped that behavior away from Multi
@@ -23,7 +24,12 @@ For Multi and Omni voice matching:
 
 - Initial `voice_match` must call the shared speed-aware matcher.
 - The matcher must request a candidate pool of 20 voices from the timbre matcher.
-- The UI-facing candidate list remains top 20 after speed reranking.
+- The UI-facing candidate list remains top 20 after combined-score reranking.
+- The combined score remains timbre dominant (`TIMBRE_WEIGHT=0.75`,
+  `SPEED_WEIGHT=0.25`); speech-rate score must not outrank a better timbre
+  candidate when the weighted combined score is lower.
+- The UI should label speech-rate metadata as a reference signal rather than a
+  definitive match.
 - Gender rematch from the voice selection popup must use the same speed-aware
   matcher, preserving the selected gender filter.
 - Existing default-voice exclusion must remain unchanged.
@@ -48,8 +54,12 @@ source speaking speed:
 Modify:
 
 - `appcore/runtime_multi.py`
+- `pipeline/voice_match_speed.py`
 - `web/routes/multi_translate.py`
 - `web/routes/omni_translate.py`
+- `web/static/voice_selector_multi.js`
+- `tests/test_english_redub_voice_match_speed.py`
+- `tests/test_voice_selector_multi_assets.py`
 - `tests/test_runtime_multi_voice_match.py`
 - `tests/test_multi_translate_routes.py`
 - `tests/test_omni_translate_routes.py`
@@ -64,11 +74,13 @@ Do not modify:
 
 ## Acceptance Criteria
 
-- Multi initial voice match uses speed-aware top20-to-top20 reranking.
+- Multi initial voice match uses timbre-dominant speed-aware top20-to-top20
+  reranking.
 - Omni initial voice match inherits the same behavior through
   `MultiTranslateRunner`.
-- Multi rematch uses speed-aware reranking and forwards gender.
-- Omni rematch uses speed-aware reranking and forwards gender.
+- Multi rematch uses timbre-dominant speed-aware reranking and forwards gender.
+- Omni rematch uses timbre-dominant speed-aware reranking and forwards gender.
+- The shared voice selector labels speed data as `语速参考`.
 - Existing default voice exclusion remains active for initial match and rematch.
 - Existing tests for English redub speed-aware matching continue to pass.
 

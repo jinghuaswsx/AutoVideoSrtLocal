@@ -944,13 +944,13 @@
     const speedScore = fmtScore(rec.speed_match_score);
     if (!previewRate || status === "missing_preview_rate") {
       const sourceText = sourceRate ? `原视频 ${escapeHtml(sourceRate)} 词/秒 · ` : "";
-      return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，已按音色排序</div>`;
+      return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，按音色排序</div>`;
     }
     return `
       <div class="vs-row-speed">
         ${sourceRate ? `<span>原视频 ${escapeHtml(sourceRate)} 词/秒</span>` : ""}
         <span>Preview ${escapeHtml(previewRate)} 词/秒</span>
-        ${speedScore ? `<span class="vs-speed-match-pill"><span class="vs-speed-match-label">语速匹配</span><span class="vs-speed-match-value">${escapeHtml(speedScore)}</span></span>` : ""}
+        ${speedScore ? `<span class="vs-speed-match-pill"><span class="vs-speed-match-label">语速参考</span><span class="vs-speed-match-value">${escapeHtml(speedScore)}</span></span>` : ""}
       </div>
     `;
   }

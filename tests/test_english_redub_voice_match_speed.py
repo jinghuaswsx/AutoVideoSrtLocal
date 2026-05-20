@@ -30,7 +30,7 @@ def test_compute_source_speech_rate_uses_words_when_available():
     assert rate["source_chars_per_second"] > 10
 
 
-def test_rank_speed_aware_reranks_similarity_pool_by_speed():
+def test_rank_speed_aware_keeps_timbre_dominant_when_speed_differs():
     from pipeline.voice_match_speed import rank_speed_aware_candidates
 
     candidates = [
@@ -48,10 +48,10 @@ def test_rank_speed_aware_reranks_similarity_pool_by_speed():
         top_k=3,
     )
 
-    assert [row["voice_id"] for row in ranked] == ["fast", "top", "low"]
-    assert ranked[0]["speed_match_score"] > ranked[1]["speed_match_score"]
-    assert ranked[0]["combined_score"] < ranked[1]["combined_score"]
-    assert [row["similarity_rank"] for row in ranked] == [2, 1, 3]
+    assert [row["voice_id"] for row in ranked] == ["top", "fast", "low"]
+    assert ranked[0]["speed_match_score"] < ranked[1]["speed_match_score"]
+    assert ranked[0]["combined_score"] > ranked[1]["combined_score"]
+    assert [row["similarity_rank"] for row in ranked] == [1, 2, 3]
 
 
 def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypatch):

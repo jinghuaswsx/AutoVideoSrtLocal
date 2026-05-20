@@ -164,6 +164,85 @@ def test_omni_rematch_uses_speed_aware_voice_match(authed_client_no_db):
     assert m_fetch.call_args.kwargs["voice_ids"] == ["voice-b"]
 
 
+def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "voice_ai_ranking" / "source_sample.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"source-audio")
+    state = {
+        "task_dir": str(tmp_path),
+        "target_lang": "de",
+        "voice_match_candidates": [
+            {"voice_id": "v1", "name": "A"},
+            {"voice_id": "v2", "name": "B"},
+        ],
+        "voice_ai_rank_debug": {
+            "request": {
+                "visual": {
+                    "media": [{
+                        "role": "source_sample",
+                        "relative_path": "voice_ai_ranking/source_sample.mp3",
+                    }]
+                }
+            }
+        },
+    }
+    saved = {}
+    seen = {}
+
+    monkeypatch.setattr(
+        "web.routes.omni_translate._query_viewable_project",
+        lambda task_id, columns: {"state_json": json.dumps(state), "user_id": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.omni_translate.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr(
+        "appcore.task_state.update",
+        lambda task_id, **kwargs: seen.setdefault("state_update", kwargs),
+    )
+
+    def fake_rank_voice_candidates(**kwargs):
+        seen.update(kwargs)
+        return {
+            "status": "done",
+            "rankings": [{"voice_id": "v2", "llm_rank": 1, "reason_summary": "better"}],
+            "candidates": [
+                {"voice_id": "v1", "name": "A"},
+                {"voice_id": "v2", "name": "B", "llm_rank": 1, "llm_reason_summary": "better"},
+            ],
+            "model": "google/gemini-3.5-flash",
+            "provider": "openrouter",
+            "candidate_limit": 3,
+            "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
+        }
+
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking.rank_voice_candidates",
+        fake_rank_voice_candidates,
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/omni-translate/task-ai/voice-ai-ranking",
+        json={"candidate_limit": 3},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert seen["candidate_limit"] == 3
+    assert seen["source_audio_path"] == source
+    assert len(seen["candidates"]) == 2
+    assert saved["voice_ai_rankings"][0]["voice_id"] == "v2"
+    assert saved["voice_match_candidates"][1]["llm_rank"] == 1
+    assert saved["voice_ai_rank_provider"] == "openrouter"
+    assert payload["voice_ai_rank_status"] == "done"
+    assert payload["candidate_limit"] == 3
+
+
 def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):
     creators = [
         {"id": 237, "display_name": "顾倩"},
