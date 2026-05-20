@@ -13,7 +13,7 @@ def test_list_translators_filters_active_users_with_translate_permission(monkeyp
             {"id": 2, "username": "bob", "role": "admin", "permissions": {"can_translate": True}},
             {"id": 3, "username": "carol", "role": "user", "permissions": '{"can_translate": false}'},
             {"id": 4, "username": "dan", "role": "user", "permissions": ""},
-            {"id": 5, "username": "admin", "role": "superadmin", "permissions": '{"can_translate": true}'},
+            {"id": 5, "username": "admin", "role": "superadmin", "permissions": "{}"},
         ]
 
     monkeypatch.setattr(users, "query", fake_query)
@@ -21,11 +21,12 @@ def test_list_translators_filters_active_users_with_translate_permission(monkeyp
     assert users.list_translators() == [
         {"id": 1, "username": "alice"},
         {"id": 2, "username": "bob"},
+        {"id": 5, "username": "admin"},
     ]
     assert calls == [
         (
-            "SELECT id, username, role, permissions FROM users WHERE is_active=1 AND role <> %s ORDER BY username ASC",
-            ("superadmin",),
+            "SELECT id, username, role, permissions FROM users WHERE is_active=1 ORDER BY username ASC",
+            (),
         )
     ]
 
@@ -35,6 +36,13 @@ def test_list_translation_work_users_requires_translate_and_work_scope(monkeypat
 
     def fake_query(sql, args=()):
         return [
+            {
+                "id": 4,
+                "username": "admin",
+                "display_name": "蔡靖华",
+                "role": "superadmin",
+                "permissions": "{}",
+            },
             {
                 "id": 1,
                 "username": "zhou",
@@ -62,6 +70,7 @@ def test_list_translation_work_users_requires_translate_and_work_scope(monkeypat
     monkeypatch.setattr(users, "query", fake_query)
 
     assert users.list_translation_work_users() == [
+        {"id": 4, "username": "admin", "display_name": "蔡靖华"},
         {"id": 1, "username": "zhou", "display_name": "周干琴"},
     ]
 
@@ -84,6 +93,26 @@ def test_ensure_translation_work_user_accepts_valid_user(monkeypatch):
     )
 
     assert users.ensure_translation_work_user(5)["username"] == "worker"
+
+
+def test_ensure_translation_work_user_accepts_active_superadmin(monkeypatch):
+    from appcore import users
+
+    monkeypatch.setattr(users, "_user_display_name_expr", lambda: "username", raising=False)
+    monkeypatch.setattr(
+        users,
+        "query_one",
+        lambda sql, args: {
+            "id": 33,
+            "username": "admin",
+            "display_name": "蔡靖华",
+            "role": "superadmin",
+            "permissions": "{}",
+            "is_active": 1,
+        },
+    )
+
+    assert users.ensure_translation_work_user(33)["display_name"] == "蔡靖华"
 
 
 def test_ensure_translation_work_user_rejects_missing_scope(monkeypatch):

@@ -93,6 +93,12 @@ def _has_bool_permission(row: dict, code: str) -> bool:
     return bool(_coerce_permissions(row.get("permissions")).get(code))
 
 
+def _has_effective_bool_permission(row: dict, code: str) -> bool:
+    if row.get("role") == ROLE_SUPERADMIN:
+        return True
+    return _has_bool_permission(row, code)
+
+
 def _user_display_name_expr() -> str:
     row = query_one(
         "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
@@ -106,14 +112,11 @@ def _user_display_name_expr() -> str:
 
 def list_translators() -> list[dict]:
     rows = query(
-        "SELECT id, username, role, permissions FROM users WHERE is_active=1 AND role <> %s ORDER BY username ASC",
-        (ROLE_SUPERADMIN,),
+        "SELECT id, username, role, permissions FROM users WHERE is_active=1 ORDER BY username ASC",
     )
     translators = []
     for row in rows:
-        if row.get("role") == ROLE_SUPERADMIN:
-            continue
-        if _has_bool_permission(row, "can_translate"):
+        if _has_effective_bool_permission(row, "can_translate"):
             translators.append({"id": row["id"], "username": row["username"]})
     return translators
 
@@ -122,16 +125,13 @@ def list_translation_work_users() -> list[dict]:
     expr = _user_display_name_expr()
     rows = query(
         f"SELECT id, username, {expr} AS display_name, role, permissions "
-        "FROM users WHERE is_active=1 AND role <> %s ORDER BY display_name ASC, id ASC",
-        (ROLE_SUPERADMIN,),
+        "FROM users WHERE is_active=1 ORDER BY display_name ASC, id ASC",
     )
     users = []
     for row in rows:
-        if row.get("role") == ROLE_SUPERADMIN:
-            continue
         if (
-            _has_bool_permission(row, "can_translate")
-            and _has_bool_permission(row, "work_scope_translation")
+            _has_effective_bool_permission(row, "can_translate")
+            and _has_effective_bool_permission(row, "work_scope_translation")
         ):
             users.append({
                 "id": int(row["id"]),
@@ -152,9 +152,9 @@ def ensure_translation_work_user(user_id: int) -> dict:
         raise ValueError("翻译员不存在")
     if not row.get("is_active"):
         raise ValueError("翻译员已停用")
-    if not _has_bool_permission(row, "can_translate"):
+    if not _has_effective_bool_permission(row, "can_translate"):
         raise ValueError("该用户没有翻译能力")
-    if not _has_bool_permission(row, "work_scope_translation"):
+    if not _has_effective_bool_permission(row, "work_scope_translation"):
         raise ValueError("该用户不在翻译工作范围")
     return row
 
