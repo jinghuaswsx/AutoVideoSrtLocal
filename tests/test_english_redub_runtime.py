@@ -201,3 +201,68 @@ def test_english_redub_original_target_range_uses_preview_prior(monkeypatch):
         voice_id="voice-1",
         language="en",
     ) == [22, 26]
+
+
+def test_english_redub_analysis_uses_av_hard_video_and_channel_label(monkeypatch, tmp_path):
+    from appcore.runtime_english_redub import (
+        ENGLISH_REDUB_DEFAULT_PLUGIN_CONFIG,
+        EnglishRedubRunner,
+    )
+
+    hard_video = tmp_path / "redub_hard.av.mp4"
+    hard_video.write_bytes(b"video")
+    task = {
+        "type": "english_redub",
+        "plugin_config": ENGLISH_REDUB_DEFAULT_PLUGIN_CONFIG,
+        "variants": {
+            "av": {
+                "result": {
+                    "hard_video": str(hard_video),
+                },
+            },
+        },
+        "result": {},
+        "preview_files": {},
+    }
+    calls: list[tuple[str, str]] = []
+    step_updates: list[tuple[str, str, str, str]] = []
+    artifacts: dict = {}
+
+    monkeypatch.setattr("appcore.task_state.get", lambda task_id: task)
+    monkeypatch.setattr(
+        "appcore.task_state.set_artifact",
+        lambda task_id, step, artifact: artifacts.setdefault(step, artifact),
+    )
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "openrouter",
+            "model": "google/gemini-3.5-flash",
+            "source": "db",
+        },
+    )
+    monkeypatch.setattr(
+        "pipeline.video_score.score_video",
+        lambda path, **kwargs: calls.append(("score", str(path))) or {"total": 88},
+    )
+    monkeypatch.setattr(
+        "pipeline.video_csk.analyze_video",
+        lambda path, **kwargs: calls.append(("csk", str(path))) or {"video_analysis": {}},
+    )
+
+    runner = EnglishRedubRunner(bus=EventBus(), user_id=1)
+    monkeypatch.setattr(
+        runner,
+        "_set_step",
+        lambda task_id, step, status, message="", **kwargs: step_updates.append(
+            (step, status, message, kwargs.get("model_tag", ""))
+        ),
+    )
+
+    runner._step_analysis("task-av")
+
+    assert calls == [("score", str(hard_video)), ("csk", str(hard_video))]
+    assert step_updates[0][3] == "OpenRouter · Gemini 3.5 Flash"
+    assert artifacts["analysis"]["model_label"] == "OpenRouter · Gemini 3.5 Flash"
+    assert artifacts["analysis"]["score_model_label"] == "OpenRouter · Gemini 3.5 Flash"
+    assert artifacts["analysis"]["csk_model_label"] == "OpenRouter · Gemini 3.5 Flash"

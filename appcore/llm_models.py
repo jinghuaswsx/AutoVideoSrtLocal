@@ -22,8 +22,11 @@ VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
 
 def model_display_name(model_id: str) -> str:
     """根据 model_id 返回可展示的名称；找不到时回退原始 id。"""
+    normalized = (model_id or "").strip()
+    if normalized.startswith("google/"):
+        normalized = normalized.split("/", 1)[1]
     for mid, label in VIDEO_CAPABLE_MODELS:
-        if mid == model_id:
+        if mid == normalized:
             return label
     return model_id or ""
 
