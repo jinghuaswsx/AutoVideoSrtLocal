@@ -62,7 +62,7 @@ def test_vertex_generate_wraps_schema_into_response_format():
     with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
                return_value=({"v": 1}, None, '{"v":1}')) as m:
         adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="score", system="be strict",
             response_schema={"type": "object"},
         )
@@ -77,7 +77,7 @@ def test_vertex_generate_composes_messages_with_system():
     with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
                return_value=({"v": 1}, None, '{"v":1}')) as m:
         adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="user-turn", system="sys-turn",
         )
     messages = m.call_args[0][0]
@@ -181,7 +181,7 @@ def test_vertex_adc_media_generate_forwards_google_search(tmp_path):
          patch("appcore.llm_providers.gemini_vertex_adapter._build_config",
                return_value="config-with-search") as m_build_config:
         adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="score",
             media=[image_path],
             google_search=True,
@@ -210,7 +210,7 @@ def test_vertex_adc_video_generate_uses_inline_bytes(tmp_path):
          patch("appcore.llm_providers.gemini_vertex_adapter.genai_types.Part.from_text",
                return_value="text-part"):
         adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="score",
             media=[video_path],
         )

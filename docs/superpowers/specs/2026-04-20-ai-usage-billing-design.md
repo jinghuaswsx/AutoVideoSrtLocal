@@ -102,16 +102,21 @@ CREATE TABLE IF NOT EXISTS ai_model_prices (
 ```sql
 INSERT INTO ai_model_prices (provider, model, units_type, unit_input_cny, unit_output_cny, unit_flat_cny, note)
 VALUES
-  ('gemini_aistudio','gemini-3.1-pro-preview','tokens',0.0000578,0.0002312,NULL,'待复核：8.5/34 USD/M ×6.8'),
+  ('gemini_aistudio','gemini-3.5-flash','tokens',0.0000102,0.0000612,NULL,'待复核：1.5/9 USD/M ×6.8'),
   ('gemini_aistudio','gemini-2.5-flash','tokens',0.00000204,0.00000816,NULL,'待复核：0.3/1.2 USD/M ×6.8'),
   ('gemini_aistudio','gemini-3-pro-image-preview','images',NULL,NULL,0.2652,'待复核：0.039 USD/image ×6.8'),
   ('gemini_vertex','gemini-3.1-flash-lite-preview','tokens',0.00000816,0.00003264,NULL,'待复核：1.2/4.8 USD/M ×6.8'),
-  ('gemini_vertex','gemini-3.1-pro-preview','tokens',0.0000578,0.0002312,NULL,'待复核：8.5/34 USD/M ×6.8'),
+  ('gemini_vertex','gemini-3.5-flash','tokens',0.0000102,0.0000612,NULL,'待复核：1.5/9 USD/M ×6.8'),
   ('doubao','doubao-1-5-pro-32k','tokens',0.000006,0.000012,NULL,'待复核：0.006/0.012 RMB/千tok'),
   ('elevenlabs','*','chars',NULL,NULL,0.000165,'待复核：≈0.165 RMB/千字符'),
   ('doubao_asr','*','seconds',NULL,NULL,0.014,'待复核：≈0.014 RMB/秒'),
   ('openrouter','*','tokens',NULL,NULL,NULL,'响应 cost 缺失时兜底，留空不计费');
 ```
+
+后续 Gemini 3.1 Pro → 3.5 Flash 迁移见
+`docs/superpowers/specs/2026-05-20-gemini-31-pro-to-35-flash-design.md`：
+该迁移为 `gemini_aistudio`、`gemini_vertex`、`gemini_vertex_adc`、`openrouter`
+补齐 3.5 Flash 精确价格，并清理旧 3.1 Pro 价格簿行。
 
 ## 4. 写入链路
 

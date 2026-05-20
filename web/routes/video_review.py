@@ -147,7 +147,7 @@ def upload():
         "task_dir": task_dir,
         "original_filename": video_filename,
         "display_name": display_name,
-        "model": "gemini-3.1-pro-preview",
+        "model": "gemini-3.5-flash",
         "custom_prompt": "",
         "steps": {"review": "pending"},
         "result": None,
@@ -182,7 +182,7 @@ def start_review(task_id: str):
     state = json.loads(row.get("state_json") or "{}")
 
     body = request.get_json(silent=True) or {}
-    model = body.get("model") or state.get("model") or "gemini-3.1-pro-preview"
+    model = body.get("model") or state.get("model") or "gemini-3.5-flash"
     custom_prompt = (body.get("custom_prompt") or "").strip()
     prompt_lang = body.get("prompt_lang") or "en"
 

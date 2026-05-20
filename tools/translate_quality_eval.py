@@ -1,4 +1,4 @@
-"""一次性评估脚本：对照 Claude Sonnet 4.6 / Gemini 3.1 Pro / Gemini 3 Flash 在
+"""一次性评估脚本：对照 Claude Sonnet 4.6 / Gemini 3.5 Flash / Gemini 3 Flash 在
 video_translate.localize 步骤的翻译质量。
 
 直接调 pipeline.translate.generate_localized_translation，不写 ai_billing
@@ -23,7 +23,7 @@ TARGET_LANGS = ["de", "es", "fr", "it", "ja", "nl", "pt", "sv"]
 # binding 路径，evaluator 跳过 binding 默认值直接指定 provider+model 跑 A/B。
 MODELS = [
     ("claude_sonnet", "Claude Sonnet 4.6", "openrouter", "anthropic/claude-sonnet-4.6"),
-    ("gemini_31_pro", "Gemini 3.1 Pro", "openrouter", "google/gemini-3.1-pro-preview"),
+    ("gemini_35_flash", "Gemini 3.5 Flash", "openrouter", "google/gemini-3.5-flash"),
     ("gemini_3_flash", "Gemini 3 Flash", "openrouter", "google/gemini-3-flash-preview"),
 ]
 

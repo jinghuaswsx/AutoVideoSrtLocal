@@ -1,4 +1,4 @@
--- Pin the unified Meta hot-post video analysis queue to Vertex ADC Gemini 3.1 Pro Preview.
+-- Pin the unified Meta hot-post video analysis queue to Vertex ADC Gemini 3.5 Flash.
 -- Docs-anchor: docs/superpowers/specs/2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md
 
 INSERT INTO llm_use_case_bindings (
@@ -12,7 +12,7 @@ INSERT INTO llm_use_case_bindings (
 (
   'meta_hot_posts.europe_fit',
   'gemini_vertex_adc',
-  'gemini-3.1-pro-preview',
+  'gemini-3.5-flash',
   NULL,
   1,
   NULL
@@ -20,7 +20,7 @@ INSERT INTO llm_use_case_bindings (
 (
   'meta_hot_posts.video_copyability',
   'gemini_vertex_adc',
-  'gemini-3.1-pro-preview',
+  'gemini-3.5-flash',
   NULL,
   1,
   NULL

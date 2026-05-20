@@ -271,7 +271,7 @@ def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
         client = _mock_openai(m_openai, content='{"ok":true}')
         OpenRouterAdapter().generate(
-            model="google/gemini-3.1-pro-preview",
+            model="google/gemini-3.5-flash",
             prompt="score this",
             response_schema={"type": "object"},
             google_search=True,

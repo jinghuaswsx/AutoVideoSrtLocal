@@ -14,7 +14,7 @@ from __future__ import annotations
 
 # 支持视频分析的 Gemini 3 系列模型（id, display_name）
 VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro"),
+    ("gemini-3.5-flash",             "Gemini 3.5 Flash"),
     ("gemini-3-flash-preview",        "Gemini 3 Flash"),
     ("gemini-3.1-flash-lite",         "Gemini 3.1 Flash-Lite"),
 ]
@@ -33,12 +33,12 @@ def model_display_name(model_id: str) -> str:
 LEGACY_PROVIDER_MODEL_MAP: dict[str, str] = {
     "vertex_gemini_31_flash_lite":     "gemini-3.1-flash-lite",
     "vertex_gemini_3_flash":           "gemini-3-flash-preview",
-    "vertex_gemini_31_pro":            "gemini-3.1-pro-preview",
+    "vertex_gemini_35_flash":        "gemini-3.5-flash",
     "vertex_adc_gemini_31_flash_lite": "gemini-3.1-flash-lite",
     "vertex_adc_gemini_3_flash":       "gemini-3-flash-preview",
-    "vertex_adc_gemini_31_pro":        "gemini-3.1-pro-preview",
+    "vertex_adc_gemini_35_flash":    "gemini-3.5-flash",
     "gemini_31_flash":                 "google/gemini-3.1-flash-lite",
-    "gemini_31_pro":                   "google/gemini-3.1-pro-preview",
+    "gemini_35_flash":               "google/gemini-3.5-flash",
     "gemini_3_flash":                  "google/gemini-3-flash-preview",
     "gpt_5_mini":                      "openai/gpt-5-mini",
     "gpt_5_5":                         "openai/gpt-5.5",

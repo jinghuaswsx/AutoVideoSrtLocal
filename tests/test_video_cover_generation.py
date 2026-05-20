@@ -206,7 +206,7 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert analysis_calls[0]["kwargs"]["provider_override"] == "openrouter"
     assert analysis_calls[0]["kwargs"]["model_override"] == "google/gemini-3-flash-preview"
     assert analysis_calls[1]["kwargs"]["provider_override"] == "gemini_aistudio"
-    assert analysis_calls[1]["kwargs"]["model_override"] == "gemini-3.1-pro-preview"
+    assert analysis_calls[1]["kwargs"]["model_override"] == "gemini-3.5-flash"
     assert ad_copy_calls[0]["use_case_code"] == "video_cover.ad_copy"
     assert ad_copy_calls[0]["kwargs"]["response_format"] == {"type": "json_object"}
     assert ad_copy_calls[0]["kwargs"]["provider_override"] == "openrouter"
@@ -555,8 +555,8 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
         video_cover_model_options,
     )
 
-    assert resolve_text_model_selection("video_analysis", "gemini_aistudio", "").model == "gemini-3.1-pro-preview"
-    assert resolve_text_model_selection("video_analysis", "openrouter", "").model == "google/gemini-3.1-pro-preview"
+    assert resolve_text_model_selection("video_analysis", "gemini_aistudio", "").model == "gemini-3.5-flash"
+    assert resolve_text_model_selection("video_analysis", "openrouter", "").model == "google/gemini-3.5-flash"
     assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").provider == "gemini_aistudio"
     assert resolve_text_model_selection("video_analysis", "gemini_vertex_adc", "gemini_3_flash").model == "gemini-3-flash-preview"
     assert resolve_text_model_selection("product_analysis", "gemini_vertex_adc", "").provider == "gemini_aistudio"
@@ -1068,7 +1068,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
         video_cover.video_cover_settings,
         "get_model_defaults",
         lambda: {
-            "video_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3.5-flash"},
             "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid", "execution_mode": "parallel"},
@@ -1187,7 +1187,7 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
 
     saved = {}
     defaults = {
-        "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+        "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.5-flash"},
         "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
         "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
         "cover_generation": {"provider": "local", "model_id": "gpt-image-2", "execution_mode": "serial"},
@@ -1198,7 +1198,7 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
         video_cover.video_cover_settings,
         "save_model_defaults",
         lambda payload: saved.setdefault("payload", payload) or {
-            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "cover_generation": {
@@ -1215,7 +1215,7 @@ def test_video_cover_default_config_api_saves_global_defaults(monkeypatch):
         "/video-cover/api/default-config",
         json={
             "steps": {
-                "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+                "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
                 "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
                 "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
                 "cover_generation": {
@@ -1243,7 +1243,7 @@ def test_video_cover_project_create_persists_initial_workflow(authed_client_no_d
     started = []
     thumbnail_calls = []
     model_defaults = {
-        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
         "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
         "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
         "cover_generation": {
@@ -1443,7 +1443,7 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
         },
         "step_messages": {},
         "model_defaults": {
-            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "cover_generation": {
@@ -1472,7 +1472,7 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
     video_cover._run_video_cover_chain("task-1")
 
     assert calls == [
-        {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.1-pro-preview", "execution_mode": None, "user_id": 8},
+        {"step": "video_analysis", "provider": "openrouter", "model": "google/gemini-3.5-flash", "execution_mode": None, "user_id": 8},
         {"step": "product_analysis", "provider": "gemini_aistudio", "model": "gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
         {"step": "ad_copy", "provider": "openrouter", "model": "google/gemini-3-flash-preview", "execution_mode": None, "user_id": 8},
         {"step": "cover_generation", "provider": "openrouter", "model": "openai/gpt-5.4-image-2:mid", "execution_mode": "serial", "user_id": 8},
@@ -1719,7 +1719,7 @@ def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defa
             "cover_generation": "done",
         },
         "model_defaults": {
-            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3.5-flash"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
             "cover_generation": {
@@ -1729,7 +1729,7 @@ def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defa
             },
         },
         "models": {
-            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
             "cover_generation": {
                 "provider": "openrouter",
                 "model_id": "openai/gpt-5.4-image-2:high",
@@ -1750,7 +1750,7 @@ def test_video_cover_detail_renders_step_model_badges_from_actual_models_or_defa
     html = resp.get_data(as_text=True)
     assert 'data-step-model-badge="video_analysis"' in html
     assert 'data-step-model-badge="cover_generation"' in html
-    assert "openrouter · google/gemini-3.1-pro-preview" in html
+    assert "openrouter · google/gemini-3.5-flash" in html
     assert "gemini_aistudio · gemini-3-flash-preview" in html
     assert "openrouter · anthropic/claude-sonnet-4.6" in html
     assert "openrouter · openai/gpt-5.4-image-2:high · 串行" in html
@@ -2814,7 +2814,7 @@ def test_video_cover_duplicate_copies_inputs_and_restarts(
         },
         "image_count": 3,
         "model_defaults": {
-            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.1-pro-preview"},
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
             "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
             "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
             "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid"},

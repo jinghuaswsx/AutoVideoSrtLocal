@@ -177,11 +177,11 @@ INSERT INTO ai_model_prices (
   note
 )
 VALUES
-  ('gemini_aistudio', 'gemini-3.1-pro-preview', 'tokens', 0.00005780, 0.00023120, NULL, '待复核：8.5/34 USD/M ×6.8'),
+  ('gemini_aistudio', 'gemini-3.5-flash', 'tokens', 0.00001020, 0.00006120, NULL, '待复核：1.5/9 USD/M ×6.8'),
   ('gemini_aistudio', 'gemini-2.5-flash', 'tokens', 0.00000204, 0.00000816, NULL, '待复核：0.3/1.2 USD/M ×6.8'),
   ('gemini_aistudio', 'gemini-3-pro-image-preview', 'images', NULL, NULL, 0.26520000, '待复核：0.039 USD/image ×6.8'),
   ('gemini_vertex', 'gemini-3.1-flash-lite-preview', 'tokens', 0.00000816, 0.00003264, NULL, '待复核：1.2/4.8 USD/M ×6.8'),
-  ('gemini_vertex', 'gemini-3.1-pro-preview', 'tokens', 0.00005780, 0.00023120, NULL, '待复核：8.5/34 USD/M ×6.8'),
+  ('gemini_vertex', 'gemini-3.5-flash', 'tokens', 0.00001020, 0.00006120, NULL, '待复核：1.5/9 USD/M ×6.8'),
   ('doubao', 'doubao-1-5-pro-32k', 'tokens', 0.00000600, 0.00001200, NULL, '待复核：0.006/0.012 RMB/千tok'),
   ('elevenlabs', '*', 'chars', NULL, NULL, 0.00016500, '待复核：≈0.165 RMB/千字符'),
   ('doubao_asr', '*', 'seconds', NULL, NULL, 0.01400000, '待复核：≈0.014 RMB/秒'),

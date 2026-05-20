@@ -34,7 +34,7 @@ def test_aistudio_generate_returns_text_for_plain_prompt():
          patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
                return_value="cfg-stub") as m_cfg:
         result = adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="hello", system="be helpful", temperature=0.1,
         )
 
@@ -43,7 +43,7 @@ def test_aistudio_generate_returns_text_for_plain_prompt():
     assert result["usage"] == {"input_tokens": 10, "output_tokens": 5}
     assert m_cfg.call_args.kwargs["system"] == "be helpful"
     assert m_cfg.call_args.kwargs["temperature"] == 0.1
-    assert client.models.generate_content.call_args.kwargs["model"] == "gemini-3.1-pro-preview"
+    assert client.models.generate_content.call_args.kwargs["model"] == "gemini-3.5-flash"
     assert client.models.generate_content.call_args.kwargs["config"] == "cfg-stub"
 
 
@@ -60,7 +60,7 @@ def test_aistudio_generate_returns_json_when_schema_given():
          patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
                return_value="cfg"):
         result = adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="score this",
             response_schema={"type": "object"},
         )
@@ -79,7 +79,7 @@ def test_aistudio_chat_folds_messages_into_system_and_prompt():
 
     with patch.object(GeminiAIStudioAdapter, "generate", fake_generate):
         adapter.chat(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             messages=[
                 {"role": "system", "content": "S1"},
                 {"role": "user", "content": "U1"},
@@ -123,7 +123,7 @@ def test_aistudio_generate_forwards_google_search_flag():
          patch("appcore.llm_providers.gemini_aistudio_adapter._build_config",
                return_value="cfg") as m_cfg:
         adapter.generate(
-            model="gemini-3.1-pro-preview",
+            model="gemini-3.5-flash",
             prompt="hello",
             google_search=True,
         )

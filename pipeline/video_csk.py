@@ -1,4 +1,4 @@
-"""CSK 视频分析模块：用 Gemini 3.1 Pro 对视频做深度特征锁定 + 3 个关键帧提取。"""
+"""CSK 视频分析模块：用 Gemini 3.5 Flash 对视频做深度特征锁定 + 3 个关键帧提取。"""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,7 @@ from pipeline.llm_util import parse_json_response
 
 logger = logging.getLogger(__name__)
 
-CSK_MODEL = "gemini-3.1-pro-preview"
+CSK_MODEL = "gemini-3.5-flash"
 
 CSK_PROMPT = """**Role & Objective**:
 You are a Senior Video Analysis Expert.

@@ -76,8 +76,8 @@ PROVIDER_GROUP_ORDER: list[tuple[str, str]] = [
 
 
 TRANSLATE_PROVIDERS = [
-    "vertex_gemini_31_flash_lite", "vertex_gemini_3_flash", "vertex_gemini_31_pro",
-    "gemini_31_flash", "gemini_31_pro", "gemini_3_flash", "gpt_5_mini", "gpt_5_5",
+    "vertex_gemini_31_flash_lite", "vertex_gemini_3_flash", "vertex_gemini_35_flash",
+    "gemini_31_flash", "gemini_35_flash", "gemini_3_flash", "gpt_5_mini", "gpt_5_5",
     "claude_sonnet",
     "openrouter",
     "doubao",

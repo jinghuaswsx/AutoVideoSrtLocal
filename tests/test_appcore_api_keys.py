@@ -182,13 +182,13 @@ def test_set_key_allows_meta_hot_posts_ai_visibility_for_any_user(fake_stores):
 
 
 def test_set_key_allows_translate_pref_for_admin(fake_stores):
-    set_key(1, "translate_pref", "vertex_gemini_31_pro")
-    assert fake_stores.api_rows[(1, "translate_pref")]["key_value"] == "vertex_gemini_31_pro"
+    set_key(1, "translate_pref", "vertex_gemini_35_flash")
+    assert fake_stores.api_rows[(1, "translate_pref")]["key_value"] == "vertex_gemini_35_flash"
 
 
 def test_set_key_blocks_non_admin_for_translate_pref(fake_stores):
     with pytest.raises(PermissionError):
-        set_key(2, "translate_pref", "vertex_gemini_31_pro")
+        set_key(2, "translate_pref", "vertex_gemini_35_flash")
 
 
 def test_resolve_extra_jianying_remains_user_scoped(fake_stores):
@@ -216,7 +216,7 @@ def test_get_all_exposes_provider_configs_under_legacy_service_name(fake_stores)
 
 def test_get_all_prefers_explicit_api_keys_row_over_provider_config(fake_stores):
     """若 admin 在老 api_keys 表里手动写过 same service，保留老值（ensure 不破坏手动迁移路径）。"""
-    set_key(1, "translate_pref", "vertex_gemini_31_pro")  # non-provider
+    set_key(1, "translate_pref", "vertex_gemini_35_flash")  # non-provider
     fake_stores.api_rows[(1, "openrouter")] = {"key_value": "manual-api-keys", "extra_config": None}
     fake_stores.seed_provider("openrouter_text", api_key="provider-dao")
     result = get_all(2)

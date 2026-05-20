@@ -13,7 +13,7 @@ def test_review_video_optimizes_video_before_llm(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "get_review_prompts", lambda: {"en": "system", "zh": "system-zh"})
     monkeypatch.setattr(
         "appcore.llm_bindings.resolve",
-        lambda use_case: {"provider": "gemini_aistudio", "model": "gemini-3.1-pro-preview"},
+        lambda use_case: {"provider": "gemini_aistudio", "model": "gemini-3.5-flash"},
     )
 
     def fake_prepare(video_path, policy, output_dir=None):

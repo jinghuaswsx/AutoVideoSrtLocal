@@ -215,14 +215,14 @@ _VALID_TRANSLATE_PREFS = (
     # Vertex AI（Google Cloud Express Mode，凭据来自 llm_provider_configs.gemini_cloud_text）
     "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite（默认）
     "vertex_gemini_3_flash",         # gemini-3-flash-preview
-    "vertex_gemini_31_pro",          # gemini-3.1-pro-preview
+    "vertex_gemini_35_flash",        # gemini-3.5-flash
     # Vertex AI ADC（凭据来自服务器 Application Default Credentials）
     "vertex_adc_gemini_31_flash_lite",
     "vertex_adc_gemini_3_flash",
-    "vertex_adc_gemini_31_pro",
+    "vertex_adc_gemini_35_flash",
     # OpenRouter
     "gemini_31_flash",               # google/gemini-3.1-flash-lite via openrouter
-    "gemini_31_pro",                 # google/gemini-3.1-pro-preview via openrouter
+    "gemini_35_flash",                # google/gemini-3.5-flash via openrouter
     "gemini_3_flash",                # google/gemini-3-flash-preview via openrouter
     "gpt_5_mini",                    # openai/gpt-5-mini via openrouter
     "gpt_5_5",                       # openai/gpt-5.5 via openrouter

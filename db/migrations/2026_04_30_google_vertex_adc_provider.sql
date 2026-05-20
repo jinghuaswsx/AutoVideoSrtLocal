@@ -30,7 +30,7 @@ INSERT INTO llm_use_case_bindings (
 ) VALUES (
   'material_evaluation.evaluate',
   'gemini_vertex_adc',
-  'gemini-3.1-pro-preview',
+  'gemini-3.5-flash',
   NULL,
   1,
   NULL

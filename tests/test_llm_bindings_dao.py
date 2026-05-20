@@ -11,7 +11,7 @@ def test_resolve_uses_default_when_db_empty_and_seeds():
          patch("appcore.llm_bindings.execute") as m_exec:
         result = llm_bindings.resolve("video_score.run")
     assert result["provider"] == "gemini_aistudio"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3.5-flash"
     assert result["source"] == "default"
     # 被 seed 回 DB
     assert m_exec.called
@@ -40,7 +40,7 @@ def test_resolve_returns_db_value_when_present():
 def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
     row = {
         "provider_code": "gemini_vertex_adc",
-        "model_id": "google/gemini-3.1-pro-preview",
+        "model_id": "google/gemini-3.5-flash",
         "extra_config": None,
         "enabled": 1,
     }
@@ -48,7 +48,7 @@ def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
          patch("appcore.llm_bindings.execute") as m_exec:
         result = llm_bindings.resolve("material_evaluation.evaluate")
     assert result["provider"] == "gemini_aistudio"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3.5-flash"
     assert result["source"] == "db"
     assert not m_exec.called
 
@@ -56,14 +56,14 @@ def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
 def test_resolve_keeps_meta_video_analysis_adc_binding():
     row = {
         "provider_code": "gemini_vertex_adc",
-        "model_id": "gemini-3.1-pro-preview",
+        "model_id": "gemini-3.5-flash",
         "extra_config": None,
         "enabled": 1,
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("meta_hot_posts.video_copyability")
     assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3.5-flash"
 
 
 def test_resolve_keeps_meta_message_translation_adc_binding():
@@ -117,7 +117,7 @@ def test_resolve_disabled_falls_back_to_default_without_reseeding():
          patch("appcore.llm_bindings.execute") as m_exec:
         result = llm_bindings.resolve("video_score.run")
     assert result["provider"] == "gemini_aistudio"
-    assert result["model"] == "gemini-3.1-pro-preview"
+    assert result["model"] == "gemini-3.5-flash"
     assert result["source"] == "default"
     assert not m_exec.called
 
@@ -144,7 +144,7 @@ def test_upsert_calls_insert_on_duplicate_update():
     with patch("appcore.llm_bindings.execute") as m_exec:
         llm_bindings.upsert(
             "video_score.run",
-            provider="gemini_aistudio", model="gemini-3.1-pro-preview",
+            provider="gemini_aistudio", model="gemini-3.5-flash",
             updated_by=1,
         )
     assert m_exec.called
@@ -162,7 +162,7 @@ def test_upsert_serializes_extra_dict():
     with patch("appcore.llm_bindings.execute") as m_exec:
         llm_bindings.upsert(
             "video_score.run",
-            provider="gemini_vertex", model="gemini-3.1-pro-preview",
+            provider="gemini_vertex", model="gemini-3.5-flash",
             extra={"k": "v"}, updated_by=7,
         )
     args = m_exec.call_args[0][1]
@@ -177,12 +177,12 @@ def test_upsert_normalizes_non_meta_video_adc_binding_to_aistudio():
         llm_bindings.upsert(
             "video_cover.video_analysis",
             provider="gemini_vertex_adc",
-            model="google/gemini-3.1-pro-preview",
+            model="google/gemini-3.5-flash",
             updated_by=7,
         )
     args = m_exec.call_args[0][1]
     assert args[1] == "gemini_aistudio"
-    assert args[2] == "gemini-3.1-pro-preview"
+    assert args[2] == "gemini-3.5-flash"
 
 
 def test_upsert_keeps_meta_message_translation_adc_binding():

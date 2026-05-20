@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS video_ai_reviews (
   run_id      INT NOT NULL,
   status      VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending|running|done|failed|cancelled
   channel     VARCHAR(64),                              -- e.g. gemini_vertex_adc
-  model       VARCHAR(128),                             -- e.g. gemini-3.1-pro-preview
+  model       VARCHAR(128),                             -- e.g. gemini-3.5-flash
   triggered_by         VARCHAR(16) NOT NULL DEFAULT 'manual',  -- manual|auto
   triggered_by_user_id INT,
 

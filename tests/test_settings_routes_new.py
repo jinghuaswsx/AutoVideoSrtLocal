@@ -305,7 +305,7 @@ def test_settings_get_renders_bindings_rows(admin_no_db_client):
                return_value=[{
                    "code": "video_score.run", "module": "video_analysis",
                    "label": "视频评分", "description": "...",
-                   "provider": "gemini_aistudio", "model": "gemini-3.1-pro-preview",
+                   "provider": "gemini_aistudio", "model": "gemini-3.5-flash",
                    "extra": {}, "enabled": True, "is_custom": False,
                    "updated_at": None, "updated_by": None,
                }]), \
@@ -740,7 +740,7 @@ def test_settings_post_providers_parses_json_extra_config(admin_no_db_client):
             "translate_pref": "vertex_gemini_31_flash_lite",
             "provider_gemini_cloud_text_api_key": "cloud-key",
             "provider_gemini_cloud_text_base_url": "",
-            "provider_gemini_cloud_text_model_id": "gemini-3.1-pro-preview",
+            "provider_gemini_cloud_text_model_id": "gemini-3.5-flash",
             "provider_gemini_cloud_text_extra_config": '{"project": "demo-gcp", "location": "us-central1"}',
             "image_translate_channel": "cloud",
             "image_translate_default_model": "gemini-3-pro-image-preview",
@@ -860,13 +860,13 @@ def test_settings_post_bindings_tab_calls_upsert(admin_no_db_client):
         resp = admin_no_db_client.post("/settings", data={
             "tab": "bindings",
             "binding_video_score.run_provider": "gemini_aistudio",
-            "binding_video_score.run_model": "gemini-3.1-pro-preview",
+            "binding_video_score.run_model": "gemini-3.5-flash",
         })
     assert resp.status_code in (302, 303)
     m_upsert.assert_any_call(
         "video_score.run",
         provider="gemini_aistudio",
-        model="gemini-3.1-pro-preview",
+        model="gemini-3.5-flash",
         updated_by=1,
     )
 

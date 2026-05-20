@@ -209,7 +209,7 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
         "appcore.llm_bindings.resolve",
         lambda use_case: {
             "provider": "gemini_aistudio",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
         },
     )
 
@@ -226,7 +226,7 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert task["step_messages"]["translate"] == "FR 时间轴分段翻译完成（2段，附2个视觉分镜上下文）"
     assert (
         task["step_model_tags"]["translate"]
-        == "gemini_aistudio · gemini-3.1-pro-preview"
+        == "gemini_aistudio · gemini-3.5-flash"
     )
 
 

@@ -210,24 +210,24 @@ def test_gemini_vertex_falls_back_to_aistudio_exact(pricing_module, monkeypatch)
     """Vertex 精确查询未命中时回落到 AI Studio 同名精确价，避免两边各维护一份。"""
     rows = [{
         "provider": "gemini_aistudio",
-        "model": "gemini-3.1-pro-preview",
+        "model": "gemini-3.5-flash",
         "units_type": "tokens",
-        "unit_input_cny": Decimal("0.0000578"),
-        "unit_output_cny": Decimal("0.0002312"),
+        "unit_input_cny": Decimal("0.00001020"),
+        "unit_output_cny": Decimal("0.00006120"),
         "unit_flat_cny": None,
     }]
     monkeypatch.setattr(pricing_module, "query", lambda sql: rows)
 
     cost, source = pricing_module.compute_cost_cny(
         provider="gemini_vertex",
-        model="gemini-3.1-pro-preview",
+        model="gemini-3.5-flash",
         units_type="tokens",
         input_tokens=1000,
         output_tokens=1000,
         request_units=None,
     )
 
-    assert cost == Decimal("0.289000")
+    assert cost == Decimal("0.071400")
     assert source == "pricebook"
 
 
@@ -317,7 +317,7 @@ def test_gemini_pair_exact_beats_self_wildcard(pricing_module, monkeypatch):
         },
         {
             "provider": "gemini_aistudio",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
             "units_type": "tokens",
             "unit_input_cny": Decimal("0.001"),
             "unit_output_cny": Decimal("0.002"),
@@ -328,7 +328,7 @@ def test_gemini_pair_exact_beats_self_wildcard(pricing_module, monkeypatch):
 
     cost, source = pricing_module.compute_cost_cny(
         provider="gemini_vertex",
-        model="gemini-3.1-pro-preview",
+        model="gemini-3.5-flash",
         units_type="tokens",
         input_tokens=1,
         output_tokens=1,
@@ -372,7 +372,7 @@ def test_invalidate_cache_forces_reload(pricing_module, monkeypatch):
         calls.append(sql)
         return [{
             "provider": "gemini_vertex",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
             "units_type": "tokens",
             "unit_input_cny": Decimal("0.001"),
             "unit_output_cny": Decimal("0.002"),
@@ -383,7 +383,7 @@ def test_invalidate_cache_forces_reload(pricing_module, monkeypatch):
 
     pricing_module.compute_cost_cny(
         provider="gemini_vertex",
-        model="gemini-3.1-pro-preview",
+        model="gemini-3.5-flash",
         units_type="tokens",
         input_tokens=1,
         output_tokens=1,
@@ -392,7 +392,7 @@ def test_invalidate_cache_forces_reload(pricing_module, monkeypatch):
     pricing_module.invalidate_cache()
     pricing_module.compute_cost_cny(
         provider="gemini_vertex",
-        model="gemini-3.1-pro-preview",
+        model="gemini-3.5-flash",
         units_type="tokens",
         input_tokens=1,
         output_tokens=1,

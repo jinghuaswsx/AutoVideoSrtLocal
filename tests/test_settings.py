@@ -125,7 +125,7 @@ def test_list_ai_model_prices_serializes_rows(monkeypatch):
         {
             "id": 7,
             "provider": "gemini_vertex",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
             "units_type": "tokens",
             "unit_input_cny": Decimal("0.003"),
             "unit_output_cny": Decimal("0.012"),
@@ -151,7 +151,7 @@ def test_list_ai_model_prices_serializes_rows(monkeypatch):
         {
             "id": 7,
             "provider": "gemini_vertex",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
             "units_type": "tokens",
             "unit_input_cny": 0.003,
             "unit_output_cny": 0.012,

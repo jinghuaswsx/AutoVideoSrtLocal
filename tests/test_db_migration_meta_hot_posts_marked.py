@@ -223,7 +223,7 @@ def test_meta_hot_posts_vertex_adc_pro_binding_migration_pins_queue_use_cases():
     assert "'meta_hot_posts.europe_fit'" in body
     assert "'meta_hot_posts.video_copyability'" in body
     assert "'gemini_vertex_adc'" in body
-    assert "'gemini-3.1-pro-preview'" in body
+    assert "'gemini-3.5-flash'" in body
     assert "ON DUPLICATE KEY UPDATE" in body
 
 
@@ -237,3 +237,28 @@ def test_meta_hot_posts_vertex_adc_pro_to_flash_migration_updates_queue_use_case
     assert "'gemini_vertex_adc'" in body
     assert "'gemini-3-flash-preview'" in body
     assert "ON DUPLICATE KEY UPDATE" in body
+
+
+def test_gemini_31_pro_to_35_flash_migration_updates_bindings_prefs_and_pricing():
+    body = Path("db/migrations/2026_05_20_gemini_31_pro_to_35_flash.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UPDATE llm_use_case_bindings" in body
+    assert "'gemini-3.1-pro-preview'" in body
+    assert "'gemini-3.5-flash'" in body
+    assert "'google/gemini-3.1-pro-preview'" in body
+    assert "'google/gemini-3.5-flash'" in body
+    assert "UPDATE api_keys" in body
+    assert "'gemini_31_pro'" in body
+    assert "'gemini_35_flash'" in body
+    assert "0.00001020" in body
+    assert "0.00006120" in body
+    assert "('gemini_aistudio', 'gemini-3.5-flash'" in body
+    assert "('gemini_vertex', 'gemini-3.5-flash'" in body
+    assert "('gemini_vertex_adc', 'gemini-3.5-flash'" in body
+    assert "('openrouter', 'google/gemini-3.5-flash'" in body
+    assert "DELETE FROM ai_model_prices" in body
+    assert "provider = 'gemini_aistudio' AND model = 'gemini-3.1-pro-preview'" in body
+    assert "provider = 'gemini_vertex' AND model = 'gemini-3.1-pro-preview'" in body
+    assert "provider = 'openrouter' AND model = 'google/gemini-3.1-pro-preview'" in body

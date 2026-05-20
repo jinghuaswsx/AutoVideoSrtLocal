@@ -464,7 +464,7 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["response_schema"]["type"] == "object"
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
     assert payload["llm"]["provider"] == "gemini_aistudio"
-    assert payload["llm"]["model"] == "gemini-3.1-pro-preview"
+    assert payload["llm"]["model"] == "gemini-3.5-flash"
     assert payload["llm"]["google_search"] is True
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
 
@@ -663,7 +663,7 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
     assert payload["request"]["provider"] == "gemini_aistudio"
-    assert payload["request"]["model"] == "gemini-3.1-pro-preview"
+    assert payload["request"]["model"] == "gemini-3.5-flash"
     assert payload["request"]["google_search"] is True
     assert payload["request"]["tools"] == [{"google_search": {}}]
 

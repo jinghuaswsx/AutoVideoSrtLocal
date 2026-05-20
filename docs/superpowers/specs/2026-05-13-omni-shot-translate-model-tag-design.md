@@ -30,7 +30,7 @@ Omni 详情页的"翻译本土化"步骤在 `shot_char_limit` 路径会显示模
 
 ## 验收
 
-- 当 `llm_bindings.resolve("translate_lab.shot_translate")` 返回 `{"provider": "gemini_aistudio", "model": "gemini-3.1-pro-preview"}` 时，任务状态中的 `step_model_tags.translate` 必须是 `gemini_aistudio · gemini-3.1-pro-preview`。
+- 当 `llm_bindings.resolve("translate_lab.shot_translate")` 返回 `{"provider": "gemini_aistudio", "model": "gemini-3.5-flash"}` 时，任务状态中的 `step_model_tags.translate` 必须是 `gemini_aistudio · gemini-3.5-flash`。
 - 默认注册表中 `translate_lab.shot_translate` 必须是 `openrouter · google/gemini-3-flash-preview`。
 - 当当前 binding 是 `openrouter / google/gemini-3-flash-preview` 时，`translate_shot()` 产生的 debug payload 也必须写同一组 provider/model。
 - 多个 translation unit 的 `shot_char_limit` 任务应并发调用 `translate_shot()`，但最终 `translations` 顺序必须仍等于原 unit 顺序。

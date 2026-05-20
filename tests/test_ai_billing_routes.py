@@ -385,7 +385,7 @@ def test_admin_ai_usage_includes_material_evaluation_rows(authed_client_no_db, m
                 "use_case_code": "material_evaluation.evaluate",
                 "module": "material",
                 "provider": "openrouter",
-                "model_name": "google/gemini-3.1-pro-preview",
+                "model_name": "google/gemini-3.5-flash",
                 "success": 1,
                 "input_tokens": 3702,
                 "output_tokens": 3792,
@@ -406,7 +406,7 @@ def test_admin_ai_usage_includes_material_evaluation_rows(authed_client_no_db, m
     assert payload["rows"][0]["use_case_code"] == "material_evaluation.evaluate"
     assert payload["rows"][0]["module"] == "material"
     assert payload["rows"][0]["provider"] == "openrouter"
-    assert payload["rows"][0]["model_name"] == "google/gemini-3.1-pro-preview"
+    assert payload["rows"][0]["model_name"] == "google/gemini-3.5-flash"
 
 
 def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_no_db, monkeypatch):
@@ -665,7 +665,7 @@ def test_ai_pricing_post_missing_price_fields_returns_400(superadmin_client_no_d
         "/admin/settings/ai-pricing",
         json={
             "provider": "gemini_vertex",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
             "units_type": "tokens",
             "note": "缺价格",
         },

@@ -48,7 +48,7 @@ ON DUPLICATE KEY UPDATE unit_input_cny=VALUES(unit_input_cny), unit_output_cny=V
 -- Cloud 定价和 AI Studio 基本一致（同模型同价）
 INSERT INTO ai_model_prices (provider, model, units_type, unit_input_cny, unit_output_cny, note) VALUES
   ('gemini_vertex', 'gemini-2.5-flash',           'tokens', 0.00000204, 0.00000816, '待复核：同 AI Studio'),
-  ('gemini_vertex', 'gemini-3.1-pro-preview',     'tokens', 0.00005780, 0.00023120, '待复核：同 AI Studio'),
+  ('gemini_vertex', 'gemini-3.5-flash',          'tokens', 0.00001020, 0.00006120, '待复核：同 AI Studio，1.5/9 USD/M ×6.8'),
   ('gemini_vertex', 'gemini-3-flash-preview',     'tokens', 0.00000816, 0.00003264, '待复核：参考 3.1-flash-lite 价格')
 ON DUPLICATE KEY UPDATE unit_input_cny=VALUES(unit_input_cny), unit_output_cny=VALUES(unit_output_cny), note=VALUES(note), updated_at=CURRENT_TIMESTAMP;
 
@@ -81,5 +81,5 @@ ON DUPLICATE KEY UPDATE unit_flat_cny=VALUES(unit_flat_cny), note=VALUES(note), 
 -- 响应 cost 存在时 ai_billing 会优先使用，这里是兜底
 INSERT INTO ai_model_prices (provider, model, units_type, unit_input_cny, unit_output_cny, note) VALUES
   ('openrouter', 'google/gemini-2.5-flash',          'tokens', 0.00000204, 0.00000816, '待复核：OpenRouter 兜底'),
-  ('openrouter', 'google/gemini-3.1-pro-preview',    'tokens', 0.00005780, 0.00023120, '待复核：OpenRouter 兜底')
+  ('openrouter', 'google/gemini-3.5-flash',       'tokens', 0.00001020, 0.00006120, '待复核：OpenRouter 兜底，1.5/9 USD/M ×6.8')
 ON DUPLICATE KEY UPDATE unit_input_cny=VALUES(unit_input_cny), unit_output_cny=VALUES(unit_output_cny), note=VALUES(note), updated_at=CURRENT_TIMESTAMP;

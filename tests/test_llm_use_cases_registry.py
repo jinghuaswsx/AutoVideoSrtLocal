@@ -132,7 +132,7 @@ def test_video_cover_analysis_use_cases_match_requested_models():
 
     assert video["module"] == "video_cover"
     assert video["default_provider"] == "gemini_aistudio"
-    assert video["default_model"] == "gemini-3.1-pro-preview"
+    assert video["default_model"] == "gemini-3.5-flash"
     assert video["usage_log_service"] == "gemini_aistudio"
     assert video["units_type"] == "tokens"
 
@@ -255,7 +255,7 @@ def test_material_evaluation_defaults_to_aistudio_gemini_pro():
     uc = USE_CASES["material_evaluation.evaluate"]
     assert uc["module"] == "material"
     assert uc["default_provider"] == "gemini_aistudio"
-    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["default_model"] == "gemini-3.5-flash"
     assert uc["usage_log_service"] == "gemini_aistudio"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"
@@ -312,7 +312,7 @@ def test_video_translate_av_sync_defaults():
     expected = {
         "video_translate.shot_notes": (
             "openrouter",
-            "google/gemini-3.1-pro-preview",
+            "google/gemini-3.5-flash",
             "openrouter",
         ),
         "video_translate.av_localize": (

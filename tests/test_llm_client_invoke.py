@@ -40,7 +40,7 @@ def test_invoke_generate_routes_to_adapter_generate():
         "usage": {"input_tokens": None, "output_tokens": None},
     }
     with patch("appcore.llm_client.llm_bindings.resolve",
-               return_value=_fake_binding("gemini_aistudio", "gemini-3.1-pro-preview")), \
+               return_value=_fake_binding("gemini_aistudio", "gemini-3.5-flash")), \
          patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
          patch("appcore.llm_client._log_usage"):
         result = llm_client.invoke_generate(
@@ -112,7 +112,7 @@ def test_invoke_generate_passes_google_search_to_adapter_and_usage_log():
         "usage": {},
     }
     with patch("appcore.llm_client.llm_bindings.resolve",
-               return_value=_fake_binding("openrouter", "google/gemini-3.1-pro-preview")), \
+               return_value=_fake_binding("openrouter", "google/gemini-3.5-flash")), \
          patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
          patch("appcore.llm_client._log_usage") as m_log:
         llm_client.invoke_generate(

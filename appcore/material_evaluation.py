@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
 EVALUATION_PROVIDER = "gemini_aistudio"
-EVALUATION_MODEL = "gemini-3.1-pro-preview"
+EVALUATION_MODEL = "gemini-3.5-flash"
 EVALUATION_SEARCH_ENABLED = True
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"

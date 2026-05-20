@@ -247,12 +247,12 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert "listing_status" not in updates
     assert "listing_status" not in result
     assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
-    assert llm_calls[0][1]["model_override"] == "gemini-3.1-pro-preview"
+    assert llm_calls[0][1]["model_override"] == "gemini-3.5-flash"
     assert llm_calls[0][1]["google_search"] is True
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
     assert detail["provider"] == "gemini_aistudio"
-    assert detail["model"] == "gemini-3.1-pro-preview"
+    assert detail["model"] == "gemini-3.5-flash"
     assert detail["search_tools"] == [{"google_search": {}}]
     assert detail["countries"][0]["lang"] == "de"
 
@@ -272,7 +272,7 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
         "llm_bindings",
         SimpleNamespace(resolve=lambda code: {
             "provider": "gemini_aistudio",
-            "model": "gemini-3.1-pro-preview",
+            "model": "gemini-3.5-flash",
         }),
         raising=False,
     )
@@ -347,12 +347,12 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
 
     assert result["status"] == "evaluated"
     assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
-    assert llm_calls[0][1]["model_override"] == "gemini-3.1-pro-preview"
+    assert llm_calls[0][1]["model_override"] == "gemini-3.5-flash"
     assert llm_calls[0][1]["google_search"] is True
     assert llm_calls[0][1]["billing_extra"]["tools"] == [{"google_search": {}}]
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["provider"] == "gemini_aistudio"
-    assert detail["model"] == "gemini-3.1-pro-preview"
+    assert detail["model"] == "gemini-3.5-flash"
     assert detail["search_tools"] == [{"google_search": {}}]
 
 
@@ -365,7 +365,7 @@ def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provid
         "llm_bindings",
         SimpleNamespace(resolve=lambda code: {
             "provider": provider,
-            "model": "google/gemini-3.1-pro-preview",
+            "model": "google/gemini-3.5-flash",
         }),
         raising=False,
     )
@@ -373,7 +373,7 @@ def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provid
     config = material_evaluation.resolve_evaluation_llm_config()
 
     assert config["provider"] == provider
-    assert config["model"] == "gemini-3.1-pro-preview"
+    assert config["model"] == "gemini-3.5-flash"
     assert config["search_tools"] == [{"google_search": {}}]
 
 

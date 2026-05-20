@@ -366,7 +366,7 @@ def test_video_review_start_review_uses_background_helper(authed_client, monkeyp
         "state_json": json.dumps(
             {
                 "video_path": str(video_path),
-                "model": "gemini-3.1-pro-preview",
+                "model": "gemini-3.5-flash",
                 "steps": {"review": "pending"},
             },
             ensure_ascii=False,
@@ -401,7 +401,7 @@ def test_video_review_start_review_uses_background_helper(authed_client, monkeyp
                 "entrypoint": "video_review.review",
                 "stage": "queued_review",
                 "details": {
-                    "model": "gemini-3.1-pro-preview",
+                    "model": "gemini-3.5-flash",
                     "prompt_lang": "en",
                 },
             },
@@ -422,7 +422,7 @@ def test_video_review_start_review_rejects_duplicate_active_task(authed_client, 
         "state_json": json.dumps(
             {
                 "video_path": str(video_path),
-                "model": "gemini-3.1-pro-preview",
+                "model": "gemini-3.5-flash",
                 "steps": {"review": "running"},
             },
             ensure_ascii=False,

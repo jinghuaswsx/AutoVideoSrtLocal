@@ -67,7 +67,7 @@ PLATFORM_SPECS = (SOCIAL_REELS_SPEC,)
 ALLOWED_IMAGE_COUNTS = {1, 2, 3, 4}
 
 GEMINI_TEXT_MODEL_LABELS: dict[str, tuple[str, str]] = {
-    "gemini_31_pro": ("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
+    "gemini_35_flash": ("Gemini 3.5 Flash", "gemini-3.5-flash"),
     "gemini_3_flash": ("Gemini 3 Flash", "gemini-3-flash-preview"),
     "gemini_31_flash_lite": ("Gemini 3.1 Flash-Lite", "gemini-3.1-flash-lite"),
 }
@@ -120,18 +120,18 @@ TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
     "video_analysis": {
         "label": "视频分析",
         "default_provider": "gemini_aistudio",
-        "providers": _text_providers(("gemini_31_pro", "gemini_3_flash", "gemini_31_flash_lite")),
+        "providers": _text_providers(("gemini_35_flash", "gemini_3_flash", "gemini_31_flash_lite")),
     },
     "product_analysis": {
         "label": "产品分析",
         "default_provider": "openrouter",
-        "providers": _text_providers(("gemini_3_flash", "gemini_31_pro", "gemini_31_flash_lite")),
+        "providers": _text_providers(("gemini_3_flash", "gemini_35_flash", "gemini_31_flash_lite")),
     },
     "ad_copy": {
         "label": "文案创作",
         "default_provider": "openrouter",
         "providers": _text_providers(
-            ("gemini_3_flash", "gemini_31_pro", "gemini_31_flash_lite"),
+            ("gemini_3_flash", "gemini_35_flash", "gemini_31_flash_lite"),
             openrouter_extra=True,
         ),
     },

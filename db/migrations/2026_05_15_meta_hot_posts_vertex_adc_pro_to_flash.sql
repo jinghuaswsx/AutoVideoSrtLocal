@@ -1,4 +1,4 @@
--- Move the unified Meta hot-post video analysis queue from Vertex ADC Gemini 3.1 Pro Preview to Gemini 3 Flash.
+-- Move the unified Meta hot-post video analysis queue from Vertex ADC Gemini 3.5 Flash to Gemini 3 Flash.
 -- Docs-anchor: docs/superpowers/specs/2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md
 
 INSERT INTO llm_use_case_bindings (

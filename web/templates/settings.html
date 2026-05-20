@@ -220,10 +220,10 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       <select id="translate_pref_select" name="translate_pref" style="flex:1">
         <option value="vertex_gemini_31_flash_lite" data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_flash_lite' }}>Gemini 3.1 Flash-Lite (默认)</option>
         <option value="vertex_gemini_3_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_3_flash' }}>Gemini 3 Flash</option>
-        <option value="vertex_gemini_31_pro"         data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_pro' }}>Gemini 3.1 Pro</option>
+        <option value="vertex_gemini_35_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_35_flash' }}>Gemini 3.5 Flash</option>
         <option value="gemini_31_flash" data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash-Lite</option>
         <option value="gemini_3_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash</option>
-        <option value="gemini_31_pro"   data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro</option>
+        <option value="gemini_35_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_35_flash' }}>Gemini 3.5 Flash</option>
         <option value="gpt_5_mini"      data-group="openrouter" {{ 'selected' if translate_pref == 'gpt_5_mini' }}>GPT 5-mini</option>
         <option value="gpt_5_5"         data-group="openrouter" {{ 'selected' if translate_pref == 'gpt_5_5' }}>GPT-5.5</option>
         <option value="claude_sonnet"   data-group="openrouter" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6</option>
@@ -406,7 +406,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     // Gemini 模型清单 —— AI Studio / Vertex / Vertex ADC 共用同一份，OpenRouter 自动派生 google/ 前缀
     // 新增/淘汰 Gemini 型号只改这里一处
     const GEMINI_MODELS = [
-      "gemini-3.1-pro-preview",
+      "gemini-3.5-flash",
       "gemini-3-flash-preview",
       "gemini-3.1-flash-lite",
       "gemini-3.1-flash-image-preview",

@@ -7,7 +7,7 @@ Google Vertex ADC is now reserved for the Meta hot-post unified video analysis q
 - `meta_hot_posts.video_copyability`
 - `meta_hot_posts.europe_fit`
 
-Both use Gemini 3.1 Pro Preview through `gemini_vertex_adc` because that queue has a controlled cadence and takeover singleton.
+Both use Gemini 3.5 Flash through `gemini_vertex_adc` because that queue has a controlled cadence and takeover singleton.
 
 ## Rule
 

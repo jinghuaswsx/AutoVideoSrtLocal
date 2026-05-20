@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 # 可选模型：复用全局 VIDEO_CAPABLE_MODELS（Gemini 3 系列）
 GEMINI_MODELS = VIDEO_CAPABLE_MODELS
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 DEFAULT_PROMPT_EN = """You are a senior US short-video e-commerce operations expert and video quality reviewer.
 You will receive a short video intended for the US market. Please evaluate it comprehensively using the framework below.

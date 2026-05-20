@@ -132,10 +132,10 @@ def test_resolve_provider_and_model_retires_vertex_adc_pref_to_aistudio(monkeypa
     from pipeline import text_translate as mod
 
     provider, model = mod._resolve_provider_and_model(
-        provider="vertex_adc_gemini_31_pro",
+        provider="vertex_adc_gemini_35_flash",
         user_id=7,
         openrouter_api_key=None,
     )
 
     assert provider == "gemini_aistudio"
-    assert model == "gemini-3.1-pro-preview"
+    assert model == "gemini-3.5-flash"

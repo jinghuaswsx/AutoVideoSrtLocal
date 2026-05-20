@@ -45,16 +45,16 @@
 | 功能入口/任务类型 | use_case_code | 默认 provider/model | 当前上传方式 | 媒体 | 现有压缩/降帧/去音频 | 请求体风险 | 是否复用 480p/低码率/去音频 | 优先级 |
 |---|---|---|---|---|---|---|---|---|
 | Omni 分镜 `pipeline/shot_decompose.py` | `shot_decompose.run` | openrouter / `google/gemini-3-flash-preview` | OpenRouter base64 | 视频 | 已 480p/15fps/600k/去音频 | 低 | 已复用，改为共享 helper | P1 |
-| AV 句级画面笔记 `pipeline/shot_notes.py` | `video_translate.shot_notes` | openrouter / `google/gemini-3.1-pro-preview` | OpenRouter base64 | 视频 | 无 | 高 | 是，去音频 | P0 |
+| AV 句级画面笔记 `pipeline/shot_notes.py` | `video_translate.shot_notes` | openrouter / `google/gemini-3.5-flash` | OpenRouter base64 | 视频 | 无 | 高 | 是，去音频 | P0 |
 | 文案生成 `pipeline/copywriting.py` | `copywriting.generate` | openrouter / `google/gemini-3-flash-preview` | OpenRouter base64 或 Doubao URL | 视频/图片 | 50MB base64 上限，无视频压缩 | 高 | 视频优先压缩；OpenRouter 去音频，Doubao 按模型 URL 拉取策略传轻量视频 | P0 |
-| AI 视频分析 `pipeline/video_ai_review.py` + `appcore/video_ai_review.py` | `video_ai_review.assess` | gemini_vertex_adc / `gemini-3.1-pro-preview` | Vertex inline bytes | 源/目标视频、图片 | media_item 下载后曾有 720/480 动态压缩；task 视频仅 warn | 高 | 保留音频，按方案 A 统一 480p/15fps/600k | P0 |
-| 素材评估 `appcore/material_evaluation.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.1-pro-preview` | Vertex inline；可绑定 OpenRouter base64 | 图片 + 15s 视频 | 只 `-t 15 -c copy` | 中高 | 保留音频，15s 后转低码率 | P0 |
-| 新品评估 `appcore/new_product_review.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.1-pro-preview` | 同素材评估 | 图片 + 15s 视频 | 复用素材评估 15s copy | 中高 | 跟随素材评估 | P0 |
+| AI 视频分析 `pipeline/video_ai_review.py` + `appcore/video_ai_review.py` | `video_ai_review.assess` | gemini_vertex_adc / `gemini-3.5-flash` | Vertex inline bytes | 源/目标视频、图片 | media_item 下载后曾有 720/480 动态压缩；task 视频仅 warn | 高 | 保留音频，按方案 A 统一 480p/15fps/600k | P0 |
+| 素材评估 `appcore/material_evaluation.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.5-flash` | Vertex inline；可绑定 OpenRouter base64 | 图片 + 15s 视频 | 只 `-t 15 -c copy` | 中高 | 保留音频，15s 后转低码率 | P0 |
+| 新品评估 `appcore/new_product_review.py` | `material_evaluation.evaluate` | gemini_vertex_adc / `gemini-3.5-flash` | 同素材评估 | 图片 + 15s 视频 | 复用素材评估 15s copy | 中高 | 跟随素材评估 | P0 |
 | 推送质量视频前 5 秒 `appcore/push_quality_checks.py` | `push_quality.check` | openrouter / `google/gemini-3.1-flash-lite-preview` | OpenRouter base64 | 视频+音频 | 5s copy | 中 | 保留音频，5s 后转低码率 | P1 |
 | Omni AV 成片理解 `pipeline/omni_av_sync_audit.py` | `omni_av_sync.understand` | doubao / `doubao-seed-2-0-lite-260215` | TOS public URL | 视频+音频 | 无 | 中 | 保留音频，传轻量 URL | P1 |
-| 成品视频评分 `pipeline/video_score.py` | `video_score.run` | gemini_aistudio / `gemini-3.1-pro-preview` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
-| CSK 深度分析 `pipeline/video_csk.py` | `video_csk.analyze` | gemini_aistudio / `gemini-3.1-pro-preview` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
-| 视频评测 `pipeline/video_review.py` | `video_review.analyze` | gemini_aistudio / `gemini-3.1-pro-preview` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
+| 成品视频评分 `pipeline/video_score.py` | `video_score.run` | gemini_aistudio / `gemini-3.5-flash` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
+| CSK 深度分析 `pipeline/video_csk.py` | `video_csk.analyze` | gemini_aistudio / `gemini-3.5-flash` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
+| 视频评测 `pipeline/video_review.py` | `video_review.analyze` | gemini_aistudio / `gemini-3.5-flash` | Gemini Files API | 视频+音频 | 无 | 中 | 保留音频，降低 Files API 上传体积 | P1 |
 | 图片检测/链接审核/同图判定 | `image_translate.detect`, `link_check.analyze`, `link_check.same_image`, `push_quality.check` | Gemini/OpenRouter | inline bytes/base64 | 图片 | 无 | 低 | 不做视频策略，仅保持 debug/估算一致 | P2 |
 
 ## 设计

@@ -1,4 +1,4 @@
-"""视频评分模块：用 Gemini 3.1 Pro 分析成品硬字幕视频，按美国短视频带货要素打分（满分 100）。"""
+"""视频评分模块：用 Gemini 3.5 Flash 分析成品硬字幕视频，按美国短视频带货要素打分（满分 100）。"""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,7 @@ from pipeline.llm_util import parse_json_response
 
 logger = logging.getLogger(__name__)
 
-SCORE_MODEL = "gemini-3.1-pro-preview"
+SCORE_MODEL = "gemini-3.5-flash"
 
 # 评分维度：(key, 中文名, 满分权重)
 DIMENSIONS: list[tuple[str, str, int]] = [
