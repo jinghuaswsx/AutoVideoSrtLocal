@@ -117,6 +117,26 @@ def test_xuanpin_mk_video_cards_clamp_copy_and_hide_missing_sales(authed_client_
     assert "· 销量 ${Number(r.sales_count || 0)}" not in body
 
 
+def test_xuanpin_mk_video_cards_use_backend_material_status_for_import_button(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const isMaterialImported = Boolean(r.has_local_material_in_library);" in body
+    assert "${isMaterialImported ? '已入库' : '加入素材库'}" in body
+    assert "${isMaterialImported ? 'disabled' : ''}" in body
+
+
+def test_xuanpin_mk_video_cards_show_product_icon_for_product_library_status(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const hasProductInLibrary = Boolean(r.has_local_product_in_library || (r.product_ad_status && r.product_ad_status.has_local_match));" in body
+    assert "if (hasProductInLibrary)" in body
+    assert "产品已在素材库" in body
+
+
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/tabcut")
 

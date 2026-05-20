@@ -36,7 +36,8 @@ In scope:
 2. Add a scheduled refresh task that maintains product-level and video-material-level
    status cache rows.
 3. Enrich `/xuanpin/api/mk-material-library` and `/xuanpin/api/mk-yesterday-top100`
-   response items from that cache only.
+   response items from that cache, with a bounded product-scoped `media_items` fallback
+   only for legacy rows that predate Mingkong bindings.
 4. Render top-right card status icons only for true states: product first, video second
    when both are present. A false state does not render a muted placeholder.
 5. Add a search icon button after the product code line that opens
@@ -44,12 +45,28 @@ In scope:
 
 Out of scope:
 
-- Do not query live status tables from card-list requests.
+- Do not query live status tables from card-list requests except the bounded
+  product-scoped legacy `media_items` fallback described below.
 - Do not add new Mingkong API calls.
 - Do not change material import, push creation, or Meta sync behavior.
 - Do not connect to Windows local MySQL for verification.
 
 ## Status Semantics
+
+Card status has two independent dimensions:
+
+1. Product status: whether the Mingkong product maps to a local `media_products` row.
+2. Video material status: whether this exact Mingkong video is present under that
+   matched local product.
+
+The UI exposes three operator states:
+
+- Product present and the corresponding video is present under that product: show both
+  icons and render the import button as `已入库`.
+- Product present but the corresponding video is not present under that product: show
+  only the product icon and keep the import button as `加入素材库`.
+- Product absent: show no product/video status icons and keep the import button as
+  `加入素材库`.
 
 ### Product Status
 
@@ -59,10 +76,12 @@ For each Mingkong card row, normalize its product code for local material-librar
 media_search_code = lower(product_code without trailing -rjc/_rjc) + "-rjc"
 ```
 
-The product status slot is highlighted only when both are true in the cache:
+The product status slot is highlighted when this is true in the cache:
 
 - `media_products.product_code = media_search_code` exists and is not deleted.
-- The matched local product has Meta ad spend evidence in recent synced ad fact data.
+
+Recent Meta ad spend remains in `product_ad_status.has_running_ad` and
+`ad_spend_usd` for diagnostics, but it is not required for the product-present icon.
 
 The refresh task may use `meta_ad_daily_campaign_metrics.product_id` and/or recent
 realtime campaign code evidence to compute this, but the card-list request only reads
@@ -74,10 +93,15 @@ For each Mingkong card row, normalize `video_path` with the same path normalizat
 by Mingkong material bindings.
 
 The video-material icon is shown when the original Mingkong video material is already
-present in the local material library:
+present under the matched local product:
 
 - A local `media_items` row is bound to that Mingkong `video_path` through
   `media_item_mk_bindings` and is not deleted.
+- For legacy imported rows that predate `media_item_mk_bindings`, the card-list response
+  may batch-check `media_items` within the matched `media_product_id` by exact
+  `video_name`/filename or normalized `video_path` basename/object-key suffix. This
+  product-scoped fallback must never treat a global filename match under another product
+  as this card's video being in the material library.
 
 The video icon does not require push or ad-plan evidence. These Mingkong videos are raw
 source materials and are generally not pushed directly as ad materials.
@@ -142,6 +166,7 @@ Each card item from both archive APIs includes:
 
 - `media_search_code`
 - `media_search_url`
+- `has_local_product_in_library`
 - `has_local_product_running_ad`
 - `has_local_material_in_library`
 - `has_local_material_running_ad`
@@ -150,16 +175,21 @@ Each card item from both archive APIs includes:
 
 `product_ad_status` and `material_ad_status` are small objects with ids, booleans,
 latest activity time, spend, and `refreshed_at` for diagnostics. The frontend uses
-`has_local_product_running_ad`, `has_local_material_in_library`, and `media_search_url`.
+`has_local_product_in_library`, `has_local_material_in_library`, and `media_search_url`.
 `has_local_material_running_ad` is retained as a compatibility alias for the material
 library match and should not be interpreted as a pushed-ad-material signal.
+`material_ad_status.summary.source` is `media_item_mk_bindings` for exact binding hits
+and `media_items_legacy_product_scope` for product-scoped legacy filename/path hits.
+
+`has_local_material_in_library` must be false when `product_ad_status.media_product_id`
+is empty, even if a same-named file exists elsewhere in `media_items`.
 
 ## UI
 
 `renderMkVideoMaterialCard()` renders an absolute top-right status cluster:
 
-- Product status icon: uses the parcel/package symbol `📦` and is shown only when
-  `has_local_product_running_ad` is true.
+- Product status icon: uses the parcel/package symbol `📦` and is shown when
+  `has_local_product_in_library` is true.
 - Video status icon: uses a video/play symbol and is shown only when
   `has_local_material_in_library` is true.
 
