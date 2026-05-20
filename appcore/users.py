@@ -76,6 +76,33 @@ def list_users() -> list[dict]:
     )
 
 
+def _coerce_permissions(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _has_bool_permission(row: dict, code: str) -> bool:
+    return bool(_coerce_permissions(row.get("permissions")).get(code))
+
+
+def _user_display_name_expr() -> str:
+    row = query_one(
+        "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+        "AND COLUMN_NAME = 'xingming'"
+    )
+    if row:
+        return "COALESCE(NULLIF(TRIM(xingming), ''), username)"
+    return "username"
+
+
 def list_translators() -> list[dict]:
     rows = query(
         "SELECT id, username, role, permissions FROM users WHERE is_active=1 AND role <> %s ORDER BY username ASC",
@@ -85,15 +112,50 @@ def list_translators() -> list[dict]:
     for row in rows:
         if row.get("role") == ROLE_SUPERADMIN:
             continue
-        permissions = row.get("permissions") or {}
-        if isinstance(permissions, str):
-            try:
-                permissions = json.loads(permissions)
-            except (TypeError, ValueError):
-                permissions = {}
-        if permissions.get("can_translate"):
+        if _has_bool_permission(row, "can_translate"):
             translators.append({"id": row["id"], "username": row["username"]})
     return translators
+
+
+def list_translation_work_users() -> list[dict]:
+    expr = _user_display_name_expr()
+    rows = query(
+        f"SELECT id, username, {expr} AS display_name, role, permissions "
+        "FROM users WHERE is_active=1 AND role <> %s ORDER BY display_name ASC, id ASC",
+        (ROLE_SUPERADMIN,),
+    )
+    users = []
+    for row in rows:
+        if row.get("role") == ROLE_SUPERADMIN:
+            continue
+        if (
+            _has_bool_permission(row, "can_translate")
+            and _has_bool_permission(row, "work_scope_translation")
+        ):
+            users.append({
+                "id": int(row["id"]),
+                "username": row["username"],
+                "display_name": row.get("display_name") or row["username"],
+            })
+    return users
+
+
+def ensure_translation_work_user(user_id: int) -> dict:
+    expr = _user_display_name_expr()
+    row = query_one(
+        f"SELECT id, username, {expr} AS display_name, role, permissions, is_active "
+        "FROM users WHERE id=%s",
+        (int(user_id),),
+    )
+    if not row:
+        raise ValueError("翻译员不存在")
+    if not row.get("is_active"):
+        raise ValueError("翻译员已停用")
+    if not _has_bool_permission(row, "can_translate"):
+        raise ValueError("该用户没有翻译能力")
+    if not _has_bool_permission(row, "work_scope_translation"):
+        raise ValueError("该用户不在翻译工作范围")
+    return row
 
 
 def set_active(user_id: int, active: bool) -> None:

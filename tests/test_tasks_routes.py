@@ -141,9 +141,71 @@ def test_create_parent_task_missing_params(authed_client_no_db):
     assert "error" in rsp.get_json()
 
 
+def test_translation_work_users_route_returns_users(authed_client_no_db, monkeypatch):
+    expected = [{"id": 10, "username": "gq", "display_name": "顾倩"}]
+    monkeypatch.setattr("web.routes.tasks.list_translation_work_users", lambda: expected)
+
+    resp = authed_client_no_db.get("/tasks/api/translation-work-users")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"users": expected}
+
+
+def test_create_parent_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_translation_work_user",
+        lambda user_id: (_ for _ in ()).throw(ValueError("该用户不在翻译工作范围")),
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: calls.append(kwargs) or 123,
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "翻译工作范围" in resp.get_json()["error"]
+    assert calls == []
+
+
+def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_translation_work_user",
+        lambda user_id: (_ for _ in ()).throw(ValueError("该用户不在翻译工作范围")),
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.import_and_create_task",
+        lambda **kwargs: calls.append(kwargs) or {"parent_task_id": 1},
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/import-and-create",
+        json={
+            "mk_video_metadata": {"filename": "x.mp4"},
+            "countries": ["DE"],
+            "translator_id": 9,
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "翻译工作范围" in resp.get_json()["error"]
+    assert calls == []
+
+
 def test_import_and_create_returns_product_link_warnings(authed_client_no_db, monkeypatch):
     warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
 
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.import_and_create_task",
         lambda **kwargs: {

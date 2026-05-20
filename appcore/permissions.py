@@ -81,6 +81,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     # C. 任务能力
     ("can_process_raw_video", GROUP_CAPABILITY, "原始视频处理人",   True,  False),
     ("can_translate",         GROUP_CAPABILITY, "翻译员",           True,  False),
+    ("work_scope_translation", GROUP_CAPABILITY, "翻译工作",         False, False),
     # D. 超管 / 系统类
     ("user_management",       GROUP_SYSTEM,     "用户管理",         False, False),
     ("system_settings",       GROUP_SYSTEM,     "系统设置",         False, False),

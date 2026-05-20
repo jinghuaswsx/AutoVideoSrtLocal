@@ -150,6 +150,20 @@ def test_default_permissions_for_analyst():
     assert perms["user_management"] is False
 
 
+def test_work_scope_translation_in_codes():
+    assert "work_scope_translation" in PERMISSION_CODES
+    assert PERMISSION_META["work_scope_translation"]["label"] == "翻译工作"
+    assert PERMISSION_META["work_scope_translation"]["group"] == "capability"
+
+
+def test_work_scope_translation_defaults_require_explicit_assignment():
+    assert default_permissions_for_role(ROLE_ADMIN)["work_scope_translation"] is False
+    assert default_permissions_for_role(ROLE_USER)["work_scope_translation"] is False
+    assert default_permissions_for_role(ROLE_TRANSLATOR)["work_scope_translation"] is False
+    assert default_permissions_for_role(ROLE_ANALYST)["work_scope_translation"] is False
+    assert default_permissions_for_role(ROLE_SUPERADMIN)["work_scope_translation"] is True
+
+
 def test_user_analyst_default_permissions():
     u = User(_make_row(ROLE_ANALYST))
     assert u.is_superadmin is False

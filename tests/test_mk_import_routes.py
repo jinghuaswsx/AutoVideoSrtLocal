@@ -73,6 +73,7 @@ def test_mk_import_video_returns_service_result(authed_client_no_db, monkeypatch
         captured.update(kwargs)
         return {"ok": True, "media_item_id": 12, "warnings": warnings}
 
+    monkeypatch.setattr(route, "ensure_translation_work_user", lambda user_id: {"id": user_id})
     monkeypatch.setattr(route.mk_import_svc, "import_mk_video", fake_import_mk_video)
 
     resp = authed_client_no_db.post(
@@ -87,6 +88,28 @@ def test_mk_import_video_returns_service_result(authed_client_no_db, monkeypatch
     assert captured["actor_user_id"] == 1
 
 
+def test_mk_import_video_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
+    from web.routes import mk_import as route
+
+    calls = []
+    monkeypatch.setattr(
+        route,
+        "ensure_translation_work_user",
+        lambda user_id: (_ for _ in ()).throw(ValueError("该用户不在翻译工作范围")),
+        raising=False,
+    )
+    monkeypatch.setattr(route.mk_import_svc, "import_mk_video", lambda **kwargs: calls.append(kwargs))
+
+    resp = authed_client_no_db.post(
+        "/mk-import/video",
+        json={"mk_video_metadata": {"filename": "x.mp4"}, "translator_id": 7},
+    )
+
+    assert resp.status_code == 400
+    assert "翻译工作范围" in resp.get_json()["detail"]
+    assert calls == []
+
+
 def test_mk_import_video_maps_service_errors(authed_client_no_db, monkeypatch):
     from web.routes import mk_import as route
 
@@ -98,6 +121,7 @@ def test_mk_import_video_maps_service_errors(authed_client_no_db, monkeypatch):
     ]
 
     for exc, expected_status, expected_error in cases:
+        monkeypatch.setattr(route, "ensure_translation_work_user", lambda user_id: {"id": user_id})
         monkeypatch.setattr(
             route.mk_import_svc,
             "import_mk_video",
