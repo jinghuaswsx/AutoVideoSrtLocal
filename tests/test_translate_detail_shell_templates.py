@@ -426,6 +426,25 @@ def test_sentence_reconcile_process_is_rendered_in_tts_duration_log():
     assert template.index('id="preview-tts"') < template.index('id="avSubtitleUnitsPanel"')
 
 
+def test_sentence_reconcile_detail_cards_are_tinted_by_convergence_status():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert '<div class="duration-round ${statusLabel.className}">' in script
+    assert ".duration-round.av-convergence-status--ok" in styles
+    assert "background: color-mix(in oklch, var(--success-bg)" in styles
+    assert ".duration-round.av-convergence-status--warn" in styles
+    assert ".duration-round.av-convergence-status--review" in styles
+    assert ".duration-round.av-convergence-status--error" in styles
+    assert "background: color-mix(in oklch, var(--danger-bg)" in styles
+
+    review_rule = re.search(r"\.av-convergence-status--review\s*\{(?P<body>.*?)\}", styles, re.S)
+    assert review_rule
+    assert "var(--warning-bg)" in review_rule.group("body")
+    assert "var(--info-bg)" not in review_rule.group("body")
+
+
 def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
