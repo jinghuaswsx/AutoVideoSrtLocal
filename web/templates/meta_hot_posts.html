@@ -515,7 +515,7 @@ const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
   return saved;
 })();
 let mhAiAnalysisVisibility = {us: false, europe: false};
-let mhAiAnalysisVisibilitySaveVersion = 0;
+let mhAiAnalysisVisibilitySaveVersion = Date.now();
 let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 let mhProductPostHash = '';

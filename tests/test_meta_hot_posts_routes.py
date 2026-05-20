@@ -183,7 +183,8 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function restoreMetaHotAiAnalysisVisibility()" in body
     assert "/xuanpin/api/meta-hot-posts/ai-analysis-visibility" in body
     assert "const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
-    assert "let mhAiAnalysisVisibilitySaveVersion = 0;" in body
+    assert "let mhAiAnalysisVisibilitySaveVersion = Date.now();" in body
+    assert "let mhAiAnalysisVisibilitySaveVersion = 0;" not in body
     assert "const saveVersion = ++mhAiAnalysisVisibilitySaveVersion;" in body
     assert "const preferences = {...mhAiAnalysisVisibility};" in body
     assert "client_id: MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID" in body
