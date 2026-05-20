@@ -81,7 +81,8 @@
 .mk-status-icon { width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); }
 .mk-status-icon svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-status-icon--product { color:var(--oc-accent); }
-.mk-status-icon--material { color:var(--oc-success-fg); }
+.mk-status-icon--video { color:var(--oc-success-fg); }
+.mk-status-icon--inactive { color:var(--oc-fg-subtle); border-color:var(--oc-border); background:rgba(248,250,252,.92); box-shadow:none; opacity:.64; }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
@@ -429,18 +430,22 @@ function mkStatusIconSvg(type) {
   if (type === 'product') {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8.5 12 3 3 8.5l9 5.5 9-5.5Z"></path><path d="M3 8.5V16l9 5 9-5V8.5"></path><path d="M12 14v7"></path></svg>';
   }
-  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 5v14"></path><path d="M16 5v14"></path><path d="M4 9h4"></path><path d="M4 15h4"></path><path d="M16 9h4"></path><path d="M16 15h4"></path></svg>';
+  if (type === 'video') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3V9Z"></path></svg>';
+  }
+  return '';
 }
 
 function renderMkStatusIconCluster(r) {
-  const icons = [];
-  if (r.has_local_product_running_ad) {
-    icons.push(`<span class="mk-status-icon mk-status-icon--product" title="产品已在素材库且有消耗广告计划" aria-label="产品已在素材库且有消耗广告计划">${mkStatusIconSvg('product')}</span>`);
-  }
-  if (r.has_local_material_running_ad) {
-    icons.push(`<span class="mk-status-icon mk-status-icon--material" title="素材已在素材库且有投放计划" aria-label="素材已在素材库且有投放计划">${mkStatusIconSvg('material')}</span>`);
-  }
-  return icons.length ? `<div class="mk-video-status-icons">${icons.join('')}</div>` : '';
+  const productActive = Boolean(r.has_local_product_running_ad);
+  const videoActive = Boolean(r.has_local_material_running_ad);
+  const productTitle = productActive ? '产品状态：已在素材库且有消耗广告计划' : '产品状态：未命中素材库投放';
+  const videoTitle = videoActive ? '视频状态：已在素材库且有投放计划' : '视频状态：未命中素材库投放';
+  const icons = [
+    `<span class="mk-status-icon mk-status-icon--product${productActive ? '' : ' mk-status-icon--inactive'}" title="${productTitle}" aria-label="${productTitle}">${mkStatusIconSvg('product')}</span>`,
+    `<span class="mk-status-icon mk-status-icon--video${videoActive ? '' : ' mk-status-icon--inactive'}" title="${videoTitle}" aria-label="${videoTitle}">${mkStatusIconSvg('video')}</span>`
+  ];
+  return `<div class="mk-video-status-icons">${icons.join('')}</div>`;
 }
 
 function renderMkMediaSearchLink(r) {

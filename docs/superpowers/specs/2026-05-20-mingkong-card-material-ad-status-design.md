@@ -37,7 +37,8 @@ In scope:
    status cache rows.
 3. Enrich `/xuanpin/api/mk-material-library` and `/xuanpin/api/mk-yesterday-top100`
    response items from that cache only.
-4. Render two top-right card icons only when their status is true.
+4. Render two fixed top-right card status icons: product first, video second. A status
+   that is true is highlighted; a status that is false remains visible but muted.
 5. Add a search icon button after the product code line that opens
    `/medias/?q=<product_code-rjc>`.
 
@@ -58,7 +59,7 @@ For each Mingkong card row, normalize its product code for local material-librar
 media_search_code = lower(product_code without trailing -rjc/_rjc) + "-rjc"
 ```
 
-The product icon is shown only when both are true in the cache:
+The product status slot is highlighted only when both are true in the cache:
 
 - `media_products.product_code = media_search_code` exists and is not deleted.
 - The matched local product has Meta ad spend evidence in recent synced ad fact data.
@@ -72,7 +73,7 @@ the cache result.
 For each Mingkong card row, normalize `video_path` with the same path normalization used
 by Mingkong material bindings.
 
-The video-material icon is shown only when both are true in the cache:
+The video-material status slot is highlighted only when both are true in the cache:
 
 - A local `media_items` row is bound to that Mingkong `video_path` through
   `media_item_mk_bindings` and is not deleted.
@@ -150,13 +151,18 @@ the two top-level booleans and `media_search_url`.
 
 ## UI
 
-`renderMkVideoMaterialCard()` renders an absolute top-right status cluster:
+`renderMkVideoMaterialCard()` renders an absolute top-right status cluster with exactly
+two icons on every video card:
 
-- Product status icon: shown when `has_local_product_running_ad` is true.
-- Material status icon: shown when `has_local_material_running_ad` is true.
+- Product status icon: first slot, uses a product/package symbol. It is highlighted when
+  `has_local_product_running_ad` is true and muted when false.
+- Video status icon: second slot, uses a video/play symbol. It is highlighted when
+  `has_local_material_running_ad` is true and muted when false.
 
 The icons use inline SVG symbols already available in the page style rather than emoji.
-No placeholder is shown when a status is false.
+This makes mixed states explicit. For example, when the product is already in the
+material library with ad spend but the exact video is not pushed, the card shows a
+highlighted product icon and a muted video icon.
 
 The second line of the product header keeps the rank and product code, and appends a
 small search icon link button. The button opens:
@@ -185,5 +191,6 @@ Manual checks:
 
 - Unauthenticated `GET /xuanpin/mk` returns 302.
 - Logged-in admin `GET /xuanpin/mk` returns 200.
-- After a status refresh, both material-card tabs show icons only for cached true states.
+- After a status refresh, both material-card tabs show two status icons per card, with
+  cached true states highlighted and false states muted.
 - Product-code search button opens the素材管理 search page with the `-rjc` code.
