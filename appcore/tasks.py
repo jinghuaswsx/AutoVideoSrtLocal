@@ -326,6 +326,7 @@ def import_and_create_task(
         product_id = import_result["media_product_id"]
         item_id = import_result["media_item_id"]
         is_new = import_result["is_new_product"]
+        warnings = list(import_result.get("warnings") or [])
     except mk_import_svc.DuplicateError:
         existing = mk_import_svc.find_existing_product_item_by_meta(mk_video_metadata)
         if not existing or not existing.get("item_id"):
@@ -333,6 +334,7 @@ def import_and_create_task(
         product_id = existing["product_id"]
         item_id = existing["item_id"]
         is_new = False
+        warnings = list(existing.get("warnings") or [])
     parent_id = create_parent_task(
         media_product_id=product_id,
         media_item_id=item_id,
@@ -340,12 +342,15 @@ def import_and_create_task(
         translator_id=int(translator_id),
         created_by=int(actor_user_id),
     )
-    return {
+    result = {
         "parent_task_id": parent_id,
         "media_product_id": product_id,
         "media_item_id": item_id,
         "is_new_product": is_new,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 class ConflictError(RuntimeError):

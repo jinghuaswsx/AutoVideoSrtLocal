@@ -202,6 +202,34 @@ def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db
     assert calls == []
 
 
+def test_import_and_create_returns_product_link_warnings(authed_client_no_db, monkeypatch):
+    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
+
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.import_and_create_task",
+        lambda **kwargs: {
+            "parent_task_id": 11,
+            "media_product_id": 22,
+            "media_item_id": 33,
+            "is_new_product": True,
+            "warnings": warnings,
+        },
+    )
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/import-and-create",
+        json={
+            "mk_video_metadata": {"filename": "demo.mp4"},
+            "translator_id": 2,
+            "countries": ["DE"],
+        },
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json()["warnings"] == warnings
+
+
 def test_parent_action_routes_registered_admin(authed_client_no_db):
     """All admin parent endpoints reachable (will 4xx/5xx without real DB; smoke only)."""
     # claim — capability required (admin has all caps)

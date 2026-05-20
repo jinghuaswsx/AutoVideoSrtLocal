@@ -23,7 +23,7 @@
 2. `POST /tasks/api/import-and-create` 也不因 Shopify 商品链接 HTTP 404 阻断；先完成素材入库和任务创建。
 3. 保持产品创建时写入规范化 `product_code + "-rjc"` 和 canonical product link 的现有行为。
 4. 保持视频下载失败、重复文件名、存储失败和 DB 失败的现有响应语义。
-5. Shopify 商品链接可访问性校验暂不放在明空入库/做小语种链路，后续按业务场景另行设计。
+5. Shopify 商品链接可访问性探测只作为成功响应里的 warning，用于前端提示，不改变成功状态码。
 
 ## 非目标
 
@@ -33,17 +33,34 @@
 
 ## 设计
 
-- `appcore.mk_import.import_mk_video()` 不探测 Shopify 商品链接，只保留 canonical product link 写入。
-- `appcore.tasks.import_and_create_task()` 不向入库层传链接可访问性门禁参数。
-- `find_existing_product_item_by_meta()` 只按 product code 找已有产品和英文素材，不探测 Shopify 商品链接。
-- `/mk-import/video` 和 `/tasks/api/import-and-create` 不再映射 `product_link_unavailable` 作为本链路错误。
+- `appcore.mk_import.import_mk_video()` 先生成 canonical product link，再做轻量可访问性探测；探测失败不抛异常。
+- 探测失败时，返回结果包含：
+
+```json
+{
+  "warnings": [
+    {
+      "type": "product_link_unavailable",
+      "message": "商品链接可能不可访问",
+      "url": "https://example.com/products/demo-rjc",
+      "detail": "HTTP 404"
+    }
+  ]
+}
+```
+
+- `appcore.tasks.import_and_create_task()` 把入库结果里的 `warnings` 原样透传给 `/tasks/api/import-and-create` 响应。
+- 已入库视频走 `find_existing_product_item_by_meta()` 回退时，也做探测并返回 warnings，但不阻断任务创建。
+- `/mk-import/video` 和 `/tasks/api/import-and-create` 不再映射 `product_link_unavailable` 为 409；warning 只通过成功响应提示。
+- 前端 `加入素材库` 和 `做小语种` 成功后，如果响应带 `warnings`，追加展示 warning toast。
 
 ## 验收
 
 1. Shopify 商品链接返回 404 时，`import_mk_video()` 默认仍会继续进入 MP4 下载/素材创建流程。
-2. Shopify 商品链接返回 404 时，`tasks.import_and_create_task()` 仍会继续创建父子任务。
-3. 已入库视频走 `find_existing_product_item_by_meta()` 回退时，不探测 Shopify 商品链接。
-4. 相关路由不再返回 `product_link_unavailable`。
+2. Shopify 商品链接返回 404 时，`import_mk_video()` 成功响应包含 `product_link_unavailable` warning。
+3. Shopify 商品链接返回 404 时，`tasks.import_and_create_task()` 仍会继续创建父子任务，并在成功响应中透传 warning。
+4. 已入库视频走 `find_existing_product_item_by_meta()` 回退时，探测失败只返回 warning。
+5. 相关路由不再返回 `product_link_unavailable` 409。
 
 ## 验证
 
