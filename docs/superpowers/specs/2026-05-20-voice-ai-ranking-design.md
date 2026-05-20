@@ -42,3 +42,12 @@
 - 大模型失败、缺少音频、preview 下载失败时，不影响现有音色选择流程。
 - 只对当前 Top10 做排名，忽略模型返回的非候选 voice_id 和重复 voice_id。
 - 原有 `voice_match_candidates`、fallback voice、手动选择逻辑保持兼容。
+
+## 2026-05-20 调通补充
+
+- 为排查结构化输出问题，音色大模型排名支持 `candidate_limit`，默认先取 Top3；需要恢复 Top10 时设置 `VOICE_AI_RANK_CANDIDATE_LIMIT=10` 或调用接口传 `candidate_limit=10`。
+- English Redub 增加管理员 POST 接口 `/api/english-redub/<task_id>/voice-ai-ranking`，用于对已生成的 `voice_match_candidates` 直接重跑大模型排名并写回任务 state；调通顺序为 Top3 先验证，再 Top10。
+- 模型返回缺少 `llm_rank` 时，后端按模型返回顺序补齐 rank；缺少 `reason_summary` 时填充「模型未给原因」，避免原始 JSON 有 voice_id 但可视化结果为空。
+- Prompt 明确要求每条 ranking 必须包含 `candidate_key`、`llm_rank`、`reason_summary`，并给出 JSON 示例，降低 OpenRouter/Gemini 忽略 schema 的概率。
+- Live Top3 smoke found Gemini may truncate long ElevenLabs `voice_id`; the request now assigns stable short `candidate_key` values (`C1`..`C10`), and backend normalization maps the key back to the real `voice_id`.
+- Live Top10 smoke found low output-token caps could stop before all rows; the request now uses a per-call response schema with `minItems`/`maxItems` equal to the candidate count and raises the output cap to 4096.
