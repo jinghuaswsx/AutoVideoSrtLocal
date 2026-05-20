@@ -84,6 +84,39 @@ def test_superadmin_list_filters_omni_translate_projects_by_user_id(authed_clien
     assert args == (237, "de")
 
 
+def test_omni_translate_voice_library_accepts_pagination(authed_client_no_db, monkeypatch):
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "web.routes.omni_translate._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps({"target_lang": "en", "steps": {"voice_match": "waiting"}}),
+            "user_id": 1,
+        },
+    )
+
+    def fake_list_voices(**kwargs):
+        captured.update(kwargs)
+        return {"items": [{"voice_id": "omni-page-2", "name": "Page 2"}], "total": 91}
+
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", fake_list_voices)
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.get("/api/omni-translate/task-voice-pages/voice-library?page=2&page_size=30")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"][0]["voice_id"] == "omni-page-2"
+    assert resp.get_json()["page"] == 2
+    assert resp.get_json()["page_size"] == 30
+    assert captured == {
+        "language": "en",
+        "gender": None,
+        "q": None,
+        "page": 2,
+        "page_size": 30,
+    }
+
+
 def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):
     creators = [
         {"id": 237, "display_name": "顾倩"},

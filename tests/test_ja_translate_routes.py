@@ -124,6 +124,8 @@ def test_ja_translate_detail_falls_back_to_in_memory_task_when_db_type_is_stale(
 
 
 def test_ja_voice_library_route_returns_shared_payload(authed_client_no_db, monkeypatch):
+    captured: dict = {}
+
     monkeypatch.setattr(
         "web.routes.ja_translate.db_query_one",
         lambda *args, **kwargs: {
@@ -134,14 +136,28 @@ def test_ja_voice_library_route_returns_shared_payload(authed_client_no_db, monk
             "user_id": 1,
         },
     )
-    monkeypatch.setattr("appcore.voice_library_browse.list_voices", lambda **kwargs: {"items": [{"voice_id": "ja-1"}], "total": 1})
+
+    def fake_list_voices(**kwargs):
+        captured.update(kwargs)
+        return {"items": [{"voice_id": "ja-1"}], "total": 61}
+
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", fake_list_voices)
     monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
 
-    resp = authed_client_no_db.get("/api/ja-translate/task-ja/voice-library")
+    resp = authed_client_no_db.get("/api/ja-translate/task-ja/voice-library?page=2&page_size=30")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"][0]["voice_id"] == "ja-1"
     assert resp.get_json()["voice_match_ready"] is True
+    assert resp.get_json()["page"] == 2
+    assert resp.get_json()["page_size"] == 30
+    assert captured == {
+        "language": "ja",
+        "gender": None,
+        "q": None,
+        "page": 2,
+        "page_size": 30,
+    }
 
 
 def test_ja_confirm_voice_route_persists_selection_and_resumes_alignment(authed_client_no_db, monkeypatch):

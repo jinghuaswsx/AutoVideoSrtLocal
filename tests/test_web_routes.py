@@ -1017,6 +1017,7 @@ def test_av_segments_route_updates_sentence_translate_variant_for_tts(authed_cli
 
 
 def test_av_task_voice_library_supports_shared_detail_shell(authed_client_no_db, monkeypatch):
+    captured: dict = {}
     task = store.create("task-av-voice-shell", "video.mp4", "output/task-av-voice-shell", user_id=1)
     store.update(
         task["id"],
@@ -1027,19 +1028,30 @@ def test_av_task_voice_library_supports_shared_detail_shell(authed_client_no_db,
         steps={"extract": "done", "asr": "done", "voice_match": "waiting"},
         voice_match_candidates=[{"voice_id": "voice-a", "similarity": 0.91}],
     )
-    monkeypatch.setattr(
-        "appcore.voice_library_browse.list_voices",
-        lambda **kwargs: {"items": [{"voice_id": "voice-a", "name": "A"}], "total": 1},
-    )
+
+    def fake_list_voices(**kwargs):
+        captured.update(kwargs)
+        return {"items": [{"voice_id": "voice-a", "name": "A"}], "total": 61}
+
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", fake_list_voices)
     monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
 
-    response = authed_client_no_db.get("/api/tasks/task-av-voice-shell/voice-library")
+    response = authed_client_no_db.get("/api/tasks/task-av-voice-shell/voice-library?page=2&page_size=30")
 
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["items"] == [{"voice_id": "voice-a", "name": "A"}]
     assert payload["selected_voice_id"] == "voice-a"
     assert payload["voice_match_ready"] is True
+    assert payload["page"] == 2
+    assert payload["page_size"] == 30
+    assert captured == {
+        "language": "de",
+        "gender": None,
+        "q": None,
+        "page": 2,
+        "page_size": 30,
+    }
 
 
 def test_av_task_confirm_voice_resumes_from_alignment_after_shared_detail_shell(tmp_path, authed_client_no_db, monkeypatch):

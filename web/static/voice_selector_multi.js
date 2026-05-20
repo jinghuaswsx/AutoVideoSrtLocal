@@ -411,7 +411,13 @@
   let modalTriggerEl = null;
   let pendingReloadState = null;
   let libraryRequestSeq = 0;
-  const VOICE_PAGE_SIZE = 200;
+  let loadedVoiceIds = new Set();
+  let nextVoicePage = 1;
+  let voiceTotal = 0;
+  let voiceHasMore = true;
+  let voicePageLoading = false;
+  let searchReloadTimer = null;
+  const VOICE_PAGE_SIZE = 30;
   const RELOAD_STATE_KEY = `voice-selector-state:${taskId || "unknown"}`;
 
   function escapeHtml(s) {
@@ -580,11 +586,26 @@
     });
   }
 
+  function currentVoiceSearch() {
+    return (searchInput && searchInput.value || "").trim();
+  }
+
+  function resetVoicePaging() {
+    allItems = [];
+    loadedVoiceIds = new Set();
+    nextVoicePage = 1;
+    voiceTotal = 0;
+    voiceHasMore = true;
+  }
+
   async function fetchVoiceLibraryPage(page) {
     const params = new URLSearchParams({
       page: String(page),
       page_size: String(VOICE_PAGE_SIZE),
     });
+    if (activeGender) params.set("gender", activeGender);
+    const q = currentVoiceSearch();
+    if (q) params.set("q", q);
     const resp = await fetch(`${apiBase}/${taskId}/voice-library?${params.toString()}`);
     if (!resp.ok) {
       const detail = escapeHtml(await resp.text());
@@ -595,49 +616,47 @@
     return resp.json();
   }
 
-  async function fetchFullVoiceLibrary(seq) {
-    const first = await fetchVoiceLibraryPage(1);
-    if (!first || seq !== libraryRequestSeq) return null;
-    const items = [];
-    const seen = new Set();
-    mergeVoiceItems(items, first.items, seen);
-
-    const total = Number(first.total || 0);
-    const maxPages = total > 0 ? Math.ceil(total / VOICE_PAGE_SIZE) : 1;
-    for (let page = 2; page <= maxPages; page += 1) {
-      const next = await fetchVoiceLibraryPage(page);
-      if (!next || seq !== libraryRequestSeq) return null;
-      mergeVoiceItems(items, next.items, seen);
+  async function loadVoicePage(options = {}) {
+    const reset = !!options.reset;
+    if (voicePageLoading && !reset) return;
+    if (!voiceHasMore && !reset) return;
+    if (reset) {
+      resetVoicePaging();
+      libraryRequestSeq += 1;
+      render("音色库加载中...");
+    } else if (!libraryRequestSeq) {
+      libraryRequestSeq = 1;
     }
-    first.items = items;
-    return first;
-  }
-
-  async function loadLibrary() {
-    if (shouldSkipAutomaticLibraryRefresh()) return;
-    const seq = ++libraryRequestSeq;
+    const seq = libraryRequestSeq;
+    const pageToLoad = nextVoicePage;
+    voicePageLoading = true;
     try {
-      const data = await fetchFullVoiceLibrary(seq);
+      const data = await fetchVoiceLibraryPage(pageToLoad);
       if (!data || seq !== libraryRequestSeq) return;
-      allItems = data.items || [];
       setVoiceMatchCandidates(data.candidates || []);
+      mergeVoiceItems(allItems, data.items || [], loadedVoiceIds);
       selectedVoiceId = data.selected_voice_id || null;
       if (selectedVoiceId && !selectedVoiceName) {
         const selected = allItems.find(v => v.voice_id === selectedVoiceId);
         selectedVoiceName = selected ? (selected.name || selected.voice_id) : null;
       }
+      voiceTotal = Number(data.total || 0);
+      const responsePage = Number(data.page || pageToLoad);
+      const responsePageSize = Number(data.page_size || VOICE_PAGE_SIZE);
+      nextVoicePage = responsePage + 1;
+      voiceHasMore = responsePage * responsePageSize < voiceTotal;
 
       const n = (data.candidates || []).length;
       const ready = !!data.voice_match_ready;
       const progress = describePipeline(data.pipeline);
 
       if (!ready) {
-        summaryEl.textContent = `${lang.toUpperCase()} 音色库共 ${data.total || 0} 个 · ${progress}`;
+        summaryEl.textContent = `${lang.toUpperCase()} 音色库共 ${voiceTotal || 0} 个 · 已加载 ${allItems.length} 个 · ${progress}`;
         setTimeout(() => render(progress), 0);
         schedulePoll();
       } else {
         markVoiceMatchReadyFrozen();
-        const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
+        const parts = [`${lang.toUpperCase()} 音色库共 ${voiceTotal || 0} 个`, `已加载 ${allItems.length} 个`];
         if (n > 0) parts.push(`${n} 个向量匹配推荐`);
         else parts.push("向量匹配未找到相似音色");
         summaryEl.textContent = parts.join(" · ");
@@ -651,6 +670,35 @@
       listEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
       if (modalListEl) modalListEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
       schedulePoll(5000);
+    } finally {
+      if (seq === libraryRequestSeq) voicePageLoading = false;
+    }
+  }
+
+  async function loadLibrary(options = {}) {
+    if (options.automatic) {
+      if (shouldSkipAutomaticLibraryRefresh()) return;
+    } else {
+      voiceMatchReadyFrozen = false;
+    }
+    return loadVoicePage({ reset: true });
+  }
+
+  function reloadVoiceLibrarySoon() {
+    if (searchReloadTimer) clearTimeout(searchReloadTimer);
+    searchReloadTimer = setTimeout(() => {
+      searchReloadTimer = null;
+      loadLibrary();
+    }, 250);
+  }
+
+  function maybeLoadMoreVoices(event) {
+    if (launched || voicePageLoading || !voiceHasMore) return;
+    if (recommendedOnly && recommendedOnly.checked) return;
+    const el = event && event.currentTarget;
+    if (!el || !el.scrollHeight) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) {
+      loadVoicePage();
     }
   }
 
@@ -667,7 +715,7 @@
       pollDelay = Math.min(pollDelay + 1000, 10000);
     }
     if (pollHandle) clearTimeout(pollHandle);
-    pollHandle = setTimeout(loadLibrary, delay);
+    pollHandle = setTimeout(() => loadLibrary({ automatic: true }), delay);
   }
 
   function rowHtml(v, opts) {
@@ -806,50 +854,6 @@
     }
   }
 
-  function render(waitingProgress) {
-    const filtered = filteredVoiceRows();
-    syncVoiceSelectOptions(filtered, waitingProgress);
-
-    let html = "";
-
-    filtered.forEach(({ v, rec }) => {
-      const isRec = !!rec;
-      const isSelected = selectedVoiceId === v.voice_id;
-      const classes = [];
-      if (isRec) classes.push("recommended");
-      const badge = isRec
-        ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
-        : "";
-      html += rowHtml(v, {
-        badge, pinClass: classes.join(" "), isSelected, rec,
-      });
-    });
-
-    if (!html) {
-      html = `<div class="vs-loading">${waitingProgress || "没有匹配的音色"}</div>`;
-    } else if (waitingProgress) {
-      html = `<div class="vs-waiting-banner">⏳ ${waitingProgress}
-        <small style="color:var(--text-user-badge);">（可先浏览/试听；向量推荐将在 ASR 完成后自动出现）</small></div>` + html;
-    }
-
-    listEl.innerHTML = html;
-
-    listEl.querySelectorAll(".vs-row").forEach(row => {
-      row.addEventListener("click", e => {
-        if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
-        selectVoice(row.dataset.voiceId, row.dataset.voiceName);
-      });
-    });
-  }
-
-  function selectVoice(voiceId, voiceName) {
-    if (launched) return;
-    selectedVoiceId = voiceId;
-    selectedVoiceName = voiceName;
-    render();
-    updateLaunchState();
-  }
-
   function bindVoiceRows(container) {
     if (!container) return;
     container.querySelectorAll(".vs-row").forEach(row => {
@@ -914,12 +918,20 @@
     renderRowsInto(modalListEl, filtered, waitingProgress);
   }
 
+  function renderVoiceModalIfOpen(waitingProgress) {
+    if (!currentModalOpen()) {
+      if (modalCountEl) modalCountEl.textContent = `${allItems.length}/${voiceTotal || allItems.length}`;
+      return;
+    }
+    renderVoiceModal(waitingProgress);
+  }
+
   function render(waitingProgress) {
     const renderState = captureRenderState();
     const filtered = filteredVoiceRows();
     syncVoiceSelectOptions(filtered, waitingProgress);
     renderRowsInto(listEl, filtered, waitingProgress);
-    renderVoiceModal(waitingProgress);
+    renderVoiceModalIfOpen(waitingProgress);
     restoreRenderState(renderState);
     saveReloadState();
   }
@@ -1030,7 +1042,7 @@
   }
 
   searchInput.addEventListener("input", () => {
-    render();
+    reloadVoiceLibrarySoon();
     saveReloadState();
   });
   recommendedOnly.addEventListener("change", () => {
@@ -1048,7 +1060,9 @@
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && currentModalOpen()) closeVoiceModal();
   });
+  if (listEl) listEl.addEventListener("scroll", maybeLoadMoreVoices, { passive: true });
   if (listEl) listEl.addEventListener("scroll", saveReloadState, { passive: true });
+  if (modalListEl) modalListEl.addEventListener("scroll", maybeLoadMoreVoices, { passive: true });
   if (modalListEl) modalListEl.addEventListener("scroll", saveReloadState, { passive: true });
   window.addEventListener("beforeunload", saveReloadState);
 
@@ -1060,7 +1074,7 @@
 
     updateGenderPills();
 
-    render();  // 先本地渲染一次（按 activeGender 过滤）
+    loadLibrary();
 
     const hint = document.getElementById("vs-rematching");
     rematching = true;
@@ -1075,16 +1089,9 @@
       if (resp.ok) {
         const data = await resp.json();
         setVoiceMatchCandidates(data.candidates || []);
-        // 把后端给的候选完整行 merge 进 allItems。
-        // 否则筛性别后的新候选不在初次 /voice-library 拿的前 200 里，
-        // 列表 join 失败 → 看不到推荐。
-        const existingIds = new Set(allItems.map(v => v.voice_id));
-        (data.extra_items || []).forEach(it => {
-          if (it && it.voice_id && !existingIds.has(it.voice_id)) {
-            allItems.push(it);
-            existingIds.add(it.voice_id);
-          }
-        });
+        // 把后端给的候选完整行 merge 进当前动态页集合。
+        // 候选可能不在已加载的 30 个普通音色里，但仍要置顶可选。
+        mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
         render();
       } else if (resp.status !== 409) {
         console.warn("rematch failed:", await resp.text());

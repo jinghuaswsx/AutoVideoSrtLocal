@@ -450,23 +450,38 @@ def test_superadmin_can_read_other_users_multi_translate_subtitle_preview(authed
 
 
 def test_superadmin_can_read_other_users_multi_translate_voice_library(authed_client_no_db, monkeypatch):
+    captured: dict = {}
+
     def fake_query_one(sql, args):
         if "user_id = %s" in sql.lower() or "user_id=%s" in sql.lower():
             return None
         return {"state_json": json.dumps({"target_lang": "de"}, ensure_ascii=False)}
 
+    def fake_list_voices(**kwargs):
+        captured.update(kwargs)
+        return {"items": [{"voice_id": "v1"}], "total": 91}
+
     monkeypatch.setattr("web.routes.multi_translate.db_query_one", fake_query_one)
     monkeypatch.setattr("web.routes.multi_translate._is_superadmin_user", lambda: True)
     monkeypatch.setattr(
         "appcore.voice_library_browse.list_voices",
-        lambda **kwargs: {"items": [{"voice_id": "v1"}], "total": 1},
+        fake_list_voices,
     )
     monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
 
-    resp = authed_client_no_db.get("/api/multi-translate/foreign-multi-task/voice-library")
+    resp = authed_client_no_db.get("/api/multi-translate/foreign-multi-task/voice-library?page=2&page_size=30")
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"voice_id": "v1"}]
+    assert resp.get_json()["page"] == 2
+    assert resp.get_json()["page_size"] == 30
+    assert captured == {
+        "language": "de",
+        "gender": None,
+        "q": None,
+        "page": 2,
+        "page_size": 30,
+    }
 
 
 def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):

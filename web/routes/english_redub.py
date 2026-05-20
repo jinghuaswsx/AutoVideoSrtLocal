@@ -1215,9 +1215,9 @@ def voice_library_for_task(task_id: str):
     except (TypeError, ValueError):
         page = 1
     try:
-        page_size = max(1, min(200, int(request.args.get("page_size") or 200)))
+        page_size = max(1, min(200, int(request.args.get("page_size") or 30)))
     except (TypeError, ValueError):
-        page_size = 200
+        page_size = 30
     try:
         data = list_voices(
             language=lang,
@@ -1235,6 +1235,8 @@ def voice_library_for_task(task_id: str):
         owner_user_id=owner_user_id,
         items=data.get("items", []),
         total=data.get("total", 0),
+        page=data.get("page", page),
+        page_size=data.get("page_size", page_size),
     )
     return _json_response(payload)
 

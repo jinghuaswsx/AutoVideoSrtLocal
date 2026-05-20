@@ -203,6 +203,8 @@ def test_english_redub_voice_library_accepts_pagination(
     resp = authed_client_no_db.get("/api/english-redub/task-voice-pages/voice-library?page=3&page_size=150")
 
     assert resp.status_code == 200
+    assert resp.get_json()["page"] == 3
+    assert resp.get_json()["page_size"] == 150
     assert captured == {
         "language": "en",
         "gender": None,

@@ -6,7 +6,15 @@ from appcore.voice_library_browse import fetch_voice_by_id
 _VALID_ROUND_INDEXES = {1, 2, 3, 4, 5}
 
 
-def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items: list, total: int) -> dict:
+def build_voice_library_payload(
+    *,
+    state: dict,
+    owner_user_id: int | None,
+    items: list,
+    total: int,
+    page: int | None = None,
+    page_size: int | None = None,
+) -> dict:
     del owner_user_id
     steps = state.get("steps", {}) or {}
     pipeline = {
@@ -24,6 +32,8 @@ def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items
         "selected_voice_id": state.get("selected_voice_id"),
         "pipeline": pipeline,
         "voice_match_ready": pipeline["voice_match"] in ("waiting", "done"),
+        "page": page,
+        "page_size": page_size,
     }
 
 

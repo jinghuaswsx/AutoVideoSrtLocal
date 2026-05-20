@@ -886,7 +886,15 @@ def voice_library_for_task(task_id: str):
     gender = request.args.get("gender") or None
     q = request.args.get("q") or None
     try:
-        data = list_voices(language=lang, gender=gender, q=q, page=1, page_size=500)
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(200, int(request.args.get("page_size") or 30)))
+    except (TypeError, ValueError):
+        page_size = 30
+    try:
+        data = list_voices(language=lang, gender=gender, q=q, page=page, page_size=page_size)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, 400)
 
@@ -896,6 +904,8 @@ def voice_library_for_task(task_id: str):
         owner_user_id=owner_user_id,
         items=data.get("items", []),
         total=data.get("total", 0),
+        page=data.get("page", page),
+        page_size=data.get("page_size", page_size),
     )
     return _json_response(payload)
 

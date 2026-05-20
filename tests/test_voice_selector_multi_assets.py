@@ -41,6 +41,34 @@ def test_voice_selector_multi_escapes_voice_library_error_response_text():
     assert 'listEl.innerHTML = `<div class="vs-loading">加载失败：${await resp.text()}</div>`;' not in SCRIPT
 
 
+def test_voice_selector_multi_uses_incremental_voice_paging():
+    assert "const VOICE_PAGE_SIZE = 30;" in SCRIPT
+    assert "function loadVoicePage(" in SCRIPT
+    assert "page: String(page)" in SCRIPT
+    assert "function maybeLoadMoreVoices(" in SCRIPT
+    assert 'listEl.addEventListener("scroll", maybeLoadMoreVoices' in SCRIPT
+    assert 'modalListEl.addEventListener("scroll", maybeLoadMoreVoices' in SCRIPT
+    assert "fetchFullVoiceLibrary" not in SCRIPT
+    assert "Math.ceil(total / VOICE_PAGE_SIZE)" not in SCRIPT
+
+
+def test_voice_selector_multi_modal_renders_only_when_open():
+    render_block = SCRIPT[
+        SCRIPT.index("function render(waitingProgress)"):
+        SCRIPT.index("function selectVoice(", SCRIPT.index("function render(waitingProgress)"))
+    ]
+    open_block = SCRIPT[
+        SCRIPT.index("function openVoiceModal()"):
+        SCRIPT.index("function closeVoiceModal()")
+    ]
+
+    assert "function renderVoiceModalIfOpen(waitingProgress)" in SCRIPT
+    assert "renderVoiceModalIfOpen(waitingProgress);" in render_block
+    assert "renderVoiceModal(waitingProgress);" not in render_block
+    assert "renderVoiceModal();" in open_block
+    assert "currentModalOpen()" in SCRIPT
+
+
 def test_voice_selector_multi_exposes_explicit_voice_select_control():
     assert 'for="vs-voice-select"' in TEMPLATE
     assert 'id="vs-voice-select"' in TEMPLATE
@@ -86,6 +114,10 @@ def test_voice_selector_multi_preserves_focus_and_scroll_during_refreshes():
 
 
 def test_voice_selector_multi_freezes_after_voice_match_ready():
+    page_block = SCRIPT[
+        SCRIPT.index("async function loadVoicePage"):
+        SCRIPT.index("async function loadLibrary")
+    ]
     load_block = SCRIPT[
         SCRIPT.index("async function loadLibrary"):
         SCRIPT.index("function schedulePoll")
@@ -95,6 +127,6 @@ def test_voice_selector_multi_freezes_after_voice_match_ready():
     assert "function markVoiceMatchReadyFrozen()" in SCRIPT
     assert "function shouldSkipAutomaticLibraryRefresh()" in SCRIPT
     assert "if (shouldSkipAutomaticLibraryRefresh()) return;" in load_block
-    assert "markVoiceMatchReadyFrozen();" in load_block
+    assert "markVoiceMatchReadyFrozen();" in page_block
     assert "voiceMatchReadyFrozen = true;" in SCRIPT
-    assert "schedulePoll();" in load_block
+    assert "schedulePoll();" in page_block
