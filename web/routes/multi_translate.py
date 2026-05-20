@@ -944,7 +944,7 @@ def rematch_voice(task_id: str):
     from appcore.video_translate_defaults import resolve_default_voice
     from appcore.voice_library_browse import fetch_voices_by_ids
     from pipeline.voice_embedding import deserialize_embedding
-    from pipeline.voice_match import match_candidates
+    from pipeline.voice_match_speed import match_candidates_speed_aware
 
     try:
         vec = deserialize_embedding(base64.b64decode(embedding_b64))
@@ -953,11 +953,13 @@ def rematch_voice(task_id: str):
 
     # 用 owner 的默认音色排除规则，保证 admin 浏览时算出的候选与 owner 看到的一致
     default_voice_id = resolve_default_voice(lang, user_id=owner_user_id)
-    candidates = match_candidates(
+    candidates = match_candidates_speed_aware(
         vec,
         language=lang,
         gender=gender,
-        top_k=10,
+        source_utterances=state.get("utterances_en") or state.get("utterances") or [],
+        candidate_pool_size=20,
+        top_k=20,
         exclude_voice_ids={default_voice_id} if default_voice_id else None,
     ) or []
     for c in candidates:

@@ -47,7 +47,8 @@ from appcore.runtime import (
 )
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline.voice_embedding import embed_audio_file
-from pipeline.voice_match import extract_sample_from_utterances, match_candidates
+from pipeline import voice_match_speed
+from pipeline.voice_match import extract_sample_from_utterances
 from pipeline.localization import (
     build_source_full_text_zh,
     build_tts_segments,
@@ -1252,10 +1253,12 @@ class MultiTranslateRunner(PipelineRunner):
                         min_duration=8.0,
                     )
                 vec = embed_audio_file(clip)
-                candidates = match_candidates(
+                candidates = voice_match_speed.match_candidates_speed_aware(
                     vec,
                     language=lang,
-                    top_k=10,
+                    source_utterances=task.get("utterances_en") or utterances,
+                    candidate_pool_size=20,
+                    top_k=20,
                     exclude_voice_ids={default_voice_id} if default_voice_id else None,
                 ) or []
                 for c in candidates:

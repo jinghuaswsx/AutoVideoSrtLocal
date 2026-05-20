@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 from unittest.mock import patch
 
@@ -115,6 +116,52 @@ def test_omni_translate_voice_library_accepts_pagination(authed_client_no_db, mo
         "page": 2,
         "page_size": 30,
     }
+
+
+def test_omni_rematch_uses_speed_aware_voice_match(authed_client_no_db):
+    normalized_utterances = [{"text": "hello world", "start_time": 0, "end_time": 1}]
+    state = {
+        "target_lang": "de",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+        "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
+        "utterances_en": normalized_utterances,
+    }
+    with patch(
+        "web.routes.omni_translate.db_query_one",
+        return_value={"state_json": json.dumps(state, ensure_ascii=False), "user_id": 1},
+    ), patch(
+        "web.routes.omni_translate.db_execute",
+    ), patch(
+        "appcore.video_translate_defaults.resolve_default_voice",
+        return_value="default-voice-id",
+    ), patch(
+        "pipeline.voice_embedding.deserialize_embedding",
+        return_value="decoded-embedding",
+    ), patch(
+        "pipeline.voice_match.match_candidates",
+        side_effect=AssertionError("legacy matcher should not be used"),
+    ), patch(
+        "pipeline.voice_match_speed.match_candidates_speed_aware",
+        return_value=[{"voice_id": "voice-b", "similarity": 0.91}],
+    ) as m_match, patch(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        return_value=[{"voice_id": "voice-b", "name": "B", "gender": "female"}],
+    ) as m_fetch:
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/task-1/rematch",
+            json={"gender": "female"},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["candidates"][0]["voice_id"] == "voice-b"
+    assert payload["extra_items"][0]["voice_id"] == "voice-b"
+    assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
+    assert m_match.call_args.kwargs["candidate_pool_size"] == 20
+    assert m_match.call_args.kwargs["top_k"] == 20
+    assert m_match.call_args.kwargs["gender"] == "female"
+    assert m_match.call_args.kwargs["source_utterances"] == normalized_utterances
+    assert m_fetch.call_args.kwargs["voice_ids"] == ["voice-b"]
 
 
 def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):

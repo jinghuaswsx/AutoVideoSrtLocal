@@ -7,10 +7,13 @@ from appcore.runtime_multi import MultiTranslateRunner
 
 def test_step_voice_match_writes_candidates_to_state():
     runner = MultiTranslateRunner(bus=EventBus(), user_id=1)
+    source_utterances = [{"start_time": 0, "end_time": 10, "text": "hola mundo"}]
+    normalized_utterances = [{"start_time": 0, "end_time": 10, "text": "hello world"}]
     task = {
         "task_dir": "/tmp/x",
         "target_lang": "de",
-        "utterances": [{"start_time": 0, "end_time": 10, "text": "hi"}],
+        "utterances": source_utterances,
+        "utterances_en": normalized_utterances,
         "video_path": "/tmp/x/src.mp4",
     }
     with patch("appcore.task_state.get", return_value=task), \
@@ -21,7 +24,7 @@ def test_step_voice_match_writes_candidates_to_state():
                return_value=np.zeros(256, dtype=np.float32)), \
          patch("appcore.runtime_multi.resolve_default_voice",
                return_value="default-voice-id"), \
-         patch("appcore.runtime_multi.match_candidates") as m_match:
+         patch("pipeline.voice_match_speed.match_candidates_speed_aware") as m_match:
         m_match.return_value = [
             {"voice_id": "v1", "name": "A", "similarity": 0.85,
              "gender": "male", "preview_url": "u1"},
@@ -34,7 +37,9 @@ def test_step_voice_match_writes_candidates_to_state():
 
     payload = m_update.call_args.kwargs
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
-    assert m_match.call_args.kwargs["top_k"] == 10
+    assert m_match.call_args.kwargs["candidate_pool_size"] == 20
+    assert m_match.call_args.kwargs["top_k"] == 20
+    assert m_match.call_args.kwargs["source_utterances"] == normalized_utterances
     assert payload["voice_match_candidates"][0]["voice_id"] == "v1"
     assert len(payload["voice_match_candidates"]) == 3
 
@@ -52,7 +57,7 @@ def test_step_voice_match_fallback_when_empty():
                return_value="/tmp/x/clip.wav"), \
          patch("appcore.runtime_multi.embed_audio_file",
                return_value=np.zeros(256, dtype=np.float32)), \
-         patch("appcore.runtime_multi.match_candidates", return_value=[]), \
+         patch("pipeline.voice_match_speed.match_candidates_speed_aware", return_value=[]), \
          patch("appcore.runtime_multi.resolve_default_voice",
                return_value="default-voice-id"):
         runner._step_voice_match("t1")

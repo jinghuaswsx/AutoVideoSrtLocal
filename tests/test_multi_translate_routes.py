@@ -484,10 +484,13 @@ def test_superadmin_can_read_other_users_multi_translate_voice_library(authed_cl
     }
 
 
-def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
+def test_rematch_excludes_default_voice_from_top20(authed_client_no_db):
+    normalized_utterances = [{"text": "hello world", "start_time": 0, "end_time": 1}]
     state = {
         "target_lang": "de",
         "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+        "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
+        "utterances_en": normalized_utterances,
     }
     with patch(
         "web.routes.multi_translate.db_query_one",
@@ -502,6 +505,9 @@ def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
         return_value="decoded-embedding",
     ), patch(
         "pipeline.voice_match.match_candidates",
+        side_effect=AssertionError("legacy matcher should not be used"),
+    ), patch(
+        "pipeline.voice_match_speed.match_candidates_speed_aware",
         return_value=[{"voice_id": "voice-b", "similarity": 0.91}],
     ) as m_match, patch(
         "appcore.voice_library_browse.fetch_voices_by_ids",
@@ -517,7 +523,10 @@ def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
     assert payload["candidates"][0]["voice_id"] == "voice-b"
     assert payload["extra_items"][0]["voice_id"] == "voice-b"
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
-    assert m_match.call_args.kwargs["top_k"] == 10
+    assert m_match.call_args.kwargs["candidate_pool_size"] == 20
+    assert m_match.call_args.kwargs["top_k"] == 20
+    assert m_match.call_args.kwargs["gender"] == "female"
+    assert m_match.call_args.kwargs["source_utterances"] == normalized_utterances
     assert m_fetch.call_args.kwargs["voice_ids"] == ["voice-b"]
 
 
