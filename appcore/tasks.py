@@ -37,6 +37,20 @@ PARENT_NON_TERMINAL = (
 PARENT_TERMINAL = (PARENT_ALL_DONE, PARENT_CANCELLED)
 CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
+RAW_NIUMA_EVENT_TYPES = {
+    "raw_niuma_submitted",
+    "raw_niuma_done",
+    "raw_niuma_failed",
+    "raw_niuma_timeout",
+}
+SUBTITLE_REMOVAL_STATUS_LABELS = {
+    "submitted": "已提交",
+    "queued": "排队中",
+    "running": "运行中",
+    "done": "已完成",
+    "failed": "失败",
+    "timeout": "超时",
+}
 
 # ---- 高层状态 rollup ----
 def high_level_status(status: str) -> str:
@@ -126,6 +140,146 @@ def _payload_user_ids(payload: dict) -> set[int]:
     return ids
 
 
+def _event_subtitle_removal_task_id(event_type: str, payload: dict) -> str:
+    if event_type not in RAW_NIUMA_EVENT_TYPES:
+        return ""
+    raw = payload.get("subtitle_task_id") or payload.get("task_id") or ""
+    return str(raw or "").strip()
+
+
+def _isoformat_value(value: Any) -> str:
+    if not value:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _subtitle_removal_detail_url(task_id: str) -> str:
+    return f"/subtitle-removal/{quote(str(task_id), safe='')}"
+
+
+def _subtitle_removal_source_video_url(task_id: str) -> str:
+    return f"/api/subtitle-removal/{quote(str(task_id), safe='')}/artifact/source-video"
+
+
+def _subtitle_removal_result_video_url(task_id: str) -> str:
+    return f"/api/subtitle-removal/{quote(str(task_id), safe='')}/artifact/result"
+
+
+def _parse_subtitle_removal_state(row: dict) -> dict:
+    raw = row.get("state_json")
+    if isinstance(raw, dict):
+        state = dict(raw)
+    else:
+        try:
+            state = json.loads(raw or "{}")
+        except (TypeError, ValueError):
+            state = {}
+    if not isinstance(state, dict):
+        state = {}
+    state.setdefault("id", row.get("id"))
+    state.setdefault("status", row.get("status"))
+    state["_project_created_at"] = row.get("created_at")
+    state["_project_updated_at"] = row.get("updated_at")
+    return state
+
+
+def _load_subtitle_removal_context(task_ids: Iterable[str]) -> dict[str, dict]:
+    normalized_ids = sorted({str(task_id).strip() for task_id in task_ids if str(task_id).strip()})
+    if not normalized_ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(normalized_ids))
+    rows = query_all(
+        "SELECT id, status, state_json, created_at, updated_at "
+        "FROM projects "
+        "WHERE type='subtitle_removal' AND deleted_at IS NULL "
+        f"AND id IN ({placeholders})",
+        tuple(normalized_ids),
+    )
+    return {str(row["id"]): _parse_subtitle_removal_state(row) for row in rows}
+
+
+def _subtitle_removal_summary_status(event_type: str, payload: dict, state: dict) -> str:
+    if event_type == "raw_niuma_timeout":
+        return "timeout"
+    if event_type == "raw_niuma_failed":
+        return "failed"
+    if event_type == "raw_niuma_done":
+        return "done"
+    status = str(state.get("status") or "").strip().lower()
+    provider_status = str(state.get("provider_status") or "").strip().lower()
+    if status == "done" or provider_status in {"done", "success"}:
+        return "done"
+    if status == "error" or provider_status in {"error", "failed", "fail"}:
+        return "failed"
+    if status == "queued" or provider_status in {"queued", "waiting"}:
+        return "queued"
+    if status == "running" or provider_status in {"running", "processing", "polling"}:
+        return "running"
+    if payload.get("error"):
+        return "failed"
+    return "submitted"
+
+
+def _subtitle_removal_error(payload: dict, state: dict) -> str:
+    for key in ("error", "provider_emsg", "message"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    for key in ("error", "provider_emsg"):
+        value = state.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def _subtitle_removal_comparison(task_id: str, state: dict) -> dict:
+    has_source = bool(str(state.get("video_path") or "").strip())
+    has_result = any(
+        str(state.get(key) or "").strip()
+        for key in ("result_video_path", "result_tos_key", "vod_result_vid", "provider_result_url")
+    )
+    if not (has_source and has_result):
+        return {}
+    return {
+        "source_video_url": _subtitle_removal_source_video_url(task_id),
+        "result_video_url": _subtitle_removal_result_video_url(task_id),
+        "source_label": "原始英文视频",
+        "result_label": "字幕移除结果",
+    }
+
+
+def _event_subtitle_removal_context(
+    *,
+    task_id: str,
+    event_type: str,
+    submitted_at: str,
+    payload: dict,
+    state: dict | None = None,
+) -> dict:
+    state = state or {}
+    status = _subtitle_removal_summary_status(event_type, payload, state)
+    last_updated_at = (
+        str(state.get("last_polled_at") or "").strip()
+        or _isoformat_value(state.get("_project_updated_at"))
+        or _isoformat_value(state.get("updated_at"))
+    )
+    context = {
+        "task_id": task_id,
+        "detail_url": _subtitle_removal_detail_url(task_id),
+        "summary_status": status,
+        "summary_label": SUBTITLE_REMOVAL_STATUS_LABELS.get(status, status),
+        "submitted_at": submitted_at or "",
+        "last_updated_at": last_updated_at,
+        "error": _subtitle_removal_error(payload, state),
+    }
+    comparison = _subtitle_removal_comparison(task_id, state)
+    if comparison:
+        context["comparison"] = comparison
+    return context
+
+
 def _load_user_display_context(user_ids: Iterable[int]) -> dict[str, dict]:
     normalized_ids = sorted({int(uid) for uid in user_ids if int(uid) > 0})
     if not normalized_ids:
@@ -161,12 +315,20 @@ def list_task_events(task_id: int) -> list[dict]:
     )
     payload_by_event_id: dict[int, dict] = {}
     payload_user_ids: set[int] = set()
+    payload_subtitle_task_ids: set[str] = set()
     for row in rows:
         payload = _parse_event_payload_obj(row.get("payload_json"))
         payload_by_event_id[int(row["id"])] = payload
         payload_user_ids.update(_payload_user_ids(payload))
+        subtitle_task_id = _event_subtitle_removal_task_id(
+            str(row.get("event_type") or ""),
+            payload,
+        )
+        if subtitle_task_id:
+            payload_subtitle_task_ids.add(subtitle_task_id)
 
     user_context = _load_user_display_context(payload_user_ids)
+    subtitle_context = _load_subtitle_removal_context(payload_subtitle_task_ids)
     events = []
     for row in rows:
         event_id = int(row["id"])
@@ -188,8 +350,23 @@ def list_task_events(task_id: int) -> list[dict]:
                 row["created_at"].isoformat() if row.get("created_at") else None
             ),
         }
+        context = {}
         if event_user_context:
-            item["payload_context"] = {"users": event_user_context}
+            context["users"] = event_user_context
+        subtitle_task_id = _event_subtitle_removal_task_id(
+            str(row.get("event_type") or ""),
+            payload,
+        )
+        if subtitle_task_id:
+            context["subtitle_removal"] = _event_subtitle_removal_context(
+                task_id=subtitle_task_id,
+                event_type=str(row.get("event_type") or ""),
+                submitted_at=item["created_at"] or "",
+                payload=payload,
+                state=subtitle_context.get(subtitle_task_id, {}),
+            )
+        if context:
+            item["payload_context"] = context
         events.append(item)
     return events
 

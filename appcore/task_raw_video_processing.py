@@ -114,7 +114,11 @@ def start_niuma_processing_for_parent_task(
         int(task_id),
         "raw_niuma_submitted",
         actor_user_id,
-        {"subtitle_task_id": subtitle_task_id, "timeout_seconds": WATCH_TIMEOUT_SECONDS},
+        {
+            "subtitle_task_id": subtitle_task_id,
+            "timeout_seconds": WATCH_TIMEOUT_SECONDS,
+            "subtitle_backend": "niuma",
+        },
     )
     watcher = start_watcher_fn or _start_watcher_thread
     watcher(

@@ -152,6 +152,67 @@ def test_list_task_events_enriches_translator_display_name_context(monkeypatch):
     assert calls[1][1] == (33,)
 
 
+def test_list_task_events_enriches_niuma_subtitle_removal_context(monkeypatch):
+    import json
+    from appcore import tasks
+
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.username", raising=False)
+    monkeypatch.setattr(tasks, "_load_user_display_context", lambda user_ids: {})
+
+    def fake_query_all(sql, args=()):
+        if "FROM task_events" in sql:
+            return [
+                {
+                    "id": 8,
+                    "task_id": 44,
+                    "event_type": "raw_niuma_submitted",
+                    "actor_user_id": 7,
+                    "actor_username": "raw-user",
+                    "actor_display_name": "蔡靖华",
+                    "payload_json": '{"subtitle_task_id": "tcraw-44-a", "timeout_seconds": 600}',
+                    "created_at": datetime(2026, 5, 20, 23, 30, 24),
+                }
+            ]
+        if "FROM projects" in sql:
+            assert args == ("tcraw-44-a",)
+            return [
+                {
+                    "id": "tcraw-44-a",
+                    "status": "done",
+                    "state_json": json.dumps(
+                        {
+                            "status": "done",
+                            "video_path": "/tmp/source.mp4",
+                            "result_video_path": "/tmp/result.mp4",
+                            "provider_status": "success",
+                            "last_polled_at": "2026-05-20T23:33:10",
+                        }
+                    ),
+                    "created_at": datetime(2026, 5, 20, 23, 30, 24),
+                    "updated_at": datetime(2026, 5, 20, 23, 33, 10),
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    event = tasks.list_task_events(44)[0]
+
+    subtitle = event["payload_context"]["subtitle_removal"]
+    assert subtitle["task_id"] == "tcraw-44-a"
+    assert subtitle["detail_url"] == "/subtitle-removal/tcraw-44-a"
+    assert subtitle["summary_status"] == "done"
+    assert subtitle["summary_label"] == "已完成"
+    assert subtitle["submitted_at"] == "2026-05-20T23:30:24"
+    assert subtitle["last_updated_at"] == "2026-05-20T23:33:10"
+    assert subtitle["comparison"] == {
+        "source_video_url": "/api/subtitle-removal/tcraw-44-a/artifact/source-video",
+        "result_video_url": "/api/subtitle-removal/tcraw-44-a/artifact/result",
+        "source_label": "原始英文视频",
+        "result_label": "字幕移除结果",
+    }
+
+
 def test_list_dispatch_pool_products_filters_active_parent_tasks(monkeypatch):
     from appcore import tasks
 

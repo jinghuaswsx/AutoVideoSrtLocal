@@ -75,3 +75,9 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "<video class=\"tc-review-video\"" in source
     assert "当前审核内容" in source
     assert "tcScrollToReviewTarget" in source
+    assert "function tcRenderSubtitleRemovalContext" in source
+    assert "字幕移除任务页" in source
+    assert "tc-niuma-comparison" in source
+    assert "<video class=\"tc-niuma-video\"" in source
+    assert "原始英文视频" in source
+    assert "字幕移除结果" in source
