@@ -129,6 +129,36 @@ def test_product_profit_actions_move_into_mobile_content_top():
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
 
 
+def test_order_analytics_secondary_screen_uses_compact_realtime_layout():
+    """Portrait desktop and narrow secondary-screen layouts should reuse compact in-page controls."""
+    template = _template_source()
+
+    summary_row_start = template.index(".oar-summary-row {")
+    summary_row_end = template.index("}", summary_row_start)
+    summary_row_css = template[summary_row_start:summary_row_end]
+    assert "align-items: start;" in summary_row_css
+
+    assert "docs/superpowers/specs/2026-05-20-order-analytics-secondary-screen-adaptation-design.md" in template
+    compact_query = "@media (min-width: 769px) and (max-width: 1180px), (min-width: 769px) and (orientation: portrait)"
+    assert compact_query in template
+    assert template.index(compact_query) > template.index(".ppr-mobile-actions { display: none; }")
+
+    compact_start = template.index(compact_query)
+    compact_end = template.index("@media (max-width: 768px)", compact_start)
+    compact_css = template[compact_start:compact_end]
+
+    assert ".topbar .oa-tabs-topbar { display: none; }" in compact_css
+    assert ".topbar .ppr-actions { display: none; }" in compact_css
+    assert ".oa-mobile-tabs {" in compact_css
+    assert "display: block;" in compact_css
+    assert ".ppr-mobile-actions {" in compact_css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in compact_css
+    assert ".oar-summary-row-main," in compact_css
+    assert ".oar-summary-row-time {" in compact_css
+    assert ".oar-summary-row {" in compact_css
+    assert "align-items: start;" in compact_css
+
+
 def test_manual_ad_spend_rendering_escapes_server_controlled_values():
     """Manual ad spend rows include DB/config values; they must not be injected as raw HTML."""
     template = _template_source()
