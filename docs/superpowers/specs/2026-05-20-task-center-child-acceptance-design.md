@@ -58,7 +58,7 @@
 
 ## 验证
 
-1. `pytest tests/test_appcore_tasks_supporting_data.py tests/test_tasks_routes.py::test_task_center_child_translate_jump_uses_product_code_search tests/test_tasks_routes.py::test_child_readiness_delegates_to_tasks_service tests/test_tasks_routes.py::test_child_readiness_maps_missing_child_to_404 tests/test_appcore_tasks.py::test_submit_child_fails_when_detail_images_not_ready -q`
+1. `pytest tests/test_appcore_tasks_supporting_data.py tests/test_tasks_routes.py::test_task_center_child_translate_jump_uses_product_code_search tests/test_tasks_routes.py::test_child_readiness_delegates_to_tasks_service tests/test_tasks_routes.py::test_child_readiness_maps_missing_child_to_404 tests/test_appcore_tasks.py::test_submit_child_fails_when_detail_images_not_ready tests/test_task_raw_source_bridge.py::test_approve_raw_ensures_raw_source_before_unblocking_children -q`
 2. `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
 3. 手工检查 `/tasks/` 页面 JS 中素材管理跳转包含 `q=<product_code>`、`from_task`、`lang`。
 

@@ -203,6 +203,22 @@ def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):
         lambda **kwargs: sequence.append("raw_source_synced")
         or {"raw_source_id": 301, "created": True, "updated": False},
     )
+    monkeypatch.setattr(tasks, "_task_product_id_for_notification", lambda cur, task_id: 901)
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "测试产品")
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_child_assigned": staticmethod(
+                    lambda cur, *, task_id, product_name: sequence.append("child_notified")
+                )
+            },
+        ),
+        raising=False,
+    )
 
     tasks.approve_raw(task_id=501, actor_user_id=11)
 
