@@ -55,6 +55,7 @@
   const aiRankStatusPill = document.getElementById("vs-ai-rank-status-pill");
   const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
   const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");
+  const forceSpeedMatchBtn = document.getElementById("vs-force-speed-match-btn");
   const aiRankModalEl = document.getElementById("vs-ai-rank-modal");
   const aiRankCloseBtn = document.getElementById("vs-ai-rank-close-btn");
   const aiRankModalStatus = document.getElementById("vs-ai-rank-modal-status");
@@ -414,6 +415,7 @@
   let voiceAiRankCacheKey = "all";
   let voiceAiRankRerunning = false;
   let voiceAiRankRequestState = "";
+  let voiceSelectionMode = "ai_rank";
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -604,6 +606,12 @@
       aiRankRunBtn.title = supportsManualVoiceAiRanking()
         ? `${label}缓存优先；没有缓存时才调用大模型`
         : "当前模块暂不支持手动重新AI排名";
+    }
+    if (forceSpeedMatchBtn) {
+      forceSpeedMatchBtn.hidden = false;
+      forceSpeedMatchBtn.disabled = false;
+      forceSpeedMatchBtn.classList.toggle("is-active", currentVoiceSelectionMode() === "speed_fallback");
+      forceSpeedMatchBtn.title = "忽略当前 AI 排名顺序，改按旧的音色匹配加语速综合排序继续选择";
     }
   }
 
@@ -804,6 +812,25 @@
     return voiceAiRankStatus === "running" || voiceAiRankStatus === "queued";
   }
 
+  function currentVoiceSelectionMode() {
+    return voiceSelectionMode === "speed_fallback" ? "speed_fallback" : "ai_rank";
+  }
+
+  function hasUsableVoiceAiRank() {
+    const status = normalizedVoiceAiRankStatus(voiceAiRankStatus);
+    if (status !== "done" && status !== "derived_from_all") return false;
+    return Array.from(candidatesMap.values()).some(rec => normalizedVoiceAiRank(rec && rec.llm_rank) !== null);
+  }
+
+  function canSelectVoiceWithoutAiGate() {
+    return currentVoiceSelectionMode() === "speed_fallback" || hasUsableVoiceAiRank();
+  }
+
+  function voiceSelectionBlockedReason() {
+    if (canSelectVoiceWithoutAiGate()) return "";
+    return "等待 AI 音色排名完成，或点击“强制音色语速匹配排序”继续";
+  }
+
   function shouldSkipAutomaticLibraryRefresh() {
     return voiceMatchReadyFrozen && !shouldPollVoiceAiRanking();
   }
@@ -813,6 +840,19 @@
     if (!Number.isFinite(rank)) return null;
     const normalized = Math.trunc(rank);
     return normalized >= 1 && normalized <= 20 ? normalized : null;
+  }
+
+  function normalizedVoiceAiRank(value) {
+    const rank = Number(value);
+    if (!Number.isFinite(rank)) return null;
+    const normalized = Math.trunc(rank);
+    return normalized >= 1 && normalized <= 10 ? normalized : null;
+  }
+
+  function shouldSortRecommendedByVoiceAiRank() {
+    const status = normalizedVoiceAiRankStatus(voiceAiRankStatus);
+    return currentVoiceSelectionMode() === "ai_rank"
+      && (status === "done" || status === "derived_from_all");
   }
 
   function seedSimilarityRankFallbacks(candidates) {
@@ -1006,17 +1046,18 @@
       ? `<audio controls preload="none" src="${escapeHtml(previewUrl)}"></audio>`
       : "";
     const speedMeta = voiceSpeedMetaHtml(rec);
+    const selectionBlocked = !canSelectVoiceWithoutAiGate();
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
            data-voice-name="${escapeHtml(v.name || '')}" tabindex="0"
-           aria-selected="${isSelected ? "true" : "false"}">
+           aria-selected="${isSelected ? "true" : "false"}" aria-disabled="${selectionBlocked ? "true" : "false"}">
         <div class="vs-row-main">
           <div class="vs-row-name">${badge || ""}${escapeHtml(v.name || v.voice_id)}</div>
           <div class="vs-row-meta">${meta}</div>
           ${speedMeta}
         </div>
         ${preview}
-        <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
+        <button class="vs-row-select-btn" type="button" ${selectionBlocked ? "disabled" : ""}>${isSelected ? "已选" : "选此音色"}</button>
       </div>
     `;
   }
@@ -1055,9 +1096,19 @@
       const rec = candidatesMap.get(v.voice_id);
       const voiceMatchRank = rec ? (candidatesRankMap.get(v.voice_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
       const voiceMatchSimilarityRank = rec ? similarityRankMap.get(v.voice_id) : null;
-      return { v, rec, sim: rec ? rec.similarity : -1, voiceMatchRank, voiceMatchSimilarityRank };
+      const aiRank = rec ? normalizedVoiceAiRank(rec.llm_rank) : null;
+      const aiRankBucket = voiceMatchRank < 10 ? 0 : 1;
+      return {
+        v, rec, sim: rec ? rec.similarity : -1, voiceMatchRank, voiceMatchSimilarityRank, aiRank, aiRankBucket,
+      };
     }).sort((a, b) => {
       if (a.rec && b.rec && a.voiceMatchRank !== b.voiceMatchRank) {
+        const sortByAiRank = shouldSortRecommendedByVoiceAiRank();
+        const aSupportsAiRank = a.aiRankBucket === 0 && a.aiRank !== null;
+        const bSupportsAiRank = b.aiRankBucket === 0 && b.aiRank !== null;
+        if (sortByAiRank && aSupportsAiRank && bSupportsAiRank && a.aiRank !== b.aiRank) {
+          return a.aiRank - b.aiRank;
+        }
         return a.voiceMatchRank - b.voiceMatchRank;
       }
       if (!!a.rec !== !!b.rec) return a.rec ? -1 : 1;
@@ -1123,7 +1174,7 @@
       voiceSelect.appendChild(option);
     });
 
-    voiceSelect.disabled = launched || optionRows.length === 0;
+    voiceSelect.disabled = launched || optionRows.length === 0 || !canSelectVoiceWithoutAiGate();
     if (selectedVoiceId && optionRows.some(({ v }) => v.voice_id === selectedVoiceId)) {
       voiceSelect.value = selectedVoiceId;
     } else {
@@ -1142,6 +1193,7 @@
           return;
         }
         if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
+        if (!canSelectVoiceWithoutAiGate()) return;
         try {
           row.focus({ preventScroll: true });
         } catch (_err) {
@@ -1154,6 +1206,7 @@
       row.addEventListener("keydown", e => {
         if (e.key !== "Enter" && e.key !== " ") return;
         if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
+        if (!canSelectVoiceWithoutAiGate()) return;
         e.preventDefault();
         selectVoice(row.dataset.voiceId, row.dataset.voiceName, {
           closeModal: container === modalListEl,
@@ -1236,9 +1289,17 @@
 
   function selectVoiceFromControl() {
     if (!voiceSelect) return;
+    if (!canSelectVoiceWithoutAiGate()) return;
     const option = voiceSelect.selectedOptions && voiceSelect.selectedOptions[0];
     if (!voiceSelect.value || !option) return;
     selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
+  }
+
+  function forceSpeedMatchSorting() {
+    voiceSelectionMode = "speed_fallback";
+    updateVoiceAiRankControls();
+    render();
+    updateLaunchState();
   }
 
   async function rerunVoiceAiRanking() {
@@ -1282,10 +1343,13 @@
   }
 
   function updateLaunchState() {
-    const ready = launched ? false : !!selectedVoiceId;
+    const ready = launched ? false : !!selectedVoiceId && canSelectVoiceWithoutAiGate();
     launchBtn.disabled = !ready;
+    if (openModalBtn) openModalBtn.disabled = launched || !canSelectVoiceWithoutAiGate();
     if (launched) {
       selectionText.textContent = "✓ 已提交，pipeline 正在运行";
+    } else if (!canSelectVoiceWithoutAiGate()) {
+      selectionText.textContent = voiceSelectionBlockedReason() || "请从列表里选择一个音色";
     } else if (selectedVoiceId) {
       const label = selectedVoiceName || selectedVoiceId;
       selectionText.textContent = `✓ 已选：${label}`;
@@ -1383,6 +1447,7 @@
   if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVoiceModal);
   if (aiRankDebugBtn) aiRankDebugBtn.addEventListener("click", () => openVoiceAiRankModal("request"));
   if (aiRankRunBtn) aiRankRunBtn.addEventListener("click", rerunVoiceAiRanking);
+  if (forceSpeedMatchBtn) forceSpeedMatchBtn.addEventListener("click", forceSpeedMatchSorting);
   if (aiRankCloseBtn) aiRankCloseBtn.addEventListener("click", closeVoiceAiRankModal);
   if (modalEl) {
     modalEl.addEventListener("click", e => {

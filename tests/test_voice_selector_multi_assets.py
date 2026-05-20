@@ -125,6 +125,23 @@ def test_voice_selector_multi_renders_llm_rank_badge_after_match_rank():
     assert ".vs-row-ai-rank" in TEMPLATE
 
 
+def test_voice_selector_multi_prioritizes_top10_by_ai_rank_only():
+    sorted_block = SCRIPT[
+        SCRIPT.index("function sortedVoiceRows()"):
+        SCRIPT.index("function filteredVoiceRows()")
+    ]
+
+    assert "function normalizedVoiceAiRank(value)" in SCRIPT
+    assert "function shouldSortRecommendedByVoiceAiRank()" in SCRIPT
+    assert "const aiRank = rec ? normalizedVoiceAiRank(rec.llm_rank) : null;" in sorted_block
+    assert "const aiRankBucket = voiceMatchRank < 10 ? 0 : 1;" in sorted_block
+    assert "const aSupportsAiRank = a.aiRankBucket === 0 && a.aiRank !== null;" in sorted_block
+    assert "const bSupportsAiRank = b.aiRankBucket === 0 && b.aiRank !== null;" in sorted_block
+    assert "if (sortByAiRank && aSupportsAiRank && bSupportsAiRank && a.aiRank !== b.aiRank)" in sorted_block
+    assert "return a.aiRank - b.aiRank;" in sorted_block
+    assert "return a.voiceMatchRank - b.voiceMatchRank;" in sorted_block
+
+
 def test_voice_selector_multi_exposes_llm_rank_debug_modal():
     assert 'id="vs-ai-rank-debug-btn"' in TEMPLATE
     assert "大模型音色选择排名" in TEMPLATE
@@ -166,6 +183,59 @@ def test_voice_selector_multi_keeps_ai_rank_controls_visible_and_adds_rerank_but
     assert "aiRankDebugBtn.hidden = false;" in SCRIPT
     assert "aiRankRunBtn.hidden = false;" in SCRIPT
     assert ".vs-ai-rank-run-btn.is-loading::before" in TEMPLATE
+
+
+def test_voice_selector_multi_exposes_force_speed_fallback_button_after_rerank():
+    heading_block = TEMPLATE[
+        TEMPLATE.index('<div class="vs-heading">'):
+        TEMPLATE.index('</div>', TEMPLATE.index('<div class="vs-heading">'))
+    ]
+    controls_block = SCRIPT[
+        SCRIPT.index("function updateVoiceAiRankControls"):
+        SCRIPT.index("function applyVoiceAiRankPayload")
+    ]
+
+    assert 'id="vs-force-speed-match-btn"' in heading_block
+    assert heading_block.index('id="vs-ai-rank-run-btn"') < heading_block.index('id="vs-force-speed-match-btn"')
+    assert 'const forceSpeedMatchBtn = document.getElementById("vs-force-speed-match-btn");' in SCRIPT
+    assert "function currentVoiceSelectionMode()" in SCRIPT
+    assert "function forceSpeedMatchSorting()" in SCRIPT
+    assert "forceSpeedMatchBtn.hidden = false;" in controls_block
+    assert "forceSpeedMatchBtn.classList.toggle(\"is-active\"" in controls_block
+
+
+def test_voice_selector_multi_blocks_selection_until_ai_rank_or_force_fallback():
+    launch_block = SCRIPT[
+        SCRIPT.index("function updateLaunchState()"):
+        SCRIPT.index("function openVoiceModal()")
+    ]
+    bind_block = SCRIPT[
+        SCRIPT.index("function bindVoiceRows(container)"):
+        SCRIPT.index("function rowsHtml")
+    ]
+    control_block = SCRIPT[
+        SCRIPT.index("function syncVoiceSelectOptions"):
+        SCRIPT.index("function bindVoiceRows(container)")
+    ]
+
+    assert "function canSelectVoiceWithoutAiGate()" in SCRIPT
+    assert "function voiceSelectionBlockedReason()" in SCRIPT
+    assert "if (!canSelectVoiceWithoutAiGate()) return;" in bind_block
+    assert 'voiceSelect.disabled = launched || optionRows.length === 0 || !canSelectVoiceWithoutAiGate();' in control_block
+    assert 'const ready = launched ? false : !!selectedVoiceId && canSelectVoiceWithoutAiGate();' in launch_block
+    assert 'selectionText.textContent = voiceSelectionBlockedReason() || "请从列表里选择一个音色";' in launch_block
+
+
+def test_voice_selector_multi_force_fallback_preserves_ai_badges_but_uses_voice_match_order():
+    sorted_block = SCRIPT[
+        SCRIPT.index("function shouldSortRecommendedByVoiceAiRank()"):
+        SCRIPT.index("function filteredVoiceRows()")
+    ]
+
+    assert 'return currentVoiceSelectionMode() === "ai_rank"' in sorted_block
+    assert "voiceSelectionMode = \"speed_fallback\";" in SCRIPT
+    assert "render();" in SCRIPT[SCRIPT.index("function forceSpeedMatchSorting()"):SCRIPT.index("function updateLaunchState()")]
+    assert "function voiceAiRankBadgeHtml(rec)" in SCRIPT
 
 
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
