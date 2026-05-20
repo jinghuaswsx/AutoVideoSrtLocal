@@ -208,8 +208,10 @@ def test_list_task_events_enriches_niuma_subtitle_removal_context(monkeypatch):
     assert subtitle["comparison"] == {
         "source_video_url": "/api/subtitle-removal/tcraw-44-a/artifact/source-video",
         "result_video_url": "/api/subtitle-removal/tcraw-44-a/artifact/result",
-        "source_label": "原始英文视频",
-        "result_label": "字幕移除结果",
+        "source_label": "提交去字幕源视频",
+        "source_hint": "原始带字幕英文视频",
+        "result_label": "去字幕输出结果视频",
+        "result_hint": "原始视频素材审核结果",
     }
 
 

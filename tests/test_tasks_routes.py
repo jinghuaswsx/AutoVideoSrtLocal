@@ -37,7 +37,7 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
 
-    assert "--tc-detail-drawer-w: min(960px, 50vw);" in body
+    assert "--tc-detail-drawer-w: 70vw;" in body
     assert "width: var(--tc-detail-drawer-w)" in body
     assert "function tcRenderEventTimeline" in body
     assert "function tcHumanEvent" in body

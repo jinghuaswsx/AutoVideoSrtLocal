@@ -245,8 +245,10 @@ def _subtitle_removal_comparison(task_id: str, state: dict) -> dict:
     return {
         "source_video_url": _subtitle_removal_source_video_url(task_id),
         "result_video_url": _subtitle_removal_result_video_url(task_id),
-        "source_label": "原始英文视频",
-        "result_label": "字幕移除结果",
+        "source_label": "提交去字幕源视频",
+        "source_hint": "原始带字幕英文视频",
+        "result_label": "去字幕输出结果视频",
+        "result_hint": "原始视频素材审核结果",
     }
 
 

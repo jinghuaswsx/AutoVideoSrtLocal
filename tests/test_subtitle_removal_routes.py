@@ -707,6 +707,51 @@ def test_subtitle_removal_source_video_artifact_serves_owned_task_video(tmp_path
     assert response.data == b"video"
 
 
+def test_subtitle_removal_source_video_artifact_prefers_public_source_backup(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    overwritten_video_path = task_dir / "source-now-cleaned.mp4"
+    overwritten_video_path.write_bytes(b"cleaned-result")
+    task = store.create_subtitle_removal(
+        "sr-source-video-public",
+        str(overwritten_video_path),
+        str(task_dir),
+        original_filename="video.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        source_tos_key="uploads/1/sr-source-video-public/original-with-subtitles.mp4",
+        source_object_info={"public_source_storage_backend": "tos"},
+    )
+    calls = []
+
+    def fake_generate_public_source_url(task_arg, object_key, *, expires=86400):
+        calls.append((task_arg["id"], object_key, expires))
+        return "https://signed.example/original-with-subtitles.mp4"
+
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_source_storage.generate_public_source_url",
+        fake_generate_public_source_url,
+    )
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source-video")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "https://signed.example/original-with-subtitles.mp4"
+    assert calls == [
+        (
+            "sr-source-video-public",
+            "uploads/1/sr-source-video-public/original-with-subtitles.mp4",
+            86400,
+        )
+    ]
+
+
 def test_state_api_returns_detail_payload(tmp_path, authed_client_no_db):
     video_path = tmp_path / "source.mp4"
     video_path.write_bytes(b"video")

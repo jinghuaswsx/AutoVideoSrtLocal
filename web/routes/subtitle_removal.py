@@ -907,6 +907,18 @@ def get_source_artifact(task_id: str):
 @login_required
 def get_source_video_artifact(task_id: str):
     task = _get_owned_task(task_id)
+    source_tos_key = (task.get("source_tos_key") or "").strip()
+    if source_tos_key:
+        try:
+            source_url = subtitle_removal_source_storage.generate_public_source_url(
+                task,
+                source_tos_key,
+                expires=86400,
+            )
+            return redirect(source_url)
+        except Exception:
+            log.exception("[subtitle_removal] source video public url failed task_id=%s", task_id)
+
     video_path = (task.get("video_path") or "").strip()
     if video_path and os.path.exists(video_path):
         return safe_task_file_response(

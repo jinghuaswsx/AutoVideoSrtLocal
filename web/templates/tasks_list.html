@@ -23,7 +23,7 @@
   --tc-r: 6px; --tc-r-md: 8px; --tc-r-lg: 12px;
   --tc-sp-2: 8px; --tc-sp-3: 12px; --tc-sp-4: 16px;
   --tc-sp-5: 20px; --tc-sp-6: 24px;
-  --tc-detail-drawer-w: min(960px, 50vw);
+  --tc-detail-drawer-w: 70vw;
 }
 .tc { font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--tc-fg); }
 .tc * { box-sizing: border-box; }
@@ -110,17 +110,18 @@
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
 .tc-niuma-meta { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-top:8px; }
-.tc-niuma-comparison { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-top:10px; }
-.tc-niuma-video-card { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; }
-.tc-niuma-video-label { font-size:12px; font-weight:700; margin-bottom:6px; color:var(--tc-fg-muted); }
-.tc-niuma-video { display:block; width:100%; max-height:360px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-niuma-comparison { display:grid; grid-template-columns:270px 270px; gap:100px; justify-content:center; align-items:start; margin-top:12px; }
+.tc-niuma-video-card { width:270px; min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; }
+.tc-niuma-video-label { font-size:13px; font-weight:700; margin-bottom:3px; color:var(--tc-fg); }
+.tc-niuma-video-hint { font-size:12px; color:var(--tc-fg-muted); margin-bottom:8px; line-height:1.4; }
+.tc-niuma-video { display:block; width:270px; height:480px; object-fit:contain; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
 
 @media (max-width: 1100px) {
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
   .tc-event-facts { grid-template-columns:1fr; }
   .tc-review-grid { grid-template-columns:1fr; }
   .tc-niuma-meta,
-  .tc-niuma-comparison { grid-template-columns:1fr; }
+  .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
 }
 
 /* ── 移动端适配 ── */
@@ -506,21 +507,41 @@ function tcRenderSubtitleRemovalMeta(label, value) {
   if (value === undefined || value === null || value === '') return '';
   return '<div class="tc-event-fact"><strong>' + tcEsc(label) + '</strong><span>' + tcEsc(value) + '</span></div>';
 }
-function tcRenderSubtitleRemovalVideo(label, url) {
+function tcRenderSubtitleRemovalVideo(label, url, hint) {
   const safeUrl = String(url || '').trim();
   if (!safeUrl) return '';
   return '<div class="tc-niuma-video-card">'
     + '<div class="tc-niuma-video-label">' + tcEsc(label || '视频') + '</div>'
+    + (hint ? '<div class="tc-niuma-video-hint">' + tcEsc(hint) + '</div>' : '')
     + '<video class="tc-niuma-video" controls preload="metadata" src="' + tcAttr(safeUrl) + '"></video>'
     + '</div>';
 }
 function tcRenderSubtitleRemovalComparison(context) {
   const comparison = context && context.comparison ? context.comparison : {};
   if (!comparison.result_video_url) return '';
-  const source = tcRenderSubtitleRemovalVideo(comparison.source_label || '原始英文视频', comparison.source_video_url);
-  const result = tcRenderSubtitleRemovalVideo(comparison.result_label || '字幕移除结果', comparison.result_video_url);
+  const source = tcRenderSubtitleRemovalVideo(
+    comparison.source_label || '提交去字幕源视频',
+    comparison.source_video_url,
+    comparison.source_hint || '原始带字幕英文视频'
+  );
+  const result = tcRenderSubtitleRemovalVideo(
+    comparison.result_label || '去字幕输出结果视频',
+    comparison.result_video_url,
+    comparison.result_hint || '原始视频素材审核结果'
+  );
   if (!source || !result) return '';
   return '<div class="tc-niuma-comparison">' + source + result + '</div>';
+}
+function tcHasSubtitleRemovalComparison(events) {
+  return (Array.isArray(events) ? events : []).some(function(event) {
+    const context = event && event.payload_context ? event.payload_context.subtitle_removal : null;
+    const comparison = context && context.comparison ? context.comparison : null;
+    return Boolean(comparison && comparison.source_video_url && comparison.result_video_url);
+  });
+}
+function tcShouldSuppressReviewAssets(eventType, suppressRawReviewAssets) {
+  if (!suppressRawReviewAssets) return false;
+  return ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded'].includes(String(eventType || ''));
 }
 function tcRenderSubtitleRemovalContext(event) {
   const context = event && event.payload_context ? event.payload_context.subtitle_removal : null;
@@ -575,11 +596,14 @@ function tcRenderEventTimeline(events, reviewAssets) {
     return '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无审核流程记录</div>';
   }
   const reviewByEvent = tcReviewAssetsByEvent(reviewAssets);
+  const suppressRawReviewAssets = tcHasSubtitleRemovalComparison(events);
   return '<div class="tc-process-timeline">' + events.map(function(event, index) {
     const h = tcHumanEvent(event, index);
     const reviewStep = reviewByEvent[event.event_type] || null;
     const reviewAttrs = reviewStep ? ' id="tcReviewStep-' + tcAttr(event.event_type || '') + '"' : '';
-    const reviewAssetsHtml = tcRenderReviewAssetList(reviewStep);
+    const reviewAssetsHtml = tcShouldSuppressReviewAssets(event.event_type, suppressRawReviewAssets)
+      ? ''
+      : tcRenderReviewAssetList(reviewStep);
     const subtitleRemovalHtml = tcRenderSubtitleRemovalContext(event);
     const facts = h.facts.length
       ? '<div class="tc-event-facts">' + h.facts.map(function(fact) {

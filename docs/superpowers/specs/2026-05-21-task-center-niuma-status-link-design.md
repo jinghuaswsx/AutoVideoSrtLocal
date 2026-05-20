@@ -28,9 +28,12 @@
 4. 卡片展示自动提交时间、已过时间、最近更新时间、错误摘要等可视化信息。
 5. 兼容历史事件：优先读取 `subtitle_task_id`，必要时兼容旧 payload 中的 `task_id`。
 6. 当字幕移除任务已有结果视频时，第 2 步卡片直接展示左右双列视频对比：
-   - 左列：原始带字幕英文视频。
-   - 右列：字幕移除后的结果视频。
+   - 左列：提交去字幕源视频，即原始带字幕英文视频。
+   - 右列：去字幕输出结果视频，即后续原始视频素材审核要看的处理结果。
 7. 任务负责人可以直接点击视频播放按钮检查字幕移除效果；超级管理员在任务中心查看全量任务时也能看到同样过程和对比视频。
+8. 详情抽屉在桌面端占据 70% 页面宽度，保证视频对比区和状态字段可读。
+9. 对比区两个播放器统一为 `270px * 480px`，桌面端左右间隔 `100px`。
+10. 若同一个任务详情抽屉已展示牛马去字幕双列对比，父任务原素材审核的 `review-assets` 不再重复渲染同一份视频，避免抽屉里出现 4 个播放器。
 
 ## 非目标
 
@@ -85,8 +88,10 @@
       "comparison": {
         "source_video_url": "/api/subtitle-removal/tcraw-5-fixed/artifact/source-video",
         "result_video_url": "/api/subtitle-removal/tcraw-5-fixed/artifact/result",
-        "source_label": "原始英文视频",
-        "result_label": "字幕移除结果"
+        "source_label": "提交去字幕源视频",
+        "source_hint": "原始带字幕英文视频",
+        "result_label": "去字幕输出结果视频",
+        "result_hint": "原始视频素材审核结果"
       }
     }
   }
@@ -100,6 +105,8 @@
 当能读取到关联的字幕移除任务时，事件上下文按以下规则生成对比信息：
 
 1. `source_video_url` 使用字幕移除源视频 artifact 路由：`/api/subtitle-removal/<subtitle_task_id>/artifact/source-video`。
+   - 该 artifact 必须优先返回提交去字幕时保存的 `source_tos_key` 公共源视频，也就是原始带字幕英文视频。
+   - 只有历史任务缺少 `source_tos_key` 时，才回退到字幕移除任务本地 `video_path`。
 2. `result_video_url` 仅在字幕移除任务已有结果时生成，优先使用 result artifact 路由：`/api/subtitle-removal/<subtitle_task_id>/artifact/result`。
 3. 只有 `result_video_url` 存在时，任务中心才展示双列视频对比；任务未完成时只展示归纳状态和 `字幕移除任务页` 按钮。
 4. 如果源视频或结果视频 artifact 不可用，卡片不报错，保留状态、错误摘要和跳转按钮。
@@ -123,12 +130,16 @@
    - 行为：新标签页打开 `detail_url`
 2. 同一卡片展示归纳状态 badge、自动提交时间、已过时间、最近更新时间、字幕移除任务 ID。
 3. 当 `payload_context.subtitle_removal.comparison.result_video_url` 存在时，在该步骤卡片中部展示双列对比播放器：
-   - 左列标题：`原始英文视频`
-   - 右列标题：`字幕移除结果`
+   - 左列标题：`提交去字幕源视频`
+   - 左列辅助说明：`原始带字幕英文视频`
+   - 右列标题：`去字幕输出结果视频`
+   - 右列辅助说明：`原始视频素材审核结果`
    - 两列都使用 `<video controls preload="metadata">`，允许负责人直接点击播放。
-   - 桌面端两列并排；窄屏自动上下堆叠，避免播放器挤压或重叠。
-4. 错误状态展示错误摘要；完整 payload 仍保留在“技术详情”折叠区。
-5. `raw_niuma_done`、`raw_niuma_failed`、`raw_niuma_timeout` 若带同一个 `subtitle_task_id`，同样展示 `字幕移除任务页` 按钮，方便从后续结果或失败节点回到具体任务。
+   - 桌面端两列并排，播放器固定 `270px * 480px`，两列间隔 `100px`。
+   - 窄屏自动上下堆叠，避免播放器挤压或重叠。
+4. 当抽屉内任一事件已展示牛马去字幕对比时，`raw_niuma_done`、`raw_manual_uploaded`、`raw_uploaded` 步骤不再渲染 `review-assets` 视频卡；审核员以对比区右侧“去字幕输出结果视频”为准。
+5. 错误状态展示错误摘要；完整 payload 仍保留在“技术详情”折叠区。
+6. `raw_niuma_done`、`raw_niuma_failed`、`raw_niuma_timeout` 若带同一个 `subtitle_task_id`，同样展示 `字幕移除任务页` 按钮，方便从后续结果或失败节点回到具体任务。
 
 ## 权限与可见性
 
@@ -153,5 +164,9 @@
    - 按钮跳转到 `/subtitle-removal/<subtitle_task_id>`。
    - 卡片显示归纳状态、自动提交时间、已过时间、最近更新时间和错误摘要。
    - 有字幕移除结果时，第 2 步中部展示左原始英文视频、右字幕移除结果视频，两个播放器都能点击播放。
+   - 左侧视频必须是提交去字幕时的原始带字幕英文视频，不能播放父任务被去字幕结果覆盖后的文件。
+   - 抽屉只显示这组牛马对比视频，不再在后续审核步骤重复显示同一原素材结果视频。
+   - 对比区标题清楚标注“提交去字幕源视频”和“去字幕输出结果视频”。
+   - 桌面端抽屉宽度约 70vw；两个播放器尺寸为 270px * 480px，间隔 100px。
    - 超级管理员在“全部任务”中可以看到同样过程和对比视频。
    - 卡片不展示字幕移除内部步骤。

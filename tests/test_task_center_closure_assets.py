@@ -79,5 +79,12 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "字幕移除任务页" in source
     assert "tc-niuma-comparison" in source
     assert "<video class=\"tc-niuma-video\"" in source
-    assert "原始英文视频" in source
-    assert "字幕移除结果" in source
+    assert ".tc-niuma-comparison { display:grid; grid-template-columns:270px 270px; gap:100px;" in source
+    assert ".tc-niuma-video { display:block; width:270px; height:480px;" in source
+    assert "function tcHasSubtitleRemovalComparison" in source
+    assert "function tcShouldSuppressReviewAssets" in source
+    assert "tcShouldSuppressReviewAssets(event.event_type, suppressRawReviewAssets)" in source
+    assert "提交去字幕源视频" in source
+    assert "原始带字幕英文视频" in source
+    assert "去字幕输出结果视频" in source
+    assert "原始视频素材审核结果" in source
