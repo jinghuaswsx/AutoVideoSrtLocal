@@ -56,6 +56,7 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.username", raising=False)
+    monkeypatch.setattr(tasks, "_load_user_display_context", lambda user_ids: {})
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql

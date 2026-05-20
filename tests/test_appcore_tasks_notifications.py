@@ -107,6 +107,49 @@ def test_create_parent_task_emits_pending_and_child_notifications(monkeypatch):
     assert conn.committed is True
 
 
+def test_create_parent_task_emits_child_notifications_per_language_assignee(monkeypatch):
+    cursor = FakeCursor()
+    conn = FakeConnection(cursor)
+    calls = []
+    fake_notifications = type(
+        "FakeNotifications",
+        (),
+        {
+            "notify_parent_assigned": staticmethod(
+                lambda cur, *, task_id, assignee_id, product_name: calls.append(
+                    ("parent_assigned", task_id, assignee_id, product_name)
+                )
+            ),
+            "notify_child_blocked": staticmethod(
+                lambda cur, *, task_id, assignee_id, product_name, country_code: calls.append(
+                    ("child_blocked", task_id, assignee_id, product_name, country_code)
+                )
+            ),
+        },
+    )
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
+    monkeypatch.setattr(tasks, "notifications_svc", fake_notifications, raising=False)
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=7,
+        media_item_id=8,
+        countries=["DE", "FR"],
+        language_assignments={"DE": 9, "FR": 10},
+        raw_processor_id=88,
+        created_by=1,
+    )
+
+    assert parent_id == 100
+    assert calls == [
+        ("parent_assigned", 100, 88, "保温杯"),
+        ("child_blocked", 101, 9, "保温杯", "DE"),
+        ("child_blocked", 102, 10, "保温杯", "FR"),
+    ]
+    assert conn.committed is True
+
+
 def test_approve_raw_notifies_children_after_unblock(monkeypatch):
     cursor = FakeCursor()
     conn = FakeConnection(cursor)

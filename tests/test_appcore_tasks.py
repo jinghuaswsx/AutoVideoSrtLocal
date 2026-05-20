@@ -94,6 +94,32 @@ def test_import_and_create_task_passes_existing_item_product_link_warnings(monke
     assert result["warnings"] == warnings
 
 
+def test_import_and_create_task_uses_first_language_assignment_as_import_owner(monkeypatch):
+    captured = {}
+
+    def fake_import_mk_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "is_new_product": True,
+        }
+
+    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", fake_import_mk_video)
+    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
+
+    result = tasks.import_and_create_task(
+        mk_video_metadata={"filename": "demo.mp4"},
+        translator_id=None,
+        countries=["DE", "FR"],
+        language_assignments={"DE": 7, "FR": 8},
+        actor_user_id=1,
+    )
+
+    assert captured["translator_id"] == 7
+    assert result["parent_task_id"] == 56
+
+
 import pytest
 from appcore.db import execute, query_one, query_all
 
@@ -205,6 +231,83 @@ def test_create_parent_task_inserts_parent_and_children(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
+def test_create_parent_task_supports_per_language_assignments(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.lastrowid = 100
+            self.rowcount = 1
+            self._next_id = 100
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+            if sql.startswith("INSERT INTO tasks"):
+                self.lastrowid = self._next_id
+                self._next_id += 1
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    conn = FakeConn()
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_parent_assigned": staticmethod(lambda *args, **kwargs: None),
+                "notify_pending_raw_task": staticmethod(lambda *args, **kwargs: None),
+                "notify_child_blocked": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+        raising=False,
+    )
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=7,
+        media_item_id=8,
+        countries=["DE", "FR"],
+        language_assignments={"de": 9, "FR": 10},
+        raw_processor_id=88,
+        created_by=1,
+    )
+
+    assert parent_id == 100
+    inserts = [
+        args for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO tasks")
+    ]
+    assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_BLOCKED)
+    assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_BLOCKED)
+
+
 def test_create_parent_task_rejects_empty_countries(
     db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
@@ -239,6 +342,20 @@ def test_create_parent_task_uppercases_countries(
     assert {c["country_code"] for c in children} == {"DE", "FR"}
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_create_parent_task_rejects_missing_language_assignment():
+    from appcore import tasks
+
+    with pytest.raises(ValueError, match="language_assignments"):
+        tasks.create_parent_task(
+            media_product_id=7,
+            media_item_id=8,
+            countries=["DE", "FR"],
+            language_assignments={"DE": 9},
+            raw_processor_id=88,
+            created_by=1,
+        )
 
 
 def test_claim_parent_succeeds(db_user_admin, db_user_translator, db_product):

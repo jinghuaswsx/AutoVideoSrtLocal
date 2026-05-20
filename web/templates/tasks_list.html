@@ -534,10 +534,25 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
     const langs = langsResp.languages || [];
     tcRegisterLanguageLabels(langs);
     const itemOpts = items.map(i => `<option value="${i.id}">${tcEsc(i.filename)}</option>`).join('');
-    const isOldProduct = ownerId && translators.some(t => t.id === ownerId);
-    const transOpts = translators.map(t => `<option value="${t.id}" ${t.id === ownerId ? 'selected' : ''}>${tcEsc(t.display_name || t.username)}</option>`).join('');
-    const langChecks = langs.map(l => `<label style="display:inline-block; padding:4px 8px;"><input type="checkbox" value="${tcEsc(l.code)}"> ${tcEsc(tcLanguageLabel(l.code))}</label>`).join('');
+    const owner = ownerId ? translators.find(t => t.id === ownerId) : null;
+    const ownerHint = owner
+      ? `<div style="color:var(--tc-fg-muted); font-size:12px; margin-top:4px;">原负责人：${tcEsc(owner.display_name || owner.username)}（仅提示，不会自动带入）</div>`
+      : '<div style="color:var(--tc-fg-muted); font-size:12px; margin-top:4px;">原负责人仅作提示，需按语言重新选择翻译负责人</div>';
+    const transOpts = translators.map(t => `<option value="${t.id}">${tcEsc(t.display_name || t.username)}</option>`).join('');
     const rawOpts = rawProcessors.map(t => `<option value="${t.id}">${tcEsc(t.display_name || t.username)}</option>`).join('');
+    const langRows = langs.map(l => {
+      const code = String(l.code || '').trim().toUpperCase();
+      const label = tcLanguageLabel(code);
+      return `
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+        <label style="min-width:84px;"><input type="checkbox" value="${tcEsc(code)}" data-lang-checkbox> ${tcEsc(label)}</label>
+        <select id="tcCreateTranslator_${tcEsc(code)}" class="tc-input" data-lang-select="${tcEsc(code)}" style="min-width:220px; flex:1;">
+          <option value="">请选择 ${tcEsc(label)} 翻译负责人</option>
+          ${transOpts}
+        </select>
+      </div>
+    `;
+    }).join('');
     body.innerHTML = `
       <div style="margin-bottom:12px;"><strong>${tcEsc(pname)}</strong></div>
       <div style="margin-bottom:12px;">
@@ -548,10 +563,8 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
         ${items.length ? '' : '<div style="color:var(--tc-danger-fg); font-size:12px; margin-top:4px;"><a href="/medias/" target="_blank" rel="noopener noreferrer">先去素材管理上传英文原片</a></div>'}
       </div>
       <div style="margin-bottom:12px;">
-        <label>翻译员：${isOldProduct ? '<span style="color:var(--tc-fg-muted); font-size:12px;">(老品自动沿用产品负责人)</span>' : ''}</label>
-        <select id="tcCreateTranslator" class="tc-input" style="width:100%;" ${isOldProduct ? 'disabled' : ''}>
-          ${transOpts || '<option value="">没有可用翻译工作用户</option>'}
-        </select>
+        <label>按语言分配翻译负责人：</label>
+        ${ownerHint}
       </div>
       <div style="margin-bottom:12px;">
         <label>原视频处理人：</label>
@@ -561,7 +574,7 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
       </div>
       <div style="margin-bottom:12px;">
         <label>目标国家（≥1）：</label>
-        <div id="tcCreateLangs">${langChecks || '<span style="color:var(--tc-fg-muted);">没有已启用的小语种</span>'}</div>
+        <div id="tcCreateLangs">${langRows || '<span style="color:var(--tc-fg-muted);">没有已启用的小语种</span>'}</div>
       </div>
     `;
   } catch (e) {
@@ -572,20 +585,40 @@ function tcCloseCreateModal() { document.getElementById('tcCreateModal').style.d
 async function tcSubmitCreate() {
   if (!TC_CREATE_CTX) return;
   const itemEl = document.getElementById('tcCreateItem');
-  const transEl = document.getElementById('tcCreateTranslator');
   const rawEl = document.getElementById('tcCreateRawProcessor');
   const item_id = itemEl && itemEl.value ? parseInt(itemEl.value) : null;
-  const translator_id = transEl && transEl.value ? parseInt(transEl.value) : null;
   const raw_processor_id = rawEl && rawEl.value ? parseInt(rawEl.value) : null;
-  const countries = Array.from(document.querySelectorAll('#tcCreateLangs input:checked')).map(cb => cb.value);
+  const countries = [];
+  const language_assignments = {};
+  document.querySelectorAll('#tcCreateLangs [data-lang-checkbox]').forEach(cb => {
+    if (!cb.checked) return;
+    const country = String(cb.value || '').trim().toUpperCase();
+    const select = document.getElementById('tcCreateTranslator_' + country);
+    const translatorId = select && select.value ? parseInt(select.value) : null;
+    countries.push(country);
+    if (translatorId) {
+      language_assignments[country] = translatorId;
+    }
+  });
   if (!item_id) { alert('请选英文素材'); return; }
-  if (!translator_id) { alert('请选翻译员'); return; }
   if (!raw_processor_id) { alert('请选原视频处理人'); return; }
   if (!countries.length) { alert('至少勾一个国家'); return; }
+  for (const country of countries) {
+    if (!language_assignments[country]) {
+      alert('请为 ' + country + ' 选择翻译负责人');
+      return;
+    }
+  }
   try {
     await tcFetchJson('/tasks/api/parent', {
       method: 'POST',
-      body: JSON.stringify({media_product_id: TC_CREATE_CTX.product_id, media_item_id: item_id, countries, translator_id, raw_processor_id}),
+      body: JSON.stringify({
+        media_product_id: TC_CREATE_CTX.product_id,
+        media_item_id: item_id,
+        countries,
+        raw_processor_id,
+        language_assignments,
+      }),
     });
     tcCloseCreateModal();
     tcRender();

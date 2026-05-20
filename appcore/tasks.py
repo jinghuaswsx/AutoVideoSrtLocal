@@ -117,6 +117,12 @@ def _payload_user_ids(payload: dict) -> set[int]:
         user_id = _positive_int(payload.get(key))
         if user_id is not None:
             ids.add(user_id)
+    assignments = payload.get("language_assignments")
+    if isinstance(assignments, dict):
+        for value in assignments.values():
+            user_id = _positive_int(value)
+            if user_id is not None:
+                ids.add(user_id)
     return ids
 
 
@@ -375,7 +381,8 @@ def create_parent_task(
     media_product_id: int,
     media_item_id: int | None,
     countries: list[str],
-    translator_id: int,
+    translator_id: int | None = None,
+    language_assignments: dict[str, int] | None = None,
     raw_processor_id: int | None = None,
     created_by: int,
 ) -> int:
@@ -385,6 +392,11 @@ def create_parent_task(
     norm_countries = [c.strip().upper() for c in countries if c and c.strip()]
     if not norm_countries:
         raise ValueError("countries must be non-empty after normalization")
+    assignment_map = _normalize_language_assignments(
+        countries=norm_countries,
+        translator_id=translator_id,
+        language_assignments=language_assignments,
+    )
 
     conn = get_conn()
     try:
@@ -419,8 +431,11 @@ def create_parent_task(
                 parent_id = cur.lastrowid
                 created_payload = {
                     "countries": norm_countries,
-                    "translator_id": int(translator_id),
                 }
+                if translator_id is not None:
+                    created_payload["translator_id"] = int(translator_id)
+                if language_assignments:
+                    created_payload["language_assignments"] = assignment_map
                 if raw_processor_id is not None:
                     created_payload["raw_processor_id"] = int(raw_processor_id)
                 _write_event(cur, parent_id, "created", created_by, created_payload)
@@ -439,6 +454,7 @@ def create_parent_task(
                         product_name=product_name,
                     )
                 for country in norm_countries:
+                    child_assignee_id = assignment_map[country]
                     cur.execute(
                         "INSERT INTO tasks "
                         "(parent_task_id, media_product_id, media_item_id, "
@@ -446,7 +462,7 @@ def create_parent_task(
                         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                         (parent_id, int(media_product_id),
                          int(media_item_id) if media_item_id is not None else None,
-                         country, int(translator_id), CHILD_BLOCKED, int(created_by)),
+                         country, child_assignee_id, CHILD_BLOCKED, int(created_by)),
                     )
                     child_id = cur.lastrowid
                     _write_event(cur, child_id, "created", created_by,
@@ -454,7 +470,7 @@ def create_parent_task(
                     notifications_svc.notify_child_blocked(
                         cur,
                         task_id=child_id,
-                        assignee_id=int(translator_id),
+                        assignee_id=child_assignee_id,
                         product_name=product_name,
                         country_code=country,
                     )
@@ -470,8 +486,9 @@ def create_parent_task(
 def import_and_create_task(
     *,
     mk_video_metadata: dict,
-    translator_id: int,
+    translator_id: int | None = None,
     countries: list[str],
+    language_assignments: dict[str, int] | None = None,
     actor_user_id: int,
 ) -> dict:
     """Import a mk video + create parent task + N child tasks in one call.
@@ -483,10 +500,15 @@ def import_and_create_task(
         {"parent_task_id": int, "media_product_id": int, "media_item_id": int,
          "is_new_product": bool}
     """
+    import_translator_id = translator_id
+    if import_translator_id is None and language_assignments:
+        first_country = next(iter(language_assignments))
+        import_translator_id = int(language_assignments[first_country])
+
     try:
         import_result = mk_import_svc.import_mk_video(
             mk_video_metadata=mk_video_metadata,
-            translator_id=int(translator_id),
+            translator_id=int(import_translator_id),
             actor_user_id=int(actor_user_id),
         )
         product_id = import_result["media_product_id"]
@@ -505,7 +527,8 @@ def import_and_create_task(
         media_product_id=product_id,
         media_item_id=item_id,
         countries=countries,
-        translator_id=int(translator_id),
+        translator_id=int(translator_id) if translator_id is not None else None,
+        language_assignments=language_assignments,
         raw_processor_id=None,
         created_by=int(actor_user_id),
     )
@@ -526,6 +549,31 @@ class ConflictError(RuntimeError):
 
 class StateError(RuntimeError):
     """Invalid state transition / precondition violation."""
+
+
+def _normalize_language_assignments(
+    *,
+    countries: list[str],
+    translator_id: int | None,
+    language_assignments: dict[str, int] | None,
+) -> dict[str, int]:
+    if language_assignments:
+        normalized = {
+            str(country or "").strip().upper(): int(assignee_id)
+            for country, assignee_id in language_assignments.items()
+            if str(country or "").strip()
+        }
+        missing = [country for country in countries if country not in normalized]
+        extras = [country for country in normalized if country not in countries]
+        if missing or extras:
+            raise ValueError(
+                "language_assignments must cover exactly the requested countries"
+            )
+        return normalized
+    if translator_id is None:
+        raise ValueError("translator_id or language_assignments required")
+    assignee_id = int(translator_id)
+    return {country: assignee_id for country in countries}
 
 
 def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:

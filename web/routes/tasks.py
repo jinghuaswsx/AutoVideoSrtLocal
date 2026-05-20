@@ -87,6 +87,50 @@ def _audit_task_action(task_id: int, action: str, detail: dict | None = None) ->
     )
 
 
+def _normalize_countries(countries: list[str]) -> list[str]:
+    return [str(country or "").strip().upper() for country in (countries or []) if str(country or "").strip()]
+
+
+def _parse_language_assignments(raw_value, countries: list[str]) -> dict[str, int] | None:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, dict):
+        raise ValueError("language_assignments must be an object")
+    normalized = {}
+    for raw_country, raw_user_id in raw_value.items():
+        country = str(raw_country or "").strip().upper()
+        if not country:
+            continue
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"language_assignments[{country}] must be an integer") from exc
+        normalized[country] = user_id
+    missing = [country for country in countries if country not in normalized]
+    extras = [country for country in normalized if country not in countries]
+    if missing or extras:
+        raise ValueError("language_assignments must cover exactly the requested countries")
+    return normalized
+
+
+def _validate_translation_targets(
+    *,
+    translator_id: int | None,
+    language_assignments: dict[str, int] | None,
+) -> None:
+    if language_assignments:
+        seen = set()
+        for user_id in language_assignments.values():
+            if user_id in seen:
+                continue
+            ensure_translation_work_user(user_id)
+            seen.add(user_id)
+        return
+    if translator_id is None:
+        raise ValueError("translator_id or language_assignments required")
+    ensure_translation_work_user(translator_id)
+
+
 @bp.route("/")
 @login_required
 @permission_required("task_center")
@@ -146,13 +190,21 @@ def api_create_parent():
         product_id = int(payload["media_product_id"])
         item_id = payload.get("media_item_id")
         item_id = int(item_id) if item_id is not None else None
-        countries = payload.get("countries") or []
-        translator_id = int(payload["translator_id"])
+        countries = _normalize_countries(payload.get("countries") or [])
+        translator_id_raw = payload.get("translator_id")
+        translator_id = int(translator_id_raw) if translator_id_raw is not None else None
+        language_assignments = _parse_language_assignments(
+            payload.get("language_assignments"),
+            countries,
+        )
         raw_processor_id = int(payload["raw_processor_id"])
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
-        ensure_translation_work_user(translator_id)
+        _validate_translation_targets(
+            translator_id=translator_id,
+            language_assignments=language_assignments,
+        )
         ensure_raw_processor_user(raw_processor_id)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
@@ -162,6 +214,7 @@ def api_create_parent():
             media_item_id=item_id,
             countries=countries,
             translator_id=translator_id,
+            language_assignments=language_assignments,
             raw_processor_id=raw_processor_id,
             created_by=int(current_user.id),
         )
@@ -193,6 +246,7 @@ def api_create_parent():
             "countries": countries,
             "translator_id": translator_id,
             "raw_processor_id": raw_processor_id,
+            **({"language_assignments": language_assignments} if language_assignments else {}),
         },
     )
     return _json_response({"parent_task_id": parent_id, "raw_processing": raw_processing})
@@ -205,12 +259,20 @@ def api_import_and_create():
     payload = request.get_json(silent=True) or {}
     try:
         meta = payload["mk_video_metadata"]
-        translator_id = int(payload["translator_id"])
-        countries = payload.get("countries") or []
+        translator_id_raw = payload.get("translator_id")
+        translator_id = int(translator_id_raw) if translator_id_raw is not None else None
+        countries = _normalize_countries(payload.get("countries") or [])
+        language_assignments = _parse_language_assignments(
+            payload.get("language_assignments"),
+            countries,
+        )
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
-        ensure_translation_work_user(translator_id)
+        _validate_translation_targets(
+            translator_id=translator_id,
+            language_assignments=language_assignments,
+        )
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
     try:
@@ -218,6 +280,7 @@ def api_import_and_create():
             mk_video_metadata=meta,
             translator_id=translator_id,
             countries=countries,
+            language_assignments=language_assignments,
             actor_user_id=int(current_user.id),
         )
     except mk_import_svc.DuplicateError as e:
@@ -238,6 +301,7 @@ def api_import_and_create():
             "media_item_id": result["media_item_id"],
             "countries": countries,
             "translator_id": translator_id,
+            **({"language_assignments": language_assignments} if language_assignments else {}),
             "is_new_product": result["is_new_product"],
         },
     )

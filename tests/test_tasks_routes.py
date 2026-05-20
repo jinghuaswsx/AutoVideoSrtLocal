@@ -67,6 +67,20 @@ def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no
     assert "翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})" in body
 
 
+def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "const transOpts = translators.map" in body
+    assert "const rawOpts = rawProcessors.map" in body
+    assert "原负责人：" in body
+    assert "仅提示，不会自动带入" in body
+    assert "tcCreateTranslator_" in body
+    assert "language_assignments[country] = translatorId;" in body
+    assert "translator_id, raw_processor_id" not in body
+    assert "isOldProduct ? 'selected' : ''" not in body
+
+
 def test_index_requires_login():
     from web.app import create_app
     app = create_app()
@@ -241,6 +255,85 @@ def test_create_parent_rejects_non_translation_work_user(authed_client_no_db, mo
     assert calls == []
 
 
+def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeypatch):
+    ensure_calls = []
+    captured = {}
+    audit_calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_translation_work_user",
+        lambda user_id: ensure_calls.append(user_id) or None,
+    )
+    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: None)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: captured.update(kwargs) or 321,
+    )
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
+        lambda **kwargs: {"status": "submitted"},
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE", "FR"],
+            "raw_processor_id": 8,
+            "language_assignments": {"de": 9, "FR": 10},
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "media_product_id": 1,
+        "media_item_id": 2,
+        "countries": ["DE", "FR"],
+        "translator_id": None,
+        "language_assignments": {"DE": 9, "FR": 10},
+        "raw_processor_id": 8,
+        "created_by": 1,
+    }
+    assert sorted(ensure_calls) == [9, 10]
+    assert audit_calls == [
+        (
+            321,
+            "task_parent_created",
+            {
+                "media_product_id": 1,
+                "media_item_id": 2,
+                "countries": ["DE", "FR"],
+                "translator_id": None,
+                "raw_processor_id": 8,
+                "language_assignments": {"DE": 9, "FR": 10},
+            },
+        )
+    ]
+
+
+def test_create_parent_rejects_missing_language_assignments(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: None)
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE", "FR"],
+            "raw_processor_id": 8,
+            "language_assignments": {"DE": 9},
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "language_assignments" in resp.get_json()["error"]
+
+
 def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
     calls = []
     monkeypatch.setattr(
@@ -264,6 +357,44 @@ def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db
     assert resp.status_code == 400
     assert "翻译工作范围" in resp.get_json()["error"]
     assert calls == []
+
+
+def test_import_and_create_accepts_language_assignments(authed_client_no_db, monkeypatch):
+    ensure_calls = []
+    captured = {}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_translation_work_user",
+        lambda user_id: ensure_calls.append(user_id) or None,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.import_and_create_task",
+        lambda **kwargs: captured.update(kwargs) or {
+            "parent_task_id": 1,
+            "media_product_id": 2,
+            "media_item_id": 3,
+            "is_new_product": False,
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/import-and-create",
+        json={
+            "mk_video_metadata": {"filename": "x.mp4"},
+            "countries": ["DE", "FR"],
+            "language_assignments": {"DE": 9, "fr": 10},
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "mk_video_metadata": {"filename": "x.mp4"},
+        "translator_id": None,
+        "countries": ["DE", "FR"],
+        "language_assignments": {"DE": 9, "FR": 10},
+        "actor_user_id": 1,
+    }
+    assert ensure_calls == [9, 10]
 
 
 def test_create_parent_requires_raw_processor_id(authed_client_no_db, monkeypatch):
