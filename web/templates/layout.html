@@ -20,6 +20,9 @@
       if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.setAttribute('data-theme', 'dark');
       }
+      if (localStorage.getItem('sidebarCollapsed') === '1') {
+        document.documentElement.setAttribute('data-sidebar-state', 'collapsed');
+      }
     })();
   </script>
   <style>
@@ -96,14 +99,17 @@
       left: 0;
       bottom: 0;
       z-index: 100;
+      transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
     }
     .sidebar-brand {
-      padding: 22px 20px 18px;
+      padding: 22px 56px 18px 20px;
       display: flex;
       align-items: center;
       gap: 10px;
       border-bottom: 1px solid var(--sidebar-border);
       text-decoration: none;
+      position: relative;
     }
     .sidebar-brand-copy {
       min-width: 0;
@@ -152,6 +158,41 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .sidebar-collapse-toggle {
+      position: absolute;
+      top: 20px;
+      right: 14px;
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.12);
+      color: var(--sidebar-text);
+      cursor: pointer;
+      padding: 0;
+      z-index: 2;
+      transition: background-color .12s, border-color .12s;
+    }
+    .sidebar-collapse-toggle:hover {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.48);
+    }
+    .sidebar-collapse-toggle:focus-visible {
+      outline: 2px solid rgba(255,255,255,0.78);
+      outline-offset: 2px;
+    }
+    .sidebar-toggle:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+    .sidebar-collapse-toggle svg {
+      width: 20px;
+      height: 20px;
+      display: block;
     }
     .sidebar-nav {
       flex: 1;
@@ -290,6 +331,7 @@
       min-width: 0;
       max-width: calc(100vw - 220px);
       overflow-x: clip;
+      transition: margin-left 0.18s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.18s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .topbar {
       height: 56px;
@@ -472,6 +514,18 @@
       opacity: 1;
       pointer-events: auto;
     }
+    @media (min-width: 769px) {
+      html[data-sidebar-state="collapsed"] .sidebar {
+        transform: translateX(-100%);
+      }
+      html[data-sidebar-state="collapsed"] .main-wrap {
+        margin-left: 0;
+        max-width: 100vw;
+      }
+      html[data-sidebar-state="collapsed"] .sidebar-toggle {
+        display: inline-flex;
+      }
+    }
     .topbar-mobile-brand {
       display: none;
       align-items: center;
@@ -512,6 +566,7 @@
       }
       body.sidebar-open .sidebar { transform: translateX(0); }
       body.sidebar-open { overflow: hidden; }
+      .sidebar-collapse-toggle { display: none; }
       .sidebar-backdrop { display: block; }
       .main-wrap {
         margin-left: 0;
@@ -575,6 +630,9 @@
         </span>
       </span>
     </a>
+    <button type="button" class="sidebar-collapse-toggle" id="sidebarCollapseToggle" aria-label="收起导航菜单" aria-controls="appSidebar" aria-expanded="true" title="收起导航菜单">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line></svg>
+    </button>
     <nav class="sidebar-nav">
       {% if has_permission('medias') %}
       <a href="/medias" {% if request.path.startswith('/medias') and not request.path.startswith('/medias/mk') and not request.path.startswith('/medias/tabcut') %}class="active"{% endif %}>
@@ -974,32 +1032,79 @@
       });
     })();
 
-    // ── Mobile sidebar drawer ──
+    // ── Sidebar drawer ──
     (function() {
       var toggleBtn = document.getElementById('sidebarToggle');
+      var collapseBtn = document.getElementById('sidebarCollapseToggle');
       var sidebar = document.getElementById('appSidebar');
       var backdrop = document.getElementById('sidebarBackdrop');
       if (!toggleBtn || !sidebar || !backdrop) return;
+      var root = document.documentElement;
       var body = document.body;
-      var mq = window.matchMedia('(min-width: 768px)');
+      var mq = window.matchMedia('(min-width: 769px)');
+
+      function isDesktop() {
+        return mq.matches;
+      }
+
+      function syncSidebarToggleLabels() {
+        var desktop = isDesktop();
+        var collapsed = root.getAttribute('data-sidebar-state') === 'collapsed';
+        var drawerOpen = body.classList.contains('sidebar-open');
+
+        if (desktop) {
+          toggleBtn.setAttribute('aria-label', collapsed ? '展开导航菜单' : '打开导航菜单');
+          toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        } else {
+          toggleBtn.setAttribute('aria-label', drawerOpen ? '关闭导航菜单' : '打开导航菜单');
+          toggleBtn.setAttribute('aria-expanded', drawerOpen ? 'true' : 'false');
+        }
+
+        if (collapseBtn) {
+          collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+      }
+
+      function setSidebarCollapsed(collapsed) {
+        if (collapsed && isDesktop()) {
+          root.setAttribute('data-sidebar-state', 'collapsed');
+          localStorage.setItem('sidebarCollapsed', '1');
+          closeDrawer();
+        } else {
+          root.removeAttribute('data-sidebar-state');
+          localStorage.setItem('sidebarCollapsed', '0');
+        }
+        syncSidebarToggleLabels();
+      }
 
       function openDrawer() {
         body.classList.add('sidebar-open');
-        toggleBtn.setAttribute('aria-expanded', 'true');
+        syncSidebarToggleLabels();
       }
       function closeDrawer() {
         body.classList.remove('sidebar-open');
-        toggleBtn.setAttribute('aria-expanded', 'false');
+        syncSidebarToggleLabels();
       }
 
       toggleBtn.addEventListener('click', function(e) {
         e.preventDefault();
+        if (isDesktop()) {
+          setSidebarCollapsed(false);
+          return;
+        }
         if (body.classList.contains('sidebar-open')) {
           closeDrawer();
         } else {
           openDrawer();
         }
       });
+
+      if (collapseBtn) {
+        collapseBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          setSidebarCollapsed(true);
+        });
+      }
 
       backdrop.addEventListener('click', closeDrawer);
 
@@ -1023,13 +1128,18 @@
 
       // 桌面 viewport 强制清除 open 状态，避免横竖屏切换残留
       function syncDesktop(e) {
-        if (e.matches) closeDrawer();
+        if (e.matches) {
+          closeDrawer();
+        } else {
+          syncSidebarToggleLabels();
+        }
       }
       if (mq.addEventListener) {
         mq.addEventListener('change', syncDesktop);
       } else if (mq.addListener) {
         mq.addListener(syncDesktop);
       }
+      syncSidebarToggleLabels();
     })();
 
     // ── Mobile header module label ──
