@@ -121,6 +121,43 @@ def test_get_product_by_code(user_id):
         _hard_delete_by_code(code)
 
 
+def test_resolve_shopify_product_id_falls_back_for_default_domain_cache_missing(monkeypatch):
+    def fake_query_one(sql, args=()):
+        assert "FROM media_product_shopify_ids" in sql
+        assert args == (575, "newjoyloo.com")
+        return None
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias.product_link_domains, "get_default_domain", lambda: "newjoyloo.com")
+    monkeypatch.setattr(
+        medias,
+        "get_product",
+        lambda product_id: {"id": product_id, "shopifyid": "8437444903085"},
+    )
+
+    assert medias.resolve_shopify_product_id(575, "newjoyloo.com") == "8437444903085"
+
+
+def test_resolve_shopify_product_id_does_not_fallback_for_other_domain_cache_missing(monkeypatch):
+    product_fetches = []
+
+    def fake_query_one(sql, args=()):
+        assert "FROM media_product_shopify_ids" in sql
+        assert args == (573, "omurio.com")
+        return None
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias.product_link_domains, "get_default_domain", lambda: "newjoyloo.com")
+    monkeypatch.setattr(
+        medias,
+        "get_product",
+        lambda product_id: product_fetches.append(product_id) or {"shopifyid": "8570636370093"},
+    )
+
+    assert medias.resolve_shopify_product_id(573, "omurio.com") is None
+    assert product_fetches == []
+
+
 def test_update_product_ad_supported_langs(user_id):
     pid = medias.create_product(user_id, "适配语种测试")
     try:

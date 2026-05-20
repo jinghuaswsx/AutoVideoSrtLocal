@@ -396,6 +396,8 @@ def get_shopify_product_id_for_domain(product_id: int, domain: str) -> str | Non
         "WHERE product_id=%s AND domain=%s ORDER BY updated_at DESC LIMIT 1",
         (int(product_id), str(domain or "").strip().lower()),
     )
+    if not row:
+        return None
     return str(row.get("shopify_product_id") or "").strip() or None
 
 
@@ -423,10 +425,13 @@ def resolve_shopify_product_id(product_id: int, domain: str | None = None) -> st
     1. 优先查 per-domain 缓存表
     2. 回退到 media_products.shopifyid 旧字段（仅默认域名时）
     """
+    normalized_domain = product_link_domains.domain_from_url(domain or "")
     if domain:
-        cached = get_shopify_product_id_for_domain(product_id, domain)
+        cached = get_shopify_product_id_for_domain(product_id, normalized_domain or domain)
         if cached:
             return cached
+        if normalized_domain and normalized_domain != product_link_domains.get_default_domain():
+            return None
     product = get_product(product_id) or {}
     direct_value = str(product.get("shopifyid") or "").strip()
     return direct_value or None
