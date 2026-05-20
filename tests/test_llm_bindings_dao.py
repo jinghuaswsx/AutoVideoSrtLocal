@@ -79,6 +79,20 @@ def test_resolve_keeps_voice_selection_adc_binding():
     assert result["model"] == "gemini-3.5-flash"
 
 
+@pytest.mark.parametrize("use_case", ["video_score.run", "video_csk.analyze"])
+def test_resolve_keeps_video_analysis_adc_binding(use_case):
+    row = {
+        "provider_code": "gemini_vertex_adc",
+        "model_id": "google/gemini-3.5-flash",
+        "extra_config": None,
+        "enabled": 1,
+    }
+    with patch("appcore.llm_bindings.query_one", return_value=row):
+        result = llm_bindings.resolve(use_case)
+    assert result["provider"] == "gemini_vertex_adc"
+    assert result["model"] == "gemini-3.5-flash"
+
+
 def test_resolve_keeps_meta_message_translation_adc_binding():
     row = {
         "provider_code": "gemini_vertex_adc",
@@ -215,6 +229,20 @@ def test_upsert_keeps_voice_selection_adc_binding():
     with patch("appcore.llm_bindings.execute") as m_exec:
         llm_bindings.upsert(
             "voice_selection.assess",
+            provider="gemini_vertex_adc",
+            model="google/gemini-3.5-flash",
+            updated_by=7,
+        )
+    args = m_exec.call_args[0][1]
+    assert args[1] == "gemini_vertex_adc"
+    assert args[2] == "gemini-3.5-flash"
+
+
+@pytest.mark.parametrize("use_case", ["video_score.run", "video_csk.analyze"])
+def test_upsert_keeps_video_analysis_adc_binding(use_case):
+    with patch("appcore.llm_bindings.execute") as m_exec:
+        llm_bindings.upsert(
+            use_case,
             provider="gemini_vertex_adc",
             model="google/gemini-3.5-flash",
             updated_by=7,

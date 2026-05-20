@@ -21,6 +21,8 @@ VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
     "meta_hot_posts.europe_fit_translate",
     "meta_hot_posts.video_copyability",
     "meta_hot_posts.video_copyability_translate",
+    "video_score.run",
+    "video_csk.analyze",
     "voice_selection.assess",
 })
 
