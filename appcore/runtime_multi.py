@@ -1242,8 +1242,10 @@ class MultiTranslateRunner(PipelineRunner):
         clip = None
         voice_ai_rankings: list = []
         voice_ai_rank_status = "skipped"
-        voice_ai_rank_model = None
-        voice_ai_rank_provider = None
+        from appcore.voice_ai_ranking import resolve_voice_ai_model_selection
+        voice_ai_model_selection = resolve_voice_ai_model_selection()
+        voice_ai_rank_model = voice_ai_model_selection["model"]
+        voice_ai_rank_provider = voice_ai_model_selection["provider"]
         voice_ai_rank_debug = None
         voice_ai_rank_usage_log_id = None
         if utterances and video_path:
@@ -1283,11 +1285,7 @@ class MultiTranslateRunner(PipelineRunner):
             query_embedding_b64 = None
 
         if candidates and clip:
-            from appcore.voice_ai_ranking import VOICE_AI_MODEL, VOICE_AI_PROVIDER
-
             voice_ai_rank_status = "running"
-            voice_ai_rank_model = VOICE_AI_MODEL
-            voice_ai_rank_provider = VOICE_AI_PROVIDER
 
         fallback = None if candidates else default_voice_id
 
@@ -1324,8 +1322,8 @@ class MultiTranslateRunner(PipelineRunner):
                     voice_ai_rank_usage_log_id=None,
                     voice_ai_rank_debug={
                         "status": "failed",
-                        "provider": "openrouter",
-                        "model": "google/gemini-3.5-flash",
+                        "provider": voice_ai_rank_provider,
+                        "model": voice_ai_rank_model,
                         "use_case": "voice_selection.assess",
                         "request": {"visual": {"media": [], "candidates": candidates[:10]}, "raw": {}},
                         "result": {"visual": {"rankings": []}, "raw": {"error": str(exc)[:500]}},

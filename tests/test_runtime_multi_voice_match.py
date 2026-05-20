@@ -23,7 +23,13 @@ def test_step_voice_match_writes_candidates_to_state():
          patch("appcore.runtime_multi.embed_audio_file",
                return_value=np.zeros(256, dtype=np.float32)), \
          patch("appcore.runtime_multi.resolve_default_voice",
-               return_value="default-voice-id"), \
+                return_value="default-voice-id"), \
+         patch("appcore.voice_ai_ranking.resolve_voice_ai_model_selection",
+               return_value={
+                   "provider": "gemini_aistudio",
+                   "model": "gemini-3.5-flash",
+                   "source": "db",
+               }), \
          patch("pipeline.voice_match_speed.match_candidates_speed_aware") as m_match, \
          patch("appcore.voice_ai_ranking_task.queue_voice_ai_ranking") as m_ai_queue:
         m_match.return_value = [
@@ -45,7 +51,8 @@ def test_step_voice_match_writes_candidates_to_state():
     assert "llm_rank" not in payload["voice_match_candidates"][1]
     assert payload["voice_ai_rankings"] == []
     assert payload["voice_ai_rank_status"] == "running"
-    assert payload["voice_ai_rank_model"] == "google/gemini-3.5-flash"
+    assert payload["voice_ai_rank_model"] == "gemini-3.5-flash"
+    assert payload["voice_ai_rank_provider"] == "gemini_aistudio"
     assert len(payload["voice_match_candidates"]) == 3
     m_ai_queue.assert_called_once()
     assert m_ai_queue.call_args.kwargs["candidates"] == payload["voice_match_candidates"]
@@ -67,12 +74,22 @@ def test_step_voice_match_fallback_when_empty():
                return_value=np.zeros(256, dtype=np.float32)), \
          patch("pipeline.voice_match_speed.match_candidates_speed_aware", return_value=[]), \
          patch("appcore.runtime_multi.resolve_default_voice",
-               return_value="default-voice-id"):
+                return_value="default-voice-id"), \
+         patch("appcore.voice_ai_ranking.resolve_voice_ai_model_selection",
+               return_value={
+                   "provider": "openrouter",
+                   "model": "google/gemini-3.5-flash",
+                   "source": "default",
+               }):
         runner._step_voice_match("t1")
 
     payload = m_update.call_args.kwargs
     assert payload["voice_match_candidates"] == []
     assert payload.get("voice_match_fallback_voice_id") == "default-voice-id"
+    assert payload["voice_ai_rankings"] == []
+    assert payload["voice_ai_rank_status"] == "skipped"
+    assert payload["voice_ai_rank_model"] == "google/gemini-3.5-flash"
+    assert payload["voice_ai_rank_provider"] == "openrouter"
 
 
 def test_step_voice_match_skips_when_original_video_passthrough_enabled():

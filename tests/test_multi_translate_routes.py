@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+from appcore.voice_ai_rank_cache import candidate_signature
+
 
 @pytest.fixture(autouse=True)
 def _patch_bulk_translate_startup_recovery(monkeypatch):
@@ -491,12 +493,22 @@ def test_rematch_excludes_default_voice_from_top20(authed_client_no_db):
         "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
         "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
         "utterances_en": normalized_utterances,
+        "voice_ai_rankings": [{"voice_id": "old", "llm_rank": 1, "reason_summary": "old"}],
+        "voice_ai_rank_status": "done",
+        "voice_ai_rank_debug": {"status": "done"},
+        "voice_ai_rank_usage_log_id": 12345,
     }
+    saved = {}
+    state_updates = {}
     with patch(
         "web.routes.multi_translate.db_query_one",
         return_value={"state_json": json.dumps(state, ensure_ascii=False)},
     ), patch(
-        "web.routes.multi_translate.db_execute",
+        "web.routes.multi_translate.save_project_state",
+        side_effect=lambda task_id, payload, execute_func=None: saved.update(payload),
+    ), patch(
+        "web.routes.multi_translate.task_state.update",
+        side_effect=lambda task_id, **kwargs: state_updates.update(kwargs),
     ), patch(
         "appcore.video_translate_defaults.resolve_default_voice",
         return_value="default-voice-id",
@@ -528,6 +540,83 @@ def test_rematch_excludes_default_voice_from_top20(authed_client_no_db):
     assert m_match.call_args.kwargs["gender"] == "female"
     assert m_match.call_args.kwargs["source_utterances"] == normalized_utterances
     assert m_fetch.call_args.kwargs["voice_ids"] == ["voice-b"]
+    assert payload["voice_ai_rankings"] == []
+    assert payload["voice_ai_rank_status"] == "not_ranked_for_filter"
+    assert payload["voice_ai_rank_debug"] is None
+    assert payload["voice_ai_rank_usage_log_id"] is None
+    assert payload["voice_ai_rank_cache_key"] == "female"
+    assert saved["voice_ai_rank_status"] == "not_ranked_for_filter"
+    assert saved["voice_ai_rank_debug"] is None
+    assert state_updates["voice_ai_rank_usage_log_id"] is None
+
+
+def test_multi_translate_rematch_derives_gender_rankings_from_all_cache(authed_client_no_db):
+    all_candidates = [
+        {"voice_id": "voice-a", "similarity": 0.95, "gender": "male", "llm_rank": 1, "llm_reason_summary": "stable"},
+        {"voice_id": "voice-b", "similarity": 0.91, "gender": "female", "llm_rank": 2, "llm_reason_summary": "bright"},
+    ]
+    female_candidates = [{"voice_id": "voice-b", "similarity": 0.91, "gender": "female"}]
+    state = {
+        "target_lang": "de",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+        "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
+        "voice_match_candidates": all_candidates,
+        "voice_ai_rank_cache": {
+            "all": {
+                "condition": "all",
+                "candidate_signature": candidate_signature(all_candidates),
+                "candidates": all_candidates,
+                "rankings": [
+                    {"voice_id": "voice-a", "llm_rank": 1, "reason_summary": "stable"},
+                    {"voice_id": "voice-b", "llm_rank": 2, "reason_summary": "bright"},
+                ],
+                "status": "done",
+                "model": "google/gemini-3.5-flash",
+                "provider": "openrouter",
+                "debug": {"status": "done"},
+                "candidate_limit": 10,
+                "usage_log_id": 98765,
+                "source": "llm",
+            },
+        },
+    }
+    saved = {}
+    with patch(
+        "web.routes.multi_translate.db_query_one",
+        return_value={"state_json": json.dumps(state, ensure_ascii=False)},
+    ), patch(
+        "web.routes.multi_translate.save_project_state",
+        side_effect=lambda task_id, payload, execute_func=None: saved.update(payload),
+    ), patch(
+        "web.routes.multi_translate.task_state.update",
+    ), patch(
+        "appcore.video_translate_defaults.resolve_default_voice",
+        return_value="default-voice-id",
+    ), patch(
+        "pipeline.voice_embedding.deserialize_embedding",
+        return_value="decoded-embedding",
+    ), patch(
+        "pipeline.voice_match_speed.match_candidates_speed_aware",
+        return_value=female_candidates,
+    ), patch(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        return_value=[{"voice_id": "voice-b", "name": "B", "gender": "female"}],
+    ):
+        resp = authed_client_no_db.post(
+            "/api/multi-translate/task-1/rematch",
+            json={"gender": "female"},
+        )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_status"] == "derived_from_all"
+    assert payload["voice_ai_rank_cache_key"] == "female"
+    assert payload["candidates"][0]["voice_id"] == "voice-b"
+    assert payload["candidates"][0]["llm_rank"] == 1
+    assert payload["voice_ai_rankings"] == [
+        {"voice_id": "voice-b", "llm_rank": 1, "reason_summary": "bright"}
+    ]
+    assert saved["voice_ai_rank_usage_log_id"] == 98765
 
 
 def test_multi_translate_voice_ai_ranking_rerun_uses_saved_candidates(
@@ -585,6 +674,7 @@ def test_multi_translate_voice_ai_ranking_rerun_uses_saved_candidates(
             "provider": "openrouter",
             "candidate_limit": 3,
             "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
+            "usage_log_id": 45678,
         }
 
     monkeypatch.setattr(
@@ -605,8 +695,77 @@ def test_multi_translate_voice_ai_ranking_rerun_uses_saved_candidates(
     assert saved["voice_ai_rankings"][0]["voice_id"] == "v2"
     assert saved["voice_match_candidates"][1]["llm_rank"] == 1
     assert saved["voice_ai_rank_provider"] == "openrouter"
+    assert saved["voice_ai_rank_usage_log_id"] == 45678
+    assert saved["voice_ai_rank_cache"]["all"]["usage_log_id"] == 45678
     assert payload["voice_ai_rank_status"] == "done"
+    assert payload["voice_ai_rank_usage_log_id"] == 45678
+    assert payload["voice_ai_rank_cache_key"] == "all"
+    assert payload["voice_ai_rank_cached"] is False
     assert payload["candidate_limit"] == 3
+
+
+def test_multi_translate_voice_ai_ranking_rerun_uses_cache_before_llm(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    source = tmp_path / "voice_ai_ranking" / "source_sample.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"source-audio")
+    candidates = [{"voice_id": "v1", "similarity": 0.9}]
+    ranked_candidates = [{"voice_id": "v1", "similarity": 0.9, "llm_rank": 1, "llm_reason_summary": "fit"}]
+    state = {
+        "task_dir": str(tmp_path),
+        "target_lang": "de",
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_cache": {
+            "all": {
+                "condition": "all",
+                "candidate_signature": candidate_signature(candidates),
+                "candidates": ranked_candidates,
+                "rankings": [{"voice_id": "v1", "llm_rank": 1, "reason_summary": "fit"}],
+                "status": "done",
+                "model": "google/gemini-3.5-flash",
+                "provider": "openrouter",
+                "debug": {"status": "done"},
+                "candidate_limit": 10,
+                "usage_log_id": 222,
+                "source": "llm",
+            },
+        },
+    }
+    saved = {}
+    seen = {}
+
+    monkeypatch.setattr(
+        "web.routes.multi_translate._query_viewable_project",
+        lambda task_id, columns: {"state_json": json.dumps(state), "user_id": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.multi_translate.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr(
+        "web.routes.multi_translate.task_state.update",
+        lambda task_id, **kwargs: seen.setdefault("state_update", kwargs),
+    )
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking.rank_voice_candidates",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("cached AI ranking should not rerun LLM")),
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/multi-translate/task-ai/voice-ai-ranking",
+        json={"gender": None},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_cached"] is True
+    assert payload["voice_ai_rank_usage_log_id"] == 222
+    assert payload["candidates"][0]["llm_rank"] == 1
+    assert saved["voice_ai_rank_status"] == "done"
+    assert seen["state_update"]["voice_ai_rank_cache"]["all"]["usage_log_id"] == 222
 
 
 def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):
@@ -1059,6 +1218,8 @@ def test_voice_selector_multi_uses_configured_api_base_for_shared_endpoints():
     assert "fetch(`${apiBase}/${taskId}/voice-library?${params.toString()}`)" in script
     assert "fetch(`${apiBase}/${taskId}/confirm-voice`, {" in script
     assert "fetch(`${apiBase}/${taskId}/rematch`, {" in script
+    assert 'apiBase === "/api/multi-translate"' in script
+    assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {" in script
     assert "`/api/multi-translate/${taskId}/voice-library`" not in script
     assert "`/api/multi-translate/${taskId}/confirm-voice`" not in script
     assert "`/api/multi-translate/${taskId}/rematch`" not in script
