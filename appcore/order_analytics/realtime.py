@@ -1191,6 +1191,75 @@ def _get_realtime_ad_summary_from_campaigns(
     }
 
 
+def _get_latest_realtime_snapshot_at(
+    target: date,
+    snapshot_until: datetime,
+    *,
+    site_codes: tuple[str, ...] | None = None,
+) -> datetime | None:
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    account_sql = ""
+    account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        if not allowed_account_ids:
+            return None
+        placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+        account_sql = f"AND ad_account_id IN ({placeholders}) "
+        account_args = list(allowed_account_ids)
+    rows = query(
+        "SELECT MAX(snapshot_at) AS latest_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at<=%s "
+        "AND data_completeness='realtime_partial' "
+        + account_sql,
+        tuple([target, snapshot_until] + account_args),
+    )
+    if not rows:
+        return None
+    return rows[0].get("latest_at")
+
+
+def _get_realtime_ad_summary_for_business_date(
+    target: date,
+    snapshot_until: datetime,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    """Range-mode realtime ad totals for one BJ business date.
+
+    Uses the same per-account latest-snapshot campaign path as the single-day
+    realtime dashboard so a lagging Meta account is not dropped by a global
+    ``MAX(snapshot_at)``.
+    """
+    campaign_summary = _get_realtime_ad_summary_from_campaigns(
+        target,
+        snapshot_until,
+        product_id=product_id,
+        site_codes=site_codes,
+    )
+    if not campaign_summary:
+        return None
+    latest_at = _get_latest_realtime_snapshot_at(
+        target,
+        snapshot_until,
+        site_codes=site_codes,
+    )
+    last_ad_updated_at = (
+        _get_realtime_ad_updated_at(target, latest_at)
+        if latest_at is not None
+        else None
+    )
+    return {
+        "ad_spend": campaign_summary["ad_spend"],
+        "meta_purchase_value": campaign_summary["meta_purchase_value"],
+        "meta_purchases": campaign_summary["meta_purchases"],
+        "last_ad_updated_at": last_ad_updated_at or latest_at,
+        "snapshot_at": latest_at,
+    }
+
+
 def _get_realtime_order_summary(
     target: date,
     data_until: datetime,
@@ -1548,6 +1617,14 @@ def _build_realtime_overview_for_range(
     last_order_at: datetime | None = None
     last_order_updated_at: datetime | None = None
     last_ad_updated_at: datetime | None = None
+    daily_ads_by_day = {
+        _date_key(row.get("meta_business_date")): row
+        for row in ad_rows
+        if _date_key(row.get("meta_business_date")) is not None
+    }
+    current_business_date = current_meta_business_date(now)
+    used_daily_ads = False
+    used_realtime_ads = False
 
     for row in order_rows:
         summary["order_count"] += int(row.get("order_count") or 0)
@@ -1562,11 +1639,42 @@ def _build_realtime_overview_for_range(
             last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
         ):
             last_order_updated_at = row["last_order_updated_at"]
-    for row in ad_rows:
+
+    for business_day in _business_dates_between(start, end):
+        if business_day > current_business_date:
+            continue
+        daily_ad = daily_ads_by_day.get(business_day)
+        realtime_ad: dict[str, Any] | None = None
+        should_try_realtime = (
+            business_day == current_business_date
+            or (
+                business_day == current_business_date - timedelta(days=1)
+                and daily_ad is None
+            )
+        )
+        if should_try_realtime:
+            _, business_day_end = compute_meta_business_window_bj(business_day)
+            snapshot_until = min(now, business_day_end)
+            realtime_ad = _get_realtime_ad_summary_for_business_date(
+                business_day,
+                snapshot_until,
+                product_id=product_id,
+                site_codes=sites,
+            )
+
+        row = realtime_ad or daily_ad
+        if not row:
+            continue
+        if realtime_ad:
+            used_realtime_ads = True
+        else:
+            used_daily_ads = True
         summary["ad_spend"] += float(row.get("ad_spend") or 0)
         summary["meta_purchase_value"] += float(row.get("meta_purchase_value") or 0)
         summary["meta_purchases"] += int(row.get("meta_purchases") or 0)
-        if row.get("last_ad_updated_at") and (last_ad_updated_at is None or row["last_ad_updated_at"] > last_ad_updated_at):
+        if row.get("last_ad_updated_at") and (
+            last_ad_updated_at is None or row["last_ad_updated_at"] > last_ad_updated_at
+        ):
             last_ad_updated_at = row["last_ad_updated_at"]
 
     for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
@@ -1621,6 +1729,15 @@ def _build_realtime_overview_for_range(
             )
             or profit_summary
         )
+    if used_daily_ads and used_realtime_ads:
+        ad_source = "mixed"
+        ad_granularity = "mixed"
+    elif used_realtime_ads:
+        ad_source = "meta_ad_realtime_daily_campaign_metrics"
+        ad_granularity = "campaign_realtime_snapshot"
+    else:
+        ad_source = "meta_ad_daily_campaign_metrics"
+        ad_granularity = "daily"
 
     return {
         "period": {
@@ -1639,8 +1756,8 @@ def _build_realtime_overview_for_range(
             "product_id": product_id,
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
-            "ad_source": "meta_ad_daily_campaign_metrics",
-            "ad_granularity": "daily",
+            "ad_source": ad_source,
+            "ad_granularity": ad_granularity,
             "hourly_ad_ready": False,
         },
         "freshness": {

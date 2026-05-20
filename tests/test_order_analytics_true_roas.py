@@ -415,6 +415,92 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     assert result["period"]["day_definition"] == "meta_ad_platform_business_day_range"
 
 
+def test_realtime_range_summary_uses_realtime_ads_for_current_business_day(monkeypatch):
+    """本周/本月范围包含当前业务日时，广告费必须补实时表兜底。"""
+    current_business_date = oa._parse_meta_date("2026-05-19")
+    latest_at = datetime(2026, 5, 20, 11, 40)
+    calls: list[tuple[str, tuple]] = []
+
+    def fake_query(sql, args=()):
+        calls.append((sql, args))
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-05-18"),
+                    "order_count": 185,
+                    "line_count": 192,
+                    "units": 208,
+                    "order_revenue": 3519.74,
+                    "line_revenue": 3519.74,
+                    "shipping_revenue": 1332.94,
+                    "last_order_at": datetime(2026, 5, 19, 15, 58, 7),
+                    "last_order_updated_at": datetime(2026, 5, 20, 11, 40, 6),
+                },
+                {
+                    "meta_business_date": current_business_date,
+                    "order_count": 155,
+                    "line_count": 157,
+                    "units": 165,
+                    "order_revenue": 2777.13,
+                    "line_revenue": 2777.13,
+                    "shipping_revenue": 1087.91,
+                    "last_order_at": datetime(2026, 5, 20, 11, 23, 57),
+                    "last_order_updated_at": datetime(2026, 5, 20, 11, 40, 12),
+                },
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-05-18"),
+                    "ad_spend": 3569.70,
+                    "meta_purchase_value": 4389.72,
+                    "meta_purchases": 169,
+                    "last_ad_updated_at": datetime(2026, 5, 19, 16, 30, 19),
+                }
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "MAX(snapshot_at) AS latest_at" in sql
+        ):
+            assert args[:2] == (current_business_date, latest_at)
+            return [{"ad_account_id": "1861285821213497", "latest_at": latest_at}]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "campaign_id, campaign_name" in sql
+        ):
+            return [
+                {
+                    "ad_account_id": "1861285821213497",
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_id": "cmp-current",
+                    "campaign_name": "current-day-campaign",
+                    "normalized_campaign_code": "current-day-campaign",
+                    "result_count": 149,
+                    "spend_usd": 3014.44,
+                    "purchase_value_usd": 3714.57,
+                    "impressions": 1000,
+                    "clicks": 42,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-18",
+        end_date="2026-05-24",
+        now=latest_at,
+    )
+
+    assert result["summary"]["ad_spend"] == 6584.14
+    assert result["summary"]["meta_purchase_value"] == 8104.29
+    assert result["summary"]["meta_purchases"] == 318
+    assert result["summary"]["revenue_with_shipping"] == 8717.72
+    assert result["summary"]["true_roas"] == round(8717.72 / 6584.14, 4)
+    assert result["summary"]["meta_roas"] == round(8104.29 / 6584.14, 4)
+    assert any("FROM meta_ad_realtime_daily_campaign_metrics" in sql for sql, _ in calls)
+
+
 def test_realtime_range_summary_uses_canonical_profit_revenue(monkeypatch):
     """历史范围实时大盘收入必须与订单利润核算共用 order_profit_lines 口径。"""
 
@@ -1348,6 +1434,58 @@ def test_realtime_overview_endpoint_attaches_data_quality(authed_client_no_db, m
     # business_date 来自 period.date
     from datetime import date as _date
     assert captured_kwargs["business_date"] == _date(2026, 4, 29)
+
+
+def test_realtime_overview_endpoint_attaches_range_data_quality(
+    authed_client_no_db,
+    monkeypatch,
+):
+    """范围模式的 data_quality 需要覆盖完整起止业务日和 mixed 源模式。"""
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        return {
+            "period": {"start_date": "2026-05-18", "end_date": "2026-05-24"},
+            "scope": {"ad_source": "mixed"},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    captured_kwargs = {}
+
+    def fake_build_for_realtime_overview(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "status": "warning",
+            "source_mode": "mixed",
+            "business_date_from": "2026-05-18",
+            "business_date_to": "2026-05-24",
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-05-20T12:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        fake_build_for_realtime_overview,
+    )
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-overview?start_date=2026-05-18&end_date=2026-05-24"
+    )
+
+    from datetime import date as _date
+
+    assert response.status_code == 200
+    assert captured_kwargs["business_date"] == _date(2026, 5, 18)
+    assert captured_kwargs["business_date_to"] == _date(2026, 5, 24)
+    assert captured_kwargs["source_mode"] == "mixed"
 
 
 def test_realtime_overview_endpoint_accepts_include_details(authed_client_no_db, monkeypatch):
