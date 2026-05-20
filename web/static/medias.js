@@ -1477,16 +1477,18 @@
       }
     }
 
-    async function load(pid) {
+    async function load(pid, langOverride) {
+      const requestedLang = (langOverride || getLang() || '').trim().toLowerCase();
+      if (requestedLang !== (getLang() || '').trim().toLowerCase()) return;
       items = [];
       selectedDetailImageIds = new Set();
       renderGrid();
       if (!pid) return;
       try {
-        const lang = getLang();
         const data = await fetchJSON(
-          `/medias/api/products/${pid}/detail-images?lang=${encodeURIComponent(lang)}`,
+          `/medias/api/products/${pid}/detail-images?lang=${encodeURIComponent(requestedLang)}`,
         );
+        if (requestedLang !== (getLang() || '').trim().toLowerCase()) return;
         items = data.items || [];
         renderGrid();
       } catch (err) {
@@ -5348,24 +5350,27 @@
     const headerClearBtn = $('edDetailImagesClearAllBtn');
     const title = section && section.querySelector('.oc-section-title > span');
     const subtitle = section && section.querySelector('.oc-section-title .optional');
-    const langName = langDisplayName(lang);
+    const activeLang = (edState.activeLang || lang || '').trim().toLowerCase();
+    const renderLang = activeLang || String(lang || '').trim().toLowerCase();
+    const isEnglishDetailLang = activeLang === 'en';
+    const langName = langDisplayName(renderLang);
     if (section) section.hidden = false;
     if (title) title.textContent = '商品详情图';
     if (subtitle) {
-      subtitle.textContent = lang === 'en'
+      subtitle.textContent = isEnglishDetailLang
         ? '英文原始版，用于后续图片翻译'
         : `${langName} 版本，可自行上传，或从英语版一键翻译`;
     }
-    if (translateBtn) translateBtn.hidden = lang === 'en';
-    if (fromUrlBtn) fromUrlBtn.hidden = lang !== 'en';
-    if (headerTranslateBtn) headerTranslateBtn.hidden = lang === 'en';
+    if (translateBtn) translateBtn.hidden = isEnglishDetailLang;
+    if (fromUrlBtn) fromUrlBtn.hidden = renderLang !== 'en';
+    if (headerTranslateBtn) headerTranslateBtn.hidden = isEnglishDetailLang;
     if (headerClearBtn) {
       const hasItems = Array.isArray(detailItems) && detailItems.length > 0;
-      headerClearBtn.hidden = lang === 'en';
+      headerClearBtn.hidden = isEnglishDetailLang;
       headerClearBtn.disabled = !hasItems;
     }
     if (!status) return;
-    if (lang === 'en') {
+    if (isEnglishDetailLang) {
       status.hidden = true;
       return;
     }
@@ -5392,7 +5397,7 @@
       html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
     }
 
-    const statusReapplyButton = edDetailTranslateReapplyButton(statusReapplyTask, lang);
+    const statusReapplyButton = edDetailTranslateReapplyButton(statusReapplyTask, renderLang);
     if (statusReapplyButton) html += ' ' + statusReapplyButton;
 
     status.hidden = false;
@@ -5400,29 +5405,33 @@
   }
 
   async function edRefreshDetailImagesPanel(lang) {
+    const requestedLang = (lang || edState.activeLang || '').trim().toLowerCase();
     const ctrl = ensureEdDetailImagesCtrl();
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     ctrl.show();
+    if (requestedLang !== (edState.activeLang || '').trim().toLowerCase()) return;
     if (!pid) {
       ctrl.reset();
-      edRenderDetailTranslateState(lang, [], []);
+      edRenderDetailTranslateState(requestedLang, [], []);
       edRenderDetailTranslateHistory([]);
       return;
     }
-    await ctrl.load(pid);
+    await ctrl.load(pid, requestedLang);
+    if (requestedLang !== (edState.activeLang || '').trim().toLowerCase()) return;
     let tasks = [];
     let loadError = null;
     try {
-      tasks = await edLoadDetailTranslateTasks(pid, lang);
+      tasks = await edLoadDetailTranslateTasks(pid, requestedLang);
     } catch (err) {
       loadError = err;
     }
+    if (requestedLang !== (edState.activeLang || '').trim().toLowerCase()) return;
     const detailItems = ctrl.items ? ctrl.items() : [];
-    edRenderDetailTranslateState(lang, tasks, detailItems);
+    edRenderDetailTranslateState(requestedLang, tasks, detailItems);
     edRenderDetailTranslateHistory(tasks);
     if (loadError) {
       const status = $('edDetailTranslateStatus');
-      if (status && lang !== 'en') {
+      if (status && requestedLang !== 'en') {
         status.hidden = false;
         status.textContent = '翻译任务记录加载失败：' + (loadError.message || loadError);
       }

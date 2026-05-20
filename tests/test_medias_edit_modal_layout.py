@@ -181,6 +181,20 @@ def test_edit_detail_translate_task_links_sanitize_internal_hrefs():
     assert "link.href = data.detail_url ||" not in submit_block
 
 
+def test_edit_detail_translate_buttons_are_hidden_by_active_english_language():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    state_block = script[
+        script.index("function edRenderDetailTranslateState"):
+        script.index("async function edRefreshDetailImagesPanel")
+    ]
+
+    assert "const activeLang = (edState.activeLang || lang || '').trim().toLowerCase();" in state_block
+    assert "const isEnglishDetailLang = activeLang === 'en';" in state_block
+    assert "translateBtn.hidden = isEnglishDetailLang" in state_block
+    assert "headerTranslateBtn.hidden = isEnglishDetailLang" in state_block
+    assert "status.hidden = true" in state_block[state_block.index("if (isEnglishDetailLang)"):]
+
+
 def test_edit_video_play_url_sanitizes_media_src_protocols():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     load_block = script[
