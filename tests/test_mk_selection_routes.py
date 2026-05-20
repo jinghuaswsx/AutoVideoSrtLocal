@@ -250,7 +250,23 @@ def test_mk_selection_import_success_marks_all_matching_buttons():
     assert "function mkiMarkImportedFilename(filename)" in template
     assert "document.querySelectorAll('.mki-btn--add')" in template
     assert "MKI_IMPORTED_FILENAMES.has(fn)" in template
+    assert "String(btn.dataset.mkiFilename || '').trim() === fn" in template
+    assert "mkiMarkImportedButton(btn);" in template
     assert "mkiMarkImportedFilename(btn.dataset.mkiFilename);" in template
+    assert template.index("mkiMarkImportedButton(btn);") < template.index("mkiMarkImportedFilename(btn.dataset.mkiFilename);")
+    assert "importSucceeded = true;" in template
+    assert "if (!importSucceeded)" in template
+
+
+def test_mk_selection_imported_check_uses_post_json_to_avoid_long_urls():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "async function mkiFetchImportedFilenames(chunk)" in template
+    assert "fetch('/mk-import/check', {" in template
+    assert "method: 'POST'" in template
+    assert "JSON.stringify({filenames: chunk})" in template
+    assert "X-CSRFToken" in template
+    assert "fetch('/mk-import/check?filenames='" not in template
 
 
 def test_mk_import_progress_medias_button_searches_product_code():
@@ -262,6 +278,20 @@ def test_mk_import_progress_medias_button_searches_product_code():
     assert "function mkiImportProgressOpenMedias()" in template
     assert "mkiImportProgressSetMediasHref(btn);" in template
     assert 'onclick="mkiImportProgressOpenMedias()"' in template
+
+
+def test_mk_import_progress_footer_actions_open_new_tabs():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiImportProgressOpenTab(href)" in template
+    assert "window.open(targetHref, '_blank', 'noopener,noreferrer')" in template
+    assert "function mkiImportProgressOpenTasks()" in template
+    assert "function mkiImportProgressContinueTask()" in template
+    assert 'onclick="mkiImportProgressContinueTask()"' in template
+    assert 'onclick="mkiImportProgressOpenTasks()"' in template
+    assert 'onclick="mkiImportProgressOpenMedias()"' in template
+    assert 'onclick="window.location.href=\'/tasks/\'"' not in template
+    assert "window.location.href = '/tasks/'" not in template
 
 
 def test_mk_selection_video_cards_include_local_video_preview():

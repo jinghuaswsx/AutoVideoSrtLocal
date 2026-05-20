@@ -46,6 +46,41 @@ def test_mk_import_check_splits_imported_and_missing(authed_client_no_db, monkey
     assert captured["filenames"] == ["a.mp4", "b.mp4", "a.mp4"]
 
 
+def test_mk_import_check_accepts_post_json_for_long_unicode_filenames(authed_client_no_db, monkeypatch):
+    from web.routes import mk_import as route
+
+    captured = {}
+    filenames = [
+        "2026.04.09-物理综合实验DIY-混剪-苏齐齐.mp4",
+        "2026.04.01-煮蛋器-原素材-指派-陈兆阳.mp4",
+    ]
+
+    def fake_list_imported_filenames(values):
+        captured["filenames"] = values
+        return {filenames[0]}
+
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_filenames", fake_list_imported_filenames)
+
+    resp = authed_client_no_db.post(
+        "/mk-import/check",
+        json={"filenames": filenames},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"imported": [filenames[0]], "missing": [filenames[1]]}
+    assert captured["filenames"] == filenames
+
+
+def test_mk_import_check_post_rejects_too_many_filenames(authed_client_no_db):
+    resp = authed_client_no_db.post(
+        "/mk-import/check",
+        json={"filenames": [f"{idx}.mp4" for idx in range(101)]},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "too_many_filenames", "max": 100}
+
+
 def test_mk_import_video_rejects_non_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.post("/mk-import/video", json={})
 

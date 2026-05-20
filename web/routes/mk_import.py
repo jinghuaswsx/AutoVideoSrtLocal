@@ -29,13 +29,20 @@ def _is_admin() -> bool:
         getattr(current_user, "is_admin", False)
 
 
-@bp.route("/check", methods=["GET"])
+@bp.route("/check", methods=["GET", "POST"])
 @login_required
 def check():
-    raw = (request.args.get("filenames") or "").strip()
-    if not raw:
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        raw_filenames = payload.get("filenames") or []
+        filenames = [str(f).strip() for f in raw_filenames if str(f).strip()] if isinstance(raw_filenames, list) else []
+    else:
+        raw = (request.args.get("filenames") or "").strip()
+        if not raw:
+            return mk_import_flask_response(build_mk_import_check_empty_response())
+        filenames = [f.strip() for f in raw.split(",") if f.strip()]
+    if not filenames:
         return mk_import_flask_response(build_mk_import_check_empty_response())
-    filenames = [f.strip() for f in raw.split(",") if f.strip()]
     if len(filenames) > 100:
         return mk_import_flask_response(
             build_mk_import_too_many_filenames_response(max_filenames=100)
