@@ -178,3 +178,36 @@ def test_english_redub_start_rejects_invalid_script_mode(
 
     assert resp.status_code == 400
     assert "script_mode" in resp.get_json()["error"]
+
+
+def test_english_redub_voice_library_accepts_pagination(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured: dict = {}
+    monkeypatch.setattr(
+        "web.routes.english_redub._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": '{"target_lang":"en","steps":{"voice_match":"waiting"}}',
+            "user_id": 1,
+        },
+    )
+
+    def fake_list_voices(**kwargs):
+        captured.update(kwargs)
+        return {"items": [{"voice_id": "voice-page-3", "name": "Page 3"}], "total": 450}
+
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", fake_list_voices)
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.get("/api/english-redub/task-voice-pages/voice-library?page=3&page_size=150")
+
+    assert resp.status_code == 200
+    assert captured == {
+        "language": "en",
+        "gender": None,
+        "q": None,
+        "page": 3,
+        "page_size": 150,
+    }
+    assert resp.get_json()["items"][0]["voice_id"] == "voice-page-3"

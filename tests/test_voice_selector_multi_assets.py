@@ -58,3 +58,28 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "语速未维护，已按音色排序" in SCRIPT
     assert "语速匹配" in SCRIPT
     assert ".vs-row-speed" in TEMPLATE
+
+
+def test_voice_selector_multi_exposes_full_voice_modal():
+    assert 'id="vs-open-modal-btn"' in TEMPLATE
+    assert 'id="vs-voice-modal"' in TEMPLATE
+    assert 'id="vs-modal-list"' in TEMPLATE
+    assert 'role="dialog"' in TEMPLATE
+    assert 'aria-modal="true"' in TEMPLATE
+    assert 'const modalEl = document.getElementById("vs-voice-modal");' in SCRIPT
+    assert "function openVoiceModal()" in SCRIPT
+    assert "function closeVoiceModal()" in SCRIPT
+    assert "function renderVoiceModal(waitingProgress)" in SCRIPT
+    assert 'openModalBtn.addEventListener("click", openVoiceModal);' in SCRIPT
+
+
+def test_voice_selector_multi_preserves_focus_and_scroll_during_refreshes():
+    assert "function captureRenderState()" in SCRIPT
+    assert "function restoreRenderState(state)" in SCRIPT
+    assert "listScrollTop: listEl ? listEl.scrollTop : 0" in SCRIPT
+    assert "modalScrollTop: modalListEl ? modalListEl.scrollTop : 0" in SCRIPT
+    assert "activeVoiceId: activeVoiceElement ? activeVoiceElement.dataset.voiceId : null" in SCRIPT
+    assert "restoreRenderState(renderState);" in SCRIPT
+    assert "sessionStorage.setItem(RELOAD_STATE_KEY" in SCRIPT
+    assert "function restoreReloadState()" in SCRIPT
+    assert "window.scrollTo({ top: saved.scrollY || 0" in SCRIPT
