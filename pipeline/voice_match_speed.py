@@ -113,6 +113,14 @@ def _speed_score(source_wps: float, candidate_wps: float | None) -> float | None
     return max(0.0, min(1.0, score))
 
 
+def _coerce_similarity_rank(candidate: dict, fallback: int) -> int:
+    try:
+        rank = int(candidate.get("similarity_rank") or fallback)
+    except (TypeError, ValueError):
+        rank = fallback
+    return max(1, rank)
+
+
 def rank_speed_aware_candidates(
     candidates: list[dict],
     source_rate: dict,
@@ -124,7 +132,7 @@ def rank_speed_aware_candidates(
         return []
     source_wps = float(source_rate.get("source_words_per_second") or 0.0)
     ranked: list[dict] = []
-    for candidate in candidates:
+    for index, candidate in enumerate(candidates, start=1):
         similarity = float(candidate.get("similarity") or 0.0)
         voice_id = str(candidate.get("voice_id") or "").strip()
         speed_score = _speed_score(source_wps, preview_rates.get(voice_id))
@@ -133,6 +141,7 @@ def rank_speed_aware_candidates(
             combined = similarity * TIMBRE_WEIGHT + speed_score * SPEED_WEIGHT
         row = dict(candidate)
         row["similarity"] = similarity
+        row["similarity_rank"] = _coerce_similarity_rank(candidate, index)
         row["source_words_per_second"] = source_wps or None
         row["preview_words_per_second"] = preview_rates.get(voice_id)
         row["speed_match_score"] = speed_score
@@ -154,9 +163,10 @@ def rank_speed_aware_candidates(
 def _annotate_timbre_fallback(candidates: list[dict], source_rate: dict, reason: str, *, top_k: int) -> list[dict]:
     source_wps = float(source_rate.get("source_words_per_second") or 0.0) or None
     rows: list[dict] = []
-    for candidate in candidates[:top_k]:
+    for index, candidate in enumerate(candidates[:top_k], start=1):
         row = dict(candidate)
         row["similarity"] = float(row.get("similarity") or 0.0)
+        row["similarity_rank"] = _coerce_similarity_rank(candidate, index)
         row["source_words_per_second"] = source_wps
         row["preview_words_per_second"] = None
         row["speed_match_score"] = None

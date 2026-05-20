@@ -138,7 +138,10 @@ def match_candidates(
             "similarity": sim,
         })
     scored.sort(key=lambda x: x["similarity"], reverse=True)
-    return scored[:top_k]
+    top = scored[:top_k]
+    for index, row in enumerate(top, start=1):
+        row["similarity_rank"] = index
+    return top
 
 
 def match_for_video(
