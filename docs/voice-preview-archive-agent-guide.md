@@ -42,7 +42,7 @@
 - `duration_seconds`：预览音频时长，单位秒
 - `transcript_text`：ASR 文案，适合列表/审核展示
 - `utterances_json`：ASR 原始分段结果，适合二次分析
-- `asr_source`：`preview_asr:doubao_asr` 或 `preview_asr:elevenlabs_scribe`
+- `asr_source`：归档链路统一写 `preview_asr:elevenlabs_scribe`
 - `status`：`ready` 可用，`failed` 表示下载或 ASR 失败
 - `error`：失败原因
 

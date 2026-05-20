@@ -125,7 +125,7 @@ def test_archive_preview_target_downloads_measures_transcribes_and_upserts(tmp_p
     assert Path(result["local_path"]).is_file()
     assert writes[0]["voice_id"] == "voice-1"
     assert writes[0]["utterances_json"][0]["text"] == "Hello world"
-    assert writes[0]["asr_source"] == "preview_asr:doubao_asr"
+    assert writes[0]["asr_source"] == "preview_asr:elevenlabs_scribe"
     assert rate_writes[0]["voice_id"] == "voice-1"
     assert rate_writes[0]["sample_duration"] == 2.0
 

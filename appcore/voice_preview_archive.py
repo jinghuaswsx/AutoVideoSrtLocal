@@ -170,11 +170,11 @@ def resolve_local_preview_path(
 
 
 def _preview_rate_source_code(language: str | None) -> str:
-    return "doubao_asr" if str(language or "").strip().lower() == "en" else "elevenlabs_scribe"
+    return "elevenlabs_scribe"
 
 
 def _preview_rate_provider_code(language: str | None) -> str:
-    return "doubao_asr" if str(language or "").strip().lower() == "en" else "elevenlabs_tts"
+    return "elevenlabs_tts"
 
 
 def _asr_source(language: str | None) -> str:

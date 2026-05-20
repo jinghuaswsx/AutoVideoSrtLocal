@@ -21,8 +21,9 @@ or transcript data.
   `voice_id`, `language`, `preview_url`, `preview_url_hash`, `local_path`,
   `duration_seconds`, `transcript_text`, `utterances_json`, `asr_source`,
   `status`, and `error`.
-- ASR uses the same provider rule as preview-rate measurement:
-  English uses Doubao ASR; other languages use ElevenLabs Scribe.
+- Archive ASR uses ElevenLabs Scribe for all languages so preview archiving only
+  depends on the existing direct-file ElevenLabs STT path and does not require a
+  temporary TOS upload bucket.
 - Preview-rate rows may be updated from the archived ASR result, but the archive
   remains the durable source for transcript and local audio metadata.
 - Voice-library API payloads expose `preview_local_url` only when the current
