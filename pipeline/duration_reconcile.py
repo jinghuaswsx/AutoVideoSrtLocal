@@ -217,6 +217,9 @@ def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
 
 
 def _text_rewrite_enabled_for_task(task: dict | None) -> bool:
+    task = task or {}
+    if task.get("type") == "english_redub":
+        return str(task.get("script_mode") or "original").strip().lower() == "rewrite"
     return True
 
 
@@ -778,13 +781,13 @@ def _reconcile_one_sentence(
     asr_index = int(current.get("asr_index", position))
 
     if status in {"needs_rewrite", "needs_expand", "needs_semantic_repair"}:
-        if not text_rewrite_enabled and status != "needs_semantic_repair":
+        if not text_rewrite_enabled:
             current["text_rewrite_disabled"] = True
-            current["rewrite_skip_reason"] = "shot_char_limit_preserves_initial_translation"
+            current["rewrite_skip_reason"] = "script_mode_original_preserves_text"
             current["status"] = _warning_status_for_ratio(current["duration_ratio"])
             current["speed"] = 1.0
             current["best_effort"] = True
-            current["best_effort_reason"] = "shot_char_limit_rewrite_disabled"
+            current["best_effort_reason"] = "script_mode_original_rewrite_disabled"
             _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_skipped")
         else:
             current_duration = current["tts_duration"]

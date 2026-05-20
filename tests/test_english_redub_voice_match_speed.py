@@ -30,28 +30,27 @@ def test_compute_source_speech_rate_uses_words_when_available():
     assert rate["source_chars_per_second"] > 10
 
 
-def test_rank_speed_aware_keeps_similarity_floor():
+def test_rank_speed_aware_reranks_similarity_pool_by_speed():
     from pipeline.voice_match_speed import rank_speed_aware_candidates
 
     candidates = [
-        {"voice_id": "top", "similarity": 0.90},
+        {"voice_id": "top", "similarity": 0.94},
         {"voice_id": "fast", "similarity": 0.86},
         {"voice_id": "low", "similarity": 0.70},
     ]
-    preview_rates = {"top": 2.0, "fast": 3.8, "low": 3.8}
+    preview_rates = {"top": 3.2, "fast": 3.8, "low": 1.0}
     source_rate = {"source_words_per_second": 3.8}
 
     ranked = rank_speed_aware_candidates(
         candidates,
         source_rate,
         preview_rates,
-        top_k=2,
+        top_k=3,
     )
 
-    assert [row["voice_id"] for row in ranked] == ["fast", "top"]
-    assert "low" not in [row["voice_id"] for row in ranked]
+    assert [row["voice_id"] for row in ranked] == ["fast", "top", "low"]
     assert ranked[0]["speed_match_score"] > ranked[1]["speed_match_score"]
-    assert ranked[0]["combined_score"] > ranked[1]["combined_score"]
+    assert ranked[0]["combined_score"] < ranked[1]["combined_score"]
 
 
 def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypatch):
@@ -61,10 +60,11 @@ def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypat
         {"voice_id": "a", "similarity": 0.9},
         {"voice_id": "b", "similarity": 0.8},
     ]
+    match_calls = []
     monkeypatch.setattr(
         voice_match_speed.voice_match,
         "match_candidates",
-        lambda *args, **kwargs: candidates,
+        lambda *args, **kwargs: match_calls.append(kwargs) or candidates,
     )
     monkeypatch.setattr(
         voice_match_speed.voice_preview_speech_rate,
@@ -85,6 +85,7 @@ def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypat
     )
 
     assert [row["voice_id"] for row in ranked] == ["a", "b"]
+    assert match_calls[0]["top_k"] == 20
     assert lazy_calls[0]["language"] == "en"
     assert lazy_calls[0]["voice_ids"] == ["a", "b"]
     assert ranked[0]["source_words_per_second"] == 2.0

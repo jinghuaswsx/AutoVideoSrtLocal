@@ -98,13 +98,13 @@ def test_get_pipeline_steps_dispatches_original_translate(monkeypatch):
     assert names[-1] == "export"
 
 
-def test_original_script_mode_uses_omni_duration_text_rewrite():
+def test_script_mode_controls_duration_text_rewrite():
     from pipeline.duration_reconcile import _text_rewrite_enabled_for_task
 
     assert _text_rewrite_enabled_for_task({
         "type": "english_redub",
         "script_mode": "original",
-    }) is True
+    }) is False
     assert _text_rewrite_enabled_for_task({
         "type": "english_redub",
         "script_mode": "rewrite",

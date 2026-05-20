@@ -265,6 +265,71 @@
 .modal-lang-pill.active {
   background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
 }
+.english-redub-script-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border-main);
+  border-radius: 10px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.english-redub-script-toggle:hover {
+  border-color: oklch(56% 0.16 230);
+  background: var(--sidebar-hover-bg);
+}
+.english-redub-script-toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.english-redub-script-toggle-track {
+  position: relative;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 24px;
+  border-radius: 9999px;
+  background: #d1d5db;
+  transition: background .15s;
+}
+.english-redub-script-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  transition: transform .15s;
+}
+.english-redub-script-toggle-input:checked + .english-redub-script-toggle-track {
+  background: oklch(56% 0.16 230);
+}
+.english-redub-script-toggle-input:checked + .english-redub-script-toggle-track::after {
+  transform: translateX(18px);
+}
+.english-redub-script-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.english-redub-script-toggle-copy strong {
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--text-main);
+}
+.english-redub-script-toggle-copy small {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #6b7280;
+}
 
 /* ── 视频拖拽区与预览（180x320） ── */
 .video-dropzone {
@@ -480,11 +545,14 @@
         {% if module_kind == 'english_redub' %}
         <div class="modal-field">
           <label>文案模式</label>
-          <label class="modal-lang-pill" style="display:inline-flex;align-items:center;gap:6px;width:auto;">
-            <input type="checkbox" name="script_mode" value="rewrite">
-            重写文案，保持原意一致
+          <label class="english-redub-script-toggle">
+            <input class="english-redub-script-toggle-input" type="checkbox" name="script_mode" value="rewrite" role="switch" aria-label="是否重写文案">
+            <span class="english-redub-script-toggle-track" aria-hidden="true"></span>
+            <span class="english-redub-script-toggle-copy">
+              <strong>重写文案</strong>
+              <small>关闭时不改原英文文案，只让音色和语速去匹配；开启后才允许 Omni 重写文案。</small>
+            </span>
           </label>
-          <div class="modal-hint" style="margin:6px 0 0;">默认关闭，关闭时保留原英文文案，只重新生成 TTS；开启后用 Omni 对齐逻辑适配语速。</div>
           <input type="hidden" id="targetLangSelect" name="target_lang" value="en">
         </div>
         {% else %}

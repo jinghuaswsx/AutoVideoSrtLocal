@@ -37,6 +37,59 @@ def test_speed_adjustment_clamped_to_five_percent():
     assert compute_speed_for_target(5.0, 4.6) is None
 
 
+def test_english_redub_original_skips_semantic_repair_rewrite(monkeypatch):
+    def fail_rewrite(**kwargs):
+        pytest.fail("original script mode must not rewrite text")
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fail_rewrite)
+
+    result = reconcile_duration(
+        task={"type": "english_redub", "script_mode": "original"},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 2.0,
+                    "target_duration": 2.0,
+                    "target_chars_range": (18, 28),
+                    "text": "Keep this exact sentence.",
+                    "source_text": "Keep this exact sentence.",
+                    "coverage_ok": False,
+                    "omitted_source_terms": ["exact"],
+                }
+            ]
+        },
+        tts_output={
+            "segments": [
+                {
+                    "asr_index": 0,
+                    "tts_path": "/tmp/seg0.mp3",
+                    "tts_duration": 2.0,
+                }
+            ]
+        },
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[
+            {
+                "index": 0,
+                "start_time": 0.0,
+                "end_time": 2.0,
+                "text": "Keep this exact sentence.",
+            }
+        ],
+    )
+
+    sentence = result[0]
+    assert sentence["text"] == "Keep this exact sentence."
+    assert sentence["text_rewrite_attempts"] == 0
+    assert sentence["text_rewrite_disabled"] is True
+    assert sentence["rewrite_skip_reason"] == "script_mode_original_preserves_text"
+
+
 def _parallel_sentence_fixture(count: int = 3) -> tuple[dict, dict]:
     sentences = []
     segments = []
