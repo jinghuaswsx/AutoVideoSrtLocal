@@ -7,6 +7,7 @@ from appcore.permissions import (
     ROLE_SUPERADMIN,
     default_permissions_for_role,
     is_valid_role,
+    merge_with_defaults,
     normalize_permissions,
 )
 
@@ -169,6 +170,7 @@ def update_user_profile(
     role: str,
     is_active: bool,
     xingming: str | None | object = _MISSING,
+    work_scopes: list[str] | object = _MISSING,
 ) -> None:
     user = get_by_id(user_id)
     if user is None:
@@ -192,15 +194,26 @@ def update_user_profile(
         if username != SUPERADMIN_USERNAME:
             raise ValueError("cannot rename the superadmin")
         is_active = True
+        work_scopes = _MISSING
     elif role == ROLE_SUPERADMIN:
         raise ValueError("only the reserved username can hold superadmin role")
 
     assignments = ["username = %s", "role = %s", "is_active = %s"]
     args: list = [username, role, int(bool(is_active))]
 
+    permissions_payload = None
     if current_role != role:
+        permissions_payload = default_permissions_for_role(role)
+
+    if work_scopes is not _MISSING:
+        if permissions_payload is None:
+            permissions_payload = merge_with_defaults(role, _coerce_permissions(user.get("permissions")))
+        selected_scopes = {str(item).strip() for item in (work_scopes or []) if str(item).strip()}
+        permissions_payload["work_scope_translation"] = "translation" in selected_scopes
+
+    if permissions_payload is not None:
         assignments.append("permissions = %s")
-        args.append(json.dumps(default_permissions_for_role(role)))
+        args.append(json.dumps(permissions_payload))
 
     if xingming is not _MISSING and _user_column_exists("xingming"):
         assignments.append("xingming = %s")

@@ -10,6 +10,9 @@ def _superadmin_client(monkeypatch):
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
     monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["en", "de"])
 
     from web.app import create_app
@@ -195,6 +198,7 @@ def test_user_profile_update_delegates_without_password_and_audits(monkeypatch):
             "role": "admin",
             "is_active": False,
             "xingming": "王同学",
+            "work_scopes": ["translation"],
             "password": "must-not-be-forwarded",
         },
     )
@@ -209,6 +213,7 @@ def test_user_profile_update_delegates_without_password_and_audits(monkeypatch):
                 "role": "admin",
                 "is_active": False,
                 "xingming": "王同学",
+                "work_scopes": ["translation"],
             },
         )
     ]
@@ -231,7 +236,7 @@ def test_admin_users_page_renders_profile_info_and_split_actions(monkeypatch):
                 "username": "worker",
                 "xingming": "王同学",
                 "role": "user",
-                "permissions": {"medias": True, "pushes": False},
+                "permissions": {"medias": True, "pushes": False, "work_scope_translation": True},
                 "is_active": 1,
                 "created_at": "2026-05-20 10:00:00",
             }
@@ -244,6 +249,9 @@ def test_admin_users_page_renders_profile_info_and_split_actions(monkeypatch):
     body = resp.get_data(as_text=True)
     assert "姓名" in body
     assert "王同学" in body
+    assert "工作范围" in body
+    assert "翻译工作" in body
+    assert "editWorkScope_translation" in body
     assert "编辑" in body
     assert "修改密码" in body
     assert "openUserEditModal" in body
@@ -295,3 +303,5 @@ def test_admin_users_password_button_uses_json_encoded_arguments():
     assert "openPasswordModal({{ u.id }}, '{{ u.username }}')" not in template
     assert "/admin/api/users/' + passwordUserId + '/password" in template
     assert "/admin/api/users/' + editUserId" in template
+    assert "editWorkScope_{{ scope.code }}" in template
+    assert "work_scopes" in template

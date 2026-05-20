@@ -23,6 +23,7 @@ def test_update_user_profile_updates_editable_fields_and_resets_role_permissions
             "username": "worker",
             "role": "user",
             "is_active": 1,
+            "permissions": '{"can_translate": true, "work_scope_translation": false}',
         },
     )
     monkeypatch.setattr(users, "get_by_username", lambda username: None)
@@ -35,6 +36,7 @@ def test_update_user_profile_updates_editable_fields_and_resets_role_permissions
         role="admin",
         is_active=False,
         xingming="王同学",
+        work_scopes=["translation"],
     )
 
     sql, args = calls[0]
@@ -45,7 +47,41 @@ def test_update_user_profile_updates_editable_fields_and_resets_role_permissions
     assert "is_active = %s" in sql
     assert "xingming = %s" in sql
     assert args[0:3] == ("worker-updated", "admin", 0)
+    assert '"work_scope_translation": true' in args[3]
     assert args[-2:] == ("王同学", 9)
+
+
+def test_update_user_profile_can_update_work_scope_without_role_change(monkeypatch):
+    from appcore import users
+
+    calls = []
+    monkeypatch.setattr(
+        users,
+        "get_by_id",
+        lambda user_id: {
+            "id": user_id,
+            "username": "worker",
+            "role": "user",
+            "is_active": 1,
+            "permissions": '{"can_translate": true, "work_scope_translation": false}',
+        },
+    )
+    monkeypatch.setattr(users, "get_by_username", lambda username: {"id": 9, "username": username})
+    monkeypatch.setattr(users, "_user_column_exists", lambda column: False)
+    monkeypatch.setattr(users, "execute", lambda sql, args=(): calls.append((sql, args)))
+
+    users.update_user_profile(
+        9,
+        username="worker",
+        role="user",
+        is_active=True,
+        work_scopes=["translation"],
+    )
+
+    sql, args = calls[0]
+    assert "permissions = %s" in sql
+    assert '"can_translate": true' in args[3]
+    assert '"work_scope_translation": true' in args[3]
 
 
 def test_update_user_profile_rejects_username_owned_by_another_user(monkeypatch):

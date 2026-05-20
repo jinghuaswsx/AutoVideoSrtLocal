@@ -34,6 +34,14 @@ from appcore.settings import (
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+WORK_SCOPE_OPTIONS = (
+    {
+        "code": "translation",
+        "label": PERMISSION_META["work_scope_translation"]["label"],
+        "permission": "work_scope_translation",
+    },
+)
+
 
 def _render_users_page(error=None, status: int = 200):
     all_users = list_users()
@@ -65,6 +73,17 @@ def _render_users_page(error=None, status: int = 200):
             u["permissions_summary"] = "、".join(enabled_labels) + suffix
         else:
             u["permissions_summary"] = "无已启用权限"
+        work_scope_labels = [
+            scope["label"]
+            for scope in WORK_SCOPE_OPTIONS
+            if effective_permissions.get(scope["permission"])
+        ]
+        work_scope_codes = [
+            scope["code"]
+            for scope in WORK_SCOPE_OPTIONS
+            if effective_permissions.get(scope["permission"])
+        ]
+        u["work_scope_summary"] = "、".join(work_scope_labels) if work_scope_labels else "—"
         u["permissions_enabled_count"] = len(enabled_codes)
         u["permissions_total_count"] = len(PERMISSION_META)
         u["profile_payload"] = {
@@ -74,12 +93,14 @@ def _render_users_page(error=None, status: int = 200):
             "role_label": ROLE_LABELS.get(u.get("role"), u.get("role")),
             "is_active": bool(u.get("is_active")),
             "is_superadmin": u.get("role") == ROLE_SUPERADMIN,
+            "work_scopes": work_scope_codes,
         }
         for field in optional_profile_fields:
             u["profile_payload"][field] = u.get(field) or ""
     return render_template("admin_users.html", users=all_users, error=error,
                            role_labels=ROLE_LABELS, current_user_id=current_user.id,
                            editable_profile_fields=optional_profile_fields,
+                           work_scope_options=WORK_SCOPE_OPTIONS,
                            perm_groups=grouped_permissions(),
                            role_defaults={r: default_permissions_for_role(r) for r in ROLES}), status
 
@@ -275,6 +296,16 @@ def api_update_user_profile(user_id: int):
         update_kwargs["is_active"] = bool(user.get("is_active"))
     if "xingming" in editable_user_profile_fields():
         update_kwargs["xingming"] = body.get("xingming") or ""
+    if "work_scopes" in body:
+        raw_scopes = body.get("work_scopes")
+        allowed_scopes = {scope["code"] for scope in WORK_SCOPE_OPTIONS}
+        if isinstance(raw_scopes, list):
+            update_kwargs["work_scopes"] = [
+                scope for scope in raw_scopes
+                if isinstance(scope, str) and scope in allowed_scopes
+            ]
+        else:
+            update_kwargs["work_scopes"] = []
     try:
         update_user_profile(user_id, **update_kwargs)
     except ValueError as exc:

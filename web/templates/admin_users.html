@@ -9,7 +9,7 @@
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .table-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; min-width: 1080px; border-collapse: collapse; }
+table { width: 100%; min-width: 1160px; border-collapse: collapse; }
 th { text-align: left; color: var(--text-muted, #6b7280); font-size: 12px; font-weight: 700; text-transform: uppercase; padding: 10px 16px; border-bottom: 1.5px solid var(--border-main, #e5e7eb); background: var(--bg-input, #f9fafb); }
 td { padding: 12px 16px; border-bottom: 1px solid var(--border-light, #f3f4f6); font-size: 14px; color: var(--text-main, #374151); }
 tr:last-child td { border-bottom: none; }
@@ -36,6 +36,8 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .actions-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 280px; }
 .perm-summary { color: var(--text-muted, #6b7280); font-size: 12px; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .perm-count { color: var(--text-main, #374151); font-weight: 600; margin-right: 6px; }
+.work-scope-tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #e0f2fe; color: #075985; }
+.work-scope-empty { color: #9ca3af; font-size: 12px; }
 
 /* Permission modal */
 .perm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000; align-items: center; justify-content: center; }
@@ -60,6 +62,10 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .user-edit-field input[readonly] { color: #6b7280; cursor: not-allowed; }
 .user-active-row { display: flex; align-items: center; gap: 8px; color: #374151; font-size: 13px; margin-top: 4px; }
 .user-active-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+.work-scope-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.work-scope-option { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; color: #374151; font-size: 13px; cursor: pointer; }
+.work-scope-option input { width: 16px; height: 16px; accent-color: var(--accent); }
+.work-scope-option:has(input:disabled) { color: #9ca3af; cursor: not-allowed; background: #f9fafb; }
 .user-edit-error { display: none; color: #ef4444; font-size: 12px; margin-top: 6px; }
 .password-field { margin-bottom: 14px; }
 .password-error { display: none; color: #ef4444; font-size: 12px; margin-top: 6px; }
@@ -120,7 +126,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 <div class="table-card">
 <div class="table-scroll">
 <table>
-  <thead><tr><th>ID</th><th>用户名</th>{% if 'xingming' in editable_profile_fields %}<th>姓名</th>{% endif %}<th>角色</th><th>状态</th><th>权限</th><th>创建时间</th><th>操作</th></tr></thead>
+  <thead><tr><th>ID</th><th>用户名</th>{% if 'xingming' in editable_profile_fields %}<th>姓名</th>{% endif %}<th>角色</th><th>工作范围</th><th>状态</th><th>权限</th><th>创建时间</th><th>操作</th></tr></thead>
   <tbody>
     {% for u in users %}
     <tr>
@@ -128,6 +134,13 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
       <td>{{ u.username }}</td>
       {% if 'xingming' in editable_profile_fields %}<td>{{ u.xingming or '—' }}</td>{% endif %}
       <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
+      <td>
+        {% if u.work_scope_summary != '—' %}
+        <span class="work-scope-tag">{{ u.work_scope_summary }}</span>
+        {% else %}
+        <span class="work-scope-empty">—</span>
+        {% endif %}
+      </td>
       <td>{{ '正常' if u.is_active else '已禁用' }}</td>
       <td>
         <div class="perm-summary" title="{{ u.permissions_summary }}">
@@ -185,6 +198,17 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
           <option value="admin">管理员</option>
           <option value="superadmin" id="editOptSuperadmin" style="display:none">超级管理员</option>
         </select>
+      </div>
+      <div class="user-edit-field">
+        <label>工作范围</label>
+        <div class="work-scope-options">
+          {% for scope in work_scope_options %}
+          <label class="work-scope-option" for="editWorkScope_{{ scope.code }}">
+            <input type="checkbox" id="editWorkScope_{{ scope.code }}" data-scope-code="{{ scope.code }}">
+            {{ scope.label }}
+          </label>
+          {% endfor %}
+        </div>
       </div>
       <div class="user-edit-field">
         <label>状态</label>
@@ -259,6 +283,7 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 <script>
 const PERM_GROUPS = {{ perm_groups | tojson }};
 const ROLE_DEFAULTS = {{ role_defaults | tojson }};
+const WORK_SCOPE_OPTIONS = {{ work_scope_options | tojson }};
 let currentUserId = null;
 let isSuperadmin = false;
 let editUserId = null;
@@ -292,6 +317,15 @@ function openUserEditModal(user) {
   const activeInput = document.getElementById('editIsActive');
   activeInput.checked = !!user.is_active;
   activeInput.disabled = isEditSuperadmin;
+
+  const selectedScopes = new Set(user.work_scopes || []);
+  for (const scope of WORK_SCOPE_OPTIONS) {
+    const scopeInput = document.getElementById('editWorkScope_' + scope.code);
+    if (scopeInput) {
+      scopeInput.checked = selectedScopes.has(scope.code);
+      scopeInput.disabled = isEditSuperadmin;
+    }
+  }
   setUserEditError('');
   document.getElementById('userEditOverlay').classList.add('open');
   usernameInput.focus();
@@ -323,6 +357,12 @@ async function saveUserProfile() {
   if (xingmingInput) {
     payload.xingming = xingmingInput.value.trim();
   }
+  payload.work_scopes = WORK_SCOPE_OPTIONS
+    .filter(scope => {
+      const input = document.getElementById('editWorkScope_' + scope.code);
+      return input && input.checked;
+    })
+    .map(scope => scope.code);
 
   const resp = await fetch('/admin/api/users/' + editUserId, {
     method: 'PUT',
