@@ -42,10 +42,17 @@
 .mh-product-table th, .mh-product-table td { padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; font-size:13px; }
 .mh-product-table th { color:#475569; background:#f8fafc; font-weight:800; }
 .mh-product-table tr:last-child td { border-bottom:0; }
+.mh-product-image-cell { width:224px; }
+.mh-product-image-link, .mh-product-main-image-placeholder { display:block; width:200px; height:200px; border-radius:6px; background:#e2e8f0; overflow:hidden; }
+.mh-product-main-image { display:block; width:200px; height:200px; object-fit:cover; background:#e2e8f0; }
 .mh-product-theme { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-product-name-cell { display:flex; align-items:flex-start; gap:8px; min-width:0; }
 .mh-product-name-link { color:#0f766e; font-weight:800; text-decoration:none; word-break:break-word; }
 .mh-product-name-link:hover { text-decoration:underline; }
+.mh-product-copy-link { margin-top:-2px; }
 .mh-product-count { width:96px; color:#111827; font-weight:900; text-align:right; }
+.mh-product-material-button { height:28px; min-width:44px; padding:0 8px; border:1px solid transparent; border-radius:5px; background:transparent; color:#111827; font-size:13px; font-weight:900; cursor:pointer; }
+.mh-product-material-button:hover { border-color:#99f6e4; background:#f0fdfa; color:#0f766e; }
 .mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
 .mh-post-id-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:34px; padding:6px 14px 2px; color:#64748b; font-size:12px; font-weight:700; }
 .mh-post-id-main { display:flex; align-items:center; gap:6px; min-width:0; }
@@ -511,6 +518,7 @@ let mhAiAnalysisVisibility = {us: false, europe: false};
 let mhAiAnalysisVisibilitySaveVersion = 0;
 let mhItemsById = new Map();
 let mhAiState = {postId: null, mode: null, request: null, result: null};
+let mhProductPostHash = '';
 const mhPageSize = 50;
 const mhProductPageSize = 100;
 const MH_AI_MODES = {
@@ -653,7 +661,11 @@ function setVideoSource(source) {
   } else if (mhSubtab === 'favorites') {
     loadFavoriteMetaHotPosts(mhPage);
   } else if (mhSubtab === 'products') {
-    loadMetaHotProductList(mhPage);
+    if (mhProductPostHash) {
+      loadCurrentMetaHotProductPosts(mhPage);
+    } else {
+      loadMetaHotProductList(mhPage);
+    }
   }
 }
 
@@ -1255,6 +1267,7 @@ function renderMetaHotPageSummary(data, items, label = '') {
 }
 async function loadMetaHotPosts(page = 1, options = {}) {
   mhSubtab = 'library';
+  mhProductPostHash = '';
   setMetaHotSubtabState('library');
   mhPage = safeMetaHotPage(page);
   qs('mhStatus').textContent = 'Loading...';
@@ -1348,19 +1361,32 @@ async function loadFavoriteMetaHotPosts(page = 1) {
 function renderMetaHotProductRow(row) {
   const theme = row.category_l1_zh || row.category_l1 || '未分类';
   const name = row.product_title_display || row.product_title_zh || row.product_title || row.product_url || '未命名产品';
+  const imageHtml = row.product_main_image_url
+    ? `<img class="mh-product-main-image" src="${esc(row.product_main_image_url)}" alt="" loading="lazy" onerror="this.remove()">`
+    : '<span class="mh-product-main-image-placeholder" aria-hidden="true"></span>';
+  const imageCell = row.product_url && row.product_main_image_url
+    ? `<a class="mh-product-image-link" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">${imageHtml}</a>`
+    : imageHtml;
   const nameHtml = row.product_url
     ? `<a class="mh-product-name-link" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">${esc(name)}</a>`
     : esc(name);
+  const copyButton = row.product_url
+    ? `<button class="mh-post-copy-btn mh-product-copy-link" type="button" data-copy-value="${esc(row.product_url)}" title="复制产品链接" aria-label="复制产品链接" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('link')}</button>`
+    : '';
+  const countHtml = row.product_url_hash
+    ? `<button class="mh-product-material-button" type="button" data-product-hash="${esc(row.product_url_hash)}" onclick="loadMetaHotProductPosts(this.dataset.productHash, 1)">${fmt(row.material_count || 0)}</button>`
+    : fmt(row.material_count || 0);
   return `<tr>
     <td><span class="mh-product-theme">${esc(theme)}</span></td>
-    <td>${nameHtml}</td>
-    <td class="mh-product-count">${fmt(row.material_count || 0)}</td>
+    <td class="mh-product-image-cell">${imageCell}</td>
+    <td><div class="mh-product-name-cell">${nameHtml}${copyButton}</div></td>
+    <td class="mh-product-count">${countHtml}</td>
   </tr>`;
 }
 function renderMetaHotProductList(items) {
   if (!items.length) return '<div class="mh-empty">暂无产品</div>';
   return `<table class="mh-product-table">
-    <thead><tr><th style="width:180px">产品主题</th><th>产品名称</th><th class="mh-product-count">素材数</th></tr></thead>
+    <thead><tr><th style="width:180px">产品主题</th><th style="width:224px">产品主图</th><th>产品名称</th><th class="mh-product-count">素材数</th></tr></thead>
     <tbody>${items.map(renderMetaHotProductRow).join('')}</tbody>
   </table>`;
 }
@@ -1373,6 +1399,7 @@ function renderMetaHotProductSummary(data, items) {
 }
 async function loadMetaHotProductList(page = 1) {
   mhSubtab = 'products';
+  mhProductPostHash = '';
   setMetaHotSubtabState('products');
   mhPage = safeMetaHotPage(page);
   qs('mhStatus').textContent = 'Loading products...';
@@ -1386,6 +1413,34 @@ async function loadMetaHotProductList(page = 1) {
   mhPage = safeMetaHotPage(data.page || page || 1);
   renderMetaHotPager(data, 'loadMetaHotProductList');
   qs('mhStatus').textContent = renderMetaHotProductSummary(data, data.items || []);
+}
+function loadCurrentMetaHotProductPosts(page = 1) {
+  return loadMetaHotProductPosts(mhProductPostHash, page);
+}
+async function loadMetaHotProductPosts(productHash, page = 1) {
+  const hash = String(productHash || '').trim();
+  if (!hash) {
+    return loadMetaHotProductList(1);
+  }
+  mhSubtab = 'products';
+  mhProductPostHash = hash;
+  setMetaHotSubtabState('products');
+  qs('mhProductListPanel').hidden = true;
+  qs('metaHotCardGrid').hidden = false;
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading product materials...';
+  const params = new URLSearchParams({page: mhPage, page_size: mhPageSize, product_url_hash: productHash});
+  const res = await fetch(`/xuanpin/api/meta-hot-posts?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">该产品暂无视频素材</div>';
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadCurrentMetaHotProductPosts');
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '产品帖子');
 }
 function resetMetaHotPosts() {
   ['mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');

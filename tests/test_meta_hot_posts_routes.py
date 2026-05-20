@@ -313,12 +313,20 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "switchMetaHotSubtab('products')" in body
     assert "产品列表" in body
     assert "产品主题" in body
+    assert "产品主图" in body
     assert "产品名称" in body
     assert "素材数" in body
     assert 'id="mhProductListPanel"' in body
     assert "function loadMetaHotProductList" in body
+    assert "function loadMetaHotProductPosts(productHash, page = 1)" in body
     assert "/xuanpin/api/meta-hot-posts/products" in body
+    assert "product_url_hash: productHash" in body
     assert "renderMetaHotProductList(data.items || [])" in body
+    assert ".mh-product-main-image" in body
+    assert "width:200px; height:200px" in body
+    assert "mh-product-copy-link" in body
+    assert "复制产品链接" in body
+    assert "mh-product-material-button" in body
     assert 'id="mhFavoriteSort"' in body
     assert "loadFavoriteMetaHotPosts" in body
     assert "/xuanpin/api/meta-hot-posts/favorites" in body

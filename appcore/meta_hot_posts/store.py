@@ -197,6 +197,11 @@ def list_hot_posts(
         where.append("COALESCE(p.is_pushed, 0) = %s")
         params.append(1 if push_status == "pushed" else 0)
 
+    product_hash = _text_arg(args, "product_url_hash")
+    if product_hash:
+        where.append("p.product_url_hash = %s")
+        params.append(product_hash)
+
     created_from = _date_arg(args, "created_from")
     if created_from:
         where.append("p.creation_time >= %s")

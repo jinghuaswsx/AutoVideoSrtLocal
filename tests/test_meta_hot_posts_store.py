@@ -122,6 +122,29 @@ def test_list_hot_posts_applies_unpushed_filter():
     assert data_params == [0, 30, 0]
 
 
+def test_list_hot_posts_filters_by_product_url_hash():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        if "COUNT" in sql:
+            return [{"cnt": 2}]
+        return [{"wedev_post_id": 1}, {"wedev_post_id": 2}]
+
+    payload = store.list_hot_posts(
+        {"product_url_hash": "hash-a"},
+        query_fn=fake_query,
+    )
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert payload["total"] == 2
+    assert "p.product_url_hash = %s" in count_sql
+    assert "p.product_url_hash = %s" in data_sql
+    assert count_params == ["hash-a"]
+    assert data_params == ["hash-a", 30, 0]
+
+
 def test_list_today_new_hot_posts_filters_by_first_seen_today():
     calls = []
 
