@@ -121,6 +121,25 @@ def test_ads_page_supports_campaign_detail_deep_link_from_query_params():
     assert "document.addEventListener('DOMContentLoaded', adsApplyDeepLinkFromQuery);" in template
 
 
+def test_ads_deep_link_defaults_detail_range_to_recent_month():
+    """素材广告计划深链进入 Campaign 详情时，日期默认最近一个月。"""
+    template = _template_source()
+
+    assert "function adsRecentMonthStartIso()" in template
+    assert "function adsApplyDeepLinkDateRange(level)" in template
+    assert "startDetailEl.value = adsRecentMonthStartIso();" in template
+    assert "endDetailEl.value = adsDefaultEndIso();" in template
+    assert "new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()" in template
+
+    deep_link = template[
+        template.index("function adsApplyDeepLinkFromQuery()"):
+        template.index("if (document.readyState === 'loading')")
+    ]
+    assert "adsApplyDeepLinkDateRange(level);" in deep_link
+    assert deep_link.index("adsInitDateInputs(level);") < deep_link.index("adsApplyDeepLinkDateRange(level);")
+    assert deep_link.index("adsApplyDeepLinkDateRange(level);") < deep_link.index("adsOpenDetail(level, code, name || code, accountId);")
+
+
 def test_product_profit_actions_move_into_mobile_content_top():
     """移动端业务按钮应进入页面内容区顶部，不挤在全局顶栏最上方。"""
     template = _template_source()

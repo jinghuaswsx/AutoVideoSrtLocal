@@ -6453,6 +6453,16 @@
       : new Date();
     return formatDateInput(d);
   }
+  // Docs-anchor: docs/superpowers/specs/2026-05-20-media-video-material-ad-plan-detail-link.md
+  function adsRecentMonthStartIso() {
+    var end = window.orderAnalyticsMetaCalendar
+      ? window.orderAnalyticsMetaCalendar.today()
+      : new Date();
+    var start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+    var lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+    start.setDate(Math.min(end.getDate(), lastDay));
+    return formatDateInput(start);
+  }
   function adsFmtMoney(v) {
     if (v === null || v === undefined || v === '') return '—';
     var n = Number(v);
@@ -6516,6 +6526,13 @@
     if (endListEl && !endListEl.value) endListEl.value = adsDefaultEndIso();
     if (startDetailEl && !startDetailEl.value) startDetailEl.value = adsDefaultStartIso();
     if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso();
+  }
+
+  function adsApplyDeepLinkDateRange(level) {
+    var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
+    var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
+    if (startDetailEl) startDetailEl.value = adsRecentMonthStartIso();
+    if (endDetailEl) endDetailEl.value = adsDefaultEndIso();
   }
 
   function adsLoadList(level) {
@@ -6859,6 +6876,7 @@
     var name = (params.get('ads_name') || '').trim();
     var accountId = (params.get('ad_account_id') || '').trim();
     adsInitDateInputs(level);
+    adsApplyDeepLinkDateRange(level);
     setAdsSubtab(level);
     adsOpenDetail(level, code, name || code, accountId);
   }
