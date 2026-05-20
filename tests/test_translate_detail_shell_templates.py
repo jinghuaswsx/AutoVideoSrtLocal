@@ -556,9 +556,13 @@ def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     assert "shot_context" in script
     assert 'item.type === "shot_translation_summary"' in script
     assert 'item.type === "shot_translations"' in script
-    assert "时间轴分段翻译过程" in script
-    assert "时间轴分段过程和结果" in script
+    assert "ASR 对齐翻译过程" in script
+    assert "ASR 对齐翻译结果（含视觉分镜上下文）" in script
+    assert "视觉分镜（待 ASR 对齐翻译）" in script
+    assert "时间轴分段翻译过程" not in script
+    assert "时间轴分段过程和结果" not in script
     assert "镜头级翻译过程" not in script
+    assert 'if (step === "translate") return false;' in script
     assert ".shot-translation-grid" in styles
 
 
@@ -567,6 +571,6 @@ def test_shot_char_limit_legacy_translate_message_is_normalized_for_display():
     script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
 
     assert "normalizeStepMessage" in script
-    assert "时间轴分段翻译完成" in script
+    assert "ASR 对齐翻译完成" in script
     assert "视觉分镜上下文" in script
     assert "镜头级翻译完成" in script

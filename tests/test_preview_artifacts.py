@@ -119,10 +119,13 @@ def test_shot_translate_artifact_uses_asr_translation_units_as_process_rows():
 
     summary = artifact["items"][0]
     rows = artifact["items"][1]["shots"]
+    assert summary["label"] == "ASR 对齐翻译过程"
+    assert artifact["items"][1]["label"] == "ASR 对齐翻译结果（含视觉分镜上下文）"
     assert summary["total"] == 2
     assert rows[0]["index"] == 0
     assert rows[0]["source_text"] == "Opening hook keeps speaking"
     assert rows[0]["description"] == "hook visual / demo visual"
+    assert rows[0]["translated_text"] == "Gancho inicial"
     assert rows[0]["shot_context"] == [{"index": 1}, {"index": 2}]
     assert [row["source_text"] for row in rows] == [
         "Opening hook keeps speaking",

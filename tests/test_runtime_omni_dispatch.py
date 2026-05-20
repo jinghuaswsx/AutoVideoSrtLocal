@@ -223,7 +223,7 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert av_sentences[0]["target_chars_range"] == [18, 22]
     assert task["variants"]["normal"]["localized_translation"]["full_text"] == "Texte 1\nTexte 2"
     assert task["steps"]["translate"] == "done"
-    assert task["step_messages"]["translate"] == "FR 时间轴分段翻译完成（2段，附2个视觉分镜上下文）"
+    assert task["step_messages"]["translate"] == "FR ASR 对齐翻译完成（2段，附2个视觉分镜上下文）"
     assert (
         task["step_model_tags"]["translate"]
         == "gemini_aistudio · gemini-3.5-flash"
@@ -413,11 +413,11 @@ def test_shot_limit_translate_sets_process_preview_artifact(
     artifact = task["artifacts"]["translate"]
     assert artifact["title"] == "翻译本土化"
     assert artifact["items"][0]["type"] == "shot_translation_summary"
-    assert artifact["items"][0]["label"] == "时间轴分段翻译过程"
+    assert artifact["items"][0]["label"] == "ASR 对齐翻译过程"
     assert artifact["items"][0]["total"] == 2
     assert artifact["items"][0]["retry_count"] == 1
     assert artifact["items"][1]["type"] == "shot_translations"
-    assert artifact["items"][1]["label"] == "时间轴分段过程和结果"
+    assert artifact["items"][1]["label"] == "ASR 对齐翻译结果（含视觉分镜上下文）"
     first_row = artifact["items"][1]["shots"][0]
     assert first_row["source_text"] == "Source one"
     assert first_row["translated_text"] == "Texto 1"
