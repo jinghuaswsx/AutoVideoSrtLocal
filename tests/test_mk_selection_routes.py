@@ -299,12 +299,13 @@ def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
             assert args == ["2026-04-23", "%tooth%"]
             return [{"cnt": 0}]
         if "FROM dianxiaomi_rankings dr" in sql:
-            assert "NULL AS mk_product_id" in sql
-            assert "NULL AS mk_product_name" in sql
-            assert "0 AS mk_total_spends" in sql
-            assert "0 AS mk_video_count" in sql
-            assert "0 AS mk_total_ads" in sql
-            assert "ORDER BY dr.rank_position ASC" in sql
+            assert "mingkong_material_products" in sql
+            assert "COALESCE(mps.mk_product_id, NULL) AS mk_product_id" in sql
+            assert "COALESCE(mps.mk_product_name, NULL) AS mk_product_name" in sql
+            assert "COALESCE(mps.total_90_spend, 0) AS mk_total_spends" in sql
+            assert "COALESCE(mps.video_count, 0) AS mk_video_count" in sql
+            assert "COALESCE(mps.total_ads, 0) AS mk_total_ads" in sql
+            assert "ORDER BY COALESCE(mps.total_90_spend" in sql
             return []
         raise AssertionError(sql)
 

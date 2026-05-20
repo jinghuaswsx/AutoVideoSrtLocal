@@ -110,6 +110,36 @@ def test_flatten_mingkong_materials_keeps_all_visible_videos():
     assert rows[1]["video_image_path"] == "uploads2/b.jpg"
 
 
+def test_product_video_aggregate_stats_counts_pathless_non_hidden_rows():
+    product = {
+        "id": 2919,
+        "videos": [
+            {"name": "playable.mp4", "path": "uploads2/playable.mp4", "spends": "18.13万", "ads_count": 237},
+            {"name": "ai-image.png", "path": "", "spends": "0", "ads_count": 39},
+            {"name": "hidden.mp4", "path": "uploads2/hidden.mp4", "hidden": True, "spends": "999", "ads_count": 999},
+        ],
+    }
+
+    stats = mm.product_video_aggregate_stats(product)
+    playable_rows = mm.flatten_materials_for_product(
+        source_product={
+            "product_code": "21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+            "rank_position": 1,
+            "shopify_product_id": "gid-1",
+            "product_name": "Fitness Bands",
+            "product_url": "https://shop.example/products/21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+        },
+        mk_product=product,
+    )
+
+    assert stats == {
+        "video_count": 2,
+        "total_90_spend": 181300.0,
+        "total_ads": 276,
+    }
+    assert len(playable_rows) == 1
+
+
 def test_select_mingkong_product_requires_exact_result_product_code():
     rjc_suffix_result = {
         "id": 901,
@@ -575,6 +605,47 @@ def test_upsert_snapshot_rows_writes_duplicate_update(monkeypatch):
     assert writes[0][1][3] == "abc"
     assert "local_cover_object_key" in writes[0][0]
     assert writes[0][1][-1] == '{"spends": 12000}'
+
+
+def test_record_product_status_writes_product_aggregate_columns(monkeypatch):
+    writes = []
+
+    monkeypatch.setattr(mm, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
+
+    mm.record_product_status(
+        run_id=42,
+        snapshot_date="2026-05-20",
+        snapshot_at="2026-05-20 05:00:00",
+        snapshot_slot="0500",
+        ranking_snapshot_date="2026-05-18",
+        source_product={
+            "product_code": "21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+            "rank_position": 1,
+            "shopify_product_id": "gid-1",
+            "product_name": "Fitness Bands",
+            "product_url": "https://shop.example/products/21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+        },
+        status="success",
+        material_count=49,
+        video_count=55,
+        path_video_count=49,
+        total_90_spend=181314.0,
+        total_ads=276,
+        mk_product={
+            "id": 2919,
+            "product_name": "健身脚蹬拉力器",
+            "product_links": ["https://shop.example/products/21-fitness-resistance-bands-4-tube-pedal-ankle-puller"],
+        },
+    )
+
+    sql, args = writes[0]
+    assert "INSERT INTO mingkong_material_products" in sql
+    for column in ["video_count", "path_video_count", "total_90_spend", "total_ads"]:
+        assert column in sql
+    assert 55 in args
+    assert 49 in args
+    assert 181314.0 in args
+    assert 276 in args
 
 
 def test_list_material_library_serializes_latest_snapshot(monkeypatch):

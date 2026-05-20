@@ -107,12 +107,13 @@ def test_build_mk_selection_response_handles_legacy_rankings_schema_without_mk_c
             assert args == ["2026-04-23", "%tooth%"]
             return [{"cnt": 0}]
         if "FROM dianxiaomi_rankings dr" in sql:
-            assert "NULL AS mk_product_id" in sql
-            assert "NULL AS mk_product_name" in sql
-            assert "0 AS mk_total_spends" in sql
-            assert "0 AS mk_video_count" in sql
-            assert "0 AS mk_total_ads" in sql
-            assert "ORDER BY dr.rank_position ASC" in sql
+            assert "mingkong_material_products" in sql
+            assert "COALESCE(mps.mk_product_id, NULL) AS mk_product_id" in sql
+            assert "COALESCE(mps.mk_product_name, NULL) AS mk_product_name" in sql
+            assert "COALESCE(mps.total_90_spend, 0) AS mk_total_spends" in sql
+            assert "COALESCE(mps.video_count, 0) AS mk_video_count" in sql
+            assert "COALESCE(mps.total_ads, 0) AS mk_total_ads" in sql
+            assert "ORDER BY COALESCE(mps.total_90_spend" in sql
             assert args == ["2026-04-23", "%tooth%", 50, 0]
             return []
         raise AssertionError(sql)
@@ -291,6 +292,91 @@ def test_build_mk_selection_response_returns_product_asset_fields_when_schema_ha
     assert item["product_detail_image_urls"] == ["https://cdn.example/detail.jpg"]
     assert item["product_cn_name"] == "健身脚蹬拉力器"
     assert item["mk_first_material_name"] == "2025.12.25-健身脚蹬拉力器-原素材.mp4"
+
+
+def test_build_mk_selection_response_prefers_local_mingkong_product_aggregates():
+    from web.services.media_mk_selection import build_mk_selection_response
+
+    def fake_ranking_columns():
+        return {
+            "id",
+            "product_id",
+            "product_name",
+            "product_url",
+            "store",
+            "sales_count",
+            "order_count",
+            "revenue_main",
+            "revenue_split",
+            "media_product_id",
+            "snapshot_date",
+            "rank_position",
+            "product_code",
+            "mk_product_id",
+            "mk_product_name",
+            "mk_total_spends",
+            "mk_video_count",
+            "mk_total_ads",
+        }
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-05-18"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            return [{"cnt": 1}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert "mingkong_material_products" in sql
+            assert "mingkong_material_sync_runs" in sql
+            assert "mps.total_90_spend" in sql
+            assert "mps.video_count" in sql
+            assert "mps.total_ads" in sql
+            assert "ORDER BY COALESCE(mps.total_90_spend" in sql
+            return [
+                {
+                    "rank_position": 1,
+                    "shopify_id": "7540261912642",
+                    "product_name": "21 Fitness Resistance Bands",
+                    "product_url": "https://shop.example/products/21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+                    "store": "7543373",
+                    "sales_count": 1635,
+                    "order_count": 1500,
+                    "revenue_main": "CNY 154353.48",
+                    "revenue_split": "CNY 94.00",
+                    "mk_product_id": 2919,
+                    "mk_product_name": "健身脚蹬拉力器",
+                    "mk_total_spends": 181314,
+                    "mk_video_count": 55,
+                    "mk_total_ads": 276,
+                    "media_product_id": None,
+                    "mp_name": None,
+                    "mp_code": None,
+                    "product_code": "21-fitness-resistance-bands-4-tube-pedal-ankle-puller",
+                    "product_main_image_url": "",
+                    "product_main_image_object_key": None,
+                    "product_detail_images_json": None,
+                    "product_cn_name": "",
+                    "mk_first_material_name": "",
+                    "mk_first_material_path": "",
+                    "mk_first_material_url": "",
+                }
+            ]
+        if "FROM media_products" in sql:
+            return []
+        raise AssertionError(sql)
+
+    result = build_mk_selection_response(
+        {},
+        ranking_columns_fn=fake_ranking_columns,
+        db_query_fn=fake_db_query,
+    )
+
+    assert result.status_code == 200
+    item = result.payload["items"][0]
+    assert item["mk_product_id"] == 2919
+    assert item["mk_product_name"] == "健身脚蹬拉力器"
+    assert item["mk_video_count"] == 55
+    assert item["mk_total_spends"] == 181314.0
+    assert item["mk_total_ads"] == 276
 
 
 def test_build_mk_selection_response_prefers_product_asset_table_over_legacy_columns():

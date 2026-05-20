@@ -23,7 +23,7 @@ Build a scheduled, local, historical Mingkong material library for `/xuanpin/mk`
 
 In scope:
 
-1. Every day at 06:00 and 18:00 Beijing time, start one long-running sync run.
+1. Every day at 05:00 and 17:00 Beijing time, start one long-running sync run.
 2. Select the latest available Dianxiaomi Listing snapshot and take `rank_position <= 300`.
 3. For each selected product, derive the product code/handle from `product_url`.
 4. Query Mingkong `/api/marketing/medias?q=<product_code>` and store the full visible
@@ -59,7 +59,7 @@ SELECT MAX(snapshot_date) FROM dianxiaomi_rankings;
 ```
 
 The run uses that latest available `snapshot_date`, even if it is not the same calendar
-date as the 06:00 run date. It then selects:
+date as the 05:00 run date. It then selects:
 
 ```sql
 WHERE snapshot_date = <latest_snapshot_date>
@@ -71,7 +71,7 @@ The run records both:
 
 - `snapshot_date`: the local material snapshot date being produced.
 - `snapshot_at`: the local material snapshot timestamp for the run.
-- `snapshot_slot`: the daily bucket, `0600` or `1800`, used to keep two snapshots per day.
+- `snapshot_slot`: the daily bucket, `0500` or `1700`, used to keep two snapshots per day.
 - `ranking_snapshot_date`: the Dianxiaomi Listing snapshot used as the Top300 source.
 
 ## Scheduler
@@ -80,7 +80,7 @@ Register one scheduled task in `appcore/scheduled_tasks.py`.
 
 - Code: `mingkong_material_daily_snapshot`
 - Name: `明空素材每日快照`
-- Schedule: every day at 06:00 and 18:00 Beijing time.
+- Schedule: every day at 05:00 and 17:00 Beijing time.
 - Source type: `systemd`.
 - Source ref: `autovideosrt-mingkong-material-daily-snapshot.timer`.
 - Runner: `tools/mingkong_material_daily_snapshot.py`.
@@ -125,7 +125,10 @@ GET <wedev_base_url>/api/marketing/medias?page=1&q=<handle>&source=&level=&show_
    - then newer Mingkong product id.
 7. Store all visible videos from the matched Mingkong product, not only the first few.
 
-Hidden videos and videos without a normalized path are skipped.
+Hidden videos and videos without a normalized path are skipped for playable
+material-card snapshots. Product-level aggregate metrics are maintained
+separately in `mingkong_material_products`: non-hidden pathless rows still count
+toward product `video_count`, `total_90_spend`, and `total_ads`.
 
 ## Material Identity
 
@@ -195,6 +198,10 @@ Required fields:
 - `mk_product_link`
 - `status`
 - `material_count`
+- `video_count`
+- `path_video_count`
+- `total_90_spend`
+- `total_ads`
 - `error_message`
 - `processed_at`
 
@@ -301,13 +308,13 @@ Indexes:
 
 ## Delta Calculation
 
-After each 06:00 or 18:00 material snapshot is stored:
+After each 05:00 or 17:00 material snapshot is stored:
 
 1. Find previous snapshot candidates from `mingkong_material_daily_snapshots` where
    `snapshot_date < current_snapshot_date`.
 2. Choose the previous candidate whose `snapshot_at` is closest to exactly 24 hours
-   before the current `snapshot_at`. For example, an 18:00 current snapshot should prefer
-   the previous day's 18:00 snapshot over the previous day's 06:00 snapshot.
+   before the current `snapshot_at`. For example, a 17:00 current snapshot should prefer
+   the previous day's 17:00 snapshot over the previous day's 05:00 snapshot.
 3. Store the chosen previous snapshot in Top100 rows as `previous_snapshot_date`,
    `previous_snapshot_at`, `previous_snapshot_slot`, and `comparison_interval_seconds`.
 4. Join current rows to previous rows by `material_key`.
@@ -438,7 +445,7 @@ Focused automated checks:
 - Service tests cover Mingkong fetch flattening and upsert of all visible videos.
 - Service tests cover delta calculation, new-material handling, negative-delta clamp, and
   new Top100 membership.
-- Scheduler tests cover 06:00/18:00 registration and scheduled task registry metadata.
+- Scheduler tests cover 05:00/17:00 registration and scheduled task registry metadata.
 - Route tests cover `/xuanpin/api/mk-material-library` local archived material listing.
 - Route tests cover `/xuanpin/api/mk-yesterday-top100` admin behavior.
 - Template tests cover local `视频素材库` behavior and the new `昨天消耗前100` inner tab.

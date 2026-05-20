@@ -124,3 +124,24 @@ def test_mingkong_material_ad_status_cache_migration_declares_table_and_indexes(
         "idx_mk_material_ad_status_refreshed",
     ]:
         assert key in body
+
+
+def test_mingkong_material_product_aggregate_migration_declares_columns_and_index():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_05_20_mingkong_material_product_aggregate_stats.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "TABLE_NAME = 'mingkong_material_products'" in body
+    for column in [
+        "video_count",
+        "path_video_count",
+        "total_90_spend",
+        "total_ads",
+    ]:
+        assert f"COLUMN_NAME = '{column}'" in body
+        assert f"ADD COLUMN {column}" in body
+
+    assert "idx_mk_material_products_latest_stats" in body

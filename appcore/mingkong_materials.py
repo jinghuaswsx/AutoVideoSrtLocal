@@ -78,7 +78,7 @@ def _snapshot_slot_for(snapshot_at: Any) -> str:
     value = _parse_datetime(snapshot_at)
     if value is None:
         return ""
-    return "0600" if value.hour < 12 else "1800"
+    return "0500" if value.hour < 12 else "1700"
 
 
 def _snapshot_identity(snapshot_date: str | None = None, snapshot_at: Any = None) -> tuple[str, str, str]:
@@ -761,6 +761,23 @@ def flatten_materials_for_product(
     return out
 
 
+def product_video_aggregate_stats(item: dict[str, Any]) -> dict[str, Any]:
+    video_count = 0
+    total_90_spend = 0.0
+    total_ads = 0
+    for raw in item.get("videos") or []:
+        if not isinstance(raw, dict) or raw.get("hidden"):
+            continue
+        video_count += 1
+        total_90_spend += _as_float(raw.get("spends"))
+        total_ads += _as_int(raw.get("ads_count"))
+    return {
+        "video_count": video_count,
+        "total_90_spend": round(total_90_spend, 2),
+        "total_ads": total_ads,
+    }
+
+
 def choose_previous_snapshot_for_24h(
     current_snapshot_at: Any,
     candidates: list[dict[str, Any]],
@@ -1386,6 +1403,10 @@ def record_product_status(
     source_product: dict[str, Any],
     status: str,
     material_count: int = 0,
+    video_count: int = 0,
+    path_video_count: int = 0,
+    total_90_spend: float = 0.0,
+    total_ads: int = 0,
     mk_product: dict[str, Any] | None = None,
     error_message: str | None = None,
 ) -> None:
@@ -1397,9 +1418,10 @@ def record_product_status(
           (run_id, snapshot_date, snapshot_at, snapshot_slot, ranking_snapshot_date, rank_position, product_code,
            shopify_product_id, product_name, product_url, store, sales_count, order_count,
            revenue_main, mk_product_id, mk_product_name, mk_product_link, status,
-           material_count, error_message, processed_at)
+           material_count, video_count, path_video_count, total_90_spend, total_ads,
+           error_message, processed_at)
         VALUES
-          (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+          (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
         ON DUPLICATE KEY UPDATE
            rank_position=VALUES(rank_position),
            snapshot_at=VALUES(snapshot_at),
@@ -1416,6 +1438,10 @@ def record_product_status(
            mk_product_link=VALUES(mk_product_link),
            status=VALUES(status),
            material_count=VALUES(material_count),
+           video_count=VALUES(video_count),
+           path_video_count=VALUES(path_video_count),
+           total_90_spend=VALUES(total_90_spend),
+           total_ads=VALUES(total_ads),
            error_message=VALUES(error_message),
            processed_at=NOW()
         """,
@@ -1439,6 +1465,10 @@ def record_product_status(
             str(links[0]) if links else None,
             status,
             int(material_count),
+            int(video_count),
+            int(path_video_count),
+            float(total_90_spend or 0.0),
+            int(total_ads),
             error_message,
         ),
     )
@@ -1704,18 +1734,12 @@ def _fetch_mingkong_product_detail(
 
 
 def _visible_video_stats(item: dict[str, Any]) -> tuple[int, float, int]:
-    count = 0
-    spend = 0.0
-    ads = 0
-    for video in item.get("videos") or []:
-        if not isinstance(video, dict) or video.get("hidden"):
-            continue
-        if not normalize_mk_media_path(str(video.get("path") or "")):
-            continue
-        count += 1
-        spend += _as_float(video.get("spends"))
-        ads += _as_int(video.get("ads_count"))
-    return count, spend, ads
+    stats = product_video_aggregate_stats(item)
+    return (
+        int(stats["video_count"]),
+        float(stats["total_90_spend"]),
+        int(stats["total_ads"]),
+    )
 
 
 def _mingkong_result_product_codes(item: dict[str, Any]) -> set[str]:
@@ -1829,6 +1853,7 @@ def run_daily_snapshot(
                         source_product=product,
                         mk_product=mk_product,
                     )
+                    product_stats = product_video_aggregate_stats(mk_product)
                     rows = [
                         cache_local_cover_for_material(
                             row,
@@ -1856,6 +1881,10 @@ def run_daily_snapshot(
                         source_product=product,
                         status="success",
                         material_count=len(rows),
+                        video_count=int(product_stats["video_count"]),
+                        path_video_count=len(rows),
+                        total_90_spend=float(product_stats["total_90_spend"]),
+                        total_ads=int(product_stats["total_ads"]),
                         mk_product=mk_product,
                     )
                     processed += 1

@@ -2,8 +2,8 @@
 Description=Run AutoVideoSrt Mingkong daily material snapshot every day
 
 [Timer]
-OnCalendar=*-*-* 06:00:00
-OnCalendar=*-*-* 18:00:00
+OnCalendar=*-*-* 05:00:00
+OnCalendar=*-*-* 17:00:00
 Persistent=true
 Unit=autovideosrt-mingkong-material-daily-snapshot.service
 

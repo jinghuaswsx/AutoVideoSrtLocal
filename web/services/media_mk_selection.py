@@ -778,11 +778,6 @@ def build_mk_selection_response(
             return f"{legacy_expr} AS {alias}"
         return f"NULL AS {alias}"
 
-    mk_product_id_select = "dr.mk_product_id" if has_mk_product_id else "NULL AS mk_product_id"
-    mk_product_name_select = "dr.mk_product_name" if has_mk_product_name else "NULL AS mk_product_name"
-    mk_total_spends_select = "dr.mk_total_spends" if has_mk_total_spends else "0 AS mk_total_spends"
-    mk_video_count_select = "dr.mk_video_count" if has_mk_video_count else "0 AS mk_video_count"
-    mk_total_ads_select = "dr.mk_total_ads" if has_mk_total_ads else "0 AS mk_total_ads"
     if has_product_assets_table and has_product_code:
         product_code_select = "COALESCE(NULLIF(dr.product_code, ''), dpa.product_code) AS product_code"
     elif has_product_assets_table:
@@ -791,6 +786,69 @@ def build_mk_selection_response(
         product_code_select = "dr.product_code AS product_code"
     else:
         product_code_select = "NULL AS product_code"
+
+    product_code_expr_parts = []
+    if has_product_code:
+        product_code_expr_parts.append("NULLIF(dr.product_code, '')")
+    if has_product_assets_table:
+        product_code_expr_parts.append("NULLIF(dpa.product_code, '')")
+    product_code_expr_parts.append(
+        "NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(dr.product_url, '?', 1), '/products/', -1), '/', 1), dr.product_url)"
+    )
+    stats_product_code_expr = "COALESCE(" + ", ".join(product_code_expr_parts) + ")"
+    normalized_stats_product_code_expr = (
+        f"LOWER(REGEXP_REPLACE({stats_product_code_expr}, '[-_]?rjc$', ''))"
+    )
+    product_stats_join = f"""
+        LEFT JOIN (
+            SELECT p.*
+            FROM mingkong_material_products p
+            JOIN (
+                SELECT MAX(snapshot_at) AS snapshot_at
+                FROM mingkong_material_sync_runs
+                WHERE status = 'success'
+            ) latest_mps ON latest_mps.snapshot_at = p.snapshot_at
+            WHERE p.status = 'success'
+        ) mps ON mps.product_code = {normalized_stats_product_code_expr}
+    """
+
+    def local_stat_select(alias: str, local_expr: str, legacy_expr: str | None, default_expr: str) -> str:
+        parts = [local_expr]
+        if legacy_expr:
+            parts.append(legacy_expr)
+        parts.append(default_expr)
+        return f"COALESCE({', '.join(parts)}) AS {alias}"
+
+    mk_product_id_select = local_stat_select(
+        "mk_product_id",
+        "mps.mk_product_id",
+        "dr.mk_product_id" if has_mk_product_id else None,
+        "NULL",
+    )
+    mk_product_name_select = local_stat_select(
+        "mk_product_name",
+        "mps.mk_product_name",
+        "dr.mk_product_name" if has_mk_product_name else None,
+        "NULL",
+    )
+    mk_total_spends_select = local_stat_select(
+        "mk_total_spends",
+        "mps.total_90_spend",
+        "dr.mk_total_spends" if has_mk_total_spends else None,
+        "0",
+    )
+    mk_video_count_select = local_stat_select(
+        "mk_video_count",
+        "mps.video_count",
+        "dr.mk_video_count" if has_mk_video_count else None,
+        "0",
+    )
+    mk_total_ads_select = local_stat_select(
+        "mk_total_ads",
+        "mps.total_ads",
+        "dr.mk_total_ads" if has_mk_total_ads else None,
+        "0",
+    )
     product_main_image_url_select = asset_select(
         "product_main_image_url",
         "dr.product_main_image_url" if has_product_main_image_url else None,
@@ -826,7 +884,8 @@ def build_mk_selection_response(
         "dr.mk_first_material_url" if has_mk_first_material_url else None,
         "mk_first_material_url",
     )
-    order_by = "dr.mk_total_spends DESC, dr.rank_position ASC" if has_mk_total_spends else "dr.rank_position ASC"
+    legacy_spend_expr = "dr.mk_total_spends" if has_mk_total_spends else "0"
+    order_by = f"COALESCE(mps.total_90_spend, {legacy_spend_expr}, 0) DESC, dr.rank_position ASC"
 
     count_expr = "COUNT(DISTINCT dr.id)" if has_product_assets_table else "COUNT(*)"
     count_row = db_query_fn(
@@ -857,6 +916,7 @@ def build_mk_selection_response(
             mp.name AS mp_name, mp.product_code AS mp_code
         FROM dianxiaomi_rankings dr
         {product_assets_join}
+        {product_stats_join}
         LEFT JOIN media_products mp ON dr.media_product_id = mp.id
         WHERE {where}
         ORDER BY {order_by}
