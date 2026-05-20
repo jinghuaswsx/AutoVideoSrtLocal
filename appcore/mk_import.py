@@ -564,7 +564,7 @@ def import_mk_video(
             user_id=owner_uid,
             filename=filename,
             object_key=object_key,
-            display_name=(meta.get("product_name") or payload.get("name") or "")[:255] or None,
+            display_name=filename,
             duration_seconds=meta.get("duration_seconds"),
             file_size=file_size,
             cover_object_key=cover_object_key,

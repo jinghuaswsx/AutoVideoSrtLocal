@@ -75,6 +75,58 @@ def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_pa
     }]
 
 
+def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
+    original_filename = "2026.04.09-物理综合实验DIY-混剪-苏齐齐.mp4"
+    captured = {}
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: {
+            "id": 587,
+            "user_id": 1,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+        },
+    )
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    def fake_create_item(**kwargs):
+        captured["created_item"] = kwargs
+        return 456
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", fake_create_item)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/original.mp4",
+            "filename": original_filename,
+            "product_name": "科学小实验手工玩具",
+            "product_code": "tool-free-robotics-building-set",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+        },
+        translator_id=1,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert captured["created_item"]["filename"] == original_filename
+    assert captured["created_item"]["display_name"] == original_filename
+
+
 def test_local_media_object_key_from_url_extracts_object_keys():
     assert (
         mk_import._local_media_object_key_from_url(
