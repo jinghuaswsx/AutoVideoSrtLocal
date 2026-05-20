@@ -33,6 +33,10 @@ The modal uses a client-side step model because the current import API is synchr
 
 The step labels stay honest: Niuma is shown only in the completion guidance as the next downstream automation after task creation and raw-video claim.
 
+## Layout Constraint
+
+The `加入素材库` progress modal uses a desktop content width of `840px`, which is 150% of the previous `560px` modal width. The CSS keeps the existing viewport cap with `width: min(840px, 94vw)` so narrow screens do not overflow horizontally.
+
 ## Files
 
 - `web/templates/mk_selection.html`: add modal markup, styles, and JavaScript workflow helpers.

@@ -150,6 +150,13 @@ def test_mk_import_progress_modal_present():
     assert "原视频处理人认领后会自动提交牛马去字幕" not in template
 
 
+def test_mk_import_progress_modal_width_is_expanded_to_150_percent():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mki-progress-modal" in template
+    assert "width: min(840px, 94vw)" in template
+
+
 def test_mk_import_progress_uses_product_owner_step_before_domains():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
