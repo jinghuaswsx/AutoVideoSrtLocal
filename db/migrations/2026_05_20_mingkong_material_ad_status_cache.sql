@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS mingkong_material_ad_status_cache (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  status_scope VARCHAR(16) NOT NULL,
+  lookup_hash CHAR(64) NOT NULL,
+  lookup_key VARCHAR(1000) NOT NULL,
+  product_code VARCHAR(255) DEFAULT NULL,
+  media_product_id INT DEFAULT NULL,
+  media_item_id INT DEFAULT NULL,
+  has_local_match TINYINT(1) NOT NULL DEFAULT 0,
+  has_running_ad TINYINT(1) NOT NULL DEFAULT 0,
+  ad_spend_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  latest_activity_at DATETIME DEFAULT NULL,
+  summary_json JSON DEFAULT NULL,
+  refreshed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_mk_material_ad_status_scope_hash (status_scope, lookup_hash),
+  KEY idx_mk_material_ad_status_scope_product (status_scope, product_code),
+  KEY idx_mk_material_ad_status_product (media_product_id),
+  KEY idx_mk_material_ad_status_item (media_item_id),
+  KEY idx_mk_material_ad_status_refreshed (refreshed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

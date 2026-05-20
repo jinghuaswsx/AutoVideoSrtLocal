@@ -89,3 +89,38 @@ def test_mingkong_material_local_cover_migration_declares_cache_columns():
     ]:
         assert f"COLUMN_NAME = '{column}'" in body
         assert f"ADD COLUMN {column}" in body
+
+
+def test_mingkong_material_ad_status_cache_migration_declares_table_and_indexes():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_05_20_mingkong_material_ad_status_cache.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS mingkong_material_ad_status_cache" in body
+    for column in [
+        "status_scope",
+        "lookup_hash",
+        "lookup_key",
+        "product_code",
+        "media_product_id",
+        "media_item_id",
+        "has_local_match",
+        "has_running_ad",
+        "ad_spend_usd",
+        "latest_activity_at",
+        "summary_json",
+        "refreshed_at",
+    ]:
+        assert column in body
+
+    for key in [
+        "uk_mk_material_ad_status_scope_hash",
+        "idx_mk_material_ad_status_scope_product",
+        "idx_mk_material_ad_status_product",
+        "idx_mk_material_ad_status_item",
+        "idx_mk_material_ad_status_refreshed",
+    ]:
+        assert key in body

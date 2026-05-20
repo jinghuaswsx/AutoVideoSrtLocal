@@ -70,7 +70,12 @@
 .mk-copy-btn { height:24px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-fg-muted); font-size:12px; cursor:pointer; }
 .mk-copy-btn:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
-.mk-video-card { width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
+.mk-video-card { position:relative; width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
+.mk-video-status-icons { position:absolute; top:8px; right:8px; z-index:3; display:flex; align-items:center; gap:4px; }
+.mk-status-icon { width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); }
+.mk-status-icon svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.mk-status-icon--product { color:var(--oc-accent); }
+.mk-status-icon--material { color:var(--oc-success-fg); }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
@@ -139,6 +144,10 @@
 .mk-video-product-name:hover { text-decoration:underline; }
 strong.mk-video-product-name { color:var(--oc-fg); }
 .mk-video-product-code { color:var(--oc-fg-muted); font-size:12px; line-height:1.35; }
+.mk-video-product-code-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
+.mk-media-search-link { width:24px; height:24px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-accent); text-decoration:none; }
+.mk-media-search-link:hover { background:var(--oc-bg-muted); border-color:var(--oc-accent); }
+.mk-media-search-link svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
 .mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
 .mk-material-state { font-size:12px; line-height:1; }
@@ -288,6 +297,12 @@ function safeMediaSrc(value) {
   return '';
 }
 
+function safeInternalHref(value) {
+  const url = String(value ?? '').trim();
+  if (/^\/medias\/\?q=/i.test(url)) return escapeHtml(url);
+  return '';
+}
+
 async function copyMkText(value, button) {
   const text = String(value || '').trim();
   if (!text) return;
@@ -367,6 +382,32 @@ function fmtMkSpendText(raw, parsed) {
   if (parsed >= 10000) return (parsed / 10000).toFixed(2).replace(/\.?0+$/, '') + '万';
   if (parsed >= 1000) return (parsed / 1000).toFixed(1).replace(/\.?0+$/, '') + '千';
   return String(Math.round(parsed || 0));
+}
+
+function mkStatusIconSvg(type) {
+  if (type === 'product') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8.5 12 3 3 8.5l9 5.5 9-5.5Z"></path><path d="M3 8.5V16l9 5 9-5V8.5"></path><path d="M12 14v7"></path></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 5v14"></path><path d="M16 5v14"></path><path d="M4 9h4"></path><path d="M4 15h4"></path><path d="M16 9h4"></path><path d="M16 15h4"></path></svg>';
+}
+
+function renderMkStatusIconCluster(r) {
+  const icons = [];
+  if (r.has_local_product_running_ad) {
+    icons.push(`<span class="mk-status-icon mk-status-icon--product" title="产品已在素材库且有消耗广告计划" aria-label="产品已在素材库且有消耗广告计划">${mkStatusIconSvg('product')}</span>`);
+  }
+  if (r.has_local_material_running_ad) {
+    icons.push(`<span class="mk-status-icon mk-status-icon--material" title="素材已在素材库且有投放计划" aria-label="素材已在素材库且有投放计划">${mkStatusIconSvg('material')}</span>`);
+  }
+  return icons.length ? `<div class="mk-video-status-icons">${icons.join('')}</div>` : '';
+}
+
+function renderMkMediaSearchLink(r) {
+  const directUrl = safeInternalHref(r.media_search_url || '');
+  const fallbackCode = String(r.media_search_code || '').trim();
+  const href = directUrl || (fallbackCode ? `/medias/?q=${encodeURIComponent(fallbackCode)}` : '');
+  if (!href) return '';
+  return `<a class="mk-media-search-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="搜索素材管理" aria-label="搜索素材管理">${'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>'}</a>`;
 }
 
 function runMkSearch() {
@@ -626,6 +667,8 @@ function renderMkVideoMaterialCard(r) {
   const safeProductName = escapeHtml(rawProductName);
   const productHandle = escapeHtml(rawProductHandle);
   const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
+  const statusIconsHtml = renderMkStatusIconCluster(r);
+  const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
   const spendText = escapeHtml(fmtMkSpendText(r.video_spends_text, spends));
@@ -642,9 +685,13 @@ function renderMkVideoMaterialCard(r) {
     ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top100</span></span></span>'
     : '';
   return `<div class="mk-video-card">
+    ${statusIconsHtml}
     <div class="mk-video-product-line">
       ${safeProductUrl ? `<a class="mk-video-product-name mk-line-clamp mk-line-clamp--2" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong class="mk-video-product-name mk-line-clamp mk-line-clamp--2" title="${safeProductName}">${safeProductName}</strong>`}
-      <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
+      <div class="mk-video-product-code-row">
+        <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
+        ${mediaSearchLinkHtml}
+      </div>
     </div>
     <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
     <div class="mk-video-summary-row">

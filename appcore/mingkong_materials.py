@@ -22,6 +22,8 @@ _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 _COVER_CACHE_PREFIX = "artifacts/mingkong-material-covers"
 _COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 _SECONDS_PER_DAY = 24 * 60 * 60
+_AD_STATUS_SCOPE_PRODUCT = "product"
+_AD_STATUS_SCOPE_MATERIAL = "material"
 
 
 def guard_against_windows_local_mysql() -> None:
@@ -217,6 +219,350 @@ def _local_media_url(object_key: Any) -> str:
     if not key:
         return ""
     return f"/medias/object?object_key={quote(key, safe='')}"
+
+
+def media_search_code_for(product_code: Any) -> str:
+    base = _strip_rjc(product_code)
+    return f"{base}-rjc" if base else ""
+
+
+def status_lookup_hash(lookup_key: Any) -> str:
+    return hashlib.sha256(str(lookup_key or "").strip().lower().encode("utf-8")).hexdigest()
+
+
+def _material_status_lookup_key(video_path: Any) -> str:
+    return normalize_mk_media_path(str(video_path or ""))
+
+
+def _media_search_url(media_search_code: str) -> str:
+    return f"/medias/?q={quote(media_search_code, safe='')}" if media_search_code else ""
+
+
+def _empty_ad_status(scope: str, lookup_key: str) -> dict[str, Any]:
+    return {
+        "status_scope": scope,
+        "lookup_key": lookup_key,
+        "product_code": "",
+        "media_product_id": None,
+        "media_item_id": None,
+        "has_local_match": False,
+        "has_running_ad": False,
+        "ad_spend_usd": 0.0,
+        "latest_activity_at": None,
+        "summary": {},
+        "refreshed_at": None,
+    }
+
+
+def _serialize_ad_status_row(row: dict[str, Any] | None, *, scope: str, lookup_key: str) -> dict[str, Any]:
+    if not row:
+        return _empty_ad_status(scope, lookup_key)
+    return {
+        "status_scope": str(row.get("status_scope") or scope),
+        "lookup_key": str(row.get("lookup_key") or lookup_key),
+        "product_code": str(row.get("product_code") or ""),
+        "media_product_id": row.get("media_product_id"),
+        "media_item_id": row.get("media_item_id"),
+        "has_local_match": bool(row.get("has_local_match")),
+        "has_running_ad": bool(row.get("has_running_ad")),
+        "ad_spend_usd": _as_float(row.get("ad_spend_usd")),
+        "latest_activity_at": _iso_datetime(row.get("latest_activity_at")),
+        "summary": _json_loads(row.get("summary_json"), {}) or {},
+        "refreshed_at": _iso_datetime(row.get("refreshed_at")),
+    }
+
+
+def _status_cache_by_hash(scope: str, lookup_hashes: set[str]) -> dict[str, dict[str, Any]]:
+    hashes = [value for value in sorted(lookup_hashes) if value]
+    if not hashes:
+        return {}
+    placeholders = ",".join(["%s"] * len(hashes))
+    rows = query(
+        "SELECT * FROM mingkong_material_ad_status_cache "
+        f"WHERE status_scope = %s AND lookup_hash IN ({placeholders})",
+        tuple([scope] + hashes),
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        row_scope = str(row.get("status_scope") or "")
+        row_hash = str(row.get("lookup_hash") or "")
+        if row_scope == scope and row_hash:
+            out[row_hash] = row
+    return out
+
+
+def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    product_hashes: set[str] = set()
+    material_hashes: set[str] = set()
+    per_item: list[tuple[dict[str, Any], str, str, str, str]] = []
+
+    for item in items:
+        media_code = media_search_code_for(item.get("product_code") or item.get("product_handle"))
+        material_key = _material_status_lookup_key(item.get("video_path"))
+        product_hash = status_lookup_hash(media_code) if media_code else ""
+        material_hash = status_lookup_hash(material_key) if material_key else ""
+        if product_hash:
+            product_hashes.add(product_hash)
+        if material_hash:
+            material_hashes.add(material_hash)
+        per_item.append((item, media_code, material_key, product_hash, material_hash))
+
+    product_cache = _status_cache_by_hash(_AD_STATUS_SCOPE_PRODUCT, product_hashes)
+    material_cache = _status_cache_by_hash(_AD_STATUS_SCOPE_MATERIAL, material_hashes)
+
+    for item, media_code, material_key, product_hash, material_hash in per_item:
+        product_status = _serialize_ad_status_row(
+            product_cache.get(product_hash),
+            scope=_AD_STATUS_SCOPE_PRODUCT,
+            lookup_key=media_code,
+        )
+        material_status = _serialize_ad_status_row(
+            material_cache.get(material_hash),
+            scope=_AD_STATUS_SCOPE_MATERIAL,
+            lookup_key=material_key,
+        )
+        item["media_search_code"] = media_code
+        item["media_search_url"] = _media_search_url(media_code)
+        item["product_ad_status"] = product_status
+        item["material_ad_status"] = material_status
+        item["has_local_product_running_ad"] = bool(
+            product_status["has_local_match"] and product_status["has_running_ad"]
+        )
+        item["has_local_material_running_ad"] = bool(
+            material_status["has_local_match"] and material_status["has_running_ad"]
+        )
+    return items
+
+
+def _distinct_archive_product_codes() -> list[str]:
+    rows = query(
+        """
+        SELECT DISTINCT product_code
+        FROM (
+            SELECT product_code FROM mingkong_material_daily_snapshots
+            UNION
+            SELECT product_code FROM mingkong_material_daily_top100
+        ) archive_codes
+        WHERE product_code IS NOT NULL AND product_code <> ''
+        """,
+        (),
+    )
+    return [str(row.get("product_code") or "").strip() for row in rows or [] if str(row.get("product_code") or "").strip()]
+
+
+def _distinct_archive_video_paths() -> list[str]:
+    rows = query(
+        """
+        SELECT DISTINCT video_path
+        FROM (
+            SELECT video_path FROM mingkong_material_daily_snapshots
+            UNION
+            SELECT video_path FROM mingkong_material_daily_top100
+        ) archive_paths
+        WHERE video_path IS NOT NULL AND video_path <> ''
+        """,
+        (),
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows or []:
+        path = _material_status_lookup_key(row.get("video_path"))
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+    return out
+
+
+def _upsert_ad_status_cache(
+    *,
+    scope: str,
+    lookup_key: str,
+    product_code: str = "",
+    media_product_id: int | None = None,
+    media_item_id: int | None = None,
+    has_local_match: bool = False,
+    has_running_ad: bool = False,
+    ad_spend_usd: float = 0.0,
+    latest_activity_at: Any = None,
+    summary: dict[str, Any] | None = None,
+) -> None:
+    execute(
+        """
+        INSERT INTO mingkong_material_ad_status_cache
+        (status_scope, lookup_hash, lookup_key, product_code, media_product_id,
+         has_local_match, ad_spend_usd, has_running_ad, media_item_id,
+         latest_activity_at, summary_json, refreshed_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+        ON DUPLICATE KEY UPDATE
+          lookup_key=VALUES(lookup_key),
+          product_code=VALUES(product_code),
+          media_product_id=VALUES(media_product_id),
+          media_item_id=VALUES(media_item_id),
+          has_local_match=VALUES(has_local_match),
+          has_running_ad=VALUES(has_running_ad),
+          ad_spend_usd=VALUES(ad_spend_usd),
+          latest_activity_at=VALUES(latest_activity_at),
+          summary_json=VALUES(summary_json),
+          refreshed_at=NOW(),
+          updated_at=NOW()
+        """,
+        (
+            scope,
+            status_lookup_hash(lookup_key),
+            lookup_key,
+            product_code or None,
+            media_product_id,
+            1 if has_local_match else 0,
+            float(ad_spend_usd or 0),
+            1 if has_running_ad else 0,
+            media_item_id,
+            latest_activity_at,
+            _json_dumps(summary or {}),
+        ),
+    )
+
+
+def _refresh_product_ad_status(media_search_code: str) -> dict[str, Any]:
+    product = query_one(
+        "SELECT id, product_code, name FROM media_products "
+        "WHERE product_code=%s AND deleted_at IS NULL",
+        (media_search_code,),
+    )
+    product_id = int(product["id"]) if product and product.get("id") else None
+    ad_row = None
+    if product_id:
+        ad_row = query_one(
+            "SELECT COALESCE(SUM(spend_usd), 0) AS ad_spend_usd, "
+            "MAX(COALESCE(meta_business_date, report_date)) AS latest_activity_at "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE product_id=%s AND COALESCE(spend_usd, 0) > 0 "
+            "AND COALESCE(meta_business_date, report_date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
+            (product_id,),
+        ) or {}
+    campaign_codes = list(dict.fromkeys([_strip_rjc(media_search_code), media_search_code]))
+    realtime_row = None
+    if product_id and campaign_codes:
+        placeholders = ",".join(["%s"] * len(campaign_codes))
+        realtime_row = query_one(
+            "SELECT COALESCE(MAX(spend_usd), 0) AS ad_spend_usd, "
+            "MAX(snapshot_at) AS latest_activity_at "
+            "FROM meta_ad_realtime_daily_campaign_metrics "
+            f"WHERE normalized_campaign_code IN ({placeholders}) "
+            "AND COALESCE(spend_usd, 0) > 0 "
+            "AND business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)",
+            tuple(campaign_codes),
+        ) or {}
+    daily_spend = _as_float((ad_row or {}).get("ad_spend_usd"))
+    realtime_spend = _as_float((realtime_row or {}).get("ad_spend_usd"))
+    ad_spend = max(daily_spend, realtime_spend)
+    latest_activity_at = (realtime_row or {}).get("latest_activity_at") or (ad_row or {}).get("latest_activity_at")
+    status = {
+        "media_product_id": product_id,
+        "product_code": (product or {}).get("product_code") or media_search_code,
+        "has_local_match": bool(product_id),
+        "has_running_ad": bool(product_id and ad_spend > 0),
+        "ad_spend_usd": ad_spend,
+        "latest_activity_at": latest_activity_at,
+        "summary": {
+            "source": "meta_ad_daily_campaign_metrics+meta_ad_realtime_daily_campaign_metrics",
+            "daily_lookback_days": 30,
+            "realtime_lookback_days": 3,
+        },
+    }
+    _upsert_ad_status_cache(
+        scope=_AD_STATUS_SCOPE_PRODUCT,
+        lookup_key=media_search_code,
+        product_code=status["product_code"],
+        media_product_id=status["media_product_id"],
+        has_local_match=status["has_local_match"],
+        has_running_ad=status["has_running_ad"],
+        ad_spend_usd=status["ad_spend_usd"],
+        latest_activity_at=status["latest_activity_at"],
+        summary=status["summary"],
+    )
+    return status
+
+
+def _refresh_material_ad_status(video_path: str) -> dict[str, Any]:
+    row = query_one(
+        """
+        SELECT i.id AS media_item_id, i.product_id AS media_product_id,
+               p.product_code, i.pushed_at,
+               (SELECT COUNT(*) FROM media_push_logs mpl
+                WHERE mpl.item_id=i.id AND mpl.status='success') AS push_success_count
+        FROM media_item_mk_bindings b
+        JOIN media_items i ON i.id = b.media_item_id
+        JOIN media_products p ON p.id = i.product_id
+        WHERE b.mk_video_path=%s
+          AND i.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+        ORDER BY i.pushed_at DESC, i.id DESC
+        LIMIT 1
+        """,
+        (video_path,),
+    )
+    item_id = int(row["media_item_id"]) if row and row.get("media_item_id") else None
+    has_push = bool(row and (row.get("pushed_at") or _as_int(row.get("push_success_count")) > 0))
+    status = {
+        "media_product_id": row.get("media_product_id") if row else None,
+        "media_item_id": item_id,
+        "product_code": row.get("product_code") if row else "",
+        "has_local_match": bool(item_id),
+        "has_running_ad": bool(item_id and has_push),
+        "ad_spend_usd": 0.0,
+        "latest_activity_at": row.get("pushed_at") if row else None,
+        "summary": {"source": "media_item_mk_bindings+media_push_logs"},
+    }
+    _upsert_ad_status_cache(
+        scope=_AD_STATUS_SCOPE_MATERIAL,
+        lookup_key=video_path,
+        product_code=status["product_code"],
+        media_product_id=status["media_product_id"],
+        media_item_id=status["media_item_id"],
+        has_local_match=status["has_local_match"],
+        has_running_ad=status["has_running_ad"],
+        ad_spend_usd=status["ad_spend_usd"],
+        latest_activity_at=status["latest_activity_at"],
+        summary=status["summary"],
+    )
+    return status
+
+
+def refresh_ad_status_cache() -> dict[str, Any]:
+    guard_against_windows_local_mysql()
+    run_id = scheduled_tasks.start_run("mingkong_material_ad_status_refresh")
+    try:
+        product_codes = sorted({media_search_code_for(code) for code in _distinct_archive_product_codes()})
+        product_codes = [code for code in product_codes if code]
+        video_paths = _distinct_archive_video_paths()
+
+        product_statuses = 0
+        product_running = 0
+        for code in product_codes:
+            status = _refresh_product_ad_status(code)
+            product_statuses += 1
+            if status["has_running_ad"]:
+                product_running += 1
+
+        material_statuses = 0
+        material_running = 0
+        for path in video_paths:
+            status = _refresh_material_ad_status(path)
+            material_statuses += 1
+            if status["has_running_ad"]:
+                material_running += 1
+
+        summary = {
+            "product_statuses": product_statuses,
+            "product_running_ad_statuses": product_running,
+            "material_statuses": material_statuses,
+            "material_running_ad_statuses": material_running,
+        }
+        scheduled_tasks.finish_run(run_id, status="success", summary=summary)
+        return summary
+    except Exception as exc:
+        scheduled_tasks.finish_run(run_id, status="failed", error_message=str(exc))
+        raise
 
 
 def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
@@ -804,8 +1150,9 @@ def list_material_library(
         """,
         tuple(args + [size, offset]),
     )
+    items = _enrich_cached_ad_statuses([_serialize_material_row(row) for row in rows or []])
     return {
-        "items": [_serialize_material_row(row) for row in rows or []],
+        "items": items,
         "snapshot": snapshot,
         "snapshot_at": selected_snapshot_at,
         "snapshot_slot": identity.get("snapshot_slot") or "",
@@ -864,7 +1211,7 @@ def list_yesterday_top100(
         """,
         tuple(base_args + [size, offset]),
     )
-    items = [_serialize_top100_row(row) for row in rows or []]
+    items = _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []])
     previous_snapshot = items[0].get("previous_snapshot_date") if items else ""
     previous_snapshot_at = items[0].get("previous_snapshot_at") if items else ""
     return {

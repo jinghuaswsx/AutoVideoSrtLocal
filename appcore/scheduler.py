@@ -32,6 +32,8 @@ def get_scheduler() -> BackgroundScheduler:
         apimart_balance_watchdog.register(_scheduler)
         from appcore import product_cover_backfill_scheduler
         product_cover_backfill_scheduler.register(_scheduler)
+        from appcore import mingkong_material_ad_status_scheduler
+        mingkong_material_ad_status_scheduler.register(_scheduler)
         from appcore import tos_backup_job
         tos_backup_job.register(_scheduler)
         from appcore import weekly_roas_report

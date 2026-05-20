@@ -166,6 +166,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
+    "mingkong_material_ad_status_refresh": {
+        "code": "mingkong_material_ad_status_refresh",
+        "name": "明空素材投放状态缓存",
+        "description": (
+            "每 10 分钟刷新明空卡片用的产品/视频素材投放状态缓存；"
+            "卡片接口只读 mingkong_material_ad_status_cache，不实时扫素材库和广告事实表。"
+            "Docs-anchor: "
+            "docs/superpowers/specs/2026-05-20-mingkong-card-material-ad-status-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "mingkong_material_ad_status_refresh",
+        "runner": "appcore.mingkong_materials.refresh_ad_status_cache",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",

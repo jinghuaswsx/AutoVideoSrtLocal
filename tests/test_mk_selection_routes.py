@@ -164,6 +164,21 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "e.stopPropagation();" in template
 
 
+def test_mk_selection_video_cards_include_cached_ad_status_icons_and_media_search_link():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function renderMkStatusIconCluster(r)" in template
+    assert "mk-video-status-icons" in template
+    assert "has_local_product_running_ad" in template
+    assert "has_local_material_running_ad" in template
+    assert "mk-status-icon--product" in template
+    assert "mk-status-icon--material" in template
+    assert "function renderMkMediaSearchLink(r)" in template
+    assert "media_search_url" in template
+    assert "mk-media-search-link" in template
+    assert "/medias/?q=" in template
+
+
 def test_mk_selection_product_rows_include_material_library_button():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

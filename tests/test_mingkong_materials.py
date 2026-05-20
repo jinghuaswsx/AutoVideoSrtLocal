@@ -16,6 +16,13 @@ def test_material_key_is_stable_and_path_specific():
     assert len(first) == 64
 
 
+def test_media_search_code_for_adds_rjc_suffix_once():
+    assert mm.media_search_code_for("cool-widget") == "cool-widget-rjc"
+    assert mm.media_search_code_for("cool-widget-rjc") == "cool-widget-rjc"
+    assert mm.media_search_code_for("Cool_Widget_RJC") == "cool_widget-rjc"
+    assert mm.media_search_code_for("") == ""
+
+
 def test_latest_top300_products_use_latest_dianxiaomi_snapshot(monkeypatch):
     calls = []
 
@@ -565,6 +572,159 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
     )
     assert result["items"][0]["mk_video_metadata"] == {"video_path": "uploads2/winner.mp4"}
     assert any("cumulative_90_spend DESC" in item[1] for item in captured if item[0] == "query")
+
+
+def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        if "FROM mingkong_material_ad_status_cache" in sql:
+            if "status_scope = %s" in sql and args and args[0] == "product":
+                return [
+                    {
+                        "status_scope": "product",
+                        "lookup_hash": mm.status_lookup_hash("cool-widget-rjc"),
+                        "lookup_key": "cool-widget-rjc",
+                        "product_code": "cool-widget-rjc",
+                        "media_product_id": 7,
+                        "media_item_id": None,
+                        "has_local_match": 1,
+                        "has_running_ad": 1,
+                        "ad_spend_usd": 123.45,
+                        "latest_activity_at": datetime(2026, 5, 18, 12, 0, 0),
+                        "summary_json": '{"source":"daily"}',
+                        "refreshed_at": datetime(2026, 5, 18, 12, 5, 0),
+                    }
+                ]
+            return [
+                {
+                    "status_scope": "material",
+                    "lookup_hash": mm.status_lookup_hash("uploads2/winner.mp4"),
+                    "lookup_key": "uploads2/winner.mp4",
+                    "product_code": "cool-widget-rjc",
+                    "media_product_id": 7,
+                    "media_item_id": 11,
+                    "has_local_match": 1,
+                    "has_running_ad": 1,
+                    "ad_spend_usd": 0,
+                    "latest_activity_at": datetime(2026, 5, 18, 11, 0, 0),
+                    "summary_json": '{"source":"push"}',
+                    "refreshed_at": datetime(2026, 5, 18, 12, 5, 0),
+                }
+            ]
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "video_name": "winner.mp4",
+                "video_path": "/medias/uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "cumulative_90_spend": 12000,
+                "video_ads_count": 9,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(keyword="winner", page=1, page_size=100)
+    item = result["items"][0]
+
+    assert item["media_search_code"] == "cool-widget-rjc"
+    assert item["media_search_url"] == "/medias/?q=cool-widget-rjc"
+    assert item["has_local_product_running_ad"] is True
+    assert item["has_local_material_running_ad"] is True
+    assert item["product_ad_status"]["media_product_id"] == 7
+    assert item["material_ad_status"]["media_item_id"] == 11
+    assert any("mingkong_material_ad_status_cache" in entry[1] for entry in captured if entry[0] == "query")
+
+
+def test_refresh_ad_status_cache_materializes_product_and_material_rows(monkeypatch):
+    writes = []
+    finishes = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm.scheduled_tasks, "start_run", lambda task_code: 101)
+    monkeypatch.setattr(
+        mm.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: finishes.append((run_id, kwargs)),
+    )
+
+    def fake_query(sql, args=()):
+        if "SELECT DISTINCT product_code" in sql:
+            return [{"product_code": "cool-widget"}]
+        if "SELECT DISTINCT video_path" in sql:
+            return [{"video_path": "/medias/uploads2/winner.mp4"}]
+        raise AssertionError(sql)
+
+    def fake_query_one(sql, args=()):
+        if "FROM media_products" in sql:
+            return {"id": 7, "product_code": "cool-widget-rjc", "name": "Cool Widget"}
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return {
+                "ad_spend_usd": 88.5,
+                "latest_activity_at": date(2026, 5, 18),
+            }
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return {
+                "ad_spend_usd": 12.5,
+                "latest_activity_at": datetime(2026, 5, 18, 12, 0, 0),
+            }
+        if "FROM media_item_mk_bindings" in sql:
+            return {
+                "media_item_id": 11,
+                "media_product_id": 7,
+                "product_code": "cool-widget-rjc",
+                "pushed_at": datetime(2026, 5, 18, 11, 0, 0),
+                "push_success_count": 0,
+            }
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query", fake_query)
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
+
+    summary = mm.refresh_ad_status_cache()
+
+    assert summary["product_statuses"] == 1
+    assert summary["material_statuses"] == 1
+    assert len(writes) == 2
+    assert all("INSERT INTO mingkong_material_ad_status_cache" in sql for sql, _args in writes)
+    assert writes[0][1][0] == "product"
+    assert writes[0][1][2] == "cool-widget-rjc"
+    assert writes[0][1][7] == 1
+    assert writes[1][1][0] == "material"
+    assert writes[1][1][2] == "uploads2/winner.mp4"
+    assert writes[1][1][8] == 11
+    assert finishes[0][0] == 101
+    assert finishes[0][1]["status"] == "success"
 
 
 def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):

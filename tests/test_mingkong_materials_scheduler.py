@@ -23,6 +23,31 @@ def test_mingkong_material_daily_snapshot_registered():
     assert enriched["log_link_available"] is True
 
 
+def test_mingkong_material_ad_status_refresh_registered():
+    from appcore import scheduled_tasks
+
+    task = scheduled_tasks.get_task_definition("mingkong_material_ad_status_refresh")
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+    enriched = definitions["mingkong_material_ad_status_refresh"]
+
+    assert task["code"] == "mingkong_material_ad_status_refresh"
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "mingkong_material_ad_status_refresh"
+    assert task["runner"] == "appcore.mingkong_materials.refresh_ad_status_cache"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "10 分钟" in task["schedule"]
+    assert "2026-05-20-mingkong-card-material-ad-status-design.md" in task["description"]
+    assert enriched["control_strategy"] == "apscheduler"
+    assert enriched["log_source"] == "db:scheduled_task_runs"
+
+
+def test_mingkong_material_ad_status_scheduler_registered_in_app_scheduler():
+    source = (Path(__file__).resolve().parents[1] / "appcore" / "scheduler.py").read_text(encoding="utf-8")
+
+    assert "mingkong_material_ad_status_scheduler" in source
+    assert "mingkong_material_ad_status_scheduler.register(_scheduler)" in source
+
+
 def test_mingkong_material_daily_snapshot_systemd_units():
     root = Path(__file__).resolve().parents[1]
     service_path = root / "deploy" / "server_browser" / "autovideosrt-mingkong-material-daily-snapshot.service"
