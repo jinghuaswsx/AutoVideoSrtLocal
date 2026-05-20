@@ -12,6 +12,8 @@ from appcore.permissions import (
 
 
 SUPERADMIN_USERNAME = "admin"
+OPTIONAL_USER_PROFILE_COLUMNS = ("xingming",)
+_MISSING = object()
 
 
 def hash_password(password: str) -> str:
@@ -28,6 +30,21 @@ def update_password(user_id: int, password: str) -> None:
         "UPDATE users SET password_hash = %s WHERE id = %s",
         (pw_hash, user_id),
     )
+
+
+def _user_column_exists(column: str) -> bool:
+    if column not in OPTIONAL_USER_PROFILE_COLUMNS:
+        return False
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s LIMIT 1",
+        ("users", column),
+    )
+    return bool(row)
+
+
+def editable_user_profile_fields() -> list[str]:
+    return [column for column in OPTIONAL_USER_PROFILE_COLUMNS if _user_column_exists(column)]
 
 
 def create_user(username: str, password: str, role: str = "user") -> int:
@@ -52,9 +69,10 @@ def get_by_id(user_id: int) -> dict | None:
 
 
 def list_users() -> list[dict]:
+    columns = ["id", "username", "role", "permissions", "is_active", "created_at"]
+    columns.extend(editable_user_profile_fields())
     return query(
-        "SELECT id, username, role, permissions, is_active, created_at "
-        "FROM users ORDER BY id"
+        f"SELECT {', '.join(columns)} FROM users ORDER BY id"
     )
 
 
@@ -80,6 +98,57 @@ def list_translators() -> list[dict]:
 
 def set_active(user_id: int, active: bool) -> None:
     execute("UPDATE users SET is_active = %s WHERE id = %s", (int(active), user_id))
+
+
+def update_user_profile(
+    user_id: int,
+    *,
+    username: str,
+    role: str,
+    is_active: bool,
+    xingming: str | None | object = _MISSING,
+) -> None:
+    user = get_by_id(user_id)
+    if user is None:
+        raise ValueError(f"user not found: {user_id}")
+
+    username = (username or "").strip()
+    role = (role or "").strip()
+    if not username:
+        raise ValueError("username cannot be blank")
+    if not is_valid_role(role):
+        raise ValueError(f"invalid role: {role}")
+
+    existing = get_by_username(username)
+    if existing and int(existing["id"]) != int(user_id):
+        raise ValueError(f"username already exists: {username}")
+
+    current_role = user.get("role")
+    if current_role == ROLE_SUPERADMIN:
+        if role != ROLE_SUPERADMIN:
+            raise ValueError("cannot demote the superadmin")
+        if username != SUPERADMIN_USERNAME:
+            raise ValueError("cannot rename the superadmin")
+        is_active = True
+    elif role == ROLE_SUPERADMIN:
+        raise ValueError("only the reserved username can hold superadmin role")
+
+    assignments = ["username = %s", "role = %s", "is_active = %s"]
+    args: list = [username, role, int(bool(is_active))]
+
+    if current_role != role:
+        assignments.append("permissions = %s")
+        args.append(json.dumps(default_permissions_for_role(role)))
+
+    if xingming is not _MISSING and _user_column_exists("xingming"):
+        assignments.append("xingming = %s")
+        args.append((str(xingming) if xingming is not None else "").strip())
+
+    args.append(user_id)
+    execute(
+        f"UPDATE users SET {', '.join(assignments)} WHERE id = %s",
+        tuple(args),
+    )
 
 
 def update_role(user_id: int, role: str, *, reset_permissions: bool = True) -> None:
