@@ -999,6 +999,32 @@ video.media-player {
   color: var(--warning-fg);
 }
 
+.duration-round.av-convergence-status--ok {
+  border-color: color-mix(in oklch, var(--success-fg) 28%, var(--success-bg));
+  background: color-mix(in oklch, var(--success-bg) 56%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--success-fg);
+}
+
+.duration-round.av-convergence-status--warn,
+.duration-round.av-convergence-status--review,
+.duration-round.av-convergence-status--pending {
+  border-color: color-mix(in oklch, var(--warning-fg) 28%, var(--warning-bg));
+  background: color-mix(in oklch, var(--warning-bg) 60%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--warning-fg);
+}
+
+.duration-round.av-convergence-status--running {
+  border-color: color-mix(in oklch, var(--info) 28%, var(--info-bg));
+  background: color-mix(in oklch, var(--info-bg) 54%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--info);
+}
+
+.duration-round.av-convergence-status--error {
+  border-color: color-mix(in oklch, var(--danger-fg) 28%, var(--danger-bg));
+  background: color-mix(in oklch, var(--danger-bg) 58%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--danger-fg);
+}
+
 .duration-rate-diagnostic {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2442,13 +2468,13 @@ video.media-player {
 }
 
 .av-convergence-status--review {
-  background: var(--info-bg);
-  color: var(--info);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
 }
 
 .av-convergence-status--pending {
-  background: var(--bg-muted);
-  color: var(--fg-subtle);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
 }
 
 .av-convergence-status--running {
