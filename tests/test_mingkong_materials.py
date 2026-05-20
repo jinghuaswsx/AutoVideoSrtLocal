@@ -498,6 +498,82 @@ def test_fetch_mingkong_product_detail_supplies_video_spends_for_snapshot():
     assert rows[0]["video_spends_text"] == "7.26万"
 
 
+def test_search_mingkong_items_retries_once_after_auto_login_refresh(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            if len(calls) == 1:
+                return FakeResponse({"is_guest": True, "message": "登录已失效"})
+            return FakeResponse({"data": {"items": [{"id": 901}]}})
+
+    refreshes = []
+    monkeypatch.setattr(
+        mm,
+        "_refresh_mingkong_headers_after_login",
+        lambda product_code, timeout_seconds: refreshes.append((product_code, timeout_seconds))
+        or {"Authorization": "Bearer refreshed"},
+    )
+
+    items = mm._search_mingkong_items(
+        FakeSession(),
+        base_url="https://os.wedev.vip",
+        headers={"Authorization": "Bearer expired"},
+        product_code="cool-widget",
+        timeout_seconds=20,
+    )
+
+    assert items == [{"id": 901}]
+    assert refreshes == [("cool-widget", 20)]
+    assert calls[1][1]["headers"] == {"Authorization": "Bearer refreshed"}
+
+
+def test_search_mingkong_items_does_not_loop_when_refreshed_credentials_still_expired(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"is_guest": True, "message": "登录已失效"}
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            return FakeResponse()
+
+    session = FakeSession()
+    monkeypatch.setattr(mm, "_refresh_mingkong_headers_after_login", lambda *args, **kwargs: {"Cookie": "new"})
+
+    try:
+        mm._search_mingkong_items(
+            session,
+            base_url="https://os.wedev.vip",
+            headers={"Cookie": "old"},
+            product_code="cool-widget",
+            timeout_seconds=20,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "Mingkong credentials expired"
+    else:
+        raise AssertionError("expected expired credentials error")
+
+    assert session.calls == 2
+
+
 def test_cache_local_cover_for_material_writes_local_media_object():
     calls = []
 

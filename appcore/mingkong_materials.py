@@ -13,7 +13,7 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from appcore import local_media_storage, pushes, scheduled_tasks
+from appcore import local_media_storage, mingkong_login_autofill, pushes, scheduled_tasks
 from appcore.db import execute, get_conn, query, query_one
 from web.services.media_mk_selection import normalize_mk_media_path
 
@@ -1684,6 +1684,23 @@ def _mk_base_url() -> str:
     return (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
 
 
+def _is_mingkong_login_expired(data: dict[str, Any]) -> bool:
+    return data.get("is_guest") is True or str(data.get("message") or "").startswith("登录")
+
+
+def _refresh_mingkong_headers_after_login(product_code: str, timeout_seconds: int) -> dict[str, str]:
+    result = mingkong_login_autofill.refresh_wedev_credentials_via_cdp(
+        base_url=_mk_base_url(),
+        verify_product_code=product_code or "__credential_probe__",
+        timeout_seconds=timeout_seconds,
+    )
+    if str(result.get("status") or "") != "success":
+        raise RuntimeError(f"Mingkong auto login failed: {result.get('error') or result.get('status')}")
+    refreshed = _mk_headers()
+    refreshed.pop("Content-Type", None)
+    return refreshed
+
+
 def _search_mingkong_items(
     session: requests.Session,
     *,
@@ -1691,6 +1708,7 @@ def _search_mingkong_items(
     headers: dict[str, str],
     product_code: str,
     timeout_seconds: int,
+    allow_login_refresh: bool = True,
 ) -> list[dict[str, Any]]:
     resp = session.get(
         f"{base_url}/api/marketing/medias",
@@ -1700,7 +1718,19 @@ def _search_mingkong_items(
     )
     resp.raise_for_status()
     data = resp.json() or {}
-    if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+    if _is_mingkong_login_expired(data):
+        if allow_login_refresh:
+            refreshed = _refresh_mingkong_headers_after_login(product_code, timeout_seconds)
+            headers.clear()
+            headers.update(refreshed)
+            return _search_mingkong_items(
+                session,
+                base_url=base_url,
+                headers=headers,
+                product_code=product_code,
+                timeout_seconds=timeout_seconds,
+                allow_login_refresh=False,
+            )
         raise RuntimeError("Mingkong credentials expired")
     return [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
 
@@ -1712,6 +1742,7 @@ def _fetch_mingkong_product_detail(
     headers: dict[str, str],
     mk_product: dict[str, Any],
     timeout_seconds: int,
+    allow_login_refresh: bool = True,
 ) -> dict[str, Any]:
     mk_product_id = _as_int(mk_product.get("id"))
     if mk_product_id <= 0:
@@ -1723,7 +1754,20 @@ def _fetch_mingkong_product_detail(
     )
     resp.raise_for_status()
     data = resp.json() or {}
-    if data.get("is_guest") is True or str(data.get("message") or "").startswith("登录"):
+    if _is_mingkong_login_expired(data):
+        if allow_login_refresh:
+            product_code = str(mk_product.get("product_code") or mk_product.get("code") or "").strip()
+            refreshed = _refresh_mingkong_headers_after_login(product_code, timeout_seconds)
+            headers.clear()
+            headers.update(refreshed)
+            return _fetch_mingkong_product_detail(
+                session,
+                base_url=base_url,
+                headers=headers,
+                mk_product=mk_product,
+                timeout_seconds=timeout_seconds,
+                allow_login_refresh=False,
+            )
         raise RuntimeError("Mingkong credentials expired")
     item = ((data.get("data") or {}).get("item") or {})
     if not isinstance(item, dict) or not item:

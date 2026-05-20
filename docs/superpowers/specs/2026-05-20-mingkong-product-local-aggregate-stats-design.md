@@ -100,6 +100,31 @@ timer runs at:
 The task remains registered in `appcore/scheduled_tasks.py` and controlled by
 `autovideosrt-mingkong-material-daily-snapshot.timer`.
 
+## Mingkong Auto Login Recovery
+
+When a scheduled Mingkong snapshot sees `is_guest=true` or a login-expired
+message from wedev, the runner must repair the server-side login without
+operator input:
+
+1. Connect to the visible DXM02-MK Chrome CDP endpoint, default
+   `http://127.0.0.1:9223`.
+2. Navigate to `https://os.wedev.vip/login?redirect=/home`.
+3. Wait 5 seconds for Chrome's saved account/password autofill to populate the
+   login form.
+4. Click the visible login button, or press Enter from the password field if the
+   button selector is not available.
+5. Verify login by calling the Mingkong product search API with credentials
+   extracted from the CDP browser context.
+6. Save the refreshed Cookie and Bearer token into the existing
+   `push_localized_texts_*` system settings.
+7. Retry the failed Mingkong request once with the refreshed headers and then
+   continue the original snapshot loop.
+
+If the page remains on the login URL, no Cookie/token can be extracted, or the
+verification API still reports guest status, the product failure is recorded
+normally and the run's consecutive-failure guard remains responsible for
+stopping a broken snapshot.
+
 ## Verification
 
 Automated checks:
@@ -111,6 +136,8 @@ Automated checks:
   legacy values.
 - Migration tests cover the new columns and index.
 - Scheduler tests cover 05:00/17:00 metadata and systemd timer.
+- Auto-login recovery tests cover login-button clicking, Cookie/token extraction,
+  settings persistence, and one-time retry after expired Mingkong credentials.
 
 Manual production check after deploy:
 
