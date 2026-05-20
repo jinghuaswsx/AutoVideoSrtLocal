@@ -270,7 +270,7 @@
     const total = Number(data.total || 0);
     const pageSize = Number(data.page_size || state.pageSize);
     const pages = Math.max(1, Math.ceil(total / pageSize));
-    const page = Number(data.page || 1);
+    const page = Math.min(pages, Math.max(1, Number(data.page || 1)));
     if (pages <= 1) {
       pagers.forEach(pager => {
         pager.innerHTML = '';
@@ -280,11 +280,21 @@
     }
     const firstDisabled = page <= 1 ? ' disabled aria-disabled="true"' : '';
     const lastDisabled = page >= pages ? ' disabled aria-disabled="true"' : '';
-    const buttons = [`<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`];
+    const buttons = [
+      `<span class="oc-vm-page-summary" data-vm-page-summary>第 ${page} / ${pages} 页 · 共 ${pages} 页</span>`,
+      `<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`,
+    ];
     for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-vm-page="${p}">${p}</button>`);
     }
     buttons.push(`<button type="button" data-vm-page="${pages}"${lastDisabled}>末页</button>`);
+    buttons.push(`
+      <label class="oc-vm-page-jump">
+        <span>去</span>
+        <input type="number" min="1" max="${pages}" value="${page}" inputmode="numeric" pattern="[0-9]*" data-vm-page-jump aria-label="跳转到指定页">
+        <span>页</span>
+      </label>
+    `);
     pagers.forEach(pager => {
       pager.hidden = false;
       pager.innerHTML = buttons.join('');
@@ -294,6 +304,24 @@
           loadVideoMaterials();
         });
       });
+      const jumpInput = pager.querySelector('[data-vm-page-jump]');
+      if (jumpInput) {
+        jumpInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const requested = Number.parseInt(jumpInput.value, 10);
+            if (!Number.isFinite(requested)) {
+              jumpInput.value = String(page);
+              return;
+            }
+            const target = Math.min(pages, Math.max(1, requested));
+            jumpInput.value = String(target);
+            if (target === state.page) return;
+            state.page = target;
+            loadVideoMaterials();
+          }
+        });
+      }
     });
   }
 

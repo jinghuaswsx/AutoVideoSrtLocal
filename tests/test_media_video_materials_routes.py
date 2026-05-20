@@ -60,6 +60,19 @@ def test_video_materials_pager_assets_render_first_and_last_buttons(authed_clien
     assert 'data-vm-page="${pages}"' in script
 
 
+def test_video_materials_pager_assets_render_page_summary_and_enter_jump(authed_client_no_db):
+    response = authed_client_no_db.get("/static/media_video_materials.js")
+
+    assert response.status_code == 200
+    script = response.get_data(as_text=True)
+    assert "oc-vm-page-summary" in script
+    assert "\u7b2c ${page} / ${pages} \u9875" in script
+    assert "\u5171 ${pages} \u9875" in script
+    assert 'data-vm-page-jump' in script
+    assert "event.key === 'Enter'" in script
+    assert "Math.min(pages, Math.max(1, requested))" in script
+
+
 def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
     captured = {}
 
