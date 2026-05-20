@@ -147,6 +147,31 @@ def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     assert "没有可用翻译工作用户" in body
 
 
+def test_xuanpin_mk_video_cards_pause_other_videos_on_play(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function pauseOtherMkVideos(activeVideo)" in body
+    assert "document.querySelectorAll('.mk-video-source').forEach(video => {" in body
+    assert "video !== activeVideo && !video.paused && !video.ended" in body
+    assert "function handleMkVideoPlay(event)" in body
+    assert "video.classList.contains('mk-video-source')" in body
+    assert "document.addEventListener('play', handleMkVideoPlay, true);" in body
+
+
+def test_xuanpin_meta_hot_posts_keeps_single_video_playback_guard(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/meta-hot-posts", "Meta热帖")
+    assert "function pauseOtherMetaHotVideos(activeVideo)" in body
+    assert "document.querySelectorAll('.meta-hot-page video').forEach(video => {" in body
+    assert "function handleMetaHotVideoPlay(event)" in body
+    assert "document.addEventListener('play', handleMetaHotVideoPlay, true);" in body
+
+
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/tabcut")
 

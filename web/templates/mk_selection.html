@@ -1223,6 +1223,21 @@ function playMkVideoFromButton(button) {
   activateMkVideoTab(videoTab, {play: true});
 }
 
+function pauseOtherMkVideos(activeVideo) {
+  document.querySelectorAll('.mk-video-source').forEach(video => {
+    if (video !== activeVideo && !video.paused && !video.ended) {
+      video.pause();
+    }
+  });
+}
+
+function handleMkVideoPlay(event) {
+  const video = event.target;
+  if (!video || video.tagName !== 'VIDEO' || !video.classList.contains('mk-video-source')) return;
+  pauseOtherMkVideos(video);
+}
+document.addEventListener('play', handleMkVideoPlay, true);
+
 function parseSpends(s) {
   if (!s || s === '0') return 0;
   s = String(s).trim();
