@@ -21,6 +21,8 @@
 - 新开的 `/order-analytics` 页面根据 URL 参数自动激活“广告分析”顶层 tab、“Campaign”子 tab，并进入对应 Campaign 详情。
 - 从素材列表深链进入 Campaign 详情时，详情页日期默认选择最近一个月：结束日期使用当前 Meta 业务日，开始日期使用结束日期前一个日历月的同日。
 - 视频素材接口优先返回最近的 `meta_ad_daily_campaign_metrics` Campaign code/name/account；查不到时回退到产品编码作为 Campaign code。
+- 视频素材列表接口必须避免对当前页每条素材逐行扫描广告日表；先取分页素材，再对当前页 `product_id` / `product_code` 批量查询 `meta_ad_daily_campaign_metrics` 并在 Python 层合并最近 Campaign 详情。
+- 广告日表需要补齐面向视频素材页的查询索引，避免 `product_id` / `normalized_campaign_code` 查最近正消耗 Campaign 时全表扫描。
 
 不做：
 
@@ -56,6 +58,7 @@
 ## Testing
 
 - `appcore/media_video_materials.py`：序列化结果包含 `ad_plan_detail`，优先使用 Campaign 字段，缺失时用产品编码回退。
+- `appcore/media_video_materials.py`：列表测试覆盖广告详情批量查询，主列表 SQL 不再包含 `meta_ad_daily_campaign_metrics`。
 - `web/static/media_video_materials.js`：渲染包含打开新 tab 并 focus 的点击逻辑，以及两行小字 class。
 - `web/templates/order_analytics.html`：包含读取 URL 参数并自动打开 Campaign 详情的逻辑；深链详情进入前将详情日期覆盖为最近一个月。
 - 路由页面测试覆盖 `/medias/` 和 `/order-analytics` 的模板片段。

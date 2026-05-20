@@ -158,26 +158,6 @@ def list_video_materials(
         "       b.id AS binding_id, b.mk_product_id, b.mk_product_name, "
         "       b.mk_video_path, b.mk_video_name, b.mk_video_image_path, "
         "       b.mk_video_metadata_json, b.bound_by, b.bound_at, "
-        "       (SELECT m.normalized_campaign_code FROM meta_ad_daily_campaign_metrics m "
-        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
-        "          AND COALESCE(m.spend_usd, 0) > 0 "
-        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "        LIMIT 1) AS ad_campaign_code, "
-        "       (SELECT m.campaign_name FROM meta_ad_daily_campaign_metrics m "
-        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
-        "          AND COALESCE(m.spend_usd, 0) > 0 "
-        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "        LIMIT 1) AS ad_campaign_name, "
-        "       (SELECT m.ad_account_id FROM meta_ad_daily_campaign_metrics m "
-        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
-        "          AND COALESCE(m.spend_usd, 0) > 0 "
-        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "        LIMIT 1) AS ad_account_id, "
-        "       (SELECT m.ad_account_name FROM meta_ad_daily_campaign_metrics m "
-        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
-        "          AND COALESCE(m.spend_usd, 0) > 0 "
-        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "        LIMIT 1) AS ad_account_name, "
         "       (SELECT COUNT(*) FROM media_push_logs mpl "
         "        WHERE mpl.item_id=i.id AND mpl.status='success') AS push_success_count "
         "FROM media_items i "
@@ -189,12 +169,91 @@ def list_video_materials(
         "LIMIT %s OFFSET %s",
         tuple(args + [size, offset]),
     )
+    _attach_ad_plan_details(rows)
     return {
         "items": [serialize_video_material(row) for row in rows],
         "total": int(total_row.get("c") or 0),
         "page": page_num,
         "page_size": size,
     }
+
+
+def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    product_ids = sorted({
+        int(row["product_id"])
+        for row in rows
+        if _int_value(row.get("product_id")) > 0
+    })
+    campaign_codes = sorted({
+        str(row.get("product_code") or "").strip().lower()
+        for row in rows
+        if str(row.get("product_code") or "").strip()
+    })
+    candidates = _load_ad_plan_candidates(product_ids=product_ids, campaign_codes=campaign_codes)
+    if not candidates:
+        return
+
+    by_product_id: dict[int, dict[str, Any]] = {}
+    by_campaign_code: dict[str, dict[str, Any]] = {}
+    for idx, candidate in enumerate(candidates):
+        candidate["_ad_plan_rank"] = idx
+        product_id = _int_value(candidate.get("product_id"))
+        code = str(candidate.get("normalized_campaign_code") or "").strip().lower()
+        if product_id > 0:
+            by_product_id.setdefault(product_id, candidate)
+        if code:
+            by_campaign_code.setdefault(code, candidate)
+
+    for row in rows:
+        product_id = _int_value(row.get("product_id"))
+        code = str(row.get("product_code") or "").strip().lower()
+        matches = [
+            candidate
+            for candidate in (by_product_id.get(product_id), by_campaign_code.get(code))
+            if candidate
+        ]
+        if not matches:
+            continue
+        detail = min(matches, key=lambda item: int(item.get("_ad_plan_rank") or 0))
+        row["ad_campaign_code"] = detail.get("normalized_campaign_code")
+        row["ad_campaign_name"] = detail.get("campaign_name")
+        row["ad_account_id"] = detail.get("ad_account_id")
+        row["ad_account_name"] = detail.get("ad_account_name")
+
+
+def _load_ad_plan_candidates(
+    *,
+    product_ids: list[int],
+    campaign_codes: list[str],
+) -> list[dict[str, Any]]:
+    parts: list[str] = []
+    args: list[Any] = []
+    select_sql = (
+        "SELECT m.product_id, m.normalized_campaign_code, m.campaign_name, "
+        "       m.ad_account_id, m.ad_account_name, "
+        "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
+        "       m.spend_usd, m.id "
+        "FROM meta_ad_daily_campaign_metrics m "
+        "WHERE COALESCE(m.spend_usd, 0) > 0 AND "
+    )
+    if product_ids:
+        placeholders = ",".join(["%s"] * len(product_ids))
+        parts.append(select_sql + f"m.product_id IN ({placeholders})")
+        args.extend(product_ids)
+    if campaign_codes:
+        placeholders = ",".join(["%s"] * len(campaign_codes))
+        parts.append(select_sql + f"m.normalized_campaign_code IN ({placeholders})")
+        args.extend(campaign_codes)
+    if not parts:
+        return []
+    union_sql = " UNION ALL ".join(parts)
+    return query(
+        f"{union_sql} "
+        "ORDER BY activity_date DESC, COALESCE(spend_usd, 0) DESC, id DESC",
+        tuple(args),
+    )
 
 
 def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:

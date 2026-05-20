@@ -49,6 +49,17 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
 
     def fake_query(sql, args=()):
         calls.append(("query", sql, args))
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{
+                "product_id": 7,
+                "normalized_campaign_code": "widget-rjc-campaign",
+                "campaign_name": "Widget Campaign",
+                "ad_account_id": "act_1253003326160754",
+                "ad_account_name": "Omurio",
+                "activity_date": "2026-05-13",
+                "spend_usd": 88,
+                "id": 100,
+            }]
         return [_video_row()]
 
     monkeypatch.setattr(mvm, "query_one", fake_query_one)
@@ -69,18 +80,79 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert payload["items"][0]["ad_plan_status"] == "has"
     assert payload["items"][0]["mk_binding"]["mk_video_path"] == "materials/widget.mp4"
     assert payload["items"][0]["video_url"] == "/medias/object?object_key=media%2Fitems%2Fwidget%20demo.mp4"
+    assert payload["items"][0]["ad_plan_detail"]["code"] == "widget-rjc-campaign"
+    assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
 
     list_sql = calls[1][1]
     list_args = calls[1][2]
     assert "i.filename LIKE %s" in list_sql
     assert "p.product_code LIKE %s" in list_sql
     assert "p.mk_id=%s" in list_sql
-    assert "meta_ad_daily_campaign_metrics" in list_sql
+    assert "meta_ad_daily_campaign_metrics" not in list_sql
     assert "i.lang=%s" in list_sql
     assert "media_push_logs" in list_sql
     assert list_args[-2:] == (25, 25)
     assert "en" in list_args
     assert 123 in list_args
+
+    ad_sql = calls[2][1]
+    ad_args = calls[2][2]
+    assert "FROM meta_ad_daily_campaign_metrics" in ad_sql
+    assert "m.product_id IN" in ad_sql
+    assert "m.normalized_campaign_code IN" in ad_sql
+    assert 7 in ad_args
+    assert "widget-rjc" in ad_args
+
+
+def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append(("query_one", sql, args))
+        return {"c": 2}
+
+    def fake_query(sql, args=()):
+        calls.append(("query", sql, args))
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "product_id": 8,
+                    "normalized_campaign_code": "fallback-code-rjc",
+                    "campaign_name": "Campaign by Code",
+                    "ad_account_id": "act_999",
+                    "ad_account_name": "Code Account",
+                    "activity_date": "2026-05-13",
+                    "spend_usd": 22,
+                    "id": 200,
+                },
+                {
+                    "product_id": 7,
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign",
+                    "ad_account_id": "act_1253003326160754",
+                    "ad_account_name": "Omurio",
+                    "activity_date": "2026-05-12",
+                    "spend_usd": 88,
+                    "id": 100,
+                },
+            ]
+        return [
+            _video_row(product_id=7, product_code="widget-rjc", push_success_count=1),
+            _video_row(id=12, product_id=8, product_code="fallback-code-rjc", push_success_count=1),
+        ]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+
+    payload = mvm.list_video_materials(page_size=100)
+
+    assert [item["ad_plan_detail"]["code"] for item in payload["items"]] == [
+        "widget-rjc-campaign",
+        "fallback-code-rjc",
+    ]
+    assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
+    assert payload["items"][1]["ad_plan_detail"]["ad_account_id"] == "999"
+    assert len([call for call in calls if call[0] == "query" and "FROM meta_ad_daily_campaign_metrics" in call[1]]) == 1
 
 
 def test_serialize_video_material_includes_campaign_detail_link():
