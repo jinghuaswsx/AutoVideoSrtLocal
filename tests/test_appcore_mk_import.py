@@ -204,6 +204,64 @@ def test_download_mp4_streams_to_path(tmp_path, monkeypatch):
     assert dest.read_bytes() == b"abcdefghijklmnop"
 
 
+def test_download_mp4_resolves_xuanpin_proxy_url_to_wedev_media(tmp_path, monkeypatch):
+    from appcore import mk_import
+    from appcore import pushes
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "video/mp4"}
+
+        def iter_content(self, chunk_size):
+            yield b"video-bytes"
+
+        def raise_for_status(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        pushes,
+        "get_localized_texts_base_url",
+        lambda: "https://os.wedev.vip",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pushes,
+        "build_localized_texts_headers",
+        lambda: {"Authorization": "Bearer token", "Content-Type": "application/json"},
+        raising=False,
+    )
+
+    captured = {}
+
+    def fake_get(url, *args, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        assert url == "https://os.wedev.vip/medias/uploads2/202604/demo.mp4"
+        assert kwargs["headers"] == {
+            "Authorization": "Bearer token",
+            "Accept": "video/*,*/*;q=0.8",
+        }
+        return FakeResponse()
+
+    monkeypatch.setattr(mk_import.requests, "get", fake_get)
+
+    dest = tmp_path / "out.mp4"
+    n = mk_import._download_mp4(
+        "/xuanpin/api/mk-video?path=uploads2%2F202604%2Fdemo.mp4",
+        str(dest),
+    )
+
+    assert n == len(b"video-bytes")
+    assert dest.read_bytes() == b"video-bytes"
+    assert captured["kwargs"]["stream"] is True
+
+
 def test_download_mp4_404_raises(tmp_path, monkeypatch):
     from appcore import mk_import
     import requests
