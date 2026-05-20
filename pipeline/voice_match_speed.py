@@ -11,12 +11,11 @@ import numpy as np
 from appcore import voice_preview_speech_rate
 from pipeline import voice_library_sync, voice_match
 
-DEFAULT_CANDIDATE_POOL_SIZE = 100
+DEFAULT_CANDIDATE_POOL_SIZE = 20
 DEFAULT_RESULT_TOP_K = 10
 DEFAULT_LAZY_PREVIEW_RATE_LIMIT = 10
 TIMBRE_WEIGHT = 0.75
 SPEED_WEIGHT = 0.25
-MIN_SIMILARITY_DELTA = 0.08
 _WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)?")
 
 
@@ -123,17 +122,10 @@ def rank_speed_aware_candidates(
 ) -> list[dict]:
     if not candidates:
         return []
-    try:
-        top_similarity = max(float(row.get("similarity") or 0.0) for row in candidates)
-    except ValueError:
-        return []
-    similarity_floor = top_similarity - MIN_SIMILARITY_DELTA
     source_wps = float(source_rate.get("source_words_per_second") or 0.0)
     ranked: list[dict] = []
     for candidate in candidates:
         similarity = float(candidate.get("similarity") or 0.0)
-        if similarity < similarity_floor:
-            continue
         voice_id = str(candidate.get("voice_id") or "").strip()
         speed_score = _speed_score(source_wps, preview_rates.get(voice_id))
         combined = similarity
@@ -150,7 +142,8 @@ def rank_speed_aware_candidates(
         ranked.append(row)
     ranked.sort(
         key=lambda row: (
-            float(row.get("combined_score") or 0.0),
+            row.get("speed_match_score") is not None,
+            float(row.get("speed_match_score") if row.get("speed_match_score") is not None else -1.0),
             float(row.get("similarity") or 0.0),
         ),
         reverse=True,
