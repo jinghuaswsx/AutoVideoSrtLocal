@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -148,19 +147,19 @@ def watch_niuma_processing(
         status = str(task.get("status") or "").strip().lower()
         if status == "done":
             try:
-                attach_niuma_result_to_parent_task(
+                record_niuma_result_ready_for_parent_task(
                     parent_task_id=parent_task_id,
                     subtitle_task_id=subtitle_task_id,
                     actor_user_id=actor_user_id,
                     result_video_path=task.get("result_video_path") or "",
                 )
-                return "done"
+                return "ready"
             except Exception as exc:  # noqa: BLE001
                 _write_event(
                     parent_task_id,
                     "raw_niuma_failed",
                     actor_user_id,
-                    {"subtitle_task_id": subtitle_task_id, "stage": "attach", "error": str(exc)[:500]},
+                    {"subtitle_task_id": subtitle_task_id, "stage": "result_ready", "error": str(exc)[:500]},
                 )
                 return "failed"
         if status == "error":
@@ -181,7 +180,7 @@ def watch_niuma_processing(
     return "timeout"
 
 
-def attach_niuma_result_to_parent_task(
+def record_niuma_result_ready_for_parent_task(
     *,
     parent_task_id: int,
     subtitle_task_id: str,
@@ -191,37 +190,94 @@ def attach_niuma_result_to_parent_task(
     result_path = Path(result_video_path)
     if not result_path.is_file():
         raise RawVideoProcessingError("niuma result video not found")
+    _write_event(
+        parent_task_id,
+        "raw_niuma_result_ready",
+        actor_user_id,
+        {
+            "subtitle_task_id": subtitle_task_id,
+            "result_video_path": str(result_path),
+            "result_size": result_path.stat().st_size,
+        },
+    )
+
+
+def accept_niuma_result_for_parent_task(
+    *,
+    parent_task_id: int,
+    actor_user_id: int,
+) -> dict:
     payload = _load_parent_task_payload(int(parent_task_id))
     if not payload:
         raise RawVideoProcessingError("parent task media item not found")
-    destination = _resolve_media_item_path(payload["object_key"])
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(result_path, destination)
-    new_size = destination.stat().st_size
-    execute(
-        "UPDATE media_items SET file_size=%s WHERE id=%s",
-        (new_size, int(payload["media_item_id"])),
+    if int(payload.get("assignee_id") or 0) != int(actor_user_id):
+        raise RawVideoProcessingError("only assignee can accept niuma result")
+    if payload.get("status") and payload.get("status") != "raw_in_progress":
+        raise RawVideoProcessingError(f"expected raw_in_progress, got {payload.get('status')}")
+
+    result_payload = _load_latest_niuma_result_ready_payload(int(parent_task_id))
+    if not result_payload:
+        raise RawVideoProcessingError("niuma result not ready")
+    result_path = Path(str(result_payload.get("result_video_path") or ""))
+    if not result_path.is_file():
+        raise RawVideoProcessingError("niuma result video not found")
+
+    from appcore import task_raw_source_bridge
+
+    raw_source_result = task_raw_source_bridge.ensure_raw_source_for_parent_task(
+        task_id=int(parent_task_id),
+        actor_user_id=int(actor_user_id),
+        source_path=result_path,
     )
     _write_event(
         parent_task_id,
-        "raw_niuma_done",
+        "raw_niuma_result_accepted",
         actor_user_id,
-        {"subtitle_task_id": subtitle_task_id, "new_size": new_size},
+        {
+            "subtitle_task_id": result_payload.get("subtitle_task_id") or "",
+            "result_video_path": str(result_path),
+            "new_size": result_path.stat().st_size,
+            "raw_source_id": raw_source_result.get("raw_source_id"),
+            "created": bool(raw_source_result.get("created")),
+            "updated": bool(raw_source_result.get("updated")),
+        },
     )
     from appcore import tasks as tasks_svc
 
     tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+    return {
+        "status": "accepted",
+        "raw_source_id": raw_source_result.get("raw_source_id"),
+        "created": bool(raw_source_result.get("created")),
+        "updated": bool(raw_source_result.get("updated")),
+    }
 
 
 def _load_parent_task_payload(task_id: int) -> dict | None:
     return query_one(
-        "SELECT t.id AS task_id, t.media_item_id, t.assignee_id, "
+        "SELECT t.id AS task_id, t.media_item_id, t.assignee_id, t.status, "
         "       i.filename, i.object_key "
         "FROM tasks t "
         "JOIN media_items i ON i.id=t.media_item_id "
         "WHERE t.id=%s AND t.parent_task_id IS NULL AND i.deleted_at IS NULL",
         (int(task_id),),
     )
+
+
+def _load_latest_niuma_result_ready_payload(parent_task_id: int) -> dict | None:
+    row = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type='raw_niuma_result_ready' "
+        "ORDER BY id DESC LIMIT 1",
+        (int(parent_task_id),),
+    )
+    if not row or not row.get("payload_json"):
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _resolve_media_item_path(object_key: str) -> Path:

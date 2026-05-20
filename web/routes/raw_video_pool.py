@@ -11,6 +11,7 @@ from web.auth import permission_required
 from appcore import raw_video_pool as rvp_svc
 from web.services.artifact_download import safe_task_file_response
 from web.services.raw_video_pool import (
+    build_raw_video_pool_accept_success_response,
     build_raw_video_pool_file_not_found_response,
     build_raw_video_pool_file_too_large_response,
     build_raw_video_pool_internal_error_response,
@@ -90,6 +91,42 @@ def api_download(tid: int):
         download_name=fname,
         mimetype="video/mp4",
     )
+
+
+@bp.route("/api/task/<int:tid>/niuma-result/download", methods=["GET"])
+@login_required
+def api_niuma_result_download(tid: int):
+    try:
+        path, fname = rvp_svc.stream_niuma_result_video(tid, int(current_user.id))
+    except rvp_svc.PermissionDenied as e:
+        return raw_video_pool_flask_response(build_raw_video_pool_permission_denied_response(e))
+    except rvp_svc.StateError as e:
+        return raw_video_pool_flask_response(build_raw_video_pool_state_error_response(e))
+    if not os.path.exists(path):
+        return raw_video_pool_flask_response(build_raw_video_pool_file_not_found_response(path))
+    return safe_task_file_response(
+        {},
+        path,
+        not_found_message="file_not_found",
+        as_attachment=True,
+        download_name=fname,
+        mimetype="video/mp4",
+    )
+
+
+@bp.route("/api/task/<int:tid>/niuma-result/accept", methods=["POST"])
+@login_required
+def api_niuma_result_accept(tid: int):
+    try:
+        result = rvp_svc.accept_niuma_result(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+        )
+    except rvp_svc.StateError as e:
+        return raw_video_pool_flask_response(build_raw_video_pool_state_error_response(e))
+    except Exception as e:
+        return raw_video_pool_flask_response(build_raw_video_pool_internal_error_response(e))
+    return raw_video_pool_flask_response(build_raw_video_pool_accept_success_response(result))
 
 
 @bp.route("/api/task/<int:tid>/upload", methods=["POST"])

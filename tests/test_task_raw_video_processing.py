@@ -105,8 +105,37 @@ def test_start_niuma_processing_rejects_runner_start_failure(monkeypatch, tmp_pa
         )
 
 
-def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatch, tmp_path):
+def test_watch_niuma_records_result_ready_without_marking_uploaded(monkeypatch, tmp_path):
     from appcore import task_raw_video_processing as processing
+
+    result_path = tmp_path / "result.mp4"
+    result_path.write_bytes(b"cleaned")
+    events = []
+    monkeypatch.setattr(
+        processing.task_state,
+        "get",
+        lambda task_id: {"status": "done", "result_video_path": str(result_path)},
+    )
+    monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
+
+    result = processing.watch_niuma_processing(
+        parent_task_id=5,
+        subtitle_task_id="tcraw-5",
+        actor_user_id=9,
+        timeout_seconds=1,
+        interval_seconds=1,
+    )
+
+    assert result == "ready"
+    assert events[0][1] == "raw_niuma_result_ready"
+    assert events[0][3]["subtitle_task_id"] == "tcraw-5"
+    assert events[0][3]["result_video_path"] == str(result_path)
+    assert events[0][3]["result_size"] == len(b"cleaned")
+
+
+def test_accept_niuma_result_creates_raw_source_without_replacing_parent_media(monkeypatch, tmp_path):
+    from appcore import task_raw_video_processing as processing
+    from appcore import task_raw_source_bridge
     from appcore import tasks
 
     result_path = tmp_path / "result.mp4"
@@ -114,7 +143,7 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     destination = tmp_path / "media.mp4"
     destination.write_bytes(b"old")
     events = []
-    executed = []
+    raw_source_calls = []
     marked = []
 
     monkeypatch.setattr(
@@ -124,25 +153,46 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
             "task_id": task_id,
             "media_item_id": 11,
             "assignee_id": 9,
+            "status": "raw_in_progress",
             "filename": "demo.mp4",
             "object_key": "mk-import/7/demo.mp4",
         },
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
-    monkeypatch.setattr(processing, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+    monkeypatch.setattr(
+        processing,
+        "_load_latest_niuma_result_ready_payload",
+        lambda parent_task_id: {
+            "subtitle_task_id": "tcraw-5",
+            "result_video_path": str(result_path),
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        task_raw_source_bridge,
+        "ensure_raw_source_for_parent_task",
+        lambda **kwargs: raw_source_calls.append(kwargs)
+        or {"raw_source_id": 301, "created": True, "updated": False},
+    )
     monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
 
-    processing.attach_niuma_result_to_parent_task(
+    processing.accept_niuma_result_for_parent_task(
         parent_task_id=5,
-        subtitle_task_id="tcraw-5",
         actor_user_id=9,
-        result_video_path=str(result_path),
     )
 
-    assert destination.read_bytes() == b"cleaned"
-    assert executed[0][1] == (len(b"cleaned"), 11)
-    assert events[0][1] == "raw_niuma_done"
+    assert destination.read_bytes() == b"old"
+    assert raw_source_calls == [
+        {
+            "task_id": 5,
+            "actor_user_id": 9,
+            "source_path": result_path,
+        }
+    ]
+    assert events[0][1] == "raw_niuma_result_accepted"
+    assert events[0][3]["subtitle_task_id"] == "tcraw-5"
+    assert events[0][3]["raw_source_id"] == 301
     assert marked == [{"task_id": 5, "actor_user_id": 9}]
 
 
@@ -151,11 +201,6 @@ def test_watch_niuma_records_attach_failure(monkeypatch):
 
     events = []
     monkeypatch.setattr(processing.task_state, "get", lambda task_id: {"status": "done", "result_video_path": ""})
-    monkeypatch.setattr(
-        processing,
-        "attach_niuma_result_to_parent_task",
-        lambda **kwargs: (_ for _ in ()).throw(processing.RawVideoProcessingError("missing result")),
-    )
     monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
 
     result = processing.watch_niuma_processing(
@@ -168,4 +213,4 @@ def test_watch_niuma_records_attach_failure(monkeypatch):
 
     assert result == "failed"
     assert events[0][1] == "raw_niuma_failed"
-    assert events[0][3]["stage"] == "attach"
+    assert events[0][3]["stage"] == "result_ready"

@@ -34,6 +34,7 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(bridge, "_find_existing_raw_source", lambda product_id, filename: None)
+    monkeypatch.setattr(bridge, "_load_latest_accepted_niuma_payload", lambda task_id: None)
     monkeypatch.setattr(
         bridge.object_keys,
         "build_media_raw_source_key",
@@ -77,6 +78,66 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
     assert copied["9/medias/7/raw_sources/demo.cover.jpg"] == b"cover"
 
 
+def test_ensure_raw_source_uses_explicit_niuma_result_with_parent_filename(monkeypatch, tmp_path):
+    from appcore import task_raw_source_bridge as bridge
+
+    result_path = tmp_path / "niuma-result.mp4"
+    result_path.write_bytes(b"cleaned-video")
+    monkeypatch.setattr(
+        bridge,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "created_by": 3,
+            "item_id": 11,
+            "item_user_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "cover_object_key": "",
+            "duration_seconds": 12.5,
+            "file_size": None,
+            "width": 720,
+            "height": 1280,
+        },
+    )
+    monkeypatch.setattr(bridge, "_find_existing_raw_source", lambda product_id, filename: None)
+    monkeypatch.setattr(bridge, "_load_latest_accepted_niuma_payload", lambda task_id: None)
+    monkeypatch.setattr(
+        bridge.object_keys,
+        "build_media_raw_source_key",
+        lambda user_id, product_id, *, kind, filename, exact_filename=False: (
+            f"{user_id}/medias/{product_id}/raw_sources/{filename}"
+            if kind == "video"
+            else f"{user_id}/medias/{product_id}/raw_sources/{Path(filename).stem}.cover.jpg"
+        ),
+    )
+    copied = {}
+    monkeypatch.setattr(bridge.local_media_storage, "write_stream", lambda key, stream: copied.setdefault(key, stream.read()))
+    monkeypatch.setattr(bridge.local_media_storage, "write_bytes", lambda key, payload: copied.setdefault(key, payload))
+    cover_tmp = tmp_path / "cover.jpg"
+    cover_tmp.write_bytes(b"cover")
+    monkeypatch.setattr(bridge, "extract_thumbnail", lambda video_path, output_dir, scale=None: str(cover_tmp))
+    monkeypatch.setattr(bridge, "probe_media_info", lambda path: {"width": 720, "height": 1280, "duration": 12.5})
+    created = {}
+    monkeypatch.setattr(
+        bridge.medias,
+        "create_raw_source",
+        lambda product_id, user_id, **kwargs: created.update({"product_id": product_id, "user_id": user_id, **kwargs}) or 301,
+    )
+
+    result = bridge.ensure_raw_source_for_parent_task(
+        task_id=55,
+        actor_user_id=4,
+        source_path=result_path,
+    )
+
+    assert result == {"raw_source_id": 301, "created": True, "updated": False}
+    assert created["display_name"] == "demo.mp4"
+    assert created["video_object_key"] == "9/medias/7/raw_sources/demo.mp4"
+    assert copied["9/medias/7/raw_sources/demo.mp4"] == b"cleaned-video"
+
+
 def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
     from appcore import task_raw_source_bridge as bridge
 
@@ -109,6 +170,7 @@ def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
         "_find_existing_raw_source",
         lambda product_id, filename: {"id": 202, "display_name": filename},
     )
+    monkeypatch.setattr(bridge, "_load_latest_accepted_niuma_payload", lambda task_id: None)
     monkeypatch.setattr(
         bridge.object_keys,
         "build_media_raw_source_key",

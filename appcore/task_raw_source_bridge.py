@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import tempfile
 from pathlib import Path
 
@@ -13,7 +14,12 @@ class RawSourceBridgeError(RuntimeError):
     pass
 
 
-def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None = None) -> dict:
+def ensure_raw_source_for_parent_task(
+    *,
+    task_id: int,
+    actor_user_id: int | None = None,
+    source_path: str | Path | None = None,
+) -> dict:
     payload = _load_parent_task_payload(int(task_id))
     if not payload:
         raise RawSourceBridgeError("parent task media item not found")
@@ -25,24 +31,28 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
     if product_id <= 0 or not filename or not object_key or user_id <= 0:
         raise RawSourceBridgeError("parent task media item not found")
 
-    source_path = _resolve_media_item_path(object_key)
-    if not source_path.is_file():
+    resolved_source_path = _resolve_raw_source_video_path(
+        task_id=int(task_id),
+        object_key=object_key,
+        source_path=source_path,
+    )
+    if not resolved_source_path.is_file():
         raise RawSourceBridgeError(f"reviewed media file not found: {object_key}")
 
     video_object_key = _copy_reviewed_video_to_raw_source(
-        source_path=source_path,
+        source_path=resolved_source_path,
         user_id=user_id,
         product_id=product_id,
         filename=filename,
     )
     cover_object_key = _resolve_cover_object_key(
         payload=payload,
-        source_path=source_path,
+        source_path=resolved_source_path,
         user_id=user_id,
         product_id=product_id,
         filename=filename,
     )
-    media_info = _safe_probe_video(source_path)
+    media_info = _safe_probe_video(resolved_source_path)
     duration_seconds = (
         media_info.get("duration")
         or payload.get("duration_seconds")
@@ -50,7 +60,7 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
     )
     width = media_info.get("width") or payload.get("width") or None
     height = media_info.get("height") or payload.get("height") or None
-    file_size = source_path.stat().st_size if source_path.exists() else payload.get("file_size")
+    file_size = resolved_source_path.stat().st_size if resolved_source_path.exists() else payload.get("file_size")
 
     existing = _find_existing_raw_source(product_id, filename)
     if existing:
@@ -108,6 +118,39 @@ def _find_existing_raw_source(product_id: int, filename: str) -> dict | None:
         "ORDER BY id ASC LIMIT 1",
         (int(product_id), filename, f"%/{filename}"),
     )
+
+
+def _resolve_raw_source_video_path(
+    *,
+    task_id: int,
+    object_key: str,
+    source_path: str | Path | None = None,
+) -> Path:
+    if source_path is not None:
+        return Path(source_path)
+    accepted = _load_latest_accepted_niuma_payload(task_id)
+    if accepted:
+        result_path = Path(str(accepted.get("result_video_path") or ""))
+        if not result_path.is_file():
+            raise RawSourceBridgeError("accepted niuma result video not found")
+        return result_path
+    return _resolve_media_item_path(object_key)
+
+
+def _load_latest_accepted_niuma_payload(task_id: int) -> dict | None:
+    row = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type='raw_niuma_result_accepted' "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id),),
+    )
+    if not row or not row.get("payload_json"):
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _resolve_media_item_path(object_key: str) -> Path:
