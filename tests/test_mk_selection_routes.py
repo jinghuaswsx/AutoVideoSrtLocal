@@ -247,7 +247,8 @@ def test_mk_selection_product_rows_include_material_library_button():
 def test_mk_selection_product_rows_show_library_status_and_color_classes():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert '<th style="width:190px">产品状态</th>' in template
+    assert '<col class="mk-col-status">' in template
+    assert "<th>产品状态</th>" in template
     assert 'colspan="13"' in template
     assert ".mk-library-row--green td" in template
     assert ".mk-library-row--red td" in template
@@ -266,8 +267,9 @@ def test_mk_selection_product_rows_show_library_status_and_color_classes():
 def test_mk_selection_product_rows_show_200_cover_and_copy_buttons():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "<th style=\"width:220px\">商品图</th>" in template
-    assert ".mk-product-image-frame { width:200px; height:200px;" in template
+    assert '<col class="mk-col-image">' in template
+    assert "--mk-product-image-size: 200px;" in template
+    assert ".mk-product-image-frame { width:var(--mk-product-image-size); height:var(--mk-product-image-size);" in template
     assert "function renderProductImageCell(row)" in template
     assert "const coverSrc = safeMediaSrc(row.product_main_image_local_url || row.product_main_image_url || '');" in template
     assert "function copyMkText(value, button)" in template
@@ -275,6 +277,24 @@ def test_mk_selection_product_rows_show_200_cover_and_copy_buttons():
     assert "renderTwoLineCopyBlock(productCode || handle, ''" in template
     assert "data-copy-text" in template
     assert "product_cn_name" in template
+
+
+def test_mk_selection_products_table_has_secondary_screen_compact_layout():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "2026-05-20-xuanpin-secondary-screen-columns-design.md" in template
+    assert '<table class="oc-table mk-products-table" id="mainTable">' in template
+    assert '<col class="mk-col-rank">' in template
+    assert '<col class="mk-col-action">' in template
+    assert "--mk-products-table-min-w: 1690px;" in template
+    assert "@media (min-width: 769px) and (max-width: 1760px)" in template
+    assert "@media (min-width: 769px) and (orientation: portrait)" in template
+    assert ".sidebar { transform:translateX(-100%); }" in template
+    assert "body.sidebar-open .sidebar { transform:translateX(0); }" in template
+    assert ".main-wrap { margin-left:0; max-width:100vw; }" in template
+    assert "--mk-col-action: 58px;" in template
+    assert ".mk-products-table-shell { overflow-x:visible;" in template
+    assert "mk-detail-btn" in template
 
 
 def test_mk_selection_dynamic_html_escapes_api_fields():
