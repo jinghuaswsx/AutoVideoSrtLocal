@@ -525,7 +525,7 @@
   }
 
   function supportsManualVoiceAiRanking() {
-    return apiBase === "/api/english-redub";
+    return apiBase === "/api/english-redub" || apiBase === "/api/multi-translate";
   }
 
   function updateVoiceAiRankControls() {
