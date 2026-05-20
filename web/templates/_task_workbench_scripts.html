@@ -910,6 +910,9 @@
     taskWorkbenchBooted = true;
     renderStepMessages();
     renderStepPreviews(currentTask.artifacts || {});
+    if (window.refreshSeparationCardFromTask) {
+      window.refreshSeparationCardFromTask(currentTask);
+    }
     // 重渲染后恢复音频播放按钮状态
     if (_previewAudio && !_previewAudio.paused && _previewAudioGid) {
       _setAudioBtns(_previewAudioGid, true);

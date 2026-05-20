@@ -25,6 +25,7 @@
   var separationStepStatus = {{ (state.steps.get('separate', '') if state.steps else '')|tojson }};
   var loudnessStepStatus = {{ (state.steps.get('loudness_match', '') if state.steps else '')|tojson }};
   var loudnessProfileSaving = false;
+  var pollTimer = null;
   const SEPARATION_TERMINAL_STATUSES = new Set(["done", "error", "failed", "interrupted", "cancelled", "timeout", "disabled", "unavailable", "silence"]);
 
   var STATUS_LABEL_ZH = {
@@ -262,10 +263,12 @@
       var vocalsUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_vocals";
       var accompUrl = API_BASE + "/" + TASK_ID + "/artifact/separation_accompaniment";
       setHtmlIfChanged(preview, '<div class="separation-detail">' +
+          '<div class="separation-section-title">处理过程</div>' +
           '<div class="kv-row"><span class="k">preset</span><span class="v">' + escapeHtml(sep.model || "-") + '</span></div>' +
           '<div class="kv-row"><span class="k">耗时</span><span class="v">' + fmt(elapsed, 1, "s") + '</span></div>' +
           '<div class="kv-row"><span class="k">原人声 L₀</span><span class="v">' + fmt(sep.vocals_lufs, 1, " LUFS") + '</span></div>' +
           '<div class="kv-row"><span class="k">原视频整体</span><span class="v">' + fmt(sep.video_lufs, 1, " LUFS") + '</span></div>' +
+          '<div class="separation-section-title">实际结果</div>' +
           '<div class="separation-audio-pair">' +
             '<div>' +
               '<div class="col-label">人声轨（vocals — 仅用于测响度基准）</div>' +
@@ -454,6 +457,16 @@
     }
   }
 
+  function syncSeparationPollTimer() {
+    if (shouldPollSeparationLatest()) {
+      if (!pollTimer) {
+        pollTimer = setInterval(pollLatest, 10000);
+      }
+      return;
+    }
+    stopPollingIfSettled();
+  }
+
   function pollLatest() {
     if (!shouldPollSeparationLatest()) {
       stopPollingIfSettled();
@@ -475,7 +488,25 @@
       .catch(function () { refreshAll(); stopPollingIfSettled(); });
   }
 
+  window.refreshSeparationCardFromTask = function (task) {
+    if (!task) return;
+    if (Object.prototype.hasOwnProperty.call(task, "separation")) {
+      separation = task.separation;
+    }
+    separationStepStatus = (task.steps && task.steps.separate) || separationStepStatus || "";
+    loudnessStepStatus = (task.steps && task.steps.loudness_match) || loudnessStepStatus || "";
+    selectedLoudnessProfile = task.loudness_profile || selectedLoudnessProfile || "standard";
+    selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 100);
+    if (!separation || !separation.status) {
+      syncSeparationPollTimer();
+      return;
+    }
+    refreshAll();
+    syncSeparationPollTimer();
+  };
+
   refreshAll();
+  syncSeparationPollTimer();
 
   document.addEventListener("click", function (e) {
     var pill = e.target.closest("#preview-loudness_match .loudness-profile-pill");
@@ -491,7 +522,6 @@
   });
 
   // 运行态才刷新 elapsed / 拉最新 task state；终态卡片冻结后停止轮询。
-  var pollTimer = shouldPollSeparationLatest() ? setInterval(pollLatest, 10000) : null;
   window.addEventListener("beforeunload", function () {
     if (pollTimer) clearInterval(pollTimer);
   });
@@ -531,6 +561,15 @@
   #preview-separate .separation-detail.muted,
   #preview-loudness_match .loudness-detail.muted {
     color: var(--fg-muted);
+  }
+  #preview-separate .separation-section-title {
+    margin-top: var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--fg);
+  }
+  #preview-separate .separation-section-title:first-child {
+    margin-top: 0;
   }
   #preview-separate .separation-audio-pair {
     display: grid;

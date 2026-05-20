@@ -246,6 +246,44 @@ def test_separation_card_stops_polling_after_terminal_previews_freeze():
     assert "clearInterval(pollTimer);" in separation
 
 
+def test_separation_card_refreshes_from_late_task_state():
+    root = Path(__file__).resolve().parents[1]
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    refresh_block = separation[
+        separation.index("window.refreshSeparationCardFromTask"):
+        separation.index("refreshAll();", separation.index("window.refreshSeparationCardFromTask"))
+    ]
+    render_state_block = script[
+        script.index("function renderTaskState"):
+        script.index("function speechShotAlignmentStatus")
+    ]
+
+    assert "window.refreshSeparationCardFromTask = function" in separation
+    assert 'Object.prototype.hasOwnProperty.call(task, "separation")' in refresh_block
+    assert "separation = task.separation;" in refresh_block
+    assert 'task.steps && task.steps.separate' in refresh_block
+    assert 'task.steps && task.steps.loudness_match' in refresh_block
+    assert "syncSeparationPollTimer();" in separation
+    assert "window.refreshSeparationCardFromTask(currentTask);" in render_state_block
+
+
+def test_separation_done_card_labels_process_and_actual_results():
+    root = Path(__file__).resolve().parents[1]
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+
+    done_block = separation[
+        separation.index('if (status === "done")'):
+        separation.index("// failed / unavailable / timeout / silence")
+    ]
+
+    assert "处理过程" in done_block
+    assert "实际结果" in done_block
+    assert "人声轨" in done_block
+    assert "环境音 / 背景音" in done_block
+
+
 def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     root = Path(__file__).resolve().parents[1]
     separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
