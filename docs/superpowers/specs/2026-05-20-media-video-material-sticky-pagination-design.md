@@ -14,6 +14,7 @@
 ## UI Behavior
 
 - 顶部分页放在筛选区下方、表格上方；页数超过 1 页时显示，只有 1 页时隐藏。
+- 顶部和底部分页都在页码按钮前显示“首页”、在页码按钮后显示“末页”；首页指向第 1 页，末页指向最后一页。
 - 点击顶部或底部分页按钮都会更新同一个 `page` 状态并重新加载列表。
 - 重新加载列表后，滚动容器回到顶部，sticky 顶部区域不随列表内容移动。
 - 列表容器高度按当前可视窗口和 sticky 区域高度计算，列表行在容器内滚动，表头贴在列表容器顶部。
@@ -23,10 +24,12 @@
 - 复用现有 `GET /medias/api/video-materials` 的 `page` / `page_size` 参数，不新增接口。
 - 后端默认 `page_size` 从 50 调整到 100，保留最大 100 的上限。
 - 前端 `media_video_materials.js` 的默认 `pageSize` 从 50 调整到 100。
+- “首页”和“末页”复用现有 `data-vm-page` 点击处理，不新增接口、不新增分页状态。
 - sticky offset 计算必须按当前激活 tab 选择工具栏和列表，避免视频 tab 使用产品 tab 的隐藏节点高度。
 
 ## Testing
 
 - Route tests cover video material page rendering of top pager and sticky variables.
 - Route tests cover API default `page_size=100` and explicit `page_size` pass-through.
+- Route/static asset tests cover first/last pager labels and their `data-vm-page` bindings.
 - Service tests cover default page size of 100 and existing clamp behavior.
