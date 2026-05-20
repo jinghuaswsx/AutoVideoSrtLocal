@@ -1593,6 +1593,11 @@ def test_ez_replace_slot_clicks_save_when_upload_input_state_is_empty(monkeypatc
     monkeypatch.setattr(ez_cdp, "_uploaded_file_state", lambda *_args, **_kwargs: {"ok": False, "count": 0, "names": []})
     monkeypatch.setattr(ez_cdp, "_click_save_and_wait", lambda *_args, **_kwargs: calls.append(("save",)) or {"dialog_closed": True})
     monkeypatch.setattr(ez_cdp, "_click_cancel", lambda *_args, **_kwargs: calls.append(("cancel",)) or True)
+    monkeypatch.setattr(
+        ez_cdp,
+        "_wait_slot_language_marker",
+        lambda *_args, **_kwargs: {"ok": True, "expected": 1, "matched": 1, "missing": []},
+    )
 
     result = ez_cdp.replace_slot(FakeFrame(), 0, str(image_path), language="Dutch")
 
@@ -1601,6 +1606,73 @@ def test_ez_replace_slot_clicks_save_when_upload_input_state_is_empty(monkeypatc
     assert ("save",) in calls
     assert calls.index(("set_input_files", str(image_path), 10000)) < calls.index(("save",))
     assert ("cancel",) not in calls
+
+
+def test_ez_replace_slot_retries_when_saved_marker_is_missing(monkeypatch, tmp_path):
+    image_path = tmp_path / "loc_from_url_en_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+    image_path.write_bytes(b"image")
+    calls = []
+    marker_attempts = []
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeFrame:
+        page = FakePage()
+
+    def fake_wait_marker(frame, slot_idx, language, **kwargs):
+        marker_attempts.append((slot_idx, language))
+        if len(marker_attempts) == 1:
+            raise RuntimeError("Dutch marker missing after save")
+        return {"ok": True, "expected": 1, "matched": 1, "missing": []}
+
+    monkeypatch.setattr(ez_cdp, "_open_slot", lambda *_args, **_kwargs: calls.append(("open",)) or {"visible_buttons": 1})
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(ez_cdp, "_select_language", lambda *_args, **_kwargs: {"ok": True, "value": "Dutch"})
+    monkeypatch.setattr(ez_cdp, "_set_upload_file", lambda *_args, **_kwargs: {"ok": True, "count": 1, "names": ["image.png"]})
+    monkeypatch.setattr(ez_cdp, "_click_save_and_wait", lambda *_args, **_kwargs: calls.append(("save",)) or {"dialog_closed": True})
+    monkeypatch.setattr(ez_cdp, "_click_cancel", lambda *_args, **_kwargs: calls.append(("cancel",)) or True)
+    monkeypatch.setattr(ez_cdp, "_wait_slot_language_marker", fake_wait_marker, raising=False)
+
+    result = ez_cdp.replace_slot(FakeFrame(), 0, str(image_path), language="Dutch")
+
+    assert result["status"] == "ok"
+    assert calls.count(("open",)) == 2
+    assert calls.count(("save",)) == 2
+    assert marker_attempts == [(0, "Dutch"), (0, "Dutch")]
+    assert ("cancel",) in calls
+    assert ("wait_for_timeout", 2000) in calls
+
+
+def test_ez_replace_slot_reports_failure_when_saved_marker_stays_missing(monkeypatch, tmp_path):
+    image_path = tmp_path / "loc_from_url_en_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+    image_path.write_bytes(b"image")
+    calls = []
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeFrame:
+        page = FakePage()
+
+    def fake_wait_marker(frame, slot_idx, language, **kwargs):
+        raise RuntimeError(f"{language} marker missing after save")
+
+    monkeypatch.setattr(ez_cdp, "_open_slot", lambda *_args, **_kwargs: calls.append(("open",)) or {"visible_buttons": 1})
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(ez_cdp, "_select_language", lambda *_args, **_kwargs: {"ok": True, "value": "Dutch"})
+    monkeypatch.setattr(ez_cdp, "_set_upload_file", lambda *_args, **_kwargs: {"ok": True, "count": 1, "names": ["image.png"]})
+    monkeypatch.setattr(ez_cdp, "_click_save_and_wait", lambda *_args, **_kwargs: calls.append(("save",)) or {"dialog_closed": True})
+    monkeypatch.setattr(ez_cdp, "_click_cancel", lambda *_args, **_kwargs: calls.append(("cancel",)) or True)
+    monkeypatch.setattr(ez_cdp, "_wait_slot_language_marker", fake_wait_marker, raising=False)
+
+    with pytest.raises(RuntimeError, match="Dutch marker missing after save"):
+        ez_cdp.replace_slot(FakeFrame(), 0, str(image_path), language="Dutch")
+
+    assert calls.count(("save",)) == 2
+    assert calls.count(("cancel",)) == 2
 
 
 def test_fetch_bootstrap_sends_optional_shopify_product_id(monkeypatch):
@@ -1928,6 +2000,16 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
         return {"slot": slot_idx, "status": "ok", "path": path}
 
     monkeypatch.setattr(ez_cdp, "replace_slot", fake_replace_slot)
+    monkeypatch.setattr(
+        ez_cdp,
+        "verify_target_language_markers",
+        lambda frame, expected_slots, language: {
+            "ok": True,
+            "expected": len(expected_slots),
+            "matched": len(expected_slots),
+            "missing": [],
+        },
+    )
 
     result = ez_cdp.replace_many(
         ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
@@ -2015,6 +2097,16 @@ def test_ez_replace_many_pauses_for_review_when_all_slots_already_translated(mon
         ),
     )
     monkeypatch.setattr(ez_cdp, "replace_slot", lambda *args, **kwargs: pytest.fail("no upload expected"))
+    monkeypatch.setattr(
+        ez_cdp,
+        "verify_target_language_markers",
+        lambda frame, expected_slots, language: {
+            "ok": True,
+            "expected": len(expected_slots),
+            "matched": len(expected_slots),
+            "missing": [],
+        },
+    )
 
     result = ez_cdp.replace_many(
         ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
@@ -2028,6 +2120,91 @@ def test_ez_replace_many_pauses_for_review_when_all_slots_already_translated(mon
     assert calls.index(("wait_for_timeout", 5000)) < calls.index(("page_close",))
     output = capsys.readouterr().out
     assert "停留 5 秒" in output
+
+
+def test_ez_replace_many_marks_final_missing_language_markers_failed(monkeypatch, capsys):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    frame = object()
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: frame)
+    monkeypatch.setattr(ez_cdp, "filter_pairs_missing_language_markers", lambda frame, pairs, language: ([], pairs))
+
+    def fake_replace_slot(frame, slot_idx, path, **kwargs):
+        calls.append(("replace_slot", slot_idx, path))
+        return {"slot": slot_idx, "status": "ok", "path": path}
+
+    def fake_verify(frame, expected_slots, language):
+        calls.append(("final_verify", tuple(expected_slots), language))
+        return {"ok": False, "expected": 2, "matched": 1, "missing": [1]}
+
+    monkeypatch.setattr(ez_cdp, "replace_slot", fake_replace_slot)
+    monkeypatch.setattr(ez_cdp, "verify_target_language_markers", fake_verify)
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg")],
+        language="German",
+    )
+
+    assert ("final_verify", (0, 1), "German") in calls
+    assert result == [
+        {"slot": 0, "status": "ok", "path": "C:/tmp/a.jpg"},
+        {
+            "slot": 1,
+            "status": "failed",
+            "path": "C:/tmp/b.jpg",
+            "error": "German marker missing after final verification",
+            "previous_status": "ok",
+        },
+    ]
+    output = capsys.readouterr().out
+    assert "最终校验缺失 German 标记的位置：[1]" in output
+    assert "[轮播图] 整体完成：请求=2 成功=1 跳过=0 失败=1" in output
 
 
 def test_preload_opens_business_page_after_google_first_tab(monkeypatch):
@@ -2321,7 +2498,12 @@ def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
 
     result = ez_cdp.replace_slot(FakeFrame(), 0, "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg", language="German")
 
-    assert result == {"slot": 0, "status": "skipped", "reason": "German already exists"}
+    assert result == {
+        "slot": 0,
+        "status": "skipped",
+        "reason": "German already exists",
+        "path": "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+    }
     assert ("click", 'button[aria-label="Remove German"]') not in calls
 
 
@@ -2373,6 +2555,8 @@ def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch,
                 return {"ok": True, "value": "de"}
             if "input.files" in script:
                 return {"ok": True, "count": 1, "names": ["loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"]}
+            if "querySelectorAll('s-button.image-button')" in script:
+                return [{"slot": 0, "languages": ["German"]}]
             raise AssertionError(script)
 
     monkeypatch.setattr(ez_cdp, "_target_exists", lambda frame, language: False)
@@ -2386,8 +2570,8 @@ def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch,
 
     output = capsys.readouterr().out
     assert result["status"] == "ok"
-    assert "[轮播图][位置 0] 开始：打开翻译对话框" in output
-    assert "[轮播图][位置 0] 完成：设置上传文件" in output
+    assert "开始：打开翻译对话框" in output
+    assert "完成：设置上传文件" in output
     assert "已选文件=loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg" in output
     assert "[轮播图][位置 0] 结果：成功" in output
     assert ("wait_for_timeout", 1000) in calls
