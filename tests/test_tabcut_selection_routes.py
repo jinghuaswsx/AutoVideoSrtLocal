@@ -22,6 +22,10 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "renderMarkOptions(row)" in body
     assert "/xuanpin/api/tabcut/videos/${encodeURIComponent(entityId)}/mark" in body
     assert "/xuanpin/api/tabcut/goods/${encodeURIComponent(entityId)}/mark" in body
+    assert "function normalizeTabcutGotoPage(raw, totalPages)" in body
+    assert "function handleTabcutGotoPage(event, totalPages)" in body
+    assert 'class="tabcut-pager-goto"' in body
+    assert 'onkeydown="handleTabcutGotoPage(event, ${totalPages})"' in body
 
 
 def test_tabcut_video_cards_use_large_left_cover_layout():

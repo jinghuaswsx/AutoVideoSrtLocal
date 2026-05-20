@@ -60,7 +60,10 @@
 .tabcut-muted { color:#64748b; }
 .tabcut-cover { width:54px; height:54px; border-radius:6px; object-fit:cover; background:#eef2f7; }
 .tabcut-product-cover { width:200px; height:200px; border-radius:6px; object-fit:cover; background:#eef2f7; }
-.tabcut-pager { display:flex; gap:8px; justify-content:center; padding:12px; }
+.tabcut-pager { display:flex; align-items:center; gap:8px; justify-content:center; padding:12px; }
+.tabcut-pager-goto { display:inline-flex; align-items:center; gap:6px; color:#64748b; font-size:13px; font-weight:700; white-space:nowrap; }
+.tabcut-pager-goto input { width:68px; height:34px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1f2937; font-size:14px; font-weight:700; text-align:center; outline:none; }
+.tabcut-pager-goto input:focus { border-color:#0f766e; box-shadow:0 0 0 2px rgba(15,118,110,.16); }
 .tabcut-empty { padding:36px; text-align:center; color:#64748b; }
 @media (max-width: 980px) {
   .tabcut-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
@@ -404,12 +407,27 @@ function renderTabcut(data) {
   renderPager(data);
 }
 
+function normalizeTabcutGotoPage(raw, totalPages) {
+  const total = Number(totalPages);
+  const last = Number.isFinite(total) && total > 0 ? Math.floor(total) : 1;
+  const page = Number(String(raw ?? "").trim());
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.min(last, Math.floor(page));
+}
+
+function handleTabcutGotoPage(event, totalPages) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  loadTabcut(normalizeTabcutGotoPage(event.currentTarget.value, totalPages));
+}
+
 function renderPager(data) {
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / data.page_size));
   qs("tabcutPager").innerHTML = `
     <button class="tabcut-btn secondary" ${data.page <= 1 ? "disabled" : ""} onclick="loadTabcut(${data.page - 1})">Prev</button>
     <span class="tabcut-muted">${data.page} / ${totalPages}</span>
-    <button class="tabcut-btn secondary" ${data.page >= totalPages ? "disabled" : ""} onclick="loadTabcut(${data.page + 1})">Next</button>`;
+    <button class="tabcut-btn secondary" ${data.page >= totalPages ? "disabled" : ""} onclick="loadTabcut(${data.page + 1})">Next</button>
+    <label class="tabcut-pager-goto">去 <input type="number" min="1" max="${totalPages}" value="${data.page}" onkeydown="handleTabcutGotoPage(event, ${totalPages})"> 页</label>`;
 }
 
 function matchingMarkElements(selector, entityType, entityId) {

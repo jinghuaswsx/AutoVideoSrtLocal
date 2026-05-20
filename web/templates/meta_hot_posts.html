@@ -39,6 +39,9 @@
 .mh-pager button.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
 .mh-pager button:disabled { opacity:.45; cursor:not-allowed; }
 .mh-pager-info { min-width:190px; text-align:center; }
+.mh-pager-goto { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.mh-pager-goto input { width:68px; height:32px; padding:0 8px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:13px; font-weight:700; text-align:center; outline:none; }
+.mh-pager-goto input:focus { border-color:var(--mh-accent); box-shadow:0 0 0 2px rgba(15,118,110,.16); }
 .meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
 .mh-product-list-panel { padding:12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
 .mh-product-table { width:100%; border-collapse:collapse; table-layout:fixed; }
@@ -1239,6 +1242,20 @@ function switchMetaHotSubtab(tab, options = {}) {
     loadMetaHotPosts(mhPage || 1, options);
   }
 }
+function normalizeMetaHotGotoPage(raw, totalPages) {
+  const total = Number(totalPages);
+  const last = Number.isFinite(total) && total > 0 ? Math.floor(total) : 1;
+  const page = Number(String(raw ?? '').trim());
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.min(last, Math.floor(page));
+}
+function handleMetaHotGotoPage(event, loaderName, totalPages) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const page = normalizeMetaHotGotoPage(event.currentTarget.value, totalPages);
+  const loader = window[loaderName];
+  if (typeof loader === 'function') loader(page);
+}
 function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
   const total = Number(data.total || 0);
   const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
@@ -1261,7 +1278,8 @@ function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
   buttons.push(
     `<button type="button"${disabledNext} onclick="${loaderName}(${Math.min(safeLastPage, page + 1)})">下一页</button>`,
     `<button type="button"${disabledNext} onclick="${loaderName}(${safeLastPage})">末页</button>`,
-    `<span class="mh-pager-info">第 ${totalPages ? page : 0} / ${totalPages} 页 · 共 ${total} 条 · 每页 ${pageSize} 条</span>`
+    `<span class="mh-pager-info">第 ${totalPages ? page : 0} / ${totalPages} 页 · 共 ${total} 条 · 每页 ${pageSize} 条</span>`,
+    `<label class="mh-pager-goto">去 <input type="number" min="1" max="${safeLastPage}" value="${page}" onkeydown="handleMetaHotGotoPage(event, '${loaderName}', ${totalPages})"> 页</label>`
   );
   ['mhPagerTop', 'mhPagerBottom'].forEach(id => {
     qs(id).innerHTML = buttons.join('');
