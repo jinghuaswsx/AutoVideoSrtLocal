@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from appcore.events import EventBus
+from appcore import runner_dispatch
 from appcore.runner_lifecycle import start_tracked_thread
 from web.extensions import socketio
 
@@ -45,3 +46,8 @@ def resume(task_id: str, start_step: str, user_id: int | None = None) -> bool:
         args=(runner, task_id, start_step),
         daemon=False,
     )
+
+
+runner_dispatch.register_omni_translate_runner(
+    start=lambda task_id, user_id=None: start(task_id, user_id=user_id)
+)

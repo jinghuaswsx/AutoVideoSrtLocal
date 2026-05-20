@@ -12,7 +12,7 @@ from appcore.db import query
 log = logging.getLogger(__name__)
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _WAITING_ITEM_STATUSES = {"awaiting_voice"}
-_VOICE_SELECTION_CHILD_TYPES = {"multi_translate", "ja_translate"}
+_VOICE_SELECTION_CHILD_TYPES = {"multi_translate", "omni_translate", "ja_translate"}
 _PARENT_RESUMABLE_STATUSES = {"paused", "interrupted"}
 _STUCK_PARENT_STATUSES = {"failed", "error", "interrupted", "paused", "waiting_manual"}
 _DONE_PARENT_STATUSES = {"done", "cancelled"}
@@ -506,6 +506,8 @@ def _child_detail_url(task_type: str | None, child_task_id: str | None) -> str |
         return None
     if task_type == "ja_translate":
         return f"/ja-translate/{child_task_id}"
+    if task_type == "omni_translate":
+        return f"/omni-translate/{child_task_id}"
     if task_type == "multi_translate":
         return f"/multi-translate/{child_task_id}"
     if task_type == "image_translate":

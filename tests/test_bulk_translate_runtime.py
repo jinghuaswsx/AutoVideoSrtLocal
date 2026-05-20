@@ -286,6 +286,13 @@ def test_create_stores_task_center_child_id(runtime_env, monkeypatch):
     assert state["task_center_task_id"] == 456
 
 
+def test_video_plan_items_default_to_omni_translate_children(runtime_env):
+    mod, _fake_db = runtime_env
+
+    assert mod._child_type_for_kind("video") == "omni_translate"
+    assert mod._child_type_for_kind("videos") == "omni_translate"
+
+
 def test_compute_progress_counts_new_statuses(runtime_env):
     mod, _fake_db = runtime_env
 
@@ -336,7 +343,7 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
     monkeypatch.setattr(
         mod,
         "_create_child_task",
-        lambda parent_id, item, parent_state: ("multi-1", "multi_translate", "running"),
+        lambda parent_id, item, parent_state: ("omni-1", "omni_translate", "running"),
     )
     monkeypatch.setattr(
         mod,
@@ -358,8 +365,8 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
 
     assert fake_db.rows[task_id]["status"] == "waiting_manual"
     state = _load_state(fake_db, task_id)
-    assert state["plan"][0]["child_task_id"] == "multi-1"
-    assert state["plan"][0]["child_task_type"] == "multi_translate"
+    assert state["plan"][0]["child_task_id"] == "omni-1"
+    assert state["plan"][0]["child_task_type"] == "omni_translate"
     assert state["plan"][0]["status"] == "awaiting_voice"
 
 
@@ -546,11 +553,11 @@ def test_run_scheduler_waiting_voice_does_not_block_other_due_items(runtime_env,
     def fake_create_child(parent_id, item, parent_state):
         created.append(item["kind"])
         if item["kind"] == "videos":
-            return "multi-1", "multi_translate", "running"
+            return "omni-1", "omni_translate", "running"
         return "cover-1", "image_translate", "running"
 
     def fake_child_snapshot(task_type, child_task_id):
-        if child_task_id == "multi-1":
+        if child_task_id == "omni-1":
             return {
                 "_project_status": "uploaded",
                 "current_review_step": "voice_match",
@@ -638,9 +645,9 @@ def test_create_child_task_rebuilds_terminal_failed_existing_child(
         )
         fake_db.execute(
             "UPDATE projects SET type = %s WHERE id = %s",
-            ("multi_translate", expected_child_id),
+            ("omni_translate", expected_child_id),
         )
-        return expected_child_id, "multi_translate", "running"
+        return expected_child_id, "omni_translate", "running"
 
     monkeypatch.setattr(mod, "_create_video_child", fake_create_video)
 
@@ -651,12 +658,12 @@ def test_create_child_task_rebuilds_terminal_failed_existing_child(
     )
 
     assert child_id == expected_child_id
-    assert child_type == "multi_translate"
+    assert child_type == "omni_translate"
     assert child_status == "running"
     # 关键回归：必须真的走 _create_video_child（启动 runner），而不是 return existing
     assert create_calls == [("parent-1", "videos")]
     # 旧 row 已被替换，现在新 row 的 status 是 fake_create 写的 'planning' / 之后的更新
-    assert fake_db.rows[expected_child_id]["type"] == "multi_translate"
+    assert fake_db.rows[expected_child_id]["type"] == "omni_translate"
 
 
 def test_create_child_task_drops_orphan_row_when_creator_raises(runtime_env, monkeypatch):
@@ -759,8 +766,6 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     )
     monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
 
-    from web.services import multi_pipeline_runner
-
     def fake_create(task_id, video_path, task_dir, original_filename, user_id):
         created.update({
             "task_id": task_id,
@@ -788,7 +793,11 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     monkeypatch.setattr(mod.store, "update", fake_update)
     monkeypatch.setattr(mod.store, "set_preview_file", fake_set_preview_file)
     monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
-    monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: started.append((task_id, user_id)))
+    monkeypatch.setattr(
+        mod.runner_dispatch,
+        "start_omni_translate_runner",
+        lambda task_id, user_id=None: started.append((task_id, user_id)) or True,
+    )
 
     child_task_id, child_type, status = mod._create_video_child(
         "parent-1",
@@ -800,7 +809,7 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
         },
     )
 
-    assert child_type == "multi_translate"
+    assert child_type == "omni_translate"
     assert status == "running"
     assert created["download"] == (raw_key, created["video_path"])
     assert started == [(child_task_id, 1)]
@@ -819,13 +828,12 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     assert re.fullmatch(r"raw-demo-pt-\d{10}", updated[child_task_id]["display_name"])
 
 
-def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatch, tmp_path):
+def test_create_video_child_routes_ja_to_omni_translate(runtime_env, monkeypatch, tmp_path):
     mod, _fake_db = runtime_env
     raw_key = "1/medias/77/raw_sources/raw-ja-demo.mp4"
     created = {}
     updated = {}
-    multi_started = []
-    ja_started = []
+    omni_started = []
 
     monkeypatch.setattr(mod, "OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr(mod, "UPLOAD_DIR", str(tmp_path / "uploads"))
@@ -842,8 +850,6 @@ def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatc
         },
     )
     monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
-
-    from web.services import ja_pipeline_runner, multi_pipeline_runner
 
     def fake_create(task_id, video_path, task_dir, original_filename, user_id):
         created.update({
@@ -866,8 +872,11 @@ def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatc
     monkeypatch.setattr(mod.store, "create", fake_create)
     monkeypatch.setattr(mod.store, "update", fake_update)
     monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
-    monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: multi_started.append((task_id, user_id)))
-    monkeypatch.setattr(ja_pipeline_runner, "start", lambda task_id, user_id: ja_started.append((task_id, user_id)))
+    monkeypatch.setattr(
+        mod.runner_dispatch,
+        "start_omni_translate_runner",
+        lambda task_id, user_id=None: omni_started.append((task_id, user_id)) or True,
+    )
 
     child_task_id, child_type, status = mod._create_video_child(
         "parent-ja-1",
@@ -879,12 +888,11 @@ def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatc
         },
     )
 
-    assert child_type == "multi_translate"
+    assert child_type == "omni_translate"
     assert status == "running"
     assert created["download"] == (raw_key, created["video_path"])
-    assert multi_started == [(child_task_id, 1)]
-    assert ja_started == []
-    assert updated[child_task_id]["type"] == "multi_translate"
+    assert omni_started == [(child_task_id, 1)]
+    assert updated[child_task_id]["type"] == "omni_translate"
     assert updated[child_task_id]["target_lang"] == "ja"
 
 

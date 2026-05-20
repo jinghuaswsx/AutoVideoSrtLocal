@@ -51,7 +51,7 @@ _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_v
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
 _RUNNING_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
-_MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
+_OMNI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 
 
 def _positive_int_or_none(value) -> int | None:
@@ -838,7 +838,7 @@ def _child_type_for_kind(kind: str | None) -> str:
     if kind in {"detail", "detail_images", "cover", "video_covers"}:
         return "image_translate"
     if kind in {"video", "videos"}:
-        return "multi_translate"
+        return "omni_translate"
     return ""
 
 
@@ -1169,9 +1169,9 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     lang = (item.get("lang") or "").strip()
-    if lang not in _MULTI_TRANSLATE_SUPPORTED_LANGS:
-        raise ValueError(f"unsupported multi_translate target lang: {lang}")
-    child_project_type = "multi_translate"
+    if lang not in _OMNI_TRANSLATE_SUPPORTED_LANGS:
+        raise ValueError(f"unsupported omni_translate target lang: {lang}")
+    child_project_type = "omni_translate"
 
     source_raw_id = int((item.get("ref") or {}).get("source_raw_id") or 0)
     raw_source = medias.get_raw_source(source_raw_id)
@@ -1204,7 +1204,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}-{datetime.now().strftime('%m%d%H%M%S')}",
         target_lang=lang,
         # media_raw_sources 表无 lang 列，业务上 raw 素材即英文（plan 也只查 lang='en'），
-        # 与 multi_translate 单独上传路径保持一致：必须显式标记用户已选源语言，
+        # 与全能视频翻译单独上传路径保持一致：必须显式标记用户已选源语言，
         # 否则 _step_asr_normalize 会因 source_language 为空直接 failed。
         source_language="en",
         user_specified_source_language=True,
@@ -1232,7 +1232,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         },
     )
     store.set_preview_file(child_task_id, "source_video", video_path)
-    runner_dispatch.start_multi_translate_runner(child_task_id, user_id=user_id)
+    runner_dispatch.start_omni_translate_runner(child_task_id, user_id=user_id)
     return child_task_id, child_project_type, "running"
 
 
@@ -1260,7 +1260,7 @@ def _materialize_multi_translate_video(
         ]
     )
     if not local_path:
-        raise RuntimeError(f"multi_translate output missing for child task {child_task_id}")
+        raise RuntimeError(f"video translate output missing for child task {child_task_id}")
     ext = Path(local_path).suffix or ".mp4"
     object_key = f"{int(raw_source.get('user_id') or 0)}/medias/{product_id}/{lang}_{base_name}{ext}"
     with open(local_path, "rb") as fh:

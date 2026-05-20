@@ -5,17 +5,20 @@ from collections.abc import Callable
 ImageStartFunc = Callable[[str, int | None], bool]
 ImageRunningFunc = Callable[[str], bool]
 MultiStartFunc = Callable[[str, int | None], object]
+OmniStartFunc = Callable[[str, int | None], object]
 
 _image_translate_start: ImageStartFunc | None = None
 _image_translate_is_running: ImageRunningFunc | None = None
 _multi_translate_start: MultiStartFunc | None = None
+_omni_translate_start: OmniStartFunc | None = None
 
 
 def clear_runner_registry() -> None:
-    global _image_translate_start, _image_translate_is_running, _multi_translate_start
+    global _image_translate_start, _image_translate_is_running, _multi_translate_start, _omni_translate_start
     _image_translate_start = None
     _image_translate_is_running = None
     _multi_translate_start = None
+    _omni_translate_start = None
 
 
 def register_image_translate_runner(
@@ -31,6 +34,11 @@ def register_image_translate_runner(
 def register_multi_translate_runner(*, start: MultiStartFunc) -> None:
     global _multi_translate_start
     _multi_translate_start = start
+
+
+def register_omni_translate_runner(*, start: OmniStartFunc) -> None:
+    global _omni_translate_start
+    _omni_translate_start = start
 
 
 def start_image_translate_runner(task_id: str, user_id: int | None = None) -> bool:
@@ -49,3 +57,9 @@ def start_multi_translate_runner(task_id: str, user_id: int | None = None) -> ob
     if _multi_translate_start is None:
         raise RuntimeError("multi_translate runner is not registered")
     return _multi_translate_start(task_id, user_id)
+
+
+def start_omni_translate_runner(task_id: str, user_id: int | None = None) -> object:
+    if _omni_translate_start is None:
+        raise RuntimeError("omni_translate runner is not registered")
+    return _omni_translate_start(task_id, user_id)

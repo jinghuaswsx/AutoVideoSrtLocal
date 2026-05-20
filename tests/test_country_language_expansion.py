@@ -27,7 +27,7 @@ def test_video_translation_supports_new_country_languages():
 
     for code in NEW_COUNTRY_LANGS:
         assert code in VIDEO_SUPPORTED_LANGS
-        assert code in btr._MULTI_TRANSLATE_SUPPORTED_LANGS
+        assert code in btr._OMNI_TRANSLATE_SUPPORTED_LANGS
         assert code in registry.SUPPORTED_LANGS
         assert code in admin_prompts.SUPPORTED_LANGS
         assert code in multi_translate.SUPPORTED_LANGS

@@ -214,6 +214,47 @@ def test_list_product_tasks_exposes_ja_translate_voice_selection_link(monkeypatc
     assert child["manual_step"] == "voice_selection"
 
 
+def test_list_product_tasks_exposes_omni_translate_voice_selection_link(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    monkeypatch.setattr(
+        mod,
+        "query",
+        lambda sql, args=None: [
+            {
+                "id": "bt-omni-1",
+                "status": "running",
+                "state_json": {
+                    "product_id": 417,
+                    "target_langs": ["de"],
+                    "content_types": ["videos"],
+                    "plan": [
+                        {
+                            "idx": 0,
+                            "kind": "videos",
+                            "lang": "de",
+                            "status": "awaiting_voice",
+                            "child_task_id": "omni-1",
+                            "child_task_type": "omni_translate",
+                            "ref": {"source_raw_id": 17},
+                        }
+                    ],
+                },
+                "created_at": datetime(2026, 5, 21, 9, 30, 0),
+            }
+        ],
+    )
+    monkeypatch.setattr(mod, "sync_task_with_children_once", lambda task_id, user_id=None: None, raising=False)
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"de": "德语"}.get(code, code))
+    monkeypatch.setattr(mod.medias, "get_raw_source", lambda raw_source_id: {"id": raw_source_id, "display_name": ""})
+
+    items = mod.list_product_tasks(1, 417)
+
+    child = items[0]["items"][0]
+    assert child["detail_url"] == "/omni-translate/omni-1"
+    assert child["manual_step"] == "voice_selection"
+
+
 def test_list_product_tasks_refreshes_child_status_before_serializing(monkeypatch):
     from appcore import bulk_translate_projection as mod
 
