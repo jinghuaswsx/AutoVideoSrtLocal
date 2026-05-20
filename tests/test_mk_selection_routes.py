@@ -213,6 +213,10 @@ def test_mk_selection_material_archive_tabs_have_top_pagers_and_page100():
     assert 'id="mkYesterdayTop100PagerTop"' in template
     assert 'id="mkYesterdayTop100PagerBottom"' in template
     assert "function renderMkArchivePager(containerIds, loaderName, page, total)" in template
+    assert "`<button onclick=\"${loaderName}(1)\" ${pageNum <= 1 ? 'disabled' : ''}>首页</button>`" in template
+    assert "`<button onclick=\"${loaderName}(${totalPages})\" ${pageNum >= totalPages ? 'disabled' : ''}>末页</button>`" in template
+    assert template.index(">首页</button>") < template.index(">上一页</button>")
+    assert template.index(">下一页</button>") < template.index(">末页</button>")
     assert "renderMkArchivePager(['mkVideoPagerTop', 'mkVideoPagerBottom'], 'loadMkLocalMaterialLibrary', page, total);" in template
     assert "renderMkArchivePager(['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'], 'loadMkYesterdayTop100', page, total);" in template
 

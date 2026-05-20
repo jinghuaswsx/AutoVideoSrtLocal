@@ -593,9 +593,11 @@ function renderMkArchivePager(containerIds, loaderName, page, total) {
   const totalPages = Math.max(1, Math.ceil(Number(total || 0) / MK_VIDEO_PAGE_SIZE));
   const prevPage = Math.max(1, pageNum - 1);
   const nextPage = Math.min(totalPages, pageNum + 1);
-  const pagerHtml = `<button onclick="${loaderName}(${prevPage})" ${pageNum <= 1 ? 'disabled' : ''}>上一页</button>` +
+  const pagerHtml = `<button onclick="${loaderName}(1)" ${pageNum <= 1 ? 'disabled' : ''}>首页</button>` +
+    `<button onclick="${loaderName}(${prevPage})" ${pageNum <= 1 ? 'disabled' : ''}>上一页</button>` +
     ` <span>${pageNum} / ${totalPages}</span> ` +
-    `<button onclick="${loaderName}(${nextPage})" ${pageNum >= totalPages ? 'disabled' : ''}>下一页</button>`;
+    `<button onclick="${loaderName}(${nextPage})" ${pageNum >= totalPages ? 'disabled' : ''}>下一页</button>` +
+    `<button onclick="${loaderName}(${totalPages})" ${pageNum >= totalPages ? 'disabled' : ''}>末页</button>`;
   containerIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = pagerHtml;
