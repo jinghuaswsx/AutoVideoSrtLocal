@@ -187,15 +187,6 @@ def api_import_and_create():
         )
     except mk_import_svc.DuplicateError as e:
         return _json_response({"error": f"视频已入库: {e}"}, 409)
-    except mk_import_svc.ProductLinkUnavailableError as e:
-        return _json_response(
-            {
-                "error": "product_link_unavailable",
-                "detail": str(e),
-                "message": "Shopify 产品链接不可访问，请先上架产品链接后再创建任务",
-            },
-            409,
-        )
     except mk_import_svc.DownloadError as e:
         return _json_response({"error": f"下载失败: {e}"}, 502)
     except mk_import_svc.StorageError as e:

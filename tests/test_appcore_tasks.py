@@ -37,6 +37,36 @@ def test_find_target_lang_item_normalizes_country_code(monkeypatch):
     assert calls[0] == (7, "de")
 
 
+def test_import_and_create_task_does_not_request_product_link_gate(monkeypatch):
+    captured = {}
+
+    def fake_import_mk_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "is_new_product": True,
+        }
+
+    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", fake_import_mk_video)
+    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
+
+    result = tasks.import_and_create_task(
+        mk_video_metadata={"filename": "demo.mp4"},
+        translator_id=7,
+        countries=["DE"],
+        actor_user_id=1,
+    )
+
+    assert "require_product_link_available" not in captured
+    assert result == {
+        "parent_task_id": 56,
+        "media_product_id": 12,
+        "media_item_id": 34,
+        "is_new_product": True,
+    }
+
+
 import pytest
 from appcore.db import execute, query_one, query_all
 

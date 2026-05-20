@@ -8,7 +8,6 @@ from web.services.mk_import import (
     build_mk_import_db_failed_response,
     build_mk_import_download_failed_response,
     build_mk_import_duplicate_response,
-    build_mk_import_product_link_unavailable_response,
     build_mk_import_storage_failed_response,
     build_mk_import_success_response,
     build_mk_import_too_many_filenames_response,
@@ -38,7 +37,6 @@ def test_mk_import_video_error_responses_are_stable():
     download = build_mk_import_download_failed_response(RuntimeError("404"))
     storage = build_mk_import_storage_failed_response(RuntimeError("tos"))
     db = build_mk_import_db_failed_response(RuntimeError("sql"))
-    product_link = build_mk_import_product_link_unavailable_response(RuntimeError("HTTP 404"))
 
     assert admin.status_code == 403
     assert admin.payload == {"error": "admin_required"}
@@ -52,8 +50,6 @@ def test_mk_import_video_error_responses_are_stable():
     assert storage.payload == {"error": "storage_failed", "detail": "tos"}
     assert db.status_code == 500
     assert db.payload == {"error": "db_failed", "detail": "sql"}
-    assert product_link.status_code == 409
-    assert product_link.payload == {"error": "product_link_unavailable", "detail": "HTTP 404"}
 
 
 def test_mk_import_success_response_returns_service_result():

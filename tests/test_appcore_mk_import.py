@@ -36,44 +36,66 @@ def test_create_product_payload_uses_rjc_product_code_and_link():
     assert payload["product_link"] == "https://omurio.com/products/abc-def-rjc"
 
 
-def test_product_link_precheck_blocks_unavailable_link(monkeypatch):
-    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"))
-
-    with pytest.raises(mk_import.ProductLinkUnavailableError, match="HTTP 404"):
-        mk_import._assert_product_link_available("https://newjoyloo.com/products/missing-rjc")
-
-
-def test_import_mk_video_checks_product_link_before_download(monkeypatch):
+def test_import_mk_video_does_not_probe_product_link(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
     monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
     monkeypatch.setattr(
         mk_import,
         "_assert_product_link_available",
-        lambda link: (_ for _ in ()).throw(mk_import.ProductLinkUnavailableError(link, "HTTP 404")),
+        lambda link: (_ for _ in ()).throw(AssertionError("product link should not be probed")),
+        raising=False,
     )
-    monkeypatch.setattr(
-        mk_import,
-        "_download_mp4",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not start")),
-    )
-    monkeypatch.setattr(
-        mk_import,
-        "execute",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("product should not be inserted")),
+    monkeypatch.setattr(mk_import, "execute", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(mk_import, "_download_cover", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/demo.mp4",
+            "filename": "demo.mp4",
+            "product_name": "Demo",
+            "product_code": "ABC-DEF",
+            "product_link": "https://newjoyloo.com/products/abc-def-rjc",
+        },
+        translator_id=1,
+        actor_user_id=1,
     )
 
-    with pytest.raises(mk_import.ProductLinkUnavailableError):
-        mk_import.import_mk_video(
-            mk_video_metadata={
-                "mp4_url": "https://cdn.example/demo.mp4",
-                "filename": "demo.mp4",
-                "product_name": "Demo",
-                "product_code": "ABC-DEF",
-                "product_link": "https://newjoyloo.com/products/abc-def-rjc",
-            },
-            translator_id=1,
-            actor_user_id=1,
-        )
+    assert result["media_product_id"] == 123
+    assert result["media_item_id"] == 456
+    assert result["is_new_product"] is True
+
+
+def test_find_existing_product_item_by_meta_does_not_probe_product_link(monkeypatch):
+    monkeypatch.setattr(
+        mk_import,
+        "_assert_product_link_available",
+        lambda link: (_ for _ in ()).throw(AssertionError("product link should not be probed")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: {
+            "id": 123,
+            "product_code": "abc-def-rjc",
+            "product_link": "https://newjoyloo.com/products/abc-def-rjc",
+        },
+    )
+    monkeypatch.setattr(mk_import, "query_one", lambda *args, **kwargs: {"id": 456})
+
+    assert mk_import.find_existing_product_item_by_meta({"product_code": "ABC-DEF"}) == {
+        "product_id": 123,
+        "item_id": 456,
+    }
 
 
 def test_exception_classes_exist():

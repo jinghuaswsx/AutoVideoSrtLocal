@@ -66,7 +66,3 @@ def build_mk_import_storage_failed_response(exc: Exception) -> MkImportResponse:
 
 def build_mk_import_db_failed_response(exc: Exception) -> MkImportResponse:
     return MkImportResponse({"error": "db_failed", "detail": str(exc)}, 500)
-
-
-def build_mk_import_product_link_unavailable_response(exc: Exception) -> MkImportResponse:
-    return MkImportResponse({"error": "product_link_unavailable", "detail": str(exc)}, 409)
