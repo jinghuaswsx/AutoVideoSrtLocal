@@ -258,6 +258,17 @@ def test_mk_selection_import_success_marks_all_matching_buttons():
     assert "if (!importSucceeded)" in template
 
 
+def test_mk_selection_imported_check_uses_post_json_to_avoid_long_urls():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "async function mkiFetchImportedFilenames(chunk)" in template
+    assert "fetch('/mk-import/check', {" in template
+    assert "method: 'POST'" in template
+    assert "JSON.stringify({filenames: chunk})" in template
+    assert "X-CSRFToken" in template
+    assert "fetch('/mk-import/check?filenames='" not in template
+
+
 def test_mk_import_progress_medias_button_searches_product_code():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

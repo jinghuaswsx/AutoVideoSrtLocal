@@ -1398,6 +1398,20 @@ function mkiMarkImportedFilename(filename) {
   });
 }
 
+async function mkiFetchImportedFilenames(chunk) {
+  const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  const headers = {'Content-Type': 'application/json'};
+  if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+  const r = await fetch('/mk-import/check', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({filenames: chunk}),
+  });
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.imported || [];
+}
+
 async function mkiCheckRenderedButtons() {
   const allBtns = Array.from(document.querySelectorAll('.mki-btn--add'));
   if (!allBtns.length) return;
@@ -1424,10 +1438,8 @@ async function mkiCheckRenderedButtons() {
   for (let i = 0; i < newFilenames.length; i += 100) {
     const chunk = newFilenames.slice(i, i + 100);
     try {
-      const r = await fetch('/mk-import/check?filenames=' + encodeURIComponent(chunk.join(',')));
-      if (!r.ok) continue;
-      const data = await r.json();
-      (data.imported || []).forEach(f => imported.add(f));
+      const importedChunk = await mkiFetchImportedFilenames(chunk);
+      importedChunk.forEach(f => imported.add(f));
     } catch (e) { console.warn('mki check failed', e); }
   }
 
