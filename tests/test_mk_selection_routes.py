@@ -203,17 +203,20 @@ def test_mk_selection_product_rows_include_material_library_button():
 def test_mk_selection_product_rows_show_library_status_and_color_classes():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert '<th style="width:100px">是否入库</th>' in template
+    assert '<th style="width:190px">产品状态</th>' in template
     assert 'colspan="13"' in template
     assert ".mk-library-row--green td" in template
     assert ".mk-library-row--red td" in template
     assert ".mk-library-row--yellow td" in template
     assert "function libraryStatusTitle(status)" in template
-    assert "function renderLibraryStatusBadge(status)" in template
+    assert "function libraryStatusMetricLine(status)" in template
+    assert "function renderLibraryStatusCell(status)" in template
+    assert "近一个月消耗" in template
+    assert "保本ROAS" in template
     assert "const libraryStatus = r.library_status || {};" in template
     assert "const rowStatusClass = libraryStatus.card_status && libraryStatus.card_status !== 'none'" in template
     assert "const linked = libraryStatus.in_library" in template
-    assert "${renderLibraryStatusBadge(libraryStatus)}</td>" in template
+    assert "${renderLibraryStatusCell(libraryStatus)}</td>" in template
 
 
 def test_mk_selection_product_rows_show_200_cover_and_copy_buttons():

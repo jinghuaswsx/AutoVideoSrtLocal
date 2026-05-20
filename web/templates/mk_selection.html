@@ -54,6 +54,8 @@
 .mk-library-row--red:hover td { background:oklch(95% 0.040 25); }
 .mk-library-row--yellow td { background:oklch(98% 0.040 85); }
 .mk-library-row--yellow:hover td { background:oklch(96% 0.050 85); }
+.mk-library-status-cell { min-width:160px; display:flex; flex-direction:column; align-items:center; gap:5px; line-height:1.35; }
+.mk-library-status-metrics { max-width:178px; color:var(--oc-fg-muted); font-size:12px; line-height:1.35; word-break:break-word; }
 .oc-link { color:var(--oc-accent); text-decoration:none; }
 .oc-link:hover { text-decoration:underline; }
 .oc-pager { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-3); padding:var(--oc-sp-4) 0; font-size:18px; color:var(--oc-fg-muted); }
@@ -194,7 +196,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
             <th style="width:220px">商品图</th>
             <th style="width:280px; text-align:left;">产品名称</th>
             <th style="width:180px; text-align:left;">中文产品名</th>
-            <th style="width:100px">是否入库</th>
+            <th style="width:190px">产品状态</th>
             <th style="width:100px">店铺</th>
             <th style="width:90px" class="text-right">付款销量</th>
             <th style="width:110px" class="text-right">销售额</th>
@@ -418,6 +420,29 @@ function renderLibraryStatusBadge(status) {
   return `<span class="oc-badge oc-badge--${cls}" title="${escapeHtml(title)}">${label}</span>`;
 }
 
+function formatLibraryStatusNumber(value) {
+  if (value === null || value === undefined || value === '') return '--';
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(2) : '--';
+}
+
+function libraryStatusMetricLine(status) {
+  const s = status || {};
+  const spend = s.in_library ? `$${formatLibraryStatusNumber(s.ad_spend_usd || 0)}` : '--';
+  const roas = s.in_library ? formatLibraryStatusNumber(s.roas) : '--';
+  const breakeven = s.in_library ? formatLibraryStatusNumber(s.breakeven_roas) : '--';
+  return `近一个月消耗 ${spend} · ROAS ${roas} · 保本ROAS ${breakeven}`;
+}
+
+function renderLibraryStatusCell(status) {
+  const s = status || {};
+  const title = libraryStatusTitle(s);
+  return `<div class="mk-library-status-cell" title="${escapeHtml(title)}">
+    ${renderLibraryStatusBadge(s)}
+    <span class="mk-library-status-metrics">${escapeHtml(libraryStatusMetricLine(s))}</span>
+  </div>`;
+}
+
 function fmtMkSpendText(raw, parsed) {
   const text = String(raw || '').trim();
   if (text && text !== '0') return text;
@@ -602,7 +627,7 @@ async function loadData(page) {
         </div>
       </td>
       <td title="${escapeHtml(cnName)}" style="text-align:left;">${escapeHtml(cnNameShort)}</td>
-      <td>${renderLibraryStatusBadge(libraryStatus)}</td>
+      <td>${renderLibraryStatusCell(libraryStatus)}</td>
       <td>${escapeHtml(r.store || '--')}</td>
       <td class="text-right text-mono">${Number(r.sales_count || 0).toLocaleString()}</td>
       <td class="text-right text-mono">${escapeHtml(r.revenue_main || '--')}</td>
