@@ -485,6 +485,206 @@ def test_multi_ja_tts_uses_shared_loop_with_character_budget_adapter(tmp_path, m
     assert updated["variants"]["normal"]["tts_script"]["full_text"] == ja_text
 
 
+def test_multi_tts_keeps_full_video_target_when_asr_has_no_large_gap(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-no-asr-gap"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    audio = tmp_path / "tts_full.round_1.mp3"
+    audio.write_bytes(b"audio")
+    localized_translation = {
+        "full_text": "Natural target copy.",
+        "sentences": [
+            {"index": 0, "text": "Natural target copy.", "source_segment_indices": [0]},
+        ],
+    }
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="es",
+        source_language="en",
+        selected_voice_id="voice-es",
+        script_segments=[
+            {"index": 0, "text": "first", "start_time": 0.0, "end_time": 2.0},
+            {"index": 1, "text": "second", "start_time": 2.2, "end_time": 4.0},
+        ],
+        variants={"normal": {"localized_translation": localized_translation}},
+        localized_translation=localized_translation,
+    )
+
+    captured = {}
+
+    def fake_tts_loop(**kwargs):
+        captured.update(kwargs)
+        return {
+            "localized_translation": kwargs["initial_localized_translation"],
+            "tts_script": {
+                "full_text": "Natural target copy.",
+                "blocks": [
+                    {
+                        "index": 0,
+                        "text": "Natural target copy.",
+                        "sentence_indices": [0],
+                        "source_segment_indices": [0],
+                    },
+                ],
+                "subtitle_chunks": [],
+            },
+            "tts_audio_path": str(audio),
+            "tts_segments": [
+                {
+                    "index": 0,
+                    "text": "first",
+                    "translated": "Natural target copy.",
+                    "tts_text": "Natural target copy.",
+                    "source_segment_indices": [0],
+                    "start_time": 0.0,
+                    "end_time": 2.0,
+                    "tts_duration": 4.0,
+                    "tts_path": str(audio),
+                },
+            ],
+            "rounds": [{"round": 1, "audio_duration": 4.0, "tts_char_count": 20}],
+            "final_round": 1,
+        }
+
+    runner = _make_runner()
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_tts_loop)
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 4.5)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner._resolve_task_translate_provider", lambda *a, **kw: "openrouter")
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake-key")
+    monkeypatch.setattr("appcore.tts_engines.elevenlabs.ElevenLabsEngine.get_audio_duration", lambda self, path: 4.0)
+    monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kw: None)
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["video_duration"] == 4.5
+    assert updated["variants"]["normal"]["audio_timeline_mode"] == "default_full_video"
+    assert updated["variants"]["normal"]["timeline_manifest"]
+
+
+def test_multi_tts_uses_asr_window_budget_when_large_gaps_exist(tmp_path, monkeypatch):
+    from appcore import task_state
+    import appcore.runtime._pipeline_runner as pipeline_runner
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **kw: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **kw: None)
+
+    task_id = "multi-asr-gap"
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    round_audio = tmp_path / "tts_full.round_1.mp3"
+    round_audio.write_bytes(b"audio")
+    rebuilt_audio = tmp_path / "tts_full.normal.mp3"
+    localized_translation = {
+        "full_text": "Gap aware target copy.",
+        "sentences": [
+            {"index": 0, "text": "Gap aware target copy.", "source_segment_indices": [0]},
+        ],
+    }
+    task_state.create(task_id, str(video), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="es",
+        source_language="en",
+        selected_voice_id="voice-es",
+        script_segments=[
+            {"index": 0, "text": "first", "start_time": 3.0, "end_time": 5.0},
+            {"index": 1, "text": "second", "start_time": 8.5, "end_time": 10.0},
+            {"index": 2, "text": "third", "start_time": 10.2, "end_time": 12.0},
+        ],
+        variants={"normal": {"localized_translation": localized_translation}},
+        localized_translation=localized_translation,
+    )
+
+    captured = {}
+
+    def fake_tts_loop(**kwargs):
+        captured.update(kwargs)
+        return {
+            "localized_translation": kwargs["initial_localized_translation"],
+            "tts_script": {
+                "full_text": "Gap aware target copy.",
+                "blocks": [
+                    {
+                        "index": 0,
+                        "text": "Gap aware target copy.",
+                        "sentence_indices": [0],
+                        "source_segment_indices": [0],
+                    },
+                ],
+                "subtitle_chunks": [],
+            },
+            "tts_audio_path": str(round_audio),
+            "tts_segments": [
+                {
+                    "index": 0,
+                    "text": "first",
+                    "translated": "Gap aware target copy.",
+                    "tts_text": "Gap aware target copy.",
+                    "source_segment_indices": [0],
+                    "start_time": 3.0,
+                    "end_time": 5.0,
+                    "tts_duration": 2.0,
+                    "tts_path": str(round_audio),
+                },
+                {
+                    "index": 1,
+                    "text": "second",
+                    "translated": "Second line.",
+                    "tts_text": "Second line.",
+                    "source_segment_indices": [1],
+                    "start_time": 8.5,
+                    "end_time": 10.0,
+                    "tts_duration": 1.5,
+                    "tts_path": str(round_audio),
+                },
+            ],
+            "rounds": [{"round": 1, "audio_duration": 3.5, "tts_char_count": 30}],
+            "final_round": 1,
+        }
+
+    rebuild_calls = []
+
+    def fake_rebuild(task_dir, segments, variant="av", *, total_duration=None):
+        rebuild_calls.append({
+            "segments": segments,
+            "variant": variant,
+            "total_duration": total_duration,
+        })
+        rebuilt_audio.write_bytes(b"rebuilt")
+        return str(rebuilt_audio)
+
+    runner = _make_runner()
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_tts_loop)
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 20.0)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner._resolve_task_translate_provider", lambda *a, **kw: "openrouter")
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake-key")
+    monkeypatch.setattr("appcore.tts_engines.elevenlabs.ElevenLabsEngine.get_audio_duration", lambda self, path: 3.5)
+    monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kw: None)
+    monkeypatch.setattr(pipeline_runner, "_rebuild_tts_full_audio_from_segments", fake_rebuild)
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert captured["video_duration"] == 5.5
+    assert rebuild_calls[0]["variant"] == "normal"
+    assert rebuild_calls[0]["total_duration"] == 20.0
+    assert rebuild_calls[0]["segments"][0]["audio_start_time"] == 3.0
+    assert rebuild_calls[0]["segments"][1]["audio_start_time"] == 8.5
+    assert updated["variants"]["normal"]["audio_timeline_mode"] == "asr_window_conditional"
+    assert updated["variants"]["normal"]["timeline_manifest"] is None
+    assert updated["timeline_manifest"] is None
+    assert updated["asr_window_gap_analysis"]["active_speech_budget"] == 5.5
+
+
 def test_multi_ja_subtitle_uses_timed_japanese_chunks(tmp_path, monkeypatch):
     from appcore import task_state
 

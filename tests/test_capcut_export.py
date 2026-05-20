@@ -174,6 +174,110 @@ def test_capcut_export_treats_missing_timeline_manifest_as_empty(tmp_path, monke
     assert manifest["timeline_manifest"] == {}
 
 
+def test_capcut_export_mutes_embedded_video_track_audio(tmp_path, monkeypatch):
+    class FakeScript:
+        def __init__(self, draft_dir):
+            self.draft_dir = draft_dir
+            self.tracks = []
+
+        def add_track(self, track_type, track_name=None, name=None, **kwargs):
+            self.tracks.append({
+                "type": track_type,
+                "name": track_name or name,
+                "segments": [],
+            })
+            return self
+
+        def add_segment(self, segment, track_name=None, **kwargs):
+            for track in self.tracks:
+                if track.get("name") == track_name:
+                    track["segments"].append({
+                        "id": f"{track_name}_segment",
+                        "volume": 1.0,
+                        "last_nonzero_volume": 1.0,
+                    })
+                    break
+            return self
+
+        def import_srt(self, path, **kwargs):
+            return self
+
+        def save(self):
+            (self.draft_dir / "draft_content.json").write_text(
+                json.dumps({"tracks": self.tracks}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript(draft_dir)
+
+    class FakeAudioSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeVideoSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_module = types.ModuleType("pyJianYingDraft")
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = FakeAudioSegment
+    fake_module.VideoSegment = FakeVideoSegment
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr("pipeline.capcut._probe_media_duration", lambda path: 10.0)
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    ambience = tmp_path / "ambience.wav"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    ambience.write_bytes(b"ambience")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={
+            "video_duration": 10.0,
+            "total_tts_duration": 10.0,
+            "segments": [
+                {
+                    "timeline_start": 0.0,
+                    "video_ranges": [{"start": 0.0, "end": 10.0}],
+                }
+            ],
+        },
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+        accompaniment_audio_path=str(ambience),
+    )
+
+    draft_content = json.loads(
+        (Path(export["project_dir"]) / "draft_content.json").read_text(encoding="utf-8")
+    )
+    track_volumes = {
+        track["name"]: [segment["volume"] for segment in track.get("segments", [])]
+        for track in draft_content["tracks"]
+    }
+    assert track_volumes["video"] == [0.0]
+    assert track_volumes["audio"] == [1.0]
+    assert track_volumes["ambience"] == [1.0]
+
+
 def test_capcut_export_uses_video_filename_for_stable_capcut_name(tmp_path, monkeypatch):
     fake_module = types.ModuleType("pyJianYingDraft")
     calls = []

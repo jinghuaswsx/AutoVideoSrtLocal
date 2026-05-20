@@ -67,6 +67,8 @@ def test_original_translate_builds_av_sentences(monkeypatch):
     assert updates["source_full_text"] == "Hello world"
     assert updates["variants"]["av"]["sentences"][0]["text"] == "Hello world"
     assert updates["variants"]["av"]["sentences"][0]["target_duration"] == 1.5
+    assert updates["variants"]["av"]["sentences"][0]["source_start_time"] == 0.0
+    assert updates["variants"]["av"]["sentences"][0]["source_end_time"] == 1.5
     assert "preserve_text" not in updates["variants"]["av"]["sentences"][0]
 
 

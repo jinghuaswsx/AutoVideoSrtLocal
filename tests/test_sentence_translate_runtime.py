@@ -160,6 +160,7 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     assert captured["initial_text"] == "Dieses Serum fühlt sich frisch an."
     assert saved["steps"]["tts"] == "done"
     assert variant["sentences"][0]["text"] == "Frisch auf der Haut."
+    assert variant["audio_timeline_mode"] == "asr_window_primary"
     assert variant["av_debug"]["summary"]["text_rewrite_attempts"] == 1
     assert saved["tts_audio_path"] == str(final_audio)
     assert rate_updates[0] == {

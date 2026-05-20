@@ -160,6 +160,33 @@ def _rewrite_draft_content_paths(project_dir: Path, jianying_project_dir: PureWi
     draft_content_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _mute_video_track_audio(project_dir: Path) -> None:
+    draft_content_path = project_dir / "draft_content.json"
+    if not draft_content_path.exists():
+        return
+
+    try:
+        data = json.loads(draft_content_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+
+    changed = False
+    for track in data.get("tracks", []) or []:
+        if not isinstance(track, dict):
+            continue
+        if str(track.get("type") or "").lower() != "video":
+            continue
+        for segment in track.get("segments", []) or []:
+            if not isinstance(segment, dict):
+                continue
+            if segment.get("volume") != 0.0:
+                segment["volume"] = 0.0
+                changed = True
+
+    if changed:
+        draft_content_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _rewrite_draft_meta_info(project_dir: Path, jianying_project_dir: PureWindowsPath) -> None:
     draft_meta_path = project_dir / "draft_meta_info.json"
     if not draft_meta_path.exists():
@@ -367,6 +394,7 @@ def _export_with_pyjianyingdraft(
         subtitle_position_y=subtitle_position_y,
     )
     script.save()
+    _mute_video_track_audio(project_dir)
 
 
 def _import_srt_safe(

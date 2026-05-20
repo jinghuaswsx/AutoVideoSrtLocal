@@ -93,6 +93,84 @@ def _segment_label(segment: Dict[str, Any], fallback_index: int) -> str:
     return f"asr_index={asr_index}"
 
 
+def _segment_source_window(segment: Dict[str, Any]) -> tuple[float, float]:
+    start = _float_value(segment.get("source_start_time", segment.get("start_time")), 0.0)
+    end = _float_value(segment.get("source_end_time", segment.get("end_time")), start)
+    if end < start:
+        end = start
+    return start, end
+
+
+def analyze_asr_window_gaps(
+    segments: List[Dict[str, Any]],
+    *,
+    video_duration: float,
+    preserve_gap_threshold: float = 1.0,
+    max_gap: float = 0.25,
+) -> Dict[str, Any]:
+    """Return ASR no-speech gap diagnostics for conditional window scheduling."""
+    duration = max(0.0, _float_value(video_duration, 0.0))
+    preserve_threshold = max(0.0, _float_value(preserve_gap_threshold, 0.0))
+    gap_limit = max(0.0, _float_value(max_gap, 0.0))
+    windows = []
+    for segment in segments or []:
+        if not isinstance(segment, dict):
+            continue
+        has_start = "source_start_time" in segment or "start_time" in segment
+        has_end = "source_end_time" in segment or "end_time" in segment
+        if not has_start or not has_end:
+            continue
+        start, end = _segment_source_window(segment)
+        if end <= start:
+            continue
+        windows.append((start, end))
+    windows.sort(key=lambda item: (item[0], item[1]))
+
+    preserved_gaps: List[Dict[str, Any]] = []
+
+    def add_gap(kind: str, start: float, end: float) -> None:
+        gap_duration = max(0.0, end - start)
+        if gap_duration < preserve_threshold or gap_duration <= 0.0:
+            return
+        preserved_gaps.append(
+            {
+                "kind": kind,
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "duration": round(gap_duration, 3),
+            }
+        )
+
+    previous_end = 0.0
+    for index, (start, end) in enumerate(windows):
+        if index == 0:
+            add_gap("leading", 0.0, start)
+        else:
+            add_gap("middle", previous_end, start)
+        previous_end = max(previous_end, end)
+
+    if windows and duration > 0.0:
+        add_gap("trailing", previous_end, duration)
+
+    preserved_total = round(sum(gap["duration"] for gap in preserved_gaps), 3)
+    enabled = bool(preserved_gaps)
+    active_budget = round(max(0.0, duration - preserved_total), 3)
+    if not enabled:
+        active_budget = round(duration, 3)
+
+    return {
+        "enabled": enabled,
+        "timeline_mode": "asr_window_conditional" if enabled else "default_full_video",
+        "video_duration": round(duration, 3),
+        "active_speech_budget": active_budget,
+        "preserved_gap_total": preserved_total if enabled else 0.0,
+        "large_gap_count": len(preserved_gaps),
+        "preserved_gaps": preserved_gaps,
+        "preserve_gap_threshold": round(preserve_threshold, 3),
+        "max_compact_gap": round(gap_limit, 3),
+    }
+
+
 def apply_compact_audio_schedule(
     sentences: List[Dict[str, Any]],
     *,

@@ -3389,7 +3389,6 @@ class PipelineRunner:
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
-        final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         variant_order = [name for name in variants.keys() if name != "normal"]
         if "normal" in variants:
             variant_order.append("normal")
@@ -3415,6 +3414,10 @@ class PipelineRunner:
             tts_translate_channel=_channel_label,
         )
 
+        from pipeline.audio_stitch import (
+            analyze_asr_window_gaps,
+            apply_asr_window_audio_schedule,
+        )
         from pipeline.timeline import build_timeline_manifest
         import shutil
         _engine_for_duration = self.profile.get_tts_engine()
@@ -3430,13 +3433,25 @@ class PipelineRunner:
             )
             if not initial_localized:
                 continue
+            gap_analysis = analyze_asr_window_gaps(
+                task.get("script_segments", []),
+                video_duration=video_duration,
+                preserve_gap_threshold=1.0,
+                max_gap=0.25,
+            )
+            loop_video_duration = (
+                float(gap_analysis["active_speech_budget"])
+                if gap_analysis.get("enabled")
+                else video_duration
+            )
+            loop_target_lo, loop_target_hi = _tts_final_target_range(loop_video_duration)
 
             loop_result = self._run_tts_duration_loop(
                 task_id=task_id,
                 task_dir=task_dir,
                 loc_mod=loc_mod,
                 provider=provider,
-                video_duration=video_duration,
+                video_duration=loop_video_duration,
                 voice=voice,
                 initial_localized_translation=initial_localized,
                 source_full_text=source_full_text,
@@ -3452,14 +3467,14 @@ class PipelineRunner:
             final_round = loop_result["final_round"]
             pre_trim_duration = _engine_for_duration.get_audio_duration(loop_result["tts_audio_path"])
             final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
-            if pre_trim_duration > final_target_hi:
+            if pre_trim_duration > loop_target_hi:
                 trim_record = {
                     "pre_trim_duration": pre_trim_duration,
-                    "video_duration": video_duration,
-                    "duration_lo": final_target_lo,
-                    "duration_hi": final_target_hi,
+                    "video_duration": loop_video_duration,
+                    "duration_lo": loop_target_lo,
+                    "duration_hi": loop_target_hi,
                     "message": (
-                        f"音频 {pre_trim_duration:.1f}s 超过目标上限 {final_target_hi:.1f}s，"
+                        f"音频 {pre_trim_duration:.1f}s 超过目标上限 {loop_target_hi:.1f}s，"
                         "正在直接截断到目标上限..."
                     ),
                 }
@@ -3467,7 +3482,7 @@ class PipelineRunner:
                 trim_result = self._truncate_audio_to_duration(
                     input_audio_path=loop_result["tts_audio_path"],
                     output_audio_path=final_audio_path,
-                    duration=final_target_hi,
+                    duration=loop_target_hi,
                     tts_segments=loop_result["tts_segments"],
                     tts_script=loop_result["tts_script"],
                     localized_translation=loop_result["localized_translation"],
@@ -3482,22 +3497,37 @@ class PipelineRunner:
                         "removed_count": trim_result["removed_count"],
                         "removed_duration": trim_result["removed_duration"],
                         "final_duration": trim_result["final_duration"],
-                        "video_duration": video_duration,
-                        "duration_lo": final_target_lo,
-                        "duration_hi": final_target_hi,
+                        "video_duration": loop_video_duration,
+                        "duration_lo": loop_target_lo,
+                        "duration_hi": loop_target_hi,
                         "message": (
                             f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
-                            f"目标上限 {final_target_hi:.1f}s"
+                            f"目标上限 {loop_target_hi:.1f}s"
                         ),
                     }
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
-            if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
-                shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
-
-            timeline_manifest = build_timeline_manifest(
-                loop_result["tts_segments"], video_duration=video_duration,
-            )
+            if gap_analysis.get("enabled"):
+                scheduled_segments = apply_asr_window_audio_schedule(
+                    loop_result["tts_segments"],
+                    max_gap=0.25,
+                    preserve_gap_threshold=1.0,
+                )
+                final_audio_path = _rebuild_tts_full_audio_from_segments(
+                    task_dir,
+                    scheduled_segments,
+                    variant=variant,
+                    total_duration=video_duration,
+                )
+                loop_result["tts_audio_path"] = final_audio_path
+                loop_result["tts_segments"] = scheduled_segments
+                timeline_manifest = None
+            else:
+                if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+                    shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
+                timeline_manifest = build_timeline_manifest(
+                    loop_result["tts_segments"], video_duration=video_duration,
+                )
             variant_state.update({
                 "segments": loop_result["tts_segments"],
                 "tts_script": loop_result["tts_script"],
@@ -3505,6 +3535,8 @@ class PipelineRunner:
                 "timeline_manifest": timeline_manifest,
                 "voice_id": voice.get("id"),
                 "localized_translation": loop_result["localized_translation"],
+                "audio_timeline_mode": gap_analysis["timeline_mode"],
+                "asr_window_gap_analysis": gap_analysis,
             })
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_audio_path
             variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(
@@ -3523,6 +3555,8 @@ class PipelineRunner:
                 "loop_result": loop_result,
                 "timeline_manifest": timeline_manifest,
                 "final_audio_path": final_audio_path,
+                "audio_timeline_mode": gap_analysis["timeline_mode"],
+                "asr_window_gap_analysis": gap_analysis,
             }
 
         if not variant_results:
@@ -3533,6 +3567,8 @@ class PipelineRunner:
         primary_loop_result = primary_result["loop_result"]
         primary_timeline_manifest = primary_result["timeline_manifest"]
         primary_audio_path = primary_result["final_audio_path"]
+        primary_audio_timeline_mode = primary_result.get("audio_timeline_mode")
+        primary_gap_analysis = primary_result.get("asr_window_gap_analysis")
 
         task_state.set_preview_file(task_id, "tts_full_audio", primary_audio_path)
         _save_json(task_dir, "tts_duration_rounds.json", primary_loop_result["rounds"])
@@ -3547,6 +3583,8 @@ class PipelineRunner:
             timeline_manifest=primary_timeline_manifest,
             localized_translation=primary_loop_result["localized_translation"],
             tts_duration_rounds=primary_loop_result["rounds"],
+            audio_timeline_mode=primary_audio_timeline_mode,
+            asr_window_gap_analysis=primary_gap_analysis,
         )
 
         task_state.set_artifact(

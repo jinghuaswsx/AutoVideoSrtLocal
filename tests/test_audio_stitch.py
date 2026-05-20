@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from pipeline.audio_stitch import (
+    analyze_asr_window_gaps,
     apply_asr_window_audio_schedule,
     apply_compact_audio_schedule,
     build_stitched_audio,
@@ -152,6 +153,66 @@ def test_apply_asr_window_audio_schedule_preserves_large_middle_gap_and_compacts
     assert scheduled[2]["audio_start_time"] == 8.0
     assert scheduled[2]["asr_window_gap_preserved"] is True
     assert scheduled[2]["compact_gap_applied"] is False
+
+
+def test_analyze_asr_window_gaps_disabled_for_continuous_speech():
+    analysis = analyze_asr_window_gaps(
+        [
+            {"index": 0, "start_time": 0.05, "end_time": 2.0},
+            {"index": 1, "start_time": 2.16, "end_time": 4.0},
+            {"index": 2, "start_time": 4.2, "end_time": 6.0},
+        ],
+        video_duration=6.4,
+        preserve_gap_threshold=1.0,
+        max_gap=0.25,
+    )
+
+    assert analysis["enabled"] is False
+    assert analysis["active_speech_budget"] == 6.4
+    assert analysis["preserved_gap_total"] == 0.0
+    assert analysis["large_gap_count"] == 0
+
+
+def test_analyze_asr_window_gaps_disabled_when_source_windows_are_missing():
+    analysis = analyze_asr_window_gaps(
+        [
+            {"index": 0, "translated": "hello"},
+            {"index": 1, "start_time": 0.0, "translated": "missing end"},
+            {"index": 2, "end_time": 4.0, "translated": "missing start"},
+        ],
+        video_duration=12.0,
+        preserve_gap_threshold=1.0,
+        max_gap=0.25,
+    )
+
+    assert analysis["enabled"] is False
+    assert analysis["timeline_mode"] == "default_full_video"
+    assert analysis["active_speech_budget"] == 12.0
+    assert analysis["preserved_gaps"] == []
+
+
+def test_analyze_asr_window_gaps_detects_leading_middle_and_trailing_gaps():
+    analysis = analyze_asr_window_gaps(
+        [
+            {"index": 0, "start_time": 3.0, "end_time": 5.0},
+            {"index": 1, "start_time": 8.5, "end_time": 10.0},
+            {"index": 2, "start_time": 10.2, "end_time": 12.0},
+        ],
+        video_duration=20.0,
+        preserve_gap_threshold=1.0,
+        max_gap=0.25,
+    )
+
+    assert analysis["enabled"] is True
+    assert analysis["large_gap_count"] == 3
+    assert analysis["preserved_gap_total"] == 14.5
+    assert analysis["active_speech_budget"] == 5.5
+    assert [gap["kind"] for gap in analysis["preserved_gaps"]] == [
+        "leading",
+        "middle",
+        "trailing",
+    ]
+    assert analysis["preserved_gaps"][1]["duration"] == 3.5
 
 
 def test_build_timeline_manifest_provides_segments_and_video_ranges():
