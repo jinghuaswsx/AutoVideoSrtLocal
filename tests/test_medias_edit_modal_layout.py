@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -105,6 +106,19 @@ def test_medias_listing_status_pill_keeps_text_horizontal():
     assert ".oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; white-space:nowrap; }" in html
 
 
+def test_medias_product_table_leaves_space_between_cover_and_name_columns():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    table_start = script.index('<table class="oc-table"')
+    colgroup_start = script.index("<colgroup>", table_start)
+    colgroup_end = script.index("</colgroup>", colgroup_start)
+    colgroup = script[colgroup_start:colgroup_end]
+    widths = [int(value) for value in re.findall(r'<col style="width:(\d+)px">', colgroup)]
+
+    assert widths[1] >= 128
+    assert widths[2] >= 130
+    assert '<td class="name wrap">${nameCell}</td>' in script
+
+
 def test_detail_images_support_multi_select_delete_assets():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
@@ -123,7 +137,7 @@ def test_detail_images_support_multi_select_delete_assets():
 def test_medias_js_uses_current_cache_buster():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
-    assert "filename='medias.js', v='detail-image-replace-card-20260519'" in html
+    assert "filename='medias.js', v='main-image-name-spacing-20260520'" in html
 
 
 def test_edit_video_material_cards_support_inline_filename_edit():

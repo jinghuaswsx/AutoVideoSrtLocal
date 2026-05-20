@@ -1624,7 +1624,7 @@
       <table class="oc-table" style="table-layout:fixed;">
         <colgroup>
         <col style="width:48px">
-        <col style="width:88px">
+        <col style="width:128px">
         <col style="width:130px">
         <col style="width:120px">
         <col style="width:160px">
