@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import appcore.today_recommendations as tr
 
 
@@ -64,7 +66,7 @@ def test_adopt_recommendations_creates_task_and_marks_adopted(monkeypatch):
     calls = {}
 
     monkeypatch.setattr(tr, "guard_against_windows_local_mysql", lambda: None)
-    monkeypatch.setattr("appcore.new_product_review._resolve_translator", lambda translator_id: {"id": translator_id})
+    monkeypatch.setattr(tr, "ensure_translation_work_user", lambda translator_id: {"id": translator_id})
     monkeypatch.setattr(tr, "_ensure_product", lambda row, translator_id: 101)
     monkeypatch.setattr(tr, "_ensure_media_item", lambda row, product_id, translator_id: 202)
 
@@ -105,3 +107,26 @@ def test_adopt_recommendations_creates_task_and_marks_adopted(monkeypatch):
         "created_by": 1,
     }
     assert calls["execute"][1][0] == tr.STATUS_ADOPTED
+
+
+def test_adopt_recommendations_rejects_non_translation_work_user(monkeypatch):
+    monkeypatch.setattr(tr, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(
+        tr,
+        "ensure_translation_work_user",
+        lambda user_id: (_ for _ in ()).throw(ValueError("该用户不在翻译工作范围")),
+        raising=False,
+    )
+    monkeypatch.setattr("appcore.new_product_review._resolve_translator", lambda translator_id: {"id": translator_id})
+    monkeypatch.setattr(
+        tr,
+        "query",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("query should not run")),
+    )
+
+    with pytest.raises(ValueError, match="翻译工作范围"):
+        tr.adopt_recommendations(
+            recommendation_ids=[1],
+            translator_id=99,
+            actor_user_id=1,
+        )

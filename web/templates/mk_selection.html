@@ -1110,7 +1110,7 @@ async function mkiCheckRenderedButtons() {
 }
 
 // mk-import: Task 10 翻译员选择 modal
-const MKI_ACTIVE_USERS_API = '/medias/api/users/active';
+const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
 let mkiTranslatorResolve = null;
 let mkiTranslatorsCache = null;
 
@@ -1138,7 +1138,7 @@ async function mkiOpenTranslatorModal() {
     }
   }
   if (!mkiTranslatorsCache.length) {
-    alert('没有可用员工');
+    alert('没有可用翻译工作用户');
     return null;
   }
   const sel = document.getElementById('mkiTranslatorSel');
@@ -1226,7 +1226,7 @@ async function mkiXiaoOpenModal() {
     } catch (e) { mkiXiaoTranslatorsCache = []; }
   }
   if (!mkiXiaoTranslatorsCache.length) {
-    alert('没有可用员工');
+    alert('没有可用翻译工作用户');
     return null;
   }
   const sel = document.getElementById('mkiXiaoTranslator');

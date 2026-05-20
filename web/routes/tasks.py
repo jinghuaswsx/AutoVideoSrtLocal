@@ -11,7 +11,11 @@ from web.auth import permission_required
 from appcore import mk_import as mk_import_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
-from appcore.users import list_translators
+from appcore.users import (
+    ensure_translation_work_user,
+    list_translation_work_users,
+    list_translators,
+)
 from web.services.tasks_responses import (
     build_tasks_payload_response,
     tasks_flask_response,
@@ -145,6 +149,10 @@ def api_create_parent():
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
+        ensure_translation_work_user(translator_id)
+    except ValueError as e:
+        return _json_response({"error": str(e)}, 400)
+    try:
         parent_id = tasks_svc.create_parent_task(
             media_product_id=product_id,
             media_item_id=item_id,
@@ -178,6 +186,10 @@ def api_import_and_create():
         countries = payload.get("countries") or []
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
+    try:
+        ensure_translation_work_user(translator_id)
+    except ValueError as e:
+        return _json_response({"error": str(e)}, 400)
     try:
         result = tasks_svc.import_and_create_task(
             mk_video_metadata=meta,
@@ -392,6 +404,12 @@ def api_events(tid: int):
 @login_required
 def api_translators():
     return _json_response({"translators": list_translators()})
+
+
+@bp.route("/api/translation-work-users", methods=["GET"])
+@login_required
+def api_translation_work_users():
+    return _json_response({"users": list_translation_work_users()})
 
 
 @bp.route("/api/languages", methods=["GET"])

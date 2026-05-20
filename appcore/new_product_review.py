@@ -81,6 +81,10 @@ def _resolve_translator(translator_id: int) -> dict:
         raise TranslatorInvalidError(
             f"user {translator_id} lacks can_translate permission"
         )
+    if not perms.get("work_scope_translation"):
+        raise TranslatorInvalidError(
+            f"user {translator_id} lacks translation work scope"
+        )
     return row
 
 

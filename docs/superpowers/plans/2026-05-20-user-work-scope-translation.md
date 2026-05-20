@@ -16,6 +16,7 @@
 - Modify `appcore/users.py`: add JSON permission parsing helpers, `list_translation_work_users()`, and `ensure_translation_work_user()`.
 - Modify `web/routes/tasks.py`: add `/tasks/api/translation-work-users`, validate `translator_id` in parent creation and import-and-create.
 - Modify `web/routes/mk_import.py`: validate `translator_id` before calling `mk_import_svc.import_mk_video`.
+- Modify `web/services/mk_import.py`: add a typed invalid-translator response helper.
 - Modify `appcore/new_product_review.py`: require `work_scope_translation` in `_resolve_translator()`.
 - Modify `appcore/today_recommendations.py`: validate recommendation adoption translator IDs through `ensure_translation_work_user()`.
 - Modify `web/templates/mk_selection.html`: replace active-user API with translation-work user API and update empty-list messages.
@@ -25,8 +26,11 @@
   - `tests/test_user_translators.py`
   - `tests/test_tasks_routes.py`
   - `tests/test_mk_import_routes.py`
+  - `tests/test_appcore_new_product_review.py`
   - `tests/test_new_product_review_routes.py`
+  - `tests/test_today_recommendations.py`
   - `tests/test_xuanpin_routes.py`
+  - `tests/test_db_migration_user_translation_work_scope.py`
 
 ## Docs Anchor
 
@@ -528,23 +532,7 @@ rg -n "def adopt_recommendations|translator_id" appcore/today_recommendations.py
 
 Expected: find `adopt_recommendations(...)` and the route test area for `/xuanpin/api/today-recommendations/adopt`.
 
-- [ ] **Step 2: Add validation in service**
-
-In `appcore/today_recommendations.py`, import:
-
-```python
-from appcore.users import ensure_translation_work_user
-```
-
-At the start of `adopt_recommendations(...)`, after parsing `translator_id`, add:
-
-```python
-    ensure_translation_work_user(int(translator_id))
-```
-
-This lets the existing xuanpin route map `ValueError` to 400.
-
-- [ ] **Step 3: Add service validation test**
+- [ ] **Step 2: Add service validation test**
 
 In `tests/test_today_recommendations.py`, add:
 
@@ -567,7 +555,33 @@ def test_adopt_recommendations_rejects_non_translation_work_user(monkeypatch):
         )
 ```
 
-- [ ] **Step 4: Run xuanpin tests**
+- [ ] **Step 3: Run failing today recommendations test**
+
+Run:
+
+```bash
+pytest tests/test_today_recommendations.py::test_adopt_recommendations_rejects_non_translation_work_user -q
+```
+
+Expected: fails because `adopt_recommendations()` has not validated the translation work scope before DB work.
+
+- [ ] **Step 4: Add validation in service**
+
+In `appcore/today_recommendations.py`, import:
+
+```python
+from appcore.users import ensure_translation_work_user
+```
+
+At the start of `adopt_recommendations(...)`, after parsing `translator_id`, add:
+
+```python
+    ensure_translation_work_user(int(translator_id))
+```
+
+This lets the existing xuanpin route map `ValueError` to 400.
+
+- [ ] **Step 5: Run today recommendations tests**
 
 Run:
 
@@ -649,6 +663,18 @@ Create `db/migrations/2026_05_20_user_translation_work_scope.sql`:
 
 SET @target_names = JSON_ARRAY('周干琴', '顾倩', '王舒溦', '王健', '蔡靖华');
 
+UPDATE users
+SET permissions = JSON_SET(
+  CASE
+    WHEN JSON_VALID(COALESCE(CAST(permissions AS CHAR), '{}'))
+    THEN COALESCE(permissions, JSON_OBJECT())
+    ELSE JSON_OBJECT()
+  END,
+  '$.can_translate', JSON_EXTRACT('true', '$'),
+  '$.work_scope_translation', JSON_EXTRACT('true', '$')
+)
+WHERE JSON_CONTAINS(@target_names, JSON_QUOTE(username));
+
 SET @has_xingming = (
   SELECT COUNT(*)
   FROM INFORMATION_SCHEMA.COLUMNS
@@ -657,19 +683,10 @@ SET @has_xingming = (
     AND COLUMN_NAME = 'xingming'
 );
 
-SET @where_names = IF(
+SET @sql = IF(
   @has_xingming > 0,
-  "JSON_CONTAINS(@target_names, JSON_QUOTE(username)) OR JSON_CONTAINS(@target_names, JSON_QUOTE(xingming))",
-  "JSON_CONTAINS(@target_names, JSON_QUOTE(username))"
-);
-
-SET @sql = CONCAT(
-  "UPDATE users SET permissions = JSON_SET(",
-  "CASE WHEN JSON_VALID(COALESCE(CAST(permissions AS CHAR), '{}')) ",
-  "THEN COALESCE(permissions, JSON_OBJECT()) ELSE JSON_OBJECT() END, ",
-  "'$.can_translate', CAST('true' AS JSON), ",
-  "'$.work_scope_translation', CAST('true' AS JSON)) ",
-  "WHERE ", @where_names
+  'UPDATE users SET permissions = JSON_SET(CASE WHEN JSON_VALID(COALESCE(CAST(permissions AS CHAR), ''{}'')) THEN COALESCE(permissions, JSON_OBJECT()) ELSE JSON_OBJECT() END, ''$.can_translate'', JSON_EXTRACT(''true'', ''$''), ''$.work_scope_translation'', JSON_EXTRACT(''true'', ''$'')) WHERE JSON_CONTAINS(@target_names, JSON_QUOTE(xingming))',
+  'SELECT 1'
 );
 
 PREPARE stmt FROM @sql;
@@ -716,24 +733,32 @@ Expected: migration static test passes.
 Run:
 
 ```bash
-pytest tests/test_permissions.py tests/test_user_translators.py tests/test_tasks_routes.py tests/test_mk_import_routes.py tests/test_appcore_new_product_review.py tests/test_new_product_review_routes.py tests/test_xuanpin_routes.py tests/test_db_migration_user_translation_work_scope.py -q
+pytest tests/test_permissions.py tests/test_user_translators.py tests/test_tasks_routes.py tests/test_mk_import_routes.py tests/test_appcore_new_product_review.py tests/test_new_product_review_routes.py tests/test_today_recommendations.py tests/test_xuanpin_routes.py tests/test_db_migration_user_translation_work_scope.py -q
 ```
 
 Expected: all focused tests pass.
 
 - [ ] **Step 2: Run route smoke without DB mutation**
 
-Run:
+Run a Flask test-client smoke with startup recovery and DB helpers patched:
 
 ```bash
-python -m web.app
-```
-
-In a separate shell if needed:
-
-```bash
-curl -I http://127.0.0.1:5000/xuanpin/mk
-curl -I http://127.0.0.1:5000/tasks/
+AUTOVIDEOSRT_DISABLE_DOTENV=1 FLASK_SECRET_KEY=test-secret WTF_CSRF_ENABLED=0 DISABLE_STARTUP_RECOVERY=1 AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS=1 python3 - <<'PY'
+from unittest.mock import patch
+with patch('web.app._seed_default_prompts', lambda: None), \
+     patch('web.app.recover_all_interrupted_tasks', lambda: None), \
+     patch('web.app.mark_interrupted_bulk_translate_tasks', lambda: None), \
+     patch('appcore.db.execute', lambda *a, **k: None), \
+     patch('appcore.db.query', lambda *a, **k: []), \
+     patch('appcore.db.query_one', lambda *a, **k: None), \
+     patch('appcore.scheduled_tasks.query', lambda *a, **k: []):
+    from web.app import create_app
+    app = create_app()
+    client = app.test_client()
+    for path in ('/xuanpin/mk', '/tasks/'):
+        resp = client.get(path, follow_redirects=False)
+        print(path, resp.status_code, resp.headers.get('Location'))
+PY
 ```
 
 Expected: unauthenticated routes return 302 to login, not 500.

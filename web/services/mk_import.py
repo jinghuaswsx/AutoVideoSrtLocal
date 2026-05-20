@@ -48,6 +48,10 @@ def build_mk_import_bad_payload_response() -> MkImportResponse:
     return MkImportResponse({"error": "bad_payload"}, 400)
 
 
+def build_mk_import_invalid_translator_response(exc: Exception) -> MkImportResponse:
+    return MkImportResponse({"error": "invalid_translator", "detail": str(exc)}, 400)
+
+
 def build_mk_import_success_response(result: dict) -> MkImportResponse:
     return MkImportResponse(result, 200)
 
