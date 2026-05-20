@@ -40,3 +40,12 @@ def test_permissions_register_english_redub():
 
     assert '"english_redub"' in source
     assert '"/english-redub"' in source
+
+
+def test_voice_selector_preserves_speed_ranked_candidate_order():
+    source = (ROOT / "web/static/voice_selector_multi.js").read_text(encoding="utf-8")
+
+    assert "voiceMatchRank" in source
+    assert "return a.voiceMatchRank - b.voiceMatchRank;" in source
+    assert "return b.sim - a.sim;" not in source
+    assert "combinedScore" not in source

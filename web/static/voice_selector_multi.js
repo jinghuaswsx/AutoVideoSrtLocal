@@ -397,6 +397,7 @@
 
   let allItems = [];
   let candidatesMap = new Map();
+  let candidatesRankMap = new Map();
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -553,6 +554,17 @@
     });
   }
 
+  function setVoiceMatchCandidates(candidates) {
+    candidatesMap.clear();
+    candidatesRankMap.clear();
+    (candidates || []).forEach((candidate, index) => {
+      const voiceId = String(candidate && candidate.voice_id || "").trim();
+      if (!voiceId) return;
+      candidatesMap.set(voiceId, candidate);
+      candidatesRankMap.set(voiceId, index);
+    });
+  }
+
   async function fetchVoiceLibraryPage(page) {
     const params = new URLSearchParams({
       page: String(page),
@@ -592,8 +604,7 @@
       const data = await fetchFullVoiceLibrary(seq);
       if (!data || seq !== libraryRequestSeq) return;
       allItems = data.items || [];
-      candidatesMap.clear();
-      (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+      setVoiceMatchCandidates(data.candidates || []);
       selectedVoiceId = data.selected_voice_id || null;
       if (selectedVoiceId && !selectedVoiceName) {
         const selected = allItems.find(v => v.voice_id === selectedVoiceId);
@@ -688,7 +699,6 @@
     const sourceRate = fmtRate(rec.source_words_per_second);
     const previewRate = fmtRate(rec.preview_words_per_second);
     const speedScore = fmtScore(rec.speed_match_score);
-    const combinedScore = fmtScore(rec.combined_score);
     if (!previewRate || status === "missing_preview_rate") {
       const sourceText = sourceRate ? `原视频 ${escapeHtml(sourceRate)} 词/秒 · ` : "";
       return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，已按音色排序</div>`;
@@ -698,7 +708,6 @@
         ${sourceRate ? `<span>原视频 ${escapeHtml(sourceRate)} 词/秒</span>` : ""}
         <span>Preview ${escapeHtml(previewRate)} 词/秒</span>
         ${speedScore ? `<span>语速匹配 ${escapeHtml(speedScore)}</span>` : ""}
-        ${combinedScore ? `<span>综合 ${escapeHtml(combinedScore)}</span>` : ""}
       </div>
     `;
   }
@@ -706,9 +715,13 @@
   function sortedVoiceRows() {
     return allItems.map(v => {
       const rec = candidatesMap.get(v.voice_id);
-      return { v, rec, sim: rec ? rec.similarity : -1 };
+      const voiceMatchRank = rec ? (candidatesRankMap.get(v.voice_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      return { v, rec, sim: rec ? rec.similarity : -1, voiceMatchRank };
     }).sort((a, b) => {
-      if (a.sim !== b.sim) return b.sim - a.sim;
+      if (a.rec && b.rec && a.voiceMatchRank !== b.voiceMatchRank) {
+        return a.voiceMatchRank - b.voiceMatchRank;
+      }
+      if (!!a.rec !== !!b.rec) return a.rec ? -1 : 1;
       return (a.v.name || "").localeCompare(b.v.name || "");
     });
   }
@@ -1047,8 +1060,7 @@
       });
       if (resp.ok) {
         const data = await resp.json();
-        candidatesMap.clear();
-        (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+        setVoiceMatchCandidates(data.candidates || []);
         // 把后端给的候选完整行 merge 进 allItems。
         // 否则筛性别后的新候选不在初次 /voice-library 拿的前 200 里，
         // 列表 join 失败 → 看不到推荐。
