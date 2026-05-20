@@ -306,6 +306,36 @@
 .mki-progress-result { border: 1px solid oklch(76% .12 160); background: oklch(97% .03 160); color: var(--oc-success-fg); }
 .mki-progress-result-title { font-weight: 800; margin-bottom: 4px; color: var(--oc-fg); }
 .mki-progress-result p { margin: 6px 0 0; color: var(--oc-fg); }
+.mki-progress-domains {
+  margin-top: 14px; padding: 12px; border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r); background: #fff;
+}
+.mki-progress-domains[hidden] { display: none; }
+.mki-progress-domain-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px;
+}
+.mki-progress-domain-title { font-size: 13px; font-weight: 800; color: var(--oc-fg); }
+.mki-progress-domain-subtitle { margin-top: 3px; font-size: 12px; color: var(--oc-fg-muted); line-height: 1.45; }
+.mki-progress-domain-list { display: flex; flex-direction: column; gap: 8px; }
+.mki-progress-domain-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--oc-border); border-radius: var(--oc-r); background: var(--oc-bg-muted);
+}
+.mki-progress-domain-row label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; cursor: pointer; }
+.mki-progress-domain-row input { margin: 0; }
+.mki-progress-domain-name { overflow-wrap: anywhere; }
+.mki-progress-domain-state {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; font-size: 12px;
+  background: var(--oc-bg); color: var(--oc-fg-muted); border: 1px solid var(--oc-border);
+}
+.mki-progress-domain-state.active { background: var(--oc-success-bg); color: var(--oc-success-fg); border-color: transparent; }
+.mki-progress-domain-state.disabled { background: oklch(95% .01 260); color: var(--oc-fg-muted); }
+.mki-progress-domain-notice {
+  margin-top: 10px; padding: 9px 10px; border-radius: var(--oc-r);
+  font-size: 12px; line-height: 1.45; background: var(--oc-warning-bg); color: var(--oc-warning-fg);
+}
+.mki-progress-domain-notice.danger { background: oklch(97% .04 25); color: oklch(42% .14 25); }
+.mki-progress-domain-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .mki-progress-actions {
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px;
 }
@@ -1523,10 +1553,12 @@ const MKI_IMPORT_STEPS = [
   {key: 'product', title: '检查产品与链接', detail: '等待服务端创建或复用产品'},
   {key: 'download', title: '下载明空原视频', detail: '等待服务端下载原视频'},
   {key: 'store', title: '写入素材库', detail: '等待写入英文素材库'},
-  {key: 'next', title: '后续任务入口', detail: '入库完成后继续创建小语种任务'}
+  {key: 'domains', title: '选择发布域名', detail: '入库完成后选择该产品要发布到哪些域名'},
+  {key: 'next', title: '后续任务入口', detail: '发布域名确认后继续创建小语种任务'}
 ];
 let mkiImportProgressButton = null;
 let mkiImportProgressFailedStep = 'product';
+let mkiImportProgressProductId = null;
 
 function mkiImportProgressStatusText(status) {
   return {
@@ -1536,6 +1568,30 @@ function mkiImportProgressStatusText(status) {
     warning: '需关注',
     error: '失败'
   }[status] || status || '待处理';
+}
+
+function mkiImportProgressHeaders(extra = {}) {
+  const headers = Object.assign({}, extra);
+  const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+  return headers;
+}
+
+function mkiImportProgressHideNextActions() {
+  ['mkiImportProgressContinue', 'mkiImportProgressTasks', 'mkiImportProgressMedias'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  });
+}
+
+function mkiImportProgressShowNextActions() {
+  const continueBtn = document.getElementById('mkiImportProgressContinue');
+  const tasksBtn = document.getElementById('mkiImportProgressTasks');
+  const mediasBtn = document.getElementById('mkiImportProgressMedias');
+  if (continueBtn) continueBtn.hidden = false;
+  if (tasksBtn) tasksBtn.hidden = false;
+  mkiImportProgressSetMediasHref(mkiImportProgressButton);
+  if (mediasBtn) mediasBtn.hidden = false;
 }
 
 function mkiImportProgressOpen(meta) {
@@ -1559,8 +1615,7 @@ function mkiImportProgressOpen(meta) {
   document.getElementById('mkiImportProgressResult').hidden = true;
   document.getElementById('mkiImportProgressResultText').textContent = '';
   document.getElementById('mkiImportProgressRetry').hidden = true;
-  document.getElementById('mkiImportProgressContinue').hidden = true;
-  document.getElementById('mkiImportProgressTasks').hidden = true;
+  mkiImportProgressHideNextActions();
   document.getElementById('mkiImportProgressContinue').dataset.href = '/tasks/';
   document.getElementById('mkiImportProgressTasks').dataset.href = '/tasks/';
   const mediasBtn = document.getElementById('mkiImportProgressMedias');
@@ -1568,6 +1623,12 @@ function mkiImportProgressOpen(meta) {
     mediasBtn.hidden = true;
     mediasBtn.dataset.href = '/medias';
   }
+  mkiImportProgressProductId = null;
+  const domainsPanel = document.getElementById('mkiImportProgressDomains');
+  if (domainsPanel) domainsPanel.hidden = true;
+  const domainList = document.getElementById('mkiImportProgressDomainList');
+  if (domainList) domainList.innerHTML = '';
+  mkiImportProgressSetDomainNotice('');
   mkiImportProgressFailedStep = 'product';
   modal.hidden = false;
   mkiImportProgressSetStep('prepare', 'running', '正在读取文件名、产品码、产品图和链接');
@@ -1596,6 +1657,9 @@ function mkiImportProgressStepForError(errorCode) {
 function mkiImportProgressFail(message) {
   const errorText = message || '未知错误';
   mkiImportProgressSetStep(mkiImportProgressFailedStep || 'product', 'error', errorText);
+  mkiImportProgressHideNextActions();
+  const domainsPanel = document.getElementById('mkiImportProgressDomains');
+  if (domainsPanel) domainsPanel.hidden = true;
   const errorEl = document.getElementById('mkiImportProgressError');
   if (errorEl) {
     errorEl.textContent = '入库失败：' + errorText;
@@ -1605,9 +1669,111 @@ function mkiImportProgressFail(message) {
   if (retryBtn) retryBtn.hidden = false;
 }
 
+function mkiImportProgressSetDomainNotice(message, kind = '') {
+  const notice = document.getElementById('mkiImportProgressDomainNotice');
+  if (!notice) return;
+  notice.textContent = message || '';
+  notice.classList.toggle('danger', kind === 'danger');
+  notice.hidden = !message;
+}
+
+function mkiImportProgressRenderDomainRows(domains) {
+  if (!Array.isArray(domains) || !domains.length) {
+    return '<div class="mki-progress-domain-notice">暂无可用域名，请先到系统设置新增域名。</div>';
+  }
+  return domains.map(item => {
+    const domainId = Number(item.id || 0);
+    const globallyEnabled = !!item.enabled;
+    const checked = !!item.product_enabled && globallyEnabled;
+    const status = globallyEnabled
+      ? (checked ? '<span class="mki-progress-domain-state active">已启用</span>' : '<span class="mki-progress-domain-state">未启用</span>')
+      : '<span class="mki-progress-domain-state disabled">全局停用</span>';
+    return `<div class="mki-progress-domain-row">
+      <label>
+        <input type="checkbox" value="${escapeHtml(domainId)}" data-mki-progress-domain-checkbox ${checked ? 'checked' : ''} ${globallyEnabled ? '' : 'disabled'}>
+        <span class="mki-progress-domain-name">${escapeHtml(item.domain || '')}</span>
+      </label>
+      ${status}
+    </div>`;
+  }).join('');
+}
+
+function mkiImportProgressSelectedDomainIds() {
+  return Array.from(document.querySelectorAll('[data-mki-progress-domain-checkbox]:checked'))
+    .map(node => Number(node.value))
+    .filter(value => Number.isFinite(value) && value > 0);
+}
+
+async function mkiImportProgressLoadDomains(productId) {
+  const panel = document.getElementById('mkiImportProgressDomains');
+  const list = document.getElementById('mkiImportProgressDomainList');
+  const submit = document.getElementById('mkiImportProgressDomainSubmit');
+  const retry = document.getElementById('mkiImportProgressDomainRetry');
+  if (!panel || !list || !submit) return;
+  panel.hidden = false;
+  list.innerHTML = '<div class="mki-progress-domain-notice">正在加载域名...</div>';
+  submit.disabled = true;
+  if (retry) retry.hidden = true;
+  mkiImportProgressSetDomainNotice('');
+  try {
+    const rsp = await fetch(`/medias/api/products/${encodeURIComponent(productId)}/product-link-domains`);
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
+    list.innerHTML = mkiImportProgressRenderDomainRows(data.domains || []);
+    submit.disabled = false;
+    mkiImportProgressSetStep('domains', 'running', '请确认该产品后续要发布到哪些域名');
+  } catch (err) {
+    const message = err.message || '域名加载失败';
+    list.innerHTML = '';
+    mkiImportProgressSetStep('domains', 'error', message);
+    mkiImportProgressSetDomainNotice('域名加载失败：' + message, 'danger');
+    if (retry) retry.hidden = false;
+  }
+}
+
+async function mkiImportProgressSaveDomains() {
+  const productId = mkiImportProgressProductId;
+  const submit = document.getElementById('mkiImportProgressDomainSubmit');
+  if (!productId || !submit) return;
+  const enabledIds = mkiImportProgressSelectedDomainIds();
+  submit.disabled = true;
+  submit.textContent = '保存中...';
+  mkiImportProgressSetDomainNotice(enabledIds.length ? '' : '当前未勾选任何发布域名，保存后该产品后续不会进入任何域名的推送。');
+  try {
+    const rsp = await fetch(`/medias/api/products/${encodeURIComponent(productId)}/product-link-domains`, {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({enabled_domain_ids: enabledIds}),
+    });
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
+    const list = document.getElementById('mkiImportProgressDomainList');
+    if (list) list.innerHTML = mkiImportProgressRenderDomainRows(data.domains || []);
+    const domainDetail = enabledIds.length
+      ? `已同步 ${enabledIds.length} 个发布域名到链接管理`
+      : '已同步为空发布域名配置';
+    mkiImportProgressSetStep('domains', 'done', domainDetail);
+    mkiImportProgressSetStep('next', 'done', '发布域名已确认，可以继续后续流程');
+    mkiImportProgressShowNextActions();
+    mkiImportProgressSetDomainNotice(enabledIds.length ? '发布域名已同步到产品链接管理。' : '已保存为空发布域名配置。');
+  } catch (err) {
+    const message = err.message || '保存失败';
+    mkiImportProgressSetStep('domains', 'error', message);
+    mkiImportProgressSetDomainNotice('发布域名保存失败：' + message, 'danger');
+  } finally {
+    submit.disabled = false;
+    submit.textContent = '确定发布域名';
+  }
+}
+
+function mkiImportProgressRetryDomains() {
+  if (mkiImportProgressProductId) mkiImportProgressLoadDomains(mkiImportProgressProductId);
+}
+
 function mkiImportProgressComplete(data, btn) {
   const productId = data?.media_product_id || data?.product_id || '--';
   const itemId = data?.media_item_id || data?.item_id || '--';
+  const numericProductId = Number(data?.media_product_id || data?.product_id || 0);
   const warningMessage = mkiWarningMessageFromResponse(data);
   const productDetail = (data?.is_new_product ? '新建产品完成' : '复用已有产品')
     + '，产品 ID：' + productId
@@ -1615,20 +1781,26 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressSetStep('product', warningMessage ? 'warning' : 'done', productDetail);
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
-  mkiImportProgressSetStep('next', 'done', '继续做小语种任务会进入任务中心流程');
+  mkiImportProgressSetStep('domains', 'running', '正在加载产品发布域名');
+  mkiImportProgressSetStep('next', 'pending', '确认发布域名后开放下一步入口');
 
   const resultEl = document.getElementById('mkiImportProgressResult');
   const textEl = document.getElementById('mkiImportProgressResultText');
   if (textEl) {
-    textEl.textContent = `产品 #${productId}，素材 #${itemId} 已入库。`;
+    textEl.textContent = `产品 #${productId}，素材 #${itemId} 已入库。请确认该产品的发布域名。`;
   }
   if (resultEl) resultEl.hidden = false;
-  document.getElementById('mkiImportProgressContinue').hidden = false;
-  document.getElementById('mkiImportProgressTasks').hidden = false;
-  mkiImportProgressSetMediasHref(btn);
-  document.getElementById('mkiImportProgressMedias').hidden = false;
+  mkiImportProgressHideNextActions();
   document.getElementById('mkiImportProgressRetry').hidden = true;
   mkiImportProgressButton = btn || mkiImportProgressButton;
+  mkiImportProgressProductId = numericProductId > 0 ? numericProductId : null;
+  if (mkiImportProgressProductId) {
+    mkiImportProgressLoadDomains(mkiImportProgressProductId);
+  } else {
+    const message = '服务端未返回产品 ID，无法配置发布域名';
+    mkiImportProgressSetStep('domains', 'error', message);
+    mkiImportProgressSetDomainNotice(message + '，请去素材管理手动确认链接管理。', 'danger');
+  }
 }
 
 function mkiImportProgressClose() {
@@ -1675,7 +1847,8 @@ async function mkiHandleClick(btn) {
     mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
     mkiImportProgressSetStep('download', 'pending', '产品确认后下载明空原视频');
     mkiImportProgressSetStep('store', 'pending', '视频下载完成后写入素材库');
-    mkiImportProgressSetStep('next', 'pending', '入库完成后开放下一步入口');
+    mkiImportProgressSetStep('domains', 'pending', '入库完成后选择发布域名');
+    mkiImportProgressSetStep('next', 'pending', '发布域名确认后开放下一步入口');
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     const headers = {'Content-Type': 'application/json'};
     if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
@@ -1854,6 +2027,20 @@ async function mkiXiaoHandleClick(btn) {
         <div class="mki-progress-result-title">入库完成</div>
         <div id="mkiImportProgressResultText"></div>
         <p>下一步继续做小语种任务；原视频处理人认领后会自动提交牛马去字幕，并进入人工审核。</p>
+      </div>
+      <div id="mkiImportProgressDomains" class="mki-progress-domains" hidden>
+        <div class="mki-progress-domain-head">
+          <div>
+            <div class="mki-progress-domain-title">选择发布域名</div>
+            <div class="mki-progress-domain-subtitle">保存后会同步到该产品的链接管理，后续推送只按启用域名执行。</div>
+          </div>
+        </div>
+        <div id="mkiImportProgressDomainList" class="mki-progress-domain-list"></div>
+        <div id="mkiImportProgressDomainNotice" class="mki-progress-domain-notice" hidden></div>
+        <div class="mki-progress-domain-actions">
+          <button id="mkiImportProgressDomainRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryDomains()" hidden>重新加载域名</button>
+          <button id="mkiImportProgressDomainSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressSaveDomains()">确定发布域名</button>
+        </div>
       </div>
       <div class="mki-progress-actions">
         <button id="mkiImportProgressRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>

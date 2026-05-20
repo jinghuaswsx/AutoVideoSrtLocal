@@ -137,6 +137,33 @@ def test_xuanpin_mk_video_cards_show_product_icon_for_product_library_status(aut
     assert "产品已在素材库" in body
 
 
+def test_xuanpin_mk_import_progress_includes_publish_domain_step(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "{key: 'domains', title: '选择发布域名'" in body
+    assert "mkiImportProgressDomains" in body
+    assert "mkiImportProgressRenderDomainRows" in body
+    assert "product-link-domains" in body
+    assert "enabled_domain_ids" in body
+    assert "确定发布域名" in body
+
+
+def test_xuanpin_mk_import_progress_waits_for_domain_save_before_next_actions(
+    authed_client_no_db,
+):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiImportProgressHideNextActions()" in body
+    assert "function mkiImportProgressShowNextActions()" in body
+    assert "mkiImportProgressHideNextActions();" in body
+    assert "mkiImportProgressSetStep('domains', 'done', domainDetail);" in body
+    assert "mkiImportProgressSetStep('next', 'done', '发布域名已确认，可以继续后续流程');" in body
+
+
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
