@@ -43,6 +43,13 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  function fmtDateParts(value) {
+    const full = fmtDate(value);
+    if (full === '-') return { date: '-', time: '' };
+    const parts = full.split(' ');
+    return { date: parts[0] || full, time: parts[1] || '' };
+  }
+
   function fmtSize(value) {
     const n = Number(value || 0);
     if (!n) return '-';
@@ -158,9 +165,39 @@
     `;
   }
 
-  function rowHtml(item) {
+  function adPlanHtml(item) {
     const planClass = item.has_ad_plan ? 'has' : 'none';
     const planText = item.has_ad_plan ? '有广告计划' : '没有广告计划';
+    const pushed = fmtDateParts(item.pushed_at);
+    const detail = item.ad_plan_detail || null;
+    const content = `
+      <span class="oc-vm-plan ${planClass}">${planText}</span>
+      <span class="oc-vm-plan-meta" title="${esc(fmtDate(item.pushed_at))}">
+        <span class="oc-vm-plan-meta-line">${esc(pushed.date)}</span>
+        ${pushed.time ? `<span class="oc-vm-plan-meta-line">${esc(pushed.time)}</span>` : ''}
+      </span>
+    `;
+    if (item.has_ad_plan && detail && detail.url) {
+      const title = detail.name || detail.code || '广告计划详情';
+      return `
+        <button type="button" class="oc-vm-plan-link" data-ad-plan-item="${esc(item.id)}" title="打开广告计划详情：${esc(title)}">
+          ${content}
+        </button>
+      `;
+    }
+    return `<span class="oc-vm-plan-box">${content}</span>`;
+  }
+
+  function openAdPlanDetail(item) {
+    const url = item && item.ad_plan_detail && item.ad_plan_detail.url;
+    if (!url) return;
+    const opened = window.open(url, '_blank');
+    if (opened && typeof opened.focus === 'function') {
+      opened.focus();
+    }
+  }
+
+  function rowHtml(item) {
     return `
       <tr data-item-id="${esc(item.id)}">
         <td class="oc-vm-preview">${previewHtml(item)}</td>
@@ -174,7 +211,7 @@
           <div class="oc-vm-muted mono">${esc(item.filename)}</div>
         </td>
         <td>${esc(langName(item.lang))}</td>
-        <td><span class="oc-vm-plan ${planClass}">${planText}</span><div class="oc-vm-muted">${esc(fmtDate(item.pushed_at))}</div></td>
+        <td class="oc-vm-plan-cell">${adPlanHtml(item)}</td>
         <td>${bindingHtml(item)}</td>
         <td class="mono">${esc(fmtSize(item.file_size))}</td>
         <td>${esc(fmtDate(item.created_at))}</td>
@@ -217,6 +254,12 @@
       btn.addEventListener('click', () => {
         const item = state.items.find(row => Number(row.id) === Number(btn.dataset.bindItem));
         if (item) openBindingModal(item);
+      });
+    });
+    host.querySelectorAll('[data-ad-plan-item]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = state.items.find(row => Number(row.id) === Number(btn.dataset.adPlanItem));
+        if (item) openAdPlanDetail(item);
       });
     });
   }

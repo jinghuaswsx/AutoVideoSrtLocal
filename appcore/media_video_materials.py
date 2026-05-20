@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -158,6 +158,26 @@ def list_video_materials(
         "       b.id AS binding_id, b.mk_product_id, b.mk_product_name, "
         "       b.mk_video_path, b.mk_video_name, b.mk_video_image_path, "
         "       b.mk_video_metadata_json, b.bound_by, b.bound_at, "
+        "       (SELECT m.normalized_campaign_code FROM meta_ad_daily_campaign_metrics m "
+        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
+        "          AND COALESCE(m.spend_usd, 0) > 0 "
+        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "        LIMIT 1) AS ad_campaign_code, "
+        "       (SELECT m.campaign_name FROM meta_ad_daily_campaign_metrics m "
+        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
+        "          AND COALESCE(m.spend_usd, 0) > 0 "
+        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "        LIMIT 1) AS ad_campaign_name, "
+        "       (SELECT m.ad_account_id FROM meta_ad_daily_campaign_metrics m "
+        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
+        "          AND COALESCE(m.spend_usd, 0) > 0 "
+        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "        LIMIT 1) AS ad_account_id, "
+        "       (SELECT m.ad_account_name FROM meta_ad_daily_campaign_metrics m "
+        "        WHERE (m.product_id=i.product_id OR LOWER(m.normalized_campaign_code)=LOWER(p.product_code)) "
+        "          AND COALESCE(m.spend_usd, 0) > 0 "
+        "        ORDER BY COALESCE(m.meta_business_date, m.report_date) DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "        LIMIT 1) AS ad_account_name, "
         "       (SELECT COUNT(*) FROM media_push_logs mpl "
         "        WHERE mpl.item_id=i.id AND mpl.status='success') AS push_success_count "
         "FROM media_items i "
@@ -217,6 +237,7 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         "push_success_count": push_success_count,
         "has_ad_plan": has_ad_plan,
         "ad_plan_status": "has" if has_ad_plan else "none",
+        "ad_plan_detail": _ad_plan_detail(item, has_ad_plan),
         "mk_binding": binding,
     }
 
@@ -275,6 +296,8 @@ def bind_mk_material(
         "       b.id AS binding_id, b.mk_product_id, b.mk_product_name, "
         "       b.mk_video_path, b.mk_video_name, b.mk_video_image_path, "
         "       b.mk_video_metadata_json, b.bound_by, b.bound_at, "
+        "       NULL AS ad_campaign_code, NULL AS ad_campaign_name, "
+        "       NULL AS ad_account_id, NULL AS ad_account_name, "
         "       0 AS push_success_count "
         "FROM media_items i "
         "JOIN media_products p ON p.id=i.product_id "
@@ -283,6 +306,37 @@ def bind_mk_material(
         (int(media_item_id),),
     )
     return serialize_video_material(row or {"id": media_item_id, "product_id": 0})
+
+
+def _normalize_ad_account_id(value: Any) -> str:
+    return str(value or "").strip().removeprefix("act_")
+
+
+def _ad_plan_detail(item: dict[str, Any], has_ad_plan: bool) -> dict[str, Any] | None:
+    if not has_ad_plan:
+        return None
+    code = str(item.get("ad_campaign_code") or item.get("product_code") or "").strip().lower()
+    if not code:
+        return None
+    name = str(item.get("ad_campaign_name") or item.get("product_name") or code).strip()
+    account_id = _normalize_ad_account_id(item.get("ad_account_id"))
+    params = {
+        "tab": "ads",
+        "ads_level": "campaign",
+        "ads_code": code,
+    }
+    if name:
+        params["ads_name"] = name
+    if account_id:
+        params["ad_account_id"] = account_id
+    return {
+        "level": "campaign",
+        "code": code,
+        "name": name,
+        "ad_account_id": account_id,
+        "ad_account_name": item.get("ad_account_name") or "",
+        "url": "/order-analytics?" + urlencode(params),
+    }
 
 
 def _mk_headers() -> dict[str, str]:

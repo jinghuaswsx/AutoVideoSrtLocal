@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from web.routes.medias import video_materials as video_routes
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_medias_page_renders_video_material_management_tab(authed_client_no_db, monkeypatch):
@@ -32,7 +36,17 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert 'id="vmTopPager"' in html
     assert "oc-vm-top-pager" in html
     assert ".oc-vm-toolbar select.oc-select" in html
+    assert "oc-vm-plan-meta-line" in html
     assert "tabsHeight" in html
+
+    script = (ROOT / "web" / "static" / "media_video_materials.js").read_text(encoding="utf-8")
+    assert "openAdPlanDetail" in script
+    assert "window.open(url, '_blank')" in script
+    assert "opened.focus()" in script
+
+    video_response = authed_client_no_db.get("/medias/video")
+    assert video_response.status_code == 200
+    assert "window.MEDIAS_ACTIVE_TAB = \"videos\"" in video_response.get_data(as_text=True)
 
 
 def test_video_materials_pager_assets_render_first_and_last_buttons(authed_client_no_db):

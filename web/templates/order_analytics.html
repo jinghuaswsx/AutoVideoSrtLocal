@@ -6838,6 +6838,36 @@
   } else {
     document.addEventListener('DOMContentLoaded', initAdsLevelTabs);
   }
+
+  function adsActivateTopTab() {
+    var tab = document.querySelector('.oa-tab[data-tab="ads"]');
+    if (tab) setActiveTab(tab);
+    document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
+    var panel = document.getElementById('panelAds');
+    if (panel) panel.classList.add('active');
+  }
+
+  function adsApplyDeepLinkFromQuery() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('tab') !== 'ads') return;
+    var level = (params.get('ads_level') || '').trim().toLowerCase();
+    var code = (params.get('ads_code') || '').trim();
+    adsActivateTopTab();
+    initAds();
+    initAdsLevelTabs();
+    if (ADS_LEVELS.indexOf(level) === -1 || !code) return;
+    var name = (params.get('ads_name') || '').trim();
+    var accountId = (params.get('ad_account_id') || '').trim();
+    adsInitDateInputs(level);
+    setAdsSubtab(level);
+    adsOpenDetail(level, code, name || code, accountId);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', adsApplyDeepLinkFromQuery);
+  } else {
+    adsApplyDeepLinkFromQuery();
+  }
 })();
 
   // ──────────────────────────────────────────────────────

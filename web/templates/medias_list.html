@@ -2411,11 +2411,11 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   background:var(--bg-body,#f2f4f8);
 }
 .oc-vm-total { justify-self:end; }
-.oc-vm-table { min-width:1180px; table-layout:fixed; }
+.oc-vm-table { min-width:1260px; table-layout:fixed; }
 .oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:72px; }
 .oc-vm-table th:nth-child(2), .oc-vm-table td:nth-child(2) { width:92px; }
 .oc-vm-table th:nth-child(5), .oc-vm-table td:nth-child(5) { width:120px; }
-.oc-vm-table th:nth-child(6), .oc-vm-table td:nth-child(6) { width:130px; }
+.oc-vm-table th:nth-child(6), .oc-vm-table td:nth-child(6) { width:180px; }
 .oc-vm-table th:nth-child(8), .oc-vm-table td:nth-child(8) { width:92px; }
 .oc-vm-table th:nth-child(9), .oc-vm-table td:nth-child(9) { width:138px; }
 .oc-vm-table th:nth-child(10), .oc-vm-table td:nth-child(10) { width:96px; text-align:center; }
@@ -2449,14 +2449,57 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
 .oc-vm-plan {
   display:inline-flex;
   align-items:center;
+  justify-content:center;
   height:24px;
   padding:0 8px;
   border-radius:9999px;
   font-size:12px;
   font-weight:600;
+  white-space:nowrap;
 }
 .oc-vm-plan.has { background:var(--oc-success-bg); color:var(--oc-success-fg); }
 .oc-vm-plan.none { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+.oc-vm-plan-cell { vertical-align:middle; }
+.oc-vm-plan-link,
+.oc-vm-plan-box {
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:3px;
+  max-width:100%;
+  min-width:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:left;
+}
+.oc-vm-plan-link { cursor:pointer; border-radius:var(--oc-r); }
+.oc-vm-plan-link:hover .oc-vm-plan.has { box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-vm-plan-link:focus-visible {
+  outline:2px solid var(--oc-accent);
+  outline-offset:2px;
+}
+.oc-vm-plan-meta {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:1px;
+  max-width:100%;
+  color:var(--oc-fg-muted);
+  font-size:12px;
+  line-height:1.25;
+  white-space:normal;
+}
+.oc-vm-plan-meta-line {
+  display:block;
+  max-width:100%;
+  overflow:visible;
+  text-overflow:clip;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
 .oc-vm-binding-name {
   font-size:13px;
   font-weight:600;

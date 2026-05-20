@@ -108,6 +108,19 @@ def test_ads_level_name_columns_expose_copy_buttons():
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
 
 
+def test_ads_page_supports_campaign_detail_deep_link_from_query_params():
+    """素材管理广告计划入口应能新开 order-analytics 并自动进入 Campaign 详情。"""
+    template = _template_source()
+
+    assert "function adsApplyDeepLinkFromQuery()" in template
+    assert "params.get('tab') !== 'ads'" in template
+    assert "params.get('ads_level')" in template
+    assert "params.get('ads_code')" in template
+    assert "setAdsSubtab(level);" in template
+    assert "adsOpenDetail(level, code, name || code, accountId);" in template
+    assert "document.addEventListener('DOMContentLoaded', adsApplyDeepLinkFromQuery);" in template
+
+
 def test_product_profit_actions_move_into_mobile_content_top():
     """移动端业务按钮应进入页面内容区顶部，不挤在全局顶栏最上方。"""
     template = _template_source()

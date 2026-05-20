@@ -75,11 +75,46 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert "i.filename LIKE %s" in list_sql
     assert "p.product_code LIKE %s" in list_sql
     assert "p.mk_id=%s" in list_sql
+    assert "meta_ad_daily_campaign_metrics" in list_sql
     assert "i.lang=%s" in list_sql
     assert "media_push_logs" in list_sql
     assert list_args[-2:] == (25, 25)
     assert "en" in list_args
     assert 123 in list_args
+
+
+def test_serialize_video_material_includes_campaign_detail_link():
+    item = mvm.serialize_video_material(_video_row(
+        ad_campaign_code="glow-go-rjc",
+        ad_campaign_name="Glow Go Campaign",
+        ad_account_id="act_1253003326160754",
+        ad_account_name="Omurio",
+    ))
+
+    detail = item["ad_plan_detail"]
+    assert detail["level"] == "campaign"
+    assert detail["code"] == "glow-go-rjc"
+    assert detail["name"] == "Glow Go Campaign"
+    assert detail["ad_account_id"] == "1253003326160754"
+    assert detail["url"] == (
+        "/order-analytics?tab=ads&ads_level=campaign&ads_code=glow-go-rjc"
+        "&ads_name=Glow+Go+Campaign&ad_account_id=1253003326160754"
+    )
+
+
+def test_serialize_video_material_falls_back_to_product_code_for_ad_plan_link():
+    item = mvm.serialize_video_material(_video_row(
+        product_code="fallback-product-rjc",
+        product_name="Fallback Product",
+        ad_campaign_code=None,
+        ad_campaign_name=None,
+        ad_account_id=None,
+        push_success_count=1,
+    ))
+
+    assert item["ad_plan_detail"]["code"] == "fallback-product-rjc"
+    assert "ads_code=fallback-product-rjc" in item["ad_plan_detail"]["url"]
+    assert "ads_name=Fallback+Product" in item["ad_plan_detail"]["url"]
 
 
 def test_list_video_materials_defaults_to_page_size_100(monkeypatch):
