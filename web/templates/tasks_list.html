@@ -86,10 +86,24 @@
 .tc-event-tech { margin-top:8px; color:var(--tc-fg-muted); font-size:12px; }
 .tc-event-tech summary { cursor:pointer; }
 .tc-event-tech pre { margin:6px 0 0; padding:8px; max-height:180px; overflow:auto; border-radius:var(--tc-r); background:var(--tc-bg-muted); white-space:pre-wrap; }
+.tc-review-entry { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-accent-subtle); margin-bottom:12px; font-size:13px; }
+.tc-review-entry strong { display:block; margin-bottom:2px; }
+.tc-review-entry span { color:var(--tc-fg-muted); font-size:12px; }
+.tc-review-assets { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
+.tc-review-assets-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
+.tc-review-target-badge { display:inline-flex; align-items:center; height:20px; padding:0 8px; border-radius:999px; background:var(--tc-warning-bg); color:var(--tc-warning-fg); font-size:11px; font-weight:700; }
+.tc-review-assets-empty { color:var(--tc-danger-fg); font-size:12px; line-height:1.5; }
+.tc-review-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.tc-review-asset { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; }
+.tc-review-video { display:block; width:100%; max-height:360px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-review-image-link { display:block; }
+.tc-review-image { display:block; width:100%; max-height:260px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
+.tc-review-asset-meta { margin-top:6px; font-size:12px; color:var(--tc-fg-muted); overflow-wrap:anywhere; }
 
 @media (max-width: 1100px) {
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
   .tc-event-facts { grid-template-columns:1fr; }
+  .tc-review-grid { grid-template-columns:1fr; }
 }
 
 /* ── 移动端适配 ── */
@@ -207,6 +221,7 @@ let TC_LANGUAGE_LABELS = {};
 let TC_LANGUAGE_LOAD_PROMISE = null;
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
 function tcInlineArg(s) {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
@@ -365,12 +380,94 @@ function tcHumanEvent(event, index) {
     tech: Object.keys(payload).length ? JSON.stringify(payload, null, 2) : '',
   };
 }
-function tcRenderEventTimeline(events) {
+function tcReviewAssetsByEvent(reviewAssets) {
+  const map = {};
+  ((reviewAssets && reviewAssets.steps) || []).forEach(function(step) {
+    if (!step || !step.event_type) return;
+    map[String(step.event_type)] = step;
+  });
+  return map;
+}
+function tcReviewAssetMeta(asset) {
+  const parts = [];
+  if (asset.filename) parts.push(asset.filename);
+  if (asset.file_size !== undefined && asset.file_size !== null && asset.file_size !== '') {
+    const size = tcFormatBytes(asset.file_size);
+    if (size) parts.push(size);
+  }
+  if (asset.lang) parts.push(tcLanguageLabel(asset.lang));
+  return parts.join(' · ');
+}
+function tcRenderReviewAsset(asset) {
+  const url = String((asset && asset.url) || '').trim();
+  if (!url) return '';
+  const label = tcEsc((asset && asset.label) || '素材');
+  const meta = tcEsc(tcReviewAssetMeta(asset || {}));
+  const metaHtml = '<div class="tc-review-asset-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>';
+  if (asset.type === 'video') {
+    return '<div class="tc-review-asset">'
+      + '<video class="tc-review-video" controls preload="metadata" src="' + tcAttr(url) + '"></video>'
+      + metaHtml
+      + '</div>';
+  }
+  if (asset.type === 'image') {
+    return '<div class="tc-review-asset">'
+      + '<a class="tc-review-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+      + '<img class="tc-review-image" src="' + tcAttr(url) + '" alt="' + tcAttr((asset && asset.label) || '审核图片') + '">'
+      + '</a>'
+      + metaHtml
+      + '</div>';
+  }
+  return '<div class="tc-review-asset">'
+    + '<a class="tc-btn" href="' + tcAttr(url) + '" target="_blank" rel="noopener">打开素材</a>'
+    + metaHtml
+    + '</div>';
+}
+function tcRenderReviewAssetList(stepAssets) {
+  if (!stepAssets) return '';
+  const assets = Array.isArray(stepAssets.assets) ? stepAssets.assets : [];
+  const badge = stepAssets.review_target ? '<span class="tc-review-target-badge">当前待审核</span>' : '';
+  const body = assets.length
+    ? '<div class="tc-review-grid">' + assets.map(tcRenderReviewAsset).join('') + '</div>'
+    : '<div class="tc-review-assets-empty">暂无可预览素材，不能仅凭空白内容判断，请回到处理人确认产物是否已绑定。</div>';
+  return '<div class="tc-review-assets">'
+    + '<div class="tc-review-assets-head">' + badge + '<span>' + tcEsc(stepAssets.title || '步骤产物') + '</span></div>'
+    + body
+    + '</div>';
+}
+function tcScrollToReviewTarget(eventType) {
+  const key = String(eventType || '').trim();
+  if (!key) return;
+  const el = document.getElementById('tcReviewStep-' + key);
+  if (!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'start'});
+  const focusable = el.querySelector('video, a, button');
+  if (focusable && focusable.focus) focusable.focus({preventScroll:true});
+}
+function tcRenderCurrentReviewEntry(reviewAssets) {
+  const current = reviewAssets && reviewAssets.current_review;
+  if (!current) return '';
+  const count = Number(current.asset_count || 0);
+  const eventType = String(current.event_type || '');
+  const action = count > 0
+    ? '<button class="tc-btn tc-btn--primary" onclick="tcScrollToReviewTarget(\'' + tcInlineArg(eventType) + '\')">查看当前审核内容</button>'
+    : '<span>当前步骤暂无可预览素材</span>';
+  return '<div class="tc-review-entry">'
+    + '<div><strong>' + tcEsc(current.title || '当前审核内容') + '</strong>'
+    + '<span>' + (count ? '共 ' + count + ' 个可查看素材' : '没有可预览素材，先确认产物绑定后再审核') + '</span></div>'
+    + action
+    + '</div>';
+}
+function tcRenderEventTimeline(events, reviewAssets) {
   if (!events.length) {
     return '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无审核流程记录</div>';
   }
+  const reviewByEvent = tcReviewAssetsByEvent(reviewAssets);
   return '<div class="tc-process-timeline">' + events.map(function(event, index) {
     const h = tcHumanEvent(event, index);
+    const reviewStep = reviewByEvent[event.event_type] || null;
+    const reviewAttrs = reviewStep ? ' id="tcReviewStep-' + tcAttr(event.event_type || '') + '"' : '';
+    const reviewAssetsHtml = tcRenderReviewAssetList(reviewStep);
     const facts = h.facts.length
       ? '<div class="tc-event-facts">' + h.facts.map(function(fact) {
           return '<div class="tc-event-fact"><strong>' + tcEsc(fact.label) + '</strong><span>' + tcEsc(fact.value) + '</span></div>';
@@ -379,7 +476,7 @@ function tcRenderEventTimeline(events) {
     const tech = h.tech
       ? '<details class="tc-event-tech"><summary>技术详情</summary><pre>' + tcEsc(h.tech) + '</pre></details>'
       : '';
-    return '<div class="tc-event tc-event--' + tcEsc(h.tone) + '">'
+    return '<div class="tc-event tc-event--' + tcEsc(h.tone) + '"' + reviewAttrs + '>'
       + '<span class="tc-event-dot"></span>'
       + '<div class="tc-event-head">'
       + '<span class="tc-event-step">第 ' + h.step + ' 步</span>'
@@ -389,6 +486,7 @@ function tcRenderEventTimeline(events) {
       + '<div class="tc-event-meta">' + tcEsc(h.actor) + ' · ' + tcEsc(h.time) + '</div>'
       + '<div class="tc-event-summary">' + tcEsc(h.summary) + '</div>'
       + facts
+      + reviewAssetsHtml
       + tech
       + '</div>';
   }).join('') + '</div>';
@@ -632,13 +730,14 @@ async function tcOpenDetail(id) {
   body.innerHTML = '加载中...';
   drawer.style.display = 'block';
   try {
-    const [taskResp, eventsResp] = await Promise.all([
+    const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
       tcFetchJson('/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine') + '&page_size=100'),
       tcFetchJson('/tasks/api/' + id + '/events'),
+      tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
     const task = (taskResp.items || []).find(t => t.id === id);
     if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
-    body.innerHTML = tcRenderDetail(task, eventsResp.events || []);
+    body.innerHTML = tcRenderDetail(task, eventsResp.events || [], reviewAssetsResp || {});
     // fetch artifacts for both parent and child tasks
     fetch('/tasks/api/' + id + '/artifacts')
       .then(r => r.json())
@@ -724,10 +823,11 @@ async function tcOpenDetail(id) {
 }
 function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; }
 
-function tcRenderDetail(task, events) {
+function tcRenderDetail(task, events, reviewAssets) {
   const isParent = !task.parent_task_id;
   const buttons = tcDetailButtons(task, isParent);
-  const eventTimeline = tcRenderEventTimeline(events);
+  const reviewEntry = tcRenderCurrentReviewEntry(reviewAssets);
+  const eventTimeline = tcRenderEventTimeline(events, reviewAssets);
   return `
     <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
@@ -744,6 +844,7 @@ function tcRenderDetail(task, events) {
   <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})</div>
   <div id="tcReadinessRows">加载中...</div>
 </div>` : ''}
+    ${reviewEntry}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
     <h4 style="margin:0 0 10px; font-size:14px;">审核流程</h4>
     ${eventTimeline}

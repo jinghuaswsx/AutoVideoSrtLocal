@@ -62,3 +62,16 @@ def test_bulk_translate_task_views_use_language_labels_with_codes():
     assert "targetLangs.map(code => esc(languageLabel(code))).join('、')" in list_source
     assert "de: '德语 (DE)'" in detail_source
     assert "target_lang_labels || task.target_langs || []).map(languageLabel).join" in admin_source
+
+
+def test_task_center_timeline_renders_review_assets_in_steps():
+    source = (ROOT / "web" / "templates" / "tasks_list.html").read_text(encoding="utf-8")
+
+    assert "/tasks/api/' + id + '/review-assets" in source
+    assert "function tcRenderCurrentReviewEntry" in source
+    assert "function tcRenderReviewAssetList" in source
+    assert "function tcRenderReviewAsset" in source
+    assert "tcRenderEventTimeline(events, reviewAssets)" in source
+    assert "<video class=\"tc-review-video\"" in source
+    assert "当前审核内容" in source
+    assert "tcScrollToReviewTarget" in source

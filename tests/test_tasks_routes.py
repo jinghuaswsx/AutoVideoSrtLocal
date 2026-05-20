@@ -688,6 +688,58 @@ def test_api_events_delegates_to_tasks_service(authed_client_no_db, monkeypatch)
 
     assert rsp.status_code == 200
     assert rsp.get_json() == {"events": expected_events}
+
+
+def test_api_review_assets_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    expected = {
+        "current_review": {
+            "event_type": "submitted",
+            "title": "当前待审核：翻译产物",
+            "asset_count": 1,
+        },
+        "steps": [
+            {
+                "event_type": "submitted",
+                "review_target": True,
+                "assets": [{"type": "video", "url": "/medias/object?object_key=x"}],
+            }
+        ],
+    }
+
+    def fake_get_task_review_assets(task_id):
+        assert task_id == 44
+        return expected
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_task_review_assets",
+        fake_get_task_review_assets,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/44/review-assets")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == expected
+
+
+def test_api_review_assets_maps_missing_task_to_404(authed_client_no_db, monkeypatch):
+    from web.routes.tasks import tasks_svc
+    captured = []
+
+    def fake_get_task_review_assets(task_id):
+        captured.append(task_id)
+        raise tasks_svc.StateError("task not found")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_task_review_assets",
+        fake_get_task_review_assets,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/44/review-assets")
+
+    assert rsp.status_code == 404
+    assert rsp.get_json()["error"] == "task not found"
     assert captured == [44]
 
 

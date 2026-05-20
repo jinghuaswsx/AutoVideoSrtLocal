@@ -478,6 +478,15 @@ def api_events(tid: int):
     return _json_response({"events": tasks_svc.list_task_events(tid)})
 
 
+@bp.route("/api/<int:tid>/review-assets", methods=["GET"])
+@login_required
+def api_review_assets(tid: int):
+    try:
+        return _json_response(tasks_svc.get_task_review_assets(tid))
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+
+
 @bp.route("/api/translators", methods=["GET"])
 @login_required
 def api_translators():

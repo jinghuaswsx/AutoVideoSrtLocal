@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Iterable
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from appcore import mk_import as mk_import_svc
 from appcore import user_notifications as notifications_svc
@@ -785,6 +785,231 @@ def _medias_search_url(
     if action:
         params.append(("action", action))
     return "/medias/?" + urlencode(params)
+
+
+def _review_media_object_url(object_key: str | None) -> str:
+    key = str(object_key or "").strip()
+    if not key:
+        return ""
+    return "/medias/object?object_key=" + quote(key, safe="")
+
+
+def _review_object_filename(object_key: str | None) -> str:
+    key = str(object_key or "").strip()
+    return key.rsplit("/", 1)[-1] if key else ""
+
+
+def _review_video_asset(
+    item: dict | None,
+    *,
+    label: str,
+) -> dict | None:
+    if not item:
+        return None
+    url = _review_media_object_url(item.get("object_key"))
+    if not url:
+        return None
+    filename = (
+        str(item.get("filename") or "").strip()
+        or _review_object_filename(item.get("object_key"))
+    )
+    return {
+        "type": "video",
+        "label": label,
+        "url": url,
+        "filename": filename,
+        "display_name": item.get("display_name") or filename,
+        "file_size": item.get("file_size"),
+        "lang": item.get("lang"),
+        "media_item_id": item.get("id"),
+    }
+
+
+def _review_item_cover_asset(item: dict | None) -> dict | None:
+    if not item or not item.get("cover_object_key"):
+        return None
+    filename = _review_object_filename(item.get("cover_object_key"))
+    return {
+        "type": "image",
+        "label": "封面",
+        "url": f"/medias/item-cover/{int(item['id'])}",
+        "filename": filename,
+        "display_name": filename or "封面",
+        "file_size": None,
+        "lang": item.get("lang"),
+        "media_item_id": item.get("id"),
+    }
+
+
+def _review_detail_image_asset(row: dict, index: int) -> dict:
+    filename = _review_object_filename(row.get("object_key"))
+    return {
+        "type": "image",
+        "label": f"详情图 {int(index)}",
+        "url": f"/medias/detail-image/{int(row['id'])}",
+        "filename": filename,
+        "display_name": filename or f"详情图 {int(index)}",
+        "file_size": row.get("file_size"),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "detail_image_id": row.get("id"),
+    }
+
+
+def _review_step(
+    event_type: str,
+    title: str,
+    *,
+    review_target: bool,
+    assets: list[dict],
+) -> dict:
+    return {
+        "event_type": event_type,
+        "title": title,
+        "review_target": bool(review_target),
+        "assets": assets,
+    }
+
+
+def _load_task_review_row(task_id: int) -> dict | None:
+    return query_one(
+        "SELECT t.*, p.product_code AS product_code, p.name AS product_name "
+        "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
+        "WHERE t.id=%s",
+        (int(task_id),),
+    )
+
+
+def _load_review_media_item(media_item_id: Any) -> dict | None:
+    item_id = _positive_int(media_item_id)
+    if item_id is None:
+        return None
+    return query_one(
+        "SELECT id, filename, display_name, object_key, cover_object_key, "
+        "file_size, lang FROM media_items "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (item_id,),
+    )
+
+
+def _parent_review_assets_payload(row: dict) -> dict:
+    item = _load_review_media_item(row.get("media_item_id"))
+    asset = _review_video_asset(item, label="原素材视频")
+    assets = [asset] if asset else []
+    review_target = row.get("status") == PARENT_RAW_REVIEW
+    steps = [
+        _review_step(
+            "raw_niuma_done",
+            "牛马去字幕完成",
+            review_target=False,
+            assets=assets,
+        ),
+        _review_step(
+            "raw_manual_uploaded",
+            "手动上传原始视频",
+            review_target=False,
+            assets=assets,
+        ),
+        _review_step(
+            "raw_uploaded",
+            "提交原始视频审核",
+            review_target=review_target,
+            assets=assets,
+        ),
+    ]
+    current_review = None
+    if review_target:
+        current_review = {
+            "event_type": "raw_uploaded",
+            "title": "当前待审核：原素材视频",
+            "asset_count": len(assets),
+        }
+    return {
+        "task_id": row.get("id"),
+        "current_review": current_review,
+        "steps": steps,
+    }
+
+
+def _load_child_review_items(task_id: int) -> list[dict]:
+    return [
+        dict(row)
+        for row in query_all(
+            "SELECT mi.id, mi.filename, mi.display_name, mi.object_key, "
+            "mi.cover_object_key, mi.file_size, mi.lang "
+            "FROM media_items mi "
+            "WHERE mi.task_id=%s AND mi.deleted_at IS NULL "
+            "ORDER BY mi.lang, mi.id DESC",
+            (int(task_id),),
+        )
+    ]
+
+
+def _load_child_review_detail_images(product_id: int, lang: str) -> list[dict]:
+    return [
+        dict(row)
+        for row in query_all(
+            "SELECT id, object_key, file_size, width, height "
+            "FROM media_product_detail_images "
+            "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+            "ORDER BY sort_order ASC, id ASC",
+            (int(product_id), (lang or "").strip().lower()),
+        )
+    ]
+
+
+def _child_review_assets_payload(row: dict) -> dict:
+    task_id = int(row["id"])
+    lang = (row.get("country_code") or "").strip().lower()
+    assets: list[dict] = []
+    for item in _load_child_review_items(task_id):
+        video = _review_video_asset(item, label="翻译视频")
+        if video:
+            assets.append(video)
+        cover = _review_item_cover_asset(item)
+        if cover:
+            assets.append(cover)
+    for index, image in enumerate(
+        _load_child_review_detail_images(int(row["media_product_id"]), lang),
+        start=1,
+    ):
+        assets.append(_review_detail_image_asset(image, index))
+
+    review_target = row.get("status") == CHILD_REVIEW
+    steps = [
+        _review_step(
+            "submitted",
+            "提交翻译验收",
+            review_target=review_target,
+            assets=assets,
+        )
+    ]
+    current_review = None
+    if review_target:
+        current_review = {
+            "event_type": "submitted",
+            "title": "当前待审核：翻译产物",
+            "asset_count": len(assets),
+        }
+    return {
+        "task_id": task_id,
+        "current_review": current_review,
+        "steps": steps,
+    }
+
+
+def get_task_review_assets(task_id: int) -> dict:
+    """Return reviewable media assets grouped by task process step.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-20-task-center-step-review-assets-design.md
+    """
+    row = _load_task_review_row(int(task_id))
+    if not row:
+        raise StateError("task not found")
+    if row.get("parent_task_id") is None:
+        return _parent_review_assets_payload(row)
+    return _child_review_assets_payload(row)
 
 
 def _acceptance_check(
