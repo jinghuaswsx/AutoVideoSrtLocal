@@ -74,6 +74,38 @@ def test_attach_local_preview_urls_keeps_remote_fallback_when_file_missing(tmp_p
     assert annotated[0]["preview_url_hash"] == preview_hash
 
 
+def test_resolve_local_preview_archive_returns_ready_file_and_metadata(tmp_path, monkeypatch):
+    from appcore import voice_preview_archive as archive
+
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(archive, "UPLOAD_DIR", str(tmp_path))
+
+    def fake_query_one(sql, params=()):
+        assert "FROM voice_preview_archives" in sql
+        assert params == ("de", "voice-1", "hash-1")
+        return {
+            "local_path": str(audio),
+            "status": "ready",
+            "duration_seconds": 4.2,
+            "transcript_text": "Guten Tag",
+            "utterances_json": '[{"text":"Guten Tag","start_time":0,"end_time":1}]',
+        }
+
+    monkeypatch.setattr(archive, "query_one", fake_query_one)
+
+    result = archive.resolve_local_preview_archive(
+        language="de",
+        voice_id="voice-1",
+        preview_url_hash="hash-1",
+    )
+
+    assert result["local_path"] == str(audio)
+    assert result["duration_seconds"] == 4.2
+    assert result["transcript_text"] == "Guten Tag"
+    assert result["utterances_json"] == [{"text": "Guten Tag", "start_time": 0, "end_time": 1}]
+
+
 def test_archive_preview_target_downloads_measures_transcribes_and_upserts(tmp_path, monkeypatch):
     from appcore import voice_preview_archive as archive
 

@@ -157,6 +157,69 @@ def test_rank_voice_candidates_prefers_local_preview_audio_over_download(tmp_pat
     assert result["candidates"][0]["voice_ai_preview_audio_relpath"].endswith("_sample.mp3")
 
 
+def test_rank_voice_candidates_prefers_voice_preview_archive_and_hides_local_path(tmp_path):
+    from appcore import voice_preview_archive
+    from appcore.voice_ai_ranking import rank_voice_candidates
+
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"source-audio")
+    archive_audio = tmp_path / "archive" / "de" / "voice-a.mp3"
+    archive_audio.parent.mkdir(parents=True)
+    archive_audio.write_bytes(b"archived-preview")
+    preview_url = "https://cdn.test/v1.mp3"
+    preview_hash = voice_preview_archive.hash_preview_url(preview_url)
+
+    def fail_download(url: str, dest: Path) -> Path:
+        raise AssertionError("archived preview audio should be used before preview_url")
+
+    def fake_trim(src: Path, dest: Path, **kwargs) -> Path:
+        dest.write_bytes(src.read_bytes())
+        return dest
+
+    with patch("appcore.voice_ai_ranking.voice_preview_archive.resolve_local_preview_archive") as m_archive, \
+         patch("appcore.voice_ai_ranking.invoke_generate") as m_generate:
+        m_archive.return_value = {
+            "local_path": str(archive_audio),
+            "duration_seconds": 5.25,
+            "transcript_text": "Archived transcript",
+            "utterances_json": [{"text": "Archived transcript", "start_time": 0, "end_time": 2}],
+        }
+        m_generate.return_value = {
+            "json": {
+                "rankings": [
+                    {"voice_id": "v1", "llm_rank": 1, "reason_summary": "自然清晰"},
+                ]
+            }
+        }
+
+        result = rank_voice_candidates(
+            task_id="task-1",
+            task={"target_lang": "de", "utterances": [{"text": "hello"}]},
+            candidates=[{
+                "voice_id": "v1",
+                "similarity": 0.9,
+                "preview_url": preview_url,
+            }],
+            source_audio_path=source,
+            task_dir=tmp_path,
+            user_id=7,
+            preview_downloader=fail_download,
+            audio_trimmer=fake_trim,
+        )
+
+    m_archive.assert_called_once_with(
+        language="de",
+        voice_id="v1",
+        preview_url_hash=preview_hash,
+    )
+    assert result["debug"]["request"]["visual"]["media"][1]["source"] == "archive"
+    assert result["debug"]["request"]["visual"]["candidates"][0]["preview_duration_seconds"] == 5.25
+    assert result["debug"]["request"]["visual"]["candidates"][0]["preview_transcript_text"] == "Archived transcript"
+    raw_debug = str(result["debug"])
+    assert str(archive_audio) not in raw_debug
+    assert "local_path" not in raw_debug
+
+
 def test_pick_breath_cut_seconds_prefers_silence_between_3_and_10_seconds():
     from appcore.voice_ai_ranking import _pick_breath_cut_seconds
 

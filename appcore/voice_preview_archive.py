@@ -153,20 +153,60 @@ def resolve_local_preview_path(
     voice_id: str,
     preview_url_hash: str,
 ) -> str | None:
+    archive = resolve_local_preview_archive(
+        language=language,
+        voice_id=voice_id,
+        preview_url_hash=preview_url_hash,
+    )
+    return archive.get("local_path") if archive else None
+
+
+def resolve_local_preview_archive(
+    *,
+    language: str,
+    voice_id: str,
+    preview_url_hash: str,
+) -> dict | None:
+    """Return ready local preview archive metadata for the exact preview URL hash."""
     lang = str(language or "").strip().lower()
     voice = str(voice_id or "").strip()
     preview_hash = str(preview_url_hash or "").strip()
     if not lang or not voice or not preview_hash:
         return None
     row = query_one(
-        "SELECT local_path, status FROM voice_preview_archives "
+        "SELECT local_path, status, duration_seconds, transcript_text, utterances_json "
+        "FROM voice_preview_archives "
         "WHERE language = %s AND voice_id = %s AND preview_url_hash = %s "
         "LIMIT 1",
         (lang, voice, preview_hash),
     )
     if not row or str(row.get("status") or "").strip() != "ready":
         return None
-    return _safe_existing_archive_file(row.get("local_path"))
+    local_path = _safe_existing_archive_file(row.get("local_path"))
+    if not local_path:
+        return None
+    utterances = []
+    raw_utterances = row.get("utterances_json")
+    if isinstance(raw_utterances, str) and raw_utterances.strip():
+        try:
+            parsed = json.loads(raw_utterances)
+            utterances = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            utterances = []
+    elif isinstance(raw_utterances, list):
+        utterances = raw_utterances
+    duration = row.get("duration_seconds")
+    try:
+        duration = float(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration = None
+    return {
+        "local_path": local_path,
+        "duration_seconds": duration,
+        "transcript_text": str(row.get("transcript_text") or "").strip(),
+        "utterances_json": utterances,
+        "preview_url_hash": preview_hash,
+    }
 
 
 def _preview_rate_source_code(language: str | None) -> str:

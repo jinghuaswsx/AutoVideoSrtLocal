@@ -1243,6 +1243,7 @@ class MultiTranslateRunner(PipelineRunner):
         voice_ai_rankings: list = []
         voice_ai_rank_status = "skipped"
         voice_ai_rank_model = None
+        voice_ai_rank_provider = None
         voice_ai_rank_debug = None
         if utterances and video_path:
             try:
@@ -1281,33 +1282,11 @@ class MultiTranslateRunner(PipelineRunner):
             query_embedding_b64 = None
 
         if candidates and clip:
-            try:
-                from appcore.voice_ai_ranking import rank_voice_candidates
+            from appcore.voice_ai_ranking import VOICE_AI_MODEL, VOICE_AI_PROVIDER
 
-                ai_result = rank_voice_candidates(
-                    task_id=task_id,
-                    task=task,
-                    candidates=candidates,
-                    source_audio_path=clip,
-                    task_dir=task["task_dir"],
-                    user_id=self.user_id,
-                )
-                candidates = ai_result.get("candidates") or candidates
-                voice_ai_rankings = ai_result.get("rankings") or []
-                voice_ai_rank_status = ai_result.get("status") or "done"
-                voice_ai_rank_model = ai_result.get("model")
-                voice_ai_rank_debug = ai_result.get("debug")
-            except Exception as exc:
-                log.exception("voice AI ranking failed for %s: %s", task_id, exc)
-                voice_ai_rank_status = "failed"
-                voice_ai_rank_debug = {
-                    "status": "failed",
-                    "provider": "openrouter",
-                    "model": "google/gemini-3.5-flash",
-                    "use_case": "voice_selection.assess",
-                    "request": {"visual": {"media": [], "candidates": candidates[:10]}, "raw": {}},
-                    "result": {"visual": {"rankings": []}, "raw": {"error": str(exc)[:500]}},
-                }
+            voice_ai_rank_status = "running"
+            voice_ai_rank_model = VOICE_AI_MODEL
+            voice_ai_rank_provider = VOICE_AI_PROVIDER
 
         fallback = None if candidates else default_voice_id
 
@@ -1316,11 +1295,39 @@ class MultiTranslateRunner(PipelineRunner):
             voice_match_candidates=candidates,
             voice_match_fallback_voice_id=fallback,
             voice_match_query_embedding=query_embedding_b64,
+            voice_match_source_audio_path=clip,
             voice_ai_rankings=voice_ai_rankings,
             voice_ai_rank_status=voice_ai_rank_status,
             voice_ai_rank_model=voice_ai_rank_model,
+            voice_ai_rank_provider=voice_ai_rank_provider,
             voice_ai_rank_debug=voice_ai_rank_debug,
         )
+        if candidates and clip:
+            try:
+                from appcore.voice_ai_ranking_task import queue_voice_ai_ranking
+
+                queue_voice_ai_ranking(
+                    task_id=task_id,
+                    task=task,
+                    candidates=candidates,
+                    source_audio_path=clip,
+                    task_dir=task["task_dir"],
+                    user_id=self.user_id,
+                )
+            except Exception as exc:
+                log.exception("voice AI ranking queue failed for %s: %s", task_id, exc)
+                task_state.update(
+                    task_id,
+                    voice_ai_rank_status="failed",
+                    voice_ai_rank_debug={
+                        "status": "failed",
+                        "provider": "openrouter",
+                        "model": "google/gemini-3.5-flash",
+                        "use_case": "voice_selection.assess",
+                        "request": {"visual": {"media": [], "candidates": candidates[:10]}, "raw": {}},
+                        "result": {"visual": {"rankings": []}, "raw": {"error": str(exc)[:500]}},
+                    },
+                )
 
         # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice
         task_state.set_current_review_step(task_id, "voice_match")

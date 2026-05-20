@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from appcore import voice_preview_archive
 from appcore.llm_client import invoke_generate
 
 log = logging.getLogger(__name__)
@@ -150,10 +151,16 @@ def rank_voice_candidates(
     for index, candidate in enumerate(top_candidates, start=1):
         prompt_candidate = _candidate_prompt_payload(candidate, index)
         preview_url = str(candidate.get("preview_url") or "").strip()
-        local_preview_path = _resolve_local_preview_audio_path(candidate, Path(task_dir))
+        archive = _resolve_voice_preview_archive(task=task, candidate=candidate)
+        local_preview_path = (
+            Path(archive["local_path"]) if archive
+            else _resolve_local_preview_audio_path(candidate, Path(task_dir))
+        )
+        if archive:
+            _attach_archive_metadata(prompt_candidate, archive)
         if local_preview_path or preview_url:
             try:
-                source_kind = "local"
+                source_kind = "archive" if archive else "local"
                 if local_preview_path:
                     downloaded_path = local_preview_path
                 else:
@@ -230,7 +237,6 @@ def rank_voice_candidates(
     for item in enriched_top:
         asset = preview_assets_by_voice_id.get(str(item.get("voice_id") or "").strip())
         if asset:
-            item["voice_ai_preview_audio_path"] = asset.get("path")
             item["voice_ai_preview_audio_relpath"] = asset.get("relative_path")
     enriched_candidates = enriched_top + [dict(candidate) for candidate in list(candidates or [])[MAX_VOICE_AI_CANDIDATES:]]
     debug = {
@@ -310,6 +316,9 @@ def _candidate_prompt_payload(candidate: dict, index: int) -> dict:
         "preview_words_per_second",
         "speed_match_score",
         "voice_speed_status",
+        "preview_url_hash",
+        "preview_duration_seconds",
+        "preview_transcript_text",
     )
     payload = {"match_order": index}
     for key in keys:
@@ -358,7 +367,7 @@ def _build_request_debug(
                 "type": "input_audio",
                 "input_audio": {
                     "data": f"[base64-audio from {item.get('filename')}, {item.get('bytes') or 0} bytes]",
-                    "format": _audio_format_from_path(item.get("path") or item.get("filename") or ""),
+                    "format": item.get("format") or _audio_format_from_path(item.get("filename") or ""),
                 },
             }
             for item in media_items
@@ -411,7 +420,6 @@ def _media_debug_item(
 ) -> dict:
     item = {
         "role": role,
-        "path": str(path),
         "filename": path.name,
         "format": _audio_format_from_path(str(path)),
         "bytes": _file_size(path),
@@ -426,6 +434,61 @@ def _media_debug_item(
     if source_url:
         item["source_url"] = source_url
     return item
+
+
+def _resolve_voice_preview_archive(*, task: dict, candidate: dict) -> dict | None:
+    voice_id = str(candidate.get("voice_id") or "").strip()
+    language = str(
+        candidate.get("language")
+        or task.get("target_lang")
+        or task.get("language")
+        or ""
+    ).strip().lower()
+    preview_url = str(candidate.get("preview_url") or "").strip()
+    preview_hash = str(candidate.get("preview_url_hash") or "").strip()
+    if not preview_hash and preview_url:
+        preview_hash = voice_preview_archive.hash_preview_url(preview_url)
+    if not voice_id or not language or not preview_hash:
+        return None
+    try:
+        return voice_preview_archive.resolve_local_preview_archive(
+            language=language,
+            voice_id=voice_id,
+            preview_url_hash=preview_hash,
+        )
+    except Exception as exc:
+        log.warning(
+            "voice preview archive lookup skipped voice=%s language=%s: %s",
+            voice_id,
+            language,
+            exc,
+        )
+        return None
+
+
+def _attach_archive_metadata(prompt_candidate: dict, archive: dict) -> None:
+    if archive.get("preview_url_hash"):
+        prompt_candidate["preview_url_hash"] = archive.get("preview_url_hash")
+    if archive.get("duration_seconds") is not None:
+        prompt_candidate["preview_duration_seconds"] = archive.get("duration_seconds")
+    transcript = str(archive.get("transcript_text") or "").strip()
+    if transcript:
+        prompt_candidate["preview_transcript_text"] = transcript
+    utterances = archive.get("utterances_json")
+    if isinstance(utterances, list) and utterances:
+        prompt_candidate["preview_utterances_sample"] = [
+            _utterance_prompt_sample(item)
+            for item in utterances[:5]
+            if isinstance(item, dict)
+        ]
+
+
+def _utterance_prompt_sample(item: dict) -> dict:
+    return {
+        "text": item.get("text") or item.get("transcript") or "",
+        "start_time": item.get("start_time", item.get("start")),
+        "end_time": item.get("end_time", item.get("end")),
+    }
 
 
 def _relative_path(path: Path, task_dir: Path) -> str | None:
@@ -491,7 +554,6 @@ def _resolve_local_preview_audio_path(candidate: dict, task_dir: Path) -> Path |
         "preview_audio_local_path",
         "voice_audio_path",
         "audio_path",
-        "voice_ai_preview_audio_path",
     ):
         raw = str(candidate.get(key) or "").strip()
         if not raw:

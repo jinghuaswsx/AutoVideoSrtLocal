@@ -1292,7 +1292,8 @@ def rematch_voice(task_id: str):
             language=lang,
             source_utterances=state.get("utterances") or [],
             gender=gender,
-            top_k=10,
+            candidate_pool_size=20,
+            top_k=20,
             exclude_voice_ids={default_voice_id} if default_voice_id else None,
         ) or []
     else:
