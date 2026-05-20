@@ -98,14 +98,15 @@ Register one scheduled task in `appcore/scheduled_tasks.py`.
 
 The job is two scheduled daily runs, not a task that wakes every 10 minutes all day.
 
-Expected runtime is about 8 hours for 500 products.
+Expected runtime is about 30-60 minutes for 500 products when Mingkong responds
+normally.
 
 The runner behavior:
 
 1. Start a `scheduled_task_runs` row.
 2. Load the latest Dianxiaomi Top500 queue.
 3. Process products in internal batches of 10.
-4. After every 1-2 products, sleep 30 seconds.
+4. After every 10 products, sleep 10 seconds.
 5. Continue until the 500-product queue is finished.
 6. Finalize material snapshots and generate the Top100 archive.
 7. Finish the run with summary counters.

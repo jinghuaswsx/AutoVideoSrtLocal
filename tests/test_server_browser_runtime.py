@@ -249,6 +249,14 @@ def test_dianxiaomi_listing_ranking_sync_timer_uses_dxm02_at_1240_for_recent_7_d
     assert "Persistent=true" in timer
 
 
+def test_mingkong_material_snapshot_service_uses_faster_guarded_throttle():
+    service = _read("deploy/server_browser/autovideosrt-mingkong-material-daily-snapshot.service")
+
+    assert "tools/mingkong_material_daily_snapshot.py" in service
+    assert "--sleep-after-products 10" in service
+    assert "--sleep-seconds 10" in service
+
+
 def test_visible_dxm_runner_installs_novnc_paste_bridge():
     runner = _read("deploy/server_browser/run_visible_dxm_env.sh")
     bridge = _read("deploy/server_browser/novnc_paste_bridge.js")
