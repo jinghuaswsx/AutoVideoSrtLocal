@@ -5,6 +5,9 @@
   <div class="vs-heading">
     <strong>🎤 选择 TTS 音色</strong>
     <span class="vs-hint" id="vs-summary">正在加载音色库...</span>
+    <button type="button" class="vs-ai-rank-debug-btn" id="vs-ai-rank-debug-btn" hidden>
+      大模型音色选择排名
+    </button>
   </div>
 
   <div class="vs-sample" id="vs-sample" style="display:none;">
@@ -51,6 +54,37 @@
       </div>
       <div class="vs-modal-list" id="vs-modal-list">
         <div class="vs-loading">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vs-ai-rank-modal" id="vs-ai-rank-modal" hidden role="dialog" aria-modal="true" aria-labelledby="vs-ai-rank-modal-title">
+    <div class="vs-modal-backdrop" data-ai-rank-modal-close></div>
+    <div class="vs-ai-rank-panel">
+      <div class="vs-modal-head">
+        <div>
+          <strong id="vs-ai-rank-modal-title">大模型音色选择排名</strong>
+          <span class="vs-modal-count" id="vs-ai-rank-modal-status">未运行</span>
+        </div>
+        <button type="button" class="vs-modal-close" id="vs-ai-rank-close-btn" aria-label="关闭">x</button>
+      </div>
+      <div class="vs-ai-rank-tabs" role="tablist" aria-label="大模型音色选择排名报文">
+        <button type="button" class="active" data-ai-rank-tab="request">请求</button>
+        <button type="button" data-ai-rank-tab="result">结果</button>
+      </div>
+      <div class="vs-ai-rank-body">
+        <section class="vs-ai-rank-tab-panel active" data-ai-rank-panel="request">
+          <div class="vs-ai-rank-section-title">可视化请求</div>
+          <div id="vs-ai-rank-request-visual"></div>
+          <div class="vs-ai-rank-section-title">原始报文</div>
+          <pre id="vs-ai-rank-request-raw" class="vs-ai-rank-pre"></pre>
+        </section>
+        <section class="vs-ai-rank-tab-panel" data-ai-rank-panel="result">
+          <div class="vs-ai-rank-section-title">可视化结果</div>
+          <div id="vs-ai-rank-result-visual"></div>
+          <div class="vs-ai-rank-section-title">原始结果</div>
+          <pre id="vs-ai-rank-result-raw" class="vs-ai-rank-pre"></pre>
+        </section>
       </div>
     </div>
   </div>
@@ -161,6 +195,17 @@
     border-radius: 12px; }
   .vs-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .vs-hint { font-size: 12px; color: var(--text-user-badge); }
+  .vs-ai-rank-debug-btn {
+    margin-left: auto; padding: 6px 12px;
+    border: 1px solid oklch(68% 0.11 155);
+    background: oklch(96% 0.035 155); color: oklch(36% 0.11 155);
+    border-radius: 999px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 700;
+    white-space: nowrap;
+  }
+  .vs-ai-rank-debug-btn:hover,
+  .vs-ai-rank-debug-btn:focus-visible {
+    background: oklch(92% 0.055 155); outline: none;
+  }
   .vs-sample { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
   .vs-warning { padding: 8px 12px; background: oklch(96% 0.05 85);
     border-left: 3px solid oklch(72% 0.14 80); border-radius: 6px;
@@ -196,8 +241,14 @@
   }
 
   .vs-modal[hidden] { display: none; }
+  .vs-ai-rank-modal[hidden] { display: none; }
   .vs-modal {
     position: fixed; inset: 0; z-index: 1200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .vs-ai-rank-modal {
+    position: fixed; inset: 0; z-index: 1210;
     display: flex; align-items: center; justify-content: center;
     padding: 24px;
   }
@@ -212,6 +263,15 @@
     display: flex; flex-direction: column;
     background: var(--bg-card); border: 1px solid var(--border-main);
     border-radius: 10px; box-shadow: var(--shadow-lg, 0 20px 50px rgba(8, 15, 32, 0.2));
+  }
+  .vs-ai-rank-panel {
+    position: relative; z-index: 1;
+    width: min(1180px, calc(100vw - 32px));
+    max-height: min(820px, calc(100vh - 48px));
+    display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+    background: var(--bg-card); border: 1px solid var(--border-main);
+    border-radius: 10px; box-shadow: var(--shadow-lg, 0 20px 50px rgba(8, 15, 32, 0.22));
+    overflow: hidden;
   }
   .vs-modal-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -236,6 +296,36 @@
     background: var(--bg-body);
   }
   body.vs-modal-open { overflow: hidden; }
+  body.vs-ai-rank-modal-open { overflow: hidden; }
+  .vs-ai-rank-tabs {
+    display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border-main);
+    background: var(--bg-body);
+  }
+  .vs-ai-rank-tabs button {
+    border: 1px solid var(--border-main); border-radius: 999px; background: var(--bg-card);
+    color: var(--text-main); cursor: pointer; font-size: 12px; font-weight: 700;
+    padding: 6px 14px;
+  }
+  .vs-ai-rank-tabs button.active {
+    border-color: oklch(56% 0.16 230); background: oklch(96% 0.04 230); color: oklch(42% 0.15 230);
+  }
+  .vs-ai-rank-body { min-height: 0; overflow: auto; padding: 14px; background: var(--bg-body); }
+  .vs-ai-rank-tab-panel { display: none; gap: 12px; }
+  .vs-ai-rank-tab-panel.active { display: grid; }
+  .vs-ai-rank-section-title { font-size: 12px; font-weight: 800; color: var(--text-main); }
+  .vs-ai-rank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+  .vs-ai-rank-card {
+    border: 1px solid var(--border-main); border-radius: 8px; background: var(--bg-card);
+    padding: 10px; min-width: 0; font-size: 12px; line-height: 1.45;
+  }
+  .vs-ai-rank-card strong { display: block; margin-bottom: 4px; color: var(--text-main); }
+  .vs-ai-rank-card span { display: block; color: var(--text-user-badge); overflow-wrap: anywhere; }
+  .vs-ai-rank-card audio { width: 100%; height: 32px; margin-top: 8px; }
+  .vs-ai-rank-pre {
+    margin: 0; max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+    padding: 12px; border: 1px solid var(--border-main); border-radius: 8px;
+    background: #0f172a; color: #e2e8f0; font-size: 11px; line-height: 1.55;
+  }
 
   /* 性别胶囊按钮组 */
   .vs-gender-pills { display: flex; gap: 6px; }
@@ -326,7 +416,8 @@
     background: oklch(96% 0.03 80);
   }
   .vs-row-sim,
-  .vs-row-rank {
+  .vs-row-rank,
+  .vs-row-ai-rank {
     display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
     font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;
     margin-right: 6px;
@@ -334,6 +425,16 @@
   .vs-row-rank {
     min-width: 28px; justify-content: center;
     background: oklch(50% 0.17 230);
+  }
+  .vs-row-ai-rank {
+    max-width: min(260px, 100%);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: oklch(50% 0.13 155);
+    cursor: pointer;
+  }
+  .vs-row-ai-rank-missing {
+    background: oklch(72% 0.03 240); color: oklch(36% 0.04 245);
+    cursor: default;
   }
   .vs-row audio { height: 32px; max-width: 220px; }
   .vs-row-select-btn {

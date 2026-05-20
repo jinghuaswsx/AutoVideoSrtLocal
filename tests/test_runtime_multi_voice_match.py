@@ -24,7 +24,8 @@ def test_step_voice_match_writes_candidates_to_state():
                return_value=np.zeros(256, dtype=np.float32)), \
          patch("appcore.runtime_multi.resolve_default_voice",
                return_value="default-voice-id"), \
-         patch("pipeline.voice_match_speed.match_candidates_speed_aware") as m_match:
+         patch("pipeline.voice_match_speed.match_candidates_speed_aware") as m_match, \
+         patch("appcore.voice_ai_ranking.rank_voice_candidates") as m_ai_rank:
         m_match.return_value = [
             {"voice_id": "v1", "name": "A", "similarity": 0.85,
              "gender": "male", "preview_url": "u1"},
@@ -33,6 +34,21 @@ def test_step_voice_match_writes_candidates_to_state():
             {"voice_id": "v3", "name": "C", "similarity": 0.74,
              "gender": "female", "preview_url": "u3"},
         ]
+        m_ai_rank.return_value = {
+            "status": "done",
+            "rankings": [{"voice_id": "v2", "llm_rank": 1, "reason_summary": "more expressive"}],
+            "candidates": [
+                {"voice_id": "v1", "name": "A", "similarity": 0.85,
+                 "gender": "male", "preview_url": "u1", "llm_rank": 2,
+                 "llm_reason_summary": "stable"},
+                {"voice_id": "v2", "name": "B", "similarity": 0.80,
+                 "gender": "male", "preview_url": "u2", "llm_rank": 1,
+                 "llm_reason_summary": "more expressive"},
+                {"voice_id": "v3", "name": "C", "similarity": 0.74,
+                 "gender": "female", "preview_url": "u3"},
+            ],
+            "model": "google/gemini-3.5-flash",
+        }
         runner._step_voice_match("t1")
 
     payload = m_update.call_args.kwargs
@@ -41,7 +57,14 @@ def test_step_voice_match_writes_candidates_to_state():
     assert m_match.call_args.kwargs["top_k"] == 20
     assert m_match.call_args.kwargs["source_utterances"] == normalized_utterances
     assert payload["voice_match_candidates"][0]["voice_id"] == "v1"
+    assert payload["voice_match_candidates"][1]["llm_rank"] == 1
+    assert payload["voice_ai_rankings"] == [
+        {"voice_id": "v2", "llm_rank": 1, "reason_summary": "more expressive"}
+    ]
+    assert payload["voice_ai_rank_status"] == "done"
+    assert payload["voice_ai_rank_model"] == "google/gemini-3.5-flash"
     assert len(payload["voice_match_candidates"]) == 3
+    m_ai_rank.assert_called_once()
 
 
 def test_step_voice_match_fallback_when_empty():

@@ -1382,11 +1382,20 @@ def rematch_voice(task_id: str):
 
     if is_owner:
         state["voice_match_candidates"] = candidates
+        state["voice_ai_rankings"] = []
+        state["voice_ai_rank_status"] = "stale_after_rematch"
+        state["voice_ai_rank_debug"] = None
         save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
             from appcore import task_state as _ts
-            _ts.update(task_id, voice_match_candidates=candidates)
+            _ts.update(
+                task_id,
+                voice_match_candidates=candidates,
+                voice_ai_rankings=[],
+                voice_ai_rank_status="stale_after_rematch",
+                voice_ai_rank_debug=None,
+            )
         except Exception:
             pass
 

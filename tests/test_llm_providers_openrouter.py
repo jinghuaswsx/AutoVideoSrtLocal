@@ -6,12 +6,14 @@ text / image 通道通过 media_kind 路由到不同 provider_code：
   - doubao            → doubao_llm
   - doubao seed 2 lite → doubao_seed_2_lite
 """
+import base64
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from appcore import llm_provider_configs
+from appcore.llm_client import _sanitize_messages
 from appcore.llm_providers.openrouter_adapter import (
     DoubaoAdapter,
     OpenRouterAdapter,
@@ -122,6 +124,62 @@ def test_openrouter_chat_switches_to_image_provider_when_message_has_image(fake_
         )
     assert m_openai.call_args.kwargs["api_key"] == "image-key", \
         "image messages must read openrouter_image row"
+
+
+def test_media_parts_supports_openrouter_input_audio(tmp_path):
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"mp3-bytes")
+
+    parts = _media_parts("rank voices", [audio])
+
+    assert parts[0] == {"type": "text", "text": "rank voices"}
+    assert parts[1] == {
+        "type": "input_audio",
+        "input_audio": {
+            "data": base64.b64encode(b"mp3-bytes").decode("ascii"),
+            "format": "mp3",
+        },
+    }
+
+
+def test_openrouter_generate_audio_uses_text_credentials(fake_provider_db, tmp_path):
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"wav-bytes")
+    fake_provider_db.seed("openrouter_text", api_key="text-key",
+                          base_url="https://openrouter.ai/api/v1")
+    fake_provider_db.seed("openrouter_image", api_key="image-key",
+                          base_url="https://openrouter.ai/api/v1")
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        client = _mock_openai(m_openai)
+        OpenRouterAdapter().generate(
+            model="google/gemini-3.5-flash",
+            prompt="rank voices",
+            media=[audio],
+        )
+
+    assert m_openai.call_args.kwargs["api_key"] == "text-key"
+    messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert messages[0]["content"][1]["type"] == "input_audio"
+    assert messages[0]["content"][1]["input_audio"]["format"] == "wav"
+
+
+def test_sanitize_messages_redacts_input_audio_base64():
+    sanitized = _sanitize_messages([
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "rank"},
+                {
+                    "type": "input_audio",
+                    "input_audio": {"data": "YWJjZA==", "format": "mp3"},
+                },
+            ],
+        }
+    ])
+
+    audio = sanitized[0]["content"][1]["input_audio"]
+    assert audio["data"] == "[base64-audio, ~8 bytes]"
+    assert audio["format"] == "mp3"
 
 
 def test_openrouter_chat_injects_response_healing_plugin_by_default(fake_provider_db):

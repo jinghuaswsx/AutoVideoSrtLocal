@@ -1239,6 +1239,11 @@ class MultiTranslateRunner(PipelineRunner):
         separation = task.get("separation") or {}
 
         candidates: list = []
+        clip = None
+        voice_ai_rankings: list = []
+        voice_ai_rank_status = "skipped"
+        voice_ai_rank_model = None
+        voice_ai_rank_debug = None
         if utterances and video_path:
             try:
                 if _sep_pkg.is_usable(separation):
@@ -1275,6 +1280,35 @@ class MultiTranslateRunner(PipelineRunner):
         else:
             query_embedding_b64 = None
 
+        if candidates and clip:
+            try:
+                from appcore.voice_ai_ranking import rank_voice_candidates
+
+                ai_result = rank_voice_candidates(
+                    task_id=task_id,
+                    task=task,
+                    candidates=candidates,
+                    source_audio_path=clip,
+                    task_dir=task["task_dir"],
+                    user_id=self.user_id,
+                )
+                candidates = ai_result.get("candidates") or candidates
+                voice_ai_rankings = ai_result.get("rankings") or []
+                voice_ai_rank_status = ai_result.get("status") or "done"
+                voice_ai_rank_model = ai_result.get("model")
+                voice_ai_rank_debug = ai_result.get("debug")
+            except Exception as exc:
+                log.exception("voice AI ranking failed for %s: %s", task_id, exc)
+                voice_ai_rank_status = "failed"
+                voice_ai_rank_debug = {
+                    "status": "failed",
+                    "provider": "openrouter",
+                    "model": "google/gemini-3.5-flash",
+                    "use_case": "voice_selection.assess",
+                    "request": {"visual": {"media": [], "candidates": candidates[:10]}, "raw": {}},
+                    "result": {"visual": {"rankings": []}, "raw": {"error": str(exc)[:500]}},
+                }
+
         fallback = None if candidates else default_voice_id
 
         task_state.update(
@@ -1282,6 +1316,10 @@ class MultiTranslateRunner(PipelineRunner):
             voice_match_candidates=candidates,
             voice_match_fallback_voice_id=fallback,
             voice_match_query_embedding=query_embedding_b64,
+            voice_ai_rankings=voice_ai_rankings,
+            voice_ai_rank_status=voice_ai_rank_status,
+            voice_ai_rank_model=voice_ai_rank_model,
+            voice_ai_rank_debug=voice_ai_rank_debug,
         )
 
         # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice
