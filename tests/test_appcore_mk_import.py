@@ -75,6 +75,142 @@ def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_pa
     }]
 
 
+def test_local_media_object_key_from_url_extracts_object_keys():
+    assert (
+        mk_import._local_media_object_key_from_url(
+            "/medias/object?object_key=artifacts%2Fmk%2Fcover.png"
+        )
+        == "artifacts/mk/cover.png"
+    )
+    assert (
+        mk_import._local_media_object_key_from_url(
+            "/medias/obj/1/medias/23/demo%20video.mp4"
+        )
+        == "1/medias/23/demo video.mp4"
+    )
+
+
+def test_import_mk_video_new_product_enriches_assets_copy_and_media_store(monkeypatch, tmp_path):
+    captured = {"created_item": None, "product_cover": None, "copy": None, "copied": [], "stored": []}
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_product_asset",
+        lambda normalized_code: {
+            "product_main_image_url": "https://cdn.example/main.jpg",
+            "product_main_image_object_key": "xuanpin/product-main-images/demo/main.jpg",
+            "product_cn_name": "科学小实验手工玩具",
+            "product_url": "https://shop.example/products/demo",
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_fetch_mk_product_detail",
+        lambda mk_id: {
+            "id": mk_id,
+            "texts": [{
+                "title": "Screen-Free Weekend",
+                "message": "Busy kids, better learning.",
+                "description": "Get Yours Today",
+            }],
+        },
+        raising=False,
+    )
+
+    def fake_execute(sql, args=None):
+        if "INSERT INTO media_products" in sql:
+            captured["product_insert_args"] = args
+            return 123
+        raise AssertionError(f"unexpected execute: {sql}")
+
+    monkeypatch.setattr(mk_import, "execute", fake_execute)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_write_file_to_media_store",
+        lambda path, object_key: captured["stored"].append((object_key, open(path, "rb").read())) or 5,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_copy_media_object",
+        lambda source_key, dest_key: captured["copied"].append((source_key, dest_key)) or 10,
+        raising=False,
+    )
+
+    def fake_create_item(**kwargs):
+        captured["created_item"] = kwargs
+        return 456
+
+    monkeypatch.setattr(mk_import, "_medias_create_item", fake_create_item)
+    monkeypatch.setattr(
+        mk_import,
+        "_medias_set_product_cover",
+        lambda product_id, lang, object_key: captured.__setitem__("product_cover", (product_id, lang, object_key)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_medias_replace_copywritings",
+        lambda product_id, items, lang="en": captured.__setitem__("copy", (product_id, lang, items)),
+        raising=False,
+    )
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/demo.mp4",
+            "filename": "demo.mp4",
+            "cover_url": "/medias/object?object_key=artifacts%2Fmk%2Fcover.png",
+            "product_name": "",
+            "product_code": "DEMO",
+            "product_link": "",
+            "mk_id": 3528,
+        },
+        translator_id=1,
+        actor_user_id=1,
+    )
+
+    assert result["media_product_id"] == 123
+    assert result["media_item_id"] == 456
+    assert captured["product_insert_args"][1] == "科学小实验手工玩具"
+    assert captured["product_insert_args"][4] == "https://cdn.example/main.jpg"
+    assert captured["created_item"]["object_key"] == "1/medias/123/demo.mp4"
+    assert captured["created_item"]["cover_object_key"] == "1/medias/123/item_cover_demo.png"
+    assert captured["created_item"]["file_size"] == 5
+    assert captured["stored"] == [("1/medias/123/demo.mp4", b"video")]
+    assert (
+        "artifacts/mk/cover.png",
+        "1/medias/123/item_cover_demo.png",
+    ) in captured["copied"]
+    assert (
+        "xuanpin/product-main-images/demo/main.jpg",
+        "1/medias/123/product_cover_en.jpg",
+    ) in captured["copied"]
+    assert captured["product_cover"] == (123, "en", "1/medias/123/product_cover_en.jpg")
+    assert captured["copy"] == (
+        123,
+        "en",
+        [{
+            "body": "标题: Screen-Free Weekend\n文案: Busy kids, better learning.\n描述: Get Yours Today",
+        }],
+    )
+
+
 def test_find_existing_product_item_by_meta_warns_when_product_link_probe_fails(monkeypatch):
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
     monkeypatch.setattr(

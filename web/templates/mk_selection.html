@@ -1006,9 +1006,11 @@ function renderMkVideoMaterialCard(r) {
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-cover-url="${safeCoverUrl}"
+        data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
-        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
+        data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         ${isMaterialImported ? 'disabled' : ''}
@@ -1020,9 +1022,11 @@ function renderMkVideoMaterialCard(r) {
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-cover-url="${safeCoverUrl}"
+        data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
-        data-mki-main-image="${escapeHtml(r.main_image || '')}"
+        data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
+        data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         onclick="mkiXiaoHandleClick(this)">
@@ -1134,9 +1138,11 @@ async function openDetail(mkId, mkName) {
             data-mki-mp4-url="${safeVideoUrl}"
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-cover-url="${safeCoverUrl}"
+            data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
+            data-mki-main-image-object-key="${escapeHtml(item.product_main_image_object_key || '')}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
             data-mki-mk-id="${escapeHtml(item.id || '')}"
             onclick="mkiHandleClick(this)">
@@ -1147,9 +1153,11 @@ async function openDetail(mkId, mkName) {
             data-mki-mp4-url="${safeVideoUrl}"
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-cover-url="${safeCoverUrl}"
+            data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
+            data-mki-main-image-object-key="${escapeHtml(item.product_main_image_object_key || '')}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
             data-mki-mk-id="${escapeHtml(item.id || '')}"
             onclick="mkiXiaoHandleClick(this)">
@@ -1353,7 +1361,11 @@ function mkiToast(kind, msg) {
 function mkiWarningMessageFromResponse(data) {
   const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
   const productLinkWarning = warnings.find(w => w && w.type === 'product_link_unavailable');
-  if (!productLinkWarning) return '';
+  if (!productLinkWarning) {
+    const firstWarning = warnings.find(w => w && (w.message || w.detail || w.type));
+    if (!firstWarning) return '';
+    return [firstWarning.message || firstWarning.type, firstWarning.detail || ''].filter(Boolean).join('：');
+  }
   const detail = productLinkWarning.detail ? '：' + productLinkWarning.detail : '';
   return '商品链接可能不可访问' + detail;
 }
@@ -1501,9 +1513,11 @@ async function mkiHandleClick(btn) {
       filename: btn.dataset.mkiFilename,
       duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
       cover_url: btn.dataset.mkiCoverUrl || null,
+      cover_object_key: btn.dataset.mkiCoverObjectKey || null,
       product_name: btn.dataset.mkiProductName,
       product_link: btn.dataset.mkiProductLink || null,
       main_image: btn.dataset.mkiMainImage || null,
+      main_image_object_key: btn.dataset.mkiMainImageObjectKey || null,
       product_code: btn.dataset.mkiProductCode,
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
     };
@@ -1624,9 +1638,11 @@ async function mkiXiaoHandleClick(btn) {
       filename: btn.dataset.mkiFilename,
       duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
       cover_url: btn.dataset.mkiCoverUrl || null,
+      cover_object_key: btn.dataset.mkiCoverObjectKey || null,
       product_name: btn.dataset.mkiProductName,
       product_link: btn.dataset.mkiProductLink || null,
       main_image: btn.dataset.mkiMainImage || null,
+      main_image_object_key: btn.dataset.mkiMainImageObjectKey || null,
       product_code: btn.dataset.mkiProductCode,
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null
     };

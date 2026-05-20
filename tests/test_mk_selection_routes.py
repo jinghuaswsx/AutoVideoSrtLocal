@@ -127,6 +127,7 @@ def test_mk_selection_import_success_warnings_are_toasted():
     assert "function mkiWarningMessageFromResponse(data)" in template
     assert "mkiToast('warning', warningMessage)" in template
     assert "product_link_unavailable" in template
+    assert "firstWarning.message || firstWarning.type" in template
 
 
 def test_mk_import_progress_modal_present():
@@ -209,6 +210,15 @@ def test_mk_selection_video_cards_prefer_local_cover_url():
     assert "const localCoverUrl = safeMediaSrc(r.local_cover_url || '');" in template
     assert "const coverUrl = localCoverUrl ||" in template
     assert "/xuanpin/api/mk-media?path=" in template
+
+
+def test_mk_selection_import_buttons_pass_local_asset_object_keys():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "data-mki-cover-object-key" in template
+    assert "data-mki-main-image-object-key" in template
+    assert "cover_object_key: btn.dataset.mkiCoverObjectKey || null" in template
+    assert "main_image_object_key: btn.dataset.mkiMainImageObjectKey || null" in template
 
 
 def test_mk_selection_video_cards_include_local_video_preview():

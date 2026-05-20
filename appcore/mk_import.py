@@ -5,12 +5,17 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
-from urllib.parse import parse_qs, quote, urlparse
+import shutil
+import tempfile
+import time
+from pathlib import Path
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import requests
 
-from appcore import product_link_domains, pushes
+from appcore import local_media_storage, object_keys, product_link_domains, pushes
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +100,12 @@ def _product_link_warning(url: str) -> dict | None:
     }
 
 
-from appcore.db import query_all, query_one
+from appcore.db import execute, query_all, query_one
+from appcore.medias import (
+    create_item as _medias_create_item,
+    replace_copywritings as _medias_replace_copywritings,
+    set_product_cover as _medias_set_product_cover,
+)
 
 
 def _find_existing_product(normalized_code: str) -> dict | None:
@@ -227,25 +237,198 @@ def _download_cover(url: str | None, dest_path: str, timeout: int = 30) -> str |
         return None  # cover 下载失败不阻塞，只记日志
 
 
-# ---- main entry ----
+def _local_media_object_key_from_url(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.path == "/medias/object":
+        values = parse_qs(parsed.query).get("object_key") or []
+        return unquote(values[0]).strip() if values else ""
+    prefix = "/medias/obj/"
+    if parsed.path.startswith(prefix):
+        return unquote(parsed.path[len(prefix):]).strip()
+    if not parsed.scheme and not parsed.netloc and not raw.startswith("/"):
+        normalized = raw.replace("\\", "/").lstrip("/")
+        if (
+            normalized.startswith(("artifacts/", "uploads/", "xuanpin/"))
+            or re.match(r"^\d+/medias/", normalized)
+        ):
+            return normalized
+    return ""
 
-import os
-import shutil
-import tempfile
-import time
 
-from appcore.db import execute
-from appcore.medias import create_item as _medias_create_item
+def _suffix_from_key_or_url(value: str | None, default: str = ".jpg") -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return default
+    parsed = urlparse(raw)
+    path = parsed.path if parsed.path else raw.split("?", 1)[0]
+    suffix = Path(unquote(path)).suffix.lower()
+    if suffix and re.fullmatch(r"\.[a-z0-9]{1,8}", suffix):
+        return suffix
+    return default
 
 
-def _build_create_product_payload(meta: dict, translator_id: int) -> dict:
-    product_code = _product_code_with_rjc(meta.get("product_code"))
+def _safe_image_filename(stem: str, suffix: str) -> str:
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(stem or "image")).strip("._")
+    return f"{safe_stem or 'image'}{suffix or '.jpg'}"
+
+
+def _write_file_to_media_store(path: str, object_key: str) -> int:
+    with open(path, "rb") as handle:
+        local_media_storage.write_stream(object_key, handle)
+    return int(Path(path).stat().st_size)
+
+
+def _copy_media_object(source_key: str, dest_key: str) -> int:
+    fd, temp_name = tempfile.mkstemp(prefix="mki_media_copy_")
+    os.close(fd)
+    try:
+        local_media_storage.download_to(source_key, temp_name)
+        return _write_file_to_media_store(temp_name, dest_key)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
+def _import_image_object(
+    *,
+    owner_uid: int,
+    product_id: int,
+    stem: str,
+    source_url: str | None = None,
+    source_object_key: str | None = None,
+    tmp_dir: str,
+    default_ext: str = ".jpg",
+) -> str | None:
+    source_key = str(source_object_key or "").strip() or _local_media_object_key_from_url(source_url)
+    suffix = _suffix_from_key_or_url(source_key or source_url, default_ext)
+    dest_key = object_keys.build_media_object_key(
+        owner_uid,
+        product_id,
+        _safe_image_filename(stem, suffix),
+    )
+    try:
+        if source_key:
+            _copy_media_object(source_key, dest_key)
+            return dest_key
+        if source_url:
+            tmp_path = os.path.join(tmp_dir, _safe_image_filename(f"download_{stem}", suffix))
+            downloaded = _download_cover(source_url, tmp_path)
+            if downloaded:
+                _write_file_to_media_store(downloaded, dest_key)
+                return dest_key
+    except Exception as exc:
+        log.warning("mk import image failed stem=%s source=%s: %s", stem, source_key or source_url, exc)
+    return None
+
+
+def _find_product_asset(normalized_code: str) -> dict | None:
+    if not normalized_code:
+        return None
+    try:
+        return query_one(
+            "SELECT * FROM dianxiaomi_product_assets "
+            "WHERE LOWER(COALESCE(product_code, '')) = %s "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1",
+            (normalized_code.lower(),),
+        )
+    except Exception as exc:
+        log.debug("mk import product asset lookup failed code=%s: %s", normalized_code, exc)
+        return None
+
+
+def _fetch_mk_product_detail(mk_id: int | str | None) -> dict:
+    if not mk_id:
+        return {}
+    try:
+        resolved_mk_id = int(mk_id)
+    except (TypeError, ValueError):
+        return {}
+    try:
+        base_url = (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+        headers = dict(pushes.build_localized_texts_headers())
+        headers.pop("Content-Type", None)
+        headers["Accept"] = "application/json"
+        if "Authorization" not in headers and "Cookie" not in headers:
+            return {}
+        resp = requests.get(
+            f"{base_url}/api/marketing/medias/{resolved_mk_id}",
+            headers=headers,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        payload = resp.json() or {}
+        item = (payload.get("data") or {}).get("item") or {}
+        return item if isinstance(item, dict) else {}
+    except Exception as exc:
+        log.warning("mk import detail fetch failed mk_id=%s: %s", mk_id, exc)
+        return {}
+
+
+def _mk_text_body(text: dict) -> str:
+    lines = []
+    if text.get("title"):
+        lines.append(f"标题: {str(text.get('title')).strip()}")
+    if text.get("message"):
+        lines.append(f"文案: {str(text.get('message')).strip()}")
+    if text.get("description"):
+        lines.append(f"描述: {str(text.get('description')).strip()}")
+    return "\n".join(line for line in lines if line)
+
+
+def _first_mk_copywriting(mk_detail: dict | None) -> dict | None:
+    texts = (mk_detail or {}).get("texts") or []
+    if not isinstance(texts, list):
+        return None
+    for text in texts:
+        if not isinstance(text, dict):
+            continue
+        body = _mk_text_body(text)
+        if body:
+            return {"body": body}
+    return None
+
+
+def _first_non_empty(*values) -> str | None:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _build_create_product_payload(
+    meta: dict,
+    translator_id: int,
+    product_asset: dict | None = None,
+    mk_detail: dict | None = None,
+) -> dict:
+    product_asset = product_asset or {}
+    mk_detail = mk_detail or {}
+    product_code = _product_code_with_rjc(meta.get("product_code") or product_asset.get("product_code"))
+    name = _first_non_empty(
+        meta.get("product_name"),
+        mk_detail.get("product_name"),
+        product_asset.get("product_cn_name"),
+        product_asset.get("product_name"),
+    ) or ""
+    product_link = _first_non_empty(meta.get("product_link"), product_asset.get("product_url"))
+    main_image = _first_non_empty(
+        meta.get("main_image"),
+        product_asset.get("product_main_image_url"),
+        mk_detail.get("main_image"),
+        mk_detail.get("image"),
+    )
     return {
-        "name": (meta.get("product_name") or "").strip()[:255],
+        "name": name[:255],
         "product_code": product_code,
-        "product_link": _canonical_product_link(meta.get("product_link"), product_code),
-        "main_image": meta.get("main_image"),
-        "mk_id": meta.get("mk_id"),
+        "product_link": _canonical_product_link(product_link, product_code),
+        "main_image": main_image,
+        "mk_id": meta.get("mk_id") or mk_detail.get("id"),
     }
 
 
@@ -293,7 +476,18 @@ def import_mk_video(
     normalized = _normalize_product_code(raw_code)
     existing = _find_existing_product(normalized)
     is_new = existing is None
-    payload = _build_create_product_payload(meta, translator_id) if is_new else {}
+    product_asset = _find_product_asset(normalized) if is_new else None
+    mk_detail = _fetch_mk_product_detail(meta.get("mk_id")) if is_new else {}
+    payload = (
+        _build_create_product_payload(
+            meta,
+            translator_id,
+            product_asset=product_asset,
+            mk_detail=mk_detail,
+        )
+        if is_new
+        else {}
+    )
     product_link = payload.get("product_link") if is_new else _existing_product_link(meta, existing)
     warnings = []
     product_link_warning = _product_link_warning(product_link)
@@ -320,48 +514,131 @@ def import_mk_video(
     else:
         product_id = existing["id"]
 
+    owner_uid = int(translator_id) if is_new else int(existing["user_id"])
+
     # 3. Download MP4 to local temp
     tmp_dir = tempfile.mkdtemp(prefix="mki_")
     mp4_dest = os.path.join(tmp_dir, filename)
     try:
         _download_mp4(meta["mp4_url"], mp4_dest, timeout=120)
+        object_key = object_keys.build_media_object_key(owner_uid, int(product_id), filename)
+        file_size = _write_file_to_media_store(mp4_dest, object_key)
     except DownloadError:
         if is_new:
             try:
                 execute("DELETE FROM media_products WHERE id=%s", (product_id,))
             except Exception:
                 pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
+    except Exception as e:
+        if is_new:
+            try:
+                execute("DELETE FROM media_products WHERE id=%s", (product_id,))
+            except Exception:
+                pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise StorageError(f"store media file failed: {e}") from e
 
-    # 4. Optional cover
-    cover_dest = os.path.join(tmp_dir, f"cover_{filename}.jpg")
-    _download_cover(meta.get("cover_url"), cover_dest)
+    # 4. Optional item cover
+    cover_object_key = _import_image_object(
+        owner_uid=owner_uid,
+        product_id=int(product_id),
+        stem=f"item_cover_{Path(filename).stem}",
+        source_url=meta.get("cover_url"),
+        source_object_key=meta.get("cover_object_key"),
+        tmp_dir=tmp_dir,
+        default_ext=".jpg",
+    )
+    if (meta.get("cover_object_key") or meta.get("cover_url")) and not cover_object_key:
+        warnings.append({
+            "type": "item_cover_import_failed",
+            "message": "视频封面写入素材库失败",
+            "detail": "cover source unavailable",
+        })
 
     # 5. Insert media_items row via medias.create_item
-    object_key = f"mk-import/{int(product_id)}/{filename}"
-    owner_uid = int(translator_id) if is_new else int(existing["user_id"])
     try:
         item_id = _medias_create_item(
             product_id=int(product_id),
             user_id=owner_uid,
             filename=filename,
             object_key=object_key,
-            display_name=(meta.get("product_name") or "")[:255] or None,
+            display_name=(meta.get("product_name") or payload.get("name") or "")[:255] or None,
             duration_seconds=meta.get("duration_seconds"),
+            file_size=file_size,
+            cover_object_key=cover_object_key,
             lang="en",
             task_id=task_id,
         )
     except Exception as e:
+        try:
+            local_media_storage.delete(object_key)
+        except Exception:
+            pass
+        if is_new:
+            try:
+                execute("DELETE FROM media_products WHERE id=%s", (product_id,))
+            except Exception:
+                pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise StorageError(f"insert media_item failed: {e}") from e
 
-    # 6. Move local mp4 to final storage location (mirrors object_key)
-    upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
-    final_path = os.path.join(upload_dir, object_key)
-    os.makedirs(os.path.dirname(final_path), exist_ok=True)
     try:
-        shutil.move(mp4_dest, final_path)
-    except Exception as e:
-        log.error("move mp4 failed: %s → %s: %s", mp4_dest, final_path, e)
+        os.unlink(mp4_dest)
+    except FileNotFoundError:
+        pass
+
+    # 7. New-product enrichment: product cover and first English copywriting
+    if is_new:
+        product_cover_source_url = _first_non_empty(
+            meta.get("main_image"),
+            (product_asset or {}).get("product_main_image_url"),
+            mk_detail.get("main_image"),
+            mk_detail.get("image"),
+        )
+        product_cover_source_key = _first_non_empty(
+            meta.get("main_image_object_key"),
+            (product_asset or {}).get("product_main_image_object_key"),
+            _local_media_object_key_from_url(product_cover_source_url),
+        )
+        product_cover_key = _import_image_object(
+            owner_uid=owner_uid,
+            product_id=int(product_id),
+            stem="product_cover_en",
+            source_url=product_cover_source_url,
+            source_object_key=product_cover_source_key,
+            tmp_dir=tmp_dir,
+            default_ext=".jpg",
+        )
+        if product_cover_key:
+            try:
+                _medias_set_product_cover(int(product_id), "en", product_cover_key)
+            except Exception as exc:
+                warnings.append({
+                    "type": "product_cover_import_failed",
+                    "message": "商品主图写入素材库失败",
+                    "detail": str(exc),
+                })
+        elif product_cover_source_url or product_cover_source_key:
+            warnings.append({
+                "type": "product_cover_import_failed",
+                "message": "商品主图写入素材库失败",
+                "detail": "cover source unavailable",
+            })
+
+        copy_item = _first_mk_copywriting(mk_detail)
+        if copy_item:
+            try:
+                _medias_replace_copywritings(int(product_id), [copy_item], lang="en")
+            except Exception as exc:
+                warnings.append({
+                    "type": "mk_copywriting_import_failed",
+                    "message": "英文文案写入素材库失败",
+                    "detail": str(exc),
+                })
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     result = {
