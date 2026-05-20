@@ -234,6 +234,27 @@ def test_mk_selection_import_buttons_pass_local_asset_object_keys():
     assert "main_image_object_key: btn.dataset.mkiMainImageObjectKey || null" in template
 
 
+def test_mk_selection_import_success_marks_all_matching_buttons():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "let MKI_IMPORTED_FILENAMES = new Set();" in template
+    assert "function mkiMarkImportedFilename(filename)" in template
+    assert "document.querySelectorAll('.mki-btn--add')" in template
+    assert "MKI_IMPORTED_FILENAMES.has(fn)" in template
+    assert "mkiMarkImportedFilename(btn.dataset.mkiFilename);" in template
+
+
+def test_mk_import_progress_medias_button_searches_product_code():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiProductCodeWithRjc(value)" in template
+    assert "function mkiMediaSearchHrefFromButton(btn)" in template
+    assert "`/medias/?q=${encodeURIComponent(code)}`" in template
+    assert "function mkiImportProgressOpenMedias()" in template
+    assert "mkiImportProgressSetMediasHref(btn);" in template
+    assert 'onclick="mkiImportProgressOpenMedias()"' in template
+
+
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

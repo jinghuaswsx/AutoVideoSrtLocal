@@ -1273,6 +1273,69 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 
 // mk-import: Task 9 — page-load + post-render batch check
 let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names
+let MKI_IMPORTED_FILENAMES = new Set();
+
+function mkiProductCodeWithRjc(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/_rjc$/i, '-rjc');
+  if (!raw) return '';
+  return /-rjc$/i.test(raw) ? raw : `${raw}-rjc`;
+}
+
+function mkiProductSearchCodeFromButton(btn) {
+  if (!btn) return '';
+  const rawCode = String(btn.dataset.mkiProductCode || '').trim()
+    || productCodeFromUrl(btn.dataset.mkiProductLink || '');
+  return mkiProductCodeWithRjc(rawCode);
+}
+
+function mkiMediaSearchHrefFromButton(btn) {
+  const code = mkiProductSearchCodeFromButton(btn);
+  return code ? `/medias/?q=${encodeURIComponent(code)}` : '/medias';
+}
+
+function mkiImportProgressSetMediasHref(btn) {
+  const mediasBtn = document.getElementById('mkiImportProgressMedias');
+  if (!mediasBtn) return;
+  mediasBtn.dataset.href = mkiMediaSearchHrefFromButton(btn);
+}
+
+function mkiImportProgressOpenMedias() {
+  const mediasBtn = document.getElementById('mkiImportProgressMedias');
+  window.location.href = (mediasBtn && mediasBtn.dataset.href) || '/medias';
+}
+
+function mkiEnsureImportedStatusIcon(card) {
+  if (!card || card.querySelector('.mk-status-icon--video')) return;
+  let cluster = card.querySelector('.mk-video-status-icons');
+  if (!cluster) {
+    cluster = document.createElement('div');
+    cluster.className = 'mk-video-status-icons';
+    card.insertBefore(cluster, card.firstChild);
+  }
+  const title = '视频素材已在素材库';
+  cluster.insertAdjacentHTML(
+    'beforeend',
+    `<span class="mk-status-icon mk-status-icon--video" title="${title}" aria-label="${title}">${mkStatusIconSvg('video')}</span>`
+  );
+}
+
+function mkiMarkImportedButton(btn) {
+  if (!btn) return;
+  btn.textContent = '已入库';
+  btn.disabled = true;
+  btn.classList.add('mki-btn--disabled');
+  mkiEnsureImportedStatusIcon(btn.closest('.mk-video-card'));
+}
+
+function mkiMarkImportedFilename(filename) {
+  const fn = String(filename || '').trim();
+  if (!fn) return;
+  MKI_IMPORTED_FILENAMES.add(fn);
+  MKI_CHECKED_FILENAMES.add(fn);
+  document.querySelectorAll('.mki-btn--add').forEach(btn => {
+    if ((btn.dataset.mkiFilename || '') === fn) mkiMarkImportedButton(btn);
+  });
+}
 
 async function mkiCheckRenderedButtons() {
   const allBtns = Array.from(document.querySelectorAll('.mki-btn--add'));
@@ -1283,6 +1346,10 @@ async function mkiCheckRenderedButtons() {
   for (const btn of allBtns) {
     const fn = btn.dataset.mkiFilename;
     if (!fn) continue;
+    if (MKI_IMPORTED_FILENAMES.has(fn)) {
+      mkiMarkImportedButton(btn);
+      continue;
+    }
     if (btn.disabled) continue;
     if (MKI_CHECKED_FILENAMES.has(fn)) continue;
     if (seen.has(fn)) continue;
@@ -1307,14 +1374,7 @@ async function mkiCheckRenderedButtons() {
   newFilenames.forEach(fn => MKI_CHECKED_FILENAMES.add(fn));
 
   // Apply disabled state
-  allBtns.forEach(btn => {
-    const fn = btn.dataset.mkiFilename;
-    if (imported.has(fn)) {
-      btn.textContent = '已入库';
-      btn.disabled = true;
-      btn.classList.add('mki-btn--disabled');
-    }
-  });
+  imported.forEach(fn => mkiMarkImportedFilename(fn));
 }
 
 // mk-import: Task 10 翻译员选择 modal
@@ -1428,7 +1488,11 @@ function mkiImportProgressOpen(meta) {
   document.getElementById('mkiImportProgressRetry').hidden = true;
   document.getElementById('mkiImportProgressContinue').hidden = true;
   document.getElementById('mkiImportProgressTasks').hidden = true;
-  document.getElementById('mkiImportProgressMedias').hidden = true;
+  const mediasBtn = document.getElementById('mkiImportProgressMedias');
+  if (mediasBtn) {
+    mediasBtn.hidden = true;
+    mediasBtn.dataset.href = '/medias';
+  }
   mkiImportProgressFailedStep = 'product';
   modal.hidden = false;
   mkiImportProgressSetStep('prepare', 'running', '正在读取文件名、产品码、产品图和链接');
@@ -1486,6 +1550,7 @@ function mkiImportProgressComplete(data, btn) {
   if (resultEl) resultEl.hidden = false;
   document.getElementById('mkiImportProgressContinue').hidden = false;
   document.getElementById('mkiImportProgressTasks').hidden = false;
+  mkiImportProgressSetMediasHref(btn);
   document.getElementById('mkiImportProgressMedias').hidden = false;
   document.getElementById('mkiImportProgressRetry').hidden = true;
   mkiImportProgressButton = btn || mkiImportProgressButton;
@@ -1557,9 +1622,7 @@ async function mkiHandleClick(btn) {
       throw new Error(err.detail || err.error || rsp.statusText);
     }
     const data = await rsp.json();
-    btn.textContent = '已入库';
-    btn.classList.add('mki-btn--disabled');
-    MKI_CHECKED_FILENAMES.add(btn.dataset.mkiFilename);  // dedup cache update
+    mkiMarkImportedFilename(btn.dataset.mkiFilename);
     mkiImportProgressComplete(data, btn);
     const tag = data.is_new_product ? '（新建产品）' : '（老品 append）';
     mkiToast('success', `素材已入库 ${tag}`);
@@ -1718,7 +1781,7 @@ async function mkiXiaoHandleClick(btn) {
         <button id="mkiImportProgressRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>
         <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>继续做小语种任务</button>
         <button id="mkiImportProgressTasks" type="button" class="oc-btn oc-btn--ghost" onclick="window.location.href='/tasks/'" hidden>去任务中心</button>
-        <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="window.location.href='/medias'" hidden>去素材管理</button>
+        <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenMedias()" hidden>去素材管理</button>
         <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressClose()">关闭</button>
       </div>
     </div>
