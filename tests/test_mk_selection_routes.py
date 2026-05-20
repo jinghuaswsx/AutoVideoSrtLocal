@@ -291,7 +291,8 @@ def test_mk_import_progress_footer_actions_open_new_tabs():
     assert "function mkiImportProgressOpenTasks()" in template
     assert "function mkiImportProgressContinueTask()" in template
     assert "async function mkiImportProgressCreateSmallLangTask()" in template
-    assert "fetch('/tasks/api/parent'" in template
+    assert "const endpoint = '/tasks/api/parent';" in template
+    assert "fetch(endpoint" in template
     assert "media_product_id: mkiImportProgressProductId" in template
     assert "media_item_id: mkiImportProgressItemId" in template
     assert "translator_id: mkiImportProgressTranslatorId" in template
@@ -315,6 +316,26 @@ def test_mk_selection_small_language_modal_matches_task_parent_contract():
     assert "function mkiXiaoLanguageAssignments(selection)" in template
     assert "raw_processor_id: selection.rawProcessorId" in template
     assert "language_assignments: mkiXiaoLanguageAssignments(selection)" in template
+
+
+def test_mk_selection_small_language_modal_keeps_task_creation_feedback_inline():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert 'id="mkiXiaoStatus"' in template
+    assert 'id="mkiXiaoConfirm"' in template
+    assert 'id="mkiXiaoCancel"' in template
+    assert "function mkiXiaoSetBusy(isBusy)" in template
+    assert "function mkiXiaoSetStatus(kind, html)" in template
+    assert "function mkiXiaoRequestError(endpoint, rsp, data)" in template
+    assert "function mkiXiaoTaskHref(taskId)" in template
+    assert "function mkiXiaoShowCreateSuccess(taskId)" in template
+    assert "function mkiXiaoShowCreateFailure(endpoint, error)" in template
+    assert "mkiXiaoCurrentEndpoint = '/tasks/api/parent'" in template
+    assert "正在请求 " in template
+    assert "任务已创建" in template
+    assert "打开任务" in template
+    assert "请求失败" in template
+    assert "document.getElementById('mkiXiaoModal').style.display = 'none';" not in template.split("function mkiXiaoOK()", 1)[1].split("function mkiXiaoCancel()", 1)[0]
 
 
 def test_mk_selection_video_cards_include_local_video_preview():

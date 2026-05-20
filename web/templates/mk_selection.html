@@ -369,6 +369,20 @@
 .mki-xiao-lang-check:focus-visible + span {
   outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
 }
+.mki-xiao-status {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--oc-r-md);
+  border: 1px solid var(--oc-border); font-size: 13px; line-height: 1.55;
+}
+.mki-xiao-status--running {
+  border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a;
+}
+.mki-xiao-status--success {
+  border-color: #bbf7d0; background: #f0fdf4; color: #14532d;
+}
+.mki-xiao-status--error {
+  border-color: #fecaca; background: #fef2f2; color: #7f1d1d;
+}
+.mki-xiao-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
 @keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
@@ -1933,7 +1947,8 @@ async function mkiImportProgressCreateSmallLangTask() {
     mkiImportProgressSetStep('next', 'error', '缺少翻译员');
     return;
   }
-  const selection = await mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true, title: '创建小语种翻译任务'});
+  const endpoint = '/tasks/api/parent';
+  const selection = await mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true, title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) {
     mkiToast('error', '请至少勾选一个国家');
@@ -1947,7 +1962,7 @@ async function mkiImportProgressCreateSmallLangTask() {
   continueBtn.textContent = '创建中...';
   mkiImportProgressSetStep('next', 'running', '正在创建小语种翻译父任务');
   try {
-    const rsp = await fetch('/tasks/api/parent', {
+    const rsp = await fetch(endpoint, {
       method: 'POST',
       headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify({
@@ -1960,7 +1975,7 @@ async function mkiImportProgressCreateSmallLangTask() {
       })
     });
     const data = await rsp.json().catch(() => ({}));
-    if (!rsp.ok) throw new Error(data.error || data.detail || rsp.statusText);
+    if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
     const taskId = Number(data.parent_task_id || 0);
     mkiImportProgressTaskId = taskId > 0 ? taskId : null;
     const taskText = mkiImportProgressTaskId ? `小语种任务已创建，父任务 #${mkiImportProgressTaskId}` : '小语种任务已创建';
@@ -1970,12 +1985,14 @@ async function mkiImportProgressCreateSmallLangTask() {
     if (tasksBtn && mkiImportProgressTaskId) {
       tasksBtn.dataset.href = `/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`;
     }
+    if (mkiImportProgressTaskId) mkiXiaoShowCreateSuccess(mkiImportProgressTaskId);
     mkiToast('success', taskText);
   } catch (err) {
     const message = err.message || '创建失败';
     continueBtn.disabled = false;
     continueBtn.textContent = '下一步：创建小语种任务';
     mkiImportProgressSetStep('next', 'error', message);
+    mkiXiaoShowCreateFailure(endpoint, err);
     mkiToast('error', '创建失败：' + message);
   }
 }
@@ -2059,6 +2076,8 @@ let mkiXiaoResolve = null;
 let mkiXiaoTranslatorsCache = null;
 let mkiXiaoRawProcessorsCache = null;
 let mkiXiaoLangsCache = null;
+let mkiXiaoLockTranslator = false;
+let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
 
 function mkiXiaoLangCode(lang) {
   if (lang && typeof lang === 'object') {
@@ -2090,7 +2109,99 @@ function mkiXiaoLangLabel(lang) {
   return fallback ? fallback + ' (' + code + ')' : code;
 }
 
+function mkiXiaoSetStatus(kind, html) {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = false;
+  statusEl.className = 'mki-xiao-status mki-xiao-status--' + kind;
+  statusEl.innerHTML = html;
+}
+
+function mkiXiaoHideStatus() {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = true;
+  statusEl.innerHTML = '';
+}
+
+function mkiXiaoSetControlsDisabled(disabled) {
+  var translator = document.getElementById('mkiXiaoTranslator');
+  var raw = document.getElementById('mkiXiaoRawProcessor');
+  if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
+  if (raw) raw.disabled = !!disabled;
+  document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
+    cb.disabled = !!disabled;
+  });
+}
+
+function mkiXiaoSetBusy(isBusy) {
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(isBusy);
+  if (confirmBtn) {
+    confirmBtn.disabled = !!isBusy;
+    confirmBtn.textContent = isBusy ? '创建中...' : '确认创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = !!isBusy;
+    cancelBtn.textContent = '取消';
+  }
+}
+
+function mkiXiaoTaskHref(taskId) {
+  return '/tasks/?task_id=' + encodeURIComponent(taskId);
+}
+
+function mkiXiaoShowCreateSuccess(taskId) {
+  var href = mkiXiaoTaskHref(taskId);
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '已创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('success',
+    '<strong>任务已创建，父任务 #' + escapeHtml(taskId) + '</strong>'
+    + '<div>下一步：进入任务中心处理这个任务。</div>'
+    + '<div class="mki-xiao-status-actions"><a class="oc-btn oc-btn--primary" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(href) + '">打开任务 #' + escapeHtml(taskId) + '</a></div>'
+  );
+}
+
+function mkiXiaoShowCreateFailure(endpoint, error) {
+  var message = error && error.message ? error.message : String(error || '未知错误');
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '创建失败';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('error',
+    '<strong>请求失败</strong>'
+    + '<div>请求：' + escapeHtml(endpoint || mkiXiaoCurrentEndpoint) + '</div>'
+    + '<div>原因：' + escapeHtml(message) + '</div>'
+    + '<div>关闭后可回到当前卡片重新发起创建。</div>'
+  );
+}
+
+function mkiXiaoRequestError(endpoint, rsp, data) {
+  var statusText = rsp ? (rsp.status + (rsp.statusText ? ' ' + rsp.statusText : '')) : 'unknown';
+  var detail = data && (data.error || data.detail || data.message);
+  return new Error('请求 ' + endpoint + ' 返回 ' + statusText + '：' + (detail || '无错误详情'));
+}
+
 async function mkiXiaoOpenModal(options = {}) {
+  mkiXiaoLockTranslator = !!options.lockTranslator;
+  mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
   // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
@@ -2113,7 +2224,6 @@ async function mkiXiaoOpenModal(options = {}) {
   const sel = document.getElementById('mkiXiaoTranslator');
   sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
   if (options.translatorId) sel.value = String(options.translatorId);
-  sel.disabled = !!options.lockTranslator;
   const rawSel = document.getElementById('mkiXiaoRawProcessor');
   rawSel.innerHTML = '<option value="">请选择原视频处理人</option>' + mkiXiaoRawProcessorsCache.map(mkiUserOption).join('');
   const rawDefault = options.rawProcessorId || (
@@ -2142,6 +2252,8 @@ async function mkiXiaoOpenModal(options = {}) {
       + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"><span>' + escapeHtml(label) + '</span></label>';
   }).join('');
 
+  mkiXiaoHideStatus();
+  mkiXiaoSetBusy(false);
   document.getElementById('mkiXiaoModal').style.display = 'flex';
   return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
 }
@@ -2159,7 +2271,9 @@ function mkiXiaoOK() {
   var countries = mkiXiaoSelectedCountries();
   if (!translatorId) { alert('请选择翻译员'); return; }
   if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
-  document.getElementById('mkiXiaoModal').style.display = 'none';
+  if (!countries.length) { alert('请选择目标国家'); return; }
+  mkiXiaoSetBusy(true);
+  mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
   if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries}); mkiXiaoResolve = null; }
 }
 
@@ -2186,7 +2300,8 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     mkiToast('warning', '先加入素材库后才能创建小语种任务');
     return;
   }
-  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务'});
+  var endpoint = '/tasks/api/parent';
+  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
   if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
@@ -2196,7 +2311,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
   btn.disabled = true;
   btn.textContent = '创建中...';
   try {
-    var rsp = await fetch('/tasks/api/parent', {
+    var rsp = await fetch(endpoint, {
       method: 'POST',
       headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify({
@@ -2209,19 +2324,24 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
       })
     });
     var data = await rsp.json().catch(function() { return {}; });
-    if (!rsp.ok) throw new Error(data.error || data.detail || rsp.statusText);
-    btn.textContent = '任务 #' + data.parent_task_id;
+    if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+    var taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    btn.textContent = '任务 #' + taskId;
     btn.classList.add('mki-btn--disabled');
-    mkiToast('success', '任务已创建 #' + data.parent_task_id);
+    mkiXiaoShowCreateSuccess(taskId);
+    mkiToast('success', '任务已创建 #' + taskId);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;
+    mkiXiaoShowCreateFailure(endpoint, e);
     mkiToast('error', '创建失败：' + e.message);
   }
 }
 
 async function mkiXiaoHandleClick(btn) {
-  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务'});
+  var endpoint = '/tasks/api/import-and-create';
+  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
   if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
@@ -2247,7 +2367,7 @@ async function mkiXiaoHandleClick(btn) {
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     var headers = {'Content-Type': 'application/json'};
     if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
-    var rsp = await fetch('/tasks/api/import-and-create', {
+    var rsp = await fetch(endpoint, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -2259,17 +2379,21 @@ async function mkiXiaoHandleClick(btn) {
     });
     if (!rsp.ok) {
       var err = await rsp.json().catch(function() { return {error: rsp.statusText}; });
-      throw new Error(err.error || err.detail || rsp.statusText);
+      throw mkiXiaoRequestError(endpoint, rsp, err);
     }
     var data = await rsp.json();
-    btn.textContent = '任务 #' + data.parent_task_id;
+    var taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    btn.textContent = '任务 #' + taskId;
     btn.classList.add('mki-btn--disabled');
-    mkiToast('success', '任务已创建 #' + data.parent_task_id + (data.is_new_product ? '（新建产品）' : ''));
+    mkiXiaoShowCreateSuccess(taskId);
+    mkiToast('success', '任务已创建 #' + taskId + (data.is_new_product ? '（新建产品）' : ''));
     var warningMessage = mkiWarningMessageFromResponse(data);
     if (warningMessage) mkiToast('warning', warningMessage);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;
+    mkiXiaoShowCreateFailure(endpoint, e);
     mkiToast('error', '创建失败：' + e.message);
   }
 }
@@ -2356,9 +2480,10 @@ async function mkiXiaoHandleClick(btn) {
       <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
       <div id="mkiXiaoLangs" class="mki-xiao-lang-pills"></div>
     </div>
+    <div id="mkiXiaoStatus" class="mki-xiao-status" hidden></div>
     <div class="mki-xiao-actions">
-      <button class="oc-btn oc-btn--ghost" onclick="mkiXiaoCancel()">取消</button>
-      <button class="oc-btn oc-btn--primary" onclick="mkiXiaoOK()">确认创建</button>
+      <button id="mkiXiaoCancel" class="oc-btn oc-btn--ghost" onclick="mkiXiaoCancel()">取消</button>
+      <button id="mkiXiaoConfirm" class="oc-btn oc-btn--primary" onclick="mkiXiaoOK()">确认创建</button>
     </div>
   </div>
 </div>

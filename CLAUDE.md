@@ -11,6 +11,7 @@
 - **优先用 Skill 系统**：`superpowers:*`、`claude-api`、`webapp-testing`、`frontend-design`、`mcp-builder`；改代码前若适用必须先 `Skill` 调用。
 - **严禁调用 `deploy/publish.sh`**：本机自主闭环已替代它（见 AGENTS.md「发布」节）。
 - **改代码前看 worktree 路径**：当前 `pwd` 不在 `~/.paseo/worktrees/...` 下且非用户明确 hotfix → 先 `git worktree add`。
+- **任务流转 UI 必须闭环**：触发动作后留在上下文内显示 loading、成功 ID/下一步入口、失败接口与错误原因。
 
 ## 模块级 CLAUDE.md（只在进入对应目录时加载）
 - `web/templates/CLAUDE.md` — Jinja 模板继承防呆 + asr-normalize-card 事故
