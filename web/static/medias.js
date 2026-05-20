@@ -3095,20 +3095,20 @@
     try {
       users = await ensureActiveUsers();
     } catch (e) {
-      alert('加载用户列表失败：' + (e.message || e));
+      alert('加载翻译工作负责人列表失败：' + (e.message || e));
       td.dataset.ownerEdit = '';
       return;
     }
 
     const select = document.createElement('select');
     select.className = 'owner-select';
-    select.setAttribute('aria-label', '指派负责人');
-    // 若原负责人当前不在 active 列表里（被禁用），先占位保留显示
-    const hasOriginalInActive = users.some(u => String(u.id) === originalUid);
-    if (originalUid && !hasOriginalInActive) {
+    select.setAttribute('aria-label', '指派素材负责人');
+    // 若原负责人当前不在翻译工作用户列表里，先占位保留显示
+    const hasOriginalInCandidates = users.some(u => String(u.id) === originalUid);
+    if (originalUid && !hasOriginalInCandidates) {
       const opt = document.createElement('option');
       opt.value = originalUid;
-      opt.textContent = originalName ? (originalName + '（已停用）') : '(当前负责人)';
+      opt.textContent = originalName ? (originalName + '（当前负责人不在翻译工作范围）') : '(当前负责人)';
       select.appendChild(opt);
     }
     if (!originalUid) {

@@ -189,7 +189,7 @@
     sel.innerHTML = '';
     const all = document.createElement('option');
     all.value = '';
-    all.textContent = '全部员工';
+    all.textContent = '全部翻译工作负责人';
     sel.appendChild(all);
     if (!window.PUSH_IS_ADMIN) return;
 

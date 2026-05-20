@@ -434,9 +434,11 @@ def list_task_center_items(
     assignee_name_expr = _user_display_name_expr("u")
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
+        "       source_mi.filename AS source_media_filename, "
         f"       u.username AS assignee_username, {assignee_name_expr} AS assignee_display_name "
         "FROM tasks t "
         "JOIN media_products p ON p.id=t.media_product_id "
+        "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {' AND '.join(where)} "
         "ORDER BY t.id DESC "
@@ -451,6 +453,7 @@ def list_task_center_items(
                 "media_product_id": row["media_product_id"],
                 "product_name": row["product_name"],
                 "product_code": row.get("product_code"),
+                "source_media_filename": row.get("source_media_filename"),
                 "country_code": row["country_code"],
                 "assignee_id": row["assignee_id"],
                 "assignee_username": row["assignee_username"],

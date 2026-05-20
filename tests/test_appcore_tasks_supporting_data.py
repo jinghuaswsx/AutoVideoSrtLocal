@@ -264,6 +264,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "media_product_id": 9,
                 "product_name": "Product A",
                 "product_code": "product-a-rjc",
+                "source_media_filename": "source-a.mp4",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -296,6 +297,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "media_product_id": 9,
                 "product_name": "Product A",
                 "product_code": "product-a-rjc",
+                "source_media_filename": "source-a.mp4",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -315,6 +317,8 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     }
     assert "FROM tasks t" in captured["sql"]
     assert "JOIN media_products p" in captured["sql"]
+    assert "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id" in captured["sql"]
+    assert "source_mi.filename AS source_media_filename" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
     assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "p.name LIKE %s" in captured["sql"]

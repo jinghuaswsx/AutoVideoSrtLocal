@@ -49,12 +49,12 @@ def test_build_medias_page_context_uses_keyword_and_extra_when_query_missing():
     assert extra_context["medias_initial_query"] == "product-extra"
 
 
-def test_build_active_users_response_wraps_user_rows():
+def test_build_active_users_response_wraps_translation_work_user_rows():
     from web.services.media_pages import build_active_users_response
 
-    users = [{"id": 1, "username": "admin"}]
+    users = [{"id": 1, "display_name": "张三"}]
 
-    assert build_active_users_response(list_active_users_fn=lambda: users) == {
+    assert build_active_users_response(list_translation_work_users_fn=lambda: users) == {
         "users": users,
     }
 

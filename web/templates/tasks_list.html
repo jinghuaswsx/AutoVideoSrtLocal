@@ -67,6 +67,13 @@
   padding:32px;
 }
 .tc-drawer-close { position:absolute; top:16px; right:16px; }
+.tc-detail-title-block { margin-bottom:8px; padding-right:72px; }
+.tc-detail-title-block h3 { margin:0 0 8px; font-size:20px; line-height:1.3; overflow-wrap:anywhere; }
+.tc-detail-ident { display:flex; flex-direction:column; gap:6px; }
+.tc-detail-ident-row { display:grid; grid-template-columns:92px minmax(0, 1fr) auto; gap:8px; align-items:center; font-size:13px; }
+.tc-detail-ident-label { color:var(--tc-fg-muted); font-weight:600; }
+.tc-detail-ident-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg); }
+.tc-copy-btn { height:24px; padding:0 8px; font-size:12px; }
 .tc-process-timeline { position:relative; padding-left:20px; }
 .tc-process-timeline::before { content:""; position:absolute; left:7px; top:4px; bottom:4px; width:2px; background:var(--tc-border); }
 .tc-event { position:relative; margin:0 0 12px; padding:12px 14px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
@@ -234,6 +241,36 @@ function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?
 function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
 function tcInlineArg(s) {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+function tcCopyButton(value, label) {
+  const text = String(value || '').trim();
+  const disabled = text ? '' : ' disabled';
+  const data = text ? ` data-copy="${tcAttr(text)}" onclick="tcCopyText(this.dataset.copy, this)"` : '';
+  return `<button type="button" class="tc-btn tc-copy-btn" title="${tcAttr(label || '复制')}"${disabled}${data}>复制</button>`;
+}
+async function tcCopyText(text, btn) {
+  const value = String(text || '').trim();
+  if (!value) return;
+  const original = btn ? btn.textContent : '';
+  const markCopied = () => {
+    if (!btn) return;
+    btn.textContent = '已复制';
+    btn.disabled = true;
+    window.setTimeout(() => {
+      btn.textContent = original || '复制';
+      btn.disabled = false;
+    }, 900);
+  };
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      window.prompt('复制文本', value);
+    }
+    markCopied();
+  } catch (e) {
+    window.prompt('复制文本', value);
+  }
 }
 function tcFormatTime(s) {
   if (!s) return '时间未知';
@@ -900,13 +937,35 @@ async function tcOpenDetail(id) {
 }
 function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; }
 
+function tcRenderDetailIdentityRows(task, isParent) {
+  if (isParent) return '';
+  const filename = String(task.source_media_filename || '').trim();
+  const productCode = String(task.product_code || '').trim();
+  return `<div class="tc-detail-ident">
+    <div class="tc-detail-ident-row">
+      <span class="tc-detail-ident-label">素材文件名</span>
+      <span class="tc-detail-ident-value" title="${tcAttr(filename || '—')}">${tcEsc(filename || '—')}</span>
+      ${tcCopyButton(task.source_media_filename, '复制素材文件名')}
+    </div>
+    <div class="tc-detail-ident-row">
+      <span class="tc-detail-ident-label">Product code</span>
+      <span class="tc-detail-ident-value" title="${tcAttr(productCode || '—')}">${tcEsc(productCode || '—')}</span>
+      ${tcCopyButton(task.product_code, '复制 Product code')}
+    </div>
+  </div>`;
+}
+
 function tcRenderDetail(task, events, reviewAssets) {
   const isParent = !task.parent_task_id;
   const buttons = tcDetailButtons(task, isParent);
   const reviewEntry = tcRenderCurrentReviewEntry(reviewAssets);
   const eventTimeline = tcRenderEventTimeline(events, reviewAssets);
+  const identityRows = tcRenderDetailIdentityRows(task, isParent);
   return `
-    <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
+    <div class="tc-detail-title-block">
+      <h3>${tcEsc(task.product_name)}</h3>
+      ${identityRows}
+    </div>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
     <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
       ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段）'} ·
