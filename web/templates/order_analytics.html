@@ -223,6 +223,7 @@
 .oar-summary-row {
   display: grid;
   gap: 16px;
+  align-items: start;
 }
 .oar-summary-row-main { grid-template-columns: repeat(9, minmax(142px, 1fr)); }
 .oar-summary-row-time { grid-template-columns: repeat(4, minmax(180px, 1fr)); }
@@ -1209,6 +1210,66 @@
 }
 .ppr-btn svg { flex-shrink: 0; }
 .ppr-mobile-actions { display: none; }
+
+@media (min-width: 769px) and (max-width: 1180px), (min-width: 769px) and (orientation: portrait) {
+  /* Docs-anchor: docs/superpowers/specs/2026-05-20-order-analytics-secondary-screen-adaptation-design.md */
+  .topbar .oa-tabs-topbar { display: none; }
+  .topbar .ppr-actions { display: none; }
+  .oa-mobile-tabs {
+    display: block;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-1);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    background: var(--bg-subtle);
+  }
+  .ppr-mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin: 0 0 var(--space-3);
+  }
+  .ppr-mobile-actions .ppr-btn {
+    justify-content: center;
+    width: 100%;
+  }
+  .oar-realtime-toolbar-row {
+    align-items: flex-start;
+  }
+  .oad-range-presets {
+    flex: 1 1 100%;
+  }
+  .oad-date-range-field {
+    flex: 1 1 auto;
+  }
+  .oar-product-search-row {
+    align-items: stretch;
+  }
+  .oar-product-search {
+    flex: 1 1 320px;
+    max-width: none;
+  }
+  .oar-summary-stats {
+    gap: var(--space-3);
+  }
+  .oar-summary-row {
+    align-items: start;
+    gap: var(--space-3);
+  }
+  .oar-summary-row-main,
+  .oar-summary-row-time {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .oar-summary-stats .oa-stat-card {
+    width: 100%;
+    min-height: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+  .oar-summary-stats .oa-stat-value {
+    font-size: var(--text-xl);
+    line-height: 1.15;
+  }
+}
 
 .ppr-dialog {
   border: none;
