@@ -17,7 +17,7 @@ from appcore import mingkong_materials  # noqa: E402
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run daily Mingkong material snapshot.")
-    parser.add_argument("--source-limit", type=int, default=300)
+    parser.add_argument("--source-limit", type=int, default=500)
     parser.add_argument("--batch-size", type=int, default=10)
     parser.add_argument("--sleep-after-products", type=int, default=2)
     parser.add_argument("--sleep-seconds", type=float, default=30)

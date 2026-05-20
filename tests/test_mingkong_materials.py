@@ -23,7 +23,39 @@ def test_media_search_code_for_adds_rjc_suffix_once():
     assert mm.media_search_code_for("") == ""
 
 
-def test_latest_top300_products_use_latest_dianxiaomi_snapshot(monkeypatch):
+def test_material_range_bounds_supports_named_ranges(monkeypatch):
+    monkeypatch.setattr(mm, "_today", lambda: date(2026, 5, 20))
+
+    assert mm._material_range_bounds("this_week") == ("2026-05-18", "2026-05-24")
+    assert mm._material_range_bounds("last_week") == ("2026-05-11", "2026-05-17")
+    assert mm._material_range_bounds("this_month") == ("2026-05-01", "2026-05-31")
+    assert mm._material_range_bounds("last_month") == ("2026-04-01", "2026-04-30")
+    assert mm._material_range_bounds("") is None
+
+
+def test_material_snapshot_identity_uses_latest_successful_run(monkeypatch):
+    captured = []
+
+    def fake_query_one(sql, args=()):
+        captured.append((sql, args))
+        return {
+            "snapshot_date": date(2026, 5, 20),
+            "snapshot_at": datetime(2026, 5, 20, 6, 0, 12),
+            "snapshot_slot": "0600",
+        }
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+
+    identity = mm._material_snapshot_identity()
+
+    assert identity["snapshot_date"] == "2026-05-20"
+    assert identity["snapshot_at"] == "2026-05-20 06:00:12"
+    assert identity["snapshot_slot"] == "0600"
+    assert "mingkong_material_sync_runs" in captured[0][0]
+    assert "status = 'success'" in captured[0][0]
+
+
+def test_latest_top500_products_use_latest_dianxiaomi_snapshot(monkeypatch):
     calls = []
 
     monkeypatch.setattr(
@@ -49,13 +81,13 @@ def test_latest_top300_products_use_latest_dianxiaomi_snapshot(monkeypatch):
 
     monkeypatch.setattr(mm, "query", fake_query)
 
-    snapshot, rows = mm.latest_top_products(limit=300)
+    snapshot, rows = mm.latest_top_products(limit=500)
 
     assert snapshot == "2026-05-17"
     assert rows[0]["product_code"] == "cool-widget"
     assert rows[0]["shopify_product_id"] == "gid-1"
     assert "ORDER BY rank_position ASC" in calls[0][0]
-    assert calls[0][1] == ("2026-05-17", 300)
+    assert calls[0][1] == ("2026-05-17", 500)
 
 
 def test_flatten_mingkong_materials_keeps_all_visible_videos():
@@ -190,7 +222,13 @@ def test_material_library_recovers_spend_from_raw_metadata_when_numeric_row_is_z
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
-            return None
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
         raise AssertionError(sql)
 
     def fake_query(sql, args=()):
@@ -242,7 +280,13 @@ def test_material_library_includes_yesterday_spend_delta(monkeypatch):
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
-            return None
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
         raise AssertionError(sql)
 
     def fake_query(sql, args=()):
@@ -789,7 +833,7 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
         "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"
     )
     assert result["items"][0]["mk_video_metadata"] == {"video_path": "uploads2/winner.mp4"}
-    assert any("cumulative_90_spend DESC" in item[1] for item in captured if item[0] == "query")
+    assert any("product_total_90_spend DESC" in item[1] for item in captured if item[0] == "query")
 
 
 def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
@@ -808,7 +852,13 @@ def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
         if "COUNT(*) AS cnt" in sql:
             return {"cnt": 1}
         if "mingkong_material_sync_runs" in sql:
-            return None
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
         raise AssertionError(sql)
 
     def fake_query(sql, args=()):
@@ -1030,7 +1080,7 @@ def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch
     monkeypatch.setattr(
         mm,
         "latest_top_products",
-        lambda limit=300: (
+        lambda limit=500: (
             "2026-05-17",
             [{"product_code": "cool-widget", "rank_position": 1}],
         ),

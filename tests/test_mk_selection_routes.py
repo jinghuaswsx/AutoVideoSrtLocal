@@ -51,6 +51,7 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert 'data-mk-library-tab="videos">视频素材库' in body
     assert 'data-mk-library-tab="yesterday-top100">昨天消耗前100' in body
     assert 'id="snapshotSelect"' in body
+    assert 'id="snapshotRangeSelect"' in body
     assert "loadMkSelectionSnapshots" in body
     assert "oc-page-tabs" not in body
     assert "oc-page-tab" not in body
@@ -68,6 +69,12 @@ def test_selection_center_tabs_and_heading_on_related_pages():
     assert '{% set active = "mk" %}' in mk_template
     assert '{% include "_xuanpin_tabs.html" %}' in mk_template
     assert "/xuanpin/api/mk-selection/snapshots" in mk_template
+    assert "snapshotRangeSelect" in mk_template
+    assert "mkRangeQueryParam" in mk_template
+    assert "本周" in mk_template
+    assert "上周" in mk_template
+    assert "本月" in mk_template
+    assert "上月" in mk_template
     assert "selectedMkSnapshot" in mk_template
     assert "oc-page-tabs" not in mk_template
     assert "oc-page-tab" not in mk_template
@@ -142,6 +149,8 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "location.hash = currentMkLibraryTab;" in template
     assert "loadMkLocalMaterialLibrary" in template
     assert "loadMkYesterdayTop100" in template
+    assert "mkSnapshotQueryParam()" in template
+    assert "mkRangeQueryParam()" in template
     assert "if (initialTab === 'videos')" in template
     assert "if (initialTab === 'yesterday-top100')" in template
     assert "/xuanpin/api/mk-material-library" in template

@@ -1,6 +1,6 @@
 # Mingkong Daily Material Snapshot Top100 Design
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 ## Context
 
@@ -13,7 +13,7 @@ but it cannot answer daily questions such as:
 - How much did each video's Mingkong 90-day spend increase from the previous snapshot?
 
 Operations need a local historical material library for the latest Dianxiaomi Listing
-Top300 products. The library must archive daily Mingkong material state and derive a
+Top500 products. The library must archive daily Mingkong material state and derive a
 daily "yesterday spend Top100" list from the difference between consecutive 90-day spend
 snapshots.
 
@@ -24,7 +24,7 @@ Build a scheduled, local, historical Mingkong material library for `/xuanpin/mk`
 In scope:
 
 1. Every day at 05:00 and 17:00 Beijing time, start one long-running sync run.
-2. Select the latest available Dianxiaomi Listing snapshot and take `rank_position <= 300`.
+2. Select the latest available Dianxiaomi Listing snapshot and take `rank_position <= 500`.
 3. For each selected product, derive the product code/handle from `product_url`.
 4. Query Mingkong `/api/marketing/medias?q=<product_code>` and store the full visible
    video material list for that product.
@@ -41,6 +41,16 @@ In scope:
    stored spend data. It must not depend on a live Mingkong request at click time.
 9. Add a `/xuanpin/mk` `昨天消耗前100` inner tab that reads the persisted Top100
    result instead of calling Mingkong live.
+10. The `视频素材库` list must read only completed `mingkong_material_sync_runs`
+    (`status='success'`). A partially running same-day snapshot must not become the
+    default list source.
+11. The `视频素材库` default sort is product-level 90-day material spend descending,
+    then product rank, then video-level 90-day spend. This keeps videos grouped by the
+    product's material scale instead of letting one high-spend clip from a lower product
+    jump ahead of a stronger product.
+12. The top filter row includes a material time range selector: 本周、上周、本月、上月.
+    When a range is selected, the material library deduplicates by material key and uses
+    the latest successful row inside the selected range.
 
 Out of scope:
 
@@ -50,7 +60,7 @@ Out of scope:
 - Do not connect to Windows local MySQL for verification. Database checks must run on
   the server/test environment according to project rules.
 
-## Source Of Top300 Products
+## Source Of Top500 Products
 
 The product source is the latest locally archived Dianxiaomi Listing ranking:
 
@@ -64,7 +74,7 @@ date as the 05:00 run date. It then selects:
 ```sql
 WHERE snapshot_date = <latest_snapshot_date>
 ORDER BY rank_position ASC
-LIMIT 300
+LIMIT 500
 ```
 
 The run records both:
@@ -72,7 +82,7 @@ The run records both:
 - `snapshot_date`: the local material snapshot date being produced.
 - `snapshot_at`: the local material snapshot timestamp for the run.
 - `snapshot_slot`: the daily bucket, `0500` or `1700`, used to keep two snapshots per day.
-- `ranking_snapshot_date`: the Dianxiaomi Listing snapshot used as the Top300 source.
+- `ranking_snapshot_date`: the Dianxiaomi Listing snapshot used as the Top500 source.
 
 ## Scheduler
 
@@ -88,15 +98,15 @@ Register one scheduled task in `appcore/scheduled_tasks.py`.
 
 The job is two scheduled daily runs, not a task that wakes every 10 minutes all day.
 
-Expected runtime is about 5 hours for 300 products.
+Expected runtime is about 8 hours for 500 products.
 
 The runner behavior:
 
 1. Start a `scheduled_task_runs` row.
-2. Load the latest Dianxiaomi Top300 queue.
+2. Load the latest Dianxiaomi Top500 queue.
 3. Process products in internal batches of 10.
 4. After every 1-2 products, sleep 30 seconds.
-5. Continue until the 300-product queue is finished.
+5. Continue until the 500-product queue is finished.
 6. Finalize material snapshots and generate the Top100 archive.
 7. Finish the run with summary counters.
 
@@ -148,7 +158,7 @@ Add migrations for these tables.
 
 ### `mingkong_material_sync_runs`
 
-Tracks one daily Top300 sync.
+Tracks one daily Top500 sync.
 
 Required fields:
 
@@ -441,7 +451,7 @@ Use TDD for implementation.
 Focused automated checks:
 
 - Migration tests assert all four tables and key indexes exist.
-- Service tests cover latest Dianxiaomi Top300 selection from `dianxiaomi_rankings`.
+- Service tests cover latest Dianxiaomi Top500 selection from `dianxiaomi_rankings`.
 - Service tests cover Mingkong fetch flattening and upsert of all visible videos.
 - Service tests cover delta calculation, new-material handling, negative-delta clamp, and
   new Top100 membership.

@@ -181,6 +181,13 @@ strong.mk-video-product-name { color:var(--oc-fg); }
       <select id="snapshotSelect" class="oc-input oc-select" aria-label="历史快照" onchange="onMkSnapshotChange()">
         <option value="">最新快照</option>
       </select>
+      <select id="snapshotRangeSelect" class="oc-input oc-select" aria-label="时间范围" onchange="onMkRangeChange()">
+        <option value="">单日</option>
+        <option value="this_week">本周</option>
+        <option value="last_week">上周</option>
+        <option value="this_month">本月</option>
+        <option value="last_month">上月</option>
+      </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
@@ -257,6 +264,7 @@ let mkVideoMaterialsLoaded = false;
 let mkYesterdayTop100Page = 1;
 let mkYesterdayTop100Loaded = false;
 let selectedMkSnapshot = '';
+let selectedMkRange = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 24;
@@ -501,7 +509,12 @@ function resetMkSearch() {
 }
 
 function mkSnapshotQueryParam() {
+  if (selectedMkRange) return '';
   return selectedMkSnapshot ? `&snapshot=${encodeURIComponent(selectedMkSnapshot)}` : '';
+}
+
+function mkRangeQueryParam() {
+  return selectedMkRange ? `&range=${encodeURIComponent(selectedMkRange)}` : '';
 }
 
 async function loadMkSelectionSnapshots() {
@@ -528,6 +541,17 @@ async function loadMkSelectionSnapshots() {
 
 function onMkSnapshotChange() {
   selectedMkSnapshot = document.getElementById('snapshotSelect').value || '';
+  selectedMkRange = '';
+  const rangeSelect = document.getElementById('snapshotRangeSelect');
+  if (rangeSelect) rangeSelect.value = '';
+  mkProductsLoaded = false;
+  mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
+  runMkSearch();
+}
+
+function onMkRangeChange() {
+  selectedMkRange = document.getElementById('snapshotRangeSelect').value || '';
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
@@ -662,13 +686,14 @@ async function loadMkLocalMaterialLibrary(page) {
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkSnapshotQueryParam()}${mkRangeQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const total = Number(data.total || 0);
     document.getElementById('totalCount').textContent = total + ' 条';
-    const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
+    const rangeLabel = data.range_start && data.range_end ? `${data.range_start} ~ ${data.range_end}` : '';
+    const snapshotLabel = rangeLabel || data.snapshot_at || data.snapshot || '最新';
     const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${snapshotLabel}`;
     status.textContent = `${scopeText} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
@@ -698,7 +723,7 @@ async function loadMkYesterdayTop100(page) {
   pager.innerHTML = '';
   status.textContent = '正在读取昨天消耗前100归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
+    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');

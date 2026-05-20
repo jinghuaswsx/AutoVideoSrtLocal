@@ -153,12 +153,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_material_daily_snapshot",
         "name": "明空素材每日快照",
         "description": (
-            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照 Top300 产品 code，"
+            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照 Top500 产品 code，"
             "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前100。"
             "Docs-anchor: "
             "docs/superpowers/specs/2026-05-20-mingkong-product-local-aggregate-stats-design.md"
         ),
-        "schedule": "每天 05:00、17:00（北京时间，每轮跑完前300产品后结束）",
+        "schedule": "每天 05:00、17:00（北京时间，每轮跑完前500产品后结束）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-mingkong-material-daily-snapshot.timer",

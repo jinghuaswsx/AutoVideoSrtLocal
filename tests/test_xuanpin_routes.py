@@ -321,7 +321,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
     )
 
     resp = authed_client_no_db.get(
-        "/xuanpin/api/mk-material-library?keyword=tooth&page=2&page_size=24&snapshot=2026-05-18"
+        "/xuanpin/api/mk-material-library?keyword=tooth&page=2&page_size=24&snapshot=2026-05-18&range=this_week"
     )
 
     assert resp.status_code == 200
@@ -329,6 +329,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
     assert captured == {
         "snapshot_date": "2026-05-18",
         "snapshot_at": None,
+        "range_key": "this_week",
         "keyword": "tooth",
         "page": "2",
         "page_size": "24",

@@ -10,7 +10,7 @@ The original local-library idea for `/xuanpin/mk` was option A:
 - cache cover images locally;
 - keep MP4 downloads on demand through the existing video cache path.
 
-The latest code already implements most of the metadata side through the daily Top300
+The latest code already implements most of the metadata side through the daily Top500
 snapshot work:
 
 - `appcore/mingkong_materials.py`
@@ -27,7 +27,7 @@ local Mingkong material library and fill the remaining gaps from option A.
 ## Current Local Flow
 
 1. A scheduled job `mingkong_material_daily_snapshot` runs daily at 06:00 Beijing time.
-2. It reads the latest Dianxiaomi Listing ranking snapshot and takes the first 300
+2. It reads the latest Dianxiaomi Listing ranking snapshot and takes the first 500
    products by `rank_position`.
 3. For each product code, it queries Mingkong `/api/marketing/medias`.
 4. It selects the matching Mingkong product, flattens all visible videos, and upserts
@@ -151,7 +151,7 @@ are actually wired together.
 - Do not bulk-download Mingkong MP4 files during the daily sync.
 - Do not replace the existing material import or task creation flows.
 - Do not use Windows local MySQL for verification.
-- Do not add a second scheduler entry for the same Top300 material scan.
+- Do not add a second scheduler entry for the same Top500 material scan.
 
 ## Verification
 

@@ -6,7 +6,8 @@ import json
 import os
 import re
 import time
-from datetime import date, datetime
+from calendar import monthrange
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -58,6 +59,10 @@ def _coerce_datetime(value: Any) -> str:
     if len(text) == 10:
         return f"{text} 00:00:00"
     return text[:19]
+
+
+def _today() -> date:
+    return date.today()
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -935,6 +940,77 @@ def _latest_snapshot_identity(
     return {"snapshot_date": "", "snapshot_at": "", "snapshot_slot": ""}
 
 
+def _material_range_bounds(range_key: str | None) -> tuple[str, str] | None:
+    key = str(range_key or "").strip().lower().replace("-", "_")
+    if not key:
+        return None
+    today = _today()
+    week_start = today - timedelta(days=today.weekday())
+    if key == "this_week":
+        start = week_start
+        end = week_start + timedelta(days=6)
+    elif key == "last_week":
+        start = week_start - timedelta(days=7)
+        end = week_start - timedelta(days=1)
+    elif key == "this_month":
+        start = today.replace(day=1)
+        end = today.replace(day=monthrange(today.year, today.month)[1])
+    elif key == "last_month":
+        first_this_month = today.replace(day=1)
+        last_month_end = first_this_month - timedelta(days=1)
+        start = last_month_end.replace(day=1)
+        end = last_month_end
+    else:
+        return None
+    return start.isoformat(), end.isoformat()
+
+
+def _material_snapshot_identity(
+    *,
+    snapshot_date: str | None = None,
+    snapshot_at: str | None = None,
+) -> dict[str, str]:
+    if snapshot_at:
+        row = query_one(
+            """
+            SELECT snapshot_date, snapshot_at, snapshot_slot
+            FROM mingkong_material_sync_runs
+            WHERE status = 'success' AND snapshot_at = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (_coerce_datetime(snapshot_at),),
+        ) or {}
+    elif snapshot_date:
+        row = query_one(
+            """
+            SELECT snapshot_date, snapshot_at, snapshot_slot
+            FROM mingkong_material_sync_runs
+            WHERE status = 'success' AND snapshot_date = %s
+            ORDER BY snapshot_at DESC, id DESC
+            LIMIT 1
+            """,
+            (_coerce_date(snapshot_date),),
+        ) or {}
+    else:
+        row = query_one(
+            """
+            SELECT snapshot_date, snapshot_at, snapshot_slot
+            FROM mingkong_material_sync_runs
+            WHERE status = 'success'
+            ORDER BY snapshot_at DESC, id DESC
+            LIMIT 1
+            """
+        ) or {}
+    if not row:
+        return {"snapshot_date": "", "snapshot_at": "", "snapshot_slot": ""}
+    return {
+        "snapshot_date": _coerce_date(row.get("snapshot_date")),
+        "snapshot_at": _coerce_datetime(row.get("snapshot_at")),
+        "snapshot_slot": str(row.get("snapshot_slot") or _snapshot_slot_for(row.get("snapshot_at"))),
+    }
+
+
 def _run_summary(snapshot_date: str, snapshot_at: str | None = None) -> dict[str, Any] | None:
     if snapshot_at:
         row = query_one(
@@ -1192,49 +1268,139 @@ def list_material_library(
     *,
     snapshot_date: str | None = None,
     snapshot_at: str | None = None,
+    range_key: str | None = None,
     keyword: str = "",
     page: int | str | None = 1,
     page_size: int | str | None = 100,
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
-    identity = _latest_snapshot_identity(
-        "mingkong_material_daily_snapshots",
-        snapshot_date=_coerce_date(snapshot_date) if snapshot_date else None,
-        snapshot_at=snapshot_at,
+    range_bounds = _material_range_bounds(range_key)
+    identity = (
+        {"snapshot_date": "", "snapshot_at": "", "snapshot_slot": ""}
+        if range_bounds
+        else _material_snapshot_identity(
+            snapshot_date=_coerce_date(snapshot_date) if snapshot_date else None,
+            snapshot_at=snapshot_at,
+        )
     )
     snapshot = identity["snapshot_date"]
     selected_snapshot_at = identity["snapshot_at"]
-    if not snapshot:
+    if not range_bounds and not snapshot:
         return {"items": [], "snapshot": "", "snapshot_at": "", "total": 0, "run_summary": None}
     page_num, size, offset = _page_bounds(page, page_size)
-    if selected_snapshot_at:
-        where = ["snapshot_at = %s"]
-        args: list[Any] = [selected_snapshot_at]
-    else:
-        where = ["snapshot_date = %s"]
-        args = [snapshot]
     kw = str(keyword or "").strip()
+
+    if range_bounds:
+        range_start, range_end = range_bounds
+        where = ["r.status = 'success'", "s.snapshot_date BETWEEN %s AND %s"]
+        args: list[Any] = [range_start, range_end]
+        if kw:
+            like = f"%{kw}%"
+            where.append(
+                "(s.product_code LIKE %s OR s.product_name LIKE %s OR s.mk_product_name LIKE %s "
+                "OR s.video_name LIKE %s OR s.video_path LIKE %s)"
+            )
+            args.extend([like, like, like, like, like])
+        where_sql = " AND ".join(where)
+        count_row = query_one(
+            f"""
+            SELECT COUNT(*) AS cnt
+            FROM (
+              SELECT s.material_key
+              FROM mingkong_material_daily_snapshots s
+              JOIN mingkong_material_sync_runs r ON r.id = s.run_id
+              WHERE {where_sql}
+              GROUP BY s.material_key
+            ) deduped
+            """,
+            tuple(args),
+        ) or {}
+        rows = query(
+            f"""
+            SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
+                     AS product_total_90_spend
+            FROM mingkong_material_daily_snapshots s
+            JOIN (
+              SELECT s.material_key, MAX(s.snapshot_at) AS latest_snapshot_at
+              FROM mingkong_material_daily_snapshots s
+              JOIN mingkong_material_sync_runs r ON r.id = s.run_id
+              WHERE {where_sql}
+              GROUP BY s.material_key
+            ) latest ON latest.material_key = s.material_key AND latest.latest_snapshot_at = s.snapshot_at
+            LEFT JOIN mingkong_material_products mp
+              ON mp.run_id = s.run_id AND mp.product_code = s.product_code
+            LEFT JOIN (
+              SELECT s2.snapshot_at, s2.product_code, SUM(s2.cumulative_90_spend) AS product_total_90_spend
+              FROM mingkong_material_daily_snapshots s2
+              JOIN mingkong_material_sync_runs r2 ON r2.id = s2.run_id
+              WHERE r2.status = 'success' AND s2.snapshot_date BETWEEN %s AND %s
+              GROUP BY s2.snapshot_at, s2.product_code
+            ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
+            ORDER BY product_total_90_spend DESC, s.rank_position ASC,
+                     s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(args + [range_start, range_end, size, offset]),
+        )
+        serialized = [_serialize_material_row(row) for row in rows or []]
+        items = _enrich_cached_ad_statuses(
+            _enrich_material_yesterday_delta(
+                serialized,
+                snapshot_date=range_end,
+                snapshot_at=None,
+            )
+        )
+        return {
+            "items": items,
+            "snapshot": "",
+            "snapshot_at": "",
+            "snapshot_slot": "",
+            "range": str(range_key or "").strip().lower().replace("-", "_"),
+            "range_start": range_start,
+            "range_end": range_end,
+            "total": _as_int(count_row.get("cnt")),
+            "page": page_num,
+            "page_size": size,
+            "run_summary": None,
+        }
+
+    if selected_snapshot_at:
+        where = ["s.snapshot_at = %s"]
+        args = [selected_snapshot_at]
+    else:
+        where = ["s.snapshot_date = %s"]
+        args = [snapshot]
     if kw:
         like = f"%{kw}%"
         where.append(
-            "(product_code LIKE %s OR product_name LIKE %s OR mk_product_name LIKE %s "
-            "OR video_name LIKE %s OR video_path LIKE %s)"
+            "(s.product_code LIKE %s OR s.product_name LIKE %s OR s.mk_product_name LIKE %s "
+            "OR s.video_name LIKE %s OR s.video_path LIKE %s)"
         )
         args.extend([like, like, like, like, like])
     where_sql = " AND ".join(where)
     count_row = query_one(
-        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots WHERE {where_sql}",
+        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots s WHERE {where_sql}",
         tuple(args),
     ) or {}
     rows = query(
         f"""
-        SELECT *
-        FROM mingkong_material_daily_snapshots
+        SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
+                 AS product_total_90_spend
+        FROM mingkong_material_daily_snapshots s
+        LEFT JOIN mingkong_material_products mp
+          ON mp.run_id = s.run_id AND mp.product_code = s.product_code
+        LEFT JOIN (
+          SELECT snapshot_at, product_code, SUM(cumulative_90_spend) AS product_total_90_spend
+          FROM mingkong_material_daily_snapshots
+          WHERE snapshot_at = %s
+          GROUP BY snapshot_at, product_code
+        ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
         WHERE {where_sql}
-        ORDER BY cumulative_90_spend DESC, video_ads_count DESC, rank_position ASC, id ASC
+        ORDER BY product_total_90_spend DESC, s.rank_position ASC,
+                 s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
         LIMIT %s OFFSET %s
         """,
-        tuple(args + [size, offset]),
+        tuple([selected_snapshot_at] + args + [size, offset]),
     )
     serialized = [_serialize_material_row(row) for row in rows or []]
     items = _enrich_cached_ad_statuses(
@@ -1820,7 +1986,7 @@ def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> 
 
 def run_daily_snapshot(
     *,
-    source_limit: int = 300,
+    source_limit: int = 500,
     batch_size: int = 10,
     sleep_after_products: int = 2,
     sleep_seconds: float = 30,

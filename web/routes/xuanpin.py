@@ -156,6 +156,7 @@ def api_mk_material_library():
     result = _mingkong_materials().list_material_library(
         snapshot_date=(request.args.get("snapshot") or "").strip() or None,
         snapshot_at=(request.args.get("snapshot_at") or "").strip() or None,
+        range_key=(request.args.get("range") or "").strip() or None,
         keyword=(request.args.get("keyword") or "").strip(),
         page=request.args.get("page") or 1,
         page_size=request.args.get("page_size") or 100,
