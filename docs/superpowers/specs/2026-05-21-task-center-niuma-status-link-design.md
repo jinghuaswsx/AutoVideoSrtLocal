@@ -142,6 +142,7 @@
 - 历史 `raw_niuma_submitted` 事件只要 payload 中有 `subtitle_task_id`，即可生成跳转按钮。
 - 若 payload 缺少字幕移除任务 ID，卡片仍展示归纳状态和技术详情，但不展示跳转按钮。
 - 若字幕移除任务记录已删除或无法读取，按钮仍可按 ID 生成；归纳状态显示为 `已提交` 或事件本身状态，避免因为关联详情缺失导致任务中心页面报错。
+- 生产 `projects` 表可能没有 `updated_at` 字段；事件增强查询不得硬依赖该列。最近更新时间优先来自 `state_json.last_polled_at` / 状态 JSON 内部字段，缺失时允许为空，不能因此让 `/tasks/api/<tid>/events` 返回 500。
 
 ## 验证
 

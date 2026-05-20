@@ -191,7 +191,7 @@ def _load_subtitle_removal_context(task_ids: Iterable[str]) -> dict[str, dict]:
         return {}
     placeholders = ", ".join(["%s"] * len(normalized_ids))
     rows = query_all(
-        "SELECT id, status, state_json, created_at, updated_at "
+        "SELECT id, status, state_json, created_at "
         "FROM projects "
         "WHERE type='subtitle_removal' AND deleted_at IS NULL "
         f"AND id IN ({placeholders})",
