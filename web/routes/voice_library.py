@@ -11,9 +11,10 @@ from flask_login import current_user, login_required
 
 from appcore import medias
 from appcore import voice_match_tasks as vmt
+from appcore.voice_preview_archive import resolve_local_preview_path
 from appcore.voice_library_browse import list_filter_options, list_voices
 from config import UPLOAD_DIR
-from web.services.artifact_download import safe_task_file_response
+from web.services.artifact_download import safe_task_file_response, send_file_with_range
 from web.services.voice_library import (
     build_voice_library_filters_response,
     build_voice_library_forbidden_upload_token_response,
@@ -99,6 +100,20 @@ def api_list():
     except ValueError as exc:
         return voice_library_flask_response(build_voice_library_service_error_response(str(exc)))
     return voice_library_flask_response(build_voice_library_list_response(result))
+
+
+@bp.route("/api/preview/<language>/<voice_id>", methods=["GET"])
+@login_required
+def api_preview_audio(language: str, voice_id: str):
+    preview_hash = (request.args.get("hash") or "").strip()
+    path = resolve_local_preview_path(
+        language=language,
+        voice_id=voice_id,
+        preview_url_hash=preview_hash,
+    )
+    if not path:
+        abort(404)
+    return send_file_with_range(path)
 
 
 _ALLOWED_VIDEO_CT = {"video/mp4", "video/quicktime", "video/x-matroska", "video/webm"}

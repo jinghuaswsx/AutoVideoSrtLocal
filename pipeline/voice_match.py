@@ -141,7 +141,12 @@ def match_candidates(
     top = scored[:top_k]
     for index, row in enumerate(top, start=1):
         row["similarity_rank"] = index
-    return top
+    try:
+        from appcore.voice_preview_archive import attach_local_preview_urls
+
+        return attach_local_preview_urls(top, language=language)
+    except Exception:
+        return top
 
 
 def match_for_video(

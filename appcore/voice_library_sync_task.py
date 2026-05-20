@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from appcore.db import query
 from appcore import realtime_events, runner_lifecycle
+from config import UPLOAD_DIR
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +167,7 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
         embed_missing_voices,
         upsert_library_stats,
     )
+    from appcore.voice_preview_archive import archive_missing_voice_previews
     try:
         total_pulled = [0]
         total_available_holder = [0]
@@ -201,6 +203,15 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
         cache_dir = os.path.join("uploads", "voice_preview_cache")
         embed_missing_voices(
             cache_dir, on_progress=on_progress, language=language,
+        )
+
+        def on_archive_progress(done, total, voice_id, ok):
+            _set(phase="preview_archive", done=done, total=total)
+
+        archive_missing_voice_previews(
+            archive_dir=os.path.join(UPLOAD_DIR, "voice_preview_archive"),
+            language=language,
+            on_progress=on_archive_progress,
         )
 
         def on_rate_progress(done, total, voice_id, ok):

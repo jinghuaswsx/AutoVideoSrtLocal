@@ -370,3 +370,28 @@ def test_match_sample_audio_rejects_file_outside_storage_roots(tmp_path, authed_
     resp = authed_client_no_db.get("/voice-library/api/match/artifact/vm_x/sample-audio")
 
     assert resp.status_code == 404
+
+
+def test_preview_archive_serves_ready_local_file(tmp_path, authed_client_no_db, monkeypatch):
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"mp3-data")
+    monkeypatch.setattr(
+        "web.routes.voice_library.resolve_local_preview_path",
+        lambda *, language, voice_id, preview_url_hash: str(audio),
+    )
+
+    resp = authed_client_no_db.get("/voice-library/api/preview/en/voice-1?hash=abc")
+
+    assert resp.status_code == 200
+    assert resp.data == b"mp3-data"
+
+
+def test_preview_archive_returns_404_when_local_file_missing(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.voice_library.resolve_local_preview_path",
+        lambda *, language, voice_id, preview_url_hash: None,
+    )
+
+    resp = authed_client_no_db.get("/voice-library/api/preview/en/voice-1?hash=abc")
+
+    assert resp.status_code == 404

@@ -115,6 +115,50 @@ def test_list_voices_prefers_language_variants_when_present(monkeypatch):
     assert "FROM elevenlabs_voice_variants" in captured["list_sql"]
 
 
+def test_list_voices_annotates_local_preview_archive(monkeypatch):
+    from appcore import voice_library_browse as vlb
+    rows = [{
+        "voice_id": "v1",
+        "name": "Voice",
+        "gender": "female",
+        "language": "en",
+        "age": None,
+        "accent": None,
+        "category": "professional",
+        "descriptive": None,
+        "use_case": "news",
+        "preview_url": "https://example.com/v1.mp3",
+        "labels_json": "{}",
+    }]
+    calls = {"query_one": 0}
+
+    def fake_query_one(sql, params=()):
+        calls["query_one"] += 1
+        if calls["query_one"] == 1:
+            return {"c": 0}
+        return {"c": 1}
+
+    def fake_query(sql, params=()):
+        return rows
+
+    def fake_attach(items, *, language):
+        assert language == "en"
+        out = [dict(item) for item in items]
+        out[0]["preview_local_url"] = "/voice-library/api/preview/en/v1?hash=h"
+        return out
+
+    monkeypatch.setattr(vlb, "query_one", fake_query_one)
+    monkeypatch.setattr(vlb, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.voice_preview_archive.attach_local_preview_urls",
+        fake_attach,
+    )
+
+    result = vlb.list_voices(language="en")
+
+    assert result["items"][0]["preview_local_url"].endswith("?hash=h")
+
+
 def test_multi_select_use_case():
     from appcore import voice_library_browse
     cap = _DBCapture(rows=[], total=0)

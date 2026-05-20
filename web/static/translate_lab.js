@@ -557,7 +557,7 @@
       var score = v.score !== undefined
         ? ('分数 ' + Number(v.score).toFixed(2))
         : "";
-      var preview = safeMediaSrc(v.preview_url || v.preview_audio || "");
+      var preview = safeMediaSrc(v.preview_local_url || v.preview_url || v.preview_audio || "");
       return ''
         + '<div class="voice-card" data-voice-id="' + escapeHtml(v.voice_id || "") + '">'
         + '  <div class="voice-card-head">'
@@ -635,7 +635,7 @@
   }
 
   function renderVoiceConfirmed(voice) {
-    var preview = safeMediaSrc(voice.preview_url || "");
+    var preview = safeMediaSrc(voice.preview_local_url || voice.preview_url || "");
     D.voiceConfirmed = voice;
     var section = $("#labVoiceSection");
     var list = $("#labVoiceMatch");

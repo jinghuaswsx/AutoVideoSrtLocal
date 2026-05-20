@@ -69,6 +69,12 @@ def _row_to_dict(row: dict) -> dict:
     return out
 
 
+def _attach_preview_archive(items: list[dict], *, language: str) -> list[dict]:
+    from appcore.voice_preview_archive import attach_local_preview_urls
+
+    return attach_local_preview_urls(items, language=language)
+
+
 def list_voices(
     *,
     language: str,
@@ -140,7 +146,7 @@ def list_voices(
         "total": total,
         "page": page,
         "page_size": page_size,
-        "items": [_row_to_dict(r) for r in rows],
+        "items": _attach_preview_archive([_row_to_dict(r) for r in rows], language=language),
     }
 
 
@@ -158,7 +164,7 @@ def fetch_voices_by_ids(*, language: str, voice_ids: list[str]) -> list[dict]:
         f"WHERE language = %s AND voice_id IN ({placeholders})",
         (language, *cleaned),
     )
-    return [_row_to_dict(r) for r in rows]
+    return _attach_preview_archive([_row_to_dict(r) for r in rows], language=language)
 
 
 def fetch_voice_by_id(*, language: str, voice_id: str) -> dict | None:
@@ -173,7 +179,7 @@ def fetch_voice_by_id(*, language: str, voice_id: str) -> dict | None:
         "WHERE language = %s AND voice_id = %s LIMIT 1",
         (language, voice_id),
     )
-    return _row_to_dict(row) if row else None
+    return _attach_preview_archive([_row_to_dict(row)], language=language)[0] if row else None
 
 
 def list_filter_options(*, language: str) -> dict:

@@ -28,7 +28,7 @@ def test_voice_selector_multi_sanitizes_preview_media_sources():
     assert "const videoSrc = safeMediaSrc(src, { allowBlob: true });" in SCRIPT
     assert 'const videoUrl = safeMediaSrc(data.video_url || "", { allowBlob: true });' in payload_block
     assert "const videoSrc = safeMediaSrc(src);" in result_block
-    assert "const previewUrl = safeMediaSrc(v.preview_url);" in row_block
+    assert "const previewUrl = safeMediaSrc(v.preview_local_url || v.preview_url);" in row_block
     assert 'src="${escapeHtml(previewUrl)}"' in row_block
     assert "previewVideo.src = src;" not in SCRIPT
     assert "resultVideo.src = src;" not in result_block

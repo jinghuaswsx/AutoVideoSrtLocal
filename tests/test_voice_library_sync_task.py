@@ -231,6 +231,7 @@ def test_summarize_prefers_voice_variants_when_available(monkeypatch):
 
 def test_run_sync_computes_preview_speech_rates_after_embedding(monkeypatch):
     from pipeline import voice_library_sync
+    from appcore import voice_preview_archive
 
     emitted = []
     preview_calls = []
@@ -267,6 +268,11 @@ def test_run_sync_computes_preview_speech_rates_after_embedding(monkeypatch):
         "compute_missing_preview_speech_rates",
         fake_preview_rates,
     )
+    monkeypatch.setattr(
+        voice_preview_archive,
+        "archive_missing_voice_previews",
+        lambda **kwargs: {"total": 0, "archived": 0, "failed": 0, "skipped": 0},
+    )
     monkeypatch.setattr(voice_library_sync, "upsert_library_stats", lambda *args, **kwargs: None)
 
     vlst._run_sync_sync("sync_1", "en", "api-key")
@@ -275,6 +281,43 @@ def test_run_sync_computes_preview_speech_rates_after_embedding(monkeypatch):
     assert preview_calls[0]["cache_dir"].endswith("voice_preview_rate_cache")
     assert any(payload.get("phase") == "preview_rate" for _event, payload in emitted)
     assert vlst.get_current()["status"] == "done"
+
+
+def test_run_sync_archives_preview_audio_and_asr_after_rates(monkeypatch):
+    from pipeline import voice_library_sync
+    from appcore import voice_preview_archive
+
+    archive_calls = []
+    emitted = []
+    vlst._CURRENT["task"] = {
+        "sync_id": "sync_1",
+        "language": "en",
+        "phase": "pull_metadata",
+        "done": 0,
+        "total": 0,
+        "status": "running",
+        "error": None,
+    }
+
+    monkeypatch.setattr(vlst, "_emit", lambda event, payload: emitted.append((event, dict(payload))))
+    monkeypatch.setattr(vlst, "summarize", lambda: [])
+    monkeypatch.setattr(voice_library_sync, "sync_all_shared_voices", lambda **kwargs: None)
+    monkeypatch.setattr(voice_library_sync, "embed_missing_voices", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(voice_library_sync, "compute_missing_preview_speech_rates", lambda **kwargs: 1)
+    monkeypatch.setattr(voice_library_sync, "upsert_library_stats", lambda *args, **kwargs: None)
+
+    def fake_archive(**kwargs):
+        archive_calls.append(kwargs)
+        kwargs["on_progress"](1, 1, "v1", True)
+        return {"total": 1, "archived": 1, "failed": 0, "skipped": 0}
+
+    monkeypatch.setattr(voice_preview_archive, "archive_missing_voice_previews", fake_archive)
+
+    vlst._run_sync_sync("sync_1", "en", "api-key")
+
+    assert archive_calls[0]["language"] == "en"
+    assert archive_calls[0]["archive_dir"].endswith("voice_preview_archive")
+    assert any(payload.get("phase") == "preview_archive" for _event, payload in emitted)
 
 
 def test_max_voices_per_language_constant():

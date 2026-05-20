@@ -757,7 +757,7 @@
     if (isSelected) classes.push("selected");
     const meta = [v.gender, v.accent, v.age, v.description || v.descriptive || ""]
       .filter(Boolean).map(escapeHtml).join(" · ");
-    const previewUrl = safeMediaSrc(v.preview_url);
+    const previewUrl = safeMediaSrc(v.preview_local_url || v.preview_url);
     const preview = previewUrl
       ? `<audio controls preload="none" src="${escapeHtml(previewUrl)}"></audio>`
       : "";

@@ -15,7 +15,7 @@ def test_voice_library_sanitizes_preview_audio_sources():
     ]
 
     assert "function safeMediaSrc(url)" in SCRIPT
-    assert "playBtn.dataset.url = safeMediaSrc(v.preview_url);" in card_block
+    assert "playBtn.dataset.url = safeMediaSrc(v.preview_local_url || v.preview_url);" in card_block
     assert "const url = safeMediaSrc(btn.dataset.url);" in play_block
     assert "audio.src = url;" in play_block
     assert "playBtn.dataset.url = v.preview_url || \"\";" not in card_block

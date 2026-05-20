@@ -175,7 +175,7 @@
 
     const playBtn = card.querySelector(".vl-play-btn");
     playBtn.dataset.voice = v.voice_id || "";
-    playBtn.dataset.url = safeMediaSrc(v.preview_url);
+    playBtn.dataset.url = safeMediaSrc(v.preview_local_url || v.preview_url);
     playBtn.addEventListener("click", (e) => togglePlay(e.currentTarget));
     return card;
   }
