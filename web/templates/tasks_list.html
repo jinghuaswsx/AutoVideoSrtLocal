@@ -36,6 +36,8 @@
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
 .tc-btn { height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); cursor:pointer; font-size:13px; }
 .tc-btn:hover { background:var(--tc-bg-muted); }
+.tc-btn:disabled { background:var(--tc-bg-muted); border-color:var(--tc-border); color:var(--tc-fg-muted); cursor:not-allowed; opacity:.72; }
+.tc-btn:disabled:hover { background:var(--tc-bg-muted); }
 .tc-btn--primary { background:var(--tc-accent); color:#fff; border:none; }
 .tc-btn--primary:hover { background:var(--tc-accent-hover); }
 .tc-btn--danger { background:var(--tc-danger); color:#fff; border:none; }
@@ -197,6 +199,29 @@ function tcInlineArg(s) {
 function tcFormatTime(s) {
   if (!s) return '时间未知';
   return String(s).replace('T', ' ').slice(0, 19);
+}
+function tcStatusLabel(status) {
+  const labels = {
+    pending: '待认领',
+    raw_in_progress: '原素材处理中',
+    raw_review: '原素材待审核',
+    raw_done: '原素材已通过',
+    all_done: '全部完成',
+    blocked: '等待前置完成',
+    assigned: '待处理',
+    review: '待审核',
+    done: '已完成',
+    cancelled: '已取消',
+  };
+  return labels[status] || status || '—';
+}
+function tcHighLevelLabel(status) {
+  const labels = {
+    in_progress: '进行中',
+    completed: '已完成',
+    terminated: '已终止',
+  };
+  return labels[status] || status || '—';
 }
 function tcParsePayload(payload) {
   let value = payload;
@@ -374,15 +399,55 @@ async function tcRenderTaskList(wrap, tab) {
       <td>${tcEsc(it.product_name)}</td>
       <td>${kind}</td>
       <td>${country}</td>
-      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(it.high_level)}</span></td>
-      <td>${tcEsc(it.status)}</td>
+      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcHighLevelLabel(it.high_level))}</span></td>
+      <td>${tcEsc(tcStatusLabel(it.status))}</td>
       <td>${tcEsc(it.assignee_username || '—')}</td>
-      <td><button class="tc-btn" onclick="tcOpenDetail(${it.id})">详情</button></td>
+      <td>${tcTaskRowAction(it)}</td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<table class="tc-table"><thead><tr>
     <th>产品</th><th>类型</th><th>国家</th><th>高层</th><th>子状态</th><th>负责人</th><th>操作</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function tcOpenDetailAction(id) {
+  tcOpenDetail(id);
+}
+function tcActiveTaskAction(id, label, primary) {
+  const cls = primary ? 'tc-btn tc-btn--primary' : 'tc-btn';
+  return `<button class="${cls}" onclick="tcOpenDetailAction(${Number(id || 0)})">${tcEsc(label)}</button>`;
+}
+function tcDisabledTaskAction(label) {
+  return `<button class="tc-btn" disabled title="${tcEsc(label)}">${tcEsc(label)}</button>`;
+}
+function tcTaskRowAction(it) {
+  const id = Number(it.id || 0);
+  const status = it.status;
+  const isParent = !it.parent_task_id;
+  if (!id) return tcDisabledTaskAction('不可处理');
+  if (isParent) {
+    if (status === 'pending') {
+      return TC_CAPS.can_process_raw_video ? tcActiveTaskAction(id, '认领处理', true) : tcDisabledTaskAction('无处理权限');
+    }
+    if (status === 'raw_in_progress') {
+      return (TC_CAPS.can_process_raw_video || TC_IS_ADMIN) ? tcActiveTaskAction(id, '处理原素材', true) : tcDisabledTaskAction('原素材处理中');
+    }
+    if (status === 'raw_review') {
+      return TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核');
+    }
+    if (status === 'raw_done' || status === 'all_done') return tcActiveTaskAction(id, '查看结果', false);
+    if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
+    return tcActiveTaskAction(id, '查看', false);
+  }
+  if (status === 'blocked') return tcDisabledTaskAction('等待前置完成');
+  if (status === 'assigned') {
+    return (TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限');
+  }
+  if (status === 'review') {
+    return TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核');
+  }
+  if (status === 'done') return tcActiveTaskAction(id, '查看结果', false);
+  if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
+  return tcActiveTaskAction(id, '查看', false);
 }
 async function tcRenderDispatchPool(wrap) {
   const data = await tcFetchJson('/tasks/api/dispatch_pool');
@@ -565,7 +630,7 @@ function tcRenderDetail(task, events) {
   const eventTimeline = tcRenderEventTimeline(events);
   return `
     <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
-    <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(task.high_level)}</span> · ${tcEsc(task.status)}</div>
+    <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
     <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
       ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(task.country_code) + ' 翻译段）'} ·
       负责人：${tcEsc(task.assignee_username || '—')}

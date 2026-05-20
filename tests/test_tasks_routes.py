@@ -13,6 +13,26 @@ def test_task_center_child_translate_jump_uses_product_code_search(authed_client
     assert "tcChildJumpTranslate(taskId, country, productId, productCode)" in body
 
 
+def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcStatusLabel(status)" in body
+    assert "blocked: '等待前置完成'" in body
+    assert "assigned: '待处理'" in body
+    assert "raw_in_progress: '原素材处理中'" in body
+    assert "<td>${tcEsc(tcStatusLabel(it.status))}</td>" in body
+    assert "function tcTaskRowAction(it)" in body
+    assert "tcDisabledTaskAction('等待前置完成')" in body
+    assert "tcOpenDetail(id)" in body
+    assert "去处理" in body
+    assert "处理原素材" in body
+    assert "查看结果" in body
+    assert "查看记录" in body
+    assert ">详情</button>" not in body
+    assert "<td>${tcEsc(it.status)}</td>" not in body
+
+
 def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
