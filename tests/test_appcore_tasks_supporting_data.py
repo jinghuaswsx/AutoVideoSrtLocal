@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 
-def test_list_enabled_target_languages_excludes_english_and_uppercases(monkeypatch):
+def test_list_enabled_target_languages_excludes_english_and_returns_display_labels(monkeypatch):
     from appcore import tasks
 
     captured = {}
@@ -11,13 +11,13 @@ def test_list_enabled_target_languages_excludes_english_and_uppercases(monkeypat
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
         captured["args"] = args
-        return [{"code": "de"}, {"code": "ja"}]
+        return [{"code": "de", "name_zh": "德语"}, {"code": "ja", "name_zh": "日语"}]
 
     monkeypatch.setattr(tasks, "query_all", fake_query_all)
 
     assert tasks.list_enabled_target_languages() == [
-        {"code": "DE"},
-        {"code": "JA"},
+        {"code": "DE", "name_zh": "德语", "label": "德语 (DE)"},
+        {"code": "JA", "name_zh": "日语", "label": "日语 (JA)"},
     ]
     assert "FROM media_languages" in captured["sql"]
     assert "enabled=1" in captured["sql"]

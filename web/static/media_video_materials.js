@@ -61,8 +61,9 @@
 
   function langName(code) {
     const raw = String(code || '').toLowerCase();
-    const row = state.languages.find(item => item.code === raw);
-    return row ? `${row.name_zh || row.code} (${row.code})` : raw;
+    const row = state.languages.find(item => String(item.code || '').toLowerCase() === raw);
+    const upper = raw.toUpperCase();
+    return row ? `${row.name_zh || upper} (${upper})` : upper;
   }
 
   function activeTab() {
@@ -99,7 +100,8 @@
       state.languages.forEach(lang => {
         const opt = document.createElement('option');
         opt.value = lang.code;
-        opt.textContent = `${lang.name_zh || lang.code} (${lang.code})`;
+        const code = String(lang.code || '').trim().toUpperCase();
+        opt.textContent = lang.name_zh ? `${lang.name_zh} (${code})` : code;
         select.appendChild(opt);
       });
     }

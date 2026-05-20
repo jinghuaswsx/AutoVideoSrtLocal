@@ -5,15 +5,15 @@
 
   // 目标语言固定列表(本期 media_languages 启用的集合)
   const ALL_LANGS = [
-    { code: 'de', label: '🇩🇪 德语' },
-    { code: 'fr', label: '🇫🇷 法语' },
-    { code: 'es', label: '🇪🇸 西班牙语' },
-    { code: 'it', label: '🇮🇹 意大利语' },
-    { code: 'ja', label: '🇯🇵 日语' },
-    { code: 'pt', label: '🇵🇹 葡萄牙语' },
-    { code: 'nl', label: '🇳🇱 荷兰语' },
-    { code: 'sv', label: '🇸🇪 瑞典语' },
-    { code: 'fi', label: '🇫🇮 芬兰语' },
+    { code: 'de', label: '德语 (DE)' },
+    { code: 'fr', label: '法语 (FR)' },
+    { code: 'es', label: '西班牙语 (ES)' },
+    { code: 'it', label: '意大利语 (IT)' },
+    { code: 'ja', label: '日语 (JA)' },
+    { code: 'pt', label: '葡萄牙语 (PT)' },
+    { code: 'nl', label: '荷兰语 (NL)' },
+    { code: 'sv', label: '瑞典语 (SV)' },
+    { code: 'fi', label: '芬兰语 (FI)' },
   ];
 
   let dialog;
@@ -49,7 +49,7 @@
     if (singleMode) {
       const span = document.createElement('span');
       span.className = 'bt-badge bt-badge--primary';
-      span.textContent = flagOf(ctx.fixedLang) + ' (固定)';
+      span.textContent = languageLabel(ctx.fixedLang) + ' (固定)';
       box.appendChild(span);
       box.dataset.fixedLang = ctx.fixedLang;
     } else {
@@ -391,11 +391,11 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[m]));
   }
-  function flagOf(code) {
-      const m = { de: '🇩🇪 德语', fr: '🇫🇷 法语', es: '🇪🇸 西班牙语',
-                   it: '🇮🇹 意大利语', ja: '🇯🇵 日语', pt: '🇵🇹 葡萄牙语',
-                   nl: '🇳🇱 荷兰语', sv: '🇸🇪 瑞典语', fi: '🇫🇮 芬兰语' };
-    return m[code] || code;
+  function languageLabel(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    const match = ALL_LANGS.find(item => item.code === normalized);
+    return match ? match.label : raw.toUpperCase();
   }
 
   // =========================

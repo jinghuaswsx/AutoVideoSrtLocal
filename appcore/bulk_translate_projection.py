@@ -169,14 +169,27 @@ def _admin_creator_name_expr() -> str:
         return "u.username"
 
 
+def _language_display_label(code: str | None) -> str:
+    raw = str(code or "").strip()
+    code_upper = raw.upper()
+    if not code_upper:
+        return ""
+    name = str(medias.get_language_name(raw.lower()) or "").strip()
+    if not name or name.lower() == raw.lower():
+        return code_upper
+    return f"{name} ({code_upper})"
+
+
 def _serialize_user_task(row: dict, state: dict) -> dict:
     cost_tracking = dict(state.get("cost_tracking") or {})
     cost_actual = dict(cost_tracking.get("actual") or {})
+    target_langs = state.get("target_langs")
     return {
         "id": row["id"],
         "status": row["status"],
         "product_id": state.get("product_id"),
-        "target_langs": state.get("target_langs"),
+        "target_langs": target_langs,
+        "target_lang_labels": [_language_display_label(lang) for lang in (target_langs or [])],
         "content_types": state.get("content_types"),
         "progress": state.get("progress"),
         "cost_estimate": None,
@@ -226,7 +239,7 @@ def _serialize_admin_task(row: dict, state: dict) -> dict:
         "product_id": product_id,
         "product": product,
         "target_langs": list(state.get("target_langs") or []),
-        "target_lang_labels": [medias.get_language_name(lang) for lang in (state.get("target_langs") or [])],
+        "target_lang_labels": [_language_display_label(lang) for lang in (state.get("target_langs") or [])],
         "content_types": list(state.get("content_types") or []),
         "content_type_labels": [
             _CONTENT_TYPE_LABELS.get(content_type, content_type)
@@ -265,7 +278,7 @@ def _serialize_task(row: dict, state: dict) -> dict:
         "status_label": _status_label(status, waiting_voice_count=waiting_voice_count),
         "product_id": int(state.get("product_id") or 0),
         "target_langs": list(state.get("target_langs") or []),
-        "target_lang_labels": [medias.get_language_name(lang) for lang in (state.get("target_langs") or [])],
+        "target_lang_labels": [_language_display_label(lang) for lang in (state.get("target_langs") or [])],
         "content_types": list(state.get("content_types") or []),
         "content_type_labels": [
             _CONTENT_TYPE_LABELS.get(content_type, content_type)
@@ -374,7 +387,7 @@ def _serialize_item(
         "kind": kind,
         "kind_label": _KIND_LABELS.get(kind, kind or "翻译任务"),
         "lang": lang,
-        "lang_label": medias.get_language_name(lang) if lang else "",
+        "lang_label": _language_display_label(lang) if lang else "",
         "status": status,
         "status_label": _status_label(status, waiting_voice_count=1 if manual_step else 0),
         "error": (item.get("error") or "").strip(),

@@ -183,7 +183,10 @@
   function languageName(code) {
     const normalized = String(code || '').trim().toLowerCase();
     const row = enabledLanguages().find((lang) => lang.code === normalized);
-    return row ? (row.name_zh || row.code.toUpperCase()) : normalized.toUpperCase();
+    const upper = normalized.toUpperCase();
+    if (!row) return upper;
+    const name = String(row.name_zh || '').trim();
+    return name ? `${name} (${upper})` : upper;
   }
 
   function rawTranslationSummary(raw) {
@@ -239,7 +242,7 @@
       <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''}">
         <input type="checkbox" value="${lang.code}" ${state.selectedLangs.has(lang.code) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
         <span class="mt-choice__body">
-          <strong>${esc(lang.name_zh || lang.code.toUpperCase())}</strong>
+          <strong>${esc(languageName(lang.code))}</strong>
           <small>${esc(statusText)}</small>
         </span>
       </label>

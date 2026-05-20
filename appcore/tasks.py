@@ -49,10 +49,21 @@ def high_level_status(status: str) -> str:
 
 def list_enabled_target_languages() -> list[dict]:
     rows = query_all(
-        "SELECT code FROM media_languages "
+        "SELECT code, name_zh FROM media_languages "
         "WHERE enabled=1 AND code <> 'en' ORDER BY code"
     )
-    return [{"code": str(row["code"]).upper()} for row in rows]
+    languages = []
+    for row in rows:
+        code = str(row["code"] or "").strip().upper()
+        if not code:
+            continue
+        name_zh = str(row.get("name_zh") or code).strip() or code
+        languages.append({
+            "code": code,
+            "name_zh": name_zh,
+            "label": f"{name_zh} ({code})",
+        })
+    return languages
 
 
 def list_product_english_items(product_id: int) -> list[dict]:

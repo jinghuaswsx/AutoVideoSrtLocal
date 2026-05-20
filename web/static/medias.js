@@ -79,8 +79,9 @@
     const normalized = raw.toLowerCase();
     if (!normalized) return '';
     const l = (LANGUAGES || []).find(x => x && x.code === normalized);
-    if (l && l.name_zh) return `${l.name_zh} (${l.code})`;
-    return raw;
+    const upper = normalized.toUpperCase();
+    if (l && l.name_zh) return `${l.name_zh} (${upper})`;
+    return upper || raw;
   }
 
   function resolveMaterialFilenameLang(filename, fallbackLang) {
@@ -7391,8 +7392,9 @@
   function rawSourceLangDisplayName(lang) {
     const code = String((lang && lang.code) || '').trim();
     const nameZh = String((lang && lang.name_zh) || '').trim();
-    if (nameZh && code) return `${nameZh} (${code})`;
-    return nameZh || code || '';
+    const upper = code.toUpperCase();
+    if (nameZh && upper) return `${nameZh} (${upper})`;
+    return nameZh || upper || '';
   }
 
   function validateFilenameNoSpaces(filename) {

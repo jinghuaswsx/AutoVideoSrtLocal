@@ -18,3 +18,9 @@ def test_bulk_translate_bubble_task_links_encode_task_ids():
     assert 'href="/tasks/${encodeURIComponent(taskId)}"' in SCRIPT
     assert "taskId.slice(0, 8)" in SCRIPT
     assert 'href="/tasks/${tid}"' not in SCRIPT
+
+
+def test_bulk_translate_dialog_language_labels_include_codes():
+    assert "{ code: 'de', label: '德语 (DE)' }" in SCRIPT
+    assert "languageLabel(ctx.fixedLang) + ' (固定)'" in SCRIPT
+    assert "🇩🇪 德语" not in SCRIPT

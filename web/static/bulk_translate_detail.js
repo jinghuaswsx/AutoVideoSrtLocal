@@ -671,15 +671,15 @@
 
   function languageLabel(code) {
     return {
-      de: '德语',
-      fr: '法语',
-      es: '西班牙语',
-      it: '意大利语',
-      ja: '日语',
-      pt: '葡萄牙语',
-      nl: '荷兰语',
-      sv: '瑞典语',
-      fi: '芬兰语',
+      de: '德语 (DE)',
+      fr: '法语 (FR)',
+      es: '西班牙语 (ES)',
+      it: '意大利语 (IT)',
+      ja: '日语 (JA)',
+      pt: '葡萄牙语 (PT)',
+      nl: '荷兰语 (NL)',
+      sv: '瑞典语 (SV)',
+      fi: '芬兰语 (FI)',
     }[code] || String(code || '未知语种').toUpperCase();
   }
 

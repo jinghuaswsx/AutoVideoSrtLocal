@@ -31,6 +31,7 @@ def test_list_user_tasks_filters_by_user_and_status(monkeypatch):
         ]
 
     monkeypatch.setattr(mod, "query", fake_query)
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"de": "德语"}.get(code, code))
 
     rows = mod.list_user_tasks(1, status="running")
 
@@ -43,6 +44,7 @@ def test_list_user_tasks_filters_by_user_and_status(monkeypatch):
             "status": "running",
             "product_id": 77,
             "target_langs": ["de"],
+            "target_lang_labels": ["德语 (DE)"],
             "content_types": ["copy"],
             "progress": {"total": 3, "done": 1},
             "cost_estimate": None,
@@ -82,6 +84,7 @@ def test_list_user_tasks_defaults_missing_state(monkeypatch):
             "status": "error",
             "product_id": None,
             "target_langs": None,
+            "target_lang_labels": [],
             "content_types": None,
             "progress": None,
             "cost_estimate": None,
@@ -373,3 +376,4 @@ def test_serialize_item_marks_failed_detail_image_as_force_backfillable(monkeypa
     )
 
     assert item["force_backfillable"] is True
+    assert item["lang_label"] == "德语 (DE)"

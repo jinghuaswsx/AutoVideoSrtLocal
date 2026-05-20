@@ -323,9 +323,9 @@
 {% if detail_mode in ('multi', 'av_sync') %}
 {# 顶部实时状态卡：源/目标语言按人工选择值渲染，进度条 + 当前阶段 + 中断提示 + 可选项 #}
 {% set _LANG_LABELS = {
-  'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
-  'fr': '法语', 'it': '意大利语', 'ja': '日语', 'de': '德语',
-  'nl': '荷兰语', 'sv': '瑞典语', 'fi': '芬兰语'
+  'zh': '中文 (ZH)', 'en': '英语 (EN)', 'es': '西班牙语 (ES)', 'pt': '葡萄牙语 (PT)',
+  'fr': '法语 (FR)', 'it': '意大利语 (IT)', 'ja': '日语 (JA)', 'de': '德语 (DE)',
+  'nl': '荷兰语 (NL)', 'sv': '瑞典语 (SV)', 'fi': '芬兰语 (FI)'
 } %}
 {% set _src_lang = state.source_language or '' %}
 {% set _src_detected = state.detected_source_language or '' %}

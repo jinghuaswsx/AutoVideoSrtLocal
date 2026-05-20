@@ -175,6 +175,20 @@ def test_xuanpin_mk_uses_create_small_language_task_labels(authed_client_no_db):
     assert "创建小语种翻译任务" in body
     assert "下一步：创建小语种任务" in body
     assert "继续做小语种任务" not in body
+    assert "mkiXiaoLangLabel" in body
+    assert "中文名 + 国家代码" not in body
+
+
+def test_xuanpin_mk_small_language_task_requires_imported_material(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;" in body
+    assert "data-mki-local-product-id" in body
+    assert "data-mki-local-item-id" in body
+    assert "先加入素材库后才能创建小语种任务" in body
+    assert "mkiXiaoCreateFromImportedMaterial" in body
 
 
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):

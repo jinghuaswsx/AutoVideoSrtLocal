@@ -43,6 +43,7 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert "openAdPlanDetail" in script
     assert "window.open(url, '_blank')" in script
     assert "opened.focus()" in script
+    assert "`${row.name_zh || upper} (${upper})`" in script
 
     video_response = authed_client_no_db.get("/medias/video")
     assert video_response.status_code == 200

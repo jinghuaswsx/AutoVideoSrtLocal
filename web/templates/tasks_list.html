@@ -191,6 +191,20 @@ const TC_CAPS = {
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
 };
 let TC_CURRENT_TAB = 'mine';
+const TC_LANGUAGE_FALLBACKS = {
+  DE: '德语',
+  FR: '法语',
+  ES: '西班牙语',
+  IT: '意大利语',
+  JA: '日语',
+  PT: '葡萄牙语',
+  NL: '荷兰语',
+  SV: '瑞典语',
+  FI: '芬兰语',
+  EN: '英语',
+};
+let TC_LANGUAGE_LABELS = {};
+let TC_LANGUAGE_LOAD_PROMISE = null;
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcInlineArg(s) {
@@ -233,6 +247,33 @@ function tcParsePayload(payload) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
   if (value === null || value === undefined || value === '') return {};
   return { message: String(value) };
+}
+function tcLanguageCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+function tcLanguageLabel(value) {
+  const code = tcLanguageCode(value);
+  if (!code) return '';
+  if (TC_LANGUAGE_LABELS[code]) return TC_LANGUAGE_LABELS[code];
+  const fallback = TC_LANGUAGE_FALLBACKS[code];
+  return fallback ? `${fallback} (${code})` : code;
+}
+function tcRegisterLanguageLabels(languages) {
+  (languages || []).forEach(function(lang) {
+    const code = tcLanguageCode(lang && lang.code);
+    if (!code) return;
+    const name = String((lang && (lang.name_zh || lang.name)) || '').trim();
+    const label = String((lang && lang.label) || '').trim() || (name ? `${name} (${code})` : tcLanguageLabel(code));
+    TC_LANGUAGE_LABELS[code] = label;
+  });
+}
+function tcLoadLanguageLabels() {
+  if (TC_LANGUAGE_LOAD_PROMISE) return TC_LANGUAGE_LOAD_PROMISE;
+  TC_LANGUAGE_LOAD_PROMISE = fetch('/tasks/api/languages')
+    .then(r => r.ok ? r.json() : {languages: []})
+    .then(data => { tcRegisterLanguageLabels(data.languages || data.items || []); })
+    .catch(() => {});
+  return TC_LANGUAGE_LOAD_PROMISE;
 }
 function tcFormatBytes(value) {
   const n = Number(value);
@@ -288,8 +329,8 @@ function tcEventFacts(payload, event) {
     if (value === undefined || value === null || value === '') return;
     facts.push({label, value: String(value)});
   };
-  if (Array.isArray(payload.countries)) add('目标国家', payload.countries.join('、'));
-  add('目标国家', payload.country);
+  if (Array.isArray(payload.countries)) add('目标国家', payload.countries.map(tcLanguageLabel).join('、'));
+  add('目标国家', tcLanguageLabel(payload.country));
   add('翻译员', tcEventPayloadUserDisplay(event, payload, 'translator_id'));
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
@@ -388,6 +429,7 @@ async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
   wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
   try {
+    await tcLoadLanguageLabels();
     if (TC_CURRENT_TAB === 'dispatch') {
       await tcRenderDispatchPool(wrap);
     } else {
@@ -406,7 +448,7 @@ async function tcRenderTaskList(wrap, tab) {
   if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>'; return; }
   const rows = data.items.map(it => {
     const kind = it.parent_task_id ? '子任务' : '父任务';
-    const country = it.country_code ? tcEsc(it.country_code) : '—';
+    const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
     return `<tr data-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
       <td>${tcEsc(it.product_name)}</td>
       <td>${kind}</td>
@@ -488,10 +530,11 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
     const items = itemsResp.items || [];
     const translators = transResp.users || transResp.translators || [];
     const langs = langsResp.languages || [];
+    tcRegisterLanguageLabels(langs);
     const itemOpts = items.map(i => `<option value="${i.id}">${tcEsc(i.filename)}</option>`).join('');
     const isOldProduct = ownerId && translators.some(t => t.id === ownerId);
     const transOpts = translators.map(t => `<option value="${t.id}" ${t.id === ownerId ? 'selected' : ''}>${tcEsc(t.display_name || t.username)}</option>`).join('');
-    const langChecks = langs.map(l => `<label style="display:inline-block; padding:4px 8px;"><input type="checkbox" value="${l.code}"> ${tcEsc(l.code)}</label>`).join('');
+    const langChecks = langs.map(l => `<label style="display:inline-block; padding:4px 8px;"><input type="checkbox" value="${tcEsc(l.code)}"> ${tcEsc(tcLanguageLabel(l.code))}</label>`).join('');
     body.innerHTML = `
       <div style="margin-bottom:12px;"><strong>${tcEsc(pname)}</strong></div>
       <div style="margin-bottom:12px;">
@@ -565,7 +608,7 @@ async function tcOpenDetail(id) {
           const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
           const href = tcMediasUrl(it.task_id || '', it.product_id || '', it.lang || '', it.product_code || '', 'history');
           return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border);">'
-            + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(it.lang || '--') + '</span>'
+            + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
             + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
             + pushedBadge
             + '<a href="' + tcEsc(href) + '" target="_blank" rel="noopener" class="tc-btn" style="font-size:10px; height:22px; padding:0 6px;">素材库</a>'
@@ -615,7 +658,7 @@ async function tcOpenDetail(id) {
           };
           const entries = Object.entries(data.readiness || {});
           if (!entries.length) {
-            wrap.innerHTML = jump + '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(data.country_code) + ' 添加视频</span>';
+            wrap.innerHTML = jump + '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(tcLanguageLabel(data.country_code)) + ' 添加视频</span>';
             return;
           }
           wrap.innerHTML = jump + entries.map(([k, v]) => {
@@ -644,7 +687,7 @@ function tcRenderDetail(task, events) {
     <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
     <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
-      ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(task.country_code) + ' 翻译段）'} ·
+      ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段）'} ·
       负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
     </div>
     ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
@@ -653,7 +696,7 @@ function tcRenderDetail(task, events) {
       <div id="tcArtifactsRows">暂无</div>
     </div>
     ${!isParent ? `<div id="tcReadinessPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">
-  <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(task.country_code)})</div>
+  <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})</div>
   <div id="tcReadinessRows">加载中...</div>
 </div>` : ''}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
@@ -770,7 +813,7 @@ async function tcOpenBindModal(taskId, isParent) {
     listEl.innerHTML = items.map(function(it) {
       return '<label style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; border-bottom:1px dashed var(--tc-border);">'
         + '<input type="checkbox" value="' + tcEsc('' + it.id) + '" style="margin:0;">'
-        + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(it.lang || '--') + '</span>'
+        + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
         + '<span style="flex:1; font-size:12px;">' + tcEsc(it.display_name || it.filename || '#' + it.id) + '</span>'
         + '</label>';
     }).join('');

@@ -53,6 +53,20 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "/tasks/api/translation-work-users" in body
 
 
+def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "const TC_LANGUAGE_FALLBACKS" in body
+    assert "function tcLanguageLabel" in body
+    assert "function tcLoadLanguageLabels" in body
+    assert "payload.countries.map(tcLanguageLabel).join('、')" in body
+    assert "tcLanguageLabel(payload.country)" in body
+    assert "const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';" in body
+    assert "tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段" in body
+    assert "翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})" in body
+
+
 def test_index_requires_login():
     from web.app import create_app
     app = create_app()
@@ -514,7 +528,10 @@ def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypat
 
     def fake_list_enabled_target_languages():
         captured.append(True)
-        return [{"code": "DE"}, {"code": "JA"}]
+        return [
+            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)"},
+            {"code": "JA", "name_zh": "日语", "label": "日语 (JA)"},
+        ]
 
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.list_enabled_target_languages",
@@ -524,7 +541,12 @@ def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypat
     rsp = authed_client_no_db.get("/tasks/api/languages")
 
     assert rsp.status_code == 200
-    assert rsp.get_json() == {"languages": [{"code": "DE"}, {"code": "JA"}]}
+    assert rsp.get_json() == {
+        "languages": [
+            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)"},
+            {"code": "JA", "name_zh": "日语", "label": "日语 (JA)"},
+        ]
+    }
     assert captured == [True]
 
 

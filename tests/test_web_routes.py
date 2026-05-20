@@ -455,7 +455,7 @@ def test_bulk_translate_list_escapes_dynamic_rows_and_encodes_detail_links():
     assert 'const taskId = String(r.id || "");' in source
     assert "${esc(taskId.slice(0, 8))}" in source
     assert 'href="/tasks/${encodeURIComponent(taskId)}"' in source
-    assert "}[c] || esc(c);" in source
+    assert "targetLangs.map(code => esc(languageLabel(code))).join('、')" in source
     assert "return `<span style=\"color:${color};font-weight:500\">${esc(label)}</span>`;" in source
     assert "<td><code>${r.id.slice(0, 8)}</code></td>" not in source
     assert 'href="/tasks/${r.id}"' not in source
@@ -3218,7 +3218,7 @@ def test_medias_page_wraps_language_coverage_with_full_labels():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
     assert "function langDisplayName(code)" in medias_js
-    assert "if (l && l.name_zh) return `${l.name_zh} (${l.code})`;" in medias_js
+    assert "if (l && l.name_zh) return `${l.name_zh} (${upper})`;" in medias_js
     assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
     assert '<col style="width:336px">' in medias_js
     assert "const midpoint = Math.ceil(chips.length / 2);" in medias_js
@@ -3504,6 +3504,8 @@ def test_image_translate_detail_template_contains_medias_context_block():
     assert "商品素材编辑页" in template
     assert "window.renderImageTranslateMediasContext" in scripts
     assert "medias_context" in scripts
+    assert "function imageTranslateLangLabel" in scripts
+    assert 'return rawName + " (" + upper + ")";' in scripts
 
 
 def test_image_translate_templates_show_concurrency_mode_pills():
@@ -3757,7 +3759,7 @@ def test_pushes_scripts_format_language_as_chinese_plus_code():
 
     assert "function formatLanguageLabel" in pushes_js
     assert "const raw = String(code || '').trim();" in pushes_js
-    assert "${name} (${normalized})" in pushes_js
+    assert "${name} (${upper})" in pushes_js
     assert '<span class="lang-pill">${formatLanguageLabel(it.lang)}</span>' in pushes_js
     assert "[['语种', formatLanguageLabel(t.lang)" in pushes_js
     assert "addKV('语种', formatLanguageLabel(item.lang));" in pushes_js
@@ -3768,7 +3770,7 @@ def test_medias_scripts_format_language_as_chinese_plus_code():
 
     assert "function langDisplayName(code)" in medias_js
     assert "const raw = String(code || '').trim();" in medias_js
-    assert "${l.name_zh} (${l.code})" in medias_js
+    assert "${l.name_zh} (${upper})" in medias_js
     assert "${langDisplayName(l.code)}${badgeHtml}" in medias_js
     assert "const label = langDisplayName(lang);" in medias_js
     assert "确认删除 ${langDisplayName(lang)} 语种主图" in medias_js

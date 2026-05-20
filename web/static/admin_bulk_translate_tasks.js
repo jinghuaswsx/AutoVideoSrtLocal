@@ -56,7 +56,7 @@
     const product = task.product || {};
     const productCode = product.product_code ? ` · ${product.product_code}` : '';
     const typeText = (task.content_type_labels || task.content_types || []).join(' / ') || '未记录类型';
-    const langText = (task.target_lang_labels || task.target_langs || []).join('、') || '未记录语言';
+    const langText = (task.target_lang_labels || task.target_langs || []).map(languageLabel).join('、') || '未记录语言';
     const costText = task.group === 'done'
       ? `实际费用 ¥${formatMoney(task.cost_actual)}`
       : '实际费用将在任务成功后生成';
@@ -99,6 +99,24 @@
   function sortTaskItems(items) {
     const order = { stuck: 0, running: 1, done: 2 };
     return [...items].sort((a, b) => (order[a.group] ?? 9) - (order[b.group] ?? 9));
+  }
+
+  function languageLabel(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/\([A-Z]{2,8}\)$/.test(raw)) return raw;
+    const normalized = raw.toLowerCase();
+    return {
+      de: '德语 (DE)',
+      fr: '法语 (FR)',
+      es: '西班牙语 (ES)',
+      it: '意大利语 (IT)',
+      ja: '日语 (JA)',
+      pt: '葡萄牙语 (PT)',
+      nl: '荷兰语 (NL)',
+      sv: '瑞典语 (SV)',
+      fi: '芬兰语 (FI)',
+    }[normalized] || raw.toUpperCase();
   }
 
   function summarize(items) {

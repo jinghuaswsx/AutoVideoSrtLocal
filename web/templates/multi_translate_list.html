@@ -396,9 +396,9 @@
   </div>
 </div>
 
-{% set lang_label_map = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语','nl':'🇳🇱 荷兰语','sv':'🇸🇪 瑞典语','fi':'🇫🇮 芬兰语','en':'🇺🇸 英语'} %}
-{% set lang_name_map = {'zh':'中文','de':'德语','fr':'法语','es':'西语','it':'意语','ja':'日语','pt':'葡语','nl':'荷兰语','sv':'瑞典语','fi':'芬兰语','en':'英语'} %}
-{% set source_lang_label_map = {'zh':'中文 zh','en':'英语 en','es':'西语 es','pt':'葡语 pt','fr':'法语 fr','it':'意语 it','de':'德语 de','ja':'日语 ja','nl':'荷兰语 nl','sv':'瑞典语 sv','fi':'芬兰语 fi'} %}
+{% set lang_label_map = {'de':'德语 (DE)','fr':'法语 (FR)','es':'西班牙语 (ES)','it':'意大利语 (IT)','ja':'日语 (JA)','pt':'葡萄牙语 (PT)','nl':'荷兰语 (NL)','sv':'瑞典语 (SV)','fi':'芬兰语 (FI)','en':'英语 (EN)'} %}
+{% set lang_name_map = {'zh':'中文 (ZH)','de':'德语 (DE)','fr':'法语 (FR)','es':'西班牙语 (ES)','it':'意大利语 (IT)','ja':'日语 (JA)','pt':'葡萄牙语 (PT)','nl':'荷兰语 (NL)','sv':'瑞典语 (SV)','fi':'芬兰语 (FI)','en':'英语 (EN)'} %}
+{% set source_lang_label_map = {'zh':'中文 (ZH)','en':'英语 (EN)','es':'西班牙语 (ES)','pt':'葡萄牙语 (PT)','fr':'法语 (FR)','it':'意大利语 (IT)','de':'德语 (DE)','ja':'日语 (JA)','nl':'荷兰语 (NL)','sv':'瑞典语 (SV)','fi':'芬兰语 (FI)'} %}
 <div class="lang-pills">
   <a class="lang-pill {{ 'active' if not current_lang else '' }}"
      href="{{ module_list_path }}{% if current_user_filter %}?user_id={{ current_user_filter }}{% endif %}">全部</a>
@@ -680,9 +680,9 @@ async function deleteTask(e, taskId) {
 }
 
 var LANG_ZH_NAMES = {
-  de: '德语', fr: '法语', es: '西语', it: '意语',
-  ja: '日语', pt: '葡语', nl: '荷兰语', sv: '瑞典语', fi: '芬兰语',
-  en: '英语'
+  de: '德语 (DE)', fr: '法语 (FR)', es: '西班牙语 (ES)', it: '意大利语 (IT)',
+  ja: '日语 (JA)', pt: '葡萄牙语 (PT)', nl: '荷兰语 (NL)', sv: '瑞典语 (SV)', fi: '芬兰语 (FI)',
+  en: '英语 (EN)'
 };
 var _lastAutoProjectName = '';
 

@@ -74,7 +74,7 @@
       return `<tr>
         <td><code>${esc(taskId.slice(0, 8))}</code></td>
         <td>#${esc(productId)}</td>
-        <td>${targetLangs.map(flag).join(' ')}</td>
+        <td>${targetLangs.map(code => esc(languageLabel(code))).join('、')}</td>
         <td>${esc(r.initiator && r.initiator.user_name || '—')}</td>
         <td>${esc(r.created_at || '—')}</td>
         <td>${statusBadge(status)}</td>
@@ -85,7 +85,23 @@
     }).join('');
   }
 
-  function flag(c) { return { de:'🇩🇪', fr:'🇫🇷', es:'🇪🇸', it:'🇮🇹', ja:'🇯🇵', pt:'🇵🇹' }[c] || esc(c); }
+  function languageLabel(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    const upper = raw.toUpperCase();
+    const names = {
+      de: '德语 (DE)',
+      fr: '法语 (FR)',
+      es: '西班牙语 (ES)',
+      it: '意大利语 (IT)',
+      ja: '日语 (JA)',
+      pt: '葡萄牙语 (PT)',
+      nl: '荷兰语 (NL)',
+      sv: '瑞典语 (SV)',
+      fi: '芬兰语 (FI)',
+    };
+    return names[normalized] || upper;
+  }
   function statusBadge(s) {
     const color = { running:'#0369a1', done:'#047857', error:'#b91c1c', paused:'#64748b', cancelled:'#64748b', planning:'#64748b' }[s] || '#64748b';
     const label = { running:'运行中', done:'✓ 完成', error:'❌ 失败', paused:'已暂停', cancelled:'已取消', planning:'待启动' }[s] || s;

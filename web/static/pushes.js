@@ -117,7 +117,8 @@
     if (!normalized) return '';
     const lang = LANGUAGES.find(l => l && l.code === normalized);
     const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
-    return name ? `${name} (${normalized})` : raw;
+    const upper = normalized.toUpperCase();
+    return name ? `${name} (${upper})` : upper || raw;
   }
 
   async function copyText(text) {

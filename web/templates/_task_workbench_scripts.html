@@ -40,13 +40,14 @@
     return isErrorLikeStatus(status) ? "error" : status;
   }
   const LANG_LABELS = {
-    zh: "中文", en: "英文", es: "西班牙语", pt: "葡萄牙语",
-    fr: "法语", it: "意大利语", ja: "日语", de: "德语",
-    nl: "荷兰语", sv: "瑞典语", fi: "芬兰语",
+    zh: "中文 (ZH)", en: "英语 (EN)", es: "西班牙语 (ES)", pt: "葡萄牙语 (PT)",
+    fr: "法语 (FR)", it: "意大利语 (IT)", ja: "日语 (JA)", de: "德语 (DE)",
+    nl: "荷兰语 (NL)", sv: "瑞典语 (SV)", fi: "芬兰语 (FI)",
   };
   function langLabel(code, fallback = "") {
     if (!code) return fallback;
-    return LANG_LABELS[code] || String(code).toUpperCase();
+    const normalized = String(code).trim().toLowerCase();
+    return LANG_LABELS[normalized] || String(code).toUpperCase();
   }
   const TASK_WORKBENCH_CONFIG = {
     taskId: {{ task_id|tojson }},

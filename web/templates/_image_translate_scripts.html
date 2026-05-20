@@ -739,6 +739,16 @@
       return "等待任务完成后自动回填";
     }
 
+    function imageTranslateLangLabel(name, code){
+      var rawCode = String(code || "").trim();
+      var upper = rawCode.toUpperCase();
+      var rawName = String(name || "").trim();
+      if (!upper) return rawName || "-";
+      if (!rawName || rawName.toUpperCase() === upper || rawName.toLowerCase() === rawCode.toLowerCase()) return upper;
+      if (/\([A-Z]{2,8}\)$/.test(rawName)) return rawName;
+      return rawName + " (" + upper + ")";
+    }
+
     window.renderImageTranslateMediasContext = function renderImageTranslateMediasContext(state){
       var ctx = (state && state.medias_context) || {};
       var card = document.getElementById("itMediasContextCard");
@@ -755,12 +765,16 @@
       document.getElementById("itMediasEntry").textContent = "商品素材编辑页";
       document.getElementById("itMediasProductName").textContent = productLabel;
       document.getElementById("itMediasTargetLang").textContent =
-        (state && state.target_language_name) || (state && state.target_language) || ctx.target_lang || "-";
+        imageTranslateLangLabel(state && state.target_language_name, (state && state.target_language) || ctx.target_lang);
       document.getElementById("itMediasApplyStatus").textContent = describeMediasApplyStatus(ctx);
     };
 
     function renderTaskMeta(state){
       if (!state) return;
+      var langEl = document.getElementById("itMetaLang");
+      if (langEl) {
+        langEl.textContent = imageTranslateLangLabel(state.target_language_name, state.target_language);
+      }
       var modelEl = document.getElementById("itMetaModel");
       if (modelEl) {
         var modelText = state.model_id || "";

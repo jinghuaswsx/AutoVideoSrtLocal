@@ -19,7 +19,7 @@ def _patch_bulk_translate_startup_recovery(monkeypatch):
 def test_list_page_renders(authed_client_no_db):
     with patch("web.routes.multi_translate.db_query", return_value=[]), \
          patch("appcore.settings.get_retention_hours", return_value=72), \
-         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"):
         resp = authed_client_no_db.get("/multi-translate")
     assert resp.status_code == 200
     assert "多语种视频翻译".encode("utf-8") in resp.data
@@ -28,7 +28,7 @@ def test_list_page_renders(authed_client_no_db):
 def test_list_filters_by_lang(authed_client_no_db):
     with patch("web.routes.multi_translate.db_query") as m_q, \
          patch("appcore.settings.get_retention_hours", return_value=72), \
-         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"):
         m_q.return_value = []
         authed_client_no_db.get("/multi-translate?lang=de")
     sql = m_q.call_args.args[0]
@@ -41,7 +41,7 @@ def test_list_query_selects_creator_name(authed_client_no_db):
     with patch("web.routes.multi_translate.db_query", return_value=[]) as m_q, \
          patch("web.routes.multi_translate.medias._media_product_owner_name_expr", return_value="u.username"), \
          patch("appcore.settings.get_retention_hours", return_value=72), \
-         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"):
         resp = authed_client_no_db.get("/multi-translate")
 
     assert resp.status_code == 200
@@ -67,7 +67,7 @@ def test_list_page_renders_creator_name(authed_client_no_db):
 
     with patch("web.routes.multi_translate.db_query", return_value=[project]), \
          patch("appcore.settings.get_retention_hours", return_value=72), \
-         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"):
         resp = authed_client_no_db.get("/multi-translate")
 
     assert resp.status_code == 200
@@ -995,9 +995,11 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     assert 'name="display_name"' in template
     assert "上传后将自动识别原视频语言" not in template
     assert "请明确指定视频原始语种" in template
+    assert "'de':'德语 (DE)'" in template
+    assert "'de':'德语 de'" not in template
     # 中文语言名映射
     assert "LANG_ZH_NAMES" in template
-    assert "de: '德语'" in template
+    assert "de: '德语 (DE)'" in template
     # 文件名解析正则：YYYY.MM.DD-产品名-...
     assert "/^\\d{4}\\.\\d{1,2}\\.\\d{1,2}-([^-]+)-/" in template
     # MMDD-HHmm 拼接
@@ -1055,7 +1057,7 @@ def test_multi_translate_start_uses_user_display_name(tmp_path, authed_client_no
 def test_multi_translate_index_filters_pills_by_enabled_languages(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.db_query", lambda *args, **kwargs: [])
     monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
-    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.routes.multi_translate.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr(
         "appcore.medias.list_enabled_language_codes",
         lambda: ["de", "ja"],
@@ -1088,7 +1090,7 @@ def test_multi_translate_index_filters_pills_by_enabled_languages(authed_client_
 def test_multi_translate_top_filter_includes_enabled_languages_plus_english(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.db_query", lambda *args, **kwargs: [])
     monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
-    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.routes.multi_translate.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["de", "ja"])
 
     resp = authed_client_no_db.get("/multi-translate")
@@ -1103,7 +1105,7 @@ def test_multi_translate_top_filter_includes_enabled_languages_plus_english(auth
     assert 'href="/multi-translate?lang=fi"' not in body
     assert 'href="/multi-translate?lang=fr"' not in body
     # 英语标签
-    assert "🇺🇸 英语" in body
+    assert "英语 (EN)" in body
     # 弹窗胶囊也含英语（en 作为兜底目标语言强制追加到末尾）
     assert 'data-lang="en"' in body
 
@@ -1140,7 +1142,7 @@ def test_list_filter_langs_excludes_unsupported_media_codes(monkeypatch):
 
 
 def test_multi_translate_index_accepts_english_lang_filter(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.routes.multi_translate.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
     monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["de"])
     with patch("web.routes.multi_translate.db_query") as m_q:
@@ -1414,13 +1416,15 @@ def test_multi_translate_list_template_exposes_en_label_in_lang_label_map():
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
 
     # 全局 lang_label_map 含 EN（统一驱动顶部筛选 pill 与模态目标语言 pill）
-    assert "'en':'🇺🇸 英语'" in template
+    assert "'en':'英语 (EN)'" in template
+    assert "'de':'德语 (DE)'" in template
+    assert "'de':'德语 de'" not in template
 
 
 def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db):
     with patch("web.routes.multi_translate.db_query", return_value=[]), \
          patch("appcore.settings.get_retention_hours", return_value=72), \
-         patch("appcore.task_recovery.recover_all_interrupted_tasks"), \
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"), \
          patch("web.routes.multi_translate._list_filter_langs",
                return_value=("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")), \
          patch("web.routes.multi_translate._list_enabled_target_langs",
@@ -1428,7 +1432,7 @@ def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db
         resp = authed_client_no_db.get("/multi-translate")
 
     assert resp.status_code == 200
-    assert "🇺🇸 英语".encode("utf-8") in resp.data
+    assert "英语 (EN)".encode("utf-8") in resp.data
 
 
 # ── Task 8: alignment utterances_en fallback ──────────────────────────────────
