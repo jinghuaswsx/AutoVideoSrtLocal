@@ -94,6 +94,22 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "font-size: 1.5em" in TEMPLATE
 
 
+def test_voice_selector_multi_renders_independent_voice_match_rank_badge():
+    rows_block = SCRIPT[
+        SCRIPT.index("function rowsHtml"):
+        SCRIPT.index("function renderRowsInto")
+    ]
+
+    assert "similarityRankMap" in SCRIPT
+    assert "candidate.similarity_rank" in SCRIPT
+    assert "const voiceMatchSimilarityRank = isRec" in rows_block
+    assert 'class="vs-row-sim"' in rows_block
+    assert 'class="vs-row-rank"' in rows_block
+    assert "#${voiceMatchSimilarityRank}" in rows_block
+    assert "${simBadge}${rankBadge}" in rows_block
+    assert ".vs-row-rank" in TEMPLATE
+
+
 def test_voice_selector_multi_exposes_full_voice_modal():
     assert 'id="vs-open-modal-btn"' in TEMPLATE
     assert 'id="vs-voice-modal"' in TEMPLATE

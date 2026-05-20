@@ -51,6 +51,7 @@ def test_rank_speed_aware_reranks_similarity_pool_by_speed():
     assert [row["voice_id"] for row in ranked] == ["fast", "top", "low"]
     assert ranked[0]["speed_match_score"] > ranked[1]["speed_match_score"]
     assert ranked[0]["combined_score"] < ranked[1]["combined_score"]
+    assert [row["similarity_rank"] for row in ranked] == [2, 1, 3]
 
 
 def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypatch):
