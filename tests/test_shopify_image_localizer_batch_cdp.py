@@ -1916,6 +1916,36 @@ def test_verify_target_language_marks_all_expected_slots():
     assert result["matched"] == 2
 
 
+def test_verify_target_language_ignores_neighbor_language_text_when_labels_are_structured():
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    class FakeFrame:
+        def evaluate(self, script, arg=None):
+            return [
+                {
+                    "slot": 0,
+                    "text": "French Italian Dutch Spanish Portuguese Swedish Japanese German",
+                    "languages": [
+                        "French",
+                        "Italian",
+                        "Dutch",
+                        "Spanish",
+                        "Portuguese",
+                        "Swedish",
+                        "Japanese",
+                    ],
+                },
+                {"slot": 1, "text": "German", "languages": ["German"]},
+            ]
+
+    result = ez_cdp.verify_target_language_markers(FakeFrame(), [0, 1], "German")
+
+    assert result["ok"] is False
+    assert result["expected"] == 2
+    assert result["matched"] == 1
+    assert result["missing"] == [0]
+
+
 def test_ez_filters_out_slots_that_already_have_language_marker():
     from tools.shopify_image_localizer.rpa import ez_cdp
 

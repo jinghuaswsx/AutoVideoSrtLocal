@@ -543,27 +543,57 @@ def _target_exists(frame, language: str) -> bool:
     return frame.locator(f'button[aria-label="Remove {language}"]').count() > 0
 
 
+def _normalize_language_marker(value: object) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"^remove\s+", "", text, flags=re.IGNORECASE).strip()
+    return text.casefold()
+
+
+def _row_language_marker_candidates(row: dict) -> list[object]:
+    labels = [value for value in (row.get("languages") or []) if str(value or "").strip()]
+    if labels:
+        return labels
+    text = str(row.get("text") or "")
+    return [value for value in re.split(r"[\r\n\t,;|]+", text) if value.strip()]
+
+
+def _row_has_language_marker(row: dict | None, language: str) -> bool:
+    wanted = _normalize_language_marker(language)
+    if not row or not wanted:
+        return False
+    return any(_normalize_language_marker(value) == wanted for value in _row_language_marker_candidates(row))
+
+
 def verify_target_language_markers(frame, expected_slots: list[int], language: str) -> dict:
     rows = frame.evaluate(
-        """() => Array.from(document.querySelectorAll('s-button.image-button')).map((button, idx) => {
-            const container = button.closest('tr, li, [data-index], .Polaris-IndexTable__TableRow, div') || button.parentElement || button;
-            const text = (container.textContent || '').trim();
-            const labels = Array.from(container.querySelectorAll('[aria-label], button, span, s-badge'))
-                .map((node) => node.getAttribute('aria-label') || node.textContent || '')
-                .map((value) => value.trim())
-                .filter(Boolean);
-            return {slot: idx, text, languages: labels};
-        })"""
+        """() => {
+            const slotContainer = (button) => {
+                let candidate = button;
+                let node = button.parentElement;
+                for (let depth = 0; node && depth < 12; depth += 1, node = node.parentElement) {
+                    const imageButtonCount = node.querySelectorAll('s-button.image-button').length;
+                    if (imageButtonCount > 1) break;
+                    if (imageButtonCount === 1) candidate = node;
+                }
+                return candidate || button.parentElement || button;
+            };
+            return Array.from(document.querySelectorAll('s-button.image-button')).map((button, idx) => {
+                const container = slotContainer(button);
+                const text = (container.textContent || '').trim();
+                const labels = Array.from(container.querySelectorAll('[aria-label], button, span, s-badge'))
+                    .map((node) => node.getAttribute('aria-label') || node.textContent || '')
+                    .map((value) => value.trim())
+                    .filter(Boolean);
+                return {slot: idx, text, languages: labels};
+            });
+        }"""
     ) or []
-    wanted = str(language or "").strip().lower()
     expected = {int(slot) for slot in expected_slots}
     matched: list[int] = []
     missing: list[int] = []
     for slot in sorted(expected):
         row = next((item for item in rows if int(item.get("slot") or 0) == slot), None)
-        labels = " ".join(str(value) for value in ((row or {}).get("languages") or []))
-        text = f"{(row or {}).get('text') or ''} {labels}".lower()
-        if wanted and wanted in text:
+        if _row_has_language_marker(row, language):
             matched.append(slot)
         else:
             missing.append(slot)
