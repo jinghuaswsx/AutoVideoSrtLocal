@@ -5,6 +5,7 @@
   <div class="vs-heading">
     <strong>🎤 选择 TTS 音色</strong>
     <span class="vs-hint" id="vs-summary">正在加载音色库...</span>
+    <span class="vs-ai-rank-status-pill" id="vs-ai-rank-status-pill" role="status" aria-live="polite" hidden></span>
     <button type="button" class="vs-ai-rank-debug-btn" id="vs-ai-rank-debug-btn">
       大模型音色选择排名
     </button>
@@ -198,14 +199,45 @@
     border-radius: 12px; }
   .vs-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .vs-hint { font-size: 12px; color: var(--text-user-badge); }
+  .vs-ai-rank-status-pill {
+    margin-left: auto; min-height: 34px; padding: 7px 14px;
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 2px solid oklch(63% 0.14 225);
+    background: oklch(96% 0.045 225); color: oklch(34% 0.12 225);
+    border-radius: 999px; font-size: 13px; font-weight: 800;
+    white-space: nowrap; box-shadow: 0 0 0 3px oklch(92% 0.04 225);
+  }
+  .vs-ai-rank-status-pill[hidden] { display: none; }
+  .vs-ai-rank-status-pill.is-loading {
+    border-color: oklch(67% 0.16 230);
+    background: oklch(94% 0.06 230); color: oklch(35% 0.13 230);
+  }
+  .vs-ai-rank-status-pill.is-success {
+    border-color: oklch(68% 0.11 155);
+    background: oklch(96% 0.04 155); color: oklch(36% 0.11 155);
+    box-shadow: 0 0 0 3px oklch(92% 0.035 155);
+  }
+  .vs-ai-rank-status-pill.is-failed {
+    border-color: oklch(66% 0.15 25);
+    background: oklch(96% 0.045 25); color: oklch(40% 0.13 25);
+    box-shadow: 0 0 0 3px oklch(93% 0.035 25);
+  }
+  .vs-ai-rank-status-pill.is-loading::before {
+    content: ""; width: 14px; height: 14px;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 999px; animation: vs-ai-rank-spin 0.8s linear infinite;
+  }
+  .vs-ai-rank-status-pill:not([hidden]) + .vs-ai-rank-debug-btn { margin-left: 0; }
+  @keyframes vs-ai-rank-spin { to { transform: rotate(360deg); } }
   .vs-ai-rank-debug-btn,
   .vs-ai-rank-run-btn {
-    margin-left: auto; padding: 6px 12px;
+    margin-left: 0; padding: 6px 12px;
     border: 1px solid oklch(68% 0.11 155);
     background: oklch(96% 0.035 155); color: oklch(36% 0.11 155);
     border-radius: 999px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 700;
     white-space: nowrap;
   }
+  .vs-ai-rank-debug-btn { margin-left: auto; }
   .vs-ai-rank-run-btn { margin-left: 0; }
   .vs-ai-rank-debug-btn:hover,
   .vs-ai-rank-debug-btn:focus-visible,

@@ -149,12 +149,20 @@ def test_voice_selector_multi_keeps_ai_rank_controls_visible_and_adds_rerank_but
         TEMPLATE.index('</div>', TEMPLATE.index('<div class="vs-heading">'))
     ]
 
+    assert 'id="vs-ai-rank-status-pill"' in heading_block
     assert 'id="vs-ai-rank-debug-btn"' in heading_block
     assert 'id="vs-ai-rank-run-btn"' in heading_block
+    assert heading_block.index('id="vs-ai-rank-status-pill"') < heading_block.index('id="vs-ai-rank-debug-btn"')
     assert heading_block.index('id="vs-ai-rank-debug-btn"') < heading_block.index('id="vs-ai-rank-run-btn"')
     assert 'id="vs-ai-rank-debug-btn" hidden' not in heading_block
     assert 'id="vs-ai-rank-run-btn" hidden' not in heading_block
+    assert 'class="vs-ai-rank-status-pill"' in TEMPLATE
     assert "function updateVoiceAiRankControls()" in SCRIPT
+    assert 'const aiRankStatusPill = document.getElementById("vs-ai-rank-status-pill");' in SCRIPT
+    assert "function updateVoiceAiRankStatusPill()" in SCRIPT
+    assert "AI音色选择请求中." in SCRIPT
+    assert "AI音色选择 已成功" in SCRIPT
+    assert "AI音色选择 已失败" in SCRIPT
     assert "aiRankDebugBtn.hidden = false;" in SCRIPT
     assert "aiRankRunBtn.hidden = false;" in SCRIPT
 
@@ -172,6 +180,48 @@ def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads
     assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {" in SCRIPT
     assert "body: JSON.stringify({ gender: currentVoiceAiRankGender() })," in SCRIPT
     assert "applyVoiceAiRankPayload(data);" in rematch_block
+
+
+def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_translate():
+    supports_block = SCRIPT[
+        SCRIPT.index("function supportsManualVoiceAiRanking"):
+        SCRIPT.index("function updateVoiceAiRankControls")
+    ]
+
+    assert '"/api/english-redub"' in supports_block
+    assert '"/api/multi-translate"' in supports_block
+    assert '"/api/omni-translate"' not in supports_block
+
+
+def test_voice_selector_multi_ai_rank_request_status_does_not_mutate_cards_on_failure():
+    rerun_block = SCRIPT[
+        SCRIPT.index("async function rerunVoiceAiRanking"):
+        SCRIPT.index("function updateLaunchState")
+    ]
+    http_failure_block = rerun_block[
+        rerun_block.index("if (!resp.ok)"):
+        rerun_block.index("const data = await resp.json();")
+    ]
+    catch_block = rerun_block[
+        rerun_block.index("} catch (err) {"):
+        rerun_block.index("} finally {")
+    ]
+    success_block = rerun_block[
+        rerun_block.index("const data = await resp.json();"):
+        rerun_block.index("openVoiceAiRankModal")
+    ]
+
+    assert 'setVoiceAiRankRequestState("running");' in rerun_block
+    assert 'setVoiceAiRankRequestState("failed");' in http_failure_block
+    assert "applyVoiceAiRankPayload" not in http_failure_block
+    assert "render();" not in http_failure_block
+    assert 'setVoiceAiRankRequestState("failed");' in catch_block
+    assert "applyVoiceAiRankPayload" not in catch_block
+    assert "render();" not in catch_block
+    assert "applyVoiceAiRankPayload(data);" in success_block
+    assert "mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);" in success_block
+    assert "render();" in success_block
+    assert 'setVoiceAiRankRequestState("success");' in success_block
 
 
 def test_voice_selector_multi_exposes_full_voice_modal():

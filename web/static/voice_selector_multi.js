@@ -52,6 +52,7 @@
   const modalCloseBtn = document.getElementById("vs-modal-close-btn");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
+  const aiRankStatusPill = document.getElementById("vs-ai-rank-status-pill");
   const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
   const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");
   const aiRankModalEl = document.getElementById("vs-ai-rank-modal");
@@ -412,6 +413,7 @@
   let voiceAiRankStatus = "";
   let voiceAiRankCacheKey = "all";
   let voiceAiRankRerunning = false;
+  let voiceAiRankRequestState = "";
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -528,8 +530,76 @@
     return apiBase === "/api/english-redub" || apiBase === "/api/multi-translate";
   }
 
+  function normalizedVoiceAiRankStatus(status) {
+    return String(status || "").trim().toLowerCase();
+  }
+
+  function isVoiceAiRankRunningStatus(status) {
+    const value = normalizedVoiceAiRankStatus(status);
+    return value === "running" || value === "queued";
+  }
+
+  function isVoiceAiRankSuccessStatus(status) {
+    const value = normalizedVoiceAiRankStatus(status);
+    return value === "done" || value === "derived_from_all";
+  }
+
+  function isVoiceAiRankFailureStatus(status) {
+    const value = normalizedVoiceAiRankStatus(status);
+    return value === "failed" || value === "error";
+  }
+
+  function voiceAiRankDisplayState() {
+    if (voiceAiRankRequestState === "running") {
+      return "running";
+    }
+    if (voiceAiRankRequestState === "success") {
+      return "success";
+    }
+    if (voiceAiRankRequestState === "failed") {
+      return "failed";
+    }
+    if (voiceAiRankRerunning || isVoiceAiRankRunningStatus(voiceAiRankStatus)) {
+      return "running";
+    }
+    if (isVoiceAiRankSuccessStatus(voiceAiRankStatus)) {
+      return "success";
+    }
+    if (isVoiceAiRankFailureStatus(voiceAiRankStatus)) {
+      return "failed";
+    }
+    return "";
+  }
+
+  function updateVoiceAiRankStatusPill() {
+    if (!aiRankStatusPill) return;
+    const state = voiceAiRankDisplayState();
+    aiRankStatusPill.classList.toggle("is-loading", state === "running");
+    aiRankStatusPill.classList.toggle("is-success", state === "success");
+    aiRankStatusPill.classList.toggle("is-failed", state === "failed");
+    if (!state) {
+      aiRankStatusPill.hidden = true;
+      aiRankStatusPill.textContent = "";
+      return;
+    }
+    aiRankStatusPill.hidden = false;
+    if (state === "running") {
+      aiRankStatusPill.textContent = "AI音色选择请求中.";
+    } else if (state === "success") {
+      aiRankStatusPill.textContent = "AI音色选择 已成功";
+    } else {
+      aiRankStatusPill.textContent = "AI音色选择 已失败";
+    }
+  }
+
+  function setVoiceAiRankRequestState(state) {
+    voiceAiRankRequestState = state || "";
+    updateVoiceAiRankStatusPill();
+  }
+
   function updateVoiceAiRankControls() {
     const label = voiceAiRankConditionLabel();
+    updateVoiceAiRankStatusPill();
     if (aiRankDebugBtn) {
       aiRankDebugBtn.hidden = false;
       aiRankDebugBtn.disabled = false;
@@ -1185,6 +1255,7 @@
     if (voiceAiRankRerunning) return;
     if (!supportsManualVoiceAiRanking()) return;
     voiceAiRankRerunning = true;
+    setVoiceAiRankRequestState("running");
     updateVoiceAiRankControls();
     try {
       const resp = await fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {
@@ -1193,16 +1264,26 @@
         body: JSON.stringify({ gender: currentVoiceAiRankGender() }),
       });
       if (!resp.ok) {
+        setVoiceAiRankRequestState("failed");
         alert("AI排名失败：" + (await resp.text()));
         return;
       }
       const data = await resp.json();
+      if (isVoiceAiRankFailureStatus(data.voice_ai_rank_status)) {
+        voiceAiRankStatus = data.voice_ai_rank_status || "failed";
+        voiceAiRankDebug = data.voice_ai_rank_debug || voiceAiRankDebug;
+        setVoiceAiRankRequestState("failed");
+        updateVoiceAiRankControls();
+        return;
+      }
       applyVoiceAiRankPayload(data);
       mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
       render();
+      setVoiceAiRankRequestState("success");
       openVoiceAiRankModal("result");
     } catch (err) {
       console.error("[voice-selector] AI ranking failed:", err);
+      setVoiceAiRankRequestState("failed");
       alert("AI排名网络错误");
     } finally {
       voiceAiRankRerunning = false;
