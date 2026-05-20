@@ -558,6 +558,38 @@ def test_shot_char_limit_translate_process_has_legacy_state_fallback():
     assert "shot_context" in script
     assert 'item.type === "shot_translation_summary"' in script
     assert 'item.type === "shot_translations"' in script
+
+
+def _script_function_block(script: str, name: str) -> str:
+    start = script.index(f"function {name}")
+    next_start = script.find("\n  function ", start + len(f"function {name}"))
+    return script[start:] if next_start == -1 else script[start:next_start]
+
+
+def test_omni_translate_fallback_builds_localization_comparison_without_shots():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    build_block = _script_function_block(script, "buildTranslateArtifactFromTask")
+
+    assert "hasTranslateSourceTargetState" in build_block
+    assert "if (!isShotTranslate && !hasTranslateSourceTargetState) return null;" in build_block
+    assert "buildTranslateFullTextComparisonFromTask(task, rows, localized)" in build_block
+    assert "orderTranslateDebugItems(items)" in build_block
+
+
+def test_translate_display_prioritizes_full_and_sentence_comparison_before_shot_rows():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    order_block = _script_function_block(script, "orderTranslateDebugItems")
+    augment_block = _script_function_block(script, "augmentTranslateArtifactFromTask")
+
+    assert 'shot_translation_summary: 0' in order_block
+    assert 'side_by_side: 1' in order_block
+    assert 'translation_pairs: 2' in order_block
+    assert 'shot_translations: 3' in order_block
+    assert "orderTranslateDebugItems(items)" in augment_block
     assert 'item.type === "translation_pairs"' in script
     assert "第一轮全文翻译对照" in script
     assert "第一轮逐句翻译对照" in script

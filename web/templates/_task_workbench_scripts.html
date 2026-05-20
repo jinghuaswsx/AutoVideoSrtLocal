@@ -1290,6 +1290,77 @@
     };
   }
 
+  function sourceFullTextFromTask(task, rows = []) {
+    const direct = String(task?.source_full_text_zh || task?.source_full_text || "").trim();
+    if (direct) return direct;
+    const rowText = rows
+      .map(row => row?.source_text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (rowText) return rowText;
+    const sources = [
+      ...(Array.isArray(task?.script_segments) ? task.script_segments : []),
+      ...(Array.isArray(task?.utterances) ? task.utterances : []),
+      ...(Array.isArray(task?.utterances_en) ? task.utterances_en : []),
+    ];
+    return sources
+      .map(item => item?.source_text || item?.text || item?.asr_text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
+  function localizedFullTextFromTask(localized, rows = []) {
+    const direct = String(localized?.full_text || "").trim();
+    if (direct) return direct;
+    const rowText = rows
+      .map(row => row?.translated_text || row?.target_text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (rowText) return rowText;
+    const sentences = Array.isArray(localized?.sentences) ? localized.sentences : [];
+    return sentences
+      .map(sentence => localizedSentenceText(sentence))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
+  function buildTranslateFullTextComparisonFromTask(task, rows = [], localized = null) {
+    const sourceFullText = sourceFullTextFromTask(task, rows);
+    const translatedFullText = localizedFullTextFromTask(localized, rows);
+    if (!sourceFullText && !translatedFullText) return null;
+    const targetLang = task?.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
+    const sourceLang = task?.source_language || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "";
+    return {
+      type: "side_by_side",
+      label: "第一轮全文翻译对照",
+      show_retranslate: true,
+      left: { type: "text", label: `整段${langLabel(sourceLang, "原文")}`, content: sourceFullText },
+      right: { type: "text", label: `整段本土化${langLabel(targetLang, targetLang.toUpperCase())}`, content: translatedFullText },
+    };
+  }
+
+  function orderTranslateDebugItems(items) {
+    const priority = {
+      shot_translation_summary: 0,
+      side_by_side: 1,
+      translation_pairs: 2,
+      shot_translations: 3,
+      sentences: 4,
+    };
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) => {
+        const leftPriority = priority[left.item?.type] ?? 10;
+        const rightPriority = priority[right.item?.type] ?? 10;
+        return leftPriority === rightPriority ? left.index - right.index : leftPriority - rightPriority;
+      })
+      .map(entry => entry.item);
+  }
+
   function buildTranslateArtifactFromTask(task) {
     if (!task) return null;
     const translations = Array.isArray(task.translations) ? task.translations : [];
@@ -1300,47 +1371,43 @@
       || null;
     const isShotTranslate = translations.length
       || (task.plugin_config?.translate_algo === "shot_char_limit" && shots.length);
-    if (!isShotTranslate) return null;
+    const hasTranslateSourceTargetState = Boolean(
+      localized?.full_text
+      || (Array.isArray(localized?.sentences) && localized.sentences.length)
+      || task.source_full_text
+      || task.source_full_text_zh
+      || Array.isArray(task.script_segments) && task.script_segments.length
+      || Array.isArray(task.utterances) && task.utterances.length
+      || Array.isArray(task.utterances_en) && task.utterances_en.length
+    );
+    if (!isShotTranslate && !hasTranslateSourceTargetState) return null;
 
     const asrRows = buildAsrPrimaryShotTranslationRows(translations);
     const rows = asrRows.length ? asrRows : buildShotTranslationRows(shots, translations);
-    const sourceFullText = task.source_full_text_zh || task.source_full_text || rows
-      .map(row => row.source_text)
-      .filter(Boolean)
-      .join("\n");
-    const translatedFullText = localized?.full_text || rows
-      .map(row => row.translated_text)
-      .filter(Boolean)
-      .join("\n");
     const targetLang = task.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
-    const sourceLang = task.source_language || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "";
     const translatedCount = rows.filter(row => row.translated_text).length;
     const overLimitCount = rows.filter(row => row.over_limit).length;
     const retryCount = rows.reduce((sum, row) => sum + (Number(row.retries) || 0), 0);
-    const items = [
-      {
+    const items = [];
+    if (rows.length || isShotTranslate) {
+      items.push({
         type: "shot_translation_summary",
         label: "时间轴分段翻译过程",
         total: rows.length,
         translated_count: translatedCount,
         over_limit_count: overLimitCount,
         retry_count: retryCount,
-      },
-      {
+      });
+    }
+    if (rows.length) {
+      items.push({
         type: "shot_translations",
         label: "时间轴分段过程和结果",
         shots: rows,
-      },
-    ];
-    if (sourceFullText || translatedFullText) {
-      items.push({
-        type: "side_by_side",
-        label: "第一轮全文翻译对照",
-        show_retranslate: true,
-        left: { type: "text", label: `整段${langLabel(sourceLang, "原文")}`, content: sourceFullText },
-        right: { type: "text", label: `整段本土化${langLabel(targetLang, targetLang.toUpperCase())}`, content: translatedFullText },
       });
     }
+    const fullTextItem = buildTranslateFullTextComparisonFromTask(task, rows, localized);
+    if (fullTextItem) items.push(fullTextItem);
     const pairItem = translationPairItemFromTask(task);
     if (pairItem) items.push(pairItem);
     if (localized?.sentences?.length) {
@@ -1350,7 +1417,7 @@
         sentences: localized.sentences,
       });
     }
-    return { title: "翻译本土化", layout: "shot_translate", items };
+    return { title: "翻译本土化", layout: "shot_translate", items: orderTranslateDebugItems(items) };
   }
 
   function augmentTranslateArtifactFromTask(artifact, task) {
@@ -1360,6 +1427,17 @@
     items.forEach(item => {
       if (item.type === "side_by_side" && !item.label) item.label = "第一轮全文翻译对照";
     });
+    const localized = task.localized_translation
+      || task.variants?.normal?.localized_translation
+      || task.variants?.av?.localized_translation
+      || null;
+    const rows = buildAsrPrimaryShotTranslationRows(Array.isArray(task.translations) ? task.translations : []);
+    const fullTextItem = buildTranslateFullTextComparisonFromTask(task, rows, localized);
+    if (fullTextItem && !items.some(item => item.type === "side_by_side")) {
+      const summaryIndex = items.findIndex(item => item.type === "shot_translation_summary");
+      if (summaryIndex >= 0) items.splice(summaryIndex + 1, 0, fullTextItem);
+      else items.unshift(fullTextItem);
+    }
     const pairItem = translationPairItemFromTask(task);
     if (pairItem) {
       const existingIndex = items.findIndex(item => item.type === "translation_pairs");
@@ -1373,7 +1451,7 @@
         else items.push(pairItem);
       }
     }
-    return Object.assign({}, artifact, { items });
+    return Object.assign({}, artifact, { items: orderTranslateDebugItems(items) });
   }
 
   function buildAsrPrimaryShotTranslationRows(translations) {
