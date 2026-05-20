@@ -82,7 +82,7 @@ def _decimal_to_float(row: dict[str, Any]) -> dict[str, Any]:
 
 def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
     page_num = max(1, _int_value(page, 1))
-    size = min(100, max(10, _int_value(page_size, 50)))
+    size = min(100, max(10, _int_value(page_size, 100)))
     return page_num, size, (page_num - 1) * size
 
 
@@ -134,7 +134,7 @@ def list_video_materials(
     lang: str = "",
     ad_plan_status: str = AD_PLAN_ALL,
     page: int | str | None = 1,
-    page_size: int | str | None = 50,
+    page_size: int | str | None = 100,
 ) -> dict[str, Any]:
     page_num, size, offset = _page_bounds(page, page_size)
     where, args = _where_for_video_materials(

@@ -1,7 +1,7 @@
 (function() {
   const state = {
     page: 1,
-    pageSize: 50,
+    pageSize: 100,
     loaded: false,
     languages: [],
     items: [],
@@ -130,8 +130,12 @@
       state.items = data.items || [];
       renderVideoTable(data);
       renderVideoPager(data);
+      host.scrollTop = 0;
+      host.scrollLeft = 0;
+      updateStickyOffsetsSoon();
     } catch (err) {
       host.innerHTML = `<div class="oc-state"><div class="icon">${icon('alert', 28)}</div><p class="title">加载失败</p><p class="desc">${esc(err.message || err)}</p></div>`;
+      updateStickyOffsetsSoon();
     }
   }
 
@@ -218,27 +222,38 @@
   }
 
   function renderVideoPager(data) {
-    const pager = $('vmPager');
-    if (!pager) return;
+    const pagers = [$('vmTopPager'), $('vmPager')].filter(Boolean);
+    if (!pagers.length) return;
     const total = Number(data.total || 0);
     const pageSize = Number(data.page_size || state.pageSize);
     const pages = Math.max(1, Math.ceil(total / pageSize));
     const page = Number(data.page || 1);
     if (pages <= 1) {
-      pager.innerHTML = '';
+      pagers.forEach(pager => {
+        pager.innerHTML = '';
+        pager.hidden = true;
+      });
       return;
     }
     const buttons = [];
     for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-vm-page="${p}">${p}</button>`);
     }
-    pager.innerHTML = buttons.join('');
-    pager.querySelectorAll('[data-vm-page]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.page = Number(btn.dataset.vmPage || 1);
-        loadVideoMaterials();
+    pagers.forEach(pager => {
+      pager.hidden = false;
+      pager.innerHTML = buttons.join('');
+      pager.querySelectorAll('[data-vm-page]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.page = Number(btn.dataset.vmPage || 1);
+          loadVideoMaterials();
+        });
       });
     });
+  }
+
+  function updateStickyOffsetsSoon() {
+    if (typeof window.updateMediaStickyOffsets !== 'function') return;
+    window.requestAnimationFrame(() => window.updateMediaStickyOffsets());
   }
 
   function openBindingModal(item) {

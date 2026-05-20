@@ -22,7 +22,7 @@ def api_video_materials():
             lang=request.args.get("lang") or "",
             ad_plan_status=request.args.get("ad_plan_status") or "all",
             page=request.args.get("page") or 1,
-            page_size=request.args.get("page_size") or 50,
+            page_size=request.args.get("page_size") or 100,
         )
     )
 
