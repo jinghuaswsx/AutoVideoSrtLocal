@@ -111,6 +111,15 @@ def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _push_status_arg(args: Mapping[str, Any]) -> str | None:
+    value = str(args.get("push_status") or "").strip().lower()
+    if value in {"pushed", "yes", "true", "1", "已推送"}:
+        return "pushed"
+    if value in {"unpushed", "un-pushed", "not_pushed", "no", "false", "0", "未推送"}:
+        return "unpushed"
+    return None
+
+
 def _favorite_sort_arg(args: Mapping[str, Any]) -> str:
     value = str(args.get("sort") or "").strip().lower()
     if value in {"interactions", "interaction", "latest_likes", "likes"}:
@@ -183,6 +192,11 @@ def list_hot_posts(
         where.append("p.mark_status = %s")
         params.append(mark_status)
 
+    push_status = _push_status_arg(args)
+    if push_status:
+        where.append("COALESCE(p.is_pushed, 0) = %s")
+        params.append(1 if push_status == "pushed" else 0)
+
     created_from = _date_arg(args, "created_from")
     if created_from:
         where.append("p.creation_time >= %s")
@@ -219,6 +233,7 @@ def list_hot_posts(
                p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
@@ -298,6 +313,7 @@ def list_favorite_hot_posts(
                p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                fav.created_at AS favorited_at,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
@@ -381,6 +397,7 @@ def list_today_new_hot_posts(
                p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
@@ -455,6 +472,7 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
         row.get("sync_period_likes"),
         row.get("sync_period_hours"),
         1 if row.get("copycat") else 0,
+        1 if row.get("is_pushed") else 0,
         _json(row.get("select_json")),
         row.get("video_url"),
         row.get("image_url"),
@@ -469,12 +487,12 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           wedev_post_id, page_id, post_id, bm_page_id, post_url, ad_library_url,
           product_url, product_url_hash, creation_time, last_synced_at,
           likes, comments, shares, latest_likes, latest_comments, latest_shares,
-          sync_period_likes, sync_period_hours, copycat, select_json, video_url,
+          sync_period_likes, sync_period_hours, copycat, is_pushed, select_json, video_url,
           image_url, invisible, invisible_region, message_html,
           message_zh_html, message_zh_status, local_video_status, raw_json
         ) VALUES (
           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-          %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'pending', 'pending', %s
+          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, 'pending', 'pending', %s
         )
         ON DUPLICATE KEY UPDATE
           page_id=VALUES(page_id),
@@ -495,6 +513,7 @@ def upsert_hot_post(row: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) 
           sync_period_likes=VALUES(sync_period_likes),
           sync_period_hours=VALUES(sync_period_hours),
           copycat=VALUES(copycat),
+          is_pushed=VALUES(is_pushed),
           select_json=VALUES(select_json),
           local_video_path=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_path ELSE NULL END,
           local_video_duration_seconds=CASE WHEN VALUES(video_url) <=> video_url THEN local_video_duration_seconds ELSE NULL END,
@@ -799,6 +818,7 @@ def get_hot_post_ai_analysis_row(
                p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
@@ -1404,6 +1424,7 @@ def list_top_video_copyability_analyses(
                p.sync_period_likes,
                p.sync_period_hours,
                p.copycat,
+               p.is_pushed,
                {favorite_select},
                p.local_video_duration_seconds,
                p.local_video_cover_path,
@@ -1732,6 +1753,7 @@ def list_top_europe_fit_materials(
                p.last_synced_at, p.likes, p.comments, p.shares,
                p.latest_likes, p.latest_comments, p.latest_shares,
                p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,

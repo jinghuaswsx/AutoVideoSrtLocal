@@ -382,6 +382,7 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
         mark_status = MARK_STATUS_BAD
     item["mark_status"] = mark_status
     item["is_marked"] = bool(mark_status)
+    item["is_pushed"] = _bool_payload(item.get("is_pushed"))
     if item.get("is_favorited") in (None, ""):
         item["is_favorited"] = bool(item.get("favorited_at"))
     else:

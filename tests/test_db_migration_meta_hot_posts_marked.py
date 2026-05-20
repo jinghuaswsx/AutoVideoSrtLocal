@@ -26,6 +26,16 @@ def test_meta_hot_posts_mark_status_migration_adds_two_choice_field():
     assert "is_marked = 1" in body
 
 
+def test_meta_hot_posts_pushed_marker_migration_adds_filter_field():
+    body = Path("db/migrations/2026_05_19_meta_hot_posts_pushed_marker.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "ADD COLUMN is_pushed" in body
+    assert "ADD KEY idx_meta_hot_posts_is_pushed" in body
+
+
 def test_meta_hot_posts_user_favorites_migration_creates_user_scoped_table():
     body = Path("db/migrations/2026_05_19_meta_hot_posts_user_favorites.sql").read_text(
         encoding="utf-8"
