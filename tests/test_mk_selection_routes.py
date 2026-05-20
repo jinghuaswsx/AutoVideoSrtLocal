@@ -123,7 +123,8 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
 def test_mk_selection_import_modals_use_active_user_display_names():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "/medias/api/users/active" in template
+    assert "/tasks/api/translation-work-users" in template
+    assert "/medias/api/users/active" not in template
     assert "/tasks/api/translators" not in template
     assert "data.users || []" in template
     assert "function mkiUserLabel(user)" in template
