@@ -419,6 +419,8 @@ def claim_parent(*, task_id: int, actor_user_id: int) -> None:
 
 
 def approve_raw(*, task_id: int, actor_user_id: int) -> None:
+    from appcore import task_raw_source_bridge
+
     """管理员审核通过原始视频，自动 unblock 所有 blocked 子任务。"""
     conn = get_conn()
     try:
@@ -433,6 +435,18 @@ def approve_raw(*, task_id: int, actor_user_id: int) -> None:
                 if cur.rowcount == 0:
                     raise StateError("parent not in raw_review")
                 _write_event(cur, task_id, "approved", actor_user_id, None)
+
+                raw_result = task_raw_source_bridge.ensure_raw_source_for_parent_task(
+                    task_id=task_id,
+                    actor_user_id=actor_user_id,
+                )
+                _write_event(
+                    cur,
+                    task_id,
+                    "raw_source_created" if raw_result.get("created") else "raw_source_updated",
+                    actor_user_id,
+                    {"raw_source_id": raw_result.get("raw_source_id")},
+                )
 
                 cur.execute(
                     "SELECT id FROM tasks WHERE parent_task_id=%s AND status=%s",

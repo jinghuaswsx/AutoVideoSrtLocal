@@ -10,6 +10,8 @@ from typing import Any
 
 import requests
 
+from appcore import product_link_domains
+
 log = logging.getLogger(__name__)
 
 # ---- 异常 ----
@@ -29,6 +31,15 @@ class DBError(MkImportError):
     """DB 操作失败。"""
 
 
+class ProductLinkUnavailableError(MkImportError):
+    """Shopify product page is missing or unavailable."""
+
+    def __init__(self, url: str, detail: str | None = None):
+        self.url = url
+        self.detail = detail or "unavailable"
+        super().__init__(f"{url}: {self.detail}")
+
+
 # ---- helpers ----
 _RJC_SUFFIX_RE = re.compile(r"-rjc$", re.IGNORECASE)
 
@@ -38,6 +49,51 @@ def _normalize_product_code(code: str | None) -> str:
     if not code:
         return ""
     return _RJC_SUFFIX_RE.sub("", code.strip()).lower()
+
+
+def _product_code_with_rjc(code: str | None) -> str:
+    normalized = _normalize_product_code(code)
+    return f"{normalized}-rjc" if normalized else ""
+
+
+def _canonical_product_link(product_link: str | None, product_code: str) -> str:
+    raw_link = str(product_link or "").strip()
+    code = _product_code_with_rjc(product_code) if product_code else ""
+    if not code:
+        return raw_link
+    domain = product_link_domains.domain_from_url(raw_link)
+    if not domain:
+        domain = product_link_domains.DEFAULT_PRODUCT_LINK_DOMAINS[0]
+    return product_link_domains.build_product_page_url(domain, "en", code)
+
+
+def _probe_product_link(url: str) -> tuple[bool, str | None]:
+    if not url:
+        return False, "empty url"
+    try:
+        resp = requests.head(url, timeout=10, allow_redirects=True)
+    except requests.RequestException as exc:
+        return False, str(exc)
+    if 200 <= resp.status_code < 400:
+        return True, None
+    if resp.status_code in {403, 405}:
+        try:
+            get_resp = requests.get(url, timeout=10, allow_redirects=True, stream=True)
+        except requests.RequestException as exc:
+            return False, str(exc)
+        try:
+            if 200 <= get_resp.status_code < 400:
+                return True, None
+            return False, f"HTTP {get_resp.status_code}"
+        finally:
+            get_resp.close()
+    return False, f"HTTP {resp.status_code}"
+
+
+def _assert_product_link_available(url: str) -> None:
+    ok, detail = _probe_product_link(url)
+    if not ok:
+        raise ProductLinkUnavailableError(url, detail)
 
 
 from appcore.db import query_all, query_one
@@ -129,13 +185,20 @@ from appcore.medias import create_item as _medias_create_item
 
 
 def _build_create_product_payload(meta: dict, translator_id: int) -> dict:
+    product_code = _product_code_with_rjc(meta.get("product_code"))
     return {
         "name": (meta.get("product_name") or "").strip()[:255],
-        "product_code": _normalize_product_code(meta.get("product_code")),
-        "product_link": meta.get("product_link"),
+        "product_code": product_code,
+        "product_link": _canonical_product_link(meta.get("product_link"), product_code),
         "main_image": meta.get("main_image"),
         "mk_id": meta.get("mk_id"),
     }
+
+
+def _existing_product_link(meta: dict, existing: dict | None) -> str:
+    existing = existing or {}
+    product_code = _product_code_with_rjc(existing.get("product_code") or meta.get("product_code"))
+    return _canonical_product_link(existing.get("product_link") or meta.get("product_link"), product_code)
 
 
 def import_mk_video(
@@ -176,9 +239,11 @@ def import_mk_video(
     normalized = _normalize_product_code(raw_code)
     existing = _find_existing_product(normalized)
     is_new = existing is None
+    payload = _build_create_product_payload(meta, translator_id) if is_new else {}
+    product_link = payload.get("product_link") if is_new else _existing_product_link(meta, existing)
+    _assert_product_link_available(product_link)
 
     if is_new:
-        payload = _build_create_product_payload(meta, translator_id)
         try:
             product_id = execute(
                 "INSERT INTO media_products "
@@ -257,6 +322,7 @@ def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
     existing = _find_existing_product(normalized)
     if not existing:
         return None
+    _assert_product_link_available(_existing_product_link(mk_video_metadata, existing))
     item = query_one(
         "SELECT id FROM media_items "
         "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL "

@@ -20,6 +20,62 @@ def test_normalize_empty_returns_empty():
     assert mk_import._normalize_product_code(None) == ""
 
 
+def test_create_product_payload_uses_rjc_product_code_and_link():
+    payload = mk_import._build_create_product_payload(
+        {
+            "product_name": "Demo",
+            "product_code": "ABC-DEF",
+            "product_link": "https://omurio.com/products/old-handle",
+            "main_image": "https://img.example/a.jpg",
+            "mk_id": 123,
+        },
+        translator_id=1,
+    )
+
+    assert payload["product_code"] == "abc-def-rjc"
+    assert payload["product_link"] == "https://omurio.com/products/abc-def-rjc"
+
+
+def test_product_link_precheck_blocks_unavailable_link(monkeypatch):
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"))
+
+    with pytest.raises(mk_import.ProductLinkUnavailableError, match="HTTP 404"):
+        mk_import._assert_product_link_available("https://newjoyloo.com/products/missing-rjc")
+
+
+def test_import_mk_video_checks_product_link_before_download(monkeypatch):
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
+    monkeypatch.setattr(
+        mk_import,
+        "_assert_product_link_available",
+        lambda link: (_ for _ in ()).throw(mk_import.ProductLinkUnavailableError(link, "HTTP 404")),
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "_download_mp4",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not start")),
+    )
+    monkeypatch.setattr(
+        mk_import,
+        "execute",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("product should not be inserted")),
+    )
+
+    with pytest.raises(mk_import.ProductLinkUnavailableError):
+        mk_import.import_mk_video(
+            mk_video_metadata={
+                "mp4_url": "https://cdn.example/demo.mp4",
+                "filename": "demo.mp4",
+                "product_name": "Demo",
+                "product_code": "ABC-DEF",
+                "product_link": "https://newjoyloo.com/products/abc-def-rjc",
+            },
+            translator_id=1,
+            actor_user_id=1,
+        )
+
+
 def test_exception_classes_exist():
     assert issubclass(mk_import.DuplicateError, mk_import.MkImportError)
     assert issubclass(mk_import.DownloadError, mk_import.MkImportError)

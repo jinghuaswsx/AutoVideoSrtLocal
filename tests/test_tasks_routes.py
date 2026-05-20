@@ -141,6 +141,35 @@ def test_create_parent_task_missing_params(authed_client_no_db):
     assert "error" in rsp.get_json()
 
 
+def test_import_and_create_maps_product_link_unavailable(authed_client_no_db, monkeypatch):
+    from appcore import mk_import
+
+    def fake_import_and_create_task(**kwargs):
+        raise mk_import.ProductLinkUnavailableError(
+            "https://newjoyloo.com/products/missing-rjc",
+            "HTTP 404",
+        )
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.import_and_create_task",
+        fake_import_and_create_task,
+    )
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/import-and-create",
+        json={
+            "mk_video_metadata": {"filename": "demo.mp4"},
+            "translator_id": 2,
+            "countries": ["DE"],
+        },
+    )
+
+    assert rsp.status_code == 409
+    body = rsp.get_json()
+    assert body["error"] == "product_link_unavailable"
+    assert "HTTP 404" in body["detail"]
+
+
 def test_parent_action_routes_registered_admin(authed_client_no_db):
     """All admin parent endpoints reachable (will 4xx/5xx without real DB; smoke only)."""
     # claim — capability required (admin has all caps)
