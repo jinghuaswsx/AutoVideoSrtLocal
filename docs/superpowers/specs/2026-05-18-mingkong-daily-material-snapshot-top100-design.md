@@ -44,10 +44,10 @@ In scope:
 10. The `视频素材库` list must read only completed `mingkong_material_sync_runs`
     (`status='success'`). A partially running same-day snapshot must not become the
     default list source.
-11. The `视频素材库` default sort is product-level 90-day material spend descending,
-    then product rank, then video-level 90-day spend. This keeps videos grouped by the
-    product's material scale instead of letting one high-spend clip from a lower product
-    jump ahead of a stronger product.
+11. The `视频素材库` default sort is strict global video-level 90-day material spend
+    descending (`cumulative_90_spend DESC`). Product-level spend and product rank must
+    not outrank a card with higher 90-day spend. Ties fall back to video ad count and
+    stable row id so the page order remains deterministic.
 12. The top filter row includes a material time range selector: 本周、上周、本月、上月.
     When a range is selected, the material library deduplicates by material key and uses
     the latest successful row inside the selected range.

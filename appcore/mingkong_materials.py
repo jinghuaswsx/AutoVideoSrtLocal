@@ -1336,8 +1336,7 @@ def list_material_library(
               WHERE r2.status = 'success' AND s2.snapshot_date BETWEEN %s AND %s
               GROUP BY s2.snapshot_at, s2.product_code
             ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
-            ORDER BY product_total_90_spend DESC, s.rank_position ASC,
-                     s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+            ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
             LIMIT %s OFFSET %s
             """,
             tuple(args + [range_start, range_end, size, offset]),
@@ -1396,8 +1395,7 @@ def list_material_library(
           GROUP BY snapshot_at, product_code
         ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
         WHERE {where_sql}
-        ORDER BY product_total_90_spend DESC, s.rank_position ASC,
-                 s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
         LIMIT %s OFFSET %s
         """,
         tuple([selected_snapshot_at] + args + [size, offset]),

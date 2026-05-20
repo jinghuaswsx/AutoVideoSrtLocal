@@ -833,7 +833,62 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
         "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"
     )
     assert result["items"][0]["mk_video_metadata"] == {"video_path": "uploads2/winner.mp4"}
-    assert any("product_total_90_spend DESC" in item[1] for item in captured if item[0] == "query")
+    assert any(
+        "ORDER BY s.cumulative_90_spend DESC" in item[1]
+        for item in captured
+        if item[0] == "query"
+    )
+
+
+def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_today", lambda: date(2026, 5, 20))
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "video_name": "winner.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "local_cover_object_key": "",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
+                "cumulative_90_spend": 12000,
+                "video_ads_count": 9,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(range_key="this_week", page=1, page_size=100)
+
+    assert result["total"] == 1
+    assert any(
+        "ORDER BY s.cumulative_90_spend DESC" in item[1]
+        for item in captured
+        if item[0] == "query"
+    )
 
 
 def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
