@@ -412,20 +412,22 @@ strong.mk-video-product-name { color:var(--oc-fg); }
     <div class="mk-video-library-head">
       <span id="mkVideoLibraryStatus">切换到视频素材库后加载本地素材快照</span>
     </div>
+    <div class="oc-pager" id="mkVideoPagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
       <div class="oc-empty">加载中...</div>
     </div>
-    <div class="oc-pager" id="mkVideoPager"></div>
+    <div class="oc-pager" id="mkVideoPagerBottom"></div>
   </section>
 
   <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
     <div class="mk-video-library-head">
       <span id="mkYesterdayTop100Status">切换到昨天消耗前100后加载本地归档</span>
     </div>
+    <div class="oc-pager" id="mkYesterdayTop100PagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkYesterdayTop100Grid">
       <div class="oc-empty">加载中...</div>
     </div>
-    <div class="oc-pager" id="mkYesterdayTop100Pager"></div>
+    <div class="oc-pager" id="mkYesterdayTop100PagerBottom"></div>
   </section>
 </div>
 
@@ -452,7 +454,7 @@ let selectedMkSnapshot = '';
 let selectedMkRange = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
-const MK_VIDEO_PAGE_SIZE = 24;
+const MK_VIDEO_PAGE_SIZE = 100;
 
 function fmtMoney(v) {
   if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
@@ -577,6 +579,27 @@ function renderProductMaterialButton(productCode, rawProductName, linkedHtml) {
     <button type="button" class="oc-btn oc-btn--ghost mk-product-material-btn" data-mk-material-button data-product-code="${escapeHtml(code)}" data-product-name="${escapeHtml(rawProductName || code)}">素材库</button>
     <span class="mk-material-state">${linkedHtml}</span>
   </div>`;
+}
+
+function clearMkArchivePager(containerIds) {
+  containerIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+}
+
+function renderMkArchivePager(containerIds, loaderName, page, total) {
+  const pageNum = Math.max(1, Number(page || 1));
+  const totalPages = Math.max(1, Math.ceil(Number(total || 0) / MK_VIDEO_PAGE_SIZE));
+  const prevPage = Math.max(1, pageNum - 1);
+  const nextPage = Math.min(totalPages, pageNum + 1);
+  const pagerHtml = `<button onclick="${loaderName}(${prevPage})" ${pageNum <= 1 ? 'disabled' : ''}>上一页</button>` +
+    ` <span>${pageNum} / ${totalPages}</span> ` +
+    `<button onclick="${loaderName}(${nextPage})" ${pageNum >= totalPages ? 'disabled' : ''}>下一页</button>`;
+  containerIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = pagerHtml;
+  });
 }
 
 function libraryStatusTitle(status) {
@@ -867,9 +890,9 @@ async function loadMkLocalMaterialLibrary(page) {
   const kw = document.getElementById('searchInput').value.trim();
   const grid = document.getElementById('mkVideoMaterialGrid');
   const status = document.getElementById('mkVideoLibraryStatus');
-  const pager = document.getElementById('mkVideoPager');
+  const pagerIds = ['mkVideoPagerTop', 'mkVideoPagerBottom'];
   grid.innerHTML = '<div class="oc-empty">加载本地视频素材快照中...</div>';
-  pager.innerHTML = '';
+  clearMkArchivePager(pagerIds);
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
@@ -889,11 +912,7 @@ async function loadMkLocalMaterialLibrary(page) {
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
-    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
-    let pagerHtml = `<button onclick="loadMkLocalMaterialLibrary(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
-    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
-    pagerHtml += `<button onclick="loadMkLocalMaterialLibrary(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
-    pager.innerHTML = pagerHtml;
+    renderMkArchivePager(['mkVideoPagerTop', 'mkVideoPagerBottom'], 'loadMkLocalMaterialLibrary', page, total);
   } catch (e) {
     status.textContent = '本地视频素材加载失败';
     grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
@@ -905,9 +924,9 @@ async function loadMkYesterdayTop100(page) {
   mkYesterdayTop100Loaded = true;
   const grid = document.getElementById('mkYesterdayTop100Grid');
   const status = document.getElementById('mkYesterdayTop100Status');
-  const pager = document.getElementById('mkYesterdayTop100Pager');
+  const pagerIds = ['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'];
   grid.innerHTML = '<div class="oc-empty">加载昨天消耗前100中...</div>';
-  pager.innerHTML = '';
+  clearMkArchivePager(pagerIds);
   status.textContent = '正在读取昨天消耗前100归档...';
   try {
     const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
@@ -926,11 +945,7 @@ async function loadMkYesterdayTop100(page) {
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
-    const totalPages = Math.max(1, Math.ceil(total / MK_VIDEO_PAGE_SIZE));
-    let pagerHtml = `<button onclick="loadMkYesterdayTop100(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
-    pagerHtml += ` <span>${page} / ${totalPages}</span> `;
-    pagerHtml += `<button onclick="loadMkYesterdayTop100(${page+1})" ${page>=totalPages ? 'disabled' : ''}>下一页</button>`;
-    pager.innerHTML = pagerHtml;
+    renderMkArchivePager(['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'], 'loadMkYesterdayTop100', page, total);
   } catch (e) {
     status.textContent = '昨天消耗前100加载失败';
     grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;

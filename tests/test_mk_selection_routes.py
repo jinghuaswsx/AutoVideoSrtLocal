@@ -204,6 +204,19 @@ def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 
 
+def test_mk_selection_material_archive_tabs_have_top_pagers_and_page100():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "const MK_VIDEO_PAGE_SIZE = 100;" in template
+    assert 'id="mkVideoPagerTop"' in template
+    assert 'id="mkVideoPagerBottom"' in template
+    assert 'id="mkYesterdayTop100PagerTop"' in template
+    assert 'id="mkYesterdayTop100PagerBottom"' in template
+    assert "function renderMkArchivePager(containerIds, loaderName, page, total)" in template
+    assert "renderMkArchivePager(['mkVideoPagerTop', 'mkVideoPagerBottom'], 'loadMkLocalMaterialLibrary', page, total);" in template
+    assert "renderMkArchivePager(['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'], 'loadMkYesterdayTop100', page, total);" in template
+
+
 def test_mk_selection_video_cards_prefer_local_cover_url():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
