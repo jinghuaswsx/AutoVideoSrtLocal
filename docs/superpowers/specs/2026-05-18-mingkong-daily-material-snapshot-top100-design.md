@@ -409,7 +409,9 @@ The page changes stay inside `mk_selection.html`:
 
 - Keep `产品库`.
 - Change `视频素材库` to read local archived snapshot rows and render localized cover
-  and data video cards when clicked.
+  and data video cards when clicked. Each card also displays `昨日消耗` using the same
+  current-vs-previous material snapshot delta calculation as `昨天消耗前100`; when no
+  previous material row exists, the delta is the current 90-day spend.
 - Add `昨天消耗前100`.
 - Both material card tabs use local archived rows only.
 - Cards reuse the existing Mingkong media proxy paths for cover/video preview.
