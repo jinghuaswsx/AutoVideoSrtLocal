@@ -1073,9 +1073,12 @@ function renderMkVideoMaterialCard(r) {
   const statusIconsHtml = renderMkStatusIconCluster(r);
   const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
   const isMaterialImported = Boolean(r.has_local_material_in_library);
+  const productStatus = r.product_ad_status || {};
   const materialStatus = r.material_ad_status || {};
   const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
+  const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
+  const hasLocalProduct = Boolean(r.has_local_product_in_library || (productStatus && productStatus.has_local_match) || existingProductId);
   const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
@@ -1133,6 +1136,8 @@ function renderMkVideoMaterialCard(r) {
         data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
+        data-mki-local-product-id="${escapeHtml(existingProductId || '')}"
+        data-mki-has-local-product="${hasLocalProduct ? '1' : ''}"
         ${isMaterialImported ? 'disabled' : ''}
         onclick="mkiHandleClick(this)">
       ${isMaterialImported ? '已入库' : '加入素材库'}
@@ -1269,6 +1274,8 @@ async function openDetail(mkId, mkName) {
             data-mki-main-image-object-key="${escapeHtml(item.product_main_image_object_key || '')}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
             data-mki-mk-id="${escapeHtml(item.id || '')}"
+            data-mki-local-product-id=""
+            data-mki-has-local-product=""
             onclick="mkiHandleClick(this)">
           加入素材库
         </button>
@@ -1553,11 +1560,11 @@ async function mkiCheckRenderedButtons() {
   imported.forEach(fn => mkiMarkImportedFilename(fn));
 }
 
-// mk-import: Task 10 翻译员选择 modal
+// mk-import: product owner and task assignment users
 const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
 const MKI_RAW_PROCESSORS_API = '/tasks/api/raw-processors';
-let mkiTranslatorResolve = null;
-let mkiTranslatorsCache = null;
+let mkiProductOwnerResolve = null;
+let mkiProductOwnersCache = null;
 
 function mkiUserLabel(user) {
   const fallback = user && user.id ? `用户 #${user.id}` : '';
@@ -1578,33 +1585,6 @@ async function mkiFetchRawProcessors() {
   const r = await fetch(MKI_RAW_PROCESSORS_API);
   const data = await r.json();
   return data.users || [];
-}
-
-async function mkiOpenTranslatorModal() {
-  if (!mkiTranslatorsCache) {
-    try {
-      mkiTranslatorsCache = await mkiFetchActiveUsers();
-    } catch (e) {
-      mkiTranslatorsCache = [];
-    }
-  }
-  if (!mkiTranslatorsCache.length) {
-    alert('没有可用翻译工作用户');
-    return null;
-  }
-  const sel = document.getElementById('mkiTranslatorSel');
-  sel.innerHTML = mkiTranslatorsCache.map(mkiUserOption).join('');
-  document.getElementById('mkiTranslatorModal').style.display = 'block';
-  return new Promise(resolve => { mkiTranslatorResolve = resolve; });
-}
-function mkiTranslatorOK() {
-  const id = parseInt(document.getElementById('mkiTranslatorSel').value);
-  document.getElementById('mkiTranslatorModal').style.display = 'none';
-  if (mkiTranslatorResolve) { mkiTranslatorResolve(id); mkiTranslatorResolve = null; }
-}
-function mkiTranslatorCancel() {
-  document.getElementById('mkiTranslatorModal').style.display = 'none';
-  if (mkiTranslatorResolve) { mkiTranslatorResolve(null); mkiTranslatorResolve = null; }
 }
 
 // mk-import: Task 11 — toast + real handler
@@ -1633,6 +1613,7 @@ const MKI_IMPORT_STEPS = [
   {key: 'product', title: '检查产品与链接', detail: '等待服务端创建或复用产品'},
   {key: 'download', title: '下载明空原视频', detail: '等待服务端下载原视频'},
   {key: 'store', title: '写入素材库', detail: '等待写入英文素材库'},
+  {key: 'productOwner', title: '选择产品负责人', detail: '新品入库前确认素材管理产品负责人'},
   {key: 'domains', title: '选择发布域名', detail: '入库完成后选择该产品要发布到哪些域名'},
   {key: 'next', title: '后续任务入口', detail: '发布域名确认后继续创建小语种任务'}
 ];
@@ -1640,7 +1621,7 @@ let mkiImportProgressButton = null;
 let mkiImportProgressFailedStep = 'product';
 let mkiImportProgressProductId = null;
 let mkiImportProgressItemId = null;
-let mkiImportProgressTranslatorId = null;
+let mkiImportProgressProductOwnerId = null;
 let mkiImportProgressTaskId = null;
 let mkiImportProgressDomainOptions = [];
 
@@ -1716,9 +1697,15 @@ function mkiImportProgressOpen(meta) {
   }
   mkiImportProgressProductId = null;
   mkiImportProgressItemId = null;
-  mkiImportProgressTranslatorId = null;
+  mkiImportProgressProductOwnerId = null;
   mkiImportProgressTaskId = null;
   mkiImportProgressDomainOptions = [];
+  mkiProductOwnerResolve = null;
+  const ownerPanel = document.getElementById('mkiImportProgressProductOwner');
+  if (ownerPanel) ownerPanel.hidden = true;
+  const ownerSel = document.getElementById('mkiImportProgressProductOwnerSelect');
+  if (ownerSel) ownerSel.innerHTML = '';
+  mkiImportProgressSetProductOwnerNotice('');
   const domainsPanel = document.getElementById('mkiImportProgressDomains');
   if (domainsPanel) domainsPanel.hidden = true;
   const domainList = document.getElementById('mkiImportProgressDomainList');
@@ -1745,7 +1732,8 @@ function mkiImportProgressStepForError(errorCode) {
   if (errorCode === 'storage_failed') return 'store';
   if (errorCode === 'duplicate_filename') return 'store';
   if (errorCode === 'db_failed') return 'product';
-  if (errorCode === 'bad_payload' || errorCode === 'invalid_translator' || errorCode === 'admin_required') return 'prepare';
+  if (errorCode === 'invalid_translator') return 'productOwner';
+  if (errorCode === 'bad_payload' || errorCode === 'admin_required') return 'prepare';
   return 'product';
 }
 
@@ -1770,6 +1758,110 @@ function mkiImportProgressSetDomainNotice(message, kind = '') {
   notice.textContent = message || '';
   notice.classList.toggle('danger', kind === 'danger');
   notice.hidden = !message;
+}
+
+function mkiImportProgressSetProductOwnerNotice(message, kind = '') {
+  const notice = document.getElementById('mkiImportProgressProductOwnerNotice');
+  if (!notice) return;
+  notice.textContent = message || '';
+  notice.classList.toggle('danger', kind === 'danger');
+  notice.hidden = !message;
+}
+
+function mkiImportProgressButtonHasLocalProduct(btn) {
+  if (!btn) return false;
+  const localProductId = Number(btn.dataset.mkiLocalProductId || 0);
+  return !!localProductId || btn.dataset.mkiHasLocalProduct === '1';
+}
+
+async function mkiImportProgressLoadProductOwners() {
+  if (!mkiProductOwnersCache) {
+    mkiProductOwnersCache = await mkiFetchActiveUsers();
+  }
+  return mkiProductOwnersCache;
+}
+
+async function mkiImportProgressPopulateProductOwners() {
+  const panel = document.getElementById('mkiImportProgressProductOwner');
+  const select = document.getElementById('mkiImportProgressProductOwnerSelect');
+  const confirm = document.getElementById('mkiImportProgressProductOwnerSubmit');
+  const retry = document.getElementById('mkiImportProgressProductOwnerRetry');
+  if (!panel || !select || !confirm) return;
+
+  panel.hidden = false;
+  confirm.disabled = true;
+  if (retry) retry.hidden = true;
+  mkiImportProgressSetProductOwnerNotice('');
+  select.innerHTML = '<option value="">正在加载产品负责人...</option>';
+  mkiImportProgressSetStep('productOwner', 'running', '请选择该新品进入素材管理后的产品负责人');
+  try {
+    const users = await mkiImportProgressLoadProductOwners();
+    if (!users.length) {
+      mkiImportProgressSetStep('productOwner', 'error', '没有可用翻译工作用户');
+      mkiImportProgressSetProductOwnerNotice('没有可用翻译工作用户，无法创建新品素材。', 'danger');
+      select.innerHTML = '<option value="">没有可用产品负责人</option>';
+      return;
+    }
+    select.innerHTML = '<option value="">请选择产品负责人</option>' + users.map(mkiUserOption).join('');
+    confirm.disabled = false;
+  } catch (err) {
+    const message = err.message || '产品负责人列表加载失败';
+    select.innerHTML = '';
+    mkiImportProgressSetStep('productOwner', 'error', message);
+    mkiImportProgressSetProductOwnerNotice('产品负责人列表加载失败：' + message, 'danger');
+    if (retry) retry.hidden = false;
+  }
+}
+
+async function mkiImportProgressRequestProductOwner(btn) {
+  const panel = document.getElementById('mkiImportProgressProductOwner');
+  const select = document.getElementById('mkiImportProgressProductOwnerSelect');
+  if (!panel || !select) return null;
+
+  if (mkiImportProgressButtonHasLocalProduct(btn)) {
+    select.innerHTML = '';
+    panel.hidden = true;
+    mkiImportProgressSetStep('productOwner', 'done', '产品已在素材管理，沿用现有产品负责人');
+    return null;
+  }
+
+  const promise = new Promise(resolve => { mkiProductOwnerResolve = resolve; });
+  mkiImportProgressPopulateProductOwners();
+  return promise;
+}
+
+function mkiImportProgressConfirmProductOwner() {
+  const select = document.getElementById('mkiImportProgressProductOwnerSelect');
+  const ownerId = Number(select && select.value || 0);
+  if (!ownerId) {
+    mkiImportProgressSetProductOwnerNotice('请选择产品负责人。', 'danger');
+    return;
+  }
+  mkiImportProgressProductOwnerId = ownerId;
+  mkiImportProgressSetStep('productOwner', 'done', '产品负责人已确认：' + (select.options[select.selectedIndex]?.textContent || ('#' + ownerId)));
+  mkiImportProgressSetProductOwnerNotice('产品负责人已确认。');
+  const panel = document.getElementById('mkiImportProgressProductOwner');
+  if (panel) panel.hidden = true;
+  if (mkiProductOwnerResolve) {
+    mkiProductOwnerResolve(ownerId);
+    mkiProductOwnerResolve = null;
+  }
+}
+
+function mkiImportProgressCancelProductOwner() {
+  const panel = document.getElementById('mkiImportProgressProductOwner');
+  if (panel) panel.hidden = true;
+  const modal = document.getElementById('mkiImportProgressModal');
+  if (modal) modal.hidden = true;
+  if (mkiProductOwnerResolve) {
+    mkiProductOwnerResolve(null);
+    mkiProductOwnerResolve = null;
+  }
+}
+
+function mkiImportProgressRetryProductOwners() {
+  mkiProductOwnersCache = null;
+  mkiImportProgressPopulateProductOwners();
 }
 
 function mkiImportProgressRenderDomainRows(domains) {
@@ -1900,6 +1992,11 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressSetStep('product', warningMessage ? 'warning' : 'done', productDetail);
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
+  if (data?.is_new_product) {
+    mkiImportProgressSetStep('productOwner', 'done', '新品产品负责人已写入素材管理');
+  } else {
+    mkiImportProgressSetStep('productOwner', 'done', '老品已沿用素材管理现有产品负责人');
+  }
   mkiImportProgressSetStep('domains', 'running', '正在加载产品发布域名');
   mkiImportProgressSetStep('next', 'pending', '确认发布域名后创建小语种任务');
 
@@ -1925,6 +2022,10 @@ function mkiImportProgressComplete(data, btn) {
 }
 
 function mkiImportProgressClose() {
+  if (mkiProductOwnerResolve) {
+    mkiProductOwnerResolve(null);
+    mkiProductOwnerResolve = null;
+  }
   const modal = document.getElementById('mkiImportProgressModal');
   if (modal) modal.hidden = true;
 }
@@ -1942,16 +2043,15 @@ async function mkiImportProgressCreateSmallLangTask() {
     mkiImportProgressSetStep('next', 'error', '缺少产品或素材 ID');
     return;
   }
-  if (!mkiImportProgressTranslatorId) {
-    mkiToast('error', '缺少翻译员，请重新加入素材库后创建任务');
-    mkiImportProgressSetStep('next', 'error', '缺少翻译员');
-    return;
-  }
   const endpoint = '/tasks/api/parent';
-  const selection = await mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true, title: '创建小语种翻译任务', endpoint: endpoint});
+  const selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) {
     mkiToast('error', '请至少勾选一个国家');
+    return;
+  }
+  if (!selection.translatorId) {
+    mkiToast('error', '请选择小语种翻译负责人');
     return;
   }
   if (!selection.rawProcessorId) {
@@ -1968,7 +2068,7 @@ async function mkiImportProgressCreateSmallLangTask() {
       body: JSON.stringify({
         media_product_id: mkiImportProgressProductId,
         media_item_id: mkiImportProgressItemId,
-        translator_id: mkiImportProgressTranslatorId,
+        translator_id: selection.translatorId,
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
         countries: selection.countries
@@ -2002,9 +2102,6 @@ function mkiImportProgressContinueTask() {
 }
 
 async function mkiHandleClick(btn) {
-  const translatorId = await mkiOpenTranslatorModal();
-  if (translatorId === null) return;
-
   const original = btn.textContent;
   let importSucceeded = false;
   btn.disabled = true;
@@ -2025,24 +2122,37 @@ async function mkiHandleClick(btn) {
     };
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
-    mkiImportProgressTranslatorId = translatorId;
     mkiImportProgressSetStep('prepare', 'done', '素材字段已读取，准备提交服务端入库');
-    mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
+    mkiImportProgressSetStep('product', 'pending', '确认产品负责人后检查产品与链接');
     mkiImportProgressSetStep('download', 'pending', '产品确认后下载明空原视频');
     mkiImportProgressSetStep('store', 'pending', '视频下载完成后写入素材库');
+    mkiImportProgressSetStep('productOwner', 'pending', '入库前确认素材管理产品负责人');
     mkiImportProgressSetStep('domains', 'pending', '入库完成后选择发布域名');
     mkiImportProgressSetStep('next', 'pending', '发布域名确认后创建小语种任务');
+    const productOwnerId = await mkiImportProgressRequestProductOwner(btn);
+    if (productOwnerId === null && !mkiImportProgressButtonHasLocalProduct(btn)) {
+      btn.disabled = false;
+      btn.textContent = original;
+      return;
+    }
+    mkiImportProgressProductOwnerId = productOwnerId;
+    mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     const headers = {'Content-Type': 'application/json'};
     if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+    const body = {mk_video_metadata: meta};
+    if (productOwnerId) body.product_owner_id = productOwnerId;
     const rsp = await fetch('/mk-import/video', {
       method: 'POST',
       headers: headers,
-      body: JSON.stringify({mk_video_metadata: meta, translator_id: translatorId}),
+      body: JSON.stringify(body),
     });
     if (!rsp.ok) {
       const err = await rsp.json().catch(() => ({error: rsp.statusText}));
-      mkiImportProgressFailedStep = mkiImportProgressStepForError(err.error);
+      const detailText = String(err.detail || err.message || '');
+      mkiImportProgressFailedStep = detailText.includes('product_owner') || detailText.includes('产品负责人')
+        ? 'productOwner'
+        : mkiImportProgressStepForError(err.error);
       throw new Error(err.detail || err.error || rsp.statusText);
     }
     const data = await rsp.json();
@@ -2269,7 +2379,7 @@ function mkiXiaoOK() {
   var translatorId = parseInt(document.getElementById('mkiXiaoTranslator').value);
   var rawProcessorId = parseInt(document.getElementById('mkiXiaoRawProcessor').value);
   var countries = mkiXiaoSelectedCountries();
-  if (!translatorId) { alert('请选择翻译员'); return; }
+  if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
   if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
   if (!countries.length) { alert('请选择目标国家'); return; }
   mkiXiaoSetBusy(true);
@@ -2304,7 +2414,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
   var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
-  if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
   if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
 
   var original = btn.textContent;
@@ -2344,7 +2454,7 @@ async function mkiXiaoHandleClick(btn) {
   var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
-  if (!selection.translatorId) { mkiToast('error', '请选择翻译员'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
   if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
 
   var original = btn.textContent;
@@ -2426,6 +2536,21 @@ async function mkiXiaoHandleClick(btn) {
         <div id="mkiImportProgressResultText"></div>
         <p>下一步创建小语种任务；原视频处理人指派后会自动提交牛马去字幕，并进入人工审核。</p>
       </div>
+      <div id="mkiImportProgressProductOwner" class="mki-progress-domains" hidden>
+        <div class="mki-progress-domain-head">
+          <div>
+            <div class="mki-progress-domain-title">选择产品负责人</div>
+            <div class="mki-progress-domain-subtitle">产品负责人用于素材归属；小语种翻译负责人用于当前语言任务，可与产品负责人不同。</div>
+          </div>
+        </div>
+        <select id="mkiImportProgressProductOwnerSelect" class="oc-input" style="width:100%; height:36px;"></select>
+        <div id="mkiImportProgressProductOwnerNotice" class="mki-progress-domain-notice" hidden></div>
+        <div class="mki-progress-domain-actions">
+          <button id="mkiImportProgressProductOwnerRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryProductOwners()" hidden>重新加载产品负责人</button>
+          <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressCancelProductOwner()">取消</button>
+          <button id="mkiImportProgressProductOwnerSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressConfirmProductOwner()">确认产品负责人</button>
+        </div>
+      </div>
       <div id="mkiImportProgressDomains" class="mki-progress-domains" hidden>
         <div class="mki-progress-domain-head">
           <div>
@@ -2451,26 +2576,14 @@ async function mkiXiaoHandleClick(btn) {
   </div>
 </div>
 
-<!-- mk-import: Task 10 翻译员选择 modal -->
-<div id="mkiTranslatorModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
-  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:380px; max-width:90vw;">
-    <h3 style="margin:0 0 12px;">指定翻译员</h3>
-    <p style="font-size:13px; color:var(--oc-fg-muted); margin:0 0 12px;">老品自动沿用现有翻译员，本次选择仅在新品时生效。</p>
-    <select id="mkiTranslatorSel" class="oc-input" style="width:100%; height:32px;"></select>
-    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
-      <button class="oc-btn oc-btn--ghost" onclick="mkiTranslatorCancel()">取消</button>
-      <button class="oc-btn oc-btn--primary" onclick="mkiTranslatorOK()">确认</button>
-    </div>
-  </div>
-</div>
-
 <!-- 创建小语种翻译任务 modal -->
 <div id="mkiXiaoModal" class="mki-xiao-backdrop">
   <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
     <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
     <div class="mki-xiao-field">
-      <label class="mki-xiao-label" for="mkiXiaoTranslator">翻译员：</label>
+      <label class="mki-xiao-label" for="mkiXiaoTranslator">小语种翻译负责人：</label>
       <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:36px;"></select>
+      <div class="mki-progress-domain-subtitle">产品负责人用于素材归属；小语种翻译负责人用于当前语言任务，可与产品负责人不同。</div>
     </div>
     <div class="mki-xiao-field">
       <label class="mki-xiao-label" for="mkiXiaoRawProcessor">原视频处理人：</label>

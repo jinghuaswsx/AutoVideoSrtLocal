@@ -429,7 +429,7 @@ def _first_non_empty(*values) -> str | None:
 
 def _build_create_product_payload(
     meta: dict,
-    translator_id: int,
+    translator_id: int | None,
     product_asset: dict | None = None,
     mk_detail: dict | None = None,
 ) -> dict:
@@ -467,7 +467,7 @@ def _existing_product_link(meta: dict, existing: dict | None) -> str:
 def import_mk_video(
     *,
     mk_video_metadata: dict,
-    translator_id: int,
+    translator_id: int | None,
     actor_user_id: int,
     task_id: int | None = None,
 ) -> dict:
@@ -521,6 +521,8 @@ def import_mk_video(
         warnings.append(product_link_warning)
 
     if is_new:
+        if translator_id is None:
+            raise ValueError("product_owner_id required for new product")
         try:
             product_id = execute(
                 "INSERT INTO media_products "

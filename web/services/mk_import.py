@@ -44,8 +44,11 @@ def build_mk_import_admin_required_response() -> MkImportResponse:
     return MkImportResponse({"error": "admin_required"}, 403)
 
 
-def build_mk_import_bad_payload_response() -> MkImportResponse:
-    return MkImportResponse({"error": "bad_payload"}, 400)
+def build_mk_import_bad_payload_response(detail: str | None = None) -> MkImportResponse:
+    payload: dict[str, Any] = {"error": "bad_payload"}
+    if detail:
+        payload["detail"] = detail
+    return MkImportResponse(payload, 400)
 
 
 def build_mk_import_invalid_translator_response(exc: Exception) -> MkImportResponse:

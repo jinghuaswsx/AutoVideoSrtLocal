@@ -150,6 +150,27 @@ def test_mk_import_progress_modal_present():
     assert "原视频处理人认领后会自动提交牛马去字幕" not in template
 
 
+def test_mk_import_progress_uses_product_owner_step_before_domains():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "{key: 'productOwner', title: '选择产品负责人'" in template
+    assert template.index("{key: 'productOwner'") < template.index("{key: 'domains'")
+    assert "product_owner_id" in template
+    assert "mkiImportProgressProductOwnerId" in template
+    assert 'id="mkiTranslatorModal"' not in template
+    assert "function mkiOpenTranslatorModal" not in template
+    assert "指定翻译员" not in template
+
+
+def test_mk_small_language_modal_distinguishes_product_owner_from_translation_owner():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "小语种翻译负责人" in template
+    assert "产品负责人用于素材归属" in template
+    assert "可与产品负责人不同" in template
+    assert "翻译员：" not in template
+
+
 def test_mk_selection_import_modals_use_active_user_display_names():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -295,10 +316,11 @@ def test_mk_import_progress_footer_actions_open_new_tabs():
     assert "fetch(endpoint" in template
     assert "media_product_id: mkiImportProgressProductId" in template
     assert "media_item_id: mkiImportProgressItemId" in template
-    assert "translator_id: mkiImportProgressTranslatorId" in template
+    assert "translator_id: selection.translatorId" in template
     assert "raw_processor_id: selection.rawProcessorId" in template
     assert "language_assignments: mkiXiaoLanguageAssignments(selection)" in template
-    assert "mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true" in template
+    assert "mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint})" in template
+    assert "mkiImportProgressTranslatorId" not in template
     assert 'onclick="mkiImportProgressContinueTask()"' in template
     assert 'onclick="mkiImportProgressOpenTasks()"' in template
     assert 'onclick="mkiImportProgressOpenMedias()"' in template

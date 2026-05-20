@@ -123,6 +123,63 @@ def test_mk_import_video_returns_service_result(authed_client_no_db, monkeypatch
     assert captured["actor_user_id"] == 1
 
 
+def test_mk_import_video_accepts_product_owner_id(authed_client_no_db, monkeypatch):
+    from web.routes import mk_import as route
+
+    captured = {}
+
+    def fake_import_mk_video(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "media_item_id": 12}
+
+    monkeypatch.setattr(route, "ensure_translation_work_user", lambda user_id: {"id": user_id})
+    monkeypatch.setattr(route.mk_import_svc, "import_mk_video", fake_import_mk_video)
+
+    resp = authed_client_no_db.post(
+        "/mk-import/video",
+        json={"mk_video_metadata": {"filename": "x.mp4"}, "product_owner_id": 8},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "media_item_id": 12}
+    assert captured["translator_id"] == 8
+    assert captured["actor_user_id"] == 1
+
+
+def test_mk_import_video_product_owner_id_takes_priority_over_legacy_translator_id(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import mk_import as route
+
+    captured = {}
+    ensure_calls = []
+
+    monkeypatch.setattr(
+        route,
+        "ensure_translation_work_user",
+        lambda user_id: ensure_calls.append(user_id) or {"id": user_id},
+    )
+    monkeypatch.setattr(
+        route.mk_import_svc,
+        "import_mk_video",
+        lambda **kwargs: captured.update(kwargs) or {"ok": True},
+    )
+
+    resp = authed_client_no_db.post(
+        "/mk-import/video",
+        json={
+            "mk_video_metadata": {"filename": "x.mp4"},
+            "product_owner_id": 8,
+            "translator_id": 7,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert ensure_calls == [8]
+    assert captured["translator_id"] == 8
+
+
 def test_mk_import_video_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
     from web.routes import mk_import as route
 

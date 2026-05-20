@@ -127,6 +127,53 @@ def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
     assert captured["created_item"]["display_name"] == original_filename
 
 
+def test_import_mk_video_old_product_allows_missing_product_owner(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: {
+            "id": 587,
+            "user_id": 42,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+        },
+    )
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: captured.update(kwargs) or 456)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/original.mp4",
+            "filename": "old-product-video.mp4",
+            "product_name": "科学小实验手工玩具",
+            "product_code": "tool-free-robotics-building-set",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+        },
+        translator_id=None,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert captured["user_id"] == 42
+    assert captured["object_key"].startswith("42/medias/587/")
+
+
 def test_import_mk_video_reuses_existing_product_after_product_code_duplicate_race(monkeypatch):
     captured = {}
     product_code = "tool-free-robotics-building-set-rjc"

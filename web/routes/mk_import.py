@@ -61,20 +61,23 @@ def import_video():
         return mk_import_flask_response(build_mk_import_admin_required_response())
     payload = request.get_json(silent=True) or {}
     meta = payload.get("mk_video_metadata") or {}
-    translator_id = payload.get("translator_id")
-    if not meta or not isinstance(translator_id, int):
+    product_owner_id = payload.get("product_owner_id", payload.get("translator_id"))
+    if not meta or (product_owner_id is not None and not isinstance(product_owner_id, int)):
         return mk_import_flask_response(build_mk_import_bad_payload_response())
-    try:
-        ensure_translation_work_user(translator_id)
-    except ValueError as e:
-        return mk_import_flask_response(build_mk_import_invalid_translator_response(e))
+    if product_owner_id is not None:
+        try:
+            ensure_translation_work_user(product_owner_id)
+        except ValueError as e:
+            return mk_import_flask_response(build_mk_import_invalid_translator_response(e))
     try:
         result = mk_import_svc.import_mk_video(
             mk_video_metadata=meta,
-            translator_id=int(translator_id),
+            translator_id=int(product_owner_id) if product_owner_id is not None else None,
             actor_user_id=int(current_user.id),
         )
         return mk_import_flask_response(build_mk_import_success_response(result))
+    except ValueError as e:
+        return mk_import_flask_response(build_mk_import_bad_payload_response(str(e)))
     except mk_import_svc.DuplicateError as e:
         return mk_import_flask_response(build_mk_import_duplicate_response(e))
     except mk_import_svc.DownloadError as e:

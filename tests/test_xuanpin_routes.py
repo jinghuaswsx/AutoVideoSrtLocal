@@ -153,6 +153,18 @@ def test_xuanpin_mk_import_progress_includes_publish_domain_step(authed_client_n
     assert "未选择发布域名，已按默认域名继续" in body
 
 
+def test_xuanpin_mk_import_progress_includes_product_owner_before_domains(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "{key: 'productOwner', title: '选择产品负责人'" in body
+    assert body.index("{key: 'productOwner'") < body.index("{key: 'domains'")
+    assert "product_owner_id" in body
+    assert "mkiImportProgressProductOwnerId" in body
+    assert 'id="mkiTranslatorModal"' not in body
+
+
 def test_xuanpin_mk_import_progress_waits_for_domain_save_before_next_actions(
     authed_client_no_db,
 ):
@@ -174,6 +186,9 @@ def test_xuanpin_mk_uses_create_small_language_task_labels(authed_client_no_db):
     body = resp.get_data(as_text=True)
     assert "创建小语种翻译任务" in body
     assert "下一步：创建小语种任务" in body
+    assert "小语种翻译负责人" in body
+    assert "产品负责人用于素材归属" in body
+    assert "可与产品负责人不同" in body
     assert "继续做小语种任务" not in body
     assert "mkiXiaoLangLabel" in body
     assert "中文名 + 国家代码" not in body
