@@ -172,7 +172,7 @@ function rvpRenderSection(elId, countId, items, kind) {
       }
     } else if (kind === 'in_progress') {
       actions = `<div class="rvp-action-group">
-        <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始</button>
+        <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始带字幕英文视频</button>
         <button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${t.task_id}, '${rvpEsc(t.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>
       </div>`;
     } else if (kind === 'review') {

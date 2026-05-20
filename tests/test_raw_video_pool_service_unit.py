@@ -116,6 +116,32 @@ def test_replace_processed_video_records_manual_upload_event(monkeypatch, tmp_pa
     assert payload["new_size"] == len(b"manual-video")
 
 
+def test_resolve_local_path_prefers_local_media_storage(monkeypatch, tmp_path):
+    from appcore import raw_video_pool
+
+    media_path = tmp_path / "media_store" / "mk-import" / "7" / "demo.mp4"
+    media_path.parent.mkdir(parents=True)
+    media_path.write_bytes(b"video")
+
+    class FakeLocalMediaStorage:
+        @staticmethod
+        def exists(object_key):
+            return object_key == "mk-import/7/demo.mp4"
+
+        @staticmethod
+        def safe_local_path_for(object_key):
+            return media_path
+
+        @staticmethod
+        def download_to(object_key, destination):
+            return str(destination)
+
+    monkeypatch.setattr(raw_video_pool, "local_media_storage", FakeLocalMediaStorage, raising=False)
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    assert raw_video_pool._resolve_local_path("mk-import/7/demo.mp4") == str(media_path)
+
+
 def test_raw_video_pool_template_exposes_raw_source_progress():
     template = Path("web/templates/raw_video_pool_list.html").read_text(encoding="utf-8")
 
@@ -125,3 +151,4 @@ def test_raw_video_pool_template_exposes_raw_source_progress():
     assert "raw_processing_status" in template
     assert "rvp-raw-status" in template
     assert "rvpOpenUpload" in template
+    assert "下载原始带字幕英文视频" in template
