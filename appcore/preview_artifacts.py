@@ -171,18 +171,16 @@ def build_shot_translate_artifact(
     items = [
         {
             "type": "shot_translation_summary",
-            "label": "ASR 对齐翻译过程",
+            "label": "时间轴分段翻译过程",
             "total": len(shot_rows),
             "translated_count": translated_count,
             "over_limit_count": over_limit_count,
             "retry_count": retry_count,
-            "mode": "asr_aligned" if translated_count else "shot_context_only",
         },
         {
             "type": "shot_translations",
-            "label": "ASR 对齐翻译结果（含视觉分镜上下文）" if translated_count else "视觉分镜（待 ASR 对齐翻译）",
+            "label": "时间轴分段过程和结果",
             "shots": shot_rows,
-            "mode": "asr_aligned" if translated_count else "shot_context_only",
         },
     ]
     if source_full_text or localized_translation:

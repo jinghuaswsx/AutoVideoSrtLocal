@@ -11,8 +11,6 @@ from unittest.mock import patch
 
 import pytest
 
-from appcore.voice_ai_rank_cache import candidate_signature
-
 
 CFG_ASR_CLEAN = {
     "asr_post": "asr_clean",
@@ -120,70 +118,6 @@ def test_omni_translate_voice_library_accepts_pagination(authed_client_no_db, mo
     }
 
 
-def test_omni_task_get_keeps_active_memory_state_over_stale_db_hydrate(
-    authed_client_no_db,
-    monkeypatch,
-    tmp_path,
-):
-    from appcore import task_state
-
-    task_id = "task-hydrate-race"
-    srt_path = str(tmp_path / "subtitle.av.srt")
-    audio_path = str(tmp_path / "tts_full.av.mp3")
-    (tmp_path / "subtitle.av.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nBonjour\n", encoding="utf-8")
-    (tmp_path / "tts_full.av.mp3").write_bytes(b"audio")
-
-    active_local_state = {
-        "id": task_id,
-        "_user_id": 1,
-        "type": "omni_translate",
-        "status": "running",
-        "steps": {"subtitle": "done", "compose": "pending"},
-        "plugin_config": {
-            **CFG_DYNAMIC_ALL,
-            "tts_strategy": "sentence_reconcile",
-            "subtitle": "sentence_units",
-        },
-        "preview_files": {"srt": srt_path, "tts_full_audio": audio_path},
-        "variants": {
-            "av": {
-                "label": "av",
-                "srt_path": srt_path,
-                "tts_audio_path": audio_path,
-            }
-        },
-    }
-    stale_db_state = {
-        **active_local_state,
-        "preview_files": {},
-        "variants": {"av": {"label": "av", "tts_audio_path": audio_path}},
-    }
-
-    def fake_query_viewable_project(_task_id, columns="*", *, include_deleted=True):
-        return {
-            "id": task_id,
-            "user_id": 1,
-            "state_json": json.dumps(stale_db_state),
-            "task_dir": str(tmp_path),
-        }
-
-    monkeypatch.setattr("web.routes.omni_translate.recover_task_if_needed", lambda *args, **kwargs: None)
-    monkeypatch.setattr("web.routes.omni_translate._query_viewable_project", fake_query_viewable_project)
-    monkeypatch.setattr("web.routes.omni_translate.is_task_active", lambda project_type, _task_id: True)
-    with task_state._lock:
-        task_state._tasks[task_id] = active_local_state
-    try:
-        resp = authed_client_no_db.get(f"/api/omni-translate/{task_id}")
-    finally:
-        with task_state._lock:
-            task_state._tasks.pop(task_id, None)
-
-    assert resp.status_code == 200
-    payload = resp.get_json()
-    assert payload["variants"]["av"]["srt_path"] == srt_path
-    assert payload["preview_files"]["srt"] == srt_path
-
-
 def test_omni_rematch_uses_speed_aware_voice_match(authed_client_no_db):
     normalized_utterances = [{"text": "hello world", "start_time": 0, "end_time": 1}]
     state = {
@@ -285,7 +219,6 @@ def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
             "provider": "openrouter",
             "candidate_limit": 3,
             "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
-            "usage_log_id": 45678,
         }
 
     monkeypatch.setattr(
@@ -306,82 +239,8 @@ def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
     assert saved["voice_ai_rankings"][0]["voice_id"] == "v2"
     assert saved["voice_match_candidates"][1]["llm_rank"] == 1
     assert saved["voice_ai_rank_provider"] == "openrouter"
-    assert saved["voice_ai_rank_usage_log_id"] == 45678
-    assert saved["voice_ai_rank_cache"]["all"]["usage_log_id"] == 45678
     assert payload["voice_ai_rank_status"] == "done"
-    assert payload["voice_ai_rank_usage_log_id"] == 45678
-    assert payload["voice_ai_rank_cache_key"] == "all"
-    assert payload["voice_ai_rank_cached"] is False
     assert payload["candidate_limit"] == 3
-
-
-def test_omni_translate_rematch_derives_gender_rankings_from_all_cache(authed_client_no_db):
-    all_candidates = [
-        {"voice_id": "voice-a", "similarity": 0.95, "gender": "male", "llm_rank": 1, "llm_reason_summary": "stable"},
-        {"voice_id": "voice-b", "similarity": 0.91, "gender": "female", "llm_rank": 2, "llm_reason_summary": "bright"},
-    ]
-    female_candidates = [{"voice_id": "voice-b", "similarity": 0.91, "gender": "female"}]
-    state = {
-        "target_lang": "de",
-        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
-        "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
-        "voice_match_candidates": all_candidates,
-        "voice_ai_rank_cache": {
-            "all": {
-                "condition": "all",
-                "candidate_signature": candidate_signature(all_candidates),
-                "candidates": all_candidates,
-                "rankings": [
-                    {"voice_id": "voice-a", "llm_rank": 1, "reason_summary": "stable"},
-                    {"voice_id": "voice-b", "llm_rank": 2, "reason_summary": "bright"},
-                ],
-                "status": "done",
-                "model": "google/gemini-3.5-flash",
-                "provider": "openrouter",
-                "debug": {"status": "done"},
-                "candidate_limit": 10,
-                "usage_log_id": 98765,
-                "source": "llm",
-            },
-        },
-    }
-    saved = {}
-    with patch(
-        "web.routes.omni_translate.db_query_one",
-        return_value={"state_json": json.dumps(state, ensure_ascii=False), "user_id": 1},
-    ), patch(
-        "web.routes.omni_translate.save_project_state",
-        side_effect=lambda task_id, payload, execute_func=None: saved.update(payload),
-    ), patch(
-        "web.routes.omni_translate.task_state.update",
-    ), patch(
-        "appcore.video_translate_defaults.resolve_default_voice",
-        return_value="default-voice-id",
-    ), patch(
-        "pipeline.voice_embedding.deserialize_embedding",
-        return_value="decoded-embedding",
-    ), patch(
-        "pipeline.voice_match_speed.match_candidates_speed_aware",
-        return_value=female_candidates,
-    ), patch(
-        "appcore.voice_library_browse.fetch_voices_by_ids",
-        return_value=[{"voice_id": "voice-b", "name": "B", "gender": "female"}],
-    ):
-        resp = authed_client_no_db.post(
-            "/api/omni-translate/task-1/rematch",
-            json={"gender": "female"},
-        )
-
-    payload = resp.get_json()
-    assert resp.status_code == 200
-    assert payload["voice_ai_rank_status"] == "derived_from_all"
-    assert payload["voice_ai_rank_cache_key"] == "female"
-    assert payload["candidates"][0]["voice_id"] == "voice-b"
-    assert payload["candidates"][0]["llm_rank"] == 1
-    assert payload["voice_ai_rankings"] == [
-        {"voice_id": "voice-b", "llm_rank": 1, "reason_summary": "bright"}
-    ]
-    assert saved["voice_ai_rank_usage_log_id"] == 98765
 
 
 def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):

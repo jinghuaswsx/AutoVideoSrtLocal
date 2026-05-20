@@ -64,8 +64,6 @@ For translate preview:
 - Overlapping shot descriptions should appear as visual context on that ASR row.
 - A shot with no ASR source text must not appear as a standalone translation row; it may only appear inside `shot_context` or diagnostics.
 - The summary total should count ASR translation units, not visual shots.
-- The detail page must label this result as `ASR 对齐翻译`, not `镜头级翻译`.
-- Before translation exists, the detail page may show visual shot diagnostics only; once ASR-aligned translations exist, every row with a translation must show the target-language text. A previously rendered shot-only preview must not freeze and hide later translations.
 
 ## Shot/ASR Matching
 

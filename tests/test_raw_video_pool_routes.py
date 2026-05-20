@@ -78,38 +78,6 @@ def test_api_download_rejects_file_outside_storage_roots(authed_client_no_db, mo
     assert rsp.status_code == 404
 
 
-def test_api_niuma_result_download_serves_ready_result(authed_client_no_db, monkeypatch, tmp_path):
-    output = tmp_path / "output"
-    result = output / "task_center_raw" / "tcraw-1" / "result.mp4"
-    result.parent.mkdir(parents=True)
-    result.write_bytes(b"cleaned")
-    monkeypatch.setattr(
-        "web.routes.raw_video_pool.rvp_svc.stream_niuma_result_video",
-        lambda task_id, user_id: (str(result), "demo.niuma.mp4"),
-    )
-    monkeypatch.setattr("web.services.artifact_download.UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", str(output))
-
-    rsp = authed_client_no_db.get("/raw-video-pool/api/task/123/niuma-result/download")
-
-    assert rsp.status_code == 200
-    assert rsp.data == b"cleaned"
-
-
-def test_api_niuma_result_accept_maps_success(authed_client_no_db, monkeypatch):
-    accepted = []
-    monkeypatch.setattr(
-        "web.routes.raw_video_pool.rvp_svc.accept_niuma_result",
-        lambda **kwargs: accepted.append(kwargs) or {"status": "accepted", "raw_source_id": 301},
-    )
-
-    rsp = authed_client_no_db.post("/raw-video-pool/api/task/123/niuma-result/accept")
-
-    assert rsp.status_code == 200
-    assert rsp.get_json() == {"ok": True, "status": "accepted", "raw_source_id": 301}
-    assert accepted == [{"task_id": 123, "actor_user_id": 1}]
-
-
 def test_api_upload_no_file(authed_client_no_db):
     rsp = authed_client_no_db.post("/raw-video-pool/api/task/9999/upload")
     assert rsp.status_code == 400

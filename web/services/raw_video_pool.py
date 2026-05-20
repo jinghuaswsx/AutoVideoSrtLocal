@@ -52,9 +52,3 @@ def build_raw_video_pool_internal_error_response(exc: Exception) -> RawVideoPool
 
 def build_raw_video_pool_upload_success_response(new_size: int) -> RawVideoPoolResponse:
     return RawVideoPoolResponse({"ok": True, "new_size": new_size}, 200)
-
-
-def build_raw_video_pool_accept_success_response(result: dict[str, Any]) -> RawVideoPoolResponse:
-    payload = {"ok": True}
-    payload.update(result or {})
-    return RawVideoPoolResponse(payload, 200)

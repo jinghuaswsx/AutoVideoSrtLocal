@@ -223,7 +223,7 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     assert av_sentences[0]["target_chars_range"] == [18, 22]
     assert task["variants"]["normal"]["localized_translation"]["full_text"] == "Texte 1\nTexte 2"
     assert task["steps"]["translate"] == "done"
-    assert task["step_messages"]["translate"] == "FR ASR 对齐翻译完成（2段，附2个视觉分镜上下文）"
+    assert task["step_messages"]["translate"] == "FR 时间轴分段翻译完成（2段，附2个视觉分镜上下文）"
     assert (
         task["step_model_tags"]["translate"]
         == "gemini_aistudio · gemini-3.5-flash"
@@ -413,11 +413,11 @@ def test_shot_limit_translate_sets_process_preview_artifact(
     artifact = task["artifacts"]["translate"]
     assert artifact["title"] == "翻译本土化"
     assert artifact["items"][0]["type"] == "shot_translation_summary"
-    assert artifact["items"][0]["label"] == "ASR 对齐翻译过程"
+    assert artifact["items"][0]["label"] == "时间轴分段翻译过程"
     assert artifact["items"][0]["total"] == 2
     assert artifact["items"][0]["retry_count"] == 1
     assert artifact["items"][1]["type"] == "shot_translations"
-    assert artifact["items"][1]["label"] == "ASR 对齐翻译结果（含视觉分镜上下文）"
+    assert artifact["items"][1]["label"] == "时间轴分段过程和结果"
     first_row = artifact["items"][1]["shots"][0]
     assert first_row["source_text"] == "Source one"
     assert first_row["translated_text"] == "Texto 1"
@@ -805,52 +805,6 @@ def test_sentence_units_subtitle_triggers_quality_assessment(
         "triggered_by": "auto",
         "user_id": 1,
     }]
-
-
-def test_compose_recovers_av_srt_path_from_preview_file(
-    monkeypatch,
-    tmp_path,
-    omni_runner,
-):
-    import appcore.task_state as task_state
-
-    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
-    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
-    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
-
-    task_id = "omni-compose-preview-srt"
-    video_path = tmp_path / "video.mp4"
-    audio_path = tmp_path / "tts_full.av.mp3"
-    srt_path = tmp_path / "subtitle.av.srt"
-    hard_video_path = tmp_path / "hard.mp4"
-    video_path.write_bytes(b"video")
-    audio_path.write_bytes(b"audio")
-    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nBonjour\n", encoding="utf-8")
-
-    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4", user_id=1)
-    task_state.update(
-        task_id,
-        plugin_config=CFG_AV_SYNC_CURRENT,
-        preview_files={"srt": str(srt_path), "tts_full_audio": str(audio_path)},
-        variants={"av": {"label": "av", "tts_audio_path": str(audio_path)}},
-    )
-
-    captured: dict = {}
-
-    def fake_compose_video(**kwargs):
-        captured.update(kwargs)
-        return {"hard_video": str(hard_video_path), "soft_video": ""}
-
-    monkeypatch.setattr("pipeline.compose.compose_video", fake_compose_video)
-    try:
-        omni_runner._step_compose(task_id, str(video_path), str(tmp_path))
-        updated = task_state.get(task_id)
-    finally:
-        with task_state._lock:
-            task_state._tasks.pop(task_id, None)
-
-    assert captured["srt_path"] == str(srt_path)
-    assert updated["variants"]["av"]["srt_path"] == str(srt_path)
 
 
 def test_sentence_units_subtitle_applies_safe_splitting(

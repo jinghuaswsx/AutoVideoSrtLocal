@@ -3845,64 +3845,6 @@ class PipelineRunner:
         """
         return "av" if _is_av_pipeline_task(task) else "normal"
 
-    def _prepare_compose_variant_state(
-        self,
-        task_id: str,
-        task: dict,
-        variant: str,
-        variants: dict,
-        variant_state: dict,
-    ) -> dict:
-        """Repair required compose paths from existing task-level previews.
-
-        Detail polling can briefly expose/persist a state where generated files
-        exist in top-level preview fields but the selected variant lost its
-        path references. Compose only needs local media paths, so repair missing
-        variant fields from already materialized preview/top-level paths.
-        """
-        preview_files = task.get("preview_files") or {}
-        repaired = False
-
-        def repair_if_missing(field: str, candidates: list[object]) -> None:
-            nonlocal repaired
-            if variant_state.get(field):
-                return
-            for candidate in candidates:
-                path = str(candidate or "").strip()
-                if path and os.path.isfile(path):
-                    variant_state[field] = path
-                    repaired = True
-                    return
-
-        repair_if_missing(
-            "tts_audio_path",
-            [
-                task.get("tts_audio_path"),
-                preview_files.get("tts_full_audio"),
-            ],
-        )
-        repair_if_missing(
-            "srt_path",
-            [
-                task.get("srt_path"),
-                preview_files.get("srt"),
-            ],
-        )
-
-        missing = [
-            field for field in ("tts_audio_path", "srt_path")
-            if not variant_state.get(field)
-        ]
-        if missing:
-            raise RuntimeError(
-                f"compose missing {', '.join(missing)} for variant {variant}"
-            )
-
-        if repaired:
-            variants[variant] = variant_state
-            task_state.update(task_id, variants=variants)
-        return variant_state
-
     def _resolve_analysis_hard_video(self, task: dict) -> str:
         variants = task.get("variants") or {}
         candidates: list[str] = []
@@ -3949,9 +3891,6 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
-        variant_state = self._prepare_compose_variant_state(
-            task_id, task, variant, variants, variant_state,
-        )
         audio_for_compose = self._maybe_mix_background_for_compose(
             task_id, variant_state["tts_audio_path"], task_dir, variant,
         )

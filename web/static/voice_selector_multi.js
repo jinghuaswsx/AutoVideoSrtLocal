@@ -527,9 +527,7 @@
   }
 
   function supportsManualVoiceAiRanking() {
-    return apiBase === "/api/english-redub"
-      || apiBase === "/api/multi-translate"
-      || apiBase === "/api/omni-translate";
+    return apiBase === "/api/english-redub" || apiBase === "/api/multi-translate";
   }
 
   function normalizedVoiceAiRankStatus(status) {
@@ -550,10 +548,6 @@
     }
     if (voiceAiRankRequestState === "failed") {
       return "failed";
-    }
-    const status = normalizedVoiceAiRankStatus(voiceAiRankStatus);
-    if (status === "running" || status === "queued") {
-      return "running";
     }
     return "";
   }
@@ -595,12 +589,9 @@
         : `${label}暂无大模型排名结果`;
     }
     if (aiRankRunBtn) {
-      const rankingBusy = voiceAiRankRerunning || shouldPollVoiceAiRanking();
       aiRankRunBtn.hidden = false;
-      aiRankRunBtn.disabled = rankingBusy || !supportsManualVoiceAiRanking();
-      aiRankRunBtn.classList.toggle("is-loading", rankingBusy);
-      aiRankRunBtn.setAttribute("aria-busy", rankingBusy ? "true" : "false");
-      aiRankRunBtn.textContent = rankingBusy ? "AI排名中..." : "重新AI排名";
+      aiRankRunBtn.disabled = voiceAiRankRerunning || !supportsManualVoiceAiRanking();
+      aiRankRunBtn.textContent = voiceAiRankRerunning ? "AI排名中..." : "重新AI排名";
       aiRankRunBtn.title = supportsManualVoiceAiRanking()
         ? `${label}缓存优先；没有缓存时才调用大模型`
         : "当前模块暂不支持手动重新AI排名";

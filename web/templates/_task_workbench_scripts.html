@@ -1096,13 +1096,11 @@
     const cfg = currentTask?.plugin_config || {};
     if (cfg.translate_algo !== "shot_char_limit") return text;
     const legacy = text.match(/^([A-Za-z]{2,8})\s+镜头级翻译完成（\s*(\d+)\s*段\s*）$/);
-    if (!legacy) {
-      return text.replace("时间轴分段翻译完成", "ASR 对齐翻译完成");
-    }
+    if (!legacy) return text;
     const target = legacy[1].toUpperCase();
     const translatedCount = Number(legacy[2]) || (Array.isArray(currentTask?.translations) ? currentTask.translations.length : 0);
     const visualShotCount = Array.isArray(currentTask?.shots) ? currentTask.shots.length : 0;
-    return `${target} ASR 对齐翻译完成（${translatedCount}段，附${visualShotCount}个视觉分镜上下文）`;
+    return `${target} 时间轴分段翻译完成（${translatedCount}段，附${visualShotCount}个视觉分镜上下文）`;
   }
 
   function stepMessage(step, fallback) {
@@ -1207,7 +1205,6 @@
 
   function shouldFreezeStepPreview(step, previewEl) {
     if (!taskWorkbenchBooted || !previewEl) return false;
-    if (step === "translate") return false;
     if (previewEl.dataset.terminalFrozen !== "1") return false;
     const status = currentTask?.steps?.[step] || "";
     return isTerminalStepStatus(status);
@@ -1243,18 +1240,16 @@
     const items = [
       {
         type: "shot_translation_summary",
-        label: translatedCount ? "ASR 对齐翻译过程" : "视觉分镜（待 ASR 对齐翻译）",
+        label: "时间轴分段翻译过程",
         total: rows.length,
         translated_count: translatedCount,
         over_limit_count: overLimitCount,
         retry_count: retryCount,
-        mode: translatedCount ? "asr_aligned" : "shot_context_only",
       },
       {
         type: "shot_translations",
-        label: translatedCount ? "ASR 对齐翻译结果（含视觉分镜上下文）" : "视觉分镜（待 ASR 对齐翻译）",
+        label: "时间轴分段过程和结果",
         shots: rows,
-        mode: translatedCount ? "asr_aligned" : "shot_context_only",
       },
     ];
     if (sourceFullText || translatedFullText) {
@@ -2098,14 +2093,10 @@
     const translated = Number(item.translated_count) || 0;
     const over = Number(item.over_limit_count) || 0;
     const retries = Number(item.retry_count) || 0;
-    const shotContextOnly = item.mode === "shot_context_only" || translated === 0;
-    const primaryStat = shotContextOnly
-      ? `<span class="shot-translation-stat"><strong>${total}</strong> 个视觉分镜</span>`
-      : `<span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>`;
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || (shotContextOnly ? "视觉分镜（待 ASR 对齐翻译）" : "ASR 对齐翻译过程"))}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段翻译过程")}</div>
       <div class="shot-translation-summary">
-        ${primaryStat}
+        <span class="shot-translation-stat"><strong>${translated}</strong>/<span>${total}</span> 已翻译</span>
         <span class="shot-translation-stat"><strong>${retries}</strong> 次缩写重试</span>
         <span class="shot-translation-stat ${over ? 'is-warning' : ''}"><strong>${over}</strong> 段超限</span>
       </div>
@@ -2115,11 +2106,10 @@
   function renderShotTranslations(item) {
     const rows = Array.isArray(item.shots) ? item.shots : [];
     if (!rows.length) {
-      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "ASR 对齐翻译结果（含视觉分镜上下文）")}</div><div class="preview-note">暂无 ASR 对齐翻译明细。</div></div>`;
+      return `<div class="preview-block"><div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div><div class="preview-note">暂无时间轴分段翻译明细。</div></div>`;
     }
-    const shotContextOnly = item.mode === "shot_context_only" || rows.every(row => !row.translated_text);
     return `<div class="preview-block">
-      <div class="preview-label">${escapeHtml(item.label || (shotContextOnly ? "视觉分镜（待 ASR 对齐翻译）" : "ASR 对齐翻译结果（含视觉分镜上下文）"))}</div>
+      <div class="preview-label">${escapeHtml(item.label || "时间轴分段过程和结果")}</div>
       <div class="shot-translation-grid">${rows.map(renderShotTranslationRow).join("")}</div>
     </div>`;
   }

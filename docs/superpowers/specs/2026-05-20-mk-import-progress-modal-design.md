@@ -17,9 +17,8 @@ This change visualizes the existing `加入素材库` flow. It does not change t
    - product creation or existing product reuse,
    - product link warning if one exists,
    - material and product IDs,
-   - next action buttons: `下一步：创建小语种任务`, `去任务中心`, `去素材管理`, `关闭`.
-5. After publish domains are confirmed, `下一步：创建小语种任务` opens the same country-selection modal as the video-card small-language action, keeps the import translator locked, and creates a parent task through `POST /tasks/api/parent`.
-6. When the API fails, the modal marks the failed step and displays the exact backend error text with retry and close actions.
+   - next action buttons: `继续做小语种任务`, `去任务中心`, `去素材管理`, `关闭`.
+5. When the API fails, the modal marks the failed step and displays the exact backend error text with retry and close actions.
 
 ## Step Model
 
