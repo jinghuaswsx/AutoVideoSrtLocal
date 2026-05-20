@@ -295,12 +295,26 @@ def test_mk_import_progress_footer_actions_open_new_tabs():
     assert "media_product_id: mkiImportProgressProductId" in template
     assert "media_item_id: mkiImportProgressItemId" in template
     assert "translator_id: mkiImportProgressTranslatorId" in template
+    assert "raw_processor_id: selection.rawProcessorId" in template
+    assert "language_assignments: mkiXiaoLanguageAssignments(selection)" in template
     assert "mkiXiaoOpenModal({translatorId: mkiImportProgressTranslatorId, lockTranslator: true" in template
     assert 'onclick="mkiImportProgressContinueTask()"' in template
     assert 'onclick="mkiImportProgressOpenTasks()"' in template
     assert 'onclick="mkiImportProgressOpenMedias()"' in template
     assert 'onclick="window.location.href=\'/tasks/\'"' not in template
     assert "window.location.href = '/tasks/'" not in template
+
+
+def test_mk_selection_small_language_modal_matches_task_parent_contract():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "const MKI_RAW_PROCESSORS_API = '/tasks/api/raw-processors';" in template
+    assert "let mkiXiaoRawProcessorsCache = null;" in template
+    assert 'id="mkiXiaoRawProcessor"' in template
+    assert "请选择原视频处理人" in template
+    assert "function mkiXiaoLanguageAssignments(selection)" in template
+    assert "raw_processor_id: selection.rawProcessorId" in template
+    assert "language_assignments: mkiXiaoLanguageAssignments(selection)" in template
 
 
 def test_mk_selection_video_cards_include_local_video_preview():
