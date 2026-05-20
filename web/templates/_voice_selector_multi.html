@@ -5,8 +5,11 @@
   <div class="vs-heading">
     <strong>🎤 选择 TTS 音色</strong>
     <span class="vs-hint" id="vs-summary">正在加载音色库...</span>
-    <button type="button" class="vs-ai-rank-debug-btn" id="vs-ai-rank-debug-btn" hidden>
+    <button type="button" class="vs-ai-rank-debug-btn" id="vs-ai-rank-debug-btn">
       大模型音色选择排名
+    </button>
+    <button type="button" class="vs-ai-rank-run-btn" id="vs-ai-rank-run-btn">
+      重新AI排名
     </button>
   </div>
 
@@ -195,17 +198,22 @@
     border-radius: 12px; }
   .vs-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .vs-hint { font-size: 12px; color: var(--text-user-badge); }
-  .vs-ai-rank-debug-btn {
+  .vs-ai-rank-debug-btn,
+  .vs-ai-rank-run-btn {
     margin-left: auto; padding: 6px 12px;
     border: 1px solid oklch(68% 0.11 155);
     background: oklch(96% 0.035 155); color: oklch(36% 0.11 155);
     border-radius: 999px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 700;
     white-space: nowrap;
   }
+  .vs-ai-rank-run-btn { margin-left: 0; }
   .vs-ai-rank-debug-btn:hover,
-  .vs-ai-rank-debug-btn:focus-visible {
+  .vs-ai-rank-debug-btn:focus-visible,
+  .vs-ai-rank-run-btn:hover,
+  .vs-ai-rank-run-btn:focus-visible {
     background: oklch(92% 0.055 155); outline: none;
   }
+  .vs-ai-rank-run-btn:disabled { cursor: wait; opacity: 0.72; }
   .vs-sample { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
   .vs-warning { padding: 8px 12px; background: oklch(96% 0.05 85);
     border-left: 3px solid oklch(72% 0.14 80); border-radius: 6px;

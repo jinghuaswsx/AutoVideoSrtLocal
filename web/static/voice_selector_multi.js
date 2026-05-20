@@ -53,6 +53,7 @@
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
   const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
+  const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");
   const aiRankModalEl = document.getElementById("vs-ai-rank-modal");
   const aiRankCloseBtn = document.getElementById("vs-ai-rank-close-btn");
   const aiRankModalStatus = document.getElementById("vs-ai-rank-modal-status");
@@ -409,6 +410,8 @@
   let similarityRankMap = new Map();
   let voiceAiRankDebug = null;
   let voiceAiRankStatus = "";
+  let voiceAiRankCacheKey = "all";
+  let voiceAiRankRerunning = false;
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -511,12 +514,46 @@
     return !!(aiRankModalEl && !aiRankModalEl.hidden);
   }
 
-  function updateVoiceAiRankDebugButton(status) {
-    voiceAiRankStatus = status || voiceAiRankStatus || "";
-    if (!aiRankDebugBtn) return;
-    const hasDebug = !!voiceAiRankDebug;
-    aiRankDebugBtn.hidden = !hasDebug;
-    aiRankDebugBtn.disabled = !hasDebug;
+  function currentVoiceAiRankGender() {
+    return activeGender === "male" || activeGender === "female" ? activeGender : null;
+  }
+
+  function voiceAiRankConditionLabel() {
+    if (voiceAiRankCacheKey === "male" || activeGender === "male") return "男声";
+    if (voiceAiRankCacheKey === "female" || activeGender === "female") return "女声";
+    return "全部音色";
+  }
+
+  function supportsManualVoiceAiRanking() {
+    return apiBase === "/api/english-redub";
+  }
+
+  function updateVoiceAiRankControls() {
+    const label = voiceAiRankConditionLabel();
+    if (aiRankDebugBtn) {
+      aiRankDebugBtn.hidden = false;
+      aiRankDebugBtn.disabled = false;
+      aiRankDebugBtn.title = voiceAiRankDebug
+        ? `查看${label}的大模型音色选择排名`
+        : `${label}暂无大模型排名结果`;
+    }
+    if (aiRankRunBtn) {
+      aiRankRunBtn.hidden = false;
+      aiRankRunBtn.disabled = voiceAiRankRerunning || !supportsManualVoiceAiRanking();
+      aiRankRunBtn.textContent = voiceAiRankRerunning ? "AI排名中..." : "重新AI排名";
+      aiRankRunBtn.title = supportsManualVoiceAiRanking()
+        ? `${label}缓存优先；没有缓存时才调用大模型`
+        : "当前模块暂不支持手动重新AI排名";
+    }
+  }
+
+  function applyVoiceAiRankPayload(data) {
+    if (!data) return;
+    setVoiceMatchCandidates(data.candidates || []);
+    voiceAiRankDebug = data.voice_ai_rank_debug || null;
+    voiceAiRankStatus = data.voice_ai_rank_status || "";
+    voiceAiRankCacheKey = data.voice_ai_rank_cache_key || currentVoiceAiRankGender() || "all";
+    updateVoiceAiRankControls();
   }
 
   function setAiRankTab(name) {
@@ -599,7 +636,7 @@
 
   function renderVoiceAiRankDebugModal(tab) {
     const debug = voiceAiRankDebug || {};
-    if (aiRankModalStatus) aiRankModalStatus.textContent = voiceAiRankStatus || debug.status || "done";
+    if (aiRankModalStatus) aiRankModalStatus.textContent = voiceAiRankStatus || debug.status || "未运行";
     if (aiRankRequestVisual) aiRankRequestVisual.innerHTML = renderVoiceAiRankRequestVisual(debug);
     if (aiRankRequestRaw) aiRankRequestRaw.textContent = prettyJson((debug.request || {}).raw || {});
     if (aiRankResultVisual) aiRankResultVisual.innerHTML = renderVoiceAiRankResultVisual(debug);
@@ -608,7 +645,7 @@
   }
 
   function openVoiceAiRankModal(tab) {
-    if (!aiRankModalEl || !voiceAiRankDebug) return;
+    if (!aiRankModalEl) return;
     renderVoiceAiRankDebugModal(tab || "request");
     aiRankModalEl.hidden = false;
     document.body.classList.add("vs-ai-rank-modal-open");
@@ -800,9 +837,7 @@
     try {
       const data = await fetchVoiceLibraryPage(pageToLoad);
       if (!data || seq !== libraryRequestSeq) return;
-      setVoiceMatchCandidates(data.candidates || []);
-      voiceAiRankDebug = data.voice_ai_rank_debug || null;
-      updateVoiceAiRankDebugButton(data.voice_ai_rank_status || "");
+      applyVoiceAiRankPayload(data);
       mergeVoiceItems(allItems, data.items || [], loadedVoiceIds);
       selectedVoiceId = data.selected_voice_id || null;
       if (selectedVoiceId && !selectedVoiceName) {
@@ -1146,6 +1181,35 @@
     selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
   }
 
+  async function rerunVoiceAiRanking() {
+    if (voiceAiRankRerunning) return;
+    if (!supportsManualVoiceAiRanking()) return;
+    voiceAiRankRerunning = true;
+    updateVoiceAiRankControls();
+    try {
+      const resp = await fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({ gender: currentVoiceAiRankGender() }),
+      });
+      if (!resp.ok) {
+        alert("AI排名失败：" + (await resp.text()));
+        return;
+      }
+      const data = await resp.json();
+      applyVoiceAiRankPayload(data);
+      mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
+      render();
+      openVoiceAiRankModal("result");
+    } catch (err) {
+      console.error("[voice-selector] AI ranking failed:", err);
+      alert("AI排名网络错误");
+    } finally {
+      voiceAiRankRerunning = false;
+      updateVoiceAiRankControls();
+    }
+  }
+
   function updateLaunchState() {
     const ready = launched ? false : !!selectedVoiceId;
     launchBtn.disabled = !ready;
@@ -1247,6 +1311,7 @@
   if (openModalBtn) openModalBtn.addEventListener("click", openVoiceModal);
   if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVoiceModal);
   if (aiRankDebugBtn) aiRankDebugBtn.addEventListener("click", () => openVoiceAiRankModal("request"));
+  if (aiRankRunBtn) aiRankRunBtn.addEventListener("click", rerunVoiceAiRanking);
   if (aiRankCloseBtn) aiRankCloseBtn.addEventListener("click", closeVoiceAiRankModal);
   if (modalEl) {
     modalEl.addEventListener("click", e => {
@@ -1292,11 +1357,9 @@
       });
       if (resp.ok) {
         const data = await resp.json();
-        setVoiceMatchCandidates(data.candidates || []);
+        applyVoiceAiRankPayload(data);
         // 把后端给的候选完整行 merge 进当前动态页集合。
         // 候选可能不在已加载的 30 个普通音色里，但仍要置顶可选。
-        voiceAiRankDebug = null;
-        updateVoiceAiRankDebugButton("stale_after_rematch");
         mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
         render();
       } else if (resp.status !== 409) {

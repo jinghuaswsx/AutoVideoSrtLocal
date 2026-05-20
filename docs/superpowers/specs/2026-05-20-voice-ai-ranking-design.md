@@ -65,6 +65,7 @@
 - 音色大模型排名继续走统一入口 `appcore.llm_client.invoke_generate`，由 `appcore.ai_billing.log_request` 写入 `usage_logs`，并将脱敏请求/响应写入 `usage_log_payloads`。
 - `llm_client` 会把本次调用写入后的 `usage_log_id` 放回结果；业务层写入 `voice_ai_rank_usage_log_id`，并同步放入 `voice_ai_rank_debug.usage_log_id` 与结果原始调试信息，方便从任务页面反查 API 调用日志。
 - 账单 `billing_extra` 固定标记 `source=voice_ai_ranking`，并携带 `task_id`、`candidate_limit`、`candidate_count`、`media_count`。use case 仍为 `voice_selection.assess`，价格表沿用 `openrouter / google/gemini-3.5-flash` token 计费；若 OpenRouter 响应返回 cost，则账单优先使用响应成本。
+
 ## 2026-05-20 Multi / Omni 补充
 
 - Multi-language video translation and Omni video translation use the same
@@ -78,3 +79,11 @@
   `/api/multi-translate/<task_id>/voice-ai-ranking` and
   `/api/omni-translate/<task_id>/voice-ai-ranking`, matching the English Redub
   rerun contract and accepting optional `candidate_limit`.
+
+## 2026-05-20 性别筛选缓存补充
+
+- 音色选择器存在 3 个 AI 排名场景：全部音色、男声、女声。每个场景最多触发一次大模型排名，总计最多 3 次；后续再点同一场景的 AI 排名按钮只读取项目状态缓存。
+- 项目 state 新增 `voice_ai_rank_cache`，按 `all` / `male` / `female` 存储该场景的候选签名、排名结果、带 `llm_rank` 的候选列表、debug 报文、模型、provider 和状态。
+- 点击男声或女声时，后端先重算当前性别候选，再查对应缓存；命中时把缓存里的 `llm_rank` / `llm_reason_summary` 回填到候选卡片。未命中专属缓存时，先从 `all` 的第一轮 AI 排名里筛出当前性别候选并重新压缩排名，例如第一轮 Top10 里有 5 个女声，则切换女声后展示 `AI #1..#5`；仍无可用排名时才展示无 AI 标签候选，等待用户点击「重新AI排名」。
+- 取消男声或女声筛选回到全部音色时，使用 `all` 缓存；如果初始自动 AI 排名已经完成，要在首次切换前回填到 `all` 缓存，避免切换后丢失原始排名。
+- 标题行的「大模型音色选择排名」按钮和新增「重新AI排名」按钮必须常驻。前者打开当前场景的排名/报文弹窗，没有结果时展示空态；后者对当前场景执行“缓存优先、未命中才调用大模型”的排名动作。

@@ -1,15 +1,13 @@
 """Background sidecar runner for LLM-based TTS voice ranking."""
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any
 
 from appcore import runner_lifecycle
 import appcore.task_state as task_state
+from appcore.voice_ai_rank_cache import cache_rank_result, candidate_signature
 from appcore.voice_ai_ranking import (
     VOICE_AI_MODEL,
     VOICE_AI_PROVIDER,
@@ -22,21 +20,6 @@ log = logging.getLogger(__name__)
 
 _running_signatures: set[tuple[str, str]] = set()
 _running_lock = threading.Lock()
-
-
-def candidate_signature(candidates: list[dict] | None) -> str:
-    rows: list[dict[str, Any]] = []
-    for item in list(candidates or [])[:20]:
-        voice_id = str(item.get("voice_id") or "").strip()
-        if not voice_id:
-            continue
-        rows.append({
-            "voice_id": voice_id,
-            "similarity": _stable_number(item.get("similarity")),
-            "speed_match_score": _stable_number(item.get("speed_match_score")),
-        })
-    raw = json.dumps(rows, ensure_ascii=False, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def queue_voice_ai_ranking(
@@ -173,16 +156,34 @@ def run_voice_ai_ranking_job(
 
     if not _is_current_signature(task_id, signature):
         return
+    state = task_state.get(task_id) or {}
+    ranked_candidates = result.get("candidates") or candidates
+    cache_rank_result(
+        state,
+        key=state.get("voice_ai_rank_active_key") or "all",
+        candidates=ranked_candidates,
+        rankings=result.get("rankings") or [],
+        status=result.get("status") or "done",
+        model=result.get("model") or VOICE_AI_MODEL,
+        provider=result.get("provider") or VOICE_AI_PROVIDER,
+        debug=result.get("debug"),
+        candidate_limit=result.get("candidate_limit"),
+        usage_log_id=result.get("usage_log_id"),
+    )
+    state["voice_ai_rank_candidate_signature"] = signature
     task_state.update(
         task_id,
-        voice_match_candidates=result.get("candidates") or candidates,
-        voice_ai_rankings=result.get("rankings") or [],
-        voice_ai_rank_status=result.get("status") or "done",
-        voice_ai_rank_model=result.get("model") or VOICE_AI_MODEL,
-        voice_ai_rank_provider=result.get("provider") or VOICE_AI_PROVIDER,
-        voice_ai_rank_debug=result.get("debug"),
-        voice_ai_rank_usage_log_id=result.get("usage_log_id"),
-        voice_ai_rank_candidate_signature=signature,
+        voice_match_candidates=state.get("voice_match_candidates") or ranked_candidates,
+        voice_ai_rankings=state.get("voice_ai_rankings") or [],
+        voice_ai_rank_status=state.get("voice_ai_rank_status") or "done",
+        voice_ai_rank_model=state.get("voice_ai_rank_model") or VOICE_AI_MODEL,
+        voice_ai_rank_provider=state.get("voice_ai_rank_provider") or VOICE_AI_PROVIDER,
+        voice_ai_rank_debug=state.get("voice_ai_rank_debug"),
+        voice_ai_rank_usage_log_id=state.get("voice_ai_rank_usage_log_id"),
+        voice_ai_rank_candidate_limit=state.get("voice_ai_rank_candidate_limit"),
+        voice_ai_rank_candidate_signature=state.get("voice_ai_rank_candidate_signature"),
+        voice_ai_rank_active_key=state.get("voice_ai_rank_active_key") or "all",
+        voice_ai_rank_cache=state.get("voice_ai_rank_cache") or {},
     )
 
 
@@ -192,13 +193,6 @@ def _is_current_signature(task_id: str, signature: str) -> bool:
     if current:
         return current == signature
     return candidate_signature(state.get("voice_match_candidates") or []) == signature
-
-
-def _stable_number(value: object) -> float | None:
-    try:
-        return round(float(value), 6)
-    except (TypeError, ValueError):
-        return None
 
 
 def _failure_debug(message: str, *, model_selection: dict | None = None) -> dict:

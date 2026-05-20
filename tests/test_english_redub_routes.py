@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 
@@ -355,3 +356,214 @@ def test_english_redub_analysis_route_returns_409_when_runner_is_active(
 
     assert resp.status_code == 409
     assert "正在运行" in resp.get_json()["error"]
+
+
+def test_english_redub_voice_ai_ranking_uses_cached_gender_result(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from appcore.voice_ai_rank_cache import cache_rank_result
+
+    candidates = [{"voice_id": "female-a", "similarity": 0.91}]
+    state = {
+        "target_lang": "en",
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_active_key": "female",
+    }
+    cache_rank_result(
+        state,
+        key="female",
+        candidates=[{
+            "voice_id": "female-a",
+            "similarity": 0.91,
+            "llm_rank": 1,
+            "llm_reason_summary": "更自然",
+        }],
+        rankings=[{"voice_id": "female-a", "llm_rank": 1, "reason_summary": "更自然"}],
+        status="done",
+        model="google/gemini-3.5-flash",
+        provider="openrouter",
+        debug={"status": "done", "result": {"visual": {"rankings": []}}},
+        candidate_limit=3,
+    )
+    saved = {}
+
+    monkeypatch.setattr(
+        "web.routes.english_redub._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps(state),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking.rank_voice_candidates",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("cache should skip LLM call")),
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/english-redub/task-ai/voice-ai-ranking",
+        json={"gender": "female"},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_cached"] is True
+    assert payload["voice_ai_rank_cache_key"] == "female"
+    assert payload["candidates"][0]["llm_rank"] == 1
+    assert saved["voice_ai_rank_active_key"] == "female"
+    assert saved["voice_match_candidates"][0]["llm_rank"] == 1
+
+
+def test_english_redub_rematch_applies_cached_gender_ai_rank(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from appcore.voice_ai_rank_cache import cache_rank_result
+
+    candidates = [{"voice_id": "male-a", "similarity": 0.88}]
+    state = {
+        "target_lang": "en",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+        "voice_match_candidates": [{"voice_id": "all-a", "similarity": 0.9}],
+        "voice_ai_rank_status": "done",
+        "voice_ai_rank_debug": {"status": "done"},
+        "voice_ai_rankings": [{"voice_id": "all-a", "llm_rank": 1}],
+    }
+    cache_rank_result(
+        state,
+        key="male",
+        candidates=[{
+            "voice_id": "male-a",
+            "similarity": 0.88,
+            "llm_rank": 2,
+            "llm_reason_summary": "男声缓存",
+        }],
+        rankings=[{"voice_id": "male-a", "llm_rank": 2, "reason_summary": "男声缓存"}],
+        status="done",
+        model="google/gemini-3.5-flash",
+        provider="openrouter",
+        debug={"status": "done", "result": {"visual": {"rankings": []}}},
+        candidate_limit=3,
+    )
+    saved = {}
+
+    monkeypatch.setattr(
+        "web.routes.english_redub._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps(state),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr("appcore.english_redub_settings.get_voice_match_strategy", lambda: "legacy")
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+    monkeypatch.setattr("pipeline.voice_embedding.deserialize_embedding", lambda raw: "decoded")
+    monkeypatch.setattr("pipeline.voice_match.match_candidates", lambda *args, **kwargs: candidates)
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        lambda **kwargs: [{"voice_id": "male-a", "name": "Male A", "gender": "male"}],
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/english-redub/task-ai/rematch",
+        json={"gender": "male"},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_cached"] is True
+    assert payload["voice_ai_rank_cache_key"] == "male"
+    assert payload["candidates"][0]["llm_rank"] == 2
+    assert payload["voice_ai_rank_status"] == "done"
+    assert saved["voice_ai_rank_active_key"] == "male"
+    assert saved["voice_match_candidates"][0]["llm_rank"] == 2
+
+
+def test_english_redub_rematch_derives_gender_rank_from_all_ai_rank_cache(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from appcore.voice_ai_rank_cache import cache_rank_result
+
+    female_candidates = [
+        {"voice_id": "female-a", "similarity": 0.91},
+        {"voice_id": "female-b", "similarity": 0.89},
+        {"voice_id": "female-c", "similarity": 0.81},
+    ]
+    state = {
+        "target_lang": "en",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+    }
+    cache_rank_result(
+        state,
+        key="all",
+        candidates=[
+            {"voice_id": "male-a", "similarity": 0.95, "llm_rank": 1, "llm_reason_summary": "男声第一"},
+            {"voice_id": "female-a", "similarity": 0.91, "llm_rank": 2, "llm_reason_summary": "女声第一"},
+            {"voice_id": "male-b", "similarity": 0.9, "llm_rank": 3, "llm_reason_summary": "男声第二"},
+            {"voice_id": "female-b", "similarity": 0.89, "llm_rank": 4, "llm_reason_summary": "女声第二"},
+        ],
+        rankings=[
+            {"voice_id": "male-a", "llm_rank": 1, "reason_summary": "男声第一"},
+            {"voice_id": "female-a", "llm_rank": 2, "reason_summary": "女声第一"},
+            {"voice_id": "male-b", "llm_rank": 3, "reason_summary": "男声第二"},
+            {"voice_id": "female-b", "llm_rank": 4, "reason_summary": "女声第二"},
+        ],
+        status="done",
+        model="google/gemini-3.5-flash",
+        provider="openrouter",
+        debug={"status": "done", "result": {"visual": {"rankings": []}}},
+        candidate_limit=10,
+    )
+    saved = {}
+
+    monkeypatch.setattr(
+        "web.routes.english_redub._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps(state),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.english_redub.save_project_state",
+        lambda task_id, payload, execute_func=None: saved.update(payload),
+    )
+    monkeypatch.setattr("appcore.english_redub_settings.get_voice_match_strategy", lambda: "legacy")
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+    monkeypatch.setattr("pipeline.voice_embedding.deserialize_embedding", lambda raw: "decoded")
+    monkeypatch.setattr("pipeline.voice_match.match_candidates", lambda *args, **kwargs: female_candidates)
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        lambda **kwargs: [
+            {"voice_id": "female-a", "name": "Female A", "gender": "female"},
+            {"voice_id": "female-b", "name": "Female B", "gender": "female"},
+            {"voice_id": "female-c", "name": "Female C", "gender": "female"},
+        ],
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/english-redub/task-ai/rematch",
+        json={"gender": "female"},
+    )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_cache_key"] == "female"
+    assert payload["voice_ai_rank_status"] == "derived_from_all"
+    assert [(row["voice_id"], row.get("llm_rank")) for row in payload["candidates"]] == [
+        ("female-a", 1),
+        ("female-b", 2),
+        ("female-c", None),
+    ]
+    assert saved["voice_ai_rank_active_key"] == "female"
+    assert saved["voice_ai_rankings"] == [
+        {"voice_id": "female-a", "llm_rank": 1, "reason_summary": "女声第一"},
+        {"voice_id": "female-b", "llm_rank": 2, "reason_summary": "女声第二"},
+    ]

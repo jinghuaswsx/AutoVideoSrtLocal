@@ -87,6 +87,8 @@ def test_run_voice_ai_ranking_job_persists_result_for_current_candidate_signatur
     assert payload["voice_ai_rank_status"] == "done"
     assert payload["voice_ai_rank_provider"] == "openrouter"
     assert payload["voice_ai_rank_usage_log_id"] == 34567
+    assert payload["voice_ai_rank_cache"]["all"]["candidates"] == enriched
+    assert payload["voice_ai_rank_cache"]["all"]["usage_log_id"] == 34567
 
 
 def test_run_voice_ai_ranking_job_ignores_stale_candidates(tmp_path):

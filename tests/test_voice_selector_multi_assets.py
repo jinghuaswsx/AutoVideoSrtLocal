@@ -143,6 +143,37 @@ def test_voice_selector_multi_exposes_llm_rank_debug_modal():
     assert "voice_ai_rank_debug" in SCRIPT
 
 
+def test_voice_selector_multi_keeps_ai_rank_controls_visible_and_adds_rerank_button():
+    heading_block = TEMPLATE[
+        TEMPLATE.index('<div class="vs-heading">'):
+        TEMPLATE.index('</div>', TEMPLATE.index('<div class="vs-heading">'))
+    ]
+
+    assert 'id="vs-ai-rank-debug-btn"' in heading_block
+    assert 'id="vs-ai-rank-run-btn"' in heading_block
+    assert heading_block.index('id="vs-ai-rank-debug-btn"') < heading_block.index('id="vs-ai-rank-run-btn"')
+    assert 'id="vs-ai-rank-debug-btn" hidden' not in heading_block
+    assert 'id="vs-ai-rank-run-btn" hidden' not in heading_block
+    assert "function updateVoiceAiRankControls()" in SCRIPT
+    assert "aiRankDebugBtn.hidden = false;" in SCRIPT
+    assert "aiRankRunBtn.hidden = false;" in SCRIPT
+
+
+def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
+    rematch_block = SCRIPT[
+        SCRIPT.index("async function onGenderPillClick"):
+        SCRIPT.index("launchBtn.addEventListener", SCRIPT.index("async function onGenderPillClick"))
+    ]
+
+    assert 'const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");' in SCRIPT
+    assert "function currentVoiceAiRankGender()" in SCRIPT
+    assert "function applyVoiceAiRankPayload(data)" in SCRIPT
+    assert "async function rerunVoiceAiRanking()" in SCRIPT
+    assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {" in SCRIPT
+    assert "body: JSON.stringify({ gender: currentVoiceAiRankGender() })," in SCRIPT
+    assert "applyVoiceAiRankPayload(data);" in rematch_block
+
+
 def test_voice_selector_multi_exposes_full_voice_modal():
     assert 'id="vs-open-modal-btn"' in TEMPLATE
     assert 'id="vs-voice-modal"' in TEMPLATE
