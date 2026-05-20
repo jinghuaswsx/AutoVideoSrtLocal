@@ -25,6 +25,16 @@ from appcore.task_recovery import (
     recover_project_if_needed,
     recover_task_if_needed,
 )
+from appcore.voice_ai_rank_cache import (
+    VOICE_AI_RANK_NOT_RUN_STATUS,
+    apply_cached_rank_result,
+    cache_rank_result,
+    derive_rank_result_from_all_cache,
+    ensure_current_rank_cached,
+    get_cached_rank_result,
+    normalize_rank_condition,
+    set_active_unranked_candidates,
+)
 from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
     SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
@@ -1365,6 +1375,8 @@ def rematch_voice(task_id: str):
     gender = (body.get("gender") or "").strip().lower() or None
     if gender and gender not in {"male", "female"}:
         return _json_response({"error": "gender must be male|female|null"}, 400)
+    rank_key = normalize_rank_condition(gender)
+    ensure_current_rank_cached(state, "all")
 
     embedding_b64 = state.get("voice_match_query_embedding")
     if not embedding_b64:
@@ -1405,31 +1417,37 @@ def rematch_voice(task_id: str):
         fetch_voices_by_ids(language=lang, voice_ids=candidate_ids)
         if candidate_ids else []
     )
+    cached_entry = get_cached_rank_result(state, rank_key, candidates)
+    cached = cached_entry is not None
+    if cached_entry:
+        apply_cached_rank_result(state, rank_key, cached_entry)
+        candidates = state.get("voice_match_candidates") or candidates
+    else:
+        derived_entry = derive_rank_result_from_all_cache(state, key=rank_key, candidates=candidates)
+        if derived_entry:
+            apply_cached_rank_result(state, rank_key, derived_entry)
+            candidates = state.get("voice_match_candidates") or candidates
+        else:
+            set_active_unranked_candidates(
+                state,
+                key=rank_key,
+                candidates=candidates,
+                status=VOICE_AI_RANK_NOT_RUN_STATUS,
+            )
 
     if is_owner:
-        state["voice_match_candidates"] = candidates
-        state["voice_ai_rankings"] = []
-        state["voice_ai_rank_status"] = "stale_after_rematch"
-        state["voice_ai_rank_debug"] = None
-        state["voice_ai_rank_usage_log_id"] = None
         save_project_state(task_id, state, execute_func=db_execute)
         # 同步内存态，避免其他路径读到旧值
         try:
             from appcore import task_state as _ts
-            _ts.update(
-                task_id,
-                voice_match_candidates=candidates,
-                voice_ai_rankings=[],
-                voice_ai_rank_status="stale_after_rematch",
-                voice_ai_rank_debug=None,
-                voice_ai_rank_usage_log_id=None,
-            )
+            _ts.update(task_id, **_voice_ai_rank_state_updates(state))
         except Exception:
             pass
 
     return _json_response({
         "ok": True, "gender": gender,
         "candidates": candidates, "extra_items": extra_items,
+        **_voice_ai_rank_response_fields(state, cached=cached),
     })
 
 
@@ -1477,6 +1495,37 @@ def _resolve_voice_ai_source_audio_path(state: dict) -> Path | None:
     return None
 
 
+def _voice_ai_rank_state_updates(state: dict) -> dict:
+    return {
+        "voice_match_candidates": state.get("voice_match_candidates") or [],
+        "voice_ai_rankings": state.get("voice_ai_rankings") or [],
+        "voice_ai_rank_status": state.get("voice_ai_rank_status") or "",
+        "voice_ai_rank_model": state.get("voice_ai_rank_model") or "",
+        "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
+        "voice_ai_rank_candidate_limit": state.get("voice_ai_rank_candidate_limit"),
+        "voice_ai_rank_debug": state.get("voice_ai_rank_debug"),
+        "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
+        "voice_ai_rank_candidate_signature": state.get("voice_ai_rank_candidate_signature"),
+        "voice_ai_rank_active_key": state.get("voice_ai_rank_active_key") or "all",
+        "voice_ai_rank_cache": state.get("voice_ai_rank_cache") or {},
+    }
+
+
+def _voice_ai_rank_response_fields(state: dict, *, cached: bool) -> dict:
+    return {
+        "voice_ai_rankings": state.get("voice_ai_rankings") or [],
+        "voice_ai_rank_status": state.get("voice_ai_rank_status") or "",
+        "voice_ai_rank_model": state.get("voice_ai_rank_model") or "",
+        "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
+        "voice_ai_rank_debug": state.get("voice_ai_rank_debug"),
+        "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
+        "voice_ai_rank_cache_key": state.get("voice_ai_rank_active_key") or "all",
+        "voice_ai_rank_cached": cached,
+        "candidate_limit": state.get("voice_ai_rank_candidate_limit"),
+        "candidates": state.get("voice_match_candidates") or [],
+    }
+
+
 @bp.route("/api/omni-translate/<task_id>/voice-ai-ranking", methods=["POST"])
 @login_required
 @admin_required
@@ -1485,14 +1534,29 @@ def rerun_voice_ai_ranking(task_id: str):
     if not row:
         abort(404)
     state = json.loads(row["state_json"] or "{}")
+    body = request.get_json(silent=True) or {}
+    rank_key = normalize_rank_condition(
+        body.get("gender") if "gender" in body else state.get("voice_ai_rank_active_key")
+    )
+    ensure_current_rank_cached(state, "all")
     candidates = state.get("voice_match_candidates") or []
     if not candidates:
         return _json_response({"error": "voice_match_candidates is empty"}, 400)
+
+    cached_entry = get_cached_rank_result(state, rank_key, candidates)
+    if cached_entry:
+        apply_cached_rank_result(state, rank_key, cached_entry)
+        save_project_state(task_id, state, execute_func=db_execute)
+        task_state.update(task_id, **_voice_ai_rank_state_updates(state))
+        return _json_response({
+            "ok": True,
+            **_voice_ai_rank_response_fields(state, cached=True),
+        })
+
     source_audio_path = _resolve_voice_ai_source_audio_path(state)
     if not source_audio_path:
         return _json_response({"error": "voice_ai_source_audio_not_found"}, 400)
 
-    body = request.get_json(silent=True) or {}
     from appcore.voice_ai_ranking import rank_voice_candidates
 
     ai_result = rank_voice_candidates(
@@ -1511,35 +1575,26 @@ def rerun_voice_ai_ranking(task_id: str):
     provider = ai_result.get("provider")
     candidate_limit = ai_result.get("candidate_limit")
     debug = ai_result.get("debug")
+    usage_log_id = ai_result.get("usage_log_id")
 
-    state["voice_match_candidates"] = updated_candidates
-    state["voice_ai_rankings"] = rankings
-    state["voice_ai_rank_status"] = status
-    state["voice_ai_rank_model"] = model
-    state["voice_ai_rank_provider"] = provider
-    state["voice_ai_rank_candidate_limit"] = candidate_limit
-    state["voice_ai_rank_debug"] = debug
-    save_project_state(task_id, state, execute_func=db_execute)
-    task_state.update(
-        task_id,
-        voice_match_candidates=updated_candidates,
-        voice_ai_rankings=rankings,
-        voice_ai_rank_status=status,
-        voice_ai_rank_model=model,
-        voice_ai_rank_provider=provider,
-        voice_ai_rank_candidate_limit=candidate_limit,
-        voice_ai_rank_debug=debug,
+    cache_rank_result(
+        state,
+        key=rank_key,
+        candidates=updated_candidates,
+        rankings=rankings,
+        status=status,
+        model=model,
+        provider=provider,
+        debug=debug,
+        candidate_limit=candidate_limit,
+        usage_log_id=usage_log_id,
     )
+    save_project_state(task_id, state, execute_func=db_execute)
+    task_state.update(task_id, **_voice_ai_rank_state_updates(state))
 
     return _json_response({
         "ok": True,
-        "voice_ai_rankings": rankings,
-        "voice_ai_rank_status": status,
-        "voice_ai_rank_model": model,
-        "voice_ai_rank_provider": provider,
-        "voice_ai_rank_debug": debug,
-        "candidate_limit": candidate_limit,
-        "candidates": updated_candidates,
+        **_voice_ai_rank_response_fields(state, cached=False),
     })
 
 

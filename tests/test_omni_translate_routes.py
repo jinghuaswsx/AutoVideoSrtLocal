@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
+from appcore.voice_ai_rank_cache import candidate_signature
+
 
 CFG_ASR_CLEAN = {
     "asr_post": "asr_clean",
@@ -283,6 +285,7 @@ def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
             "provider": "openrouter",
             "candidate_limit": 3,
             "debug": {"status": "done", "result": {"visual": {"rankings": []}}},
+            "usage_log_id": 45678,
         }
 
     monkeypatch.setattr(
@@ -303,8 +306,82 @@ def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
     assert saved["voice_ai_rankings"][0]["voice_id"] == "v2"
     assert saved["voice_match_candidates"][1]["llm_rank"] == 1
     assert saved["voice_ai_rank_provider"] == "openrouter"
+    assert saved["voice_ai_rank_usage_log_id"] == 45678
+    assert saved["voice_ai_rank_cache"]["all"]["usage_log_id"] == 45678
     assert payload["voice_ai_rank_status"] == "done"
+    assert payload["voice_ai_rank_usage_log_id"] == 45678
+    assert payload["voice_ai_rank_cache_key"] == "all"
+    assert payload["voice_ai_rank_cached"] is False
     assert payload["candidate_limit"] == 3
+
+
+def test_omni_translate_rematch_derives_gender_rankings_from_all_cache(authed_client_no_db):
+    all_candidates = [
+        {"voice_id": "voice-a", "similarity": 0.95, "gender": "male", "llm_rank": 1, "llm_reason_summary": "stable"},
+        {"voice_id": "voice-b", "similarity": 0.91, "gender": "female", "llm_rank": 2, "llm_reason_summary": "bright"},
+    ]
+    female_candidates = [{"voice_id": "voice-b", "similarity": 0.91, "gender": "female"}]
+    state = {
+        "target_lang": "de",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+        "utterances": [{"text": "hola mundo", "start_time": 0, "end_time": 1}],
+        "voice_match_candidates": all_candidates,
+        "voice_ai_rank_cache": {
+            "all": {
+                "condition": "all",
+                "candidate_signature": candidate_signature(all_candidates),
+                "candidates": all_candidates,
+                "rankings": [
+                    {"voice_id": "voice-a", "llm_rank": 1, "reason_summary": "stable"},
+                    {"voice_id": "voice-b", "llm_rank": 2, "reason_summary": "bright"},
+                ],
+                "status": "done",
+                "model": "google/gemini-3.5-flash",
+                "provider": "openrouter",
+                "debug": {"status": "done"},
+                "candidate_limit": 10,
+                "usage_log_id": 98765,
+                "source": "llm",
+            },
+        },
+    }
+    saved = {}
+    with patch(
+        "web.routes.omni_translate.db_query_one",
+        return_value={"state_json": json.dumps(state, ensure_ascii=False), "user_id": 1},
+    ), patch(
+        "web.routes.omni_translate.save_project_state",
+        side_effect=lambda task_id, payload, execute_func=None: saved.update(payload),
+    ), patch(
+        "web.routes.omni_translate.task_state.update",
+    ), patch(
+        "appcore.video_translate_defaults.resolve_default_voice",
+        return_value="default-voice-id",
+    ), patch(
+        "pipeline.voice_embedding.deserialize_embedding",
+        return_value="decoded-embedding",
+    ), patch(
+        "pipeline.voice_match_speed.match_candidates_speed_aware",
+        return_value=female_candidates,
+    ), patch(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        return_value=[{"voice_id": "voice-b", "name": "B", "gender": "female"}],
+    ):
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/task-1/rematch",
+            json={"gender": "female"},
+        )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_status"] == "derived_from_all"
+    assert payload["voice_ai_rank_cache_key"] == "female"
+    assert payload["candidates"][0]["voice_id"] == "voice-b"
+    assert payload["candidates"][0]["llm_rank"] == 1
+    assert payload["voice_ai_rankings"] == [
+        {"voice_id": "voice-b", "llm_rank": 1, "reason_summary": "bright"}
+    ]
+    assert saved["voice_ai_rank_usage_log_id"] == 98765
 
 
 def test_superadmin_omni_translate_page_renders_user_filter(authed_client_no_db):
