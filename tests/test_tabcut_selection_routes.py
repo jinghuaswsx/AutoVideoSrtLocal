@@ -41,6 +41,19 @@ def test_tabcut_video_cards_use_large_left_cover_layout():
     assert "width:90px; height:160px" not in template
 
 
+def test_tabcut_video_cards_enlarge_product_link_image_and_compact_stats():
+    from pathlib import Path
+
+    template = Path("web/templates/tabcut_selection.html").read_text(encoding="utf-8")
+
+    assert ".tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr));" in template
+    assert ".tabcut-stat-value { margin-top:2px; color:#1f2937; font-size:13px;" in template
+    assert ".tabcut-product-mini { display:grid; grid-template-columns:96px minmax(0, 1fr);" in template
+    assert ".tabcut-product-mini img, .tabcut-product-img-empty { width:96px; height:96px;" in template
+    assert "grid-template-columns:52px minmax(0, 1fr)" not in template
+    assert "width:52px; height:52px" not in template
+
+
 def test_tabcut_selection_videos_api_delegates(monkeypatch, authed_client_no_db):
     from appcore.tabcut_selection.service import TabcutResponse
 
