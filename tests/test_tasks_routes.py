@@ -67,6 +67,19 @@ def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no
     assert "翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})" in body
 
 
+def test_task_detail_header_shows_source_filename_and_product_code_copy_actions(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcCopyText" in body
+    assert "function tcRenderDetailIdentityRows" in body
+    assert "素材文件名" in body
+    assert "Product code" in body
+    assert "source_media_filename" in body
+    assert "tcCopyButton(task.source_media_filename" in body
+    assert "tcCopyButton(task.product_code" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
