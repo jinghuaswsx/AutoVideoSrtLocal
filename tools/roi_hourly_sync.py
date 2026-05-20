@@ -264,6 +264,38 @@ META_PURCHASE_VALUE_CONTAINS = (
     ("成效", "价值"),
     ("result", "value"),
 )
+META_PURCHASE_VALUE_EXCLUDED_KEY_PARTS = (
+    "平均",
+    "average",
+    "avg",
+)
+META_PURCHASE_ROAS_COLUMNS = (
+    "广告花费回报 (ROAS) - 购物",
+    "成效广告花费回报",
+    "Purchase ROAS (return on ad spend)",
+    "ROAS",
+)
+META_PURCHASE_ROAS_CONTAINS = (
+    ("roas",),
+    ("回报",),
+)
+META_AVERAGE_PURCHASE_VALUE_COLUMNS = (
+    "平均购物转化价值",
+    "Average purchase conversion value",
+    "Average purchase value",
+)
+META_AVERAGE_PURCHASE_VALUE_CONTAINS = (
+    ("平均", "购物", "价值"),
+    ("average", "purchase", "value"),
+)
+META_PURCHASE_RESULT_COLUMNS = (
+    "成效",
+    "Results",
+)
+META_PURCHASE_RESULT_CONTAINS = (
+    ("result",),
+    ("成效",),
+)
 
 
 def _safe_report_number(value: Any) -> float:
@@ -278,12 +310,63 @@ def _safe_report_number(value: Any) -> float:
         return 0.0
 
 
-def _meta_purchase_value_from_row(row: dict[str, Any]) -> float:
-    return round(_safe_report_number(_pick_value(
+def _pick_meta_purchase_value(row: dict[str, Any]) -> Any:
+    for key in META_PURCHASE_VALUE_COLUMNS:
+        if key in row:
+            return row.get(key)
+    for key, value in row.items():
+        normalized = str(key or "").strip().lower()
+        if any(part in normalized for part in META_PURCHASE_VALUE_EXCLUDED_KEY_PARTS):
+            continue
+        for parts in META_PURCHASE_VALUE_CONTAINS:
+            if all(part.lower() in normalized for part in parts):
+                return value
+    return None
+
+
+def _meta_purchase_roas_from_row(row: dict[str, Any]) -> float:
+    return _safe_report_number(_pick_value(
         row,
-        META_PURCHASE_VALUE_COLUMNS,
-        META_PURCHASE_VALUE_CONTAINS,
-    )), 4)
+        META_PURCHASE_ROAS_COLUMNS,
+        META_PURCHASE_ROAS_CONTAINS,
+    ))
+
+
+def _meta_average_purchase_value_from_row(row: dict[str, Any]) -> float:
+    return _safe_report_number(_pick_value(
+        row,
+        META_AVERAGE_PURCHASE_VALUE_COLUMNS,
+        META_AVERAGE_PURCHASE_VALUE_CONTAINS,
+    ))
+
+
+def _meta_purchase_result_count_from_row(row: dict[str, Any]) -> int:
+    return int(round(_safe_report_number(_pick_value(
+        row,
+        META_PURCHASE_RESULT_COLUMNS,
+        META_PURCHASE_RESULT_CONTAINS,
+    ))))
+
+
+def _meta_purchase_value_from_row(
+    row: dict[str, Any],
+    *,
+    spend: float | None = None,
+    result_count: int | None = None,
+) -> float:
+    value = round(_safe_report_number(_pick_meta_purchase_value(row)), 4)
+    if value > 0:
+        return value
+    spend_value = float(spend or 0)
+    if spend_value > 0:
+        roas = _meta_purchase_roas_from_row(row)
+        if roas > 0:
+            return round(spend_value * roas, 4)
+    count = int(result_count) if result_count is not None else _meta_purchase_result_count_from_row(row)
+    avg_value = _meta_average_purchase_value_from_row(row)
+    if count > 0 and avg_value > 0:
+        return round(avg_value * count, 4)
+    return 0.0
 
 
 def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
@@ -606,7 +689,11 @@ def _import_meta_realtime_campaign_rows_legacy(
             ("成效", "Results"),
             (("result",), ("成效",)),
         ))))
-        purchase_value = _meta_purchase_value_from_row(row)
+        purchase_value = _meta_purchase_value_from_row(
+            row,
+            spend=spend,
+            result_count=result_count,
+        )
         impressions = int(round(_safe_report_number(_pick_value(
             row,
             ("展示次数", "Impressions"),
@@ -702,7 +789,11 @@ def _import_meta_realtime_campaign_rows(
             ("成效", "Results"),
             (("result",), ("成效",)),
         ))))
-        purchase_value = _meta_purchase_value_from_row(row)
+        purchase_value = _meta_purchase_value_from_row(
+            row,
+            spend=spend,
+            result_count=result_count,
+        )
         impressions = int(round(_safe_report_number(_pick_value(
             row,
             ("展示次数", "Impressions"),

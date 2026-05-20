@@ -364,7 +364,12 @@ def _common_metrics(row: dict[str, Any]) -> dict[str, Any]:
         ("已花费金额 (USD)", "花费金额 (USD)", "Amount spent (USD)", "Amount spent", "Spend"),
         (("amount", "spent"), ("花费",), ("spend",)),
     )), 4)
-    purchase_value = realtime_sync._meta_purchase_value_from_row(row)
+    result_count = int(round(_num(_pick(row, ("成效", "Results"), (("result",), ("成效",))))))
+    purchase_value = realtime_sync._meta_purchase_value_from_row(
+        row,
+        spend=spend,
+        result_count=result_count,
+    )
     roas = _num(_pick(
         row,
         (
@@ -376,7 +381,7 @@ def _common_metrics(row: dict[str, Any]) -> dict[str, Any]:
         (("roas",), ("回报",)),
     ))
     return {
-        "result_count": int(round(_num(_pick(row, ("成效", "Results"), (("result",), ("成效",)))))),
+        "result_count": result_count,
         "result_metric": _text(_pick(row, ("成效指标", "Result indicator", "Result type"), (("result", "indicator"), ("成效", "指标"))) or "", 128) or None,
         "spend_usd": spend,
         "purchase_value_usd": purchase_value,

@@ -415,6 +415,158 @@ def test_get_realtime_roas_overview_aggregates_date_range(monkeypatch):
     assert result["period"]["day_definition"] == "meta_ad_platform_business_day_range"
 
 
+def test_realtime_range_summary_uses_canonical_meta_purchase_value(monkeypatch):
+    """范围分支 Meta ROAS 必须用 roas_purchase 纠正平均购买价值误写。
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md#7-2026-05-20-实时大盘-meta-roas-口径修复
+    """
+
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-05-07"),
+                    "order_count": 78,
+                    "line_count": 79,
+                    "units": 91,
+                    "order_revenue": 1918.09,
+                    "line_revenue": 1918.09,
+                    "shipping_revenue": 634.29,
+                    "last_order_at": datetime(2026, 5, 8, 15, 57),
+                    "last_order_updated_at": datetime(2026, 5, 8, 16, 30),
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            assert "roas_purchase" in sql
+            assert "purchase_value_usd" in sql
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-05-07"),
+                    "ad_spend": 1460.07,
+                    "meta_purchase_value": 1752.08,
+                    "meta_purchases": 71,
+                    "last_ad_updated_at": datetime(2026, 5, 8, 16, 30),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-08",
+        now=datetime(2026, 5, 9, 12, 0),
+    )
+
+    assert result["summary"]["ad_spend"] == 1460.07
+    assert result["summary"]["meta_purchase_value"] == 1752.08
+    assert result["summary"]["meta_roas"] == round(1752.08 / 1460.07, 4)
+
+
+def test_realtime_range_summary_uses_order_fallback_when_meta_purchase_columns_missing(monkeypatch):
+    """Meta 日终行缺购买价值/ROAS 列时，实时大盘 Meta ROAS 分子用既有订单兜底。
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md#7-2026-05-20-实时大盘-meta-roas-口径修复
+    """
+
+    target = oa._parse_meta_date("2026-05-07")
+
+    def fake_query(sql, args=()):
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": target,
+                    "order_count": 10,
+                    "line_count": 10,
+                    "units": 10,
+                    "order_revenue": 300.0,
+                    "line_revenue": 300.0,
+                    "shipping_revenue": 0.0,
+                    "last_order_at": datetime(2026, 5, 8, 10, 0),
+                    "last_order_updated_at": datetime(2026, 5, 8, 10, 5),
+                }
+            ]
+        if "SELECT meta_business_date, ad_account_id, matched_product_code" in sql:
+            return [
+                {
+                    "meta_business_date": target,
+                    "ad_account_id": "1861285821213497",
+                    "matched_product_code": "sonic-lens-refresher-rjc",
+                    "product_id": 316,
+                    "spend_usd": 100.0,
+                    "purchase_value_usd": 0.0,
+                    "result_count": 10,
+                    "updated_at": datetime(2026, 5, 8, 16, 30),
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": target,
+                    "ad_spend": 100.0,
+                    "meta_purchase_value": 0.0,
+                    "meta_purchases": 10,
+                    "last_ad_updated_at": datetime(2026, 5, 8, 16, 30),
+                }
+            ]
+        return []
+
+    def fake_fill_purchase_value_from_orders(rows, *, level, start_date, end_date, accounts_loader=None):
+        assert level == "campaign"
+        assert start_date == target
+        assert end_date == target
+        assert len(rows) == 1
+        rows[0]["purchase_value_usd"] = 300.0
+        return {"fallback_row_count": 1, "fallback_revenue_total_usd": 300.0}
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "fill_purchase_value_from_orders", fake_fill_purchase_value_from_orders)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-08",
+        now=datetime(2026, 5, 10, 12, 0),
+    )
+
+    assert result["summary"]["ad_spend"] == 100.0
+    assert result["summary"]["meta_purchase_value"] == 300.0
+    assert result["summary"]["meta_roas"] == 3.0
+    assert result["summary"]["meta_purchase_fallback_row_count"] == 1
+
+
+def test_realtime_single_day_summary_includes_meta_roas(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql or "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "GROUP BY HOUR" in sql:
+            return []
+        if "SELECT meta_business_date, ad_account_id, matched_product_code" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "ad_spend": 200.0,
+                    "meta_purchase_value": 300.0,
+                    "meta_purchases": 6,
+                    "last_ad_updated_at": datetime(2026, 5, 8, 16, 30),
+                }
+            ]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-07",
+        now=datetime(2026, 5, 10, 12, 0),
+    )
+
+    assert result["summary"]["meta_roas"] == 1.5
+
+
 def test_realtime_range_summary_uses_realtime_ads_for_current_business_day(monkeypatch):
     """本周/本月范围包含当前业务日时，广告费必须补实时表兜底。"""
     current_business_date = oa._parse_meta_date("2026-05-19")
@@ -1434,6 +1586,57 @@ def test_realtime_overview_endpoint_attaches_data_quality(authed_client_no_db, m
     # business_date 来自 period.date
     from datetime import date as _date
     assert captured_kwargs["business_date"] == _date(2026, 4, 29)
+
+
+def test_realtime_overview_endpoint_marks_meta_purchase_fallback_warning(
+    authed_client_no_db,
+    monkeypatch,
+):
+    """Meta purchase 订单兜底不能被 data_quality 静默标为 ok。"""
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        return {
+            "period": {"date": "2026-05-07"},
+            "scope": {"ad_source": "meta_ad_daily_campaign_metrics"},
+            "summary": {
+                "order_revenue": 0,
+                "ad_spend": 100,
+                "meta_purchase_value": 300,
+                "true_roas": None,
+                "meta_purchase_fallback_row_count": 1,
+                "meta_purchase_fallback_revenue_total_usd": 300.0,
+            },
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    def fake_build_for_realtime_overview(**kwargs):
+        return {
+            "status": "ok",
+            "source_mode": "daily_final",
+            "business_date_from": "2026-05-07",
+            "business_date_to": "2026-05-07",
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-05-08T18:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        fake_build_for_realtime_overview,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/realtime-overview?date=2026-05-07")
+    payload = response.get_json()
+
+    assert payload["data_quality"]["status"] == "warning"
+    assert payload["data_quality"]["warnings"][0]["code"] == "meta_purchase_value_order_fallback"
 
 
 def test_realtime_overview_endpoint_attaches_range_data_quality(

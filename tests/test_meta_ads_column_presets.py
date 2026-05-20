@@ -91,6 +91,52 @@ def test_daily_final_metrics_reads_meta_result_value_aliases():
     assert metrics["roas_purchase"] == 1.19
 
 
+def test_daily_final_metrics_ignore_average_purchase_value_as_total():
+    """平均购物转化价值不能被当作总购物转化价值。
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md#7-2026-05-20-实时大盘-meta-roas-口径修复
+    """
+    from tools import meta_daily_final_sync
+
+    metrics = meta_daily_final_sync._common_metrics({
+        "已花费金额 (USD)": "$1460.07",
+        "平均购物转化价值": "$31.51",
+    })
+
+    assert metrics["purchase_value_usd"] == 0.0
+    assert metrics["roas_purchase"] is None
+
+
+def test_daily_final_metrics_derive_purchase_value_from_average_when_count_present():
+    """只有平均购物价值和购买数时，用平均值 * 购买数恢复 Meta 总购买价值。"""
+    from tools import meta_daily_final_sync
+
+    metrics = meta_daily_final_sync._common_metrics({
+        "成效": "2",
+        "已花费金额 (USD)": "$100.00",
+        "平均购物转化价值": "$31.51",
+    })
+
+    assert metrics["purchase_value_usd"] == 63.02
+    assert metrics["roas_purchase"] is None
+
+
+def test_daily_final_metrics_derive_purchase_value_from_roas_when_total_missing():
+    """缺总值列但有 Meta ROAS 时，用 spend * ROAS 反推总购物价值。"""
+    from tools import meta_daily_final_sync
+
+    metrics = meta_daily_final_sync._common_metrics({
+        "成效": "71",
+        "已花费金额 (USD)": "$1460.07",
+        "平均购物转化价值": "$31.51",
+        "成效广告花费回报": "1.20",
+    })
+
+    assert metrics["purchase_value_usd"] == 1752.084
+    assert metrics["roas_purchase"] == 1.2
+
+
 def test_realtime_metrics_reads_meta_result_value_aliases():
     from tools import roi_hourly_sync
 
@@ -100,6 +146,16 @@ def test_realtime_metrics_reads_meta_result_value_aliases():
     })
 
     assert value == 84.11
+
+
+def test_realtime_metrics_ignore_average_purchase_value_alias():
+    from tools import roi_hourly_sync
+
+    value = roi_hourly_sync._meta_purchase_value_from_row({
+        "平均购物转化价值": "$31.51",
+    })
+
+    assert value == 0.0
 
 
 def test_export_csv_validation_accepts_result_value_and_roas_aliases(tmp_path):

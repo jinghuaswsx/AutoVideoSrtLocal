@@ -47,6 +47,7 @@ _LOGISTICS_MISSING_CONDITION_SQL = (
     "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
     "OR COALESCE(p.shipping_cost_usd, 0) = 0))"
 )
+_META_PURCHASE_ROAS_CORRECTION_FACTOR = 1.5
 
 # 实时大盘店铺筛选：默认双店，site_codes 取值必须命中此白名单。
 # 详细设计：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
@@ -108,6 +109,27 @@ def _resolve_ad_account_ids_for_sites(site_codes: tuple[str, ...]) -> list[str] 
             if account_id and account_id not in account_ids:
                 account_ids.append(account_id)
     return account_ids
+
+
+def _canonical_meta_purchase_value_sql(prefix: str = "") -> str:
+    """Meta purchase value expression for daily campaign tables.
+
+    If a historical row stored average purchase value in ``purchase_value_usd``
+    but still has a valid Meta ROAS column, recover total purchase value from
+    ``spend_usd * roas_purchase``. Realtime tables do not have ``roas_purchase``
+    and must not use this expression.
+    """
+    qualifier = f"{prefix}." if prefix else ""
+    spend = f"COALESCE({qualifier}spend_usd, 0)"
+    purchase = f"COALESCE({qualifier}purchase_value_usd, 0)"
+    roas = f"COALESCE({qualifier}roas_purchase, 0)"
+    derived = f"({spend} * {roas})"
+    return (
+        "CASE WHEN "
+        f"{spend} > 0 AND {roas} > 0 "
+        f"AND {derived} > GREATEST({purchase}, 0) * {_META_PURCHASE_ROAS_CORRECTION_FACTOR} "
+        f"THEN {derived} ELSE {purchase} END"
+    )
 
 
 # DB 入口走 module-level wrapper（与其他 sub-module 同样原理）。
@@ -986,6 +1008,194 @@ def _business_dates_between(date_from: date, date_to: date) -> list[date]:
     return days
 
 
+def _daily_campaign_purchase_rows(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch daily campaign rows for Meta purchase-value correction.
+
+    The normal aggregate query stays in place for the common path; this row-level
+    pass lets the realtime dashboard reuse the existing order-fallback rule when
+    an account's Meta export lacks purchase value / ROAS columns.
+    """
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    if allowed_account_ids is not None and not allowed_account_ids:
+        return []
+    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    account_sql = ""
+    account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+        account_sql = f"AND ad_account_id IN ({placeholders}) "
+        account_args = list(allowed_account_ids)
+
+    rows = query(
+        "SELECT meta_business_date, ad_account_id, matched_product_code, product_id, "
+        "spend_usd, "
+        + _canonical_meta_purchase_value_sql() + " AS purchase_value_usd, "
+        "result_count, updated_at "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        + product_sql + account_sql,
+        tuple([start, end] + product_args + account_args),
+    ) or []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not any(key in row for key in ("spend_usd", "purchase_value_usd", "result_count")):
+            continue
+        item = dict(row)
+        item["spend_usd"] = float(item.get("spend_usd") or 0)
+        item["purchase_value_usd"] = float(item.get("purchase_value_usd") or 0)
+        item["result_count"] = int(item.get("result_count") or 0)
+        out.append(item)
+    return out
+
+
+def _apply_daily_purchase_order_fallback(
+    rows: list[dict[str, Any]],
+    *,
+    start: date,
+    end: date,
+) -> dict[str, Any]:
+    """Apply campaign-level order fallback only to still-broken day groups."""
+    totals_by_key: dict[tuple[date, str, str], dict[str, float]] = {}
+    for row in rows:
+        day = _date_key(row.get("meta_business_date"))
+        account_id = str(row.get("ad_account_id") or "").strip().removeprefix("act_")
+        product = str(row.get("matched_product_code") or "").strip().lower()
+        if day is None or not account_id or not product:
+            continue
+        total = totals_by_key.setdefault((day, account_id, product), {"spend": 0.0, "purchase": 0.0})
+        total["spend"] += float(row.get("spend_usd") or 0)
+        total["purchase"] += float(row.get("purchase_value_usd") or 0)
+
+    candidates_by_day: dict[date, list[dict[str, Any]]] = {}
+    for row in rows:
+        day = _date_key(row.get("meta_business_date"))
+        account_id = str(row.get("ad_account_id") or "").strip().removeprefix("act_")
+        product = str(row.get("matched_product_code") or "").strip().lower()
+        if day is None:
+            continue
+        total = totals_by_key.get((day, account_id, product))
+        if total and total["spend"] > 0 and total["purchase"] <= 0:
+            candidates_by_day.setdefault(day, []).append(row)
+
+    if not candidates_by_day:
+        return {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+    total_stats = {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+    for day, candidates in sorted(candidates_by_day.items()):
+        if day < start or day > end:
+            continue
+        stats = _facade().fill_purchase_value_from_orders(
+            candidates,
+            level="campaign",
+            start_date=day,
+            end_date=day,
+        )
+        total_stats["fallback_row_count"] += int(stats.get("fallback_row_count") or 0)
+        total_stats["fallback_revenue_total_usd"] += float(
+            stats.get("fallback_revenue_total_usd") or 0
+        )
+    total_stats["fallback_revenue_total_usd"] = round(total_stats["fallback_revenue_total_usd"], 4)
+    return total_stats
+
+
+def _summarize_daily_campaign_purchase_rows(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    rows = _daily_campaign_purchase_rows(
+        start,
+        end,
+        product_id=product_id,
+        site_codes=site_codes,
+    )
+    if not rows:
+        return None
+    fallback_stats = _apply_daily_purchase_order_fallback(rows, start=start, end=end)
+    last_ad_updated_at = None
+    for row in rows:
+        updated_at = row.get("updated_at")
+        if updated_at and (last_ad_updated_at is None or updated_at > last_ad_updated_at):
+            last_ad_updated_at = updated_at
+    return {
+        "ad_spend": round(sum(float(row.get("spend_usd") or 0) for row in rows), 2),
+        "meta_purchase_value": round(
+            sum(float(row.get("purchase_value_usd") or 0) for row in rows),
+            2,
+        ),
+        "meta_purchases": sum(int(row.get("result_count") or 0) for row in rows),
+        "last_ad_updated_at": last_ad_updated_at,
+        "purchase_fallback_stats": fallback_stats,
+    }
+
+
+def _summarize_daily_campaign_purchase_rows_by_day(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    rows = _daily_campaign_purchase_rows(
+        start,
+        end,
+        product_id=product_id,
+        site_codes=site_codes,
+    )
+    fallback_stats = _apply_daily_purchase_order_fallback(rows, start=start, end=end)
+    grouped: dict[date, dict[str, Any]] = {}
+    for row in rows:
+        day = _date_key(row.get("meta_business_date"))
+        if day is None:
+            continue
+        group = grouped.setdefault(
+            day,
+            {
+                "meta_business_date": day,
+                "ad_spend": 0.0,
+                "meta_purchase_value": 0.0,
+                "meta_purchases": 0,
+                "last_ad_updated_at": None,
+            },
+        )
+        group["ad_spend"] += float(row.get("spend_usd") or 0)
+        group["meta_purchase_value"] += float(row.get("purchase_value_usd") or 0)
+        group["meta_purchases"] += int(row.get("result_count") or 0)
+        updated_at = row.get("updated_at")
+        if updated_at and (
+            group["last_ad_updated_at"] is None or updated_at > group["last_ad_updated_at"]
+        ):
+            group["last_ad_updated_at"] = updated_at
+    out = []
+    for row in grouped.values():
+        row["ad_spend"] = round(row["ad_spend"], 2)
+        row["meta_purchase_value"] = round(row["meta_purchase_value"], 2)
+        out.append(row)
+    out.sort(key=lambda row: row["meta_business_date"])
+    return out, fallback_stats
+
+
+def _attach_meta_purchase_fallback_summary(summary: dict[str, Any], stats: dict[str, Any] | None) -> None:
+    if not stats:
+        return
+    fallback_row_count = int(stats.get("fallback_row_count") or 0)
+    if fallback_row_count <= 0:
+        return
+    summary["meta_purchase_value_source"] = "meta_or_order_fallback"
+    summary["meta_purchase_fallback_row_count"] = fallback_row_count
+    summary["meta_purchase_fallback_revenue_total_usd"] = _money(
+        stats.get("fallback_revenue_total_usd") or 0
+    )
+
+
 def _load_profit_units_for_products(
     date_from: date,
     date_to: date,
@@ -1385,7 +1595,7 @@ def _get_daily_campaigns(
         "SELECT ad_account_id, ad_account_name, campaign_name, normalized_campaign_code, "
         "SUM(result_count) AS result_count, "
         "SUM(spend_usd) AS spend, "
-        "SUM(purchase_value_usd) AS purchase_value "
+        "SUM(" + _canonical_meta_purchase_value_sql() + ") AS purchase_value "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date=%s "
         + product_sql + account_sql +
@@ -1580,7 +1790,7 @@ def _build_realtime_overview_for_range(
             ad_rows = query(
                 "SELECT meta_business_date, "
                 "SUM(spend_usd) AS ad_spend, "
-                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(" + _canonical_meta_purchase_value_sql() + ") AS meta_purchase_value, "
                 "SUM(result_count) AS meta_purchases, "
                 "MAX(updated_at) AS last_ad_updated_at "
                 "FROM meta_ad_daily_campaign_metrics "
@@ -1593,7 +1803,7 @@ def _build_realtime_overview_for_range(
         ad_rows = query(
             "SELECT meta_business_date, "
             "SUM(spend_usd) AS ad_spend, "
-            "SUM(purchase_value_usd) AS meta_purchase_value, "
+            "SUM(" + _canonical_meta_purchase_value_sql() + ") AS meta_purchase_value, "
             "SUM(result_count) AS meta_purchases, "
             "MAX(updated_at) AS last_ad_updated_at "
             "FROM meta_ad_daily_campaign_metrics "
@@ -1602,6 +1812,15 @@ def _build_realtime_overview_for_range(
             "GROUP BY meta_business_date",
             tuple([start, end] + ad_product_args),
         )
+    purchase_fallback_stats: dict[str, Any] = {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+    corrected_ad_rows, purchase_fallback_stats = _summarize_daily_campaign_purchase_rows_by_day(
+        start,
+        end,
+        product_id=product_id,
+        site_codes=sites,
+    )
+    if corrected_ad_rows:
+        ad_rows = corrected_ad_rows
 
     summary = {
         "order_count": 0,
@@ -1685,6 +1904,7 @@ def _build_realtime_overview_for_range(
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     summary["order_data_status"] = "ok"
     summary["ad_data_status"] = "ok"
+    _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
 
     range_start_at, _ = compute_meta_business_window_bj(start)
     _, range_end_at = compute_meta_business_window_bj(end)
@@ -2068,6 +2288,11 @@ def get_realtime_roas_overview(
             target,
         )
         campaign_details = campaign_allocation["campaigns"]
+        meta_purchase_value = round(
+            sum(c["purchase_value_usd"] for c in campaign_details),
+            2,
+        ) if campaign_details else 0.0
+        meta_purchases = sum(c["result_count"] for c in campaign_details) if campaign_details else 0
         product_sales_stats = _get_realtime_product_sales_stats(
             target,
             snapshot_at,
@@ -2116,9 +2341,10 @@ def get_realtime_roas_overview(
                 "line_revenue": 0.0,
                 "shipping_revenue": shipping_revenue,
                 "ad_spend": ad_spend,
-                "meta_purchase_value": round(sum(c["purchase_value_usd"] for c in campaign_details), 2) if campaign_details else 0.0,
-                "meta_purchases": sum(c["result_count"] for c in campaign_details) if campaign_details else 0,
+                "meta_purchase_value": meta_purchase_value,
+                "meta_purchases": meta_purchases,
                 "true_roas": _roas(revenue_with_shipping, ad_spend),
+                "meta_roas": _roas(meta_purchase_value, ad_spend),
                 "order_data_status": snap.get("order_data_status") or "ok",
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
             },
@@ -2194,7 +2420,7 @@ def get_realtime_roas_overview(
             ad_account_args_live = list(allowed_account_ids)
             ad_rows = query(
                 "SELECT SUM(spend_usd) AS ad_spend, "
-                "SUM(purchase_value_usd) AS meta_purchase_value, "
+                "SUM(" + _canonical_meta_purchase_value_sql() + ") AS meta_purchase_value, "
                 "SUM(result_count) AS meta_purchases, "
                 "MAX(updated_at) AS last_ad_updated_at "
                 "FROM meta_ad_daily_campaign_metrics "
@@ -2207,7 +2433,7 @@ def get_realtime_roas_overview(
     else:
         ad_rows = query(
             "SELECT SUM(spend_usd) AS ad_spend, "
-            "SUM(purchase_value_usd) AS meta_purchase_value, "
+            "SUM(" + _canonical_meta_purchase_value_sql() + ") AS meta_purchase_value, "
             "SUM(result_count) AS meta_purchases, "
             "MAX(updated_at) AS last_ad_updated_at "
             "FROM meta_ad_daily_campaign_metrics "
@@ -2217,6 +2443,18 @@ def get_realtime_roas_overview(
         )
         ad_source = "meta_ad_daily_campaign_metrics"
         ad_granularity = "daily"
+
+    purchase_fallback_stats: dict[str, Any] = {"fallback_row_count": 0, "fallback_revenue_total_usd": 0.0}
+    if realtime_ad_summary is None:
+        corrected_ad = _summarize_daily_campaign_purchase_rows(
+            target,
+            target,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        )
+        if corrected_ad:
+            purchase_fallback_stats = corrected_ad.get("purchase_fallback_stats") or purchase_fallback_stats
+            ad_rows = [corrected_ad]
 
     orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
     ad = ad_rows[0] if ad_rows else {}
@@ -2267,6 +2505,8 @@ def get_realtime_roas_overview(
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
+    _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
     order_profit_all = _get_realtime_order_profit_details(
         target,
         day_start,
@@ -2378,13 +2618,16 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     ad_rows = query(
         "SELECT meta_business_date, "
         "SUM(spend_usd) AS ad_spend, "
-        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(" + _canonical_meta_purchase_value_sql() + ") AS meta_purchase_value, "
         "SUM(result_count) AS meta_purchases "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
         "GROUP BY meta_business_date",
         (start, end),
     )
+    corrected_ad_rows, purchase_fallback_stats = _summarize_daily_campaign_purchase_rows_by_day(start, end)
+    if corrected_ad_rows:
+        ad_rows = corrected_ad_rows
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
@@ -2445,6 +2688,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
+    _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
     return {
         "period": {
             "start": start,

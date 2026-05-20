@@ -204,3 +204,43 @@ def fill_purchase_value_from_orders(
 3. **多账户共享 store**：如果未来一个 store 被多个 ad account 共享（spec 当前 store_codes 里允许），订单兜底要按每个账户的 store_codes 集合各自查询，**不要**做整 store 全局求和后跨账户重复分摊；本 spec 实现按 `(matched_product_code, ad_account_id)` 分组保证不重复。
 4. **column_preset 在 Meta 改名/删除**：账户里建的 preset 后面被人删了，URL 又会落回裸列。这是数据质量问题，不是代码 bug；`data_quality.status="fallback_used"` 会持续告警，提醒 admin 去 Meta UI 重建。
 5. **同步链路当前坏的状态**：用户明确说现在 Meta 同步本身有问题。本 spec 的 A 部分（per-account preset 配置）只有当 Meta 同步恢复后才真正起作用；C 部分立刻让看板可读。
+
+## 7. 2026-05-20 实时大盘 Meta ROAS 口径修复
+
+### 7.1 现象
+
+用户在 `/order-analytics -> 实时大盘` 选择 `2026-05-04 ~ 2026-05-10` 时，Meta ROAS 显示 `0.66`，但同屏真实 ROAS 约 `1.73`。只读复查 `/order-analytics/realtime-overview?start_date=2026-05-04&end_date=2026-05-10` 后确认前端没有二次计算偏差：页面值来自 `summary.meta_purchase_value / summary.ad_spend`。
+
+逐日异常集中在 `meta_ad_daily_campaign_metrics.purchase_value_usd`：
+
+| 业务日 | Meta 购买数 | 当前 purchase value | 异常形态 |
+|---|---:|---:|---|
+| 2026-05-07 | 71 | 31.51 | newjoyloo_bak/Omurio 行有购买数和消耗，但缺购买价值/ROAS 列；31.51 只来自旧户单笔转化 |
+| 2026-05-08 | 106 | 30.94 | 同上，活跃新户购买价值缺列，只有旧户单笔转化价值 |
+| 2026-05-09 | 212 | 0.00 | 活跃新户缺总购买价值/ROAS，旧户也没有可补的购买价值 |
+
+### 7.2 根因
+
+问题有两层：
+
+1. `tools/roi_hourly_sync.py::_meta_purchase_value_from_row` 使用模糊列名匹配，包含 `("购物", "价值")` / `("purchase", "value")`。当 CSV 缺少真正的总值列（`购物转化价值` / `成效价值`），但存在 `平均购物转化价值` 时，解析器可能把平均值写入 `purchase_value_usd`。
+2. 这次线上坏数据的主因是第 1 节描述的账户级 `column_preset` 问题：newjoyloo_bak / Omurio 曾导出裸「表现」列，只包含成效数、花费、单次成效费用等，没有购买价值和 ROAS。日终表因此保存为 `purchase_value_usd=0 / roas_purchase=0`，实时大盘范围分支继续直接 `SUM(purchase_value_usd)`，把大量有购买数的广告当成购买金额 0。
+
+`tools/meta_daily_final_sync.py::_common_metrics` 复用同一个解析器，因此日终 campaign/adset/ad 三层入库也会被污染。实时大盘范围分支与真实 ROAS 看板直接 `SUM(purchase_value_usd)`，历史错值会继续压低 Meta ROAS。
+
+### 7.3 修复决策
+
+1. 购买总值解析必须优先精确匹配总值列；模糊匹配时排除 `平均` / `average` / `avg` 列，不允许把平均购买价值直接当作总购买价值。
+2. 当总购买价值列缺失但 Meta ROAS 列存在时，日终同步用 `spend_usd * roas_purchase` 反推 `purchase_value_usd`；当 ROAS 也缺失但有平均购买价值和购买数时，用 `average_purchase_value * result_count` 恢复总值。这两种都是 Meta 后台可推导口径，不是订单兜底。
+3. 实时大盘与真实 ROAS 的日终汇总使用同一套 canonical Meta purchase value 表达式：若 `roas_purchase` 与 `spend_usd` 能反推出明显大于 `purchase_value_usd` 的值，则使用反推值；否则使用源表 `purchase_value_usd`。这样已入库的“平均值误写”历史行也能在查询时恢复。
+4. 当某个 `(ad_account_id, matched_product_code)` 分组在 canonical 修正后仍满足 `spend>0 && purchase_value=0`，实时大盘复用本 spec 既有 `fill_purchase_value_from_orders` 订单兜底：按账户绑定店铺的店小秘订单营收、扣除同 store 池里其它账户已上报的 Meta 购买价值，再按 spend 占比分摊。响应里写入 `summary.meta_purchase_fallback_*`，路由层把 `data_quality.status` 降为 warning，避免把订单兜底值伪装成纯 Meta 真值。
+5. 查询时修复只影响 Meta purchase value / Meta ROAS，不改变广告消耗、真实 ROAS、订单收入、利润、广告费分摊口径。
+
+### 7.4 验收
+
+- 解析器测试：只有 `平均购物转化价值` 时，`purchase_value_usd` 不得取该列；有真实总值列时仍取真实总值。
+- 日终同步测试：缺总值列但有 `成效广告花费回报` 时，`purchase_value_usd == spend_usd * roas_purchase`；缺 ROAS 但有平均购买价值与购买数时，`purchase_value_usd == average_purchase_value * result_count`。
+- 实时大盘范围测试：当日表 `purchase_value_usd=31.51`、`spend_usd=1460.07`、`roas_purchase=1.2` 时，`summary.meta_purchase_value` 使用 `1460.07*1.2`，Meta ROAS 随之按 canonical 值计算。
+- 实时大盘兜底测试：当日表有 `spend/result_count` 但缺购买价值/ROAS 时，`summary.meta_purchase_value` 使用订单兜底结果，且返回 `meta_purchase_fallback_row_count`。
+- 单日 API 测试：`start_date=end_date` 或日期快捷入口返回的 `summary.meta_roas` 必须与 `meta_purchase_value / ad_spend` 一致，不能只依赖前端二次计算。
+- 只读复查范围：`今天`、`昨天`、`本周`、`上周`、`本月`、`上月`、`2026-05-04 ~ 2026-05-10`，核对 `summary.meta_purchase_value / summary.ad_spend == summary.meta_roas`，并检查是否还有明显 `purchase_count > 0` 但 Meta purchase value 接近 0 或平均值的日期。

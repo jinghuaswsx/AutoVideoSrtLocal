@@ -121,6 +121,28 @@ def _attach_realtime_data_quality(result):
             last_order_at=freshness.get("last_order_at"),
             last_ad_snapshot_at=freshness.get("last_ad_updated_at"),
         )
+        summary = result.get("summary") or {}
+        fallback_row_count = int(summary.get("meta_purchase_fallback_row_count") or 0)
+        if fallback_row_count > 0:
+            fallback_total = float(summary.get("meta_purchase_fallback_revenue_total_usd") or 0)
+            check = {
+                "code": "meta_purchase_value_order_fallback",
+                "status": dq.STATUS_WARNING,
+                "fallback_row_count": fallback_row_count,
+                "fallback_revenue_total_usd": fallback_total,
+                "message": (
+                    "部分 Meta 日终广告行缺购买价值/ROAS 列，Meta ROAS 分子已按订单营收兜底；"
+                    "修复账户 column_preset 后会回到 Meta 真值。"
+                ),
+            }
+            result["data_quality"].setdefault("checks", []).append(check)
+            result["data_quality"].setdefault("warnings", []).append({
+                "code": check["code"],
+                "status": check["status"],
+                "message": check["message"],
+            })
+            if result["data_quality"].get("status") == dq.STATUS_OK:
+                result["data_quality"]["status"] = dq.STATUS_WARNING
     except Exception as exc:  # noqa: BLE001
         log.warning("attach realtime data_quality failed: %s", exc)
         result.setdefault(
