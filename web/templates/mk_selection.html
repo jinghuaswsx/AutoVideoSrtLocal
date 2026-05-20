@@ -688,7 +688,7 @@ async function loadMkLocalMaterialLibrary(page) {
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkSnapshotQueryParam()}${mkRangeQueryParam()}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -725,7 +725,7 @@ async function loadMkYesterdayTop100(page) {
   pager.innerHTML = '';
   status.textContent = '正在读取昨天消耗前100归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}`;
+    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');

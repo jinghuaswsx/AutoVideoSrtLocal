@@ -158,6 +158,24 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "/xuanpin/api/mk-video-materials" not in template
 
 
+def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert (
+        "const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}"
+        "&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;"
+    ) in template
+    assert (
+        "const url = `/xuanpin/api/mk-material-library?page=${page}"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}`;"
+    ) in template
+    assert (
+        "const url = `/xuanpin/api/mk-yesterday-top100?page=${page}"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}`;"
+    ) in template
+    assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
+
+
 def test_mk_selection_video_cards_prefer_local_cover_url():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -198,7 +216,9 @@ def test_mk_selection_video_cards_include_cached_ad_status_icons_and_media_searc
     assert "📦" in template
     assert "mk-status-icon--video" in template
     assert "mkStatusIconSvg('video')" in template
-    assert "if (r.has_local_product_running_ad)" in template
+    assert "const hasProductInLibrary = Boolean(r.has_local_product_in_library" in template
+    assert "if (hasProductInLibrary)" in template
+    assert "r.has_local_product_running_ad ? '产品已在素材库且有消耗广告计划' : '产品已在素材库'" in template
     assert "if (r.has_local_material_in_library)" in template
     assert "产品已在素材库且有消耗广告计划" in template
     assert "视频素材已在素材库" in template
