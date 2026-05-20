@@ -329,7 +329,13 @@ def _rebuild_tts_full_audio_from_segments_legacy_concat(task_dir: str, segments:
     return full_audio_path
 
 
-def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], variant: str = "av") -> str:
+def _rebuild_tts_full_audio_from_segments(
+    task_dir: str,
+    segments: list[dict],
+    variant: str = "av",
+    *,
+    total_duration: float | None = None,
+) -> str:
     full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
     full_audio_path = os.path.join(task_dir, full_audio_name)
     source_duration = max(
@@ -346,10 +352,15 @@ def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], v
         ),
         default=0.0,
     )
+    requested_duration = float(total_duration or 0.0)
     return build_source_timeline_audio(
         segments or [],
         output_path=full_audio_path,
-        total_duration=source_duration if source_duration > 0 else None,
+        total_duration=(
+            requested_duration
+            if requested_duration > 0
+            else (source_duration if source_duration > 0 else None)
+        ),
     )
 
 

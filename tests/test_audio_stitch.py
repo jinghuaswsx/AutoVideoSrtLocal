@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from pipeline.audio_stitch import (
+    apply_asr_window_audio_schedule,
     apply_compact_audio_schedule,
     build_stitched_audio,
     build_timeline_manifest,
@@ -68,6 +69,89 @@ def test_apply_compact_audio_schedule_caps_large_source_gap():
     assert scheduled[2]["compact_gap_applied"] is True
     assert scheduled[2]["audio_start_time"] == 6.993
     assert scheduled[2]["timeline_mode"] == "compact_asr_primary"
+
+
+def test_apply_asr_window_audio_schedule_preserves_initial_no_asr_gap():
+    scheduled = apply_asr_window_audio_schedule(
+        [
+            {
+                "asr_index": 0,
+                "start_time": 13.979,
+                "end_time": 15.779,
+                "tts_duration": 1.75,
+                "text": "First speech",
+            },
+            {
+                "asr_index": 1,
+                "start_time": 16.399,
+                "end_time": 19.92,
+                "tts_duration": 3.422,
+                "text": "Second speech",
+            },
+        ],
+        max_gap=0.25,
+        preserve_gap_threshold=1.0,
+    )
+
+    assert scheduled[0]["source_gap_before"] == 13.979
+    assert scheduled[0]["audio_gap_before"] == 13.979
+    assert scheduled[0]["audio_start_time"] == 13.979
+    assert scheduled[0]["audio_end_time"] == 15.729
+    assert scheduled[0]["asr_window_gap_preserved"] is True
+    assert scheduled[0]["compact_gap_applied"] is False
+    assert scheduled[0]["timeline_mode"] == "asr_window_primary"
+
+    assert scheduled[1]["source_gap_before"] == 0.62
+    assert scheduled[1]["audio_gap_before"] == 0.25
+    assert scheduled[1]["audio_start_time"] == 15.979
+    assert scheduled[1]["asr_window_gap_preserved"] is False
+    assert scheduled[1]["compact_gap_applied"] is True
+
+
+def test_apply_asr_window_audio_schedule_preserves_large_middle_gap_and_compacts_short_gap():
+    scheduled = apply_asr_window_audio_schedule(
+        [
+            {
+                "asr_index": 0,
+                "start_time": 0.12,
+                "end_time": 1.8,
+                "tts_duration": 1.6,
+                "text": "Hook",
+            },
+            {
+                "asr_index": 1,
+                "start_time": 2.05,
+                "end_time": 3.0,
+                "tts_duration": 0.9,
+                "text": "Short gap",
+            },
+            {
+                "asr_index": 2,
+                "start_time": 8.25,
+                "end_time": 10.0,
+                "tts_duration": 1.7,
+                "text": "After music",
+            },
+        ],
+        max_gap=0.25,
+        preserve_gap_threshold=1.0,
+    )
+
+    assert scheduled[0]["audio_start_time"] == 0.0
+    assert scheduled[0]["source_gap_before"] == 0.12
+    assert scheduled[0]["audio_gap_before"] == 0.0
+    assert scheduled[0]["asr_window_gap_preserved"] is False
+
+    assert scheduled[1]["source_gap_before"] == 0.25
+    assert scheduled[1]["audio_gap_before"] == 0.25
+    assert scheduled[1]["audio_start_time"] == 1.85
+    assert scheduled[1]["compact_gap_applied"] is False
+
+    assert scheduled[2]["source_gap_before"] == 5.25
+    assert scheduled[2]["audio_gap_before"] == 5.25
+    assert scheduled[2]["audio_start_time"] == 8.0
+    assert scheduled[2]["asr_window_gap_preserved"] is True
+    assert scheduled[2]["compact_gap_applied"] is False
 
 
 def test_build_timeline_manifest_provides_segments_and_video_ranges():

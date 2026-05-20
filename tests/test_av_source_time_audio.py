@@ -51,6 +51,40 @@ def test_runtime_rebuilds_av_tts_on_source_timeline_with_silence_gaps(tmp_path):
     assert "concat" not in cmd
 
 
+def test_runtime_rebuild_can_pad_av_tts_to_full_video_duration(tmp_path):
+    from appcore.runtime import _rebuild_tts_full_audio_from_segments
+
+    seg0 = tmp_path / "seg0.mp3"
+    seg0.write_bytes(b"seg0")
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        _rebuild_tts_full_audio_from_segments(
+            str(tmp_path),
+            [
+                {
+                    "tts_path": str(seg0),
+                    "source_start_time": 13.979,
+                    "source_end_time": 15.779,
+                    "audio_start_time": 13.979,
+                    "audio_end_time": 15.729,
+                    "tts_duration": 1.75,
+                },
+            ],
+            variant="av",
+            total_duration=48.181,
+        )
+
+    cmd = calls[0]
+    filter_graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "adelay=13979|13979" in filter_graph
+    assert cmd[cmd.index("-t") + 1] == "48.181"
+
+
 def test_source_time_subtitle_units_keep_original_sentence_positions():
     from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
 

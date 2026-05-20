@@ -158,7 +158,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         from appcore.source_video import ensure_local_source_video
         import importlib
         from pipeline.av_source_normalize import normalize_source_segments
-        from pipeline.audio_stitch import apply_compact_audio_schedule
+        from pipeline.audio_stitch import apply_asr_window_audio_schedule
         from pipeline.av_translate import generate_av_localized_translation
         from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
         from pipeline.duration_reconcile import reconcile_duration
@@ -356,11 +356,24 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             user_id=runner.user_id,
             project_id=task_id,
         )
-        final_sentences = apply_compact_audio_schedule(final_sentences, max_gap=0.25)
+        final_sentences = apply_asr_window_audio_schedule(
+            final_sentences,
+            max_gap=0.25,
+            preserve_gap_threshold=1.0,
+        )
         av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
         final_localized_translation = _build_av_localized_translation(final_sentences)
         final_tts_segments = _build_av_tts_segments(final_sentences)
-        final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant=variant)
+        task_for_audio = task_state.get(task_id) or task
+        final_full_audio_path = _rebuild_tts_full_audio_from_segments(
+            task_dir,
+            final_tts_segments,
+            variant=variant,
+            total_duration=(
+                task_for_audio.get("video_duration")
+                or task_for_audio.get("original_video_duration")
+            ),
+        )
         subtitle_units = build_subtitle_units_from_sentences(
             final_sentences,
             mode=str(av_inputs.get("sync_granularity") or "hybrid"),
@@ -382,7 +395,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
                 "av_debug": av_debug,
                 "source_normalization": source_normalization,
                 "subtitle_units": subtitle_units,
-                "audio_timeline_mode": "compact_asr_primary",
+                "audio_timeline_mode": "asr_window_primary",
                 "max_compact_gap": 0.25,
             }
         )
@@ -397,7 +410,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             voice_id=voice.get("id") or tts_voice_id,
             localized_translation=final_localized_translation,
             tts_duration_status="done",
-            audio_timeline_mode="compact_asr_primary",
+            audio_timeline_mode="asr_window_primary",
             max_compact_gap=0.25,
         )
         task_state.set_preview_file(task_id, "tts_full_audio", final_tts_output["full_audio_path"])

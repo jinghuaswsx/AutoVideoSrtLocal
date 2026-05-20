@@ -26,7 +26,7 @@ from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     validate_tts_script_language_or_raise,
 )
-from pipeline.audio_stitch import apply_compact_audio_schedule
+from pipeline.audio_stitch import apply_asr_window_audio_schedule
 from pipeline import speech_rate_model
 from pipeline.speech_shot_alignment import apply_speech_shot_alignment
 
@@ -364,7 +364,7 @@ def _build_final_compose_summary(
             f"尾部静音 {tail_padding_duration:.1f}s；无截断"
         )
     notes = [
-        "按每句 audio_start_time 放置音频，句间由静音补齐；输出时长由最终时间轴限制。",
+        "按 ASR 人声窗口放置句级音频；无 ASR 区间保留背景/静音；输出时长由最终时间轴限制。",
     ]
     if clipped_segments:
         notes.append("存在超出句子窗口或最终时间轴的音频片段，已先裁剪再参与视频合成。")
@@ -391,8 +391,8 @@ def _build_final_compose_summary(
         "target_timeline_duration": round(final_output_audio_duration, 3),
         "source_timeline_duration": round(source_end or 0.0, 3),
         "audio_path": audio_path,
-        "timeline_mode": "compact_asr_primary",
-        "stitching_method": "按句 audio_start_time 放置，句间静音补齐，最终由 ffmpeg -t 限制到目标时间轴。",
+        "timeline_mode": "asr_window_primary",
+        "stitching_method": "按 ASR 人声窗口放置句级音频；无 ASR 区间保留背景/静音；最终由 ffmpeg -t 限制到目标时间轴。",
         "max_compact_gap": round(float(max_compact_gap), 3),
         "silence_gap_count": sum(
             1
@@ -620,7 +620,11 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 project_id=task_id,
                 on_progress=_on_reconcile_progress,
             )
-            final_sentences = apply_compact_audio_schedule(final_sentences, max_gap=0.25)
+            final_sentences = apply_asr_window_audio_schedule(
+                final_sentences,
+                max_gap=0.25,
+                preserve_gap_threshold=1.0,
+            )
             alignment_summary = _default_speech_shot_alignment_summary(final_sentences)
             task_for_alignment = task_state.get(task_id) or task
             if _should_run_speech_shot_alignment(task_for_alignment):
@@ -645,7 +649,16 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
             )
             final_localized_translation = _build_av_localized_translation(final_sentences)
             final_tts_segments = _build_av_tts_segments(final_sentences)
-            final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant="av")
+            task_for_audio = task_state.get(task_id) or task
+            final_full_audio_path = _rebuild_tts_full_audio_from_segments(
+                task_dir,
+                final_tts_segments,
+                variant="av",
+                total_duration=(
+                    task_for_audio.get("video_duration")
+                    or task_for_audio.get("original_video_duration")
+                ),
+            )
             _copy_clip_metadata_to_sentences(final_sentences, final_tts_segments)
             av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
             final_compose_summary = _build_final_compose_summary(
@@ -679,7 +692,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                     "voice_id": voice.get("id") or tts_voice_id,
                     "av_debug": av_debug,
                     "source_normalization": source_normalization,
-                    "audio_timeline_mode": "compact_asr_primary",
+                    "audio_timeline_mode": "asr_window_primary",
                     "max_compact_gap": 0.25,
                     "final_compose_summary": final_compose_summary,
                     "speech_shot_alignment": alignment_summary,
@@ -699,7 +712,7 @@ class SentenceReconcileStrategy(TtsConvergenceStrategy):
                 final_compose_summary=final_compose_summary,
                 speech_shot_alignment=alignment_summary,
                 av_debug=av_debug,
-                audio_timeline_mode="compact_asr_primary",
+                audio_timeline_mode="asr_window_primary",
                 max_compact_gap=0.25,
             )
             task_state.set_preview_file(task_id, "tts_full_audio", final_full_audio_path)

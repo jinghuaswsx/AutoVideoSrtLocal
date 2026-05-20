@@ -139,7 +139,7 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
     monkeypatch.setattr("pipeline.duration_reconcile.reconcile_duration", fake_reconcile_duration)
     monkeypatch.setattr(
         "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
-        lambda task_dir, segments, variant="av": str(final_audio),
+        lambda task_dir, segments, variant="av", **kwargs: str(final_audio),
     )
     monkeypatch.setattr(
         "appcore.tts_strategies.sentence_reconcile.speech_rate_model.update_rate",
@@ -264,7 +264,7 @@ def test_omni_tts_step_applies_speech_shot_alignment_before_rebuild(tmp_path, mo
         ],
     )
 
-    def fake_rebuild(task_dir, segments, variant="av"):
+    def fake_rebuild(task_dir, segments, variant="av", **kwargs):
         rebuilt_segments.extend([dict(segment) for segment in segments])
         return str(final_audio)
 
@@ -351,7 +351,7 @@ def test_tts_step_records_fallback_final_compose_summary(tmp_path, monkeypatch):
         ],
     )
 
-    def fake_rebuild(task_dir, segments, variant="av"):
+    def fake_rebuild(task_dir, segments, variant="av", **kwargs):
         segments[0]["audio_clipped"] = True
         segments[0]["audio_clipped_seconds"] = 0.2
         segments[0]["audio_clip_reason"] = "source_window"

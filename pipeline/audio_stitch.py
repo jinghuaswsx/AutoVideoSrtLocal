@@ -143,6 +143,65 @@ def apply_compact_audio_schedule(
     return scheduled
 
 
+def apply_asr_window_audio_schedule(
+    sentences: List[Dict[str, Any]],
+    *,
+    max_gap: float = 0.25,
+    preserve_gap_threshold: float = 1.0,
+) -> List[Dict[str, Any]]:
+    """Return sentences placed on ASR speech windows.
+
+    Long no-ASR windows are treated as source background/silence and preserved.
+    Short ASR segmentation gaps remain compact so split sentences do not sound
+    choppy.
+    """
+    scheduled: List[Dict[str, Any]] = []
+    cursor = 0.0
+    previous_source_end: float | None = None
+    gap_limit = max(0.0, float(max_gap))
+    preserve_threshold = max(0.0, float(preserve_gap_threshold))
+
+    for index, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        item = dict(sentence)
+        source_start = _float_value(item.get("source_start_time", item.get("start_time")), 0.0)
+        source_end = _float_value(item.get("source_end_time", item.get("end_time")), source_start)
+        tts_duration = _float_value(item.get("tts_duration"), 0.0)
+
+        if index == 0 or previous_source_end is None:
+            source_gap = max(0.0, source_start)
+            gap_preserved = source_gap >= preserve_threshold and source_gap > 0.0
+            audio_gap = source_gap if gap_preserved else 0.0
+            compact_applied = False
+        else:
+            source_gap = max(0.0, source_start - previous_source_end)
+            gap_preserved = source_gap >= preserve_threshold and source_gap > 0.0
+            audio_gap = source_gap if gap_preserved else min(source_gap, gap_limit)
+            compact_applied = source_gap > audio_gap + 0.001
+
+        audio_start = cursor + audio_gap
+        audio_end = audio_start + max(0.0, tts_duration)
+
+        item["source_start_time"] = round(source_start, 3)
+        item["source_end_time"] = round(source_end, 3)
+        item["audio_start_time"] = round(audio_start, 3)
+        item["audio_end_time"] = round(audio_end, 3)
+        item["source_gap_before"] = round(source_gap, 3)
+        item["audio_gap_before"] = round(audio_gap, 3)
+        item["compact_gap_applied"] = compact_applied
+        item["asr_window_gap_preserved"] = gap_preserved
+        item["max_compact_gap"] = round(gap_limit, 3)
+        item["preserve_gap_threshold"] = round(preserve_threshold, 3)
+        item["timeline_mode"] = "asr_window_primary"
+
+        scheduled.append(item)
+        cursor = audio_end
+        previous_source_end = source_end
+
+    return scheduled
+
+
 def _validate_source_timeline_fit(
     segments: List[Dict[str, Any]],
     *,
