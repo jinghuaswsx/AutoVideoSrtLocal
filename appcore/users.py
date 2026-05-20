@@ -7,11 +7,14 @@ from appcore.permissions import (
     ROLE_SUPERADMIN,
     default_permissions_for_role,
     is_valid_role,
+    merge_with_defaults,
     normalize_permissions,
 )
 
 
 SUPERADMIN_USERNAME = "admin"
+OPTIONAL_USER_PROFILE_COLUMNS = ("xingming",)
+_MISSING = object()
 
 
 def hash_password(password: str) -> str:
@@ -28,6 +31,21 @@ def update_password(user_id: int, password: str) -> None:
         "UPDATE users SET password_hash = %s WHERE id = %s",
         (pw_hash, user_id),
     )
+
+
+def _user_column_exists(column: str) -> bool:
+    if column not in OPTIONAL_USER_PROFILE_COLUMNS:
+        return False
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s LIMIT 1",
+        ("users", column),
+    )
+    return bool(row)
+
+
+def editable_user_profile_fields() -> list[str]:
+    return [column for column in OPTIONAL_USER_PROFILE_COLUMNS if _user_column_exists(column)]
 
 
 def create_user(username: str, password: str, role: str = "user") -> int:
@@ -52,10 +70,38 @@ def get_by_id(user_id: int) -> dict | None:
 
 
 def list_users() -> list[dict]:
+    columns = ["id", "username", "role", "permissions", "is_active", "created_at"]
+    columns.extend(editable_user_profile_fields())
     return query(
-        "SELECT id, username, role, permissions, is_active, created_at "
-        "FROM users ORDER BY id"
+        f"SELECT {', '.join(columns)} FROM users ORDER BY id"
     )
+
+
+def _coerce_permissions(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _has_bool_permission(row: dict, code: str) -> bool:
+    return bool(_coerce_permissions(row.get("permissions")).get(code))
+
+
+def _user_display_name_expr() -> str:
+    row = query_one(
+        "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+        "AND COLUMN_NAME = 'xingming'"
+    )
+    if row:
+        return "COALESCE(NULLIF(TRIM(xingming), ''), username)"
+    return "username"
 
 
 def list_translators() -> list[dict]:
@@ -67,19 +113,117 @@ def list_translators() -> list[dict]:
     for row in rows:
         if row.get("role") == ROLE_SUPERADMIN:
             continue
-        permissions = row.get("permissions") or {}
-        if isinstance(permissions, str):
-            try:
-                permissions = json.loads(permissions)
-            except (TypeError, ValueError):
-                permissions = {}
-        if permissions.get("can_translate"):
+        if _has_bool_permission(row, "can_translate"):
             translators.append({"id": row["id"], "username": row["username"]})
     return translators
 
 
+def list_translation_work_users() -> list[dict]:
+    expr = _user_display_name_expr()
+    rows = query(
+        f"SELECT id, username, {expr} AS display_name, role, permissions "
+        "FROM users WHERE is_active=1 AND role <> %s ORDER BY display_name ASC, id ASC",
+        (ROLE_SUPERADMIN,),
+    )
+    users = []
+    for row in rows:
+        if row.get("role") == ROLE_SUPERADMIN:
+            continue
+        if (
+            _has_bool_permission(row, "can_translate")
+            and _has_bool_permission(row, "work_scope_translation")
+        ):
+            users.append({
+                "id": int(row["id"]),
+                "username": row["username"],
+                "display_name": row.get("display_name") or row["username"],
+            })
+    return users
+
+
+def ensure_translation_work_user(user_id: int) -> dict:
+    expr = _user_display_name_expr()
+    row = query_one(
+        f"SELECT id, username, {expr} AS display_name, role, permissions, is_active "
+        "FROM users WHERE id=%s",
+        (int(user_id),),
+    )
+    if not row:
+        raise ValueError("翻译员不存在")
+    if not row.get("is_active"):
+        raise ValueError("翻译员已停用")
+    if not _has_bool_permission(row, "can_translate"):
+        raise ValueError("该用户没有翻译能力")
+    if not _has_bool_permission(row, "work_scope_translation"):
+        raise ValueError("该用户不在翻译工作范围")
+    return row
+
+
 def set_active(user_id: int, active: bool) -> None:
     execute("UPDATE users SET is_active = %s WHERE id = %s", (int(active), user_id))
+
+
+def update_user_profile(
+    user_id: int,
+    *,
+    username: str,
+    role: str,
+    is_active: bool,
+    xingming: str | None | object = _MISSING,
+    work_scopes: list[str] | object = _MISSING,
+) -> None:
+    user = get_by_id(user_id)
+    if user is None:
+        raise ValueError(f"user not found: {user_id}")
+
+    username = (username or "").strip()
+    role = (role or "").strip()
+    if not username:
+        raise ValueError("username cannot be blank")
+    if not is_valid_role(role):
+        raise ValueError(f"invalid role: {role}")
+
+    existing = get_by_username(username)
+    if existing and int(existing["id"]) != int(user_id):
+        raise ValueError(f"username already exists: {username}")
+
+    current_role = user.get("role")
+    if current_role == ROLE_SUPERADMIN:
+        if role != ROLE_SUPERADMIN:
+            raise ValueError("cannot demote the superadmin")
+        if username != SUPERADMIN_USERNAME:
+            raise ValueError("cannot rename the superadmin")
+        is_active = True
+        work_scopes = _MISSING
+    elif role == ROLE_SUPERADMIN:
+        raise ValueError("only the reserved username can hold superadmin role")
+
+    assignments = ["username = %s", "role = %s", "is_active = %s"]
+    args: list = [username, role, int(bool(is_active))]
+
+    permissions_payload = None
+    if current_role != role:
+        permissions_payload = default_permissions_for_role(role)
+
+    if work_scopes is not _MISSING:
+        if permissions_payload is None:
+            permissions_payload = merge_with_defaults(role, _coerce_permissions(user.get("permissions")))
+        selected_scopes = {str(item).strip() for item in (work_scopes or []) if str(item).strip()}
+        permissions_payload["work_scope_translation"] = "translation" in selected_scopes
+
+    if permissions_payload is not None:
+        assignments.append("permissions = %s")
+        args.append(json.dumps(permissions_payload))
+
+    if xingming is not _MISSING and _user_column_exists("xingming"):
+        assignments.append("xingming = %s")
+        args.append((str(xingming) if xingming is not None else "").strip())
+
+    args.append(user_id)
+    execute(
+        f"UPDATE users SET {', '.join(assignments)} WHERE id = %s",
+        tuple(args),
+    )
 
 
 def update_role(user_id: int, role: str, *, reset_permissions: bool = True) -> None:

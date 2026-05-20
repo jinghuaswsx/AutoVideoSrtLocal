@@ -120,10 +120,20 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "昨日消耗" in template
 
 
+def test_mk_selection_import_success_warnings_are_toasted():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mki-toast--warning" in template
+    assert "function mkiWarningMessageFromResponse(data)" in template
+    assert "mkiToast('warning', warningMessage)" in template
+    assert "product_link_unavailable" in template
+
+
 def test_mk_selection_import_modals_use_active_user_display_names():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "/medias/api/users/active" in template
+    assert "/tasks/api/translation-work-users" in template
+    assert "/medias/api/users/active" not in template
     assert "/tasks/api/translators" not in template
     assert "data.users || []" in template
     assert "function mkiUserLabel(user)" in template
@@ -287,7 +297,7 @@ def test_mk_selection_products_table_has_secondary_screen_compact_layout():
     assert '<col class="mk-col-rank">' in template
     assert '<col class="mk-col-action">' in template
     assert "--mk-products-table-min-w: 1690px;" in template
-    assert "@media (min-width: 769px) and (max-width: 1760px)" in template
+    assert "@media (min-width: 769px) and (max-width: 2100px)" in template
     assert "@media (min-width: 769px) and (orientation: portrait)" in template
     assert ".sidebar { transform:translateX(-100%); }" in template
     assert "body.sidebar-open .sidebar { transform:translateX(0); }" in template
@@ -295,6 +305,15 @@ def test_mk_selection_products_table_has_secondary_screen_compact_layout():
     assert "--mk-col-action: 58px;" in template
     assert ".mk-products-table-shell { overflow-x:visible;" in template
     assert "mk-detail-btn" in template
+
+
+def test_mk_selection_products_table_has_secondary_half_screen_density_band():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "@media (min-width: 769px) and (max-width: 2100px)" in template
+    assert "--mk-product-image-size: 128px;" in template
+    assert "--mk-col-name: 200px;" in template
+    assert "--mk-col-action: 68px;" in template
 
 
 def test_mk_selection_dynamic_html_escapes_api_fields():

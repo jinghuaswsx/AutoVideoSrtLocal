@@ -37,8 +37,9 @@ def test_find_target_lang_item_normalizes_country_code(monkeypatch):
     assert calls[0] == (7, "de")
 
 
-def test_import_and_create_task_does_not_request_product_link_gate(monkeypatch):
+def test_import_and_create_task_passes_product_link_warnings(monkeypatch):
     captured = {}
+    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
 
     def fake_import_mk_video(**kwargs):
         captured.update(kwargs)
@@ -46,6 +47,7 @@ def test_import_and_create_task_does_not_request_product_link_gate(monkeypatch):
             "media_product_id": 12,
             "media_item_id": 34,
             "is_new_product": True,
+            "warnings": warnings,
         }
 
     monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", fake_import_mk_video)
@@ -64,7 +66,32 @@ def test_import_and_create_task_does_not_request_product_link_gate(monkeypatch):
         "media_product_id": 12,
         "media_item_id": 34,
         "is_new_product": True,
+        "warnings": warnings,
     }
+
+
+def test_import_and_create_task_passes_existing_item_product_link_warnings(monkeypatch):
+    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
+
+    def duplicate_import(**kwargs):
+        raise tasks.mk_import_svc.DuplicateError("dupe")
+
+    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", duplicate_import)
+    monkeypatch.setattr(
+        tasks.mk_import_svc,
+        "find_existing_product_item_by_meta",
+        lambda meta: {"product_id": 12, "item_id": 34, "warnings": warnings},
+    )
+    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
+
+    result = tasks.import_and_create_task(
+        mk_video_metadata={"filename": "demo.mp4"},
+        translator_id=7,
+        countries=["DE"],
+        actor_user_id=1,
+    )
+
+    assert result["warnings"] == warnings
 
 
 import pytest

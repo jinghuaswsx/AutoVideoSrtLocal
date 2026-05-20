@@ -11,12 +11,14 @@ from web.services.admin import (
 )
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
-    update_role, update_password, update_permissions, reset_permissions_to_role_default,
+    update_role, update_password, update_user_profile,
+    update_permissions, reset_permissions_to_role_default,
+    editable_user_profile_fields, OPTIONAL_USER_PROFILE_COLUMNS,
 )
 from appcore.permissions import (
     ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN, ROLE_TRANSLATOR, ROLE_ANALYST,
     ROLE_LABELS, ROLES, grouped_permissions, PERMISSION_META,
-    default_permissions_for_role, normalize_permissions,
+    default_permissions_for_role, merge_with_defaults,
 )
 from appcore.settings import (
     PROJECT_TYPE_LABELS,
@@ -32,9 +34,21 @@ from appcore.settings import (
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
+WORK_SCOPE_OPTIONS = (
+    {
+        "code": "translation",
+        "label": PERMISSION_META["work_scope_translation"]["label"],
+        "permission": "work_scope_translation",
+    },
+)
+
 
 def _render_users_page(error=None, status: int = 200):
     all_users = list_users()
+    optional_profile_fields = [
+        field for field in OPTIONAL_USER_PROFILE_COLUMNS
+        if any(field in u for u in all_users)
+    ]
     # 为模板准备权限对象；模板侧用 tojson 注入 JS 参数，避免 inline handler 注入。
     import json as _json
     for u in all_users:
@@ -49,8 +63,44 @@ def _render_users_page(error=None, status: int = 200):
             u["permissions_payload"] = parsed if isinstance(parsed, dict) else {}
         else:
             u["permissions_payload"] = {}
+        effective_permissions = merge_with_defaults(u.get("role"), u["permissions_payload"])
+        enabled_codes = [code for code in PERMISSION_META if effective_permissions.get(code)]
+        enabled_labels = [PERMISSION_META[code]["label"] for code in enabled_codes[:3]]
+        if u.get("role") == ROLE_SUPERADMIN:
+            u["permissions_summary"] = "全部权限"
+        elif enabled_labels:
+            suffix = " 等" if len(enabled_codes) > len(enabled_labels) else ""
+            u["permissions_summary"] = "、".join(enabled_labels) + suffix
+        else:
+            u["permissions_summary"] = "无已启用权限"
+        work_scope_labels = [
+            scope["label"]
+            for scope in WORK_SCOPE_OPTIONS
+            if effective_permissions.get(scope["permission"])
+        ]
+        work_scope_codes = [
+            scope["code"]
+            for scope in WORK_SCOPE_OPTIONS
+            if effective_permissions.get(scope["permission"])
+        ]
+        u["work_scope_summary"] = "、".join(work_scope_labels) if work_scope_labels else "—"
+        u["permissions_enabled_count"] = len(enabled_codes)
+        u["permissions_total_count"] = len(PERMISSION_META)
+        u["profile_payload"] = {
+            "id": u.get("id"),
+            "username": u.get("username") or "",
+            "role": u.get("role") or ROLE_USER,
+            "role_label": ROLE_LABELS.get(u.get("role"), u.get("role")),
+            "is_active": bool(u.get("is_active")),
+            "is_superadmin": u.get("role") == ROLE_SUPERADMIN,
+            "work_scopes": work_scope_codes,
+        }
+        for field in optional_profile_fields:
+            u["profile_payload"][field] = u.get(field) or ""
     return render_template("admin_users.html", users=all_users, error=error,
                            role_labels=ROLE_LABELS, current_user_id=current_user.id,
+                           editable_profile_fields=optional_profile_fields,
+                           work_scope_options=WORK_SCOPE_OPTIONS,
                            perm_groups=grouped_permissions(),
                            role_defaults={r: default_permissions_for_role(r) for r in ROLES}), status
 
@@ -224,6 +274,52 @@ def api_update_user_password(user_id: int):
         target_type="user",
         target_id=user_id,
         target_label=user.get("username"),
+    )
+    return admin_flask_response(build_admin_ok_response())
+
+
+@bp.route("/api/users/<int:user_id>", methods=["PUT"])
+@login_required
+@superadmin_required
+def api_update_user_profile(user_id: int):
+    from appcore.users import get_by_id
+    user = get_by_id(user_id)
+    if not user:
+        return admin_flask_response(build_admin_error_response("用户不存在", 404))
+    body = request.get_json(silent=True) or {}
+    update_kwargs = {
+        "username": body.get("username") or "",
+        "role": body.get("role") or user.get("role") or ROLE_USER,
+        "is_active": bool(body.get("is_active")),
+    }
+    if "is_active" not in body:
+        update_kwargs["is_active"] = bool(user.get("is_active"))
+    if "xingming" in editable_user_profile_fields():
+        update_kwargs["xingming"] = body.get("xingming") or ""
+    if "work_scopes" in body:
+        raw_scopes = body.get("work_scopes")
+        allowed_scopes = {scope["code"] for scope in WORK_SCOPE_OPTIONS}
+        if isinstance(raw_scopes, list):
+            update_kwargs["work_scopes"] = [
+                scope for scope in raw_scopes
+                if isinstance(scope, str) and scope in allowed_scopes
+            ]
+        else:
+            update_kwargs["work_scopes"] = []
+    try:
+        update_user_profile(user_id, **update_kwargs)
+    except ValueError as exc:
+        return admin_flask_response(build_admin_error_response(str(exc), 400))
+    _audit_admin_action(
+        "admin_user_profile_updated",
+        target_type="user",
+        target_id=user_id,
+        target_label=user.get("username"),
+        detail={
+            "old_role": user.get("role"),
+            "new_role": update_kwargs["role"],
+            "is_active": update_kwargs["is_active"],
+        },
     )
     return admin_flask_response(build_admin_ok_response())
 

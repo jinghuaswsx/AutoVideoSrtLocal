@@ -5,6 +5,7 @@ from flask import Blueprint, request
 from flask_login import current_user, login_required
 
 from appcore import mk_import as mk_import_svc
+from appcore.users import ensure_translation_work_user
 from web.services.mk_import import (
     build_mk_import_admin_required_response,
     build_mk_import_bad_payload_response,
@@ -13,6 +14,7 @@ from web.services.mk_import import (
     build_mk_import_db_failed_response,
     build_mk_import_download_failed_response,
     build_mk_import_duplicate_response,
+    build_mk_import_invalid_translator_response,
     build_mk_import_storage_failed_response,
     build_mk_import_success_response,
     build_mk_import_too_many_filenames_response,
@@ -55,6 +57,10 @@ def import_video():
     translator_id = payload.get("translator_id")
     if not meta or not isinstance(translator_id, int):
         return mk_import_flask_response(build_mk_import_bad_payload_response())
+    try:
+        ensure_translation_work_user(translator_id)
+    except ValueError as e:
+        return mk_import_flask_response(build_mk_import_invalid_translator_response(e))
     try:
         result = mk_import_svc.import_mk_video(
             mk_video_metadata=meta,

@@ -335,9 +335,31 @@ def test_resolve_translator_rejects_no_can_translate_perm(monkeypatch):
         npr._resolve_translator(5)
 
 
+def test_resolve_translator_rejects_no_translation_work_scope(monkeypatch):
+    """permissions JSON 缺 work_scope_translation → TranslatorInvalidError。"""
+    monkeypatch.setattr(
+        "appcore.new_product_review.query_one",
+        lambda sql, args: {
+            "id": 5,
+            "username": "u",
+            "role": "user",
+            "permissions": '{"can_translate": true, "work_scope_translation": false}',
+            "is_active": 1,
+        },
+    )
+    with pytest.raises(npr.TranslatorInvalidError, match="translation work scope"):
+        npr._resolve_translator(5)
+
+
 def test_resolve_translator_accepts_valid(monkeypatch):
     """正常用户 → 返回 dict。"""
-    user = {"id": 5, "username": "u", "role": "user", "permissions": '{"can_translate": true}', "is_active": 1}
+    user = {
+        "id": 5,
+        "username": "u",
+        "role": "user",
+        "permissions": '{"can_translate": true, "work_scope_translation": true}',
+        "is_active": 1,
+    }
     monkeypatch.setattr(
         "appcore.new_product_review.query_one",
         lambda sql, args: user,
@@ -529,7 +551,7 @@ def _setup_decide_mocks(monkeypatch, product=None, translator=None, task_id=42):
         "appcore.new_product_review.query_one",
         lambda sql, args: translator if translator is not None else {
             "id": 10, "username": "alice", "role": "user",
-            "permissions": '{"can_translate": true}', "is_active": 1,
+            "permissions": '{"can_translate": true, "work_scope_translation": true}', "is_active": 1,
         },
     )
     monkeypatch.setattr(

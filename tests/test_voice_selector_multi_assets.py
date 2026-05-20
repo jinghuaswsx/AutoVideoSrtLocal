@@ -86,6 +86,28 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "语速未维护，已按音色排序" in SCRIPT
     assert "语速匹配" in SCRIPT
     assert ".vs-row-speed" in TEMPLATE
+    assert 'class="vs-speed-match-pill"' in SCRIPT
+    assert '<span class="vs-speed-match-label">语速匹配</span>' in SCRIPT
+    assert '<span class="vs-speed-match-value">${escapeHtml(speedScore)}</span>' in SCRIPT
+    assert ".vs-speed-match-pill" in TEMPLATE
+    assert ".vs-speed-match-value" in TEMPLATE
+    assert "font-size: 1.5em" in TEMPLATE
+
+
+def test_voice_selector_multi_renders_independent_voice_match_rank_badge():
+    rows_block = SCRIPT[
+        SCRIPT.index("function rowsHtml"):
+        SCRIPT.index("function renderRowsInto")
+    ]
+
+    assert "similarityRankMap" in SCRIPT
+    assert "candidate.similarity_rank" in SCRIPT
+    assert "const voiceMatchSimilarityRank = isRec" in rows_block
+    assert 'class="vs-row-sim"' in rows_block
+    assert 'class="vs-row-rank"' in rows_block
+    assert "#${voiceMatchSimilarityRank}" in rows_block
+    assert "${simBadge}${rankBadge}" in rows_block
+    assert ".vs-row-rank" in TEMPLATE
 
 
 def test_voice_selector_multi_exposes_full_voice_modal():

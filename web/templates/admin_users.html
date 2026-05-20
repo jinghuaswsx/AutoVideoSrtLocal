@@ -8,7 +8,8 @@
 }
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .table-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; overflow: hidden; }
-table { width: 100%; border-collapse: collapse; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; min-width: 1160px; border-collapse: collapse; }
 th { text-align: left; color: var(--text-muted, #6b7280); font-size: 12px; font-weight: 700; text-transform: uppercase; padding: 10px 16px; border-bottom: 1.5px solid var(--border-main, #e5e7eb); background: var(--bg-input, #f9fafb); }
 td { padding: 12px 16px; border-bottom: 1px solid var(--border-light, #f3f4f6); font-size: 14px; color: var(--text-main, #374151); }
 tr:last-child td { border-bottom: none; }
@@ -32,11 +33,17 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 /* Action buttons */
 .btn-perm { padding: 4px 12px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border-main, #e5e7eb); background: var(--bg-card, #fff); color: var(--text-main, #374151); cursor: pointer; }
 .btn-perm:hover { background: var(--bg-input, #f9fafb); }
+.actions-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 280px; }
+.perm-summary { color: var(--text-muted, #6b7280); font-size: 12px; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perm-count { color: var(--text-main, #374151); font-weight: 600; margin-right: 6px; }
+.work-scope-tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #e0f2fe; color: #075985; }
+.work-scope-empty { color: #9ca3af; font-size: 12px; }
 
 /* Permission modal */
 .perm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000; align-items: center; justify-content: center; }
 .perm-overlay.open { display: flex; }
 .perm-modal { background: #fff; border-radius: 14px; width: 620px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.15); }
+.user-edit-modal { width: 480px; }
 .password-modal { width: 420px; }
 .perm-modal-header { padding: 20px 24px 12px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
 .perm-modal-header h2 { font-size: 16px; font-weight: 700; color: #111827; margin: 0; }
@@ -51,6 +58,15 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 .perm-role-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6; }
 .perm-role-row label { font-size: 13px; font-weight: 600; color: #374151; margin: 0; }
 .perm-role-row select { width: 160px; }
+.user-edit-field { margin-bottom: 14px; }
+.user-edit-field input[readonly] { color: #6b7280; cursor: not-allowed; }
+.user-active-row { display: flex; align-items: center; gap: 8px; color: #374151; font-size: 13px; margin-top: 4px; }
+.user-active-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+.work-scope-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.work-scope-option { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; color: #374151; font-size: 13px; cursor: pointer; }
+.work-scope-option input { width: 16px; height: 16px; accent-color: var(--accent); }
+.work-scope-option:has(input:disabled) { color: #9ca3af; cursor: not-allowed; background: #f9fafb; }
+.user-edit-error { display: none; color: #ef4444; font-size: 12px; margin-top: 6px; }
 .password-field { margin-bottom: 14px; }
 .password-error { display: none; color: #ef4444; font-size: 12px; margin-top: 6px; }
 .btn-reset-defaults { padding: 4px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; cursor: pointer; }
@@ -108,17 +124,33 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 </div>
 
 <div class="table-card">
+<div class="table-scroll">
 <table>
-  <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+  <thead><tr><th>ID</th><th>用户名</th>{% if 'xingming' in editable_profile_fields %}<th>姓名</th>{% endif %}<th>角色</th><th>工作范围</th><th>状态</th><th>权限</th><th>创建时间</th><th>操作</th></tr></thead>
   <tbody>
     {% for u in users %}
     <tr>
       <td>{{ u.id }}</td>
       <td>{{ u.username }}</td>
+      {% if 'xingming' in editable_profile_fields %}<td>{{ u.xingming or '—' }}</td>{% endif %}
       <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
+      <td>
+        {% if u.work_scope_summary != '—' %}
+        <span class="work-scope-tag">{{ u.work_scope_summary }}</span>
+        {% else %}
+        <span class="work-scope-empty">—</span>
+        {% endif %}
+      </td>
       <td>{{ '正常' if u.is_active else '已禁用' }}</td>
+      <td>
+        <div class="perm-summary" title="{{ u.permissions_summary }}">
+          <span class="perm-count">{{ u.permissions_enabled_count }}/{{ u.permissions_total_count }}</span>{{ u.permissions_summary }}
+        </div>
+      </td>
       <td>{{ u.created_at }}</td>
-      <td style="display:flex;gap:6px;align-items:center;">
+      <td class="actions-cell">
+        <button class="btn-perm" type="button" onclick='openUserEditModal({{ u.profile_payload | tojson }})'>编辑</button>
+        <button class="btn-perm" type="button" onclick='openPasswordModal({{ u.id | tojson }}, {{ u.username | tojson }})'>修改密码</button>
         {% if u.role != 'superadmin' %}
         <button class="btn-perm" onclick='openPermModal({{ u.id | tojson }}, {{ u.username | tojson }}, {{ u.role | tojson }}, {{ u.permissions_payload | tojson }})'>权限配置</button>
         {% else %}
@@ -131,12 +163,67 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
           <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">
           <button class="btn btn-ghost btn-sm" type="submit" {% if u.role == 'superadmin' %}disabled title="不能禁用超管"{% endif %}>{{ '禁用' if u.is_active else '启用' }}</button>
         </form>
-        <button class="btn-perm" type="button" onclick='openPasswordModal({{ u.id | tojson }}, {{ u.username | tojson }})'>编辑</button>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
+</div>
+
+<!-- User Edit Modal -->
+<div class="perm-overlay" id="userEditOverlay" onclick="if(event.target===this)closeUserEditModal()">
+  <div class="perm-modal user-edit-modal">
+    <div class="perm-modal-header">
+      <h2 id="userEditModalTitle">编辑用户</h2>
+      <button class="close-btn" type="button" onclick="closeUserEditModal()">&times;</button>
+    </div>
+    <div class="perm-modal-body">
+      <div class="user-edit-field">
+        <label for="editUsername">用户名</label>
+        <input type="text" id="editUsername" autocomplete="off">
+      </div>
+      {% if 'xingming' in editable_profile_fields %}
+      <div class="user-edit-field">
+        <label for="editXingming">姓名</label>
+        <input type="text" id="editXingming" autocomplete="off">
+      </div>
+      {% endif %}
+      <div class="user-edit-field">
+        <label for="editRole">角色</label>
+        <select id="editRole">
+          <option value="user">普通用户</option>
+          <option value="translator">翻译用户</option>
+          <option value="analyst">分析用户</option>
+          <option value="admin">管理员</option>
+          <option value="superadmin" id="editOptSuperadmin" style="display:none">超级管理员</option>
+        </select>
+      </div>
+      <div class="user-edit-field">
+        <label>工作范围</label>
+        <div class="work-scope-options">
+          {% for scope in work_scope_options %}
+          <label class="work-scope-option" for="editWorkScope_{{ scope.code }}">
+            <input type="checkbox" id="editWorkScope_{{ scope.code }}" data-scope-code="{{ scope.code }}">
+            {{ scope.label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="user-edit-field">
+        <label>状态</label>
+        <label class="user-active-row" for="editIsActive">
+          <input type="checkbox" id="editIsActive">
+          正常启用
+        </label>
+        <div class="user-edit-error" id="userEditError"></div>
+      </div>
+    </div>
+    <div class="perm-modal-footer">
+      <button class="btn-cancel" type="button" onclick="closeUserEditModal()">取消</button>
+      <button class="btn-save" type="button" onclick="saveUserProfile()">保存</button>
+    </div>
+  </div>
 </div>
 
 <!-- Permission Modal -->
@@ -196,9 +283,101 @@ input:focus, select:focus { border-color: var(--accent); background: var(--bg-ca
 <script>
 const PERM_GROUPS = {{ perm_groups | tojson }};
 const ROLE_DEFAULTS = {{ role_defaults | tojson }};
+const WORK_SCOPE_OPTIONS = {{ work_scope_options | tojson }};
 let currentUserId = null;
 let isSuperadmin = false;
+let editUserId = null;
 let passwordUserId = null;
+
+function openUserEditModal(user) {
+  editUserId = user.id;
+  const isEditSuperadmin = !!user.is_superadmin;
+  document.getElementById('userEditModalTitle').textContent = '编辑用户 — ' + (user.username || '');
+  const usernameInput = document.getElementById('editUsername');
+  usernameInput.value = user.username || '';
+  usernameInput.readOnly = isEditSuperadmin;
+
+  const xingmingInput = document.getElementById('editXingming');
+  if (xingmingInput) {
+    xingmingInput.value = user.xingming || '';
+  }
+
+  const roleSelect = document.getElementById('editRole');
+  const superOption = document.getElementById('editOptSuperadmin');
+  if (isEditSuperadmin) {
+    superOption.style.display = '';
+    roleSelect.value = 'superadmin';
+    roleSelect.disabled = true;
+  } else {
+    superOption.style.display = 'none';
+    roleSelect.value = user.role || 'user';
+    roleSelect.disabled = false;
+  }
+
+  const activeInput = document.getElementById('editIsActive');
+  activeInput.checked = !!user.is_active;
+  activeInput.disabled = isEditSuperadmin;
+
+  const selectedScopes = new Set(user.work_scopes || []);
+  for (const scope of WORK_SCOPE_OPTIONS) {
+    const scopeInput = document.getElementById('editWorkScope_' + scope.code);
+    if (scopeInput) {
+      scopeInput.checked = selectedScopes.has(scope.code);
+      scopeInput.disabled = isEditSuperadmin;
+    }
+  }
+  setUserEditError('');
+  document.getElementById('userEditOverlay').classList.add('open');
+  usernameInput.focus();
+}
+
+function closeUserEditModal() {
+  document.getElementById('userEditOverlay').classList.remove('open');
+  editUserId = null;
+  setUserEditError('');
+}
+
+function setUserEditError(message) {
+  const el = document.getElementById('userEditError');
+  el.textContent = message;
+  el.style.display = message ? 'block' : 'none';
+}
+
+async function saveUserProfile() {
+  if (!editUserId) return;
+  const username = document.getElementById('editUsername').value.trim();
+  if (!username) { setUserEditError('用户名不能为空'); return; }
+
+  const payload = {
+    username: username,
+    role: document.getElementById('editRole').value,
+    is_active: document.getElementById('editIsActive').checked
+  };
+  const xingmingInput = document.getElementById('editXingming');
+  if (xingmingInput) {
+    payload.xingming = xingmingInput.value.trim();
+  }
+  payload.work_scopes = WORK_SCOPE_OPTIONS
+    .filter(scope => {
+      const input = document.getElementById('editWorkScope_' + scope.code);
+      return input && input.checked;
+    })
+    .map(scope => scope.code);
+
+  const resp = await fetch('/admin/api/users/' + editUserId, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
+    body: JSON.stringify(payload)
+  });
+  if (!resp.ok) {
+    const e = await resp.json();
+    setUserEditError(e.error || '用户信息更新失败');
+    return;
+  }
+
+  closeUserEditModal();
+  location.reload();
+}
 
 function openPermModal(userId, username, role, perms) {
   currentUserId = userId;

@@ -17,6 +17,7 @@ from typing import Any
 from appcore import local_media_storage, mk_import, pushes, tasks
 from appcore.db import execute, get_conn, query, query_one
 from appcore.medias import create_item
+from appcore.users import ensure_translation_work_user
 from web.services.media_mk_selection import (
     build_mk_video_cache_object_key,
     cache_mk_video,
@@ -419,9 +420,7 @@ def adopt_recommendations(
     if not ids:
         raise ValueError("recommendation_ids required")
 
-    from appcore.new_product_review import _resolve_translator
-
-    _resolve_translator(int(translator_id))
+    ensure_translation_work_user(int(translator_id))
     placeholders = ",".join(["%s"] * len(ids))
     rows = query(
         f"SELECT * FROM xuanpin_today_recommendations WHERE id IN ({placeholders}) "

@@ -29,3 +29,13 @@ def test_mobile_sidebar_drawer_contract_remains_intact():
     assert "body.classList.contains('sidebar-open')" in source
     assert "backdrop.addEventListener('click', closeDrawer)" in source
     assert "e.key === 'Escape'" in source
+
+
+def test_desktop_forced_drawer_mode_uses_hamburger_as_drawer_trigger():
+    source = _layout_source()
+
+    assert "function isForcedDrawerMode()" in source
+    assert "function isDrawerMode()" in source
+    assert "var sidebarTransform = window.getComputedStyle(sidebar).transform;" in source
+    assert "return !isDesktop() || isForcedDrawerMode();" in source
+    assert "if (isDesktop() && !isDrawerMode())" in source

@@ -304,20 +304,36 @@
     display: flex; flex-wrap: wrap; gap: 6px;
     margin-top: 6px; font-size: 11px; color: var(--text-user-badge);
   }
-  .vs-row-speed span,
+  .vs-row-speed > span,
   .vs-row-speed-missing {
     display: inline-flex; align-items: center;
     padding: 2px 7px; border-radius: 999px;
     background: var(--bg-muted, #f1f5f9);
   }
+  .vs-row-speed .vs-speed-match-pill {
+    gap: 5px; padding: 3px 9px;
+    background: var(--info-bg, oklch(94% 0.055 220));
+    border: 1px solid var(--info-border, oklch(80% 0.075 220));
+    color: var(--info-fg, oklch(36% 0.11 220));
+    font-weight: 700;
+  }
+  .vs-speed-match-value {
+    font-size: 1.5em; line-height: 1;
+    font-weight: 800; font-variant-numeric: tabular-nums;
+  }
   .vs-row-speed-missing {
     color: oklch(48% 0.08 70);
     background: oklch(96% 0.03 80);
   }
-  .vs-row-sim {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
+  .vs-row-sim,
+  .vs-row-rank {
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
     font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;
     margin-right: 6px;
+  }
+  .vs-row-rank {
+    min-width: 28px; justify-content: center;
+    background: oklch(50% 0.17 230);
   }
   .vs-row audio { height: 32px; max-width: 220px; }
   .vs-row-select-btn {

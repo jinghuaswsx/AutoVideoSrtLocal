@@ -102,14 +102,14 @@
 .mk-copy-btn { height:24px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-fg-muted); font-size:12px; cursor:pointer; }
 .mk-copy-btn:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
 .mk-detail-btn { height:30px; font-size:16px; padding:0 10px; }
-@media (min-width: 769px) and (max-width: 1760px) {
+@media (min-width: 769px) and (max-width: 2100px) {
   .oc {
-    --mk-products-table-min-w: 100%; --mk-product-image-size: 148px;
-    --mk-col-rank: 42px; --mk-col-image: 164px; --mk-col-name: 230px;
-    --mk-col-cn: 140px; --mk-col-status: 150px; --mk-col-store: 82px;
-    --mk-col-sales: 72px; --mk-col-revenue: 92px; --mk-col-spend: 92px;
-    --mk-col-video: 56px; --mk-col-ads: 56px; --mk-col-material: 82px;
-    --mk-col-action: 80px;
+    --mk-products-table-min-w: 100%; --mk-product-image-size: 128px;
+    --mk-col-rank: 34px; --mk-col-image: 140px; --mk-col-name: 200px;
+    --mk-col-cn: 118px; --mk-col-status: 124px; --mk-col-store: 68px;
+    --mk-col-sales: 60px; --mk-col-revenue: 80px; --mk-col-spend: 80px;
+    --mk-col-video: 46px; --mk-col-ads: 46px; --mk-col-material: 68px;
+    --mk-col-action: 68px;
   }
   .main-content { padding-left:22px; padding-right:22px; }
   .oc-table { font-size:16px; }
@@ -234,6 +234,7 @@
   z-index: 2000; max-width: 400px;
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-toast--warning { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
@@ -1218,7 +1219,7 @@ async function mkiCheckRenderedButtons() {
 }
 
 // mk-import: Task 10 翻译员选择 modal
-const MKI_ACTIVE_USERS_API = '/medias/api/users/active';
+const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
 let mkiTranslatorResolve = null;
 let mkiTranslatorsCache = null;
 
@@ -1246,7 +1247,7 @@ async function mkiOpenTranslatorModal() {
     }
   }
   if (!mkiTranslatorsCache.length) {
-    alert('没有可用员工');
+    alert('没有可用翻译工作用户');
     return null;
   }
   const sel = document.getElementById('mkiTranslatorSel');
@@ -1271,6 +1272,14 @@ function mkiToast(kind, msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 4000);
+}
+
+function mkiWarningMessageFromResponse(data) {
+  const warnings = Array.isArray(data?.warnings) ? data.warnings : [];
+  const productLinkWarning = warnings.find(w => w && w.type === 'product_link_unavailable');
+  if (!productLinkWarning) return '';
+  const detail = productLinkWarning.detail ? '：' + productLinkWarning.detail : '';
+  return '商品链接可能不可访问' + detail;
 }
 
 async function mkiHandleClick(btn) {
@@ -1307,6 +1316,8 @@ async function mkiHandleClick(btn) {
     MKI_CHECKED_FILENAMES.add(btn.dataset.mkiFilename);  // dedup cache update
     const tag = data.is_new_product ? '（新建产品）' : '（老品 append）';
     mkiToast('success', `素材已入库 ${tag}`);
+    const warningMessage = mkiWarningMessageFromResponse(data);
+    if (warningMessage) mkiToast('warning', warningMessage);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;
@@ -1334,7 +1345,7 @@ async function mkiXiaoOpenModal() {
     } catch (e) { mkiXiaoTranslatorsCache = []; }
   }
   if (!mkiXiaoTranslatorsCache.length) {
-    alert('没有可用员工');
+    alert('没有可用翻译工作用户');
     return null;
   }
   const sel = document.getElementById('mkiXiaoTranslator');
@@ -1416,6 +1427,8 @@ async function mkiXiaoHandleClick(btn) {
     btn.textContent = '任务 #' + data.parent_task_id;
     btn.classList.add('mki-btn--disabled');
     mkiToast('success', '任务已创建 #' + data.parent_task_id + (data.is_new_product ? '（新建产品）' : ''));
+    var warningMessage = mkiWarningMessageFromResponse(data);
+    if (warningMessage) mkiToast('warning', warningMessage);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;

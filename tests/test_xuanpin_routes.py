@@ -137,6 +137,16 @@ def test_xuanpin_mk_video_cards_show_product_icon_for_product_library_status(aut
     assert "产品已在素材库" in body
 
 
+def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';" in body
+    assert "/medias/api/users/active" not in body
+    assert "没有可用翻译工作用户" in body
+
+
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/tabcut")
 
