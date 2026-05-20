@@ -200,6 +200,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "voice_selection.assess": _uc(
+        "voice_selection.assess",
+        "video_translate",
+        "TTS 音色大模型排名",
+        "Gemini 3.5 Flash 通过 OpenRouter 对当前前十音色做单轮自然度、情绪和表达力排名",
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "openrouter",
+        "tokens",
+    ),
     "video_translate.asr": _uc(
         "video_translate.asr",
         "video_translate",

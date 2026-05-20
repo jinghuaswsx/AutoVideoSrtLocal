@@ -141,7 +141,27 @@ def _guess_mime(path: Path) -> str:
         ".jpeg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".webm": "audio/webm",
+        ".flac": "audio/flac",
+        ".aac": "audio/aac",
     }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _audio_format(path: Path, mime: str) -> str:
+    suffix = path.suffix.lower().lstrip(".")
+    if suffix in {"mp3", "wav", "flac", "m4a", "ogg", "webm", "aac"}:
+        return suffix
+    if mime == "audio/mpeg":
+        return "mp3"
+    if mime == "audio/mp4":
+        return "m4a"
+    if mime.startswith("audio/"):
+        return mime.split("/", 1)[1]
+    raise RuntimeError(f"unsupported audio mime for OpenRouter: {mime}")
 
 
 def _media_parts(prompt: str, media) -> list[dict]:
@@ -152,16 +172,25 @@ def _media_parts(prompt: str, media) -> list[dict]:
             raise RuntimeError(f"media file does not exist: {path}")
         mime = _guess_mime(path)
         data = base64.b64encode(path.read_bytes()).decode("ascii")
-        data_url = f"data:{mime};base64,{data}"
         if mime.startswith("image/"):
+            data_url = f"data:{mime};base64,{data}"
             parts.append({
                 "type": "image_url",
                 "image_url": {"url": data_url},
             })
         elif mime.startswith("video/"):
+            data_url = f"data:{mime};base64,{data}"
             parts.append({
                 "type": "video_url",
                 "video_url": {"url": data_url},
+            })
+        elif mime.startswith("audio/"):
+            parts.append({
+                "type": "input_audio",
+                "input_audio": {
+                    "data": data,
+                    "format": _audio_format(path, mime),
+                },
             })
         else:
             raise RuntimeError(f"unsupported media mime for OpenRouter: {mime}")

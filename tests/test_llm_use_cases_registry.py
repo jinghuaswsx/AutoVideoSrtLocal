@@ -61,6 +61,16 @@ def test_video_translate_asr_and_tts_defaults():
     assert USE_CASES["video_translate.tts_language_check"]["units_type"] == "tokens"
 
 
+def test_voice_selection_assess_uses_openrouter_gemini_35_flash():
+    uc = USE_CASES["voice_selection.assess"]
+
+    assert uc["module"] == "video_translate"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+
+
 def test_gemini_video_analysis_family_defaults():
     for code in ("video_score.run", "video_review.analyze"):
         uc = USE_CASES[code]
@@ -94,7 +104,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 58
+    assert len(USE_CASES) == 59
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES

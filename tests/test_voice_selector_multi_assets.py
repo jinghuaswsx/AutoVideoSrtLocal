@@ -106,8 +106,41 @@ def test_voice_selector_multi_renders_independent_voice_match_rank_badge():
     assert 'class="vs-row-sim"' in rows_block
     assert 'class="vs-row-rank"' in rows_block
     assert "#${voiceMatchSimilarityRank}" in rows_block
-    assert "${simBadge}${rankBadge}" in rows_block
+    assert "${simBadge}${rankBadge}${aiRankBadge}" in rows_block
     assert ".vs-row-rank" in TEMPLATE
+
+
+def test_voice_selector_multi_renders_llm_rank_badge_after_match_rank():
+    rows_block = SCRIPT[
+        SCRIPT.index("function rowsHtml"):
+        SCRIPT.index("function renderRowsInto")
+    ]
+
+    assert "function voiceAiRankBadgeHtml(rec)" in SCRIPT
+    assert "llm_rank" in SCRIPT
+    assert "llm_reason_summary" in SCRIPT
+    assert 'class="vs-row-ai-rank"' in SCRIPT
+    assert "const aiRankBadge = isRec ? voiceAiRankBadgeHtml(rec) : \"\";" in rows_block
+    assert "${simBadge}${rankBadge}${aiRankBadge}" in rows_block
+    assert ".vs-row-ai-rank" in TEMPLATE
+
+
+def test_voice_selector_multi_exposes_llm_rank_debug_modal():
+    assert 'id="vs-ai-rank-debug-btn"' in TEMPLATE
+    assert "大模型音色选择排名" in TEMPLATE
+    assert 'id="vs-ai-rank-modal"' in TEMPLATE
+    assert 'data-ai-rank-tab="request"' in TEMPLATE
+    assert 'data-ai-rank-tab="result"' in TEMPLATE
+    assert 'id="vs-ai-rank-request-visual"' in TEMPLATE
+    assert 'id="vs-ai-rank-request-raw"' in TEMPLATE
+    assert 'id="vs-ai-rank-result-visual"' in TEMPLATE
+    assert 'id="vs-ai-rank-result-raw"' in TEMPLATE
+    assert "let voiceAiRankDebug = null;" in SCRIPT
+    assert "function openVoiceAiRankModal(" in SCRIPT
+    assert "function renderVoiceAiRankDebugModal(" in SCRIPT
+    assert "function renderVoiceAiRankRequestVisual(" in SCRIPT
+    assert "function renderVoiceAiRankResultVisual(" in SCRIPT
+    assert "voice_ai_rank_debug" in SCRIPT
 
 
 def test_voice_selector_multi_exposes_full_voice_modal():

@@ -52,6 +52,14 @@
   const modalCloseBtn = document.getElementById("vs-modal-close-btn");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
+  const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
+  const aiRankModalEl = document.getElementById("vs-ai-rank-modal");
+  const aiRankCloseBtn = document.getElementById("vs-ai-rank-close-btn");
+  const aiRankModalStatus = document.getElementById("vs-ai-rank-modal-status");
+  const aiRankRequestVisual = document.getElementById("vs-ai-rank-request-visual");
+  const aiRankRequestRaw = document.getElementById("vs-ai-rank-request-raw");
+  const aiRankResultVisual = document.getElementById("vs-ai-rank-result-visual");
+  const aiRankResultRaw = document.getElementById("vs-ai-rank-result-raw");
 
   // 字幕参数输入
   const subFontEl = document.getElementById("vs-sub-font");
@@ -399,6 +407,8 @@
   let candidatesMap = new Map();
   let candidatesRankMap = new Map();
   let similarityRankMap = new Map();
+  let voiceAiRankDebug = null;
+  let voiceAiRankStatus = "";
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -425,6 +435,14 @@
     return String(s).replace(/[&<>"']/g, ch => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[ch]));
+  }
+
+  function prettyJson(value) {
+    try {
+      return JSON.stringify(value == null ? {} : value, null, 2);
+    } catch (_err) {
+      return String(value == null ? "" : value);
+    }
   }
 
   function findActiveVoiceElement() {
@@ -487,6 +505,119 @@
 
   function currentModalOpen() {
     return !!(modalEl && !modalEl.hidden);
+  }
+
+  function currentAiRankModalOpen() {
+    return !!(aiRankModalEl && !aiRankModalEl.hidden);
+  }
+
+  function updateVoiceAiRankDebugButton(status) {
+    voiceAiRankStatus = status || voiceAiRankStatus || "";
+    if (!aiRankDebugBtn) return;
+    const hasDebug = !!voiceAiRankDebug;
+    aiRankDebugBtn.hidden = !hasDebug;
+    aiRankDebugBtn.disabled = !hasDebug;
+  }
+
+  function setAiRankTab(name) {
+    if (!aiRankModalEl) return;
+    aiRankModalEl.querySelectorAll("[data-ai-rank-tab]").forEach(btn => {
+      const active = btn.dataset.aiRankTab === name;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", String(active));
+    });
+    aiRankModalEl.querySelectorAll("[data-ai-rank-panel]").forEach(panel => {
+      panel.classList.toggle("active", panel.dataset.aiRankPanel === name);
+    });
+  }
+
+  function debugCards(items) {
+    const html = (items || []).map(item => `
+      <div class="vs-ai-rank-card">
+        <strong>${escapeHtml(item[0])}</strong>
+        <span>${escapeHtml(item[1] == null || item[1] === "" ? "-" : item[1])}</span>
+      </div>
+    `).join("");
+    return html ? `<div class="vs-ai-rank-grid">${html}</div>` : `<div class="vs-loading">暂无数据</div>`;
+  }
+
+  function voiceAiRankAudioHtml(item) {
+    const rel = item && item.relative_path ? String(item.relative_path) : "";
+    if (!rel) return "";
+    const src = safeMediaSrc(`${apiBase}/${taskId}/artifact-path?path=${encodeURIComponent(rel)}`);
+    return src ? `<audio controls preload="none" src="${escapeHtml(src)}"></audio>` : "";
+  }
+
+  function renderVoiceAiRankRequestVisual(debug) {
+    const request = (debug && debug.request) || {};
+    const visual = request.visual || {};
+    const media = Array.isArray(visual.media) ? visual.media : [];
+    const candidates = Array.isArray(visual.candidates) ? visual.candidates : [];
+    const mediaHtml = media.length ? media.map((item, index) => `
+      <div class="vs-ai-rank-card">
+        <strong>${index + 1}. ${escapeHtml(item.role || "audio")}</strong>
+        <span>${escapeHtml(item.voice_id || item.filename || "-")}</span>
+        <span>${escapeHtml(item.relative_path || item.path || "")}</span>
+        <span>${escapeHtml(item.source || "")}${item.bytes ? ` · ${escapeHtml(item.bytes)} bytes` : ""}</span>
+        ${voiceAiRankAudioHtml(item)}
+      </div>
+    `).join("") : `<div class="vs-loading">暂无音频信息</div>`;
+    const candidateHtml = candidates.length ? candidates.map(item => `
+      <div class="vs-ai-rank-card">
+        <strong>#${escapeHtml(item.match_order || "-")} ${escapeHtml(item.name || item.voice_id || "-")}</strong>
+        <span>${escapeHtml(item.voice_id || "-")}</span>
+        <span>相似度 ${escapeHtml(item.similarity || "-")} · 语速 ${escapeHtml(item.speed_match_score || "-")}</span>
+        <span>${escapeHtml(item.audio_ref || "")}</span>
+      </div>
+    `).join("") : `<div class="vs-loading">暂无候选信息</div>`;
+    return `
+      ${debugCards([
+        ["Provider", debug && debug.provider],
+        ["Model", debug && debug.model],
+        ["状态", debug && debug.status],
+        ["目标语言", visual.target_lang],
+      ])}
+      <div class="vs-ai-rank-section-title">音频文件</div>
+      <div class="vs-ai-rank-grid">${mediaHtml}</div>
+      <div class="vs-ai-rank-section-title">候选音色</div>
+      <div class="vs-ai-rank-grid">${candidateHtml}</div>
+    `;
+  }
+
+  function renderVoiceAiRankResultVisual(debug) {
+    const result = (debug && debug.result) || {};
+    const visual = result.visual || {};
+    const rankings = Array.isArray(visual.rankings) ? visual.rankings : [];
+    if (!rankings.length) return `<div class="vs-loading">暂无排名结果</div>`;
+    return `<div class="vs-ai-rank-grid">${rankings.map(row => `
+      <div class="vs-ai-rank-card">
+        <strong>AI #${escapeHtml(row.llm_rank || "-")} · ${escapeHtml(row.voice_id || "-")}</strong>
+        <span>${escapeHtml(row.reason_summary || "")}</span>
+      </div>
+    `).join("")}</div>`;
+  }
+
+  function renderVoiceAiRankDebugModal(tab) {
+    const debug = voiceAiRankDebug || {};
+    if (aiRankModalStatus) aiRankModalStatus.textContent = voiceAiRankStatus || debug.status || "done";
+    if (aiRankRequestVisual) aiRankRequestVisual.innerHTML = renderVoiceAiRankRequestVisual(debug);
+    if (aiRankRequestRaw) aiRankRequestRaw.textContent = prettyJson((debug.request || {}).raw || {});
+    if (aiRankResultVisual) aiRankResultVisual.innerHTML = renderVoiceAiRankResultVisual(debug);
+    if (aiRankResultRaw) aiRankResultRaw.textContent = prettyJson((debug.result || {}).raw || {});
+    setAiRankTab(tab || "request");
+  }
+
+  function openVoiceAiRankModal(tab) {
+    if (!aiRankModalEl || !voiceAiRankDebug) return;
+    renderVoiceAiRankDebugModal(tab || "request");
+    aiRankModalEl.hidden = false;
+    document.body.classList.add("vs-ai-rank-modal-open");
+  }
+
+  function closeVoiceAiRankModal() {
+    if (!aiRankModalEl) return;
+    aiRankModalEl.hidden = true;
+    document.body.classList.remove("vs-ai-rank-modal-open");
   }
 
   function saveReloadState() {
@@ -666,6 +797,8 @@
       const data = await fetchVoiceLibraryPage(pageToLoad);
       if (!data || seq !== libraryRequestSeq) return;
       setVoiceMatchCandidates(data.candidates || []);
+      voiceAiRankDebug = data.voice_ai_rank_debug || null;
+      updateVoiceAiRankDebugButton(data.voice_ai_rank_status || "");
       mergeVoiceItems(allItems, data.items || [], loadedVoiceIds);
       selectedVoiceId = data.selected_voice_id || null;
       if (selectedVoiceId && !selectedVoiceName) {
@@ -748,6 +881,17 @@
     }
     if (pollHandle) clearTimeout(pollHandle);
     pollHandle = setTimeout(() => loadLibrary({ automatic: true }), delay);
+  }
+
+  function voiceAiRankBadgeHtml(rec) {
+    if (!rec) return "";
+    const rank = Number(rec.llm_rank);
+    const reason = String(rec.llm_reason_summary || "").trim();
+    if (Number.isFinite(rank) && rank > 0) {
+      const label = `AI #${Math.trunc(rank)}${reason ? ` · ${reason}` : ""}`;
+      return `<button type="button" class="vs-row-ai-rank" title="${escapeHtml(reason || "大模型推荐排名")}">${escapeHtml(label)}</button>`;
+    }
+    return "";
   }
 
   function rowHtml(v, opts) {
@@ -891,6 +1035,12 @@
     if (!container) return;
     container.querySelectorAll(".vs-row").forEach(row => {
       row.addEventListener("click", e => {
+        if (e.target.closest(".vs-row-ai-rank")) {
+          e.preventDefault();
+          e.stopPropagation();
+          openVoiceAiRankModal("result");
+          return;
+        }
         if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
         try {
           row.focus({ preventScroll: true });
@@ -926,7 +1076,8 @@
       const rankBadge = isRec && Number.isFinite(voiceMatchSimilarityRank)
         ? `<span class="vs-row-rank">#${voiceMatchSimilarityRank}</span>`
         : "";
-      const badge = `${simBadge}${rankBadge}`;
+      const aiRankBadge = isRec ? voiceAiRankBadgeHtml(rec) : "";
+      const badge = `${simBadge}${rankBadge}${aiRankBadge}`;
       html += rowHtml(v, {
         badge, pinClass: classes.join(" "), isSelected, rec,
       });
@@ -1090,13 +1241,23 @@
   if (voiceSelect) voiceSelect.addEventListener("change", selectVoiceFromControl);
   if (openModalBtn) openModalBtn.addEventListener("click", openVoiceModal);
   if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVoiceModal);
+  if (aiRankDebugBtn) aiRankDebugBtn.addEventListener("click", () => openVoiceAiRankModal("request"));
+  if (aiRankCloseBtn) aiRankCloseBtn.addEventListener("click", closeVoiceAiRankModal);
   if (modalEl) {
     modalEl.addEventListener("click", e => {
       if (e.target && e.target.hasAttribute("data-vs-modal-close")) closeVoiceModal();
     });
   }
+  if (aiRankModalEl) {
+    aiRankModalEl.addEventListener("click", e => {
+      if (e.target && e.target.hasAttribute("data-ai-rank-modal-close")) closeVoiceAiRankModal();
+      const tab = e.target && e.target.closest("[data-ai-rank-tab]");
+      if (tab) setAiRankTab(tab.dataset.aiRankTab || "request");
+    });
+  }
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && currentModalOpen()) closeVoiceModal();
+    if (e.key === "Escape" && currentAiRankModalOpen()) closeVoiceAiRankModal();
   });
   if (listEl) listEl.addEventListener("scroll", maybeLoadMoreVoices, { passive: true });
   if (listEl) listEl.addEventListener("scroll", saveReloadState, { passive: true });
@@ -1129,6 +1290,8 @@
         setVoiceMatchCandidates(data.candidates || []);
         // 把后端给的候选完整行 merge 进当前动态页集合。
         // 候选可能不在已加载的 30 个普通音色里，但仍要置顶可选。
+        voiceAiRankDebug = null;
+        updateVoiceAiRankDebugButton("stale_after_rematch");
         mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
         render();
       } else if (resp.status !== 409) {

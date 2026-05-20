@@ -40,6 +40,13 @@ def _sanitize_messages(messages: list[dict]) -> list[dict]:
                         })
                     else:
                         parts.append(part)
+                elif (isinstance(part, dict)
+                      and part.get("type") == "input_audio"):
+                    audio = dict(part.get("input_audio") or {})
+                    data = str(audio.get("data") or "")
+                    if data:
+                        audio["data"] = f"[base64-audio, ~{len(data)} bytes]"
+                    parts.append({**part, "input_audio": audio})
                 else:
                     parts.append(part)
             result.append({**msg, "content": parts})
