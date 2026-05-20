@@ -88,27 +88,35 @@ def _attach_realtime_data_quality(result):
     if not isinstance(result, dict):
         return result
     period = result.get("period") or {}
-    business_date = (
+    business_date_from = (
         _coerce_business_date(period.get("date"))
         or _coerce_business_date(period.get("start_date"))
     )
-    if business_date is None:
+    if business_date_from is None:
         return result
+    business_date_to = (
+        _coerce_business_date(period.get("date"))
+        or _coerce_business_date(period.get("end_date"))
+        or business_date_from
+    )
     scope = result.get("scope") or {}
     ad_source = scope.get("ad_source") or ""
-    if "realtime" in ad_source:
+    if ad_source == "mixed" or scope.get("ad_granularity") == "mixed":
+        source_mode = dq.SOURCE_MODE_MIXED
+    elif "realtime" in ad_source:
         source_mode = dq.SOURCE_MODE_REALTIME_SNAPSHOT
     elif ad_source.startswith("meta_ad_daily"):
         source_mode = dq.SOURCE_MODE_DAILY_FINAL
     else:
         source_mode = dq.resolve_source_mode(
-            business_date_from=business_date,
-            business_date_to=business_date,
+            business_date_from=business_date_from,
+            business_date_to=business_date_to,
         )
     freshness = result.get("freshness") or {}
     try:
         result["data_quality"] = dq.build_for_realtime_overview(
-            business_date=business_date,
+            business_date=business_date_from,
+            business_date_to=business_date_to,
             source_mode=source_mode,
             last_order_at=freshness.get("last_order_at"),
             last_ad_snapshot_at=freshness.get("last_ad_updated_at"),
@@ -120,8 +128,8 @@ def _attach_realtime_data_quality(result):
             {
                 "status": "warning",
                 "source_mode": "unknown",
-                "business_date_from": business_date.isoformat(),
-                "business_date_to": business_date.isoformat(),
+                "business_date_from": business_date_from.isoformat(),
+                "business_date_to": business_date_to.isoformat(),
                 "warnings": [],
                 "errors": [],
                 "checks": [],

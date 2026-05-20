@@ -608,6 +608,7 @@ def build_for_order_profit(
 def build_for_realtime_overview(
     *,
     business_date: date,
+    business_date_to: date | None = None,
     source_mode: str,
     last_order_at: datetime | None = None,
     last_ad_snapshot_at: datetime | None = None,
@@ -617,6 +618,7 @@ def build_for_realtime_overview(
 
     比较订单截止时间和广告快照时间；如广告快照明显早于订单截止时间，标记 warning。
     """
+    business_date_end = business_date_to or business_date
     checks: list[dict] = []
     last_order_at = _ensure_naive(last_order_at)
     last_ad_snapshot_at = _ensure_naive(last_ad_snapshot_at)
@@ -637,15 +639,21 @@ def build_for_realtime_overview(
             "status": STATUS_WARNING,
             "message": "日终广告表暂未生成，使用实时快照兜底",
         })
+    elif source_mode == SOURCE_MODE_MIXED:
+        checks.append({
+            "code": "using_mixed_ad_sources",
+            "status": STATUS_WARNING,
+            "message": "日期范围内部分业务日使用日终广告表，部分业务日使用实时快照兜底",
+        })
     checks.append(
         check_meta_ad_day_uniqueness(
             business_date_from=business_date,
-            business_date_to=business_date,
+            business_date_to=business_date_end,
         )
     )
     return build_data_quality(
         business_date_from=business_date,
-        business_date_to=business_date,
+        business_date_to=business_date_end,
         source_mode=source_mode or SOURCE_MODE_UNKNOWN,
         checks=checks,
         watermarks=fetch_watermarks(),
