@@ -546,7 +546,7 @@
         <div class="modal-field">
           <label>文案模式</label>
           <label class="english-redub-script-toggle">
-            <input class="english-redub-script-toggle-input" type="checkbox" name="script_mode" value="rewrite" role="switch" aria-label="是否重写文案">
+            <input class="english-redub-script-toggle-input" type="checkbox" name="script_mode" value="rewrite" checked role="switch" aria-label="是否重写文案">
             <span class="english-redub-script-toggle-track" aria-hidden="true"></span>
             <span class="english-redub-script-toggle-copy">
               <strong>重写文案</strong>
@@ -746,6 +746,8 @@ function _resetUploadModal() {
   if (IS_ENGLISH_REDUB) {
     document.getElementById('targetLangSelect').value = 'en';
     document.getElementById('sourceLanguageSelect').value = 'en';
+    var scriptToggle = document.querySelector('.english-redub-script-toggle-input');
+    if (scriptToggle) scriptToggle.checked = true;
   }
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');

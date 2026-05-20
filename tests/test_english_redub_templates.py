@@ -25,7 +25,8 @@ def test_list_template_configures_english_redub_module():
     assert "english-redub-script-toggle" in shared
     assert 'role="switch"' in shared
     assert 'name="script_mode" value="rewrite"' in shared
-    assert 'name="script_mode" value="rewrite" checked' not in shared
+    assert 'name="script_mode" value="rewrite" checked' in shared
+    assert "scriptToggle.checked = true;" in shared
 
 
 def test_detail_shell_knows_english_redub_back_link():
