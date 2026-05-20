@@ -57,6 +57,41 @@ def _canonical_product_link(product_link: str | None, product_code: str) -> str:
     return product_link_domains.build_product_page_url(domain, "en", code)
 
 
+def _probe_product_link(url: str) -> tuple[bool, str | None]:
+    if not url:
+        return False, "empty url"
+    try:
+        resp = requests.head(url, timeout=10, allow_redirects=True)
+    except requests.RequestException as exc:
+        return False, str(exc)
+    if 200 <= resp.status_code < 400:
+        return True, None
+    if resp.status_code in {403, 405}:
+        try:
+            get_resp = requests.get(url, timeout=10, allow_redirects=True, stream=True)
+        except requests.RequestException as exc:
+            return False, str(exc)
+        try:
+            if 200 <= get_resp.status_code < 400:
+                return True, None
+            return False, f"HTTP {get_resp.status_code}"
+        finally:
+            get_resp.close()
+    return False, f"HTTP {resp.status_code}"
+
+
+def _product_link_warning(url: str) -> dict | None:
+    ok, detail = _probe_product_link(url)
+    if ok:
+        return None
+    return {
+        "type": "product_link_unavailable",
+        "message": "商品链接可能不可访问",
+        "url": url,
+        "detail": detail or "unavailable",
+    }
+
+
 from appcore.db import query_all, query_one
 
 
@@ -156,6 +191,12 @@ def _build_create_product_payload(meta: dict, translator_id: int) -> dict:
     }
 
 
+def _existing_product_link(meta: dict, existing: dict | None) -> str:
+    existing = existing or {}
+    product_code = _product_code_with_rjc(existing.get("product_code") or meta.get("product_code"))
+    return _canonical_product_link(existing.get("product_link") or meta.get("product_link"), product_code)
+
+
 def import_mk_video(
     *,
     mk_video_metadata: dict,
@@ -195,6 +236,11 @@ def import_mk_video(
     existing = _find_existing_product(normalized)
     is_new = existing is None
     payload = _build_create_product_payload(meta, translator_id) if is_new else {}
+    product_link = payload.get("product_link") if is_new else _existing_product_link(meta, existing)
+    warnings = []
+    product_link_warning = _product_link_warning(product_link)
+    if product_link_warning:
+        warnings.append(product_link_warning)
 
     if is_new:
         try:
@@ -260,12 +306,15 @@ def import_mk_video(
         log.error("move mp4 failed: %s → %s: %s", mp4_dest, final_path, e)
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    return {
+    result = {
         "media_item_id": int(item_id),
         "media_product_id": int(product_id),
         "is_new_product": is_new,
         "duration_ms": duration_ms,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
@@ -275,6 +324,10 @@ def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
     existing = _find_existing_product(normalized)
     if not existing:
         return None
+    warnings = []
+    product_link_warning = _product_link_warning(_existing_product_link(mk_video_metadata, existing))
+    if product_link_warning:
+        warnings.append(product_link_warning)
     item = query_one(
         "SELECT id FROM media_items "
         "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL "
@@ -283,4 +336,7 @@ def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
     )
     if not item:
         return None
-    return {"product_id": existing["id"], "item_id": item["id"]}
+    result = {"product_id": existing["id"], "item_id": item["id"]}
+    if warnings:
+        result["warnings"] = warnings
+    return result

@@ -36,19 +36,14 @@ def test_create_product_payload_uses_rjc_product_code_and_link():
     assert payload["product_link"] == "https://omurio.com/products/abc-def-rjc"
 
 
-def test_import_mk_video_does_not_probe_product_link(monkeypatch, tmp_path):
+def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_path):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
     monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
-    monkeypatch.setattr(
-        mk_import,
-        "_assert_product_link_available",
-        lambda link: (_ for _ in ()).throw(AssertionError("product link should not be probed")),
-        raising=False,
-    )
     monkeypatch.setattr(mk_import, "execute", lambda *args, **kwargs: 123)
     monkeypatch.setattr(mk_import, "_download_cover", lambda *args, **kwargs: None)
     monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -72,15 +67,16 @@ def test_import_mk_video_does_not_probe_product_link(monkeypatch, tmp_path):
     assert result["media_product_id"] == 123
     assert result["media_item_id"] == 456
     assert result["is_new_product"] is True
+    assert result["warnings"] == [{
+        "type": "product_link_unavailable",
+        "message": "商品链接可能不可访问",
+        "url": "https://newjoyloo.com/products/abc-def-rjc",
+        "detail": "HTTP 404",
+    }]
 
 
-def test_find_existing_product_item_by_meta_does_not_probe_product_link(monkeypatch):
-    monkeypatch.setattr(
-        mk_import,
-        "_assert_product_link_available",
-        lambda link: (_ for _ in ()).throw(AssertionError("product link should not be probed")),
-        raising=False,
-    )
+def test_find_existing_product_item_by_meta_warns_when_product_link_probe_fails(monkeypatch):
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
     monkeypatch.setattr(
         mk_import,
         "_find_existing_product",
@@ -95,6 +91,12 @@ def test_find_existing_product_item_by_meta_does_not_probe_product_link(monkeypa
     assert mk_import.find_existing_product_item_by_meta({"product_code": "ABC-DEF"}) == {
         "product_id": 123,
         "item_id": 456,
+        "warnings": [{
+            "type": "product_link_unavailable",
+            "message": "商品链接可能不可访问",
+            "url": "https://newjoyloo.com/products/abc-def-rjc",
+            "detail": "HTTP 404",
+        }],
     }
 
 

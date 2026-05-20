@@ -120,6 +120,15 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "昨日消耗" in template
 
 
+def test_mk_selection_import_success_warnings_are_toasted():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mki-toast--warning" in template
+    assert "function mkiWarningMessageFromResponse(data)" in template
+    assert "mkiToast('warning', warningMessage)" in template
+    assert "product_link_unavailable" in template
+
+
 def test_mk_selection_import_modals_use_active_user_display_names():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
