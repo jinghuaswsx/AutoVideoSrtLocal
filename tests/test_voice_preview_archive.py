@@ -128,3 +128,36 @@ def test_archive_preview_target_downloads_measures_transcribes_and_upserts(tmp_p
     assert writes[0]["asr_source"] == "preview_asr:doubao_asr"
     assert rate_writes[0]["voice_id"] == "voice-1"
     assert rate_writes[0]["sample_duration"] == 2.0
+
+
+def test_archive_missing_voice_previews_supports_worker_pool(monkeypatch):
+    from appcore import voice_preview_archive as archive
+
+    processed = []
+    progress = []
+    monkeypatch.setattr(
+        archive,
+        "list_preview_archive_targets",
+        lambda **kw: [
+            {"voice_id": "v1", "language": "en", "preview_url": "https://e/v1.mp3"},
+            {"voice_id": "v2", "language": "en", "preview_url": "https://e/v2.mp3"},
+        ],
+    )
+
+    def fake_archive_target(target, *, archive_dir=None):
+        processed.append(target["voice_id"])
+        return {"status": "ready", "voice_id": target["voice_id"]}
+
+    monkeypatch.setattr(archive, "archive_preview_target", fake_archive_target)
+
+    result = archive.archive_missing_voice_previews(
+        language="en",
+        workers=2,
+        on_progress=lambda done, total, voice_id, ok: progress.append((done, total, voice_id, ok)),
+    )
+
+    assert result == {"total": 2, "archived": 2, "failed": 0, "skipped": 0}
+    assert sorted(processed) == ["v1", "v2"]
+    assert len(progress) == 2
+    assert {row[1] for row in progress} == {2}
+    assert {row[3] for row in progress} == {True}

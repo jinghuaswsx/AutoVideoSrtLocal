@@ -125,6 +125,12 @@ python scripts/archive_voice_previews.py --dry-run
 python scripts/archive_voice_previews.py --language de
 ```
 
+低并发全量回填：
+
+```bash
+python scripts/archive_voice_previews.py --workers 2
+```
+
 脚本只处理当前 preview URL hash 缺失 ready 归档的记录。远端 `preview_url` 改变后会自动生成新的 hash，并重新归档。
 
 ## Agent 注意事项

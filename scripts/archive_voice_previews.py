@@ -23,6 +23,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--language", default=None, help="Optional language filter, e.g. en.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum missing rows to process.")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Concurrent preview download/ASR workers. Default: 1.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Only count missing rows.")
     args = parser.parse_args(argv)
 
@@ -40,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         "language": args.language,
         "limit": args.limit,
         "dry_run": bool(args.dry_run),
+        "workers": args.workers,
     }
     if not args.dry_run:
         kwargs["on_progress"] = _on_progress

@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -437,6 +438,7 @@ def archive_missing_voice_previews(
     language: str | None = None,
     limit: int | None = None,
     dry_run: bool = False,
+    workers: int = 1,
     on_progress: Callable[[int, int, str, bool], None] | None = None,
 ) -> dict[str, int]:
     targets = list_preview_archive_targets(language=language, limit=limit)
@@ -446,22 +448,41 @@ def archive_missing_voice_previews(
 
     archived = 0
     failed = 0
-    for index, target in enumerate(targets, start=1):
+
+    def _record_progress(index: int, total_rows: int, voice_id: str, ok: bool) -> None:
+        if on_progress is not None:
+            try:
+                on_progress(index, total_rows, voice_id, ok)
+            except Exception as exc:
+                log.warning("on_progress callback failed at %s: %s", voice_id, exc)
+
+    def _process_target(target: dict) -> tuple[str, bool]:
         voice_id = str(target.get("voice_id") or "").strip()
-        ok = False
         try:
             result = archive_preview_target(target, archive_dir=archive_dir)
-            ok = result.get("status") == "ready"
+            return voice_id, result.get("status") == "ready"
+        except Exception as exc:
+            log.warning("[voice_preview_archive] unexpected failure %s: %s", voice_id, exc)
+            return voice_id, False
+
+    worker_count = max(1, int(workers or 1))
+    if worker_count == 1:
+        for index, target in enumerate(targets, start=1):
+            voice_id, ok = _process_target(target)
             if ok:
                 archived += 1
             else:
                 failed += 1
-        except Exception as exc:
-            failed += 1
-            log.warning("[voice_preview_archive] unexpected failure %s: %s", voice_id, exc)
-        if on_progress is not None:
-            try:
-                on_progress(index, total, voice_id, ok)
-            except Exception as exc:
-                log.warning("on_progress callback failed at %s: %s", voice_id, exc)
+            _record_progress(index, total, voice_id, ok)
+        return {"total": total, "archived": archived, "failed": failed, "skipped": 0}
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(_process_target, target) for target in targets]
+        for index, future in enumerate(as_completed(futures), start=1):
+            voice_id, ok = future.result()
+            if ok:
+                archived += 1
+            else:
+                failed += 1
+            _record_progress(index, total, voice_id, ok)
     return {"total": total, "archived": archived, "failed": failed, "skipped": 0}
