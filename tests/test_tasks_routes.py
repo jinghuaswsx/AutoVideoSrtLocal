@@ -45,6 +45,12 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "牛马去字幕失败" in body
     assert "手动上传原始视频" in body
     assert "技术详情" in body
+    assert "function tcEventPayloadUserDisplay" in body
+    assert "actor_display_name" in body
+    assert "payload_context" in body
+    assert "翻译员 ID" not in body
+    assert "add('翻译员'," in body
+    assert "/tasks/api/translation-work-users" in body
 
 
 def test_index_requires_login():

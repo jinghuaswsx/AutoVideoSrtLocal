@@ -55,6 +55,7 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
     from appcore import tasks
 
     captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.username", raising=False)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -66,6 +67,7 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
                 "event_type": "created",
                 "actor_user_id": 7,
                 "actor_username": "alice",
+                "actor_display_name": "alice",
                 "payload_json": '{"ok": true}',
                 "created_at": datetime(2026, 5, 7, 9, 30, 0),
             }
@@ -80,6 +82,7 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
             "event_type": "created",
             "actor_user_id": 7,
             "actor_username": "alice",
+            "actor_display_name": "alice",
             "payload_json": '{"ok": true}',
             "created_at": "2026-05-07T09:30:00",
         }
@@ -87,6 +90,65 @@ def test_list_task_events_serializes_actor_and_created_at(monkeypatch):
     assert "FROM task_events" in captured["sql"]
     assert "LEFT JOIN users" in captured["sql"]
     assert captured["args"] == (44,)
+
+
+def test_list_task_events_enriches_translator_display_name_context(monkeypatch):
+    from appcore import tasks
+
+    calls = []
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        calls.append((sql, args))
+        if "FROM task_events" in sql:
+            return [
+                {
+                    "id": 3,
+                    "task_id": 44,
+                    "event_type": "created",
+                    "actor_user_id": 7,
+                    "actor_username": "admin",
+                    "actor_display_name": "蔡靖华",
+                    "payload_json": '{"countries": ["DE"], "translator_id": 33}',
+                    "created_at": datetime(2026, 5, 7, 9, 30, 0),
+                }
+            ]
+        if "FROM users u" in sql:
+            return [
+                {
+                    "id": 33,
+                    "username": "translator33",
+                    "display_name": "周干琴",
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_events(44) == [
+        {
+            "id": 3,
+            "task_id": 44,
+            "event_type": "created",
+            "actor_user_id": 7,
+            "actor_username": "admin",
+            "actor_display_name": "蔡靖华",
+            "payload_json": '{"countries": ["DE"], "translator_id": 33}',
+            "created_at": "2026-05-07T09:30:00",
+            "payload_context": {
+                "users": {
+                    "33": {
+                        "id": 33,
+                        "username": "translator33",
+                        "display_name": "周干琴",
+                    }
+                }
+            },
+        }
+    ]
+    assert "u.display_name AS actor_display_name" in calls[0][0]
+    assert "WHERE u.id IN (%s)" in calls[1][0]
+    assert calls[1][1] == (33,)
 
 
 def test_list_dispatch_pool_products_filters_active_parent_tasks(monkeypatch):
@@ -128,6 +190,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     from appcore import tasks
 
     captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -142,6 +205,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
+                "assignee_display_name": "顾倩",
                 "status": tasks.CHILD_DONE,
                 "created_at": datetime(2026, 5, 7, 10, 0, 0),
                 "updated_at": datetime(2026, 5, 7, 10, 5, 0),
@@ -173,6 +237,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
+                "assignee_display_name": "顾倩",
                 "status": tasks.CHILD_DONE,
                 "high_level": "completed",
                 "created_at": "2026-05-07T10:00:00",
@@ -189,6 +254,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "FROM tasks t" in captured["sql"]
     assert "JOIN media_products p" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
+    assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "p.name LIKE %s" in captured["sql"]
     assert "t.status IN (%s, %s)" in captured["sql"]
     assert captured["args"] == (

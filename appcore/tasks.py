@@ -65,27 +65,116 @@ def list_product_english_items(product_id: int) -> list[dict]:
 
 
 # ---- 共用 helpers (后续 task 用) ----
-def list_task_events(task_id: int) -> list[dict]:
+def _user_display_name_expr(alias: str) -> str:
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+        "AND COLUMN_NAME = 'xingming'"
+    )
+    prefix = f"{alias}." if alias else ""
+    if row:
+        return f"COALESCE(NULLIF(TRIM({prefix}xingming), ''), {prefix}username)"
+    return f"{prefix}username"
+
+
+def _parse_event_payload_obj(payload_json: Any) -> dict:
+    value = payload_json
+    for _ in range(2):
+        if not isinstance(value, str):
+            break
+        text = value.strip()
+        if not text or text[0] not in "{[\"":
+            break
+        try:
+            value = json.loads(text)
+        except (TypeError, ValueError):
+            break
+    return value if isinstance(value, dict) else {}
+
+
+def _positive_int(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _payload_user_ids(payload: dict) -> set[int]:
+    ids: set[int] = set()
+    for key in ("translator_id", "assignee_id", "old", "new"):
+        user_id = _positive_int(payload.get(key))
+        if user_id is not None:
+            ids.add(user_id)
+    return ids
+
+
+def _load_user_display_context(user_ids: Iterable[int]) -> dict[str, dict]:
+    normalized_ids = sorted({int(uid) for uid in user_ids if int(uid) > 0})
+    if not normalized_ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(normalized_ids))
+    display_expr = _user_display_name_expr("u")
     rows = query_all(
-        "SELECT te.*, u.username AS actor_username "
+        f"SELECT u.id, u.username, {display_expr} AS display_name "
+        "FROM users u "
+        f"WHERE u.id IN ({placeholders})",
+        tuple(normalized_ids),
+    )
+    result: dict[str, dict] = {}
+    for row in rows:
+        user_id = int(row["id"])
+        username = str(row.get("username") or "")
+        display_name = str(row.get("display_name") or username).strip()
+        result[str(user_id)] = {
+            "id": user_id,
+            "username": username,
+            "display_name": display_name or username,
+        }
+    return result
+
+
+def list_task_events(task_id: int) -> list[dict]:
+    actor_name_expr = _user_display_name_expr("u")
+    rows = query_all(
+        f"SELECT te.*, u.username AS actor_username, {actor_name_expr} AS actor_display_name "
         "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
         "WHERE te.task_id=%s ORDER BY te.id ASC",
         (int(task_id),),
     )
-    return [
-        {
+    payload_by_event_id: dict[int, dict] = {}
+    payload_user_ids: set[int] = set()
+    for row in rows:
+        payload = _parse_event_payload_obj(row.get("payload_json"))
+        payload_by_event_id[int(row["id"])] = payload
+        payload_user_ids.update(_payload_user_ids(payload))
+
+    user_context = _load_user_display_context(payload_user_ids)
+    events = []
+    for row in rows:
+        event_id = int(row["id"])
+        payload = payload_by_event_id.get(event_id, {})
+        event_user_context = {
+            str(user_id): user_context[str(user_id)]
+            for user_id in _payload_user_ids(payload)
+            if str(user_id) in user_context
+        }
+        item = {
             "id": row["id"],
             "task_id": row["task_id"],
             "event_type": row["event_type"],
             "actor_user_id": row["actor_user_id"],
             "actor_username": row["actor_username"],
+            "actor_display_name": row.get("actor_display_name") or row["actor_username"],
             "payload_json": row["payload_json"],
             "created_at": (
                 row["created_at"].isoformat() if row.get("created_at") else None
             ),
         }
-        for row in rows
-    ]
+        if event_user_context:
+            item["payload_context"] = {"users": event_user_context}
+        events.append(item)
+    return events
 
 
 def list_dispatch_pool_products() -> list[dict]:
@@ -148,9 +237,10 @@ def list_task_center_items(
         where.append("t.status=%s")
         args.append(PARENT_CANCELLED)
 
+    assignee_name_expr = _user_display_name_expr("u")
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
-        "       u.username AS assignee_username "
+        f"       u.username AS assignee_username, {assignee_name_expr} AS assignee_display_name "
         "FROM tasks t "
         "JOIN media_products p ON p.id=t.media_product_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
@@ -170,6 +260,9 @@ def list_task_center_items(
                 "country_code": row["country_code"],
                 "assignee_id": row["assignee_id"],
                 "assignee_username": row["assignee_username"],
+                "assignee_display_name": (
+                    row.get("assignee_display_name") or row["assignee_username"]
+                ),
                 "status": row["status"],
                 "high_level": high_level_status(row["status"]),
                 "created_at": (

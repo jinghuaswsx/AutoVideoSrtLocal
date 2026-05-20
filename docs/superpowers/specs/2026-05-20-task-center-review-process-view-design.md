@@ -54,8 +54,19 @@
 - 文件大小字段按 B、KB、MB、GB 展示。
 - 技术详情默认折叠，用户需要排查时可展开查看完整 payload。
 
+## 人物字段可视化规则
+
+- 审核流程主内容不展示裸用户 ID，例如不显示“翻译员 ID 33”。
+- `created` 等事件 payload 中出现 `translator_id` 时，主卡片展示为：
+  - 标签：`翻译员`
+  - 值：优先 `users.xingming`；没有中文姓名或部署无 `xingming` 列时回退 `username`；用户记录不存在时才回退 `用户 #<id>`。
+- 事件操作人、任务负责人同样优先展示中文姓名，缺失时回退用户名。
+- 原始 ID 保留在“技术详情”折叠区，便于排查历史数据和接口问题。
+- 后端可以在事件响应上追加向后兼容的显示上下文字段（例如 `actor_display_name`、`payload_context.users`），但不能改变现有字段含义。
+
 ## 验证
 
 1. `pytest tests/test_tasks_routes.py -q`
-2. `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
-3. 手工打开 `/tasks/`，详情抽屉桌面端约半屏；审计流能看到中文步骤、失败原因和文件信息。
+2. `pytest tests/test_appcore_tasks_supporting_data.py -q`
+3. `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
+4. 手工打开 `/tasks/`，详情抽屉桌面端约半屏；审计流能看到中文步骤、失败原因和文件信息；创建任务事件显示“翻译员 / 中文姓名或用户名”，不显示“翻译员 ID”。
