@@ -642,6 +642,16 @@ def realtime_overview():
         if not page_size or page_size <= 0:
             return _json_response(error="invalid_param", detail="page_size must be a positive integer"), 400
         kwargs["page_size"] = min(page_size, 100)
+    if "order_page" in request.args:
+        order_page = request.args.get("order_page", type=int)
+        if not order_page or order_page <= 0:
+            return _json_response(error="invalid_param", detail="order_page must be a positive integer"), 400
+        kwargs["order_page"] = order_page
+    if "order_page_size" in request.args:
+        order_page_size = request.args.get("order_page_size", type=int)
+        if not order_page_size or order_page_size <= 0:
+            return _json_response(error="invalid_param", detail="order_page_size must be a positive integer"), 400
+        kwargs["order_page_size"] = min(order_page_size, 100)
     try:
         result = oa.get_realtime_roas_overview(date_text, **kwargs)
         result = _attach_realtime_data_quality(result)

@@ -595,7 +595,7 @@ def test_data_analysis_page_enlarges_dianxiaomi_store_filter(authed_client_no_db
     assert "height: calc(var(--space-8) + var(--space-6));" in body
 
 
-def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):
+def test_data_analysis_page_hardens_dashboard_rendering_and_dynamic_loading(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
     assert response.status_code == 200
@@ -612,20 +612,42 @@ def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_cl
     assert "escapeOadHtml(entry[1])" in body
     assert "+ (p.product_name ||" not in body
     assert "+ (p.product_code ||" not in body
-    assert "function setDxmPaginationDisabled(disabled)" in body
+    assert "function loadMoreDxmOrders()" in body
+    assert "function appendDxmOrderRows(rows)" in body
 
     load_start = body.index("function loadDxmOrders(page)")
     params_start = body.index("var params = new URLSearchParams", load_start)
     render_start = body.index("function renderDxmOrderAnalysis(data)", load_start)
     catch_start = body.index(".catch(function(err)", load_start)
-    pagination_helper_start = body.index("function setDxmPaginationDisabled(disabled)", render_start)
+    append_start = body.index("function appendDxmOrderRows(rows)", render_start)
 
     loading_segment = body[load_start:params_start]
     catch_segment = body[catch_start:render_start]
-    render_segment = body[render_start:pagination_helper_start]
+    render_segment = body[render_start:append_start]
 
-    assert "setDxmPaginationDisabled(true);" in loading_segment
-    assert "setDxmPaginationDisabled(true);" in catch_segment
-    assert "setDxmPaginationDisabled(false);" in render_segment
-    assert "prev.disabled = dxmOrderState.page <= 1" in render_segment
-    assert "next.disabled = dxmOrderState.page >= dxmOrderState.totalPages" in render_segment
+    assert "dxmOrderState.loaded = 0;" in loading_segment
+    assert "dxmOrderState.hasMore = true;" in loading_segment
+    assert "dxmOrderState.loading = true;" in loading_segment
+    assert "dxmOrderState.loaded <= 0" in catch_segment
+    assert "appendDxmOrderRows(rows);" in render_segment
+    assert "dxmOrderState.hasMore = dxmOrderState.loaded < dxmOrderState.total" in render_segment
+
+
+def test_data_analysis_page_dianxiaomi_orders_use_infinite_loading(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel_start = body.index('id="panelDxmOrders"')
+    panel_end = body.index('class="oa-panel"', panel_start + 1) if 'class="oa-panel"' in body[panel_start + 1:] else len(body)
+    panel = body[panel_start:panel_end]
+
+    assert 'id="dxmOrderPageInfo"' in panel
+    assert 'id="dxmPrevPage"' not in panel
+    assert 'id="dxmNextPage"' not in panel
+    assert "pageSize: 30" in body
+    assert "function attachInfiniteScroll(" in body
+    assert "function loadMoreDxmOrders()" in body
+    assert "appendDxmOrderRows(rows)" in body
+    assert "dxmOrderState.loading" in body
+    assert "dxmOrderState.hasMore" in body

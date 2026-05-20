@@ -108,6 +108,7 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     result = oa.get_realtime_roas_overview(
         "2026-04-29",
         now=datetime(2026, 4, 29, 14, 10),
+        include_details=True,
     )
 
     assert result["summary"]["order_revenue"] == 2000.0
@@ -150,6 +151,7 @@ def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypat
     result = oa.get_realtime_roas_overview(
         "2026-04-29",
         now=datetime(2026, 4, 29, 14, 10),
+        include_details=True,
     )
 
     assert result["product_sales_stats"] == [
@@ -776,12 +778,7 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
     )
 
     assert result["order_profit_details"] == []
-    assert result["order_profit_details_page"] == {
-        "page": 1,
-        "page_size": 100,
-        "total": 1,
-        "pages": 1,
-    }
+    assert result["order_profit_details_page"] == {"page": 1, "page_size": 100, "total": 0, "pages": 0}
     assert result["order_profit_summary"]["profit_with_estimate_usd"] == 50.0
     assert profit_calls == [
         {
@@ -915,10 +912,68 @@ def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
     assert detail["total_revenue"] == 86.0
 
 
+def test_get_realtime_roas_overview_range_pages_order_details(monkeypatch):
+    detail_queries = []
+
+    def fake_query(sql, args=()):
+        if "SELECT COUNT(*) AS total FROM (" in sql and "d.meta_business_date >= %s" in sql:
+            return [{"total": 61}]
+        if (
+            "FROM dianxiaomi_order_lines d" in sql
+            and "GROUP BY d.meta_business_date, d.site_code" in sql
+            and "profit_line_count" not in sql
+        ):
+            detail_queries.append((sql, args))
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-30"),
+                    "site_code": "newjoy",
+                    "dxm_package_id": "PKG-RANGE-2",
+                    "dxm_order_id": "DXM-RANGE-2",
+                    "package_number": "PN-RANGE-2",
+                    "order_state": "paid",
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_time": datetime(2026, 5, 1, 15, 30),
+                    "line_count": 1,
+                    "units": 2,
+                    "product_revenue": 80.0,
+                    "shipping_revenue": 6.0,
+                    "total_revenue": 86.0,
+                    "skus": "SKU-R",
+                    "product_names": "Range Product",
+                }
+            ]
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-04-01",
+        end_date="2026-04-30",
+        include_details=True,
+        order_page=2,
+        order_page_size=30,
+        now=datetime(2026, 5, 1, 12, 0),
+    )
+
+    assert result["order_details"][0]["dxm_package_id"] == "PKG-RANGE-2"
+    assert result["order_details_page"] == {"page": 2, "page_size": 30, "total": 61, "pages": 3}
+    assert detail_queries
+    assert "LIMIT %s OFFSET %s" in detail_queries[0][0]
+    assert detail_queries[0][1][-2:] == (30, 30)
+
+
 def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypatch):
     profit_query_args = []
 
     def fake_query(sql, args=()):
+        if "SELECT COUNT(*) AS total FROM (" in sql and "realtime_order_profit_groups" in sql:
+            return [{"total": 1}]
         if (
             "FROM dianxiaomi_order_lines d" in sql
             and "GROUP BY d.meta_business_date" in sql
@@ -980,7 +1035,7 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
     assert detail["business_hour"] == 23
     assert detail["order_profit_usd"] == 54.1
     assert result["order_profit_details_page"] == {"page": 1, "page_size": 100, "total": 1, "pages": 1}
-    assert len(profit_query_args) == 2
+    assert len(profit_query_args) == 1
 
 
 def test_realtime_order_profit_missing_field_like_patterns_escape_pymysql_wildcards(monkeypatch):
@@ -1165,6 +1220,7 @@ def test_get_realtime_roas_overview_snapshot_includes_order_profit_details(monke
     result = oa.get_realtime_roas_overview(
         "2026-05-07",
         now=datetime(2026, 5, 7, 20, 0),
+        include_details=True,
     )
 
     detail = result["order_profit_details"][0]
@@ -1472,6 +1528,7 @@ def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monke
     result = oa.get_realtime_roas_overview(
         "2026-05-07",
         now=datetime(2026, 5, 7, 20, 0),
+        include_details=True,
     )
 
     detail = result["order_profit_details"][0]
@@ -1806,6 +1863,51 @@ def test_realtime_overview_endpoint_forwards_product_and_pagination(authed_clien
     assert captured["page_size"] == 100
 
 
+def test_realtime_overview_endpoint_forwards_order_detail_pagination(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(
+        date_text=None,
+        *,
+        start_date=None,
+        end_date=None,
+        include_details=False,
+        order_page=1,
+        order_page_size=30,
+        now=None,
+    ):
+        captured["start_date"] = start_date
+        captured["end_date"] = end_date
+        captured["include_details"] = include_details
+        captured["order_page"] = order_page
+        captured["order_page_size"] = order_page_size
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "order_details_page": {"page": order_page, "page_size": order_page_size, "total": 0, "pages": 0},
+            "order_profit_details": [],
+            "order_profit_summary": {"order_count": 0},
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-overview"
+        "?start_date=2026-04-29&end_date=2026-04-30"
+        "&include_details=1&order_page=3&order_page_size=30"
+    )
+
+    assert response.status_code == 200
+    assert captured["include_details"] is True
+    assert captured["order_page"] == 3
+    assert captured["order_page_size"] == 30
+
+
 # ── 前端模板回归 ─────────────────────────────────────────
 
 
@@ -2006,11 +2108,11 @@ def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client
         "realtimeProfitUnallocatedAd",
         "realtimeProfitTotal",
         "realtimeProfitReconcile",
-        "realtimeProfitPrev",
         "realtimeProfitPageInfo",
-        "realtimeProfitNext",
     ):
         assert f'id="{element_id}"' in panel
+    assert 'id="realtimeProfitPrev"' not in panel
+    assert 'id="realtimeProfitNext"' not in panel
     # 对账提示 JS 必须实际写入 reconcile 元素，避免摆好坑位却没逻辑。
     body = response.get_data(as_text=True)
     assert "realtimeProfitReconcile" in body
@@ -2090,9 +2192,30 @@ def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no
     subtab_js = body[subtab_start:subtab_end]
 
     assert "product_id" in subtab_js
+    assert "order_page" in subtab_js
+    assert "order_page_size" in subtab_js
     assert "page" in subtab_js
     assert "page_size" in subtab_js
-    assert "100" in subtab_js
+    assert "30" in subtab_js
+
+
+def test_realtime_order_detail_tables_use_infinite_loading(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+
+    assert 'id="realtimeOrderPageInfo"' in panel
+    assert 'id="realtimeProfitPageInfo"' in panel
+    assert 'id="realtimeProfitPrev"' not in panel
+    assert 'id="realtimeProfitNext"' not in panel
+    assert "orderPageSize: 30" in body
+    assert "profitPageSize: 30" in body
+    assert "function attachInfiniteScroll(" in body
+    assert "function loadMoreRealtimeOrders()" in body
+    assert "function loadMoreRealtimeOrderProfitDetails()" in body
+    assert "appendRealtimeOrders(data.order_details || [])" in body
+    assert "appendRealtimeOrderProfitDetails(data.order_profit_details || [])" in body
 
 
 # ───────────────────────────────────────────────────────────

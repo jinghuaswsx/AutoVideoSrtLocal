@@ -29,6 +29,8 @@ from .order_profit_aggregation import (
 )
 from .shopify_fee import split_shopify_fee_for_order
 
+ORDER_DETAIL_PAGE_SIZE = 30
+ORDER_DETAIL_MAX_PAGE_SIZE = 100
 ORDER_PROFIT_PAGE_SIZE = 100
 ORDER_PROFIT_MAX_PAGE_SIZE = 100
 PURCHASE_MISSING_ESTIMATE_RATE = 0.10
@@ -408,12 +410,19 @@ def _build_order_profit_summary_from_status(
     return summary
 
 
-def _order_profit_page_info(total: int, page: int, page_size: int) -> dict[str, int]:
+def _page_info(
+    total: int,
+    page: int,
+    page_size: int,
+    *,
+    default_size: int,
+    max_size: int,
+) -> dict[str, int]:
     normalized_page = _normalize_positive_int(page, 1)
     normalized_size = _normalize_positive_int(
         page_size,
-        ORDER_PROFIT_PAGE_SIZE,
-        max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+        default_size,
+        max_value=max_size,
     )
     pages = (int(total) + normalized_size - 1) // normalized_size if total else 0
     return {
@@ -424,17 +433,50 @@ def _order_profit_page_info(total: int, page: int, page_size: int) -> dict[str, 
     }
 
 
+def _order_detail_page_info(total: int, page: int, page_size: int) -> dict[str, int]:
+    return _page_info(
+        total,
+        page,
+        page_size,
+        default_size=ORDER_DETAIL_PAGE_SIZE,
+        max_size=ORDER_DETAIL_MAX_PAGE_SIZE,
+    )
+
+
+def _order_profit_page_info(total: int, page: int, page_size: int) -> dict[str, int]:
+    return _page_info(
+        total,
+        page,
+        page_size,
+        default_size=ORDER_PROFIT_PAGE_SIZE,
+        max_size=ORDER_PROFIT_MAX_PAGE_SIZE,
+    )
+
+
 def _get_realtime_order_details(
     target: date,
     day_start: datetime,
     data_until: datetime,
     *,
     product_id: int | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     sites = _normalize_site_codes(site_codes)
+    limit_sql = ""
+    limit_args: list[Any] = []
+    if page is not None or page_size is not None:
+        normalized_page = _normalize_positive_int(page, 1)
+        normalized_size = _normalize_positive_int(
+            page_size,
+            ORDER_DETAIL_PAGE_SIZE,
+            max_value=ORDER_DETAIL_MAX_PAGE_SIZE,
+        )
+        limit_sql = " LIMIT %s OFFSET %s"
+        limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
         "SELECT d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -452,8 +494,9 @@ def _get_realtime_order_details(
         + product_sql +
         "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, d.dxm_package_id DESC",
-        tuple([target, data_until] + product_args),
+        "ORDER BY order_time DESC, d.dxm_package_id DESC"
+        + limit_sql,
+        tuple([target, data_until] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -479,16 +522,55 @@ def _get_realtime_order_details(
     return details
 
 
+def _count_realtime_order_details(
+    target: date,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> int:
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
+    rows = query(
+        "SELECT COUNT(*) AS total FROM ("
+        "SELECT 1 "
+        "FROM dianxiaomi_order_lines d "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        + product_sql +
+        "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        ") AS realtime_order_detail_groups",
+        tuple([target, data_until] + product_args),
+    )
+    return int((rows[0] or {}).get("total") or 0) if rows else 0
+
+
 def _get_realtime_order_details_for_range(
     start: date,
     end: date,
     *,
     product_id: int | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql("d.product_id", product_id)
     sites = _normalize_site_codes(site_codes)
+    limit_sql = ""
+    limit_args: list[Any] = []
+    if page is not None or page_size is not None:
+        normalized_page = _normalize_positive_int(page, 1)
+        normalized_size = _normalize_positive_int(
+            page_size,
+            ORDER_DETAIL_PAGE_SIZE,
+            max_value=ORDER_DETAIL_MAX_PAGE_SIZE,
+        )
+        limit_sql = " LIMIT %s OFFSET %s"
+        limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
         "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
@@ -505,8 +587,9 @@ def _get_realtime_order_details_for_range(
         + product_sql +
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
-        "ORDER BY order_time DESC, d.dxm_package_id DESC",
-        tuple([start, end] + product_args),
+        "ORDER BY order_time DESC, d.dxm_package_id DESC"
+        + limit_sql,
+        tuple([start, end] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -533,6 +616,31 @@ def _get_realtime_order_details_for_range(
             "product_names": row.get("product_names"),
         })
     return details
+
+
+def _count_realtime_order_details_for_range(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> int:
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
+    rows = query(
+        "SELECT COUNT(*) AS total FROM ("
+        "SELECT 1 "
+        "FROM dianxiaomi_order_lines d "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
+        + product_sql +
+        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        ") AS realtime_order_detail_groups",
+        tuple([start, end] + product_args),
+    )
+    return int((rows[0] or {}).get("total") or 0) if rows else 0
 
 
 _REFUND_STATE_KEYWORDS = (
@@ -745,6 +853,57 @@ def _get_realtime_order_profit_details_for_range(
         product_id=product_id,
     )
     return details
+
+
+def _count_realtime_order_profit_details(
+    target: date,
+    data_until: datetime,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> int:
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
+    rows = query(
+        "SELECT COUNT(*) AS total FROM ("
+        "SELECT 1 "
+        "FROM dianxiaomi_order_lines d "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        + product_sql +
+        "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        ") AS realtime_order_profit_groups",
+        tuple([target, data_until] + product_args),
+    )
+    return int((rows[0] or {}).get("total") or 0) if rows else 0
+
+
+def _count_realtime_order_profit_details_for_range(
+    start: date,
+    end: date,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> int:
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    sites = _normalize_site_codes(site_codes)
+    rows = query(
+        "SELECT COUNT(*) AS total FROM ("
+        "SELECT 1 "
+        "FROM dianxiaomi_order_lines d "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
+        + product_sql +
+        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
+        ") AS realtime_order_profit_groups",
+        tuple([start, end] + product_args),
+    )
+    return int((rows[0] or {}).get("total") or 0) if rows else 0
 
 
 def _apply_realtime_ad_cost_adjustments(
@@ -1747,6 +1906,8 @@ def _build_realtime_overview_for_range(
     include_details: bool = False,
     include_profit_summary: bool = False,
     product_id: int | None = None,
+    order_page: int = 1,
+    order_page_size: int = ORDER_DETAIL_PAGE_SIZE,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
     site_codes: tuple[str, ...] | None = None,
@@ -1909,7 +2070,25 @@ def _build_realtime_overview_for_range(
     range_start_at, _ = compute_meta_business_window_bj(start)
     _, range_end_at = compute_meta_business_window_bj(end)
 
-    include_profit = include_details or include_profit_summary
+    order_detail_total = (
+        _count_realtime_order_details_for_range(
+            start,
+            end,
+            product_id=product_id,
+            site_codes=sites,
+        )
+        if include_details else 0
+    )
+    order_profit_total = (
+        _count_realtime_order_profit_details_for_range(
+            start,
+            end,
+            product_id=product_id,
+            site_codes=sites,
+        )
+        if include_details else 0
+    )
+    include_profit = include_profit_summary
     order_profit_all = (
         _get_realtime_order_profit_details_for_range(
             start,
@@ -1994,10 +2173,13 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            page=order_page,
+            page_size=order_page_size,
             site_codes=sites,
         ) if include_details else [],
+        "order_details_page": _order_detail_page_info(order_detail_total, order_page, order_page_size),
         "order_profit_details": order_profit_details,
-        "order_profit_details_page": _order_profit_page_info(len(order_profit_all), page, page_size),
+        "order_profit_details_page": _order_profit_page_info(order_profit_total, page, page_size),
         "order_profit_summary": profit_summary,
         "campaigns": [],
         "unallocated_campaigns": [],
@@ -2020,6 +2202,8 @@ def get_realtime_roas_overview(
     include_details: bool = False,
     include_profit_summary: bool = False,
     product_id: int | None = None,
+    order_page: int = 1,
+    order_page_size: int = ORDER_DETAIL_PAGE_SIZE,
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
     site_codes: list[str] | tuple[str, ...] | None = None,
@@ -2034,6 +2218,12 @@ def get_realtime_roas_overview(
         page_size,
         ORDER_PROFIT_PAGE_SIZE,
         max_value=ORDER_PROFIT_MAX_PAGE_SIZE,
+    )
+    normalized_order_page = _normalize_positive_int(order_page, 1)
+    normalized_order_page_size = _normalize_positive_int(
+        order_page_size,
+        ORDER_DETAIL_PAGE_SIZE,
+        max_value=ORDER_DETAIL_MAX_PAGE_SIZE,
     )
 
     # 范围模式：start_date / end_date 同时给出，且为不同日期 → 走范围聚合分支
@@ -2050,6 +2240,8 @@ def get_realtime_roas_overview(
                 include_details=include_details,
                 include_profit_summary=include_profit_summary,
                 product_id=normalized_product_id,
+                order_page=normalized_order_page,
+                order_page_size=normalized_order_page_size,
                 page=normalized_page,
                 page_size=normalized_page_size,
                 site_codes=normalized_site_codes,
@@ -2152,12 +2344,32 @@ def get_realtime_roas_overview(
             ad_spend = round(sum(c["spend_usd"] for c in campaign_details), 2)
             meta_purchase_value = round(sum(c["purchase_value_usd"] for c in campaign_details), 2)
             meta_purchases = sum(c["result_count"] for c in campaign_details)
+            order_detail_total = (
+                _count_realtime_order_details(
+                    target,
+                    snapshot_at,
+                    product_id=normalized_product_id,
+                    site_codes=normalized_site_codes,
+                )
+                if include_details else 0
+            )
             order_details = _get_realtime_order_details(
                 target,
                 day_start,
                 snapshot_at,
                 product_id=normalized_product_id,
+                page=normalized_order_page,
+                page_size=normalized_order_page_size,
                 site_codes=normalized_site_codes,
+            ) if include_details else []
+            order_profit_total = (
+                _count_realtime_order_profit_details(
+                    target,
+                    snapshot_at,
+                    product_id=normalized_product_id,
+                    site_codes=normalized_site_codes,
+                )
+                if include_details else 0
             )
             order_profit_all = _get_realtime_order_profit_details(
                 target,
@@ -2165,7 +2377,7 @@ def get_realtime_roas_overview(
                 snapshot_at,
                 product_id=normalized_product_id,
                 site_codes=normalized_site_codes,
-            )
+            ) if include_profit_summary else []
             order_profit_details = _get_realtime_order_profit_details(
                 target,
                 day_start,
@@ -2174,13 +2386,13 @@ def get_realtime_roas_overview(
                 page=normalized_page,
                 page_size=normalized_page_size,
                 site_codes=normalized_site_codes,
-            )
+            ) if include_details else []
             product_sales_stats = _get_realtime_product_sales_stats(
                 target,
                 snapshot_at,
                 product_id=normalized_product_id,
                 site_codes=normalized_site_codes,
-            )
+            ) if include_details else []
             last_order_updated_at = _get_realtime_order_updated_at(
                 target,
                 snapshot_at,
@@ -2235,9 +2447,14 @@ def get_realtime_roas_overview(
                 "roas_points": roas_points,
                 "snapshots": [snap],
                 "order_details": order_details,
+                "order_details_page": _order_detail_page_info(
+                    order_detail_total,
+                    normalized_order_page,
+                    normalized_order_page_size,
+                ),
                 "order_profit_details": order_profit_details,
                 "order_profit_details_page": _order_profit_page_info(
-                    len(order_profit_all),
+                    order_profit_total,
                     normalized_page,
                     normalized_page_size,
                 ),
@@ -2254,12 +2471,32 @@ def get_realtime_roas_overview(
         shipping_revenue = _money(snap.get("shipping_revenue_usd"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(snap.get("ad_spend_usd"))
+        order_detail_total = (
+            _count_realtime_order_details(
+                target,
+                snapshot_at,
+                product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
+            )
+            if include_details else 0
+        )
         order_details = _get_realtime_order_details(
             target,
             day_start,
             snapshot_at,
             product_id=normalized_product_id,
+            page=normalized_order_page,
+            page_size=normalized_order_page_size,
             site_codes=normalized_site_codes,
+        ) if include_details else []
+        order_profit_total = (
+            _count_realtime_order_profit_details(
+                target,
+                snapshot_at,
+                product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
+            )
+            if include_details else 0
         )
         order_profit_all = _get_realtime_order_profit_details(
             target,
@@ -2267,7 +2504,7 @@ def get_realtime_roas_overview(
             snapshot_at,
             product_id=normalized_product_id,
             site_codes=normalized_site_codes,
-        )
+        ) if include_profit_summary else []
         order_profit_details = _get_realtime_order_profit_details(
             target,
             day_start,
@@ -2276,7 +2513,7 @@ def get_realtime_roas_overview(
             page=normalized_page,
             page_size=normalized_page_size,
             site_codes=normalized_site_codes,
-        )
+        ) if include_details else []
         campaign_details = _get_realtime_campaign_details(
             target,
             snapshot_at,
@@ -2298,7 +2535,7 @@ def get_realtime_roas_overview(
             snapshot_at,
             product_id=normalized_product_id,
             site_codes=normalized_site_codes,
-        )
+        ) if include_details else []
         last_order_updated_at = _get_realtime_order_updated_at(
             target,
             snapshot_at,
@@ -2352,9 +2589,14 @@ def get_realtime_roas_overview(
             "roas_points": roas_points,
             "snapshots": [snap],
             "order_details": order_details,
+            "order_details_page": _order_detail_page_info(
+                order_detail_total,
+                normalized_order_page,
+                normalized_order_page_size,
+            ),
             "order_profit_details": order_profit_details,
             "order_profit_details_page": _order_profit_page_info(
-                len(order_profit_all),
+                order_profit_total,
                 normalized_page,
                 normalized_page_size,
             ),
@@ -2507,13 +2749,31 @@ def get_realtime_roas_overview(
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
+    order_detail_total = (
+        _count_realtime_order_details(
+            target,
+            data_until,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        )
+        if include_details else 0
+    )
+    order_profit_total = (
+        _count_realtime_order_profit_details(
+            target,
+            data_until,
+            product_id=normalized_product_id,
+            site_codes=normalized_site_codes,
+        )
+        if include_details else 0
+    )
     order_profit_all = _get_realtime_order_profit_details(
         target,
         day_start,
         data_until,
         product_id=normalized_product_id,
         site_codes=normalized_site_codes,
-    )
+    ) if include_profit_summary else []
     order_profit_details = _get_realtime_order_profit_details(
         target,
         day_start,
@@ -2522,7 +2782,7 @@ def get_realtime_roas_overview(
         page=normalized_page,
         page_size=normalized_page_size,
         site_codes=normalized_site_codes,
-    )
+    ) if include_details else []
     campaign_details = (
         realtime_ad_summary["campaigns"]
         if realtime_ad_summary is not None
@@ -2531,7 +2791,7 @@ def get_realtime_roas_overview(
             product_id=normalized_product_id,
             site_codes=normalized_site_codes,
         )
-    )
+    ) if include_details else []
     campaign_allocation = _annotate_campaign_allocation(
         campaign_details,
         target,
@@ -2572,11 +2832,18 @@ def get_realtime_roas_overview(
             day_start,
             data_until,
             product_id=normalized_product_id,
+            page=normalized_order_page,
+            page_size=normalized_order_page_size,
             site_codes=normalized_site_codes,
+        ) if include_details else [],
+        "order_details_page": _order_detail_page_info(
+            order_detail_total,
+            normalized_order_page,
+            normalized_order_page_size,
         ),
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(
-            len(order_profit_all),
+            order_profit_total,
             normalized_page,
             normalized_page_size,
         ),
@@ -2592,7 +2859,7 @@ def get_realtime_roas_overview(
             data_until,
             product_id=normalized_product_id,
             site_codes=normalized_site_codes,
-        ),
+        ) if include_details else [],
     }
 
 

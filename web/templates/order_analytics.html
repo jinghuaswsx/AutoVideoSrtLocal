@@ -1564,10 +1564,10 @@
   <div class="oar-subpanel is-active" id="realtimeSubOrders">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
-        <div class="oa-table-title">今天订单明细</div>
+        <div class="oa-table-title">今天订单明细 <span class="oar-page-info" id="realtimeOrderPageInfo">加载中...</span></div>
         <div class="oar-note">按订单时间倒序，从最新订单一直回看到广告系统日 0 点</div>
       </div>
-      <div class="oa-table-scroll">
+      <div class="oa-table-scroll" id="realtimeOrderScroll">
         <table class="oa-table oar-compact-table">
           <thead>
             <tr>
@@ -1642,7 +1642,7 @@
           </div>
         </div>
       </div>
-      <div class="oa-table-scroll">
+      <div class="oa-table-scroll" id="realtimeProfitScroll">
         <table class="oa-table oar-compact-table">
           <thead>
             <tr>
@@ -1670,10 +1670,8 @@
         </table>
       </div>
       <div class="oar-profit-reconcile" id="realtimeProfitReconcile" aria-live="polite"></div>
-      <div class="oar-pagination" aria-label="订单盈亏明细分页">
-        <button type="button" class="oar-page-btn" id="realtimeProfitPrev">上一页</button>
+      <div class="oar-pagination" aria-label="订单盈亏明细加载状态">
         <span class="oar-page-info" id="realtimeProfitPageInfo">第 1 / 1 页 · 共 0 条</span>
-        <button type="button" class="oar-page-btn" id="realtimeProfitNext">下一页</button>
       </div>
     </div>
   </div>
@@ -2653,7 +2651,7 @@
       <div class="oa-table-title">店小秘订单明细</div>
       <div class="oar-note" id="dxmOrderPageInfo">第 1 页</div>
     </div>
-    <div class="oa-table-scroll">
+    <div class="oa-table-scroll" id="dxmOrderScroll">
       <table class="oa-table oar-compact-table">
         <thead>
           <tr>
@@ -2675,10 +2673,6 @@
         <tbody id="dxmOrderBody"></tbody>
       </table>
     </div>
-  </div>
-  <div class="oa-actions">
-    <button type="button" class="btn btn-default btn-sm" id="dxmPrevPage">上一页</button>
-    <button type="button" class="btn btn-default btn-sm" id="dxmNextPage">下一页</button>
   </div>
 </div>
 
@@ -3232,6 +3226,16 @@
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
+  function attachInfiniteScroll(elementId, callback) {
+    var el = document.getElementById(elementId);
+    if (!el || typeof callback !== 'function') return;
+    el.addEventListener('scroll', function() {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+        callback();
+      }
+    });
+  }
+
   var countryDashboardInited = false;
   var countryDashboardState = {
     range: 'today'
@@ -3247,8 +3251,12 @@
   var dxmOrdersInited = false;
   var dxmOrderState = {
     page: 1,
-    pageSize: 50,
-    totalPages: 1
+    pageSize: 30,
+    totalPages: 1,
+    total: 0,
+    loaded: 0,
+    loading: false,
+    hasMore: true
   };
 
   function initCountryDashboard() {
@@ -3344,17 +3352,10 @@
           syncDxmRangeSelection();
         });
       });
-      var prev = document.getElementById('dxmPrevPage');
-      if (prev) prev.addEventListener('click', function() {
-        if (dxmOrderState.page > 1) loadDxmOrders(dxmOrderState.page - 1);
-      });
-      var next = document.getElementById('dxmNextPage');
-      if (next) next.addEventListener('click', function() {
-        if (dxmOrderState.page < dxmOrderState.totalPages) loadDxmOrders(dxmOrderState.page + 1);
-      });
+      attachInfiniteScroll('dxmOrderScroll', loadMoreDxmOrders);
       setDxmRange('thisMonth');
     } else {
-      loadDxmOrders(dxmOrderState.page || 1);
+      loadDxmOrders(1);
     }
   }
 
@@ -3518,20 +3519,38 @@
   }
 
   function loadDxmOrders(page) {
-    var start = document.getElementById('dxmStartDate').value;
-    var end = document.getElementById('dxmEndDate').value;
-    var store = document.getElementById('dxmStoreFilter').value;
+    dxmOrderState.page = page || 1;
+    dxmOrderState.totalPages = 1;
+    dxmOrderState.total = 0;
+    dxmOrderState.loaded = 0;
+    dxmOrderState.loading = false;
+    dxmOrderState.hasMore = true;
     var summaryEl = document.getElementById('dxmOrderSummary');
     var bodyEl = document.getElementById('dxmOrderBody');
     var productBodyEl = document.getElementById('dxmProductStatsBody');
     var pageInfo = document.getElementById('dxmOrderPageInfo');
-    if (!summaryEl || !bodyEl) return;
-    dxmOrderState.page = page || 1;
-    summaryEl.innerHTML = '';
-    bodyEl.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
+    if (summaryEl) summaryEl.innerHTML = '';
+    if (bodyEl) bodyEl.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
     if (productBodyEl) productBodyEl.innerHTML = '<tr><td colspan="6" class="oad-loading">加载中...</td></tr>';
     if (pageInfo) pageInfo.textContent = '加载中...';
-    setDxmPaginationDisabled(true);
+    loadMoreDxmOrders();
+  }
+
+  function loadMoreDxmOrders() {
+    if (dxmOrderState.loading || !dxmOrderState.hasMore) return;
+    var start = document.getElementById('dxmStartDate').value;
+    var end = document.getElementById('dxmEndDate').value;
+    var store = document.getElementById('dxmStoreFilter').value;
+    var bodyEl = document.getElementById('dxmOrderBody');
+    var productBodyEl = document.getElementById('dxmProductStatsBody');
+    var pageInfo = document.getElementById('dxmOrderPageInfo');
+    if (!bodyEl) return;
+    dxmOrderState.loading = true;
+    if (pageInfo) {
+      pageInfo.textContent = dxmOrderState.loaded > 0
+        ? '已加载 ' + fmtInt(dxmOrderState.loaded) + ' / 共 ' + fmtInt(dxmOrderState.total) + ' 条，继续加载...'
+        : '加载中...';
+    }
 
     var params = new URLSearchParams({
       start_date: start,
@@ -3555,15 +3574,18 @@
         renderDxmOrderAnalysis(data);
       })
       .catch(function(err) {
-        dxmOrderState.totalPages = dxmOrderState.page;
-        setDxmPaginationDisabled(true);
-        bodyEl.innerHTML = '<tr><td colspan="13" class="oad-error">加载失败：' +
-          escapeHtml(err.message || String(err)) + '</td></tr>';
-        if (productBodyEl) {
+        if (dxmOrderState.loaded <= 0) {
+          bodyEl.innerHTML = '<tr><td colspan="13" class="oad-error">加载失败：' +
+            escapeHtml(err.message || String(err)) + '</td></tr>';
+        }
+        if (productBodyEl && dxmOrderState.loaded <= 0) {
           productBodyEl.innerHTML = '<tr><td colspan="6" class="oad-error">加载失败：' +
             escapeHtml(err.message || String(err)) + '</td></tr>';
         }
-        if (pageInfo) pageInfo.textContent = '加载失败';
+        if (pageInfo) pageInfo.textContent = '加载失败：' + (err.message || String(err));
+      })
+      .finally(function() {
+        dxmOrderState.loading = false;
       });
   }
 
@@ -3571,8 +3593,9 @@
     var summary = data.summary || {};
     var pagination = data.pagination || {};
     var rows = Array.isArray(data.rows) ? data.rows : [];
-    dxmOrderState.page = parseInt(pagination.page, 10) || dxmOrderState.page || 1;
+    var currentPage = parseInt(pagination.page, 10) || dxmOrderState.page || 1;
     dxmOrderState.totalPages = parseInt(pagination.total_pages, 10) || 1;
+    dxmOrderState.total = parseInt(pagination.total, 10) || 0;
 
     document.getElementById('dxmOrderSummary').innerHTML =
       statCard('总销售额', fmtMoney(summary.total_sales)) +
@@ -3584,21 +3607,26 @@
     renderDxmProductStats(data.product_stats || []);
 
     var pageInfo = document.getElementById('dxmOrderPageInfo');
+    appendDxmOrderRows(rows);
+    dxmOrderState.loaded += rows.length;
+    dxmOrderState.hasMore = dxmOrderState.loaded < dxmOrderState.total && currentPage < dxmOrderState.totalPages;
+    dxmOrderState.page = currentPage + 1;
     if (pageInfo) {
-      pageInfo.textContent = '第 ' + dxmOrderState.page + ' 页 / 共 ' + dxmOrderState.totalPages + ' 页';
+      pageInfo.textContent = dxmOrderState.total > 0
+        ? '已加载 ' + fmtInt(dxmOrderState.loaded) + ' / 共 ' + fmtInt(dxmOrderState.total) + ' 条'
+        : '共 0 条';
     }
-    setDxmPaginationDisabled(false);
-    var prev = document.getElementById('dxmPrevPage');
-    var next = document.getElementById('dxmNextPage');
-    if (prev) prev.disabled = dxmOrderState.page <= 1;
-    if (next) next.disabled = dxmOrderState.page >= dxmOrderState.totalPages;
+  }
 
+  function appendDxmOrderRows(rows) {
     var bodyEl = document.getElementById('dxmOrderBody');
-    if (!rows.length) {
+    if (!bodyEl) return;
+    if (!rows.length && dxmOrderState.loaded <= 0) {
       bodyEl.innerHTML = '<tr><td colspan="13" class="oad-empty">暂无店小秘订单数据</td></tr>';
       return;
     }
-    bodyEl.innerHTML = rows.map(function(row) {
+    if (dxmOrderState.loaded <= 0) bodyEl.innerHTML = '';
+    bodyEl.insertAdjacentHTML('beforeend', rows.map(function(row) {
       var shop = row.dxm_shop_name || row.site_code || '';
       var orderId = row.dxm_order_id || row.dxm_package_id || '';
       var country = row.buyer_country_name || row.buyer_country || '';
@@ -3618,7 +3646,7 @@
         '<td>' + fmtMoney(row.total_sales) + '</td>' +
         '<td>' + escapeHtml(row.order_state || '') + '</td>' +
       '</tr>';
-    }).join('');
+    }).join(''));
   }
 
   function renderDxmProductStats(productStats) {
@@ -3714,8 +3742,18 @@
     productId: null,
     productLabel: '',
     siteCode: '',
+    orderPage: 1,
+    orderPageSize: 30,
+    orderTotal: 0,
+    orderLoaded: 0,
+    orderLoading: false,
+    orderHasMore: true,
     profitPage: 1,
-    profitPageSize: 100,
+    profitPageSize: 30,
+    profitTotal: 0,
+    profitLoaded: 0,
+    profitLoading: false,
+    profitHasMore: true,
     campaignFilter: '',
     unallocatedAd: 0
   };
@@ -3764,21 +3802,8 @@
       loadRealtimeOverview();
     });
   }
-  var realtimeProfitPrev = document.getElementById('realtimeProfitPrev');
-  if (realtimeProfitPrev) {
-    realtimeProfitPrev.addEventListener('click', function() {
-      if (realtimeState.profitPage <= 1) return;
-      realtimeState.profitPage -= 1;
-      loadRealtimeSubTabs();
-    });
-  }
-  var realtimeProfitNext = document.getElementById('realtimeProfitNext');
-  if (realtimeProfitNext) {
-    realtimeProfitNext.addEventListener('click', function() {
-      realtimeState.profitPage += 1;
-      loadRealtimeSubTabs();
-    });
-  }
+  attachInfiniteScroll('realtimeOrderScroll', loadMoreRealtimeOrders);
+  attachInfiniteScroll('realtimeProfitScroll', loadMoreRealtimeOrderProfitDetails);
   var realtimeUnallocatedAdCard = document.getElementById('realtimeProfitUnallocatedAdCard');
   if (realtimeUnallocatedAdCard) {
     realtimeUnallocatedAdCard.addEventListener('click', showRealtimeUnallocatedCampaigns);
@@ -3814,7 +3839,16 @@
   }
 
   function resetRealtimeProfitPage() {
+    realtimeState.orderPage = 1;
+    realtimeState.orderTotal = 0;
+    realtimeState.orderLoaded = 0;
+    realtimeState.orderLoading = false;
+    realtimeState.orderHasMore = true;
     realtimeState.profitPage = 1;
+    realtimeState.profitTotal = 0;
+    realtimeState.profitLoaded = 0;
+    realtimeState.profitLoading = false;
+    realtimeState.profitHasMore = true;
   }
 
   function setRealtimeSubtab(name) {
@@ -3997,8 +4031,11 @@
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
-    renderRealtimeOrderProfitSummary(null);
-    renderRealtimeOrderProfitPagination(null);
+    resetRealtimeProfitPage();
+    realtimeState.orderLoading = true;
+    realtimeState.profitLoading = true;
+    renderRealtimeOrderPagination(null, 0);
+    renderRealtimeOrderProfitPagination(null, 0);
     var range;
     try {
       range = getRealtimeDateRange();
@@ -4014,8 +4051,10 @@
     params.set('start_date', range.start);
     params.set('end_date', range.end);
     params.set('include_details', '1');
+    params.set('order_page', realtimeState.orderPage || 1);
+    params.set('order_page_size', realtimeState.orderPageSize || 30);
     params.set('page', realtimeState.profitPage || 1);
-    params.set('page_size', realtimeState.profitPageSize || 100);
+    params.set('page_size', realtimeState.profitPageSize || 30);
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
     if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
     var url = '/order-analytics/realtime-overview?' + params.toString();
@@ -4030,9 +4069,9 @@
           '每 20 分钟同步当天累计订单、商品销售额、运费、广告费和 ROAS；走势图按广告系统日小时节点展示，ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
         renderRealtimeOrders(data.order_details || []);
-        renderRealtimeOrderProfitSummary(data.order_profit_summary || {});
-        renderRealtimeOrderProfitPagination(data.order_profit_details_page || {});
+        renderRealtimeOrderPagination(data.order_details_page || {}, (data.order_details || []).length);
         renderRealtimeOrderProfitDetails(data.order_profit_details || []);
+        renderRealtimeOrderProfitPagination(data.order_profit_details_page || {}, (data.order_profit_details || []).length);
         renderRealtimeProductSales(data.product_sales_stats || []);
         realtimeLastCampaignRows = data.campaigns || [];
         renderRealtimeCampaigns(realtimeLastCampaignRows);
@@ -4080,8 +4119,12 @@
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
         if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
-        renderRealtimeOrderProfitSummary(null);
-        renderRealtimeOrderProfitPagination(null);
+        renderRealtimeOrderPagination(null, 0);
+        renderRealtimeOrderProfitPagination(null, 0);
+      })
+      .finally(function() {
+        realtimeState.orderLoading = false;
+        realtimeState.profitLoading = false;
       });
   }
 
@@ -4089,6 +4132,12 @@
     var body = document.getElementById('realtimeOrderBody');
     if (!body) return;
     body.innerHTML = '';
+    appendRealtimeOrders(rows);
+  }
+
+  function appendRealtimeOrders(rows) {
+    var body = document.getElementById('realtimeOrderBody');
+    if (!body) return;
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, formatShortDateTime(row.order_time));
@@ -4106,6 +4155,74 @@
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
     }
+  }
+
+  function renderRealtimeOrderPagination(pageInfo, rowCount) {
+    if (!pageInfo) {
+      var emptyLabel = document.getElementById('realtimeOrderPageInfo');
+      if (emptyLabel) emptyLabel.textContent = '加载中...';
+      return;
+    }
+    var info = pageInfo || {};
+    var page = parseInt(info.page, 10) || realtimeState.orderPage || 1;
+    var pageSize = parseInt(info.page_size, 10) || realtimeState.orderPageSize || 30;
+    var total = parseInt(info.total, 10) || 0;
+    var pages = parseInt(info.pages, 10) || 0;
+    if (pages <= 0) pages = total > 0 ? 1 : 0;
+    realtimeState.orderTotal = total;
+    realtimeState.orderLoaded += parseInt(rowCount, 10) || 0;
+    realtimeState.orderPage = page + 1;
+    realtimeState.orderHasMore = total > 0 && realtimeState.orderLoaded < total && page < pages;
+    var label = document.getElementById('realtimeOrderPageInfo');
+    if (label) {
+      label.textContent = total > 0
+        ? '已加载 ' + fmtInt(realtimeState.orderLoaded) + ' / 共 ' + fmtInt(total) + ' 条'
+        : '共 0 条';
+    }
+  }
+
+  function realtimeDetailsParams() {
+    var range = getRealtimeDateRange();
+    if (!range) throw new Error('请选择日期范围');
+    var params = new URLSearchParams();
+    params.set('start_date', range.start);
+    params.set('end_date', range.end);
+    params.set('include_details', '1');
+    if (realtimeState.productId) params.set('product_id', realtimeState.productId);
+    if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+    return params;
+  }
+
+  function loadMoreRealtimeOrders() {
+    if (realtimeState.orderLoading || !realtimeState.orderHasMore) return;
+    realtimeState.orderLoading = true;
+    var params;
+    try {
+      params = realtimeDetailsParams();
+    } catch (err) {
+      realtimeState.orderLoading = false;
+      return;
+    }
+    params.set('order_page', realtimeState.orderPage || 1);
+    params.set('order_page_size', realtimeState.orderPageSize || 30);
+    params.set('page', '1');
+    params.set('page_size', '1');
+    fetch('/order-analytics/realtime-overview?' + params.toString())
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        appendRealtimeOrders(data.order_details || []);
+        renderRealtimeOrderPagination(data.order_details_page || {}, (data.order_details || []).length);
+      })
+      .catch(function(err) {
+        var label = document.getElementById('realtimeOrderPageInfo');
+        if (label) label.textContent = '加载失败：' + err.message;
+      })
+      .finally(function() {
+        realtimeState.orderLoading = false;
+      });
   }
 
   function setRealtimeProfitText(id, value) {
@@ -4211,24 +4328,28 @@
     }
   }
 
-  function renderRealtimeOrderProfitPagination(pageInfo) {
+  function renderRealtimeOrderProfitPagination(pageInfo, rowCount) {
+    if (!pageInfo) {
+      var emptyLabel = document.getElementById('realtimeProfitPageInfo');
+      if (emptyLabel) emptyLabel.textContent = '加载中...';
+      return;
+    }
     var info = pageInfo || {};
     var page = parseInt(info.page, 10) || realtimeState.profitPage || 1;
-    var pageSize = parseInt(info.page_size, 10) || realtimeState.profitPageSize || 100;
+    var pageSize = parseInt(info.page_size, 10) || realtimeState.profitPageSize || 30;
     var total = parseInt(info.total, 10) || 0;
     var pages = parseInt(info.pages, 10) || 0;
     if (pages <= 0) pages = total > 0 ? 1 : 0;
-    realtimeState.profitPage = page;
+    realtimeState.profitTotal = total;
+    realtimeState.profitLoaded += parseInt(rowCount, 10) || 0;
+    realtimeState.profitPage = page + 1;
+    realtimeState.profitHasMore = total > 0 && realtimeState.profitLoaded < total && page < pages;
 
-    var prev = document.getElementById('realtimeProfitPrev');
-    var next = document.getElementById('realtimeProfitNext');
     var label = document.getElementById('realtimeProfitPageInfo');
-    if (prev) prev.disabled = total <= 0 || page <= 1;
-    if (next) next.disabled = total <= 0 || page >= pages;
     if (label) {
       label.textContent = total > 0
-        ? '第 ' + page + ' / ' + pages + ' 页 · 共 ' + fmtInt(total) + ' 条 · 每页 ' + fmtInt(pageSize) + ' 条'
-        : '第 1 / 1 页 · 共 0 条';
+        ? '已加载 ' + fmtInt(realtimeState.profitLoaded) + ' / 共 ' + fmtInt(total) + ' 条 · 每批 ' + fmtInt(pageSize) + ' 条'
+        : '共 0 条';
     }
   }
 
@@ -4236,6 +4357,12 @@
     var body = document.getElementById('realtimeOrderProfitBody');
     if (!body) return;
     body.innerHTML = '';
+    appendRealtimeOrderProfitDetails(rows);
+  }
+
+  function appendRealtimeOrderProfitDetails(rows) {
+    var body = document.getElementById('realtimeOrderProfitBody');
+    if (!body) return;
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       var country = (row.buyer_country_name || row.buyer_country || '-') +
@@ -4264,6 +4391,41 @@
     if (!body.children.length) {
       body.innerHTML = '<tr><td colspan="18">暂无订单盈亏数据</td></tr>';
     }
+  }
+
+  function loadMoreRealtimeOrderProfitDetails() {
+    if (realtimeState.profitLoading || !realtimeState.profitHasMore) return;
+    realtimeState.profitLoading = true;
+    var params;
+    try {
+      params = realtimeDetailsParams();
+    } catch (err) {
+      realtimeState.profitLoading = false;
+      return;
+    }
+    params.set('order_page', '1');
+    params.set('order_page_size', '1');
+    params.set('page', realtimeState.profitPage || 1);
+    params.set('page_size', realtimeState.profitPageSize || 30);
+    fetch('/order-analytics/realtime-overview?' + params.toString())
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        appendRealtimeOrderProfitDetails(data.order_profit_details || []);
+        renderRealtimeOrderProfitPagination(
+          data.order_profit_details_page || {},
+          (data.order_profit_details || []).length
+        );
+      })
+      .catch(function(err) {
+        var label = document.getElementById('realtimeProfitPageInfo');
+        if (label) label.textContent = '加载失败：' + err.message;
+      })
+      .finally(function() {
+        realtimeState.profitLoading = false;
+      });
   }
 
   function renderRealtimeProductSales(rows) {
