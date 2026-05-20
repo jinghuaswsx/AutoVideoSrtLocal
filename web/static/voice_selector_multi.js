@@ -398,6 +398,7 @@
   let allItems = [];
   let candidatesMap = new Map();
   let candidatesRankMap = new Map();
+  let similarityRankMap = new Map();
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let launched = false;
@@ -575,14 +576,45 @@
     return voiceMatchReadyFrozen;
   }
 
+  function normalizeSimilarityRank(value) {
+    const rank = Number(value);
+    if (!Number.isFinite(rank)) return null;
+    const normalized = Math.trunc(rank);
+    return normalized >= 1 && normalized <= 20 ? normalized : null;
+  }
+
+  function seedSimilarityRankFallbacks(candidates) {
+    (candidates || [])
+      .map((candidate, index) => ({
+        voiceId: String(candidate && candidate.voice_id || "").trim(),
+        similarity: Number(candidate && candidate.similarity),
+        index,
+      }))
+      .filter(row => row.voiceId && Number.isFinite(row.similarity))
+      .sort((a, b) => {
+        if (b.similarity !== a.similarity) return b.similarity - a.similarity;
+        return a.index - b.index;
+      })
+      .slice(0, 20)
+      .forEach((row, index) => {
+        similarityRankMap.set(row.voiceId, index + 1);
+      });
+  }
+
   function setVoiceMatchCandidates(candidates) {
     candidatesMap.clear();
     candidatesRankMap.clear();
+    similarityRankMap.clear();
+    seedSimilarityRankFallbacks(candidates);
     (candidates || []).forEach((candidate, index) => {
       const voiceId = String(candidate && candidate.voice_id || "").trim();
       if (!voiceId) return;
       candidatesMap.set(voiceId, candidate);
       candidatesRankMap.set(voiceId, index);
+      const similarityRank = normalizeSimilarityRank(candidate.similarity_rank);
+      if (similarityRank !== null) {
+        similarityRankMap.set(voiceId, similarityRank);
+      }
     });
   }
 
@@ -778,7 +810,8 @@
     return allItems.map(v => {
       const rec = candidatesMap.get(v.voice_id);
       const voiceMatchRank = rec ? (candidatesRankMap.get(v.voice_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-      return { v, rec, sim: rec ? rec.similarity : -1, voiceMatchRank };
+      const voiceMatchSimilarityRank = rec ? similarityRankMap.get(v.voice_id) : null;
+      return { v, rec, sim: rec ? rec.similarity : -1, voiceMatchRank, voiceMatchSimilarityRank };
     }).sort((a, b) => {
       if (a.rec && b.rec && a.voiceMatchRank !== b.voiceMatchRank) {
         return a.voiceMatchRank - b.voiceMatchRank;
@@ -881,14 +914,19 @@
 
   function rowsHtml(rows, waitingProgress) {
     let html = "";
-    rows.forEach(({ v, rec }) => {
+    rows.forEach(({ v, rec, voiceMatchSimilarityRank: rawVoiceMatchSimilarityRank }) => {
       const isRec = !!rec;
+      const voiceMatchSimilarityRank = isRec ? rawVoiceMatchSimilarityRank : null;
       const isSelected = selectedVoiceId === v.voice_id;
       const classes = [];
       if (isRec) classes.push("recommended");
-      const badge = isRec
+      const simBadge = isRec
         ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
         : "";
+      const rankBadge = isRec && Number.isFinite(voiceMatchSimilarityRank)
+        ? `<span class="vs-row-rank">#${voiceMatchSimilarityRank}</span>`
+        : "";
+      const badge = `${simBadge}${rankBadge}`;
       html += rowHtml(v, {
         badge, pinClass: classes.join(" "), isSelected, rec,
       });

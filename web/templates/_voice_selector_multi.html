@@ -314,10 +314,15 @@
     color: oklch(48% 0.08 70);
     background: oklch(96% 0.03 80);
   }
-  .vs-row-sim {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
+  .vs-row-sim,
+  .vs-row-rank {
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
     font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;
     margin-right: 6px;
+  }
+  .vs-row-rank {
+    min-width: 28px; justify-content: center;
+    background: oklch(50% 0.17 230);
   }
   .vs-row audio { height: 32px; max-width: 220px; }
   .vs-row-select-btn {

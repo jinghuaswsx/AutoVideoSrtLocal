@@ -20,6 +20,7 @@ def test_match_candidates_returns_top_k_by_cosine_similarity():
                return_value=rows):
         top3 = match_candidates(query_vec, language="en", top_k=3)
     assert [c["voice_id"] for c in top3] == ["a", "b", "c"]
+    assert [c["similarity_rank"] for c in top3] == [1, 2, 3]
     assert top3[0]["similarity"] > 0.99
     assert top3[-1]["similarity"] < 0.01
 
