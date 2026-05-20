@@ -184,6 +184,68 @@ def test_voice_separation_card_stays_after_audio_extract_before_tts_selector():
     assert "moveSeparateBeforeVoiceSelector" not in separation
 
 
+def test_terminal_step_cards_freeze_and_waiting_steps_do_not_poll():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    task_needs_block = script[
+        script.index("function taskNeedsLiveRefresh"):
+        script.index("function startActiveRefreshLoop")
+    ]
+    specialized_block = script[
+        script.index("function specializedPreviewOwnsStep"):
+        script.index("function buildTranslateArtifactFromTask")
+    ]
+    preview_block = script[
+        script.index("function renderStepPreviews"):
+        script.index("function renderAnalysisArtifact")
+    ]
+
+    assert "const TERMINAL_STEP_STATUSES = new Set" in script
+    for status in ["done", "error", "failed", "interrupted", "cancelled", "timeout", "disabled", "unavailable", "silence"]:
+        assert f'"{status}"' in script
+    assert "function isTerminalStepStatus(status)" in script
+    assert "function isRefreshableStepStatus(status)" in script
+    assert 'return status === "running";' in script
+    assert "return isRefreshableStepStatus(status);" in task_needs_block
+    assert "waiting" not in task_needs_block
+    assert '"/api/english-redub"' in specialized_block
+    assert "function shouldFreezeStepPreview(step, previewEl)" in script
+    assert "if (shouldFreezeStepPreview(step, previewEl)) return;" in preview_block
+    assert 'const isPlaceholderPreview = html.indexOf("preview-placeholder") !== -1;' in preview_block
+    assert "isTerminalStepStatus(status) && !isPlaceholderPreview" in preview_block
+
+
+def test_tts_duration_log_freezes_after_terminal_status():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    duration_block = script[
+        script.index("function renderTtsDurationLog"):
+        script.index("function renderSentenceReconcileSyncSummary")
+    ]
+
+    assert "const TERMINAL_TTS_DURATION_STATUSES = new Set" in script
+    for status in ["converged", "done", "failed", "source_video_passthrough", "clipped_output"]:
+        assert f'"{status}"' in script
+    assert "function isTerminalTtsDurationStatus(status)" in script
+    assert 'container.dataset.terminalFrozen === "1"' in duration_block
+    assert 'container.dataset.terminalFrozen = isTerminalTtsDurationStatus(status) ? "1" : "";' in duration_block
+
+
+def test_separation_card_stops_polling_after_terminal_previews_freeze():
+    root = Path(__file__).resolve().parents[1]
+    separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")
+
+    assert "const SEPARATION_TERMINAL_STATUSES = new Set" in separation
+    assert "function isSeparationTerminalStatus(status)" in separation
+    assert "function shouldPollSeparationLatest()" in separation
+    assert "function stopPollingIfSettled()" in separation
+    assert 'preview.dataset.terminalFrozen = "1";' in separation
+    assert "if (!shouldPollSeparationLatest()) {" in separation
+    assert "clearInterval(pollTimer);" in separation
+
+
 def test_loudness_card_exposes_profile_controls_and_actual_algorithm():
     root = Path(__file__).resolve().parents[1]
     separation = (root / "web" / "templates" / "_separation_card.html").read_text(encoding="utf-8")

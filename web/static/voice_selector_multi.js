@@ -403,6 +403,7 @@
   let pollHandle = null;
   let pollDelay = 3000;
   let pollStartTime = 0;
+  let voiceMatchReadyFrozen = false;
   const POLL_TIMEOUT_MS = 5 * 60 * 1000;
   let activeGender = null;       // null | "male" | "female"（由胶囊按钮驱动）
   let rematching = false;
@@ -553,6 +554,20 @@
     });
   }
 
+  function markVoiceMatchReadyFrozen() {
+    voiceMatchReadyFrozen = true;
+    if (pollHandle) {
+      clearTimeout(pollHandle);
+      pollHandle = null;
+    }
+    pollDelay = 3000;
+    pollStartTime = 0;
+  }
+
+  function shouldSkipAutomaticLibraryRefresh() {
+    return voiceMatchReadyFrozen;
+  }
+
   async function fetchVoiceLibraryPage(page) {
     const params = new URLSearchParams({
       page: String(page),
@@ -587,6 +602,7 @@
   }
 
   async function loadLibrary() {
+    if (shouldSkipAutomaticLibraryRefresh()) return;
     const seq = ++libraryRequestSeq;
     try {
       const data = await fetchFullVoiceLibrary(seq);
@@ -609,9 +625,7 @@
         setTimeout(() => render(progress), 0);
         schedulePoll();
       } else {
-        if (pollHandle) { clearTimeout(pollHandle); pollHandle = null; }
-        pollDelay = 3000;
-        pollStartTime = 0;
+        markVoiceMatchReadyFrozen();
         const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
         if (n > 0) parts.push(`${n} 个向量匹配推荐`);
         else parts.push("向量匹配未找到相似音色");

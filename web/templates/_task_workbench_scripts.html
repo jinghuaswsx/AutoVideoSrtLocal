@@ -22,8 +22,19 @@
   const PROGRESS_STEPS = MAIN_STEPS;
   {% endif %}
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×", failed: "×", interrupted: "×", cancelled: "×" };
+  const TERMINAL_STEP_STATUSES = new Set(["done", "error", "failed", "interrupted", "cancelled", "timeout", "disabled", "unavailable", "silence"]);
+  const TERMINAL_TTS_DURATION_STATUSES = new Set(["converged", "done", "failed", "source_video_passthrough", "clipped_output"]);
   function isErrorLikeStatus(status) {
     return ["error", "failed", "interrupted", "cancelled"].includes(status);
+  }
+  function isTerminalStepStatus(status) {
+    return TERMINAL_STEP_STATUSES.has(String(status || ""));
+  }
+  function isRefreshableStepStatus(status) {
+    return status === "running";
+  }
+  function isTerminalTtsDurationStatus(status) {
+    return TERMINAL_TTS_DURATION_STATUSES.has(String(status || ""));
   }
   function visualStepStatus(status) {
     return isErrorLikeStatus(status) ? "error" : status;
@@ -59,6 +70,7 @@
   const _userTranslatePref = {{ (translate_pref or 'openrouter')|tojson }};
   let refreshTimer = null;
   let activeRefreshLoop = null;
+  let taskWorkbenchBooted = false;
   let startRequestInFlight = false;
   let analysisStartInFlight = false;
   const START_BUTTON_DEFAULT_LABEL = "开始处理";
@@ -870,7 +882,7 @@
     if (task.status === "done" || task.status === "error") return false;
     return STEP_ORDER.some(step => {
       const status = task.steps?.[step];
-      return status === "running" || status === "waiting";
+      return isRefreshableStepStatus(status);
     });
   }
 
@@ -895,6 +907,7 @@
 
   function renderTaskState() {
     if (!currentTask) return;
+    taskWorkbenchBooted = true;
     renderStepMessages();
     renderStepPreviews(currentTask.artifacts || {});
     // 重渲染后恢复音频播放按钮状态
@@ -1183,8 +1196,15 @@
   function specializedPreviewOwnsStep(step) {
     if (!(step === "separate" || step === "loudness_match")) return false;
     const apiBase = TASK_WORKBENCH_CONFIG.apiBase || "";
-    if (apiBase !== "/api/omni-translate" && apiBase !== "/api/multi-translate") return false;
+    if (apiBase !== "/api/omni-translate" && apiBase !== "/api/multi-translate" && apiBase !== "/api/english-redub") return false;
     return Boolean(currentTask?.separation);
+  }
+
+  function shouldFreezeStepPreview(step, previewEl) {
+    if (!taskWorkbenchBooted || !previewEl) return false;
+    if (previewEl.dataset.terminalFrozen !== "1") return false;
+    const status = currentTask?.steps?.[step] || "";
+    return isTerminalStepStatus(status);
   }
 
   function buildTranslateArtifactFromTask(task) {
@@ -1311,6 +1331,7 @@
     STEP_ORDER.forEach(step => {
       const previewEl = document.getElementById(`preview-${step}`);
       if (!previewEl) return;
+      if (shouldFreezeStepPreview(step, previewEl)) return;
       if (specializedPreviewOwnsStep(step)) return;
       let artifact = artifacts[step];
       if (step === "translate" && (!artifact || (!artifact.items && !artifact.layout))) {
@@ -1351,6 +1372,12 @@
       if (previewEl.dataset.lastHtml !== html) {
         previewEl.innerHTML = html;
         previewEl.dataset.lastHtml = html;
+      }
+      const isPlaceholderPreview = html.indexOf("preview-placeholder") !== -1;
+      if (taskWorkbenchBooted && isTerminalStepStatus(status) && !isPlaceholderPreview) {
+        previewEl.dataset.terminalFrozen = "1";
+      } else {
+        delete previewEl.dataset.terminalFrozen;
       }
     });
   }
@@ -3070,18 +3097,24 @@
     const container = document.getElementById('ttsDurationLog');
     if (!container) return;
     const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
+    const status = currentTask.tts_duration_status || 'running';
+    if (isTerminalTtsDurationStatus(status) && container.dataset.terminalFrozen === "1") return;
     if (rounds.some(round => round && round.mode === 'sentence_reconcile')) {
       renderSentenceReconcileDurationLog(container, rounds);
+      container.dataset.terminalFrozen = isTerminalTtsDurationStatus(status) ? "1" : "";
       return;
     }
     if (!rounds.length) {
-      if (renderSentenceReconcileDurationLog(container)) return;
+      if (renderSentenceReconcileDurationLog(container)) {
+        container.dataset.terminalFrozen = isTerminalTtsDurationStatus(status) ? "1" : "";
+        return;
+      }
       container.hidden = true;
       container.innerHTML = '';
+      container.dataset.terminalFrozen = isTerminalTtsDurationStatus(status) ? "1" : "";
       return;
     }
 
-    const status = currentTask.tts_duration_status || 'running';
     const finalRound = currentTask.tts_final_round || null;
     const finalReason = currentTask.tts_final_reason || null;
     const finalDistance = currentTask.tts_final_distance;
@@ -3467,6 +3500,7 @@
     // bound flag so bootCollapsibleCards rebinds the new header.
     delete container.dataset.collapsibleBound;
     container.innerHTML = parts.join('');
+    container.dataset.terminalFrozen = isTerminalTtsDurationStatus(status) ? "1" : "";
     container.hidden = false;
     if (window.bootCollapsibleCards) {
       window.bootCollapsibleCards(container.parentNode || document, taskId);

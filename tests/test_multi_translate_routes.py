@@ -953,7 +953,7 @@ def test_voice_selector_multi_uses_configured_api_base_for_shared_endpoints():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
 
-    assert "fetch(`${apiBase}/${taskId}/voice-library`)" in script
+    assert "fetch(`${apiBase}/${taskId}/voice-library?${params.toString()}`)" in script
     assert "fetch(`${apiBase}/${taskId}/confirm-voice`, {" in script
     assert "fetch(`${apiBase}/${taskId}/rematch`, {" in script
     assert "`/api/multi-translate/${taskId}/voice-library`" not in script

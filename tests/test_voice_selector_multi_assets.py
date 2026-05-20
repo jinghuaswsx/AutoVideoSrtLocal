@@ -83,3 +83,18 @@ def test_voice_selector_multi_preserves_focus_and_scroll_during_refreshes():
     assert "sessionStorage.setItem(RELOAD_STATE_KEY" in SCRIPT
     assert "function restoreReloadState()" in SCRIPT
     assert "window.scrollTo({ top: saved.scrollY || 0" in SCRIPT
+
+
+def test_voice_selector_multi_freezes_after_voice_match_ready():
+    load_block = SCRIPT[
+        SCRIPT.index("async function loadLibrary"):
+        SCRIPT.index("function schedulePoll")
+    ]
+
+    assert "let voiceMatchReadyFrozen = false;" in SCRIPT
+    assert "function markVoiceMatchReadyFrozen()" in SCRIPT
+    assert "function shouldSkipAutomaticLibraryRefresh()" in SCRIPT
+    assert "if (shouldSkipAutomaticLibraryRefresh()) return;" in load_block
+    assert "markVoiceMatchReadyFrozen();" in load_block
+    assert "voiceMatchReadyFrozen = true;" in SCRIPT
+    assert "schedulePoll();" in load_block

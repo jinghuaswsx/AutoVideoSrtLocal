@@ -22,8 +22,10 @@
   var separation = {{ sep|tojson }} || null;
   var selectedLoudnessProfile = {{ (state.loudness_profile or 'standard')|tojson }};
   var selectedManualBoostPct = Number({{ (state.loudness_manual_boost_pct or 100)|tojson }}) || 100;
+  var separationStepStatus = {{ (state.steps.get('separate', '') if state.steps else '')|tojson }};
   var loudnessStepStatus = {{ (state.steps.get('loudness_match', '') if state.steps else '')|tojson }};
   var loudnessProfileSaving = false;
+  const SEPARATION_TERMINAL_STATUSES = new Set(["done", "error", "failed", "interrupted", "cancelled", "timeout", "disabled", "unavailable", "silence"]);
 
   var STATUS_LABEL_ZH = {
     "running":     "运行中",
@@ -34,6 +36,19 @@
     "silence":     "结果异常",
     "disabled":    "未启用",
   };
+
+  function isSeparationTerminalStatus(status) {
+    return SEPARATION_TERMINAL_STATUSES.has(String(status || ""));
+  }
+
+  function markTerminalPreview(preview, status) {
+    if (!preview) return;
+    if (isSeparationTerminalStatus(status)) {
+      preview.dataset.terminalFrozen = "1";
+    } else {
+      delete preview.dataset.terminalFrozen;
+    }
+  }
 
   function fmt(v, digits, suffix) {
     if (v === null || v === undefined || isNaN(Number(v))) return "-";
@@ -208,11 +223,13 @@
     if (!preview) return;
     if (!sep || !sep.status) {
       setHtmlIfChanged(preview, "");
+      markTerminalPreview(preview, "");
       return;
     }
     var status = sep.status;
     if (status === "disabled") {
       setHtmlIfChanged(preview, '<div class="separation-detail muted">人声分离总开关未启用，主任务走旧逻辑（不混背景音、不做响度匹配）</div>');
+      markTerminalPreview(preview, status);
       return;
     }
 
@@ -237,6 +254,7 @@
           '<div class="kv-row"><span class="k">API</span><span class="v">' + escapeHtml(sep.api_url || "-") + '</span></div>' +
           warning +
         '</div>');
+      markTerminalPreview(preview, status);
       return;
     }
 
@@ -264,6 +282,7 @@
             '<br>↓ CapCut 工程包导出时 accompaniment 作为独立 ambience 音轨保留' +
           '</div>' +
         '</div>');
+      markTerminalPreview(preview, status);
       return;
     }
 
@@ -276,6 +295,7 @@
         (errMsg ? '<div class="kv-row"><span class="k">原因</span><span class="v">' + errMsg + '</span></div>' : "") +
         '<div class="loudness-warn">⚠ 已自动降级走旧逻辑（不混背景音、不做响度匹配，主任务继续）</div>' +
       '</div>');
+    markTerminalPreview(preview, status);
   }
 
   function renderLoudnessProfileControls(tl) {
@@ -323,6 +343,7 @@
 
     if (!sep || sep.status === "disabled") {
       setHtmlIfChanged(preview, renderLoudnessProfileControls(null));
+      markTerminalPreview(preview, sep && sep.status === "disabled" ? "disabled" : loudnessStepStatus);
       return;
     }
 
@@ -330,6 +351,7 @@
     if (!tl || !tl.variants || !tl.variants.length) {
       // 还没跑到 loudness_match step（separate 还没 done 或 TTS 还没好）
       setHtmlIfChanged(preview, renderLoudnessProfileControls(tl));
+      markTerminalPreview(preview, loudnessStepStatus);
       return;
     }
 
@@ -399,6 +421,7 @@
         '<div class="loudness-algo-row">' + algoBadge + '</div>' +
         coreRows +
       '</div>');
+    markTerminalPreview(preview, loudnessStepStatus || "done");
   }
 
   function refreshAll() {
@@ -406,19 +429,50 @@
     renderLoudnessMatch(separation);
   }
 
+  function loudnessNeedsPolling() {
+    if (!document.getElementById("preview-loudness_match")) return false;
+    if (!loudnessStepStatus) return false;
+    if (isSeparationTerminalStatus(loudnessStepStatus)) return false;
+    var tl = separation && separation.tts_loudness;
+    if (tl && tl.variants && tl.variants.length) return false;
+    return true;
+  }
+
+  function shouldPollSeparationLatest() {
+    var sepStatus = (separation && separation.status) || separationStepStatus || "";
+    if (!sepStatus) return false;
+    if (!isSeparationTerminalStatus(sepStatus)) return true;
+    return loudnessNeedsPolling();
+  }
+
+  function stopPollingIfSettled() {
+    if (!shouldPollSeparationLatest()) {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+  }
+
   function pollLatest() {
+    if (!shouldPollSeparationLatest()) {
+      stopPollingIfSettled();
+      return;
+    }
     fetch(API_BASE + "/" + TASK_ID)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (task) {
         if (task) {
           if (Object.prototype.hasOwnProperty.call(task, "separation")) separation = task.separation;
+          separationStepStatus = (task.steps && task.steps.separate) || separationStepStatus || "";
           selectedLoudnessProfile = task.loudness_profile || selectedLoudnessProfile || "standard";
           selectedManualBoostPct = Number(task.loudness_manual_boost_pct || selectedManualBoostPct || 100);
           loudnessStepStatus = (task.steps && task.steps.loudness_match) || loudnessStepStatus || "";
         }
         refreshAll();
+        stopPollingIfSettled();
       })
-      .catch(function () { refreshAll(); });
+      .catch(function () { refreshAll(); stopPollingIfSettled(); });
   }
 
   refreshAll();
@@ -436,10 +490,10 @@
     saveLoudnessProfile(profile, null);
   });
 
-  // 用户要求：每 10s 刷新 elapsed 显示 + 拉一次最新 task state
-  var pollTimer = setInterval(pollLatest, 10000);
+  // 运行态才刷新 elapsed / 拉最新 task state；终态卡片冻结后停止轮询。
+  var pollTimer = shouldPollSeparationLatest() ? setInterval(pollLatest, 10000) : null;
   window.addEventListener("beforeunload", function () {
-    clearInterval(pollTimer);
+    if (pollTimer) clearInterval(pollTimer);
   });
 })();
 </script>
