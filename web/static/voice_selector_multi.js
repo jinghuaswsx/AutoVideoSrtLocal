@@ -534,16 +534,6 @@
     return String(status || "").trim().toLowerCase();
   }
 
-  function isVoiceAiRankRunningStatus(status) {
-    const value = normalizedVoiceAiRankStatus(status);
-    return value === "running" || value === "queued";
-  }
-
-  function isVoiceAiRankSuccessStatus(status) {
-    const value = normalizedVoiceAiRankStatus(status);
-    return value === "done" || value === "derived_from_all";
-  }
-
   function isVoiceAiRankFailureStatus(status) {
     const value = normalizedVoiceAiRankStatus(status);
     return value === "failed" || value === "error";
@@ -557,15 +547,6 @@
       return "success";
     }
     if (voiceAiRankRequestState === "failed") {
-      return "failed";
-    }
-    if (voiceAiRankRerunning || isVoiceAiRankRunningStatus(voiceAiRankStatus)) {
-      return "running";
-    }
-    if (isVoiceAiRankSuccessStatus(voiceAiRankStatus)) {
-      return "success";
-    }
-    if (isVoiceAiRankFailureStatus(voiceAiRankStatus)) {
       return "failed";
     }
     return "";
