@@ -56,8 +56,10 @@
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
 .oc-search input::placeholder { color:var(--oc-fg-subtle); }
 .oc-search input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
-.oc-toolbar select.oc-select { width:100%; min-width:0; height:32px; padding:0 28px 0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; cursor:pointer; appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 8px center; }
-.oc-toolbar select.oc-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-toolbar select.oc-select,
+.oc-vm-toolbar select.oc-select { width:100%; min-width:0; height:32px; padding:0 28px 0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; cursor:pointer; appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 8px center; }
+.oc-toolbar select.oc-select:focus,
+.oc-vm-toolbar select.oc-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
 
 .oc-chip { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r-full,9999px); background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:500; cursor:pointer; user-select:none; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-chip input { display:none; }
@@ -108,6 +110,7 @@
 
 /* ────────── Pager ────────── */
 .oc-pager { display:flex; justify-content:center; gap:var(--oc-sp-1); padding:var(--oc-sp-6) 0 var(--oc-sp-2); }
+.oc-pager[hidden] { display:none; }
 .oc-pager button { min-width:32px; height:32px; padding:0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; font-variant-numeric:tabular-nums; cursor:pointer; transition:all var(--oc-dur-fast) var(--oc-ease); }
 .oc-pager button:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
 .oc-pager button.active { background:var(--oc-accent); border-color:var(--oc-accent); color:#fff; }
@@ -2399,6 +2402,14 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   top:var(--sticky-toolbar-top, 176px);
   z-index:20;
 }
+.oc-vm-top-pager {
+  position:sticky;
+  top:var(--sticky-pager-top, 220px);
+  z-index:19;
+  margin:0;
+  padding:var(--oc-sp-3) 0 var(--oc-sp-2);
+  background:var(--bg-body,#f2f4f8);
+}
 .oc-vm-total { justify-self:end; }
 .oc-vm-table { min-width:1180px; table-layout:fixed; }
 .oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:72px; }
@@ -2636,6 +2647,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
       </select>
       <span class="count oc-vm-total" id="vmTotalPill">共 0 条素材</span>
     </div>
+    <div class="oc-pager oc-vm-top-pager" id="vmTopPager" aria-label="视频素材顶部分页" hidden></div>
     <div class="oc-list" id="vmList"></div>
     <div class="oc-pager" id="vmPager"></div>
   </section>
@@ -2654,20 +2666,26 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   function updateStickyOffsets() {
     var header = document.querySelector('.oc-header');
     var tabs = document.querySelector('.oc-page-tabs');
-    var toolbar = document.querySelector('.oc-toolbar');
-    var list = document.querySelector('.oc-list');
+    var activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.querySelector('#mediaProductsPanel');
+    var toolbar = activePanel ? activePanel.querySelector('.oc-toolbar, .oc-vm-toolbar') : document.querySelector('.oc-toolbar, .oc-vm-toolbar');
+    var topPager = activePanel ? activePanel.querySelector('.oc-vm-top-pager:not([hidden])') : null;
+    var list = activePanel ? activePanel.querySelector('.oc-list') : document.querySelector('.oc-list');
     if (!header || !toolbar || !list) return;
     var hh = header.getBoundingClientRect().height;
     var tabsHeight = tabs ? tabs.getBoundingClientRect().height : 0;
     var tabsMargin = tabs ? parseFloat(window.getComputedStyle(tabs).marginBottom || '0') || 0 : 0;
     var th = toolbar.getBoundingClientRect().height;
+    var ph = topPager ? topPager.getBoundingClientRect().height : 0;
     var tabsTop = TOPBAR + hh;
     var toolbarTop = tabsTop + tabsHeight + tabsMargin;
+    var pagerTop = toolbarTop + th;
     document.documentElement.style.setProperty('--sticky-tabs-top', tabsTop + 'px');
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
-    var tableTop = toolbarTop + th + 16; /* 16px margin-top */
+    document.documentElement.style.setProperty('--sticky-pager-top', pagerTop + 'px');
+    var tableTop = pagerTop + ph + 16; /* 16px list margin-top */
     list.style.maxHeight = Math.max(window.innerHeight - tableTop - 80, 320) + 'px';
   }
+  window.updateMediaStickyOffsets = updateStickyOffsets;
   updateStickyOffsets();
   window.addEventListener('resize', updateStickyOffsets);
 })();

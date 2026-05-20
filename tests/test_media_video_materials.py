@@ -82,6 +82,27 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert 123 in list_args
 
 
+def test_list_video_materials_defaults_to_page_size_100(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append(("query_one", sql, args))
+        return {"c": 0}
+
+    def fake_query(sql, args=()):
+        calls.append(("query", sql, args))
+        return []
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+
+    payload = mvm.list_video_materials()
+
+    assert payload["page"] == 1
+    assert payload["page_size"] == 100
+    assert calls[1][2][-2:] == (100, 0)
+
+
 def test_existing_english_material_identity_matches_names_and_bound_paths(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM media_item_mk_bindings" in sql:

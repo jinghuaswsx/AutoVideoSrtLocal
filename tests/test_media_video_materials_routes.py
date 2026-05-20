@@ -28,7 +28,27 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert "vmBindMask" in html
     assert "position:sticky" in html
     assert "--sticky-tabs-top" in html
+    assert "--sticky-pager-top" in html
+    assert 'id="vmTopPager"' in html
+    assert "oc-vm-top-pager" in html
+    assert ".oc-vm-toolbar select.oc-select" in html
     assert "tabsHeight" in html
+
+
+def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_video_materials(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "total": 0, "page": 1, "page_size": 100}
+
+    monkeypatch.setattr(video_routes.media_video_materials, "list_video_materials", fake_list_video_materials)
+
+    response = authed_client_no_db.get("/medias/api/video-materials")
+
+    assert response.status_code == 200
+    assert captured["page"] == 1
+    assert captured["page_size"] == 100
 
 
 def test_video_materials_api_lists_with_filters(authed_client_no_db, monkeypatch):
