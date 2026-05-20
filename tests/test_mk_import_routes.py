@@ -91,6 +91,14 @@ def test_mk_import_video_maps_service_errors(authed_client_no_db, monkeypatch):
 
     cases = [
         (route.mk_import_svc.DuplicateError("dupe"), 422, "duplicate_filename"),
+        (
+            route.mk_import_svc.ProductLinkUnavailableError(
+                "https://newjoyloo.com/products/missing-rjc",
+                "HTTP 404",
+            ),
+            409,
+            "product_link_unavailable",
+        ),
         (route.mk_import_svc.DownloadError("404"), 502, "download_failed"),
         (route.mk_import_svc.StorageError("tos"), 500, "storage_failed"),
         (route.mk_import_svc.DBError("sql"), 500, "db_failed"),

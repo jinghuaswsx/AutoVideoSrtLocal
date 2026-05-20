@@ -13,6 +13,7 @@ from web.services.mk_import import (
     build_mk_import_db_failed_response,
     build_mk_import_download_failed_response,
     build_mk_import_duplicate_response,
+    build_mk_import_product_link_unavailable_response,
     build_mk_import_storage_failed_response,
     build_mk_import_success_response,
     build_mk_import_too_many_filenames_response,
@@ -64,6 +65,8 @@ def import_video():
         return mk_import_flask_response(build_mk_import_success_response(result))
     except mk_import_svc.DuplicateError as e:
         return mk_import_flask_response(build_mk_import_duplicate_response(e))
+    except mk_import_svc.ProductLinkUnavailableError as e:
+        return mk_import_flask_response(build_mk_import_product_link_unavailable_response(e))
     except mk_import_svc.DownloadError as e:
         return mk_import_flask_response(build_mk_import_download_failed_response(e))
     except mk_import_svc.StorageError as e:

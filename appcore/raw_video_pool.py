@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 from typing import Any
 
@@ -38,6 +39,23 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                t.assignee_id, t.created_at, t.claimed_at, t.updated_at,
                p.name AS product_name,
                i.filename AS mp4_filename, i.file_size AS mp4_size,
+               (SELECT rs.id
+                FROM media_raw_sources rs
+                WHERE rs.product_id = t.media_product_id
+                  AND rs.deleted_at IS NULL
+                  AND (rs.display_name = i.filename OR rs.video_object_key LIKE CONCAT('%/', i.filename))
+                ORDER BY rs.id ASC LIMIT 1) AS raw_source_id,
+               (SELECT te.event_type
+                FROM task_events te
+                WHERE te.task_id = t.id
+                  AND te.event_type IN (
+                    'raw_niuma_submitted',
+                    'raw_niuma_done',
+                    'raw_niuma_failed',
+                    'raw_niuma_timeout',
+                    'raw_manual_uploaded'
+                  )
+                ORDER BY te.id DESC LIMIT 1) AS raw_processing_event,
                (SELECT GROUP_CONCAT(country_code ORDER BY country_code SEPARATOR ',')
                 FROM tasks c WHERE c.parent_task_id = t.id) AS country_codes
         FROM tasks t
@@ -80,6 +98,9 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                 "product_name": r["product_name"],
                 "mp4_filename": r["mp4_filename"],
                 "mp4_size": r["mp4_size"],
+                "raw_source_id": r.get("raw_source_id"),
+                "raw_source_status": _raw_source_status(r),
+                "raw_processing_status": _raw_processing_status(r),
                 "country_codes": r["country_codes"] or "",
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 "claimed_at": r["claimed_at"].isoformat() if r["claimed_at"] else None,
@@ -91,6 +112,36 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
         "in_progress": _shape(in_progress),
         "review": _shape(review),
     }
+
+
+def _raw_source_status(row: dict) -> str:
+    if not row.get("media_item_id") or not row.get("mp4_filename"):
+        return "missing_media"
+    return "ready" if row.get("raw_source_id") else "not_ready"
+
+
+def _raw_processing_status(row: dict) -> str:
+    event_type = (row.get("raw_processing_event") or "").strip()
+    return {
+        "raw_niuma_submitted": "niuma_running",
+        "raw_niuma_done": "niuma_done",
+        "raw_niuma_failed": "niuma_failed",
+        "raw_niuma_timeout": "niuma_timeout",
+        "raw_manual_uploaded": "manual_uploaded",
+    }.get(event_type, "not_started")
+
+
+def _write_event(task_id: int, event_type: str, actor_user_id: int | None, payload: dict | None = None) -> None:
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            event_type,
+            int(actor_user_id) if actor_user_id is not None else None,
+            json.dumps(payload, ensure_ascii=False) if payload else None,
+        ),
+    )
 
 
 def _resolve_local_path(object_key: str) -> str | None:
@@ -161,6 +212,15 @@ def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) 
     execute(
         "UPDATE media_items SET file_size=%s WHERE id=%s",
         (new_size, row["media_item_id"]),
+    )
+    _write_event(
+        task_id,
+        "raw_manual_uploaded",
+        actor_user_id,
+        {
+            "filename": os.path.basename(str(getattr(uploaded_file, "filename", "") or "")),
+            "new_size": new_size,
+        },
     )
 
     # Auto-trigger C's mark_uploaded (translates state to raw_review)

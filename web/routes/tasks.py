@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from functools import wraps
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, current_app, render_template, request
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
@@ -187,6 +187,15 @@ def api_import_and_create():
         )
     except mk_import_svc.DuplicateError as e:
         return _json_response({"error": f"视频已入库: {e}"}, 409)
+    except mk_import_svc.ProductLinkUnavailableError as e:
+        return _json_response(
+            {
+                "error": "product_link_unavailable",
+                "detail": str(e),
+                "message": "Shopify 产品链接不可访问，请先上架产品链接后再创建任务",
+            },
+            409,
+        )
     except mk_import_svc.DownloadError as e:
         return _json_response({"error": f"下载失败: {e}"}, 502)
     except mk_import_svc.StorageError as e:
@@ -218,7 +227,26 @@ def api_parent_claim(tid: int):
     except tasks_svc.ConflictError as e:
         return _json_response({"error": str(e)}, 409)
     _audit_task_action(tid, "task_parent_claimed")
-    return _json_response({"ok": True})
+    raw_processing = None
+    if not current_app.testing:
+        from appcore import task_raw_video_processing
+
+        try:
+            raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
+                task_id=tid,
+                actor_user_id=int(current_user.id),
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                task_raw_video_processing.record_niuma_start_failed(
+                    parent_task_id=tid,
+                    actor_user_id=int(current_user.id),
+                    error=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                current_app.logger.exception("record niuma start failure failed task_id=%s", tid)
+            raw_processing = {"status": "start_failed", "error": str(exc)}
+    return _json_response({"ok": True, "raw_processing": raw_processing})
 
 
 @bp.route("/api/parent/<int:tid>/upload_done", methods=["POST"])
