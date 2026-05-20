@@ -197,6 +197,8 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value)' in body
     assert 'params.set("mark_status", qs("markStatus").value)' in body
     assert "tabcut-video-grid" in body
+    assert "function normalizeTabcutGotoPage(raw, totalPages)" in body
+    assert 'class="tabcut-pager-goto"' in body
 
 
 def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(

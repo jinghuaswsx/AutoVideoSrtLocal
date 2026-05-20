@@ -85,6 +85,9 @@
 .oc-pager button { height:34px; padding:0 16px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); cursor:pointer; font-size:16px; }
 .oc-pager button:disabled { opacity:0.4; cursor:default; }
 .oc-pager button:not(:disabled):hover { background:var(--oc-bg-muted); }
+.oc-pager-goto { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.oc-pager-goto input { width:72px; height:34px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:16px; text-align:center; outline:none; }
+.oc-pager-goto input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
 .oc-empty { text-align:center; padding:60px 20px; color:var(--oc-fg-muted); }
 .text-mono { font-family:"JetBrains Mono",monospace; font-size:12px; }
 .text-right { text-align:right; }
@@ -588,6 +591,22 @@ function clearMkArchivePager(containerIds) {
   });
 }
 
+function normalizeMkGotoPage(raw, totalPages) {
+  const total = Number(totalPages);
+  const last = Number.isFinite(total) && total > 0 ? Math.floor(total) : 1;
+  const page = Number(String(raw ?? '').trim());
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.min(last, Math.floor(page));
+}
+
+function handleMkGotoPage(event, loaderName, totalPages) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const page = normalizeMkGotoPage(event.currentTarget.value, totalPages);
+  const loader = window[loaderName];
+  if (typeof loader === 'function') loader(page);
+}
+
 function renderMkArchivePager(containerIds, loaderName, page, total) {
   const pageNum = Math.max(1, Number(page || 1));
   const totalPages = Math.max(1, Math.ceil(Number(total || 0) / MK_VIDEO_PAGE_SIZE));
@@ -597,7 +616,8 @@ function renderMkArchivePager(containerIds, loaderName, page, total) {
     `<button onclick="${loaderName}(${prevPage})" ${pageNum <= 1 ? 'disabled' : ''}>上一页</button>` +
     ` <span>${pageNum} / ${totalPages}</span> ` +
     `<button onclick="${loaderName}(${nextPage})" ${pageNum >= totalPages ? 'disabled' : ''}>下一页</button>` +
-    `<button onclick="${loaderName}(${totalPages})" ${pageNum >= totalPages ? 'disabled' : ''}>末页</button>`;
+    `<button onclick="${loaderName}(${totalPages})" ${pageNum >= totalPages ? 'disabled' : ''}>末页</button>` +
+    `<label class="oc-pager-goto">去 <input type="number" min="1" max="${totalPages}" value="${pageNum}" onkeydown="handleMkGotoPage(event, '${loaderName}', ${totalPages})"> 页</label>`;
   containerIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = pagerHtml;
@@ -879,10 +899,12 @@ async function loadData(page) {
   }).join('');
 
   // 分页
-  const totalPages = Math.ceil(data.total / PAGE_SIZE);
-  let pagerHtml = `<button onclick="loadData(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
-  pagerHtml += ` <span>${page} / ${totalPages}</span> `;
-  pagerHtml += `<button onclick="loadData(${page+1})" ${page>=totalPages?'disabled':''}>下一页</button>`;
+  const totalPages = Math.max(1, Math.ceil(Number(data.total || 0) / PAGE_SIZE));
+  const pageNum = Math.max(1, Number(page || 1));
+  let pagerHtml = `<button onclick="loadData(${pageNum-1})" ${pageNum<=1?'disabled':''}>上一页</button>`;
+  pagerHtml += ` <span>${pageNum} / ${totalPages}</span> `;
+  pagerHtml += `<button onclick="loadData(${pageNum+1})" ${pageNum>=totalPages?'disabled':''}>下一页</button>`;
+  pagerHtml += `<label class="oc-pager-goto">去 <input type="number" min="1" max="${totalPages}" value="${pageNum}" onkeydown="handleMkGotoPage(event, 'loadData', ${totalPages})"> 页</label>`;
   document.getElementById('pager').innerHTML = pagerHtml;
 }
 

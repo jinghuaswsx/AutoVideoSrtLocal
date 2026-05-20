@@ -246,6 +246,10 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "{param: 'mark_status', inputId: 'mhMarkStatus'}" in body
     assert "appendMetaHotFilterParams(params)" in body
     assert "function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts')" in body
+    assert "function normalizeMetaHotGotoPage(raw, totalPages)" in body
+    assert "function handleMetaHotGotoPage(event, loaderName, totalPages)" in body
+    assert 'class="mh-pager-goto"' in body
+    assert "onkeydown=\"handleMetaHotGotoPage(event, '${loaderName}', ${totalPages})\"" in body
     assert "function renderMetaHotPageSummary(data, items, label = '')" in body
     assert "当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材" in body
     assert "qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);" in body

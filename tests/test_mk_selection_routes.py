@@ -208,6 +208,11 @@ def test_mk_selection_material_archive_tabs_have_top_pagers_and_page100():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert "const MK_VIDEO_PAGE_SIZE = 100;" in template
+    assert "function normalizeMkGotoPage(raw, totalPages)" in template
+    assert "function handleMkGotoPage(event, loaderName, totalPages)" in template
+    assert 'class="oc-pager-goto"' in template
+    assert "onkeydown=\"handleMkGotoPage(event, 'loadData', ${totalPages})\"" in template
+    assert "onkeydown=\"handleMkGotoPage(event, '${loaderName}', ${totalPages})\"" in template
     assert 'id="mkVideoPagerTop"' in template
     assert 'id="mkVideoPagerBottom"' in template
     assert 'id="mkYesterdayTop100PagerTop"' in template
