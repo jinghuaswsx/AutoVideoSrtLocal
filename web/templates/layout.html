@@ -1047,12 +1047,24 @@
         return mq.matches;
       }
 
+      function isForcedDrawerMode() {
+        if (!isDesktop()) return false;
+        if (root.getAttribute('data-sidebar-state') === 'collapsed') return false;
+        if (window.getComputedStyle(toggleBtn).display === 'none') return false;
+        var sidebarTransform = window.getComputedStyle(sidebar).transform;
+        return Boolean(sidebarTransform && sidebarTransform !== 'none' && sidebarTransform !== 'matrix(1, 0, 0, 1, 0, 0)');
+      }
+
+      function isDrawerMode() {
+        return !isDesktop() || isForcedDrawerMode();
+      }
+
       function syncSidebarToggleLabels() {
-        var desktop = isDesktop();
+        var drawerMode = isDrawerMode();
         var collapsed = root.getAttribute('data-sidebar-state') === 'collapsed';
         var drawerOpen = body.classList.contains('sidebar-open');
 
-        if (desktop) {
+        if (!drawerMode) {
           toggleBtn.setAttribute('aria-label', collapsed ? '展开导航菜单' : '打开导航菜单');
           toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         } else {
@@ -1088,7 +1100,7 @@
 
       toggleBtn.addEventListener('click', function(e) {
         e.preventDefault();
-        if (isDesktop()) {
+        if (isDesktop() && !isDrawerMode()) {
           setSidebarCollapsed(false);
           return;
         }
