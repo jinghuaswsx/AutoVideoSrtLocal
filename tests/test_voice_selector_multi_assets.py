@@ -224,6 +224,18 @@ def test_voice_selector_multi_ai_rank_request_status_does_not_mutate_cards_on_fa
     assert 'setVoiceAiRankRequestState("success");' in success_block
 
 
+def test_voice_selector_multi_status_pill_only_reflects_current_request_state():
+    display_block = SCRIPT[
+        SCRIPT.index("function voiceAiRankDisplayState"):
+        SCRIPT.index("function updateVoiceAiRankStatusPill")
+    ]
+
+    assert "voiceAiRankRequestState" in display_block
+    assert "voiceAiRankStatus" not in display_block
+    assert "isVoiceAiRankSuccessStatus" not in display_block
+    assert "isVoiceAiRankFailureStatus" not in display_block
+
+
 def test_voice_selector_multi_exposes_full_voice_modal():
     assert 'id="vs-open-modal-btn"' in TEMPLATE
     assert 'id="vs-voice-modal"' in TEMPLATE
