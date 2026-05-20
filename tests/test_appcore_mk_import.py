@@ -127,6 +127,74 @@ def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
     assert captured["created_item"]["display_name"] == original_filename
 
 
+def test_import_mk_video_reuses_existing_product_after_product_code_duplicate_race(monkeypatch):
+    captured = {}
+    product_code = "tool-free-robotics-building-set-rjc"
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(mk_import, "_find_product_asset", lambda normalized_code: None, raising=False)
+    monkeypatch.setattr(mk_import, "_fetch_mk_product_detail", lambda mk_id: {}, raising=False)
+
+    def fake_execute(sql, args=None):
+        if "INSERT INTO media_products" in sql:
+            raise Exception(
+                "(1062, \"Duplicate entry 'tool-free-robotics-building-set-rjc' "
+                "for key 'media_products.uk_media_products_product_code'\")"
+            )
+        raise AssertionError(f"unexpected execute: {sql}")
+
+    def fake_query_one(sql, args=None):
+        if "FROM media_products" in sql:
+            assert product_code in args
+            return {
+                "id": 587,
+                "user_id": 42,
+                "product_code": product_code,
+                "product_link": f"https://newjoyloo.com/products/{product_code}",
+            }
+        raise AssertionError(f"unexpected query_one: {sql}")
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    def fake_create_item(**kwargs):
+        captured["created_item"] = kwargs
+        return 456
+
+    monkeypatch.setattr(mk_import, "execute", fake_execute)
+    monkeypatch.setattr(mk_import, "query_one", fake_query_one)
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", fake_create_item)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/original.mp4",
+            "filename": "2026.04.09-物理综合实验DIY-混剪-苏齐齐.mp4",
+            "product_name": "科学小实验手工玩具",
+            "product_code": "tool-free-robotics-building-set",
+            "product_link": f"https://newjoyloo.com/products/{product_code}",
+        },
+        translator_id=99,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert result["media_product_id"] == 587
+    assert captured["created_item"]["product_id"] == 587
+    assert captured["created_item"]["user_id"] == 42
+    assert captured["created_item"]["object_key"].startswith("42/medias/587/")
+
+
 def test_local_media_object_key_from_url_extracts_object_keys():
     assert (
         mk_import._local_media_object_key_from_url(

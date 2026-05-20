@@ -125,6 +125,32 @@ def _find_existing_product(normalized_code: str) -> dict | None:
     )
 
 
+def _find_active_product_by_exact_code(product_code: str | None) -> dict | None:
+    code = str(product_code or "").strip().lower()
+    if not code:
+        return None
+    return query_one(
+        "SELECT * FROM media_products "
+        "WHERE deleted_at IS NULL "
+        "AND LOWER(COALESCE(product_code, '')) = %s "
+        "LIMIT 1",
+        (code,),
+    )
+
+
+def _is_product_code_duplicate_error(exc: Exception) -> bool:
+    parts = getattr(exc, "args", None)
+    text = " ".join(str(part) for part in parts) if parts else str(exc)
+    lowered = text.lower()
+    return (
+        "duplicate entry" in lowered
+        and (
+            "uk_media_products_product_code" in lowered
+            or "product_code" in lowered
+        )
+    )
+
+
 def _is_video_already_imported(filename: str) -> bool:
     """True if a media_item with this filename already exists (and not soft-deleted)."""
     if not filename:
@@ -510,7 +536,20 @@ def import_mk_video(
                 ),
             )
         except Exception as e:
-            raise DBError(f"create product failed: {e}") from e
+            if _is_product_code_duplicate_error(e):
+                existing = _find_active_product_by_exact_code(payload.get("product_code"))
+                if existing:
+                    product_id = existing["id"]
+                    is_new = False
+                    log.warning(
+                        "mk import product_code duplicate; reuse product_id=%s product_code=%s",
+                        product_id,
+                        payload.get("product_code"),
+                    )
+                else:
+                    raise DBError(f"create product failed: {e}") from e
+            else:
+                raise DBError(f"create product failed: {e}") from e
     else:
         product_id = existing["id"]
 
