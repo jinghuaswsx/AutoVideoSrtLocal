@@ -235,10 +235,13 @@
       });
       return;
     }
-    const buttons = [];
+    const firstDisabled = page <= 1 ? ' disabled aria-disabled="true"' : '';
+    const lastDisabled = page >= pages ? ' disabled aria-disabled="true"' : '';
+    const buttons = [`<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`];
     for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-vm-page="${p}">${p}</button>`);
     }
+    buttons.push(`<button type="button" data-vm-page="${pages}"${lastDisabled}>末页</button>`);
     pagers.forEach(pager => {
       pager.hidden = false;
       pager.innerHTML = buttons.join('');

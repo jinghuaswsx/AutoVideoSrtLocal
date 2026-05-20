@@ -35,6 +35,17 @@ def test_medias_page_renders_video_material_management_tab(authed_client_no_db, 
     assert "tabsHeight" in html
 
 
+def test_video_materials_pager_assets_render_first_and_last_buttons(authed_client_no_db):
+    response = authed_client_no_db.get("/static/media_video_materials.js")
+
+    assert response.status_code == 200
+    script = response.get_data(as_text=True)
+    assert "首页" in script
+    assert "末页" in script
+    assert 'data-vm-page="1"' in script
+    assert 'data-vm-page="${pages}"' in script
+
+
 def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
     captured = {}
 
