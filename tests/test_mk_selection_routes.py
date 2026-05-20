@@ -113,6 +113,16 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "昨日消耗" in template
 
 
+def test_mk_selection_import_modals_use_active_user_display_names():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "/medias/api/users/active" in template
+    assert "/tasks/api/translators" not in template
+    assert "data.users || []" in template
+    assert "function mkiUserLabel(user)" in template
+    assert "user.display_name || user.username" in template
+
+
 def test_mk_selection_modal_preview_tokens_available_globally():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -256,7 +266,7 @@ def test_mk_selection_dynamic_html_escapes_api_fields():
     assert "${escapeHtml(t.message || '')}" in template
     assert 'href="${href}"' in template
     assert '加载失败: ${escapeHtml(e.message)}' in template
-    assert '<option value="${escapeHtml(t.id)}">${escapeHtml(t.username || \'\')}</option>' in template
+    assert '<option value="${escapeHtml(user.id)}">${escapeHtml(mkiUserLabel(user))}</option>' in template
 
     assert 'title="${r.product_name}"' not in template
     assert 'href="${r.product_url}"' not in template

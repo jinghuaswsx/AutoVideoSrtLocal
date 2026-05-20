@@ -1081,25 +1081,39 @@ async function mkiCheckRenderedButtons() {
 }
 
 // mk-import: Task 10 翻译员选择 modal
+const MKI_ACTIVE_USERS_API = '/medias/api/users/active';
 let mkiTranslatorResolve = null;
 let mkiTranslatorsCache = null;
+
+function mkiUserLabel(user) {
+  const fallback = user && user.id ? `用户 #${user.id}` : '';
+  return String((user && (user.display_name || user.username)) || fallback).trim();
+}
+
+function mkiUserOption(user) {
+  return `<option value="${escapeHtml(user.id)}">${escapeHtml(mkiUserLabel(user))}</option>`;
+}
+
+async function mkiFetchActiveUsers() {
+  const r = await fetch(MKI_ACTIVE_USERS_API);
+  const data = await r.json();
+  return data.users || [];
+}
 
 async function mkiOpenTranslatorModal() {
   if (!mkiTranslatorsCache) {
     try {
-      const r = await fetch('/tasks/api/translators');
-      const data = await r.json();
-      mkiTranslatorsCache = data.translators || [];
+      mkiTranslatorsCache = await mkiFetchActiveUsers();
     } catch (e) {
       mkiTranslatorsCache = [];
     }
   }
   if (!mkiTranslatorsCache.length) {
-    alert('没有可用翻译员（请确保有用户开启 can_translate 权限）');
+    alert('没有可用员工');
     return null;
   }
   const sel = document.getElementById('mkiTranslatorSel');
-  sel.innerHTML = mkiTranslatorsCache.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.username || '')}</option>`).join('');
+  sel.innerHTML = mkiTranslatorsCache.map(mkiUserOption).join('');
   document.getElementById('mkiTranslatorModal').style.display = 'block';
   return new Promise(resolve => { mkiTranslatorResolve = resolve; });
 }
@@ -1176,20 +1190,18 @@ function mkiXiaoLangCode(lang) {
 }
 
 async function mkiXiaoOpenModal() {
-  // Load translators
+  // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
-      const r = await fetch('/tasks/api/translators');
-      const data = await r.json();
-      mkiXiaoTranslatorsCache = data.translators || [];
+      mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
     } catch (e) { mkiXiaoTranslatorsCache = []; }
   }
   if (!mkiXiaoTranslatorsCache.length) {
-    alert('没有可用翻译员');
+    alert('没有可用员工');
     return null;
   }
   const sel = document.getElementById('mkiXiaoTranslator');
-  sel.innerHTML = mkiXiaoTranslatorsCache.map(t => '<option value="' + escapeHtml('' + t.id) + '">' + escapeHtml(t.username || '') + '</option>').join('');
+  sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
 
   // Load languages
   if (!mkiXiaoLangsCache) {
