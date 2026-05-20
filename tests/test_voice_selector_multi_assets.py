@@ -181,7 +181,9 @@ def test_voice_selector_multi_freezes_after_voice_match_ready():
     assert "let voiceMatchReadyFrozen = false;" in SCRIPT
     assert "function markVoiceMatchReadyFrozen()" in SCRIPT
     assert "function shouldSkipAutomaticLibraryRefresh()" in SCRIPT
+    assert "function shouldPollVoiceAiRanking()" in SCRIPT
     assert "if (shouldSkipAutomaticLibraryRefresh()) return;" in load_block
     assert "markVoiceMatchReadyFrozen();" in page_block
     assert "voiceMatchReadyFrozen = true;" in SCRIPT
     assert "schedulePoll();" in page_block
+    assert "if (shouldPollVoiceAiRanking()) schedulePoll(6000);" in page_block

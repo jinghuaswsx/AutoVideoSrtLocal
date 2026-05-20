@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from appcore.events import EventBus
 
 
@@ -96,6 +98,55 @@ def test_get_pipeline_steps_dispatches_original_translate(monkeypatch):
     assert names[:5] == ["extract", "asr", "separate", "asr_clean", "voice_match"]
     assert "translate" in names
     assert names[-1] == "export"
+
+
+def test_english_redub_voice_match_uses_top20_speed_sort_and_queues_ai(monkeypatch):
+    from appcore.runtime_english_redub import EnglishRedubRunner
+
+    updates: dict = {}
+    monkeypatch.setattr(
+        "appcore.task_state.get",
+        lambda task_id: {
+            "task_dir": "/tmp/en-redub",
+            "target_lang": "en",
+            "utterances": [{"text": "hello world", "start_time": 0, "end_time": 2}],
+            "video_path": "/tmp/en-redub/source.mp4",
+        },
+    )
+    monkeypatch.setattr("appcore.task_state.update", lambda task_id, **kwargs: updates.update(kwargs))
+    monkeypatch.setattr("appcore.task_state.set_current_review_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.runtime_english_redub.resolve_default_voice", lambda *args, **kwargs: "default")
+    monkeypatch.setattr("appcore.runtime_english_redub.extract_sample_from_utterances", lambda *args, **kwargs: "/tmp/en-redub/clip.wav")
+    monkeypatch.setattr("appcore.runtime_english_redub.embed_audio_file", lambda path: np.zeros(256, dtype=np.float32))
+    monkeypatch.setattr("appcore.runtime_english_redub.serialize_embedding", lambda vec: b"embedding")
+    monkeypatch.setattr("pipeline.audio_separation.is_usable", lambda separation: False)
+    monkeypatch.setattr(
+        "appcore.english_redub_settings.get_voice_match_strategy",
+        lambda: "timbre_speed",
+    )
+    match_calls: list[dict] = []
+    monkeypatch.setattr(
+        "pipeline.voice_match_speed.match_candidates_speed_aware",
+        lambda *args, **kwargs: match_calls.append(kwargs) or [
+            {"voice_id": "v1", "similarity": 0.91},
+            {"voice_id": "v2", "similarity": 0.88},
+        ],
+    )
+    queued: list[dict] = []
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking_task.queue_voice_ai_ranking",
+        lambda **kwargs: queued.append(kwargs) or True,
+    )
+    runner = EnglishRedubRunner(bus=EventBus(), user_id=1)
+    monkeypatch.setattr(runner, "_set_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "_emit", lambda *args, **kwargs: None)
+
+    runner._step_voice_match("task-en")
+
+    assert match_calls[0]["candidate_pool_size"] == 20
+    assert match_calls[0]["top_k"] == 20
+    assert updates["voice_ai_rank_status"] == "running"
+    assert queued[0]["candidates"] == updates["voice_match_candidates"]
 
 
 def test_script_mode_controls_duration_text_rewrite():

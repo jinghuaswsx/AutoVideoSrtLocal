@@ -33,6 +33,7 @@ def build_voice_library_payload(
         "voice_ai_rankings": state.get("voice_ai_rankings") or [],
         "voice_ai_rank_status": state.get("voice_ai_rank_status") or "",
         "voice_ai_rank_model": state.get("voice_ai_rank_model") or "",
+        "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
         "voice_ai_rank_debug": state.get("voice_ai_rank_debug") or None,
         "pipeline": pipeline,
         "voice_match_ready": pipeline["voice_match"] in ("waiting", "done"),

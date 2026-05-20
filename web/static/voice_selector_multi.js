@@ -557,7 +557,7 @@
       <div class="vs-ai-rank-card">
         <strong>${index + 1}. ${escapeHtml(item.role || "audio")}</strong>
         <span>${escapeHtml(item.voice_id || item.filename || "-")}</span>
-        <span>${escapeHtml(item.relative_path || item.path || "")}</span>
+        <span>${escapeHtml(item.relative_path || item.filename || "")}</span>
         <span>${escapeHtml(item.source || "")}${item.bytes ? ` · ${escapeHtml(item.bytes)} bytes` : ""}</span>
         ${voiceAiRankAudioHtml(item)}
       </div>
@@ -703,8 +703,12 @@
     pollStartTime = 0;
   }
 
+  function shouldPollVoiceAiRanking() {
+    return voiceAiRankStatus === "running" || voiceAiRankStatus === "queued";
+  }
+
   function shouldSkipAutomaticLibraryRefresh() {
-    return voiceMatchReadyFrozen;
+    return voiceMatchReadyFrozen && !shouldPollVoiceAiRanking();
   }
 
   function normalizeSimilarityRank(value) {
@@ -826,6 +830,7 @@
         else parts.push("向量匹配未找到相似音色");
         summaryEl.textContent = parts.join(" · ");
         render(null);
+        if (shouldPollVoiceAiRanking()) schedulePoll(6000);
       }
 
       updateLaunchState();
