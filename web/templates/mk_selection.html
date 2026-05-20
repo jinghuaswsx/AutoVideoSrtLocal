@@ -84,7 +84,6 @@
 .mk-status-icon svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-status-icon--product { color:var(--oc-accent); }
 .mk-status-icon--video { color:var(--oc-success-fg); }
-.mk-status-icon--inactive { color:var(--oc-fg-subtle); border-color:var(--oc-border); background:rgba(248,250,252,.92); box-shadow:none; opacity:.64; }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
@@ -462,15 +461,14 @@ function mkStatusIconSvg(type) {
 }
 
 function renderMkStatusIconCluster(r) {
-  const productActive = Boolean(r.has_local_product_running_ad);
-  const videoActive = Boolean(r.has_local_material_running_ad);
-  const productTitle = productActive ? '产品状态：已在素材库且有消耗广告计划' : '产品状态：未命中素材库投放';
-  const videoTitle = videoActive ? '视频状态：已在素材库且有投放计划' : '视频状态：未命中素材库投放';
-  const icons = [
-    `<span class="mk-status-icon mk-status-icon--product${productActive ? '' : ' mk-status-icon--inactive'}" title="${productTitle}" aria-label="${productTitle}">${mkStatusIconSvg('product')}</span>`,
-    `<span class="mk-status-icon mk-status-icon--video${videoActive ? '' : ' mk-status-icon--inactive'}" title="${videoTitle}" aria-label="${videoTitle}">${mkStatusIconSvg('video')}</span>`
-  ];
-  return `<div class="mk-video-status-icons">${icons.join('')}</div>`;
+  const icons = [];
+  if (r.has_local_product_running_ad) {
+    icons.push(`<span class="mk-status-icon mk-status-icon--product" title="产品已在素材库且有消耗广告计划" aria-label="产品已在素材库且有消耗广告计划">${mkStatusIconSvg('product')}</span>`);
+  }
+  if (r.has_local_material_in_library) {
+    icons.push(`<span class="mk-status-icon mk-status-icon--video" title="视频素材已在素材库" aria-label="视频素材已在素材库">${mkStatusIconSvg('video')}</span>`);
+  }
+  return icons.length ? `<div class="mk-video-status-icons">${icons.join('')}</div>` : '';
 }
 
 function renderMkMediaSearchLink(r) {

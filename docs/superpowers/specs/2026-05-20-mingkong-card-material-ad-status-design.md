@@ -37,8 +37,8 @@ In scope:
    status cache rows.
 3. Enrich `/xuanpin/api/mk-material-library` and `/xuanpin/api/mk-yesterday-top100`
    response items from that cache only.
-4. Render two fixed top-right card status icons: product first, video second. A status
-   that is true is highlighted; a status that is false remains visible but muted.
+4. Render top-right card status icons only for true states: product first, video second
+   when both are present. A false state does not render a muted placeholder.
 5. Add a search icon button after the product code line that opens
    `/medias/?q=<product_code-rjc>`.
 
@@ -73,12 +73,14 @@ the cache result.
 For each Mingkong card row, normalize `video_path` with the same path normalization used
 by Mingkong material bindings.
 
-The video-material status slot is highlighted only when both are true in the cache:
+The video-material icon is shown when the original Mingkong video material is already
+present in the local material library:
 
 - A local `media_items` row is bound to that Mingkong `video_path` through
   `media_item_mk_bindings` and is not deleted.
-- That local item has successful push evidence: `media_items.pushed_at IS NOT NULL` or
-  a successful `media_push_logs` row.
+
+The video icon does not require push or ad-plan evidence. These Mingkong videos are raw
+source materials and are generally not pushed directly as ad materials.
 
 ## Data Model
 
@@ -141,28 +143,30 @@ Each card item from both archive APIs includes:
 - `media_search_code`
 - `media_search_url`
 - `has_local_product_running_ad`
+- `has_local_material_in_library`
 - `has_local_material_running_ad`
 - `product_ad_status`
 - `material_ad_status`
 
 `product_ad_status` and `material_ad_status` are small objects with ids, booleans,
-latest activity time, spend, and `refreshed_at` for diagnostics. The frontend only needs
-the two top-level booleans and `media_search_url`.
+latest activity time, spend, and `refreshed_at` for diagnostics. The frontend uses
+`has_local_product_running_ad`, `has_local_material_in_library`, and `media_search_url`.
+`has_local_material_running_ad` is retained as a compatibility alias for the material
+library match and should not be interpreted as a pushed-ad-material signal.
 
 ## UI
 
-`renderMkVideoMaterialCard()` renders an absolute top-right status cluster with exactly
-two icons on every video card:
+`renderMkVideoMaterialCard()` renders an absolute top-right status cluster:
 
-- Product status icon: first slot, uses a product/package symbol. It is highlighted when
-  `has_local_product_running_ad` is true and muted when false.
-- Video status icon: second slot, uses a video/play symbol. It is highlighted when
-  `has_local_material_running_ad` is true and muted when false.
+- Product status icon: uses a product/package symbol and is shown only when
+  `has_local_product_running_ad` is true.
+- Video status icon: uses a video/play symbol and is shown only when
+  `has_local_material_in_library` is true.
 
 The icons use inline SVG symbols already available in the page style rather than emoji.
-This makes mixed states explicit. For example, when the product is already in the
-material library with ad spend but the exact video is not pushed, the card shows a
-highlighted product icon and a muted video icon.
+No placeholder is shown when a status is false. For example, when the product is already
+in the material library with ad spend but the exact raw video is not in the local material
+library, the card shows only the product icon.
 
 The second line of the product header keeps the rank and product code, and appends a
 small search icon link button. The button opens:
@@ -191,6 +195,5 @@ Manual checks:
 
 - Unauthenticated `GET /xuanpin/mk` returns 302.
 - Logged-in admin `GET /xuanpin/mk` returns 200.
-- After a status refresh, both material-card tabs show two status icons per card, with
-  cached true states highlighted and false states muted.
+- After a status refresh, both material-card tabs show icons only for cached true states.
 - Product-code search button opens the素材管理 search page with the `-rjc` code.

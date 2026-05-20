@@ -764,10 +764,10 @@ def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
                     "media_product_id": 7,
                     "media_item_id": 11,
                     "has_local_match": 1,
-                    "has_running_ad": 1,
+                    "has_running_ad": 0,
                     "ad_spend_usd": 0,
-                    "latest_activity_at": datetime(2026, 5, 18, 11, 0, 0),
-                    "summary_json": '{"source":"push"}',
+                    "latest_activity_at": None,
+                    "summary_json": '{"source":"media_item_mk_bindings"}',
                     "refreshed_at": datetime(2026, 5, 18, 12, 5, 0),
                 }
             ]
@@ -801,9 +801,11 @@ def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
     assert item["media_search_code"] == "cool-widget-rjc"
     assert item["media_search_url"] == "/medias/?q=cool-widget-rjc"
     assert item["has_local_product_running_ad"] is True
+    assert item["has_local_material_in_library"] is True
     assert item["has_local_material_running_ad"] is True
     assert item["product_ad_status"]["media_product_id"] == 7
     assert item["material_ad_status"]["media_item_id"] == 11
+    assert item["material_ad_status"]["has_running_ad"] is False
     assert any("mingkong_material_ad_status_cache" in entry[1] for entry in captured if entry[0] == "query")
 
 

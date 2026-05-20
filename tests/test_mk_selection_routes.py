@@ -171,17 +171,19 @@ def test_mk_selection_video_cards_include_cached_ad_status_icons_and_media_searc
     assert "function renderMkStatusIconCluster(r)" in template
     assert "mk-video-status-icons" in template
     assert "has_local_product_running_ad" in template
-    assert "has_local_material_running_ad" in template
-    assert "mk-status-icon--inactive" in template
+    assert "has_local_material_in_library" in template
+    assert "mk-status-icon--inactive" not in template
     assert "mk-status-icon--product" in template
     assert "mkStatusIconSvg('product')" in template
     assert "mk-status-icon--video" in template
     assert "mkStatusIconSvg('video')" in template
-    assert "产品状态：已在素材库且有消耗广告计划" in template
-    assert "产品状态：未命中素材库投放" in template
-    assert "视频状态：已在素材库且有投放计划" in template
-    assert "视频状态：未命中素材库投放" in template
-    assert "return `<div class=\"mk-video-status-icons\">${icons.join('')}</div>`;" in template
+    assert "if (r.has_local_product_running_ad)" in template
+    assert "if (r.has_local_material_in_library)" in template
+    assert "产品已在素材库且有消耗广告计划" in template
+    assert "视频素材已在素材库" in template
+    assert "视频已在素材库且有投放计划" not in template
+    assert "未命中素材库投放" not in template
+    assert "return icons.length ? `<div class=\"mk-video-status-icons\">${icons.join('')}</div>` : '';" in template
     assert "function renderMkMediaSearchLink(r)" in template
     assert "media_search_url" in template
     assert "mk-media-search-link" in template

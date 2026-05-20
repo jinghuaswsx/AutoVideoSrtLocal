@@ -328,9 +328,11 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         item["has_local_product_running_ad"] = bool(
             product_status["has_local_match"] and product_status["has_running_ad"]
         )
-        item["has_local_material_running_ad"] = bool(
-            material_status["has_local_match"] and material_status["has_running_ad"]
-        )
+        material_in_library = bool(material_status["has_local_match"])
+        item["has_local_material_in_library"] = material_in_library
+        # Backward-compatible alias for older callers/templates. Mingkong videos are
+        # raw source materials, so the card icon means local library match only.
+        item["has_local_material_running_ad"] = material_in_library
     return items
 
 
