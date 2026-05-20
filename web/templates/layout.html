@@ -440,6 +440,150 @@
       transition: all 0.2s;
     }
     .theme-btn:hover { background: var(--bg-card); border-color: var(--primary-color); }
+    .notification-center {
+      position: relative;
+      margin-right: 12px;
+      flex: 0 0 auto;
+    }
+    .notification-toggle {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-main);
+      border-radius: 999px;
+      background: var(--bg-user-badge);
+      color: var(--text-main);
+      cursor: pointer;
+      padding: 0;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .notification-toggle:hover,
+    .notification-toggle[aria-expanded="true"] {
+      background: var(--bg-card);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    .notification-toggle svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+    .notification-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--text-btn-danger);
+      color: #fff;
+      border: 2px solid var(--bg-topbar);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 14px;
+      text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .notification-badge[hidden] { display: none; }
+    .notification-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 340px;
+      max-width: min(340px, calc(100vw - 24px));
+      max-height: min(480px, calc(100vh - 84px));
+      overflow: hidden;
+      border: 1px solid var(--border-main);
+      border-radius: 12px;
+      background: var(--bg-card);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+      z-index: 80;
+    }
+    .notification-menu[hidden] { display: none; }
+    .notification-menu-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-main);
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .notification-menu-refresh {
+      border: none;
+      background: transparent;
+      color: var(--primary-color);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 0;
+    }
+    .notification-list {
+      max-height: 394px;
+      overflow-y: auto;
+      padding: 6px;
+    }
+    .notification-state {
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--text-user-badge);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .notification-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 28px;
+      gap: 8px;
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-main);
+      text-align: left;
+      padding: 10px 8px;
+    }
+    .notification-item:hover { background: var(--bg-user-badge); }
+    .notification-item-main {
+      border: none;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      padding: 0;
+      min-width: 0;
+      font: inherit;
+    }
+    .notification-title {
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.4;
+      margin-bottom: 4px;
+    }
+    .notification-body,
+    .notification-time {
+      color: var(--text-user-badge);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .notification-dismiss {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-user-badge);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .notification-dismiss:hover {
+      background: var(--bg-btn-danger);
+      color: var(--text-btn-danger);
+    }
     .scheduled-failure-alert {
       margin: 14px 28px 0;
       border: 1px solid #ef4444;
@@ -583,6 +727,15 @@
       /* 桌面页标题在移动端隐藏（用 brand + 后续 chevron 由各页面自定） */
       .topbar > .topbar-title { display: none; }
       .topbar-spacer { flex: 1; }
+      .notification-center { margin-right: 6px; }
+      .notification-menu {
+        position: fixed;
+        top: 58px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+        max-width: none;
+      }
       .main-content { padding: 14px 12px 32px; }
       .scheduled-failure-alert {
         margin: 10px 12px 0;
@@ -987,6 +1140,24 @@
       <span class="topbar-title">{% block page_title %}{% endblock %}</span>
       {% block topbar_actions %}{% endblock %}
       <span class="topbar-spacer"></span>
+      <div class="notification-center" id="notificationCenter">
+        <button type="button" class="notification-toggle" id="notificationCenterToggle" aria-label="消息中心" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span class="notification-badge" id="notificationCenterBadge" hidden>0</span>
+        </button>
+        <div class="notification-menu" id="notificationCenterMenu" hidden>
+          <div class="notification-menu-head">
+            <span>消息中心</span>
+            <button type="button" class="notification-menu-refresh" id="notificationCenterRefresh">刷新</button>
+          </div>
+          <div class="notification-list" id="notificationCenterList">
+            <div class="notification-state">加载中...</div>
+          </div>
+        </div>
+      </div>
       <button id="themeToggleBtn" class="theme-btn" style="margin-right: 12px;">
         <span class="icon">☀️</span> 亮色
       </button>
@@ -1178,6 +1349,137 @@
         brand.setAttribute('aria-label', label);
       }
       if (href) brand.setAttribute('href', href);
+    })();
+
+    // ── Notification center ──
+    (function notificationCenter() {
+      var root = document.getElementById('notificationCenter');
+      var toggle = document.getElementById('notificationCenterToggle');
+      var badge = document.getElementById('notificationCenterBadge');
+      var menu = document.getElementById('notificationCenterMenu');
+      var list = document.getElementById('notificationCenterList');
+      var refreshBtn = document.getElementById('notificationCenterRefresh');
+      if (!root || !toggle || !badge || !menu || !list) return;
+
+      var unreadCount = 0;
+
+      function csrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') || '' : '';
+      }
+      function esc(value) {
+        var div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+      }
+      function setBadge(count) {
+        unreadCount = Math.max(0, Number(count) || 0);
+        if (unreadCount > 0) {
+          badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+          badge.hidden = false;
+        } else {
+          badge.hidden = true;
+        }
+      }
+      function setState(text) {
+        list.innerHTML = '<div class="notification-state">' + esc(text) + '</div>';
+      }
+      function renderItems(items) {
+        if (!items.length) {
+          setState('暂无消息');
+          return;
+        }
+        list.innerHTML = items.map(function(item) {
+          return '<div class="notification-item" data-notification-id="' + esc(item.id) + '" data-notification-unread="' + (item.read_at ? '0' : '1') + '">'
+            + '<button type="button" class="notification-item-main" data-notification-open="' + esc(item.id) + '" data-target-url="' + esc(item.target_url || '#') + '">'
+            + '<div class="notification-title">' + esc(item.title || '消息') + '</div>'
+            + (item.body ? '<div class="notification-body">' + esc(item.body) + '</div>' : '')
+            + '<div class="notification-time">' + esc(item.created_at || '') + '</div>'
+            + '</button>'
+            + '<button type="button" class="notification-dismiss" data-notification-dismiss="' + esc(item.id) + '" aria-label="关闭消息">×</button>'
+            + '</div>';
+        }).join('');
+      }
+      async function fetchSummary() {
+        try {
+          var rsp = await fetch('/notifications/api/summary', {credentials: 'same-origin'});
+          if (!rsp.ok) throw new Error(rsp.statusText || 'summary failed');
+          var data = await rsp.json();
+          setBadge(data.unread_count || 0);
+        } catch (err) {
+          setBadge(0);
+        }
+      }
+      async function fetchList() {
+        setState('加载中...');
+        try {
+          var rsp = await fetch('/notifications/api/list?limit=20', {credentials: 'same-origin'});
+          if (!rsp.ok) throw new Error(rsp.statusText || 'list failed');
+          var data = await rsp.json();
+          renderItems(data.items || []);
+        } catch (err) {
+          setState('消息加载失败，请稍后重试');
+        }
+      }
+      async function markRead(id) {
+        var rsp = await fetch(`/notifications/api/${encodeURIComponent(id)}/read`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'X-CSRFToken': csrfToken()}
+        });
+        if (!rsp.ok) throw new Error(rsp.statusText || 'read failed');
+      }
+      function closeMenu() {
+        menu.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+      function openMenu() {
+        menu.hidden = false;
+        toggle.setAttribute('aria-expanded', 'true');
+        fetchList();
+      }
+
+      toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (menu.hidden) openMenu();
+        else closeMenu();
+      });
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          fetchSummary();
+          fetchList();
+        });
+      }
+      list.addEventListener('click', async function(e) {
+        var dismiss = e.target.closest('[data-notification-dismiss]');
+        var open = e.target.closest('[data-notification-open]');
+        var target = dismiss || open;
+        if (!target) return;
+        var id = target.getAttribute(dismiss ? 'data-notification-dismiss' : 'data-notification-open');
+        var row = target.closest('[data-notification-id]');
+        try {
+          await markRead(id);
+          var wasUnread = row && row.getAttribute('data-notification-unread') === '1';
+          if (wasUnread) setBadge(unreadCount - 1);
+          if (row) row.remove();
+          if (open) {
+            window.location.href = open.getAttribute('data-target-url') || '/tasks/';
+          } else if (!list.querySelector('[data-notification-id]')) {
+            setState('暂无消息');
+          }
+        } catch (err) {
+          setState('操作失败，请刷新后重试');
+        }
+      });
+      document.addEventListener('click', function(e) {
+        if (!root.contains(e.target)) closeMenu();
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeMenu();
+      });
+      fetchSummary();
+      window.setInterval(fetchSummary, 60000);
     })();
 
     const themeBtn = document.getElementById('themeToggleBtn');

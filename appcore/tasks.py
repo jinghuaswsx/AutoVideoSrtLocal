@@ -12,6 +12,7 @@ import json
 from typing import Any, Iterable
 
 from appcore import mk_import as mk_import_svc
+from appcore import user_notifications as notifications_svc
 from appcore.db import execute, get_conn, query_one, query_all
 
 # ---- 状态常量 ----
@@ -232,6 +233,22 @@ def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
 
 
+def _product_name_for_notification(cur, product_id: int) -> str:
+    cur.execute("SELECT name FROM media_products WHERE id=%s", (int(product_id),))
+    row = cur.fetchone()
+    if row and row.get("name"):
+        return str(row["name"])
+    return f"产品 #{int(product_id)}"
+
+
+def _task_product_id_for_notification(cur, task_id: int) -> int | None:
+    cur.execute("SELECT media_product_id FROM tasks WHERE id=%s", (int(task_id),))
+    row = cur.fetchone()
+    if not row:
+        return None
+    return int(row["media_product_id"])
+
+
 def _write_event(
     cur, task_id: int, event_type: str,
     actor_user_id: int | None, payload: dict | None = None,
@@ -279,6 +296,12 @@ def create_parent_task(
                 _write_event(cur, parent_id, "created", created_by,
                              {"countries": norm_countries,
                               "translator_id": int(translator_id)})
+                product_name = _product_name_for_notification(cur, int(media_product_id))
+                notifications_svc.notify_pending_raw_task(
+                    cur,
+                    task_id=parent_id,
+                    product_name=product_name,
+                )
                 for country in norm_countries:
                     cur.execute(
                         "INSERT INTO tasks "
@@ -292,6 +315,13 @@ def create_parent_task(
                     child_id = cur.lastrowid
                     _write_event(cur, child_id, "created", created_by,
                                  {"country": country})
+                    notifications_svc.notify_child_blocked(
+                        cur,
+                        task_id=child_id,
+                        assignee_id=int(translator_id),
+                        product_name=product_name,
+                        country_code=country,
+                    )
             conn.commit()
             return int(parent_id)
         except Exception:
@@ -467,6 +497,17 @@ def approve_raw(*, task_id: int, actor_user_id: int) -> None:
                     )
                     for cid in child_ids:
                         _write_event(cur, cid, "unblocked", None, None)
+                    product_id = _task_product_id_for_notification(cur, task_id)
+                    product_name = (
+                        _product_name_for_notification(cur, product_id)
+                        if product_id is not None else f"任务 #{int(task_id)}"
+                    )
+                    for cid in child_ids:
+                        notifications_svc.notify_child_assigned(
+                            cur,
+                            task_id=cid,
+                            product_name=product_name,
+                        )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -496,6 +537,16 @@ def reject_raw(*, task_id: int, actor_user_id: int, reason: str) -> None:
                 if cur.rowcount == 0:
                     raise StateError("parent not in raw_review")
                 _write_event(cur, task_id, "rejected", actor_user_id, {"reason": reason})
+                product_id = _task_product_id_for_notification(cur, task_id)
+                product_name = (
+                    _product_name_for_notification(cur, product_id)
+                    if product_id is not None else f"任务 #{int(task_id)}"
+                )
+                notifications_svc.notify_parent_rejected(
+                    cur,
+                    task_id=task_id,
+                    product_name=product_name,
+                )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -797,6 +848,16 @@ def reject_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
                     raise StateError("child not in review")
                 _write_event(cur, task_id, "rejected", actor_user_id,
                              {"reason": reason})
+                product_id = _task_product_id_for_notification(cur, task_id)
+                product_name = (
+                    _product_name_for_notification(cur, product_id)
+                    if product_id is not None else f"任务 #{int(task_id)}"
+                )
+                notifications_svc.notify_child_rejected(
+                    cur,
+                    task_id=task_id,
+                    product_name=product_name,
+                )
             conn.commit()
         except Exception:
             conn.rollback()
