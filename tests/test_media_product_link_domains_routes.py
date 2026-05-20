@@ -63,3 +63,31 @@ def test_medias_product_link_domains_post_saves_enabled_ids(
     assert resp.get_json()["domains"] == [
         {"id": 2, "domain": "omurio.com", "product_enabled": True}
     ]
+
+
+def test_medias_product_link_domains_post_allows_empty_enabled_ids(
+    authed_client_no_db, monkeypatch
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    captured = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr(
+        "web.routes.medias.product_link_domains.set_product_domain_enabled_ids",
+        lambda product_id, ids: captured.update({"product_id": product_id, "ids": ids}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.product_link_domains.list_product_domain_options",
+        lambda product_id: [],
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/10/product-link-domains",
+        json={"enabled_domain_ids": []},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {"product_id": 10, "ids": []}
+    assert resp.get_json() == {"ok": True, "domains": []}
