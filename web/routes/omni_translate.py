@@ -19,7 +19,12 @@ from appcore import task_state, medias, translation_route_store
 from appcore.audio_loudness import validate_loudness_profile
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.project_state import save_project_state, update_project_state
-from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
+from appcore.task_recovery import (
+    is_task_active,
+    recover_all_interrupted_tasks,
+    recover_project_if_needed,
+    recover_task_if_needed,
+)
 from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
     SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
@@ -254,6 +259,23 @@ def _hydrate_task_state_cache(task_id: str, task: dict) -> None:
         task_state._tasks[task_id] = copy.deepcopy(task)
 
 
+def _cached_task_without_db_fallback(task_id: str) -> dict | None:
+    if store is not task_state:
+        return None
+    with task_state._lock:
+        return task_state._tasks.get(task_id)
+
+
+def _should_keep_cached_task_over_db(task_id: str, task: dict | None) -> bool:
+    if not task:
+        return False
+    try:
+        return is_task_active("omni_translate", task_id)
+    except Exception:
+        log.warning("[omni_translate] active-task check failed task=%s", task_id, exc_info=True)
+        return False
+
+
 def _copy_source_video_for_duplicate(
     *,
     source_video_path: str,
@@ -310,6 +332,9 @@ def _can_view_task(task: dict) -> bool:
 def _get_viewable_task(task_id: str) -> dict | None:
     fresh_task = _fresh_viewable_project_task(task_id)
     if fresh_task:
+        cached_task = _cached_task_without_db_fallback(task_id)
+        if _should_keep_cached_task_over_db(task_id, cached_task):
+            return cached_task
         _hydrate_task_state_cache(task_id, fresh_task)
         return fresh_task
 
