@@ -339,11 +339,44 @@
 .mki-progress-actions {
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px;
 }
+.mki-xiao-backdrop {
+  position: fixed; inset: 0; z-index: 1500; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(15, 23, 42, .42);
+}
+.mki-xiao-dialog {
+  width: min(720px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg); background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+}
+.mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+.mki-xiao-field { margin-bottom: 18px; }
+.mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
+.mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+.mki-xiao-lang-check {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.mki-xiao-lang-pill span {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 58px; height: 38px;
+  padding: 0 16px; border: 1.5px solid var(--oc-border-strong); border-radius: 9999px;
+  background: #fff; color: var(--oc-fg); font-size: 14px; font-weight: 800; line-height: 1;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.mki-xiao-lang-pill:hover span { border-color: var(--oc-accent); color: var(--oc-accent); }
+.mki-xiao-lang-check:checked + span {
+  background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
+}
+.mki-xiao-lang-check:focus-visible + span {
+  outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
+}
+.mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
 @keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
   .mki-progress-meta { grid-template-columns: 1fr; }
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
+  .mki-xiao-dialog { padding: 22px; }
+  .mki-xiao-lang-pill span { min-width: 52px; height: 36px; padding: 0 14px; }
 }
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
@@ -1926,11 +1959,11 @@ async function mkiXiaoOpenModal() {
   langsDiv.innerHTML = mkiXiaoLangsCache.map(function(l) {
     var code = mkiXiaoLangCode(l);
     if (!code) return '';
-    return '<label style="display:inline-flex; align-items:center; gap:2px; font-size:13px; cursor:pointer; padding:2px 6px; border:1px solid var(--oc-border); border-radius:4px; user-select:none;">'
-      + '<input type="checkbox" value="' + escapeHtml(code) + '" style="margin:0;"> ' + escapeHtml(code) + '</label>';
+    return '<label class="mki-xiao-lang-pill">'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"><span>' + escapeHtml(code) + '</span></label>';
   }).join('');
 
-  document.getElementById('mkiXiaoModal').style.display = 'block';
+  document.getElementById('mkiXiaoModal').style.display = 'flex';
   return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
 }
 
@@ -2068,18 +2101,18 @@ async function mkiXiaoHandleClick(btn) {
 </div>
 
 <!-- 做小语种 modal -->
-<div id="mkiXiaoModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
-  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:460px; max-width:90vw;">
-    <h3 style="margin:0 0 12px;">做小语种 — 创建翻译任务</h3>
-    <div style="margin-bottom:12px;">
-      <label style="font-weight:600; font-size:13px;">翻译员：</label>
-      <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:32px; margin-top:4px;"></select>
+<div id="mkiXiaoModal" class="mki-xiao-backdrop">
+  <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
+    <h3 id="mkiXiaoTitle" class="mki-xiao-title">做小语种 — 创建翻译任务</h3>
+    <div class="mki-xiao-field">
+      <label class="mki-xiao-label" for="mkiXiaoTranslator">翻译员：</label>
+      <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:36px;"></select>
     </div>
-    <div style="margin-bottom:12px;">
-      <label style="font-weight:600; font-size:13px;">目标国家（至少勾选一个）：</label>
-      <div id="mkiXiaoLangs" style="display:flex; flex-wrap:wrap; gap:4px 8px; margin-top:4px;"></div>
+    <div class="mki-xiao-field">
+      <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
+      <div id="mkiXiaoLangs" class="mki-xiao-lang-pills"></div>
     </div>
-    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+    <div class="mki-xiao-actions">
       <button class="oc-btn oc-btn--ghost" onclick="mkiXiaoCancel()">取消</button>
       <button class="oc-btn oc-btn--primary" onclick="mkiXiaoOK()">确认创建</button>
     </div>

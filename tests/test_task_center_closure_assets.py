@@ -12,6 +12,18 @@ def test_mk_selection_xiao_languages_use_language_code_values():
     assert 'value="\' + escapeHtml(code) + \'"' in source
 
 
+def test_mk_selection_xiao_modal_uses_large_capsule_language_picker():
+    source = (ROOT / "web" / "templates" / "mk_selection.html").read_text(encoding="utf-8")
+
+    assert "mki-xiao-dialog" in source
+    assert "width: min(720px, 94vw)" in source
+    assert "mki-xiao-lang-pills" in source
+    assert "mki-xiao-lang-pill" in source
+    assert "mki-xiao-lang-check:checked + span" in source
+    assert "background: var(--oc-accent)" in source
+    assert '<input class="mki-xiao-lang-check" type="checkbox"' in source
+
+
 def test_medias_task_bridge_opens_translate_modal_for_translate_action():
     source = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
