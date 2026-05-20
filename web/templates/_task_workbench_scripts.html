@@ -1390,11 +1390,13 @@
     const cskBlock = renderCskResult(artifact.csk, artifact.csk_error);
     const sp = artifact.score_prompt || "";
     const cp = artifact.csk_prompt || "";
-    const modelLabel = escapeHtml(artifact.model_label || "Gemini 3.5 Flash");
+    const modelLabel = artifact.model_label || "Gemini 3.5 Flash";
+    const scoreModelLabel = escapeHtml(artifact.score_model_label || modelLabel);
+    const cskModelLabel = escapeHtml(artifact.csk_model_label || modelLabel);
     return `
       <div class="analysis-row">
         <div class="analysis-card">
-          <div class="analysis-head"><span class="analysis-tag">视频评分</span><span class="analysis-sub">美国短视频带货要素 · ${modelLabel}</span></div>
+          <div class="analysis-head"><span class="analysis-tag">视频评分</span><span class="analysis-sub">美国短视频带货要素 · ${scoreModelLabel}</span></div>
           <div class="analysis-split">
             <div class="analysis-left">${scoreBlock}</div>
             <div class="analysis-right">
@@ -1406,7 +1408,7 @@
       </div>
       <div class="analysis-row">
         <div class="analysis-card">
-          <div class="analysis-head"><span class="analysis-tag analysis-tag--csk">CSK 视频分析</span><span class="analysis-sub">产品特征锁定 + 3 关键帧 · ${modelLabel}</span></div>
+          <div class="analysis-head"><span class="analysis-tag analysis-tag--csk">CSK 视频分析</span><span class="analysis-sub">产品特征锁定 + 3 关键帧 · ${cskModelLabel}</span></div>
           <div class="analysis-split">
             <div class="analysis-left">${cskBlock}</div>
             <div class="analysis-right">

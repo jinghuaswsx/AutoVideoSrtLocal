@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+PROVIDER_DISPLAY_NAMES = {
+    "openrouter": "OpenRouter",
+    "gemini_aistudio": "Google AI Studio",
+    "gemini_vertex": "Google Vertex",
+    "gemini_vertex_adc": "Google Vertex ADC",
+    "doubao": "Doubao",
+}
+
 
 def resolve_use_case_provider_model(use_case_code: str) -> tuple[str, str]:
     """Return the provider/model currently bound to a use case for UI display."""
@@ -30,9 +38,29 @@ def resolve_use_case_provider_model(use_case_code: str) -> tuple[str, str]:
     return use_case_code, use_case_code
 
 
-def provider_model_tag(provider: str | None, model: str | None) -> str:
+def provider_display_name(provider: str | None) -> str:
     provider_text = str(provider or "").strip()
+    return PROVIDER_DISPLAY_NAMES.get(provider_text, provider_text)
+
+
+def provider_model_tag(provider: str | None, model: str | None) -> str:
+    provider_text = provider_display_name(provider)
     model_text = str(model or "").strip()
+    if model_text:
+        try:
+            from appcore.llm_models import model_display_name
+
+            model_text = model_display_name(model_text)
+        except Exception:
+            pass
     if provider_text and model_text:
         return f"{provider_text} · {model_text}"
     return provider_text or model_text
+
+
+__all__ = [
+    "PROVIDER_DISPLAY_NAMES",
+    "provider_display_name",
+    "provider_model_tag",
+    "resolve_use_case_provider_model",
+]

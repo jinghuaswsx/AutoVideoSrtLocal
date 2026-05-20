@@ -3845,6 +3845,41 @@ class PipelineRunner:
         """
         return "av" if _is_av_pipeline_task(task) else "normal"
 
+    def _resolve_analysis_hard_video(self, task: dict) -> str:
+        variants = task.get("variants") or {}
+        candidates: list[str] = []
+
+        def add_candidate(value) -> None:
+            if not value:
+                return
+            try:
+                candidate = os.fspath(value).strip()
+            except TypeError:
+                return
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        variant_names: list[str] = []
+        try:
+            variant_names.append(self._resolve_compose_variant_name(task))
+        except Exception:
+            pass
+        variant_names.extend(["normal", "av"])
+
+        for variant in dict.fromkeys(variant_names):
+            variant_state = variants.get(variant) or {}
+            add_candidate((variant_state.get("result") or {}).get("hard_video"))
+            add_candidate((variant_state.get("preview_files") or {}).get("hard_video"))
+
+        add_candidate((task.get("result") or {}).get("hard_video"))
+        add_candidate((task.get("compose_result") or {}).get("hard_video"))
+        add_candidate((task.get("preview_files") or {}).get("hard_video"))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return ""
+
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
@@ -3899,23 +3934,30 @@ class PipelineRunner:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
         from pipeline import video_csk, video_score
         from appcore import llm_bindings
-        from appcore.llm_models import model_display_name
+        from appcore.llm_display import provider_model_tag
 
         task = task_state.get(task_id) or {}
         if self._skip_original_video_passthrough_step(task_id, "analysis", task=task):
             return
-        variants = task.get("variants") or {}
-        variant_state = variants.get("normal") or {}
-        hard_video = (variant_state.get("result") or {}).get("hard_video")
+        hard_video = self._resolve_analysis_hard_video(task)
 
         # 直接读 binding（USE_CASES 默认 model 与 video_score.SCORE_MODEL 一致），
         # 不再走 appcore.gemini.resolve_config。
-        resolved_model = (
-            llm_bindings.resolve("video_score.run").get("model")
-            or video_score.SCORE_MODEL
+        score_binding = llm_bindings.resolve("video_score.run")
+        csk_binding = llm_bindings.resolve("video_csk.analyze")
+        score_model_label = provider_model_tag(
+            score_binding.get("provider"),
+            score_binding.get("model") or video_score.SCORE_MODEL,
         )
-        model_label = model_display_name(resolved_model)
-        _analysis_model_tag = f"gemini · {resolved_model}"
+        csk_model_label = provider_model_tag(
+            csk_binding.get("provider"),
+            csk_binding.get("model") or video_csk.CSK_MODEL,
+        )
+        if score_model_label == csk_model_label:
+            model_label = score_model_label
+        else:
+            model_label = f"评分 {score_model_label} / CSK {csk_model_label}"
+        _analysis_model_tag = model_label
         self._set_step(task_id, "analysis", "running", "AI 分析中（评分 + CSK）...", model_tag=_analysis_model_tag)
 
         score_result = None
@@ -3932,6 +3974,8 @@ class PipelineRunner:
                 score_error="未找到硬字幕视频",
                 csk_error="未找到硬字幕视频",
                 model_label=model_label,
+                score_model_label=score_model_label,
+                csk_model_label=csk_model_label,
             ))
             return
 
@@ -3954,6 +3998,8 @@ class PipelineRunner:
             score_error=score_err,
             csk_error=csk_err,
             model_label=model_label,
+            score_model_label=score_model_label,
+            csk_model_label=csk_model_label,
         ))
 
         if score_err and csk_err:

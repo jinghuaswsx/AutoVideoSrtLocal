@@ -49,6 +49,13 @@ def test_task_workbench_step_title_renders_provider_model_tags():
     assert ".step-title-model-tag" in styles
 
 
+def test_task_workbench_analysis_cards_render_per_channel_model_labels():
+    scripts = (ROOT / "web/templates/_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "artifact.score_model_label" in scripts
+    assert "artifact.csk_model_label" in scripts
+
+
 def test_translate_lab_step_title_renders_provider_model_tags():
     template = (ROOT / "web/templates/translate_lab_detail.html").read_text(encoding="utf-8")
     scripts = (ROOT / "web/static/translate_lab.js").read_text(encoding="utf-8")
