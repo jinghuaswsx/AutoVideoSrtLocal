@@ -308,9 +308,11 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "id": 21,
                 "parent_task_id": None,
                 "media_product_id": 9,
+                "media_item_id": 34,
                 "product_name": "Product A",
                 "product_code": "product-a-rjc",
                 "source_media_filename": "source-a.mp4",
+                "child_country_codes": "DE,FR",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -342,9 +344,11 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "id": 21,
                 "parent_task_id": None,
                 "media_product_id": 9,
+                "media_item_id": 34,
                 "product_name": "Product A",
                 "product_code": "product-a-rjc",
                 "source_media_filename": "source-a.mp4",
+                "child_country_codes": "DE,FR",
                 "country_code": "DE",
                 "assignee_id": 2,
                 "assignee_username": "translator",
@@ -366,6 +370,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "JOIN media_products p" in captured["sql"]
     assert "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id" in captured["sql"]
     assert "source_mi.filename AS source_media_filename" in captured["sql"]
+    assert "FROM tasks c WHERE c.parent_task_id = t.id" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
     assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
@@ -447,6 +452,41 @@ def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypa
 
     assert "t.id=%s" in captured["sql"]
     assert captured["args"] == (442, 20, 0)
+
+
+def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="todo",
+        page=1,
+        page_size=20,
+        parent_only=True,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.parent_task_id IS NULL" in captured["sql"]
+    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.CHILD_ASSIGNED,
+        20,
+        0,
+    )
 
 
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
