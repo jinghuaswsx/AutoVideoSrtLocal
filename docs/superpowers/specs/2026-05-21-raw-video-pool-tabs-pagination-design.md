@@ -1,4 +1,4 @@
-# 原始素材处理列表重构设计
+# 原始素材处理任务中心化重构设计
 
 - **日期**：2026-05-21
 - **上位锚点**：
@@ -9,30 +9,32 @@
 
 ## 背景
 
-原始素材处理页仍保留早期“待认领 / 我已认领 / 已上传待审”结构。当前业务已经改为管理员在创建或分配任务时指定原视频处理人，处理人不再从公共池认领任务。继续展示“待认领”会误导处理流程，也让列表无法按任务中心的处理阶段统一查看。
+原始素材处理页最初从“待认领 / 我已认领 / 已上传待审”三段工作池演进而来。当前业务已经改为管理员在任务中心创建或分配任务时指定原视频处理人，处理人不再从公共池认领任务。上一版虽然移除了待认领并保留了 4 个 TAB，但列表仍是 raw-video-pool 自己维护的查询和展示，脱离任务中心父任务逻辑，导致用户能看到列表，却不能像任务中心一样处理任务，也看不全任务状态进度。
 
 ## 目标
 
-1. 原始素材处理页移除“待认领”模块和认领按钮。
-2. 页面改为 4 个 TAB：任务总览、待处理、待审核、已完成。
-3. 列表参考任务中心，使用表格化展示和分页。
-4. 表格统一新增“任务入口”列，内容为“任务详情”按钮。
-5. “任务详情”跳转到该父任务对应的牛马去字幕原始视频素材处理详情页，即 `/subtitle-removal/<subtitle_task_id>`。
+1. 原始素材处理页只保留 4 个 TAB：任务总览、待处理、待审核、已完成。
+2. 列表数据复用任务中心列表逻辑，只展示父任务（原始视频段），权限、负责人、状态分桶与任务中心一致。
+3. 用户必须能看到自己被指派的原始素材处理任务；管理员能看到全部父任务。
+4. 用户必须能直接处理任务：待处理任务提供下载原视频、上传处理后视频、打开牛马去字幕详情、打开任务中心详情。
+5. 用户必须能看到状态进度：列表显示任务中心状态、牛马/手动处理进度、原始库状态；详情抽屉显示任务事件时间线。
 
 ## 状态映射
 
 | TAB | 后端 bucket | 父任务状态 |
 | --- | --- | --- |
-| 任务总览 | `overview` | `raw_in_progress`, `raw_review`, `raw_done`, `all_done` |
+| 任务总览 | `overview` | 任务中心可见的所有父任务状态 |
 | 待处理 | `todo` | `raw_in_progress` |
 | 待审核 | `review` | `raw_review` |
 | 已完成 | `done` | `raw_done`, `all_done` |
 
-`pending` 不再进入原始素材处理页，因为任务来源必须是管理员指派后的任务。
+`pending` 和 `cancelled` 只在任务总览里出现，行为与任务中心一致。待处理 / 待审核 / 已完成三个 TAB 只展示对应处理阶段。
 
 ## 服务与接口
 
-`appcore/raw_video_pool.py` 增加分页列表能力：
+`appcore/tasks.py` 的 `list_task_center_items()` 增加可选参数 `parent_only`，默认 `False`，不影响任务中心现有调用。原始素材处理页调用时传 `parent_only=True`，从同一套任务中心 SQL、权限和状态分桶中取父任务。
+
+`appcore/raw_video_pool.py` 的 `list_visible_tasks()` 变为任务中心父任务列表适配器：
 
 ```python
 def list_visible_tasks(
@@ -65,25 +67,38 @@ def list_visible_tasks(
 }
 ```
 
-每条任务保留现有字段，并增加：
+每条任务以任务中心 row 为基础，并补充原始素材处理页需要的字段：
 
 - `status`：父任务状态。
-- `updated_at`：用于列表排序和显示。
-- `task_detail_url`：最近一条 `raw_niuma_submitted/raw_niuma_done/raw_niuma_failed/raw_niuma_timeout` 事件中的 `subtitle_task_id` 转成 `/subtitle-removal/<id>`。没有对应事件时返回空字符串，前端按钮禁用。
+- `high_level`、`assignee_display_name`、`product_code`、`source_media_filename`：与任务中心一致。
+- `country_codes`：父任务下子任务语种聚合。
+- `raw_processing_status`：最近牛马/手动上传进度。
+- `raw_source_status`：原始库入库状态。
+- `subtitle_detail_url`：最近一条 `raw_niuma_submitted/raw_niuma_done/raw_niuma_failed/raw_niuma_timeout` 事件中的 `subtitle_task_id` 转成 `/subtitle-removal/<id>`。没有对应事件时按钮禁用。
+- `task_center_url`：`/tasks/?task_id=<id>`，始终可打开任务中心同一任务详情。
 
 `GET /raw-video-pool/api/list` 接收 `bucket/page/page_size`，`page_size` 上限 100。
 
 ## 前端
 
-`raw_video_pool_list.html` 改为：
+`raw_video_pool_list.html` 改为任务中心风格的父任务工作台：
 
 1. 顶部保留标题和刷新按钮。
 2. TAB 顺序为：任务总览、待处理、待审核、已完成。
-3. 表格列为：产品、国家、文件名、大小、创建时间、处理进度、原始库、任务入口、操作。
-4. “任务入口”列始终渲染“任务详情”按钮；无 `task_detail_url` 时禁用。
-5. 待处理行保留下载和上传替换视频操作。
-6. 待审核行保留禁用态“待人工审核，通过后入库”。
-7. 已完成行不提供上传操作，只显示“已完成”。
+3. 表格列为：任务、国家、状态、负责人、创建时间、处理进度、原始库、任务入口、操作。
+4. “任务”列展示产品名、任务 id、product code、源素材文件名。
+5. “任务入口”列展示“任务详情”按钮，有 `subtitle_detail_url` 时跳转牛马去字幕原始视频素材处理详情；没有时禁用。
+6. “操作”列按任务中心父任务语义展示：
+   - `raw_in_progress`：处理任务（打开本页详情抽屉）。
+   - `raw_review`：查看进度；管理员可回任务中心审核。
+   - `raw_done/all_done`：查看结果。
+   - 其他状态：查看记录。
+7. 详情抽屉展示：
+   - 任务中心同口径身份信息、状态、负责人。
+   - 待处理任务的下载原视频、上传替换视频按钮。
+   - 牛马去字幕详情入口（有 `subtitle_detail_url` 时）。
+   - 任务中心详情入口（始终可用）。
+   - 任务事件时间线，展示所有状态进度。
 8. 底部分页使用任务中心同口径：第 N / M 页、上一页、下一页、总数。
 
 ## 不做范围
@@ -92,6 +107,7 @@ def list_visible_tasks(
 2. 不新增数据库表或迁移。
 3. 不改任务创建、管理员指派和牛马自动提交流程。
 4. 不改字幕移除详情页自身功能。
+5. 不在本页实现管理员审核通过/打回；审核仍跳任务中心详情完成。
 
 ## 验证
 

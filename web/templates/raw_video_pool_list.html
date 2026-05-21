@@ -48,6 +48,24 @@
 .rvp-empty { padding:20px; text-align:center; color:var(--rvp-fg-muted); font-size:13px; }
 .rvp-action-group { display:flex; gap:6px; flex-wrap:wrap; }
 .rvp-pager { display:flex; align-items:center; justify-content:flex-end; gap:var(--rvp-sp-2); margin-top:var(--rvp-sp-3); font-size:13px; color:var(--rvp-fg-muted); }
+.rvp-task-name { font-weight:700; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rvp-task-meta { margin-top:3px; color:var(--rvp-fg-muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rvp-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; white-space:nowrap; }
+.rvp-badge--in_progress { background:var(--rvp-bg-muted); color:var(--rvp-fg-muted); }
+.rvp-badge--completed { background:var(--rvp-success-bg); color:var(--rvp-success-fg); }
+.rvp-badge--terminated { background:oklch(96% 0.04 25); color:var(--rvp-danger-fg); }
+.rvp-detail-drawer { display:none; position:fixed; top:0; right:0; bottom:0; width:min(760px, 72vw); max-width:100vw; min-width:640px; background:var(--rvp-bg); border-left:1px solid var(--rvp-border); box-shadow:-8px 0 24px rgba(15, 23, 42, .12); z-index:1400; overflow-y:auto; padding:28px; }
+.rvp-detail-close { position:absolute; top:14px; right:14px; }
+.rvp-detail-title { padding-right:72px; margin-bottom:8px; }
+.rvp-detail-title h3 { margin:0 0 8px; font-size:20px; line-height:1.3; overflow-wrap:anywhere; }
+.rvp-detail-meta { color:var(--rvp-fg-muted); font-size:13px; margin-bottom:14px; line-height:1.5; }
+.rvp-detail-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+.rvp-event-list { display:flex; flex-direction:column; gap:8px; }
+.rvp-event { border:1px solid var(--rvp-border); border-radius:var(--rvp-r-md); background:var(--rvp-bg); padding:10px 12px; font-size:13px; }
+.rvp-event-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+.rvp-event-title { font-weight:700; }
+.rvp-event-time { color:var(--rvp-fg-muted); font-size:12px; }
+.rvp-event-payload { margin-top:6px; color:var(--rvp-fg-muted); font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .rvp-raw-status { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:6px; font-size:12px; border:1px solid var(--rvp-border); white-space:nowrap; }
 .rvp-raw-status--ready { color:var(--rvp-success-fg); background:var(--rvp-success-bg); border-color:transparent; }
 .rvp-raw-status--not_ready { color:var(--rvp-warning-fg); background:var(--rvp-warning-bg); border-color:transparent; }
@@ -78,6 +96,11 @@
   </div>
 
   <div id="rvpTableWrap"></div>
+
+  <div id="rvpDetailDrawer" class="rvp-detail-drawer">
+    <button class="rvp-btn rvp-detail-close" onclick="rvpCloseTaskDetail()">关闭</button>
+    <div id="rvpDetailBody"></div>
+  </div>
 </div>
 
 <!-- Upload modal -->
@@ -106,6 +129,7 @@ const RVP_CAN_PROCESS = {{ 'true' if can_process_raw_video else 'false' }};
 const RVP_PAGE_SIZE = 20;
 let RVP_CURRENT_BUCKET = 'overview';
 let RVP_CURRENT_PAGE = 1;
+let RVP_TASK_CACHE = new Map();
 
 function rvpEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function rvpAttr(s) { return rvpEsc(s).replace(/"/g, '&quot;'); }
@@ -117,6 +141,26 @@ function rvpFmtSize(b) {
 function rvpFmtTime(s) {
   if (!s) return '—';
   return s.replace('T', ' ').slice(0, 19);
+}
+function rvpCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? meta.content : '';
+}
+function rvpStatusLabel(status) {
+  const labels = {
+    pending: '待分配',
+    raw_in_progress: '原素材处理中',
+    raw_review: '原素材待审核',
+    raw_done: '原素材完成',
+    all_done: '全部完成',
+    cancelled: '已取消',
+  };
+  return labels[status] || status || '—';
+}
+function rvpHighLevelLabel(level) {
+  if (level === 'completed') return '已完成';
+  if (level === 'terminated') return '已终止';
+  return '进行中';
 }
 function rvpRawStatusLabel(status) {
   if (status === 'ready') return '已入原始库';
@@ -164,6 +208,7 @@ async function rvpRender() {
     const r = await fetch('/raw-video-pool/api/list?' + params.toString());
     if (!r.ok) throw new Error(r.statusText);
     const data = await r.json();
+    RVP_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || it.task_id || 0), it]));
     rvpRenderCounts(data.counts || {});
     rvpRenderTable(wrap, data);
   } catch (e) {
@@ -185,40 +230,53 @@ function rvpRenderTable(wrap, data) {
     return;
   }
   const rows = items.map(t => {
-    let actions = '';
-    if (t.status === 'raw_in_progress') {
-      actions = `<div class="rvp-action-group">
-        <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始带字幕英文视频</button>
-        <button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${t.task_id}, '${rvpEsc(t.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>
-      </div>`;
-    } else if (t.status === 'raw_review') {
-      actions = `<button class="rvp-btn" disabled>待人工审核，通过后入库</button>`;
-    } else {
-      actions = `<button class="rvp-btn" disabled>已完成</button>`;
-    }
     const rawClass = rvpRawStatusClass(t.raw_source_status);
     const rawLabel = rvpRawStatusLabel(t.raw_source_status);
     const processingClass = rvpProcessingStatusClass(t.raw_processing_status);
     const processingLabel = rvpProcessingStatusLabel(t.raw_processing_status);
-    const detailUrl = String(t.task_detail_url || '').trim();
-    const entry = detailUrl
-      ? `<a class="rvp-btn" href="${rvpAttr(detailUrl)}" target="_blank" rel="noopener">任务详情</a>`
-      : `<button class="rvp-btn" disabled>任务详情</button>`;
+    const countryCodes = t.country_codes || t.child_country_codes || t.country_code || '—';
+    const meta = [
+      '#' + (t.id || t.task_id || ''),
+      t.product_code || '',
+      t.source_media_filename || '',
+    ].filter(Boolean).join(' · ');
     return `<tr>
-      <td>${rvpEsc(t.product_name)}</td>
-      <td>${rvpEsc(t.country_codes || '—')}</td>
-      <td title="${rvpEsc(t.mp4_filename || '')}" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${rvpEsc(t.mp4_filename || '—')}</td>
-      <td>${rvpFmtSize(t.mp4_size)}</td>
+      <td><div class="rvp-task-name" title="${rvpAttr(t.product_name || '')}">${rvpEsc(t.product_name)}</div><div class="rvp-task-meta" title="${rvpAttr(meta)}">${rvpEsc(meta)}</div></td>
+      <td>${rvpEsc(countryCodes)}</td>
+      <td><span class="rvp-badge rvp-badge--${rvpEsc(t.high_level || 'in_progress')}">${rvpEsc(rvpStatusLabel(t.status))}</span></td>
+      <td>${rvpEsc(t.assignee_display_name || t.assignee_username || '—')}</td>
       <td>${rvpFmtTime(t.created_at)}</td>
       <td><span class="rvp-processing-status rvp-processing-status--${processingClass}">${rvpEsc(processingLabel)}</span></td>
       <td><span class="rvp-raw-status rvp-raw-status--${rawClass}">${rvpEsc(rawLabel)}</span></td>
-      <td>${entry}</td>
-      <td>${actions}</td>
+      <td>${rvpTaskEntryAction(t)}</td>
+      <td>${rvpTaskRowAction(t)}</td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<div class="rvp-table-wrap"><table class="rvp-table"><thead><tr>
-    <th>产品</th><th>国家</th><th>文件名</th><th>大小</th><th>创建时间</th><th>处理进度</th><th>原始库</th><th>任务入口</th><th>操作</th>
+    <th>任务</th><th>国家</th><th>状态</th><th>负责人</th><th>创建时间</th><th>处理进度</th><th>原始库</th><th>任务入口</th><th>操作</th>
   </tr></thead><tbody>${rows}</tbody></table></div>${rvpRenderTaskPager(data, items.length)}`;
+}
+
+function rvpTaskEntryAction(t) {
+  if (!t.subtitle_detail_url) {
+    return '<button class="rvp-btn" disabled>任务详情</button>';
+  }
+  return `<a class="rvp-btn" href="${rvpAttr(t.subtitle_detail_url)}" target="_blank" rel="noopener">任务详情</a>`;
+}
+
+function rvpTaskRowAction(t) {
+  const id = Number(t.id || t.task_id || 0);
+  if (!id) return '<button class="rvp-btn" disabled>不可处理</button>';
+  if (t.status === 'raw_in_progress') {
+    return `<button class="rvp-btn rvp-btn--primary" onclick="rvpOpenTaskDetail(${id})">处理任务</button>`;
+  }
+  if (t.status === 'raw_review') {
+    return `<button class="rvp-btn" onclick="rvpOpenTaskDetail(${id})">查看进度</button>`;
+  }
+  if (t.status === 'raw_done' || t.status === 'all_done') {
+    return `<button class="rvp-btn" onclick="rvpOpenTaskDetail(${id})">查看结果</button>`;
+  }
+  return `<button class="rvp-btn" onclick="rvpOpenTaskDetail(${id})">查看记录</button>`;
 }
 
 function rvpRenderTaskPager(data, itemCount) {
@@ -243,6 +301,87 @@ function rvpTaskPage(delta) {
 function rvpDownload(tid) {
   // Browser GET with auth cookie — server triggers download via send_file
   window.location.href = "/raw-video-pool/api/task/" + encodeURIComponent(tid || "") + "/download";
+}
+
+function rvpCloseTaskDetail() {
+  document.getElementById('rvpDetailDrawer').style.display = 'none';
+}
+async function rvpFetchJson(url, opts) {
+  const r = await fetch(url, Object.assign({credentials: 'same-origin'}, opts || {}));
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.detail || r.statusText);
+  return data;
+}
+async function rvpOpenTaskDetail(id) {
+  const task = RVP_TASK_CACHE.get(Number(id || 0));
+  const drawer = document.getElementById('rvpDetailDrawer');
+  const body = document.getElementById('rvpDetailBody');
+  drawer.style.display = 'block';
+  body.innerHTML = '<div class="rvp-empty">加载中...</div>';
+  try {
+    const events = await rvpFetchJson('/tasks/api/' + encodeURIComponent(id) + '/events');
+    body.innerHTML = rvpRenderTaskDetail(task || {id}, events.events || []);
+  } catch (e) {
+    body.innerHTML = '<div class="rvp-empty">加载失败：' + rvpEsc(e.message) + '</div>';
+  }
+}
+function rvpRenderTaskDetail(task, events) {
+  const id = Number(task.id || task.task_id || 0);
+  const status = task.status || '';
+  const countryCodes = task.country_codes || task.child_country_codes || task.country_code || '—';
+  const buttons = [];
+  if (status === 'raw_in_progress') {
+    buttons.push(`<button class="rvp-btn" onclick="rvpDownload(${id})">下载原始带字幕英文视频</button>`);
+    buttons.push(`<button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${id}, '${rvpEsc(task.source_media_filename || task.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>`);
+  }
+  if (task.subtitle_detail_url) {
+    buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.subtitle_detail_url)}" target="_blank" rel="noopener">牛马去字幕详情</a>`);
+  }
+  buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.task_center_url || ('/tasks/?task_id=' + id))}" target="_blank" rel="noopener">任务中心详情</a>`);
+  return `<div class="rvp-detail-title">
+      <h3>${rvpEsc(task.product_name || '原始素材任务')}</h3>
+      <div class="rvp-task-meta">${rvpEsc(['#' + id, task.product_code || '', task.source_media_filename || ''].filter(Boolean).join(' · '))}</div>
+    </div>
+    <div class="rvp-detail-meta">
+      <span class="rvp-badge rvp-badge--${rvpEsc(task.high_level || 'in_progress')}">${rvpEsc(rvpHighLevelLabel(task.high_level || 'in_progress'))}</span>
+      ${rvpEsc(rvpStatusLabel(status))} · 国家：${rvpEsc(countryCodes)} · 负责人：${rvpEsc(task.assignee_display_name || task.assignee_username || '—')}
+    </div>
+    ${task.last_reason ? `<div class="rvp-event" style="background:var(--rvp-warning-bg); color:var(--rvp-warning-fg); margin-bottom:12px;">最近备注：${rvpEsc(task.last_reason)}</div>` : ''}
+    <div class="rvp-detail-actions">${buttons.join('')}</div>
+    <h4 style="margin:0 0 10px; font-size:14px;">状态进度</h4>
+    ${rvpRenderTaskEvents(events)}`;
+}
+function rvpEventTitle(type) {
+  const labels = {
+    created: '创建任务',
+    claimed: '指派原素材处理',
+    raw_niuma_submitted: '提交牛马去字幕',
+    raw_niuma_done: '牛马去字幕完成',
+    raw_niuma_failed: '牛马去字幕失败',
+    raw_niuma_timeout: '牛马去字幕超时',
+    raw_manual_uploaded: '手动上传原始视频',
+    raw_uploaded: '提交原始视频审核',
+    raw_approved: '原始视频审核通过',
+    raw_rejected: '原始视频打回',
+    cancelled: '取消任务',
+  };
+  return labels[type] || type || '流程记录';
+}
+function rvpRenderTaskEvents(events) {
+  if (!events.length) return '<div class="rvp-empty">暂无流程记录</div>';
+  return '<div class="rvp-event-list">' + events.map(ev => {
+    let payload = '';
+    try {
+      const obj = typeof ev.payload_json === 'string' ? JSON.parse(ev.payload_json || '{}') : (ev.payload_json || {});
+      const keys = Object.keys(obj || {}).filter(k => !['source_object_info'].includes(k));
+      payload = keys.length ? keys.map(k => `${k}: ${obj[k]}`).join('\\n') : '';
+    } catch (e) {}
+    return `<div class="rvp-event">
+      <div class="rvp-event-head"><span class="rvp-event-title">${rvpEsc(rvpEventTitle(ev.event_type))}</span><span class="rvp-event-time">${rvpEsc(rvpFmtTime(ev.created_at))}</span></div>
+      <div class="rvp-event-time">操作人：${rvpEsc(ev.actor_display_name || ev.actor_username || '系统')}</div>
+      ${payload ? `<div class="rvp-event-payload">${rvpEsc(payload)}</div>` : ''}
+    </div>`;
+  }).join('') + '</div>';
 }
 
 let _rvpUploadCtx = null;
@@ -296,6 +435,8 @@ function rvpUploadOK() {
     alert('网络错误');
   };
   xhr.open('POST', `/raw-video-pool/api/task/${_rvpUploadCtx.tid}/upload`);
+  const csrf = rvpCsrfToken();
+  if (csrf) xhr.setRequestHeader('X-CSRFToken', csrf);
   const fd = new FormData();
   fd.append('file', f);
   xhr.send(fd);

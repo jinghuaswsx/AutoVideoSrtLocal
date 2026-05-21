@@ -428,6 +428,7 @@ def list_task_center_items(
     page_size: int,
     bucket: str = "",
     task_id: int | None = None,
+    parent_only: bool = False,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
     where = ["1=1"]
@@ -438,6 +439,8 @@ def list_task_center_items(
         args.append(int(user_id))
     elif tab != "all":
         raise ValueError("invalid tab")
+    if parent_only:
+        where.append("t.parent_task_id IS NULL")
 
     if task_id:
         where.append("t.id=%s")
@@ -471,6 +474,8 @@ def list_task_center_items(
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
         "       source_mi.filename AS source_media_filename, "
+        "       (SELECT GROUP_CONCAT(c.country_code ORDER BY c.country_code SEPARATOR ',') "
+        "        FROM tasks c WHERE c.parent_task_id = t.id) AS child_country_codes, "
         f"       u.username AS assignee_username, {assignee_name_expr} AS assignee_display_name "
         "FROM tasks t "
         "JOIN media_products p ON p.id=t.media_product_id "
@@ -487,9 +492,11 @@ def list_task_center_items(
                 "id": row["id"],
                 "parent_task_id": row["parent_task_id"],
                 "media_product_id": row["media_product_id"],
+                "media_item_id": row["media_item_id"],
                 "product_name": row["product_name"],
                 "product_code": row.get("product_code"),
                 "source_media_filename": row.get("source_media_filename"),
+                "child_country_codes": row.get("child_country_codes") or "",
                 "country_code": row["country_code"],
                 "assignee_id": row["assignee_id"],
                 "assignee_username": row["assignee_username"],
