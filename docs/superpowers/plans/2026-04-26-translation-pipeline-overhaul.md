@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS translation_quality_assessments (
 Run on the test server (per project memory, deploy migrations there first):
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -c "
 import sys; sys.path.insert(0, \"/opt/autovideosrt-test\")
@@ -1430,7 +1430,7 @@ Place it next to `omni_translate` blueprint registration to keep related code to
 - [ ] **Step 3: Smoke-test routes (server-side)**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -c "
 from web.app import create_app
@@ -1494,7 +1494,7 @@ This ensures legacy single-target runners (de_translate, fr_translate, ja_transl
 - [ ] **Step 3: Smoke test**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -m pytest tests/test_omni_translate_routes.py tests/test_multi_translate_routes.py -q 2>&1 | tail -15'
 ```
@@ -1752,7 +1752,7 @@ Find the route `update_source_language` (around line 405). Its body currently wr
 - [ ] **Step 4: Smoke test pipeline-step list**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -c "
 from appcore.runtime_omni import OmniTranslateRunner
@@ -1922,7 +1922,7 @@ In `appcore/runtime_omni.py`, append to `OmniTranslateRunner` class:
 - [ ] **Step 2: Smoke test (server-side dry call)**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -c "
 from appcore.runtime_omni import OmniTranslateRunner
@@ -2030,7 +2030,7 @@ In `OmniTranslateRunner`, append:
 - [ ] **Step 3: Smoke test**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -c "
 from appcore.runtime_omni import OmniLocalizationAdapter
@@ -2563,7 +2563,7 @@ git commit -m "feat(ui): translation quality assessment card (omni + multi)"
 ```bash
 cd .worktrees/translation-pipeline-overhaul
 git push -u origin feature/translation-pipeline-overhaul
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git fetch origin feature/translation-pipeline-overhaul && \
    git checkout feature/translation-pipeline-overhaul && \
    systemctl restart autovideosrt-test && sleep 5 && \
@@ -2634,7 +2634,7 @@ git merge --no-ff feature/translation-pipeline-overhaul \
 - [ ] **Step 3: Deploy to production server**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt && git pull && systemctl restart autovideosrt'
 ```
 
@@ -2643,7 +2643,7 @@ Expected: migration auto-applies, server back up.
 - [ ] **Step 4: Production verification**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt && set -a && source /opt/autovideosrt/.env && set +a && \
    /opt/autovideosrt/venv/bin/python -c "
 from appcore.db import query

@@ -86,7 +86,7 @@
 
 ### 测试环境（默认先发这里）
 ```bash
-ssh 172.30.254.14  # 走内网
+ssh 172.16.254.106  # 走内网
 cd /opt/autovideosrt-test
 git fetch origin
 git checkout codex/claude-llm-provider-db-config
@@ -94,7 +94,7 @@ sudo systemctl restart autovideosrt-test.service
 # migration 会在启动时由 appcore/db_migrations.py 自动应用
 ```
 验证 checklist：
-1. 打开 http://172.30.254.14:8080/settings，确认 admin 可见、分组展示、明文 + 复制按钮
+1. 打开 http://172.16.254.106:8080/settings，确认 admin 可见、分组展示、明文 + 复制按钮
 2. 非 admin 登录访问 /settings 应得 403
 3. 填一组 provider key 保存；刷新页面后字段仍显示
 4. 触发一次 ASR 任务 / 一次翻译任务 / 一次图片翻译任务验证 DB 凭据被读取

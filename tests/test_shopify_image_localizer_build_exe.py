@@ -197,7 +197,7 @@ def test_shopify_build_rejects_empty_source_runtime_config(
     build_exe.settings.config_path(repo_root).write_text(
         json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "",
                 "browser_user_data_dir": r"C:\chrome-shopify-image",
             }
@@ -220,7 +220,7 @@ def test_shopify_build_rejects_demo_source_runtime_config(
     build_exe.settings.config_path(repo_root).write_text(
         json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "demo-key",
                 "browser_user_data_dir": r"C:\chrome-shopify-image",
             }
@@ -243,7 +243,7 @@ def test_shopify_build_prefers_env_api_key_over_source_config(
     build_exe.settings.config_path(repo_root).write_text(
         json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "stale-source-openapi-key",
                 "browser_user_data_dir": r"C:\chrome-shopify-image",
             }

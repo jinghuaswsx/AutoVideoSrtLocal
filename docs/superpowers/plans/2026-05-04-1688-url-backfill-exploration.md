@@ -286,7 +286,7 @@ X-Requested-With: XMLHttpRequest
 - 可能捕获"ARP9电动水枪"↔"全自动水枪 vector"这类人工难以规则化的对应
 
 ### 运行环境
-- 服务器：172.30.254.14（SSH key: ~/.ssh/CC.pem）
+- 服务器：172.16.254.106（SSH key: ~/.ssh/CC.pem）
 - 项目目录：/opt/autovideosrt
 - Python venv：venv/bin/python
 - CDP 浏览器：http://127.0.0.1:9222（需店小秘已登录）

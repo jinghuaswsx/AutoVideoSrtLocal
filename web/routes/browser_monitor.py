@@ -12,7 +12,7 @@ from web.auth import permission_required
 
 bp = Blueprint("browser_monitor", __name__, url_prefix="/browser-monitor")
 
-SERVER_HOST = "172.30.254.14"
+SERVER_HOST = "172.16.254.106"
 
 
 @dataclass(frozen=True)

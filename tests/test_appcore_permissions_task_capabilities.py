@@ -1,5 +1,5 @@
 from appcore.permissions import (
-    PERMISSION_CODES, default_permissions_for_role,
+    PERMISSION_CODES, PERMISSION_META, default_permissions_for_role,
     ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN,
 )
 
@@ -7,6 +7,10 @@ from appcore.permissions import (
 def test_task_center_codes_present():
     for code in ("task_center", "can_process_raw_video", "can_translate"):
         assert code in PERMISSION_CODES
+
+
+def test_task_center_permission_label_stays_generic():
+    assert PERMISSION_META["task_center"]["label"] == "任务中心"
 
 
 def test_admin_defaults_have_capabilities_on():

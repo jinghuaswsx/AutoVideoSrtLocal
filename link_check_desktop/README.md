@@ -87,7 +87,7 @@ link_check_desktop_config.json
 
 ```json
 {
-  "base_url": "http://172.30.254.14",
+  "base_url": "http://172.16.254.106",
   "api_key": ""
 }
 ```

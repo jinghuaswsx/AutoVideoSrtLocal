@@ -88,7 +88,7 @@
 ```json
 {
   "method": "POST",
-  "url": "http://172.30.254.14:82/v1/images/edits",
+  "url": "http://172.16.254.106:82/v1/images/edits",
   "headers": {
     "Authorization": "Bearer <真实 API key>",
     "Content-Type": "multipart/form-data"

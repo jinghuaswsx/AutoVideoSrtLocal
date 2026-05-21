@@ -33,7 +33,7 @@ Tabcut 选品模块固定采集美国站（`US`）数据，依赖服务器上已
 - systemd service：`autovideosrt-tabcut-vnc.service`
 - Chrome profile：`/data/autovideosrt/browser/profiles/tabcut`
 - CDP：`http://127.0.0.1:9227`
-- noVNC：`http://172.30.254.14:6097/vnc.html`
+- noVNC：`http://172.16.254.106:6097/vnc.html`
 - 登录态：Tabcut 旗舰版账号，由运维在 noVNC 窗口保持登录
 
 采集命令通过 CDP 在该浏览器上下文内发起请求，保留登录态与会员权限；请求间隔不低于 3 秒。

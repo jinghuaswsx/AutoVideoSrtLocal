@@ -21,4 +21,4 @@ def test_autovideo_base_url_default_points_to_current_local_server(monkeypatch):
     settings = importlib.reload(settings)
     settings.get_settings.cache_clear()
 
-    assert settings.get_settings().autovideo_base_url == "http://172.30.254.14"
+    assert settings.get_settings().autovideo_base_url == "http://172.16.254.106"

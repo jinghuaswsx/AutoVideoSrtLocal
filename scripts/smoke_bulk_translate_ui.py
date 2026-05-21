@@ -4,14 +4,14 @@
     python scripts/smoke_bulk_translate_ui.py
 
 前置:
-    * 测试环境 http://172.30.254.14:8080 已部署本分支
+    * 测试环境 http://172.16.254.106:8080 已部署本分支
     * testuser.md 的管理员账号有效，密码从 AUTOVIDEOSRT_SMOKE_PASSWORD 读取
 """
 import os
 
 from playwright.sync_api import sync_playwright, expect
 
-BASE = "http://172.30.254.14:8080"
+BASE = "http://172.16.254.106:8080"
 USER = os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin")
 PWD = os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", "")
 

@@ -462,7 +462,7 @@ git push origin master
 - [ ] **Step 3.3：部署到线上**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 '
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 '
 set -e
 cd /opt/autovideosrt
 git pull origin master --ff-only

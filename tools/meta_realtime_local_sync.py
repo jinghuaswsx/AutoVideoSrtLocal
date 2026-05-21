@@ -39,7 +39,7 @@ ACCOUNT_NAME = os.environ.get("META_AD_EXPORT_ACCOUNT_NAME", "Newjoyloo").strip(
 # 该值必须与对应账户 Meta UI 内手工存的列模板一致，否则导出 CSV 会缺购买相关列。
 # Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
 COLUMN_PRESET = os.environ.get("META_AD_EXPORT_COLUMN_PRESET", "1658418688523178").strip() or "1658418688523178"
-SERVER_HOST = "172.30.254.14"
+SERVER_HOST = "172.16.254.106"
 SERVER_USER = "root"
 SERVER_APP_DIR = "/opt/autovideosrt"
 SSH_KEY = Path(r"C:\Users\admin\.ssh\CC.pem")

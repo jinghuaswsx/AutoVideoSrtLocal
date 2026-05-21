@@ -117,6 +117,29 @@ def test_xuanpin_mk_video_cards_clamp_copy_and_hide_missing_sales(authed_client_
     assert "· 销量 ${Number(r.sales_count || 0)}" not in body
 
 
+def test_xuanpin_mk_video_cards_copy_code_and_show_first_mk_product_link(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "renderMkProductCodeCopyButton(rawProductHandle)" in body
+    assert "const productLinkRaw = String(r.mk_product_link || r.product_url || '').trim();" in body
+    assert 'class="mk-video-product-link-row"' in body
+    assert 'class="mk-video-product-link mk-line-clamp mk-line-clamp--1"' in body
+    assert "renderMkProductLinkCopyButton(productLinkRaw)" in body
+
+
+def test_xuanpin_mk_video_import_metadata_includes_mk_paths(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'data-mki-video-path="${escapeHtml(videoPath)}"' in body
+    assert 'data-mki-cover-path="${escapeHtml(coverPath)}"' in body
+    assert "video_path: btn.dataset.mkiVideoPath || null" in body
+    assert "cover_path: btn.dataset.mkiCoverPath || null" in body
+
+
 def test_xuanpin_mk_video_cards_use_backend_material_status_for_import_button(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

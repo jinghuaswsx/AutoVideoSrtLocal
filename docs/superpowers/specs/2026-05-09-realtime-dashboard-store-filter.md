@@ -97,7 +97,7 @@
    - 传非法 site_code（路由层）：返回 400。
 2. **既有测试不破**：
    - `pytest tests/test_order_analytics*.py tests/characterization/test_order_analytics_baseline.py -q` 全过。
-3. **手动**：登录测试环境 `http://172.30.254.14:8080/order-analytics`，分别选「全部 / Newjoy / Omurio」三档比对订单数 / 广告费 / ROAS。
+3. **手动**：登录测试环境 `http://172.16.254.106:8080/order-analytics`，分别选「全部 / Newjoy / Omurio」三档比对订单数 / 广告费 / ROAS。
 
 ## 已知非目标 / 注意事项
 

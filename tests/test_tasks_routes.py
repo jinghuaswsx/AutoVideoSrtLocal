@@ -4,7 +4,7 @@ import io
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
-    assert "小语种视频翻译".encode("utf-8") in rsp.data
+    assert "任务中心".encode("utf-8") in rsp.data
 
 
 def test_task_detail_route_renders_task_center_with_initial_detail_id(authed_client_no_db):
@@ -73,16 +73,26 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     body = rsp.data.decode("utf-8")
 
     assert "function tcStatusLabel(status)" in body
-    assert "blocked: '等待前置完成'" in body
+    assert "blocked: '等待 去字幕原始素材'" in body
     assert "assigned: '待处理'" in body
     assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
     assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
+    assert "function tcTaskTypeLabel(task)" in body
+    assert "const kind = tcTaskTypeLabel(it);" in body
+    assert "task && task.parent_task_id ? '小语种翻译' : '去字幕'" in body
+    assert "function tcTaskStatusCell(it)" in body
+    assert "<td>${tcTaskStatusCell(it)}</td>" in body
+    assert "tcActiveTaskAction(parentId, '去查看等待的任务', false)" in body
     assert "function tcTaskRowAction(it)" in body
-    assert "tcDisabledTaskAction('等待前置完成')" in body
+    assert "tcDisabledTaskAction('等待 去字幕原始素材')" in body
+    assert "function tcBlockedTaskAction(it)" not in body
+    assert "if (status === 'blocked') return tcDisabledTaskAction('等待 去字幕原始素材');" in body
     assert "tcOpenDetail(id)" in body
     assert "去处理" in body
     assert "处理去字幕原始视频" in body
     assert "认领处理" not in body
+    assert "const kind = it.parent_task_id ? '子任务' : '父任务';" not in body
+    assert "等待前置完成" not in body
     assert "查看结果" in body
     assert "查看记录" in body
     assert ">详情</button>" not in body
@@ -195,7 +205,8 @@ def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no
     assert "payload.countries.map(tcLanguageLabel).join('、')" in body
     assert "tcLanguageLabel(payload.country)" in body
     assert "const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';" in body
-    assert "tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段" in body
+    assert "tcEsc(tcTaskTypeLabel(task))" in body
+    assert "'（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'" in body
     assert "翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})" in body
 
 

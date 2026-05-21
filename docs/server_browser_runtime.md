@@ -69,7 +69,7 @@ bash deploy/server_browser/install_novnc.sh
 
 1. **noVNC（推荐，浏览器直连）**：内网浏览器打开
    ```
-   http://172.30.254.14:6082/vnc.html?host=172.30.254.14&port=6082&autoconnect=true&resize=remote
+   http://172.16.254.106:6082/vnc.html?host=172.16.254.106&port=6082&autoconnect=true&resize=remote
    ```
    会直接连进 cjh 桌面，看到三个 Chromium 窗口（店小秘列表 / 明空选品 / 小秘云仓）。
 2. **向日葵远程桌面**：直接进 cjh 桌面（如果 `runsunloginclient.service` 起着）。

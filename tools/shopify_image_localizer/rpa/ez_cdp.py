@@ -359,7 +359,7 @@ def ensure_cdp_chrome(
     if proxy_server:
         args.extend([
             f"--proxy-server={proxy_server}",
-            "--proxy-bypass-list=127.0.0.1;localhost;172.30.254.14;<local>",
+            "--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>",
         ])
     args.extend(_startup_urls(initial_url))
 

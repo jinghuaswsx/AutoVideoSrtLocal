@@ -1246,8 +1246,8 @@ bash deploy/publish.sh "feat: add system security audit logging"
 Then verify service and HTTP explicitly:
 
 ```powershell
-ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14 "systemctl status autovideosrt.service --no-pager -l | head -n 20"
-curl -I http://172.30.254.14/
+ssh -i C:\Users\admin\.ssh\CC.pem root@172.16.254.106 "systemctl status autovideosrt.service --no-pager -l | head -n 20"
+curl -I http://172.16.254.106/
 ```
 
 Expected: publish script exits 0, service is active, and HTTP is reachable.

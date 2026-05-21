@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让 `172.30.254.14` 成为唯一正式生产入口，运行时完全使用本地 MySQL 和本地文件存储，只有豆包 ASR、Seedance、VOD 字幕移除这类必须公网回拉的链路继续使用 TOS。
+**Goal:** 让 `172.16.254.106` 成为唯一正式生产入口，运行时完全使用本地 MySQL 和本地文件存储，只有豆包 ASR、Seedance、VOD 字幕移除这类必须公网回拉的链路继续使用 TOS。
 
 **Architecture:** 服务器环境迁移底座已经完成，实施重点不再是装机，而是把仓库代码和真实服务器状态对齐：`systemd` 托管、IP 直连、单机 `Web + MySQL + 本地文件存储`。代码层面保持 `projects.state_json`、`thumbnail_path`、`object_key` 等现有协议不做大改，先把主读写切到本地文件，再把 TOS 收敛成“公网交换层”，最后用迁移脚本校验引用一致性并做整仓验收。
 
@@ -14,7 +14,7 @@
 
 以下内容已经由人工在目标机完成，不再作为本计划的实施目标，只作为后续步骤的前提：
 
-- 目标机：`172.30.254.14`
+- 目标机：`172.16.254.106`
 - 操作系统与托管：`Linux + systemd`
 - 应用目录：`/opt/autovideosrt`
 - 数据目录：`/data/autovideosrt/uploads`、`/data/autovideosrt/output`
@@ -23,9 +23,9 @@
 - 生产配置已复制：`.env`、`google_api_key`、`voices/voices.json`
 - 远程数据已同步：`uploads` 与 `output`
 - 本地 MySQL 已完成导入：库名 `auto_video`
-- 当前本地服务已可访问：`http://172.30.254.14/`
-- 当前本地 MySQL 已可访问：`172.30.254.14:3306`
-- 当前监控入口已可访问：`https://172.30.254.14:9090/`
+- 当前本地服务已可访问：`http://172.16.254.106/`
+- 当前本地 MySQL 已可访问：`172.16.254.106:3306`
+- 当前监控入口已可访问：`https://172.16.254.106:9090/`
 
 本计划保持单一文档，不拆分为多个子计划，原因是部署契约、核心上传链路、存储语义、迁移脚本和全模块验收是强耦合事项，必须按同一目标状态一起收口。
 
@@ -111,16 +111,16 @@ def test_default_autovideo_base_url_points_to_local_server(monkeypatch):
     reload(autopush_settings)
     autopush_settings.get_settings.cache_clear()
 
-    assert autopush_settings.get_settings().autovideo_base_url == "http://172.30.254.14"
+    assert autopush_settings.get_settings().autovideo_base_url == "http://172.16.254.106"
 ```
 
 - [ ] **Step 3: 运行测试并确认先失败**
 
 Run: `pytest tests/test_autopush_settings.py -q`
 
-Expected: `PASS`，默认上游应指向当前正式入口 `http://172.30.254.14`。
+Expected: `PASS`，默认上游应指向当前正式入口 `http://172.16.254.106`。
 
-- [ ] **Step 4: 更新运行契约文件，统一到 `172.30.254.14 + 80 端口 + 单 worker + gthread`**
+- [ ] **Step 4: 更新运行契约文件，统一到 `172.16.254.106 + 80 端口 + 单 worker + gthread`**
 
 ```ini
 # deploy/autovideosrt.service
@@ -135,7 +135,7 @@ RestartSec=5
 
 ```bash
 # deploy/publish.sh
-SERVER_HOST="172.30.254.14"
+SERVER_HOST="172.16.254.106"
 APP_DIR="/opt/autovideosrt"
 SERVICE="autovideosrt"
 
@@ -157,7 +157,7 @@ curl -I http://127.0.0.1/
 
 ```env
 # .env.example
-LOCAL_SERVER_BASE_URL=http://172.30.254.14
+LOCAL_SERVER_BASE_URL=http://172.16.254.106
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_NAME=auto_video
@@ -170,7 +170,7 @@ FLASK_SECRET_KEY=change_me
 # AutoPush/backend/settings.py
 self.autovideo_base_url = getenv(
     "AUTOVIDEO_BASE_URL",
-    "http://172.30.254.14",
+    "http://172.16.254.106",
 ).rstrip("/")
 ```
 
@@ -179,8 +179,8 @@ self.autovideo_base_url = getenv(
 ```md
 ## 生产环境约定
 
-- 目标生产机：`172.30.254.14`
-- 对外入口：`http://172.30.254.14/`
+- 目标生产机：`172.16.254.106`
+- 对外入口：`http://172.16.254.106/`
 - 不使用 nginx，`gunicorn` 直接监听 `80`
 - MySQL：本机 `127.0.0.1:3306`，库名 `auto_video`
 - 数据目录：`/data/autovideosrt/uploads`、`/data/autovideosrt/output`
@@ -949,7 +949,7 @@ git add appcore/local_storage_migration.py scripts/migrate_local_storage_project
 git commit -m "feat: add local storage migration and verification scripts"
 ```
 
-### Task 7: 形成验收清单，在 `172.30.254.14` 做整仓验证、切换与回退演练
+### Task 7: 形成验收清单，在 `172.16.254.106` 做整仓验证、切换与回退演练
 
 **Files:**
 - Create: `docs/superpowers/notes/2026-04-22-local-server-acceptance-checklist.md`
@@ -1042,7 +1042,7 @@ Expected:
 Run:
 
 ```text
-1. 访问 http://172.30.254.14/
+1. 访问 http://172.16.254.106/
 2. 登录管理员账号
 3. 新建主翻译任务并上传一个最小视频
 4. 确认任务可跑到 export，能预览、能下载、能重跑
@@ -1061,7 +1061,7 @@ Run:
 
 ```text
 切换：
-1. 明确团队开始统一使用 http://172.30.254.14/
+1. 明确团队开始统一使用 http://172.16.254.106/
 2. 远程旧服务器不删除、不改库，仅停止作为正式写入入口
 3. 连续观察 Cockpit、journalctl、MySQL 连接数、磁盘写入
 

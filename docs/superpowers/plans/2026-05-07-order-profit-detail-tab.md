@@ -969,14 +969,14 @@ If no changes are needed, do not create an empty commit.
 
 - [ ] **Step 1: Use test environment only when user asks for test release or verification**
 
-Do not connect to Windows local MySQL. If real data verification is requested, use the project test environment described in `AGENTS.md`: `http://172.30.254.14:8080/`.
+Do not connect to Windows local MySQL. If real data verification is requested, use the project test environment described in `AGENTS.md`: `http://172.16.254.106:8080/`.
 
 - [ ] **Step 2: Browser check**
 
 After code is deployed to the test environment, open:
 
 ```text
-http://172.30.254.14:8080/order-analytics
+http://172.16.254.106:8080/order-analytics
 ```
 
 Expected:
@@ -992,7 +992,7 @@ Expected:
 Request:
 
 ```text
-GET http://172.30.254.14:8080/order-analytics/realtime-overview
+GET http://172.16.254.106:8080/order-analytics/realtime-overview
 ```
 
 Expected response includes:

@@ -1222,7 +1222,7 @@ def _provider_config_values(provider: str) -> tuple[str, str]:
 def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str]:
     normalized = (provider or "").strip()
     if normalized in {"", "local", "local_image_2"}:
-        api_base = base_url or "http://172.30.254.14:82/v1"
+        api_base = base_url or "http://172.16.254.106:82/v1"
         return f"{api_base.rstrip('/')}/images/edits", "multipart/form-data"
     if normalized == "openrouter":
         api_base = base_url or "https://openrouter.ai/api/v1"

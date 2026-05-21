@@ -18,10 +18,10 @@
 - 本地 CDP 调试端口：`http://127.0.0.1:9845`。
 - Meta ad account：`2110407576446225`。
 - Meta business：`476723373113063`。
-- 线上服务器：`172.30.254.14`。
+- 线上服务器：`172.16.254.106`。
 - 线上 Web 目录：`/opt/autovideosrt`。
 - 线上数据库：`auto_video`。
-- 线上页面：[http://172.30.254.14/order-analytics](http://172.30.254.14/order-analytics)。
+- 线上页面：[http://172.16.254.106/order-analytics](http://172.16.254.106/order-analytics)。
 - SSH key：`C:\Users\admin\.ssh\CC.pem`。
 
 注意：这套流程已经确认是导入线上环境，不是测试环境。测试环境目录是 `/opt/autovideosrt-test`，数据库是 `auto_video_test`，不要误用。
@@ -73,7 +73,7 @@ WHERE ad_account_id='2110407576446225'
   AND report_date BETWEEN '2026-01-01' AND '2026-02-28'
 GROUP BY report_date
 ORDER BY report_date;
-'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "mysql -N -B auto_video"
+'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "mysql -N -B auto_video"
 ```
 
 如果某一天已经有数据，就不要再导那一天。导出脚本会跳过本地已有 CSV，但真正避重以线上 DB 查询为准。
@@ -148,11 +148,11 @@ DONE attempted 118 failures []
 ## 第三步：上传 CSV 到服务器
 
 ```powershell
-ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "rm -rf /tmp/meta_ads_2026_01_02 && mkdir -p /tmp/meta_ads_2026_01_02"
+ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "rm -rf /tmp/meta_ads_2026_01_02 && mkdir -p /tmp/meta_ads_2026_01_02"
 
 scp -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no `
   G:\Code\AutoVideoSrtLocal\scratch\meta_ads_backfill_2026_01_02\*.csv `
-  root@172.30.254.14:/tmp/meta_ads_2026_01_02/
+  root@172.16.254.106:/tmp/meta_ads_2026_01_02/
 ```
 
 上传导入逻辑文件。若代码已经合并并发布到线上，可以直接用 `/opt/autovideosrt/appcore/order_analytics.py`；若还没合并，用当前 worktree 的文件上传到 `/tmp`：
@@ -160,13 +160,13 @@ scp -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no `
 ```powershell
 scp -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no `
   G:\Code\AutoVideoSrtLocal\.worktrees\meta-daily-ad-import\appcore\order_analytics.py `
-  root@172.30.254.14:/tmp/order_analytics_daily.py
+  root@172.16.254.106:/tmp/order_analytics_daily.py
 ```
 
 确认上传数量：
 
 ```powershell
-ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "find /tmp/meta_ads_2026_01_02 -maxdepth 1 -name '*.csv' | wc -l"
+ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "find /tmp/meta_ads_2026_01_02 -maxdepth 1 -name '*.csv' | wc -l"
 ```
 
 ## 第四步：导入线上库
@@ -258,7 +258,7 @@ print(json.dumps({
 '@
 
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-$encoded | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "cd /opt/autovideosrt && base64 -d -i | /opt/autovideosrt/venv/bin/python -"
+$encoded | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "cd /opt/autovideosrt && base64 -d -i | /opt/autovideosrt/venv/bin/python -"
 ```
 
 重要：`source_utc_offset_minutes=-480` 是当前导入时使用的 Meta 源日期偏移。导出 URL 本身按 Meta Ads Manager 的日历日期查询，入库保留 `report_date`。不要在没有用户确认的情况下把 Meta 日历日重新按小时切分。
@@ -285,7 +285,7 @@ SELECT DATE_FORMAT(report_date, '%Y-%m') AS ym, COUNT(DISTINCT report_date) AS d
 FROM meta_ad_daily_ad_metrics
 WHERE ad_account_id='2110407576446225' AND report_date BETWEEN '2026-01-01' AND '2026-02-28'
 GROUP BY ym ORDER BY ym;
-'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "mysql -N -B auto_video"
+'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "mysql -N -B auto_video"
 ```
 
 检查产品匹配/未匹配金额：
@@ -296,7 +296,7 @@ SELECT IF(product_id IS NULL,'unmatched','matched') AS product_status, COUNT(*) 
 FROM meta_ad_daily_campaign_metrics
 WHERE ad_account_id='2110407576446225' AND report_date BETWEEN '2026-01-01' AND '2026-02-28'
 GROUP BY product_status;
-'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "mysql -N -B auto_video"
+'@ | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "mysql -N -B auto_video"
 ```
 
 检查产品看板函数能读到数据：
@@ -330,10 +330,10 @@ print(json.dumps(out, ensure_ascii=False, default=str))
 '@
 
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-$encoded | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 "cd /opt/autovideosrt && base64 -d -i | /opt/autovideosrt/venv/bin/python -"
+$encoded | ssh -i C:\Users\admin\.ssh\CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 "cd /opt/autovideosrt && base64 -d -i | /opt/autovideosrt/venv/bin/python -"
 ```
 
-页面入口：[http://172.30.254.14/order-analytics](http://172.30.254.14/order-analytics)
+页面入口：[http://172.16.254.106/order-analytics](http://172.16.254.106/order-analytics)
 
 看“产品看板”，选择对应年月。注意“广告分析”tab 仍是旧的手工上传视图，不是这套 daily import 的主要查看入口。
 

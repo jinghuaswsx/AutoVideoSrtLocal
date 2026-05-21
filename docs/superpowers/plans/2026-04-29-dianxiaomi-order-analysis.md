@@ -1269,10 +1269,10 @@ Expected:
 
 - [ ] **Step 2: Prepare server validation checklist**
 
-Use this checklist after code is deployed to the test environment `http://172.30.254.14:8080/`:
+Use this checklist after code is deployed to the test environment `http://172.16.254.106:8080/`:
 
 ```text
-1. Open http://172.30.254.14:8080/order-analytics as admin.
+1. Open http://172.16.254.106:8080/order-analytics as admin.
 2. Confirm tabs show 国家看板, Shopify 订单导入, Shopify 订单分析, 订单分析.
 3. Open 国家看板 and switch 月 / 周 / 日.
 4. Confirm countries are ordered by 订单量 descending.
@@ -1281,4 +1281,4 @@ Use this checklist after code is deployed to the test environment `http://172.30
 7. Open 产品看板 and confirm first load is ordered by 订单 descending.
 ```
 
-Do not touch production `http://172.30.254.14/` unless the user explicitly asks for a production release.
+Do not touch production `http://172.16.254.106/` unless the user explicitly asks for a production release.

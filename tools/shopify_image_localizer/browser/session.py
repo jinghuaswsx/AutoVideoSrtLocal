@@ -311,7 +311,7 @@ def _build_base_args(
             args.append(f"--window-size={window_size}")
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
-        args.append("--proxy-bypass-list=127.0.0.1;localhost;172.30.254.14;<local>")
+        args.append("--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>")
     if load_extension:
         ext_dir = _resolve_bundled_extension_dir()
         if ext_dir:

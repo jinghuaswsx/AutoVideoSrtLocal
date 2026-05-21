@@ -351,8 +351,8 @@ def shutdown_scheduler(wait: bool = False) -> None:
   - 探针返回的 `items` 反映当前 `_active_tasks`。
 
 **集成测试（手工，测试环境）**
-1. 在测试环境（172.30.254.14:8080）启动一个 multi_translate 50 段任务。
-2. 等到 step=`tts` 跑到一半（第 10-15 段），`ssh root@172.30.254.14 "systemctl restart autovideosrt-test.service"`。
+1. 在测试环境（172.16.254.106:8080）启动一个 multi_translate 50 段任务。
+2. 等到 step=`tts` 跑到一半（第 10-15 段），`ssh root@172.16.254.106 "systemctl restart autovideosrt-test.service"`。
 3. 验证：
    - `journalctl -u autovideosrt-test -n 100 --no-pager`：无 `SIGKILL` / `signal 9` / `process didn't exit`。
    - 重启总耗时 ≤ 60s（实际看 `systemd-analyze stop autovideosrt-test`）。
@@ -479,7 +479,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 
 ### 8.1 阶段 1 验收（完整）
 
-**测试环境**（172.30.254.14:8080，admin: testuser.md 凭据）
+**测试环境**（172.16.254.106:8080，admin: testuser.md 凭据）
 
 - [ ] `pytest tests/test_shutdown_coordinator.py tests/test_runner_lifecycle_cancellable.py tests/test_admin_runtime_routes.py -q` 全绿。
 - [ ] 测试环境跑 multi_translate 50 段任务，途中 `systemctl restart autovideosrt-test.service`：
@@ -491,7 +491,7 @@ def shutdown_scheduler(wait: bool = False) -> None:
 - [ ] APScheduler jobs 在重启前后 `apscheduler.events` 计数一致；下一次 cleanup tick 不延迟。
 - [ ] 探针接口 `curl -s http://127.0.0.1:8080/admin/runtime/active-tasks` 在重启前能列出活跃任务，重启后返回空。
 
-**线上**（172.30.254.14）
+**线上**（172.16.254.106）
 
 - [ ] 灰度发布完成后 24 小时无 `SIGKILL` 日志。
 - [ ] 24 小时内主动跑 ≥ 1 次重启演练，确认验收点全过。
