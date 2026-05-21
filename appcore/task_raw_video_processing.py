@@ -49,13 +49,14 @@ def start_niuma_processing_for_parent_task(
     subtitle_task_id = _new_subtitle_task_id(int(task_id))
     task_dir = _task_dir(subtitle_task_id)
     filename = os.path.basename(str(payload.get("filename") or "source.mp4"))
+    subtitle_source_path = _prepare_subtitle_source_copy(source_path, task_dir, filename)
     public_key = subtitle_removal_source_storage.build_public_source_object_key(
         actor_user_id,
         subtitle_task_id,
         filename,
     )
     public_backend = subtitle_removal_source_storage.upload_public_source(
-        str(source_path),
+        str(subtitle_source_path),
         public_key,
     )
     source_object_info = subtitle_removal_source_storage.with_public_source_info(
@@ -67,14 +68,14 @@ def start_niuma_processing_for_parent_task(
         {
             "original_filename": filename,
             "storage_backend": public_backend,
-            "file_size": source_path.stat().st_size,
+            "file_size": subtitle_source_path.stat().st_size,
             "uploaded_at": datetime.now().isoformat(timespec="seconds"),
         }
     )
 
     task_state.create_subtitle_removal(
         subtitle_task_id,
-        str(source_path),
+        str(subtitle_source_path),
         task_dir,
         original_filename=filename,
         user_id=actor_user_id,
@@ -236,6 +237,16 @@ def _resolve_media_item_path(object_key: str) -> Path:
         pass
     upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
     return Path(upload_dir) / str(object_key or "")
+
+
+def _prepare_subtitle_source_copy(source_path: Path, task_dir: str, filename: str) -> Path:
+    task_path = Path(task_dir)
+    task_path.mkdir(parents=True, exist_ok=True)
+    suffix = Path(filename or source_path.name).suffix or source_path.suffix or ".mp4"
+    destination = task_path / f"source{suffix}"
+    if source_path.resolve(strict=False) != destination.resolve(strict=False):
+        shutil.copyfile(source_path, destination)
+    return destination
 
 
 def _probe_media_info(source_path: Path) -> dict:
