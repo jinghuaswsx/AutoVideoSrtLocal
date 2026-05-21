@@ -173,6 +173,8 @@ def api_list():
         pass
     else:
         return _json_response({"error": "invalid tab"}, 400)
+    if bucket == "all":
+        bucket = ""
     if bucket and bucket not in {"todo", "review", "done"}:
         return _json_response({"error": "invalid bucket"}, 400)
 
@@ -611,6 +613,31 @@ def api_child_readiness(tid: int):
     except tasks_svc.StateError as exc:
         return _json_response({"error": str(exc)}, 404)
     return _json_response(payload)
+
+
+@bp.route("/api/child/<int:tid>/steps/<step_key>/confirm", methods=["POST"])
+@login_required
+def api_child_step_confirm(tid: int, step_key: str):
+    """人工兜底确认某个子任务验收步骤已完成。"""
+    try:
+        result = tasks_svc.confirm_child_step(
+            task_id=tid,
+            step_key=step_key,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, 403)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    _audit_task_action(
+        tid,
+        "task_child_step_confirmed",
+        {"step_key": result["step_key"]},
+    )
+    return _json_response({"ok": True, "step_key": result["step_key"]})
 
 
 @bp.route("/api/<int:tid>/artifacts", methods=["GET"])

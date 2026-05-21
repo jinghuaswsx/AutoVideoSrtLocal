@@ -563,14 +563,14 @@ def _parse_state(raw_state: dict | str | None) -> dict:
 
 def _status_label(status: str, *, waiting_voice_count: int = 0) -> str:
     if status == "waiting_manual" and waiting_voice_count:
-        return "等待选声音"
+        return "等待人工选声音"
     return {
         "planning": "待启动",
         "pending": "待执行",
         "dispatching": "排队创建中",
         "running": "执行中",
         "syncing_result": "同步结果中",
-        "awaiting_voice": "等待选声音",
+        "awaiting_voice": "等待人工选声音",
         "waiting_manual": "等待人工处理",
         "failed": "失败",
         "error": "失败",

@@ -64,9 +64,20 @@ def index():
 @bp.route("/api/list", methods=["GET"])
 @login_required
 def api_list():
+    bucket = (request.args.get("bucket") or "overview").strip()
+    if bucket not in {"overview", "todo", "review", "done"}:
+        return {"error": "invalid_bucket"}, 400
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+        page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
+    except ValueError:
+        return {"error": "invalid_pagination"}, 400
     result = rvp_svc.list_visible_tasks(
         viewer_user_id=int(current_user.id),
         viewer_role=_viewer_role(),
+        bucket=bucket,
+        page=page,
+        page_size=page_size,
     )
     return raw_video_pool_flask_response(build_raw_video_pool_list_response(result))
 

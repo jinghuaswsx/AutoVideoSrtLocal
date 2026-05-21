@@ -400,6 +400,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert "ORDER BY t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
@@ -530,34 +531,44 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
     monkeypatch.setattr(tasks, "_find_target_lang_item", lambda product_id, lang: None)
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
 
-    assert tasks.get_child_readiness(44) == {
-        "ready": False,
-        "missing": ["lang_item_missing"],
-        "country_code": "DE",
-        "product_code": "robot-kit-rjc",
-        "media_search_url": (
-            "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
-        ),
-        "readiness": {},
-        "checks": [
-            {
-                "key": "localized_media_item",
-                "label": "目标语种素材",
-                "ok": False,
-                "required": True,
-                "reason": "未找到该语种 media_item",
-                "actions": [
-                    {
-                        "label": "去生成/绑定素材",
-                        "url": "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate",
-                        "kind": "locate",
-                        "primary": True,
-                    }
-                ],
-            }
-        ],
-    }
+    payload = tasks.get_child_readiness(44)
+
+    assert payload["ready"] is False
+    assert payload["missing"] == [
+        "lang_item_missing",
+        "translated_video",
+        "translated_cover",
+        "translated_copywriting",
+        "push_texts",
+        "product_listed",
+        "language_supported",
+        "detail_images",
+        "shopify_images",
+        "product_links",
+    ]
+    assert payload["country_code"] == "DE"
+    assert payload["product_code"] == "robot-kit-rjc"
+    assert payload["media_search_url"] == (
+        "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+    )
+    assert payload["readiness"] == {}
+    assert payload["manual_confirmed_steps"] == []
+    assert [check["key"] for check in payload["checks"]] == [
+        "localized_media_item",
+        "translated_video",
+        "translated_cover",
+        "translated_copywriting",
+        "push_texts",
+        "product_listed",
+        "language_supported",
+        "detail_images",
+        "shopify_images",
+        "product_links",
+    ]
+    assert payload["checks"][0]["reason"] == "未找到该语种 media_item"
+    assert all(check["manual_upload_url"].startswith("/medias/?") for check in payload["checks"])
     assert "FROM tasks t" in captured["sql"]
     assert "parent_task_id IS NOT NULL" in captured["sql"]
     assert captured["args"] == (44,)
@@ -669,6 +680,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         lambda *args, **kwargs: "img-1",
         raising=False,
     )
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
     monkeypatch.setattr(
         tasks,
         "_detail_image_preview_rows",
@@ -802,6 +814,73 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "shopify_images",
         "product_links",
     ]
+
+
+def test_get_child_readiness_applies_manual_step_confirmations(monkeypatch):
+    from appcore import pushes, tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "media_product_id": 9,
+            "country_code": "DE",
+            "product_code": "robot-kit-rjc",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 5,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": "robot-kit-de.mp4",
+            "object_key": "1/medias/9/robot-kit-de.mp4",
+        },
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: {"translated_cover"})
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": False,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
+    monkeypatch.setattr(tasks, "_copywriting_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_shopify_image_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_product_link_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_recent_copywriting_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_recent_detail_image_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_detail_image_preview_rows", lambda *args, **kwargs: [])
+
+    payload = tasks.get_child_readiness(44)
+    checks = {check["key"]: check for check in payload["checks"]}
+
+    assert payload["ready"] is True
+    assert payload["missing"] == []
+    assert payload["manual_confirmed_steps"] == ["translated_cover"]
+    assert checks["translated_cover"]["ok"] is True
+    assert checks["translated_cover"]["system_ok"] is False
+    assert checks["translated_cover"]["manual_confirmed"] is True
+    assert "人工确认完成" in checks["translated_cover"]["reason"]
 
 
 def test_list_task_artifacts_includes_direct_actions(monkeypatch):

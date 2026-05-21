@@ -577,10 +577,6 @@ def _handle_bindings_post() -> None:
         llm_bindings.delete(restore)
         return
 
-    set_voice_ai_auto_select_enabled(
-        request.form.get("voice_ai_auto_select_enabled") in ("1", "on", "true", "yes")
-    )
-
     for code in USE_CASES:
         if code in HIDDEN_BINDING_CODES:
             continue
@@ -713,6 +709,9 @@ def _handle_audio_separation_post() -> None:
 
 def _handle_omni_preset_post() -> None:
     """Omni preset tab also hosts isolated English redub runtime switches."""
+    set_voice_ai_auto_select_enabled(
+        request.form.get("voice_ai_auto_select_enabled") in ("1", "on", "true", "yes")
+    )
     english_redub_settings.set_voice_match_strategy(
         request.form.get("english_redub_voice_match_strategy")
     )

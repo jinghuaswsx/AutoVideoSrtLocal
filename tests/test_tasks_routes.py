@@ -26,6 +26,17 @@ def test_task_center_renders_backend_product_actions(authed_client_no_db):
     assert "it.actions" in body
 
 
+def test_task_detail_child_readiness_renders_manual_fallback_buttons(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcRenderReadinessManualActions" in body
+    assert "手动传素材" in body
+    assert "确认完成" in body
+    assert "tcConfirmChildStep" in body
+    assert "/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm" in body
+
+
 def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -75,7 +86,7 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
     assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
-    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th>" in body
+    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
 def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
@@ -203,6 +214,25 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "page_size": 100,
         "task_id": 44,
     }
+
+
+def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&bucket=all")
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == ""
 
 
 def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
@@ -1017,9 +1047,14 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
     assert 'data-section-tab="overview"' in body
+    assert "let TC_CURRENT_BUCKET = 'all';" in body
+    assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
+    assert '>任务总览</button>' in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
     assert 'data-bucket="done"' in body
+    assert "<th>创建时间</th>" in body
+    assert "<th>更新时间</th>" not in body
     assert "tcRender" in body  # JS bootstrapped
     assert "tcCreateRawProcessor" in body
     assert "原视频处理人" in body
@@ -1156,5 +1191,69 @@ def test_child_readiness_maps_missing_child_to_404(authed_client_no_db, monkeypa
 
     rsp = authed_client_no_db.get("/tasks/api/child/44/readiness")
 
+    assert rsp.status_code == 404
+    assert rsp.get_json() == {"error": "child task not found"}
+
+
+def test_child_step_confirm_route_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fake_confirm_child_step(**kwargs):
+        captured.update(kwargs)
+        return {"step_key": "detail_images"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.confirm_child_step",
+        fake_confirm_child_step,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/child/44/steps/detail_images/confirm")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True, "step_key": "detail_images"}
+    assert captured == {
+        "task_id": 44,
+        "step_key": "detail_images",
+        "actor_user_id": 1,
+        "is_admin": True,
+    }
+    assert audit_calls == [
+        (44, "task_child_step_confirmed", {"step_key": "detail_images"})
+    ]
+
+
+def test_child_step_confirm_route_maps_service_errors(authed_client_no_db, monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.confirm_child_step",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("unknown step")),
+        raising=False,
+    )
+    rsp = authed_client_no_db.post("/tasks/api/child/44/steps/bad_step/confirm")
+    assert rsp.status_code == 400
+    assert rsp.get_json() == {"error": "unknown step"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.confirm_child_step",
+        lambda **kwargs: (_ for _ in ()).throw(PermissionError("forbidden")),
+        raising=False,
+    )
+    rsp = authed_client_no_db.post("/tasks/api/child/44/steps/detail_images/confirm")
+    assert rsp.status_code == 403
+    assert rsp.get_json() == {"error": "forbidden"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.confirm_child_step",
+        lambda **kwargs: (_ for _ in ()).throw(tasks.StateError("child task not found")),
+        raising=False,
+    )
+    rsp = authed_client_no_db.post("/tasks/api/child/44/steps/detail_images/confirm")
     assert rsp.status_code == 404
     assert rsp.get_json() == {"error": "child task not found"}
