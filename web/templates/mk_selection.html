@@ -227,6 +227,8 @@
 .mki-btn:hover:not(:disabled) { background: var(--oc-accent-hover); }
 .mki-btn--xiao { background: oklch(60% 0.16 160); border-color: oklch(55% 0.15 155); color: #fff; }
 .mki-btn--xiao:hover:not(:disabled) { background: oklch(50% 0.14 155); }
+.mki-ai-btn { background: oklch(58% 0.14 255); border-color: oklch(52% 0.13 255); color: #fff; }
+.mki-ai-btn:hover:not(:disabled) { background: oklch(48% 0.14 255); }
 .mki-btn:disabled, .mki-btn--disabled {
   background: var(--oc-bg-muted); color: var(--oc-fg-muted);
   cursor: not-allowed; border-color: var(--oc-border);
@@ -356,17 +358,22 @@
 .mki-xiao-lang-check {
   position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }
-.mki-xiao-lang-pill span {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 58px; height: 38px;
-  padding: 0 16px; border: 1.5px solid var(--oc-border-strong); border-radius: 9999px;
-  background: #fff; color: var(--oc-fg); font-size: 14px; font-weight: 800; line-height: 1;
+.mki-xiao-lang-pill-box {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 74px; min-height: 50px; padding: 7px 14px; border: 1.5px solid var(--oc-border-strong);
+  border-radius: 9999px; background: #fff; color: var(--oc-fg);
   transition: background 120ms, border-color 120ms, color 120ms;
 }
-.mki-xiao-lang-pill:hover span { border-color: var(--oc-accent); color: var(--oc-accent); }
-.mki-xiao-lang-check:checked + span {
+.mki-xiao-lang-main { font-size: 14px; font-weight: 800; line-height: 1.1; }
+.mki-xiao-ai-suggestion { font-size: 10px; font-weight: 700; line-height: 1.1; color: var(--oc-fg-muted); white-space: nowrap; }
+.mki-xiao-ai-suggestion.good { color: var(--oc-success-fg); }
+.mki-xiao-ai-suggestion.bad { color: var(--oc-danger); }
+.mki-xiao-lang-pill:hover .mki-xiao-lang-pill-box { border-color: var(--oc-accent); color: var(--oc-accent); }
+.mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box {
   background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
 }
-.mki-xiao-lang-check:focus-visible + span {
+.mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box .mki-xiao-ai-suggestion { color: rgba(255,255,255,.88); }
+.mki-xiao-lang-check:focus-visible + .mki-xiao-lang-pill-box {
   outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
 }
 .mki-xiao-status {
@@ -390,7 +397,7 @@
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
   .mki-xiao-dialog { padding: 22px; }
-  .mki-xiao-lang-pill span { min-width: 52px; height: 36px; padding: 0 14px; }
+  .mki-xiao-lang-pill-box { min-width: 64px; min-height: 46px; padding: 6px 12px; }
 }
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
@@ -521,6 +528,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <div id="detailContent" style="padding:20px 24px; overflow-y:auto; max-height:calc(94vh - 60px);">加载中...</div>
 </div>
 
+<script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script>
 const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
@@ -1161,6 +1169,16 @@ function renderMkVideoMaterialCard(r) {
         onclick="mkiXiaoCreateFromImportedMaterial(this)">
       创建小语种翻译任务
     </button>
+    <button class="mki-btn mki-ai-btn"
+        ${existingProductId ? '' : 'disabled'}
+        title="${existingProductId ? '打开 AI 评估请求与结果' : '先加入素材库后才能进行 AI 评估'}"
+        data-mki-ai-product-id="${escapeHtml(existingProductId || '')}"
+        data-mki-local-item-id="${escapeHtml(localItemId || '')}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        onclick="mkiAiEvaluateFromCard(this)">
+      AI评估
+    </button>
   </div>`;
 }
 
@@ -1297,6 +1315,16 @@ async function openDetail(mkId, mkName) {
             data-mki-local-item-id=""
             onclick="mkiXiaoCreateFromImportedMaterial(this)">
           创建小语种翻译任务
+        </button>
+        <button class="mki-btn mki-ai-btn"
+            disabled
+            title="先加入素材库后才能进行 AI 评估"
+            data-mki-ai-product-id=""
+            data-mki-local-item-id=""
+            data-mki-product-name="${escapeHtml(item.product_name || '')}"
+            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            onclick="mkiAiEvaluateFromCard(this)">
+          AI评估
         </button>
       </div>`;
     });
@@ -1457,6 +1485,189 @@ function mkiImportProgressOpenTasks() {
   mkiImportProgressOpenTab((tasksBtn && tasksBtn.dataset.href) || '/tasks/');
 }
 
+async function mkiFetchJson(url, options = {}) {
+  const resp = await fetch(url, options);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const message = data && (data.error || data.message || data.detail) || resp.statusText || '请求失败';
+    throw new Error(message);
+  }
+  return data;
+}
+
+function mkiAiProductEndpoint(productId, suffix, itemId, productLink) {
+  let url = `/medias/api/products/${encodeURIComponent(productId)}${suffix || ''}`;
+  const params = new URLSearchParams();
+  const numericItemId = Number(itemId || 0);
+  if (numericItemId > 0) params.set('media_item_id', String(numericItemId));
+  const sourceProductLink = String(productLink || '').trim();
+  if (sourceProductLink) params.set('product_link', sourceProductLink);
+  const query = params.toString();
+  if (query) url += `?${query}`;
+  return url;
+}
+
+function mkiAiParseDetail(raw) {
+  if (!raw) return null;
+  if (window.EvalCountryTable && typeof window.EvalCountryTable.parse === 'function') {
+    return window.EvalCountryTable.parse(raw);
+  }
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  }
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function mkiAiCountryRows(raw) {
+  const detail = mkiAiParseDetail(raw);
+  const countries = detail && Array.isArray(detail.countries) ? detail.countries : [];
+  return countries.filter(row => row && typeof row === 'object');
+}
+
+function mkiAiCountryIndex(raw) {
+  const index = {};
+  mkiAiCountryRows(raw).forEach(row => {
+    const code = String(row.lang || row.code || '').trim().toUpperCase();
+    if (code && !index[code]) index[code] = row;
+  });
+  return index;
+}
+
+function mkiAiSuggestionTitle(row) {
+  if (!row) return '当前还没有 AI 评估结果';
+  const score = row.score === undefined || row.score === null ? '-' : row.score;
+  const recommendation = row.recommendation || (row.is_suitable ? '做' : '不做');
+  const summary = row.summary || row.reason || '';
+  return `${row.country || row.lang || ''}：${recommendation}，评分 ${score}。${summary}`;
+}
+
+function mkiAiRenderRequestPreview(panel, preview, fullPayloadUrl) {
+  if (!panel) return;
+  if (!preview) {
+    panel.innerHTML = '<div class="ect-empty">正在加载请求数据、商品主图和视频素材...</div>';
+    return;
+  }
+  const media = preview.media || [];
+  const cover = media.find(item => item.role === 'product_cover') || {};
+  const video = media.find(item => item.role === 'english_video') || {};
+  const product = preview.product || {};
+  const llm = preview.llm || {};
+  const coverUrl = String(cover.preview_url || '').startsWith('/') ? cover.preview_url : '';
+  const videoUrl = String(video.preview_url || '').startsWith('/') ? video.preview_url : '';
+  const productUrl = String(product.product_url || '');
+  const safeProductUrl = /^https?:\/\//i.test(productUrl) ? productUrl : '';
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+      <button type="button" class="oc-btn oc-btn--primary" data-mki-ai-full-payload>完整请求报文</button>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:16px;align-items:start;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求素材</h4>
+        <div style="width:180px;height:180px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${coverUrl ? `<img src="${escapeHtml(coverUrl)}" alt="商品主图" style="width:100%;height:100%;object-fit:contain;">` : '暂无主图'}
+        </div>
+        <div style="width:180px;margin-top:10px;color:var(--oc-fg-muted);font-size:12px;line-height:1.4;word-break:break-word;">${escapeHtml(video.filename || video.object_key || '暂无视频')}</div>
+        <div style="width:180px;height:320px;margin-top:8px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${videoUrl ? `<video controls preload="metadata" src="${escapeHtml(videoUrl)}" style="width:100%;height:100%;object-fit:contain;"></video>` : '暂无视频'}
+        </div>
+      </div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求关键字段</h4>
+        <dl style="display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px 10px;margin:0;font-size:13px;line-height:1.5;">
+          <dt style="color:var(--oc-fg-muted);">商品链接</dt><dd style="margin:0;word-break:break-word;">${safeProductUrl ? `<a href="${escapeHtml(safeProductUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productUrl)}</a>` : escapeHtml(productUrl || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">商品主图</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(cover.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">视频素材</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(video.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">语种国家</dt><dd style="margin:0;">${escapeHtml((preview.languages || []).map(lang => `${lang.country || lang.name}(${String(lang.code || '').toUpperCase()})`).join('、') || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Provider</dt><dd style="margin:0;">${escapeHtml(llm.provider || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Model</dt><dd style="margin:0;">${escapeHtml(llm.model || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">UseCase</dt><dd style="margin:0;">${escapeHtml(llm.use_case || '-')}</dd>
+        </dl>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">User Prompt</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml((preview.prompts || {}).user || '')}</pre></div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">Response Schema / Request JSON</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml(JSON.stringify({schema: preview.response_schema || {}, request: preview.request || {}}, null, 2))}</pre></div>
+    </div>`;
+  const fullBtn = panel.querySelector('[data-mki-ai-full-payload]');
+  if (fullBtn) fullBtn.addEventListener('click', () => mkiAiOpenFullPayload(fullPayloadUrl || preview.full_payload_url));
+}
+
+async function mkiAiOpenFullPayload(url) {
+  if (!url || !window.EvalCountryTable) return;
+  const shell = window.EvalCountryTable.openModal('', {title: '完整请求报文'});
+  const body = shell.body;
+  body.innerHTML = '<div class="ect-empty">正在加载完整请求报文...</div>';
+  try {
+    const data = await mkiFetchJson(url);
+    body.innerHTML = `<pre class="ect-modal-json">${escapeHtml(JSON.stringify(data.payload || data, null, 2))}</pre>`;
+  } catch (e) {
+    body.innerHTML = `<div class="ect-empty">完整报文加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiEvaluateFromCard(btn) {
+  const productId = Number(btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
+  const itemId = Number(btn?.dataset.mkiLocalItemId || 0);
+  const productLink = String(btn?.dataset.mkiProductLink || '').trim();
+  if (!productId) {
+    mkiToast('warning', '先加入素材库后才能进行 AI 评估');
+    return;
+  }
+  if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
+    mkiToast('error', 'AI 评估弹窗组件未加载');
+    return;
+  }
+  const title = btn?.dataset.mkiProductName ? `AI评估 - ${btn.dataset.mkiProductName}` : 'AI评估';
+  const shell = window.EvalCountryTable.openModal('', {title, withRequestTab: true});
+  if (shell.setActiveTab) shell.setActiveTab('request');
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在等待大模型返回结构化结果...</div>';
+  const previewUrl = mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink);
+  const runUrl = mkiAiProductEndpoint(productId, '/evaluate', 0, '');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '请求中...';
+  try {
+    mkiAiRenderRequestPreview(shell.requestPanel, null, '');
+    const preview = await mkiFetchJson(previewUrl);
+    mkiAiRenderRequestPreview(shell.requestPanel, preview.payload || null, (preview.payload || {}).full_payload_url);
+  } catch (e) {
+    if (shell.requestPanel) shell.requestPanel.innerHTML = `<div class="ect-empty">请求数据加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+  try {
+    const data = await mkiFetchJson(runUrl, {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({
+        ...(itemId > 0 ? {media_item_id: itemId} : {}),
+        ...(productLink ? {product_link: productLink} : {}),
+      }),
+    });
+    let product = null;
+    try {
+      const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(productId)}`);
+      product = fresh.product || null;
+    } catch (_) {}
+    const detail = product && product.ai_evaluation_detail
+      || data?.result?.detail
+      || data?.result?.ai_evaluation_detail
+      || data?.detail
+      || data?.result
+      || data;
+    if (shell.resultPanel) {
+      shell.resultPanel.innerHTML = window.EvalCountryTable.render(detail);
+    }
+    if (shell.setActiveTab) shell.setActiveTab('result');
+    if (product && product.ai_evaluation_detail) mkiXiaoApplyAiSuggestions(product.ai_evaluation_detail);
+    btn.textContent = '已完成';
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1200);
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">评估失败：${escapeHtml(e.message || e)}</div>`;
+    if (shell.setActiveTab) shell.setActiveTab('result');
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
 function mkiEnsureImportedStatusIcon(card) {
   if (!card || card.querySelector('.mk-status-icon--video')) return;
   let cluster = card.querySelector('.mk-video-status-icons');
@@ -1488,14 +1699,22 @@ function mkiEnableSmallLangButtonForImported(addBtn, data) {
   const card = addBtn && (addBtn.closest('.mk-video-card') || addBtn.closest('.mki-detail-video-card'));
   if (!card || !data) return;
   const xiaoBtn = card.querySelector('.mki-btn--xiao');
-  if (!xiaoBtn) return;
   const productId = Number(data.media_product_id || data.product_id || 0);
   const itemId = Number(data.media_item_id || data.item_id || 0);
   if (!productId || !itemId) return;
-  xiaoBtn.dataset.mkiLocalProductId = String(productId);
-  xiaoBtn.dataset.mkiLocalItemId = String(itemId);
-  xiaoBtn.disabled = false;
-  xiaoBtn.title = '创建小语种翻译任务';
+  if (xiaoBtn) {
+    xiaoBtn.dataset.mkiLocalProductId = String(productId);
+    xiaoBtn.dataset.mkiLocalItemId = String(itemId);
+    xiaoBtn.disabled = false;
+    xiaoBtn.title = '创建小语种翻译任务';
+  }
+  const aiBtn = card.querySelector('.mki-ai-btn');
+  if (aiBtn) {
+    aiBtn.dataset.mkiAiProductId = String(productId);
+    aiBtn.dataset.mkiLocalItemId = String(itemId);
+    aiBtn.disabled = false;
+    aiBtn.title = '打开 AI 评估请求与结果';
+  }
 }
 
 function mkiMarkImportedFilename(filename) {
@@ -1617,6 +1836,7 @@ let mkiImportProgressItemId = null;
 let mkiImportProgressProductOwnerId = null;
 let mkiImportProgressTaskId = null;
 let mkiImportProgressDomainOptions = [];
+let mkiImportProgressProductLink = null;
 
 function mkiImportProgressStatusText(status) {
   return {
@@ -1693,6 +1913,7 @@ function mkiImportProgressOpen(meta) {
   mkiImportProgressProductOwnerId = null;
   mkiImportProgressTaskId = null;
   mkiImportProgressDomainOptions = [];
+  mkiImportProgressProductLink = String(meta.product_link || '').trim() || null;
   mkiProductOwnerResolve = null;
   const ownerPanel = document.getElementById('mkiImportProgressProductOwner');
   if (ownerPanel) ownerPanel.hidden = true;
@@ -2037,7 +2258,11 @@ async function mkiImportProgressCreateSmallLangTask() {
     return;
   }
   const endpoint = '/tasks/api/parent';
-  const selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
+  const selection = await mkiXiaoOpenModal({
+    title: '创建小语种翻译任务',
+    endpoint: endpoint,
+    productId: mkiImportProgressProductId
+  });
   if (!selection) return;
   if (!selection.countries.length) {
     mkiToast('error', '请至少勾选一个国家');
@@ -2061,6 +2286,7 @@ async function mkiImportProgressCreateSmallLangTask() {
       body: JSON.stringify({
         media_product_id: mkiImportProgressProductId,
         media_item_id: mkiImportProgressItemId,
+        product_link: mkiImportProgressProductLink || null,
         translator_id: selection.translatorId,
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
@@ -2181,6 +2407,8 @@ let mkiXiaoRawProcessorsCache = null;
 let mkiXiaoLangsCache = null;
 let mkiXiaoLockTranslator = false;
 let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
+let mkiXiaoAiProductId = null;
+const MKI_AI_SUGGESTION_CACHE = new Map();
 
 function mkiXiaoLangCode(lang) {
   if (lang && typeof lang === 'object') {
@@ -2210,6 +2438,54 @@ function mkiXiaoLangLabel(lang) {
     FI: '芬兰语'
   }[code];
   return fallback ? fallback + ' (' + code + ')' : code;
+}
+
+function mkiXiaoAiSuggestionElement(code) {
+  return document.querySelector(`#mkiXiaoLangs [data-mki-ai-lang="${code}"]`);
+}
+
+function mkiXiaoApplyAiSuggestions(detail, state = '') {
+  const countryIndex = mkiAiCountryIndex(detail);
+  document.querySelectorAll('#mkiXiaoLangs .mki-xiao-lang-pill-box').forEach(box => {
+    const code = String(box.dataset.mkiAiLang || '').toUpperCase();
+    const small = box.querySelector('.mki-xiao-ai-suggestion');
+    if (!small) return;
+    const row = countryIndex[code];
+    small.classList.remove('good', 'bad');
+    if (row) {
+      const recommended = row.recommendation === '做' || row.is_suitable === true;
+      small.textContent = 'AI建议：' + (recommended ? '✅' : '❌');
+      small.classList.add(recommended ? 'good' : 'bad');
+      box.title = mkiAiSuggestionTitle(row);
+    } else if (state === 'loading') {
+      small.textContent = 'AI建议：加载中';
+      box.title = '正在加载 AI 评估结果';
+    } else {
+      small.textContent = 'AI建议：暂无';
+      box.title = '当前还没有 AI 评估结果';
+    }
+  });
+}
+
+async function mkiXiaoLoadAiSuggestions(productId) {
+  const pid = Number(productId || 0);
+  if (!pid) {
+    mkiXiaoApplyAiSuggestions(null);
+    return;
+  }
+  if (MKI_AI_SUGGESTION_CACHE.has(pid)) {
+    mkiXiaoApplyAiSuggestions(MKI_AI_SUGGESTION_CACHE.get(pid));
+    return;
+  }
+  mkiXiaoApplyAiSuggestions(null, 'loading');
+  try {
+    const data = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(pid)}`);
+    const detail = data && data.product ? data.product.ai_evaluation_detail : null;
+    MKI_AI_SUGGESTION_CACHE.set(pid, detail || null);
+    mkiXiaoApplyAiSuggestions(detail || null);
+  } catch (e) {
+    mkiXiaoApplyAiSuggestions(null);
+  }
 }
 
 function mkiXiaoSetStatus(kind, html) {
@@ -2305,6 +2581,7 @@ function mkiXiaoRequestError(endpoint, rsp, data) {
 async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoLockTranslator = !!options.lockTranslator;
   mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
+  mkiXiaoAiProductId = Number(options.productId || options.aiProductId || 0) || null;
   // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
@@ -2348,8 +2625,17 @@ async function mkiXiaoOpenModal(options = {}) {
     var label = mkiXiaoLangLabel(l);
     if (!code) return '';
     return '<label class="mki-xiao-lang-pill">'
-      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"><span>' + escapeHtml(label) + '</span></label>';
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '">'
+      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="当前还没有 AI 评估结果">'
+      + '<span class="mki-xiao-lang-main">' + escapeHtml(label) + '</span>'
+      + '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>'
+      + '</span></label>';
   }).join('');
+  if (mkiXiaoAiProductId) {
+    mkiXiaoLoadAiSuggestions(mkiXiaoAiProductId);
+  } else {
+    mkiXiaoApplyAiSuggestions(null);
+  }
 
   mkiXiaoHideStatus();
   mkiXiaoSetBusy(false);
@@ -2400,7 +2686,11 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     return;
   }
   var endpoint = '/tasks/api/parent';
-  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
+  var selection = await mkiXiaoOpenModal({
+    title: '创建小语种翻译任务',
+    endpoint: endpoint,
+    productId: productId
+  });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
   if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
@@ -2416,6 +2706,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
       body: JSON.stringify({
         media_product_id: productId,
         media_item_id: itemId,
+        product_link: btn.dataset.mkiProductLink || null,
         translator_id: selection.translatorId,
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
@@ -2440,7 +2731,11 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
 
 async function mkiXiaoHandleClick(btn) {
   var endpoint = '/tasks/api/import-and-create';
-  var selection = await mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint});
+  var selection = await mkiXiaoOpenModal({
+    title: '创建小语种翻译任务',
+    endpoint: endpoint,
+    productId: Number(btn.dataset.mkiLocalProductId || btn.dataset.mkiAiProductId || 0)
+  });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
   if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }

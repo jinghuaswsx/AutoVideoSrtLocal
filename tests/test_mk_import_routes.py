@@ -102,25 +102,54 @@ def test_mk_import_video_returns_service_result(authed_client_no_db, monkeypatch
     from web.routes import mk_import as route
 
     captured = {}
+    evaluation_calls = []
     warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
 
     def fake_import_mk_video(**kwargs):
         captured.update(kwargs)
-        return {"ok": True, "media_item_id": 12, "warnings": warnings}
+        return {"ok": True, "media_product_id": 34, "media_item_id": 12, "warnings": warnings}
 
     monkeypatch.setattr(route, "ensure_translation_work_user", lambda user_id: {"id": user_id})
     monkeypatch.setattr(route.mk_import_svc, "import_mk_video", fake_import_mk_video)
+    monkeypatch.setattr(
+        route,
+        "_trigger_material_evaluation",
+        lambda **kwargs: evaluation_calls.append(kwargs) or True,
+    )
 
     resp = authed_client_no_db.post(
         "/mk-import/video",
-        json={"mk_video_metadata": {"filename": "x.mp4"}, "translator_id": 7},
+        json={
+            "mk_video_metadata": {
+                "filename": "x.mp4",
+                "product_link": "https://mingkong.example/item/abc",
+            },
+            "translator_id": 7,
+        },
     )
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True, "media_item_id": 12, "warnings": warnings}
-    assert captured["mk_video_metadata"] == {"filename": "x.mp4"}
+    assert resp.get_json() == {
+        "ok": True,
+        "media_product_id": 34,
+        "media_item_id": 12,
+        "warnings": warnings,
+    }
+    assert captured["mk_video_metadata"] == {
+        "filename": "x.mp4",
+        "product_link": "https://mingkong.example/item/abc",
+    }
     assert captured["translator_id"] == 7
     assert captured["actor_user_id"] == 1
+    assert evaluation_calls == [
+        {
+            "product_id": 34,
+            "media_item_id": 12,
+            "force": True,
+            "manual": False,
+            "product_url_override": "https://mingkong.example/item/abc",
+        }
+    ]
 
 
 def test_mk_import_video_accepts_product_owner_id(authed_client_no_db, monkeypatch):

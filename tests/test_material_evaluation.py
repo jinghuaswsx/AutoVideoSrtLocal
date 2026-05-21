@@ -12,23 +12,60 @@ def _default_product_link_probe_ok(monkeypatch):
     monkeypatch.setattr(material_evaluation.pushes, "probe_ad_url", lambda url: (True, None))
 
 
-def test_response_schema_requires_every_enabled_small_language():
+def _fixed_target_country_rows(*, score: int = 88, suitable: bool = True) -> list[dict]:
+    return [
+        {
+            "lang": code,
+            "country": country,
+            "is_suitable": suitable,
+            "score": score,
+            "risk_level": "low" if suitable else "high",
+            "decision": "suitable" if suitable else "not_suitable",
+            "summary": "market fit summary",
+            "reason": "market fit reason",
+            "suggestions": [],
+        }
+        for code, country in [
+            ("de", "Germany"),
+            ("fr", "France"),
+            ("it", "Italy"),
+            ("es", "Spain"),
+            ("ja", "Japan"),
+        ]
+    ]
+
+
+def test_response_schema_requires_fixed_xuanpin_target_countries():
     from appcore import material_evaluation
 
-    languages = [
-        {"code": "de", "name": "德语"},
-        {"code": "fr", "name": "法语"},
-        {"code": "es", "name": "西班牙语"},
-    ]
+    languages = material_evaluation.evaluation_target_languages()
 
     schema = material_evaluation.build_response_schema(languages)
 
     countries = schema["properties"]["countries"]
     item_props = countries["items"]["properties"]
-    assert countries["minItems"] == 3
-    assert countries["maxItems"] == 3
-    assert item_props["lang"]["enum"] == ["de", "fr", "es"]
+    assert countries["minItems"] == 5
+    assert countries["maxItems"] == 5
+    assert item_props["lang"]["enum"] == ["de", "fr", "it", "es", "ja"]
+    assert item_props["recommendation"]["enum"] == ["做", "不做"]
+    assert "summary" in item_props
     assert item_props["reason"]["maxLength"] == 100
+
+
+def test_material_evaluation_defaults_to_openrouter_gemini35(monkeypatch):
+    from appcore import material_evaluation
+
+    monkeypatch.setattr(
+        material_evaluation.llm_bindings,
+        "resolve",
+        lambda use_case: (_ for _ in ()).throw(RuntimeError("no db binding")),
+    )
+
+    config = material_evaluation.resolve_evaluation_llm_config()
+
+    assert config["provider"] == "openrouter"
+    assert config["model"] == "google/gemini-3.5-flash"
+    assert config["search_tools"] == [{"type": "openrouter:web_search"}]
 
 
 def test_prompt_mentions_europe_small_languages_and_input_assets():
@@ -219,6 +256,7 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
         lambda *args, **kwargs: llm_calls.append((args, kwargs)) or {
             "json": {
                 "countries": [
+                    *_fixed_target_country_rows(score=88),
                     {
                         "lang": "de",
                         "country": "德国",
@@ -246,15 +284,16 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates
     assert "listing_status" not in result
-    assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
-    assert llm_calls[0][1]["model_override"] == "gemini-3.5-flash"
+    assert llm_calls[0][1]["provider_override"] == "openrouter"
+    assert llm_calls[0][1]["model_override"] == "google/gemini-3.5-flash"
     assert llm_calls[0][1]["google_search"] is True
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
-    assert detail["provider"] == "gemini_aistudio"
-    assert detail["model"] == "gemini-3.5-flash"
-    assert detail["search_tools"] == [{"google_search": {}}]
+    assert detail["provider"] == "openrouter"
+    assert detail["model"] == "google/gemini-3.5-flash"
+    assert detail["search_tools"] == [{"type": "openrouter:web_search"}]
     assert detail["countries"][0]["lang"] == "de"
+    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja"]
 
 
 def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypatch, tmp_path):
@@ -377,7 +416,7 @@ def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provid
     assert config["search_tools"] == [{"google_search": {}}]
 
 
-def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
+def test_evaluate_ready_product_sends_30s_clip_to_llm(monkeypatch, tmp_path):
     from appcore import material_evaluation
 
     clip_root = tmp_path / "eval_clips"
@@ -418,7 +457,7 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
                 "id": 11,
                 "lang": "en",
                 "object_key": "media/promo.mp4",
-                "duration_seconds": 30.0,
+                "duration_seconds": 31.0,
             }
         ],
     )
@@ -498,10 +537,10 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
     assert "-ss" in ffmpeg_calls[0]
     assert ffmpeg_calls[0][ffmpeg_calls[0].index("-ss") + 1] == "0"
     assert "-t" in ffmpeg_calls[0]
-    assert ffmpeg_calls[0][ffmpeg_calls[0].index("-t") + 1] == "15"
+    assert ffmpeg_calls[0][ffmpeg_calls[0].index("-t") + 1] == "30"
     media = llm_calls[0][1]["media"]
     assert media[0] == cover
-    assert str(media[1]).endswith("11_15s_llm.mp4")
+    assert str(media[1]).endswith("11_30s_llm.mp4")
     assert Path(media[1]).read_bytes() == b"llm-clip"
 
 
@@ -795,7 +834,7 @@ def test_evaluation_blocks_missing_local_video_before_llm(monkeypatch, tmp_path)
     monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover)
     monkeypatch.setattr(
         material_evaluation,
-        "_make_eval_clip_15s",
+        "_make_eval_clip_30s",
         lambda product_id, item: (_ for _ in ()).throw(FileNotFoundError(item["object_key"])),
     )
     monkeypatch.setattr(
@@ -889,6 +928,7 @@ def test_manual_evaluation_bypasses_auto_attempt_limit(monkeypatch, tmp_path):
         lambda *args, **kwargs: {
             "json": {
                 "countries": [
+                    *_fixed_target_country_rows(score=88),
                     {
                         "lang": "de",
                         "country": "Germany",
@@ -1247,7 +1287,7 @@ def test_build_request_debug_payload_base64_uses_llm_eval_video(monkeypatch, tmp
     from appcore import material_evaluation
 
     cover_path = tmp_path / "cover.jpg"
-    video_path = tmp_path / "99_15s_llm.mp4"
+    video_path = tmp_path / "99_30s_llm.mp4"
     cover_path.write_bytes(b"cover")
     video_path.write_bytes(b"llm-video")
     product = {
@@ -1276,10 +1316,112 @@ def test_build_request_debug_payload_base64_uses_llm_eval_video(monkeypatch, tmp
     monkeypatch.setattr(material_evaluation.medias, "list_items", lambda pid, lang=None: [video])
     monkeypatch.setattr(material_evaluation.pushes, "resolve_product_page_url", lambda lang, product: product["product_link"])
     monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover_path)
-    monkeypatch.setattr(material_evaluation, "_make_eval_clip_15s", lambda pid, item: video_path)
+    monkeypatch.setattr(material_evaluation, "_make_eval_clip_30s", lambda pid, item: video_path)
 
     payload = material_evaluation.build_request_debug_payload(7, include_base64=True)
 
     assert payload["media"][1]["role"] == "english_video"
     assert payload["media"][1]["byte_size"] == len(b"llm-video")
     assert payload["request"]["media"][1]["filename"] == "7.mp4"
+
+
+def test_build_request_debug_payload_uses_requested_media_item_and_30s_clip(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover_path = tmp_path / "cover.jpg"
+    selected_video_path = tmp_path / "77_30s_llm.mp4"
+    cover_path.write_bytes(b"cover")
+    selected_video_path.write_bytes(b"selected-llm-video")
+    product = {
+        "id": 7,
+        "name": "Debug Product",
+        "product_code": "DP-7",
+        "product_link": "https://example.test/products/debug",
+        "user_id": 42,
+        "cover_object_key": "covers/7.jpg",
+    }
+    selected_video = {
+        "id": 77,
+        "product_id": 7,
+        "lang": "en",
+        "object_key": "videos/selected.mp4",
+        "filename": "selected.mp4",
+        "duration_seconds": 62,
+        "file_size": 456,
+    }
+    other_video = {
+        "id": 99,
+        "product_id": 7,
+        "lang": "en",
+        "object_key": "videos/first.mp4",
+        "filename": "first.mp4",
+        "duration_seconds": 30,
+        "file_size": 123,
+    }
+    clip_calls = []
+
+    monkeypatch.setattr(material_evaluation.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(material_evaluation.medias, "get_item", lambda item_id: selected_video if item_id == 77 else None)
+    monkeypatch.setattr(material_evaluation.medias, "resolve_cover", lambda pid, lang: "covers/7.jpg")
+    monkeypatch.setattr(material_evaluation.medias, "list_items", lambda pid, lang=None: [other_video, selected_video])
+    monkeypatch.setattr(material_evaluation.pushes, "resolve_product_page_url", lambda lang, product: product["product_link"])
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover_path)
+    monkeypatch.setattr(
+        material_evaluation,
+        "_make_eval_clip_30s",
+        lambda pid, item: clip_calls.append(item["id"]) or selected_video_path,
+    )
+
+    payload = material_evaluation.build_request_debug_payload(
+        7,
+        include_base64=True,
+        media_item_id=77,
+    )
+
+    assert clip_calls == [77]
+    assert payload["media"][1]["item_id"] == 77
+    assert payload["media"][1]["filename"] == "selected.mp4"
+    assert payload["request"]["media"][1]["data_base64"] == "c2VsZWN0ZWQtbGxtLXZpZGVv"
+
+
+def test_build_request_debug_payload_prefers_mingkong_product_url_override(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover_path = tmp_path / "cover.jpg"
+    cover_path.write_bytes(b"cover")
+    product = {
+        "id": 7,
+        "name": "Debug Product",
+        "product_code": "DP-7",
+        "product_link": "https://our-shop.example/products/debug",
+        "user_id": 42,
+        "cover_object_key": "covers/7.jpg",
+    }
+    video = {
+        "id": 99,
+        "product_id": 7,
+        "lang": "en",
+        "object_key": "videos/7.mp4",
+        "filename": "7.mp4",
+        "duration_seconds": 30,
+        "file_size": 123,
+    }
+
+    monkeypatch.setattr(material_evaluation.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(material_evaluation.medias, "resolve_cover", lambda pid, lang: "covers/7.jpg")
+    monkeypatch.setattr(material_evaluation.medias, "list_items", lambda pid, lang=None: [video])
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://our-shop.example/products/debug",
+    )
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover_path)
+
+    payload = material_evaluation.build_request_debug_payload(
+        7,
+        product_url_override="https://mingkong.example/item/DP-7",
+    )
+
+    assert payload["product"]["product_url"] == "https://mingkong.example/item/DP-7"
+    assert payload["request"]["prompt"].count("https://mingkong.example/item/DP-7") == 1
+    assert "https://our-shop.example/products/debug" not in payload["request"]["prompt"]

@@ -381,9 +381,9 @@ USE_CASES: dict[str, UseCase] = {
         "material",
         "素材评估",
         "根据商品图、链接和视频评估市场适配度",
-        "gemini_aistudio",
-        "gemini-3.5-flash",
-        "gemini_aistudio",
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "openrouter",
         "tokens",
     ),
     "xuanpin.today_recommendations": _uc(

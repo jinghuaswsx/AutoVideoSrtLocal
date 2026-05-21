@@ -463,10 +463,50 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["prompts"]["user"]
     assert payload["response_schema"]["type"] == "object"
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
-    assert payload["llm"]["provider"] == "gemini_aistudio"
-    assert payload["llm"]["model"] == "gemini-3.5-flash"
+    assert payload["llm"]["provider"] == "openrouter"
+    assert payload["llm"]["model"] == "google/gemini-3.5-flash"
     assert payload["llm"]["google_search"] is True
+    assert payload["llm"]["tools"] == [{"type": "openrouter:web_search"}]
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
+
+
+def test_manual_ai_evaluate_request_preview_passes_mingkong_product_link(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+    from web.services.media_evaluation import MediaEvaluationResponse
+
+    calls = []
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_builder(product_id, **kwargs):
+        calls.append((product_id, kwargs))
+        return MediaEvaluationResponse({
+            "ok": True,
+            "payload": {
+                "product": {"id": product_id},
+                "full_payload_url": "/x",
+            },
+        }, 200)
+
+    monkeypatch.setattr(
+        "web.routes.medias._build_product_evaluation_preview_response",
+        fake_builder,
+    )
+
+    resp = authed_client_no_db.get(
+        "/medias/api/products/123/evaluate/request-preview"
+        "?product_link=https%3A%2F%2Fmingkong.example%2Fitem%2Fabc"
+    )
+
+    assert resp.status_code == 200
+    assert calls == [
+        (
+            123,
+            {"product_url_override": "https://mingkong.example/item/abc"},
+        )
+    ]
 
 
 def test_media_thumb_serves_thumbnail_inside_output_dir(authed_client_no_db, monkeypatch, tmp_path):
@@ -662,10 +702,10 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["media"][0]["data_base64"] == "Y292ZXItYnl0ZXM="
     assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
-    assert payload["request"]["provider"] == "gemini_aistudio"
-    assert payload["request"]["model"] == "gemini-3.5-flash"
+    assert payload["request"]["provider"] == "openrouter"
+    assert payload["request"]["model"] == "google/gemini-3.5-flash"
     assert payload["request"]["google_search"] is True
-    assert payload["request"]["tools"] == [{"google_search": {}}]
+    assert payload["request"]["tools"] == [{"type": "openrouter:web_search"}]
 
 
 def test_item_bootstrap_rejects_bad_localized_material_filename(

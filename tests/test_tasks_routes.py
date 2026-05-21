@@ -411,6 +411,7 @@ def test_create_parent_validates_raw_processor_with_translation_work_scope(authe
         json={
             "media_product_id": 1,
             "media_item_id": 2,
+            "product_link": "https://mingkong.example/item/imported",
             "countries": ["DE"],
             "translator_id": 9,
             "raw_processor_id": 8,
@@ -438,6 +439,7 @@ def test_create_parent_rejects_non_translation_work_user(authed_client_no_db, mo
         json={
             "media_product_id": 1,
             "media_item_id": 2,
+            "product_link": "https://mingkong.example/item/imported",
             "countries": ["DE"],
             "translator_id": 9,
             "raw_processor_id": 8,
@@ -552,6 +554,7 @@ def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db
 
 def test_import_and_create_accepts_language_assignments(authed_client_no_db, monkeypatch):
     ensure_calls = []
+    evaluation_calls = []
     captured = {}
 
     monkeypatch.setattr(
@@ -567,11 +570,18 @@ def test_import_and_create_accepts_language_assignments(authed_client_no_db, mon
             "is_new_product": False,
         },
     )
+    monkeypatch.setattr(
+        "web.routes.tasks._trigger_material_evaluation",
+        lambda **kwargs: evaluation_calls.append(kwargs) or True,
+    )
 
     resp = authed_client_no_db.post(
         "/tasks/api/import-and-create",
         json={
-            "mk_video_metadata": {"filename": "x.mp4"},
+            "mk_video_metadata": {
+                "filename": "x.mp4",
+                "product_link": "https://mingkong.example/item/import-and-create",
+            },
             "countries": ["DE", "FR"],
             "language_assignments": {"DE": 9, "fr": 10},
         },
@@ -579,13 +589,25 @@ def test_import_and_create_accepts_language_assignments(authed_client_no_db, mon
 
     assert resp.status_code == 200
     assert captured == {
-        "mk_video_metadata": {"filename": "x.mp4"},
+        "mk_video_metadata": {
+            "filename": "x.mp4",
+            "product_link": "https://mingkong.example/item/import-and-create",
+        },
         "translator_id": None,
         "countries": ["DE", "FR"],
         "language_assignments": {"DE": 9, "FR": 10},
         "actor_user_id": 1,
     }
     assert ensure_calls == [9, 10]
+    assert evaluation_calls == [
+        {
+            "product_id": 2,
+            "media_item_id": 3,
+            "force": False,
+            "manual": False,
+            "product_url_override": "https://mingkong.example/item/import-and-create",
+        }
+    ]
 
 
 def test_create_parent_requires_raw_processor_id(authed_client_no_db, monkeypatch):
@@ -614,6 +636,7 @@ def test_create_parent_requires_raw_processor_id(authed_client_no_db, monkeypatc
 def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypatch):
     audit_calls = []
     ensure_calls = []
+    evaluation_calls = []
 
     monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: ensure_calls.append(("translation_work", user_id)) or None)
     monkeypatch.setattr(
@@ -633,12 +656,17 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
         "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
         lambda **kwargs: {"status": "submitted", "subtitle_task_id": "tcraw-123"},
     )
+    monkeypatch.setattr(
+        "web.routes.tasks._trigger_material_evaluation",
+        lambda **kwargs: evaluation_calls.append(kwargs) or True,
+    )
 
     resp = authed_client_no_db.post(
         "/tasks/api/parent",
         json={
             "media_product_id": 1,
             "media_item_id": 2,
+            "product_link": "https://mingkong.example/item/imported",
             "countries": ["DE"],
             "translator_id": 9,
             "raw_processor_id": 8,
@@ -655,10 +683,20 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
         (123, "task_parent_created", {
             "media_product_id": 1,
             "media_item_id": 2,
+            "product_link": "https://mingkong.example/item/imported",
             "countries": ["DE"],
             "translator_id": 9,
             "raw_processor_id": 8,
         })
+    ]
+    assert evaluation_calls == [
+        {
+            "product_id": 1,
+            "media_item_id": 2,
+            "force": False,
+            "manual": False,
+            "product_url_override": "https://mingkong.example/item/imported",
+        }
     ]
 
 

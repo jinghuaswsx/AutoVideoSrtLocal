@@ -261,12 +261,12 @@ def test_copywriting_translate_audit_uses_gemini_flash_lite():
     assert uc["units_type"] == "tokens"
 
 
-def test_material_evaluation_defaults_to_aistudio_gemini_pro():
+def test_material_evaluation_defaults_to_openrouter_gemini_flash():
     uc = USE_CASES["material_evaluation.evaluate"]
     assert uc["module"] == "material"
-    assert uc["default_provider"] == "gemini_aistudio"
-    assert uc["default_model"] == "gemini-3.5-flash"
-    assert uc["usage_log_service"] == "gemini_aistudio"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"
 
