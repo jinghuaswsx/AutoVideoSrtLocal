@@ -154,6 +154,15 @@ def api_list():
     bucket = (request.args.get("bucket") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
+    raw_task_id = (request.args.get("task_id") or "").strip()
+    task_id = None
+    if raw_task_id:
+        try:
+            parsed_task_id = int(raw_task_id)
+        except ValueError:
+            return _json_response({"error": "invalid task_id"}, 400)
+        if parsed_task_id > 0:
+            task_id = parsed_task_id
     if tab == "all":
         if not _is_admin():
             return _json_response({"error": "需要管理员权限"}, 403)
@@ -174,6 +183,7 @@ def api_list():
             bucket=bucket,
             page=page,
             page_size=page_size,
+            task_id=task_id,
         )
     )
 

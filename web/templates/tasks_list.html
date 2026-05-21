@@ -202,7 +202,7 @@
   </div>
 
   <div class="tc-filters" id="tcFilters">
-    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名" style="width:240px;">
+    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -929,8 +929,11 @@ async function tcOpenDetail(id) {
   drawer.style.display = 'block';
   try {
     const cachedTask = TC_TASK_CACHE.get(Number(id || 0)) || null;
+    const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
+      + '&task_id=' + encodeURIComponent(String(id || ''))
+      + '&page_size=1';
     const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
-      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson('/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine') + '&page_size=100'),
+      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson(detailListUrl),
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
