@@ -58,15 +58,16 @@ def test_list_visible_tasks_admin_sees_all(db_user_admin, db_user_processor):
             (db_user_processor, tid_b))
 
     result = raw_video_pool.list_visible_tasks(viewer_user_id=db_user_admin, viewer_role="admin")
-    assert any(t["task_id"] == tid_a for t in result["pending"])
-    assert any(t["task_id"] == tid_b for t in result["in_progress"])
+    task_ids = [t["task_id"] for t in result["items"]]
+    assert tid_a not in task_ids
+    assert tid_b in task_ids
 
     execute("DELETE FROM tasks WHERE id IN (%s,%s)", (tid_a, tid_b))
     execute("DELETE FROM media_items WHERE product_id IN (%s,%s)", (pid_a, pid_b))
     execute("DELETE FROM media_products WHERE id IN (%s,%s)", (pid_a, pid_b))
 
 
-def test_list_visible_tasks_processor_sees_pool_and_own(db_user_admin, db_user_processor):
+def test_list_visible_tasks_processor_sees_own_assigned_only(db_user_admin, db_user_processor):
     from appcore import raw_video_pool
     tid_a, pid_a, _ = _insert_pending_parent_task(db_user_admin, "_t_rvp_p3", "_t_rvp_v3.mp4")
     tid_b, pid_b, _ = _insert_pending_parent_task(db_user_admin, "_t_rvp_p4", "_t_rvp_v4.mp4")
@@ -74,17 +75,16 @@ def test_list_visible_tasks_processor_sees_pool_and_own(db_user_admin, db_user_p
             (db_user_processor, tid_b))
 
     result = raw_video_pool.list_visible_tasks(viewer_user_id=db_user_processor, viewer_role="user")
-    pending_ids = [t["task_id"] for t in result["pending"]]
-    inprog_ids = [t["task_id"] for t in result["in_progress"]]
-    assert tid_a in pending_ids
-    assert tid_b in inprog_ids
+    task_ids = [t["task_id"] for t in result["items"]]
+    assert tid_a not in task_ids
+    assert tid_b in task_ids
     # Other user's in-progress task should NOT appear in processor's view
     other_uid = db_user_admin
     tid_c, pid_c, _ = _insert_pending_parent_task(db_user_admin, "_t_rvp_p_other", "_t_rvp_v_other.mp4")
     execute("UPDATE tasks SET assignee_id=%s, status='raw_in_progress' WHERE id=%s",
             (other_uid, tid_c))
     result2 = raw_video_pool.list_visible_tasks(viewer_user_id=db_user_processor, viewer_role="user")
-    assert tid_c not in [t["task_id"] for t in result2["in_progress"]]
+    assert tid_c not in [t["task_id"] for t in result2["items"]]
 
     execute("DELETE FROM tasks WHERE id IN (%s,%s,%s)", (tid_a, tid_b, tid_c))
     execute("DELETE FROM media_items WHERE product_id IN (%s,%s,%s)", (pid_a, pid_b, pid_c))

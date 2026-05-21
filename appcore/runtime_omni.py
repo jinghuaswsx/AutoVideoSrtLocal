@@ -231,7 +231,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
         判断，omni 任务两个都不满足 → 误读 "normal" → variant_state["tts_audio_path"]
         KeyError 卡 compose。
         """
-        cfg = (task or {}).get("plugin_config") or {}
+        cfg = self._resolve_plugin_config_for_task_state(task)
         if (
             cfg.get("translate_algo") == "av_sentence"
             or cfg.get("tts_strategy") == "sentence_reconcile"
@@ -526,6 +526,28 @@ class OmniTranslateRunner(MultiTranslateRunner):
                 return validate_plugin_config(preset["plugin_config"])
         except Exception:  # noqa: BLE001 — DB 异常不阻塞，走硬编码兜底
             log.warning("[omni] resolve default preset failed", exc_info=True)
+        return dict(DEFAULT_PLUGIN_CONFIG)
+
+    def _resolve_plugin_config_for_task_state(self, task: dict | None) -> dict:
+        """Resolve plugin_config from a loaded task dict, including default fallback."""
+        from appcore.omni_plugin_config import (
+            DEFAULT_PLUGIN_CONFIG, validate_plugin_config,
+        )
+
+        task = task or {}
+        cfg = task.get("plugin_config")
+        if cfg:
+            try:
+                return validate_plugin_config(cfg)
+            except ValueError:
+                log.warning(
+                    "[omni] task=%s plugin_config invalid, falling back to default",
+                    task.get("id") or "?",
+                    exc_info=True,
+                )
+        task_id = str(task.get("id") or "").strip()
+        if task_id:
+            return self._resolve_plugin_config(task_id)
         return dict(DEFAULT_PLUGIN_CONFIG)
 
     @staticmethod

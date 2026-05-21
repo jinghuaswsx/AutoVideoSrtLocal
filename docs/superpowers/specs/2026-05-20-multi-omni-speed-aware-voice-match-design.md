@@ -46,6 +46,9 @@ source speaking speed:
 - Prefer `utterances_en` when present because it keeps the original timing while
   providing word-like text for rate estimation.
 - Fall back to `utterances` when `utterances_en` is not present.
+- If fallback `utterances` contain non-word-like timed tokens, such as Chinese
+  phrases grouped as one ASR word, treat source speech rate as unavailable
+  instead of comparing that token count to English preview words per second.
 - Do not block voice matching if neither source can produce a speech-rate
   sample; the shared helper handles fallback.
 
@@ -96,6 +99,17 @@ Do not modify:
 - A regression in either product is unacceptable when the other product still
   works. Tests must cover the shared service directly and route contracts for
   both Multi and Omni so the modules cannot drift apart during merges.
+
+## 2026-05-21 Auto-Confirm Idempotency
+
+- The shared voice selector may auto-confirm the AI-ranked top voice only when
+  the task is still blocked at `voice_match=waiting` and no
+  `selected_voice_id` has been persisted.
+- Once `selected_voice_id` exists, or once `voice_match` is already `done`, page
+  load and background refresh must never call `/confirm-voice` automatically.
+- This guard applies equally to Multi and Omni because both pages load
+  `web/static/voice_selector_multi.js`.
+- Manual re-confirmation through an explicit user click remains allowed.
 
 ## Verification
 

@@ -37,6 +37,23 @@ PARENT_NON_TERMINAL = (
 PARENT_TERMINAL = (PARENT_ALL_DONE, PARENT_CANCELLED)
 CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
+CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
+CHILD_ACCEPTANCE_STEP_LABELS = {
+    "localized_media_item": "目标语种素材",
+    "translated_video": "视频翻译结果",
+    "translated_cover": "封面翻译结果",
+    "translated_copywriting": "文案翻译结果",
+    "push_texts": "推送文案格式",
+    "product_listed": "商品在架状态",
+    "language_supported": "广告语言配置",
+    "detail_images": "产品详情图翻译",
+    "shopify_images": "链接商品图替换",
+    "product_links": "商品链接探活",
+}
+CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
+CHILD_ACCEPTANCE_MISSING_ALIASES = {
+    "localized_media_item": "lang_item_missing",
+}
 RAW_NIUMA_EVENT_TYPES = {
     "raw_niuma_submitted",
     "raw_niuma_done",
@@ -401,6 +418,7 @@ def list_task_center_items(
     page: int,
     page_size: int,
     bucket: str = "",
+    task_id: int | None = None,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
     where = ["1=1"]
@@ -412,9 +430,13 @@ def list_task_center_items(
     elif tab != "all":
         raise ValueError("invalid tab")
 
+    if task_id:
+        where.append("t.id=%s")
+        args.append(int(task_id))
     if keyword:
-        where.append("p.name LIKE %s")
-        args.append(f"%{keyword}%")
+        like = f"%{keyword}%"
+        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
+        args.extend([like, like])
     if high_status == "in_progress":
         where.append("t.status NOT IN (%s, %s, %s)")
         args.extend([PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
@@ -431,8 +453,8 @@ def list_task_center_items(
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
     elif bucket == "done":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_ALL_DONE, CHILD_DONE])
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
     elif bucket:
         raise ValueError("invalid bucket")
 
@@ -446,7 +468,7 @@ def list_task_center_items(
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {' AND '.join(where)} "
-        "ORDER BY t.id DESC "
+        "ORDER BY t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*args, int(page_size), offset))
@@ -569,6 +591,7 @@ def create_parent_task(
     translator_id: int | None = None,
     language_assignments: dict[str, int] | None = None,
     raw_processor_id: int | None = None,
+    reused_raw_source_id: int | None = None,
     created_by: int,
 ) -> int:
     """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
@@ -582,13 +605,27 @@ def create_parent_task(
         translator_id=translator_id,
         language_assignments=language_assignments,
     )
+    reuse_raw_source_id = _positive_int(reused_raw_source_id)
 
     conn = get_conn()
     try:
         conn.begin()
         try:
             with conn.cursor() as cur:
-                if raw_processor_id is not None:
+                if reuse_raw_source_id is not None:
+                    cur.execute(
+                        "INSERT INTO tasks "
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, NOW(), %s)",
+                        (
+                            int(media_product_id),
+                            int(media_item_id) if media_item_id is not None else None,
+                            int(raw_processor_id) if raw_processor_id is not None else None,
+                            PARENT_RAW_DONE,
+                            int(created_by),
+                        ),
+                    )
+                elif raw_processor_id is not None:
                     cur.execute(
                         "INSERT INTO tasks "
                         "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
@@ -623,9 +660,23 @@ def create_parent_task(
                     created_payload["language_assignments"] = assignment_map
                 if raw_processor_id is not None:
                     created_payload["raw_processor_id"] = int(raw_processor_id)
+                if reuse_raw_source_id is not None:
+                    created_payload["raw_source_id"] = reuse_raw_source_id
+                    created_payload["raw_processing_skipped"] = True
                 _write_event(cur, parent_id, "created", created_by, created_payload)
                 product_name = _product_name_for_notification(cur, int(media_product_id))
-                if raw_processor_id is not None:
+                if reuse_raw_source_id is not None:
+                    _write_event(
+                        cur,
+                        parent_id,
+                        "raw_source_reused",
+                        created_by,
+                        {
+                            "raw_source_id": reuse_raw_source_id,
+                            "media_item_id": int(media_item_id) if media_item_id is not None else None,
+                        },
+                    )
+                elif raw_processor_id is not None:
                     notifications_svc.notify_parent_assigned(
                         cur,
                         task_id=parent_id,
@@ -638,6 +689,7 @@ def create_parent_task(
                         task_id=parent_id,
                         product_name=product_name,
                     )
+                child_status = CHILD_ASSIGNED if reuse_raw_source_id is not None else CHILD_BLOCKED
                 for country in norm_countries:
                     child_assignee_id = assignment_map[country]
                     cur.execute(
@@ -647,18 +699,25 @@ def create_parent_task(
                         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                         (parent_id, int(media_product_id),
                          int(media_item_id) if media_item_id is not None else None,
-                         country, child_assignee_id, CHILD_BLOCKED, int(created_by)),
+                         country, child_assignee_id, child_status, int(created_by)),
                     )
                     child_id = cur.lastrowid
                     _write_event(cur, child_id, "created", created_by,
                                  {"country": country})
-                    notifications_svc.notify_child_blocked(
-                        cur,
-                        task_id=child_id,
-                        assignee_id=child_assignee_id,
-                        product_name=product_name,
-                        country_code=country,
-                    )
+                    if reuse_raw_source_id is not None:
+                        notifications_svc.notify_child_assigned(
+                            cur,
+                            task_id=child_id,
+                            product_name=product_name,
+                        )
+                    else:
+                        notifications_svc.notify_child_blocked(
+                            cur,
+                            task_id=child_id,
+                            assignee_id=child_assignee_id,
+                            product_name=product_name,
+                            country_code=country,
+                        )
             conn.commit()
             return int(parent_id)
         except Exception:
@@ -955,6 +1014,7 @@ def _medias_search_url(
     product_id: int | None,
     lang: str | None,
     action: str = "translate",
+    extra: dict[str, Any] | None = None,
 ) -> str:
     params: list[tuple[str, str]] = []
     code = (product_code or "").strip()
@@ -969,7 +1029,27 @@ def _medias_search_url(
         params.append(("lang", lang_code))
     if action:
         params.append(("action", action))
+    for key, value in (extra or {}).items():
+        if value is None or value == "":
+            continue
+        params.append((str(key), str(value)))
     return "/medias/?" + urlencode(params)
+
+
+def _action(
+    label: str,
+    url: str,
+    kind: str,
+    *,
+    primary: bool = False,
+    disabled_reason: str = "",
+) -> dict:
+    payload = {"label": label, "url": url, "kind": kind}
+    if primary:
+        payload["primary"] = True
+    if disabled_reason:
+        payload["disabled_reason"] = disabled_reason
+    return payload
 
 
 def _review_media_object_url(object_key: str | None) -> str:
@@ -1005,23 +1085,27 @@ def _review_video_asset(
         "filename": filename,
         "display_name": item.get("display_name") or filename,
         "file_size": item.get("file_size"),
-        "lang": item.get("lang"),
+        "lang": str(item.get("lang") or "").strip().lower(),
         "media_item_id": item.get("id"),
     }
 
 
-def _review_item_cover_asset(item: dict | None) -> dict | None:
+def _review_item_cover_asset(
+    item: dict | None,
+    *,
+    label: str = "封面",
+) -> dict | None:
     if not item or not item.get("cover_object_key"):
         return None
     filename = _review_object_filename(item.get("cover_object_key"))
     return {
         "type": "image",
-        "label": "封面",
+        "label": label,
         "url": f"/medias/item-cover/{int(item['id'])}",
         "filename": filename,
         "display_name": filename or "封面",
         "file_size": None,
-        "lang": item.get("lang"),
+        "lang": str(item.get("lang") or "").strip().lower(),
         "media_item_id": item.get("id"),
     }
 
@@ -1039,6 +1123,134 @@ def _review_detail_image_asset(row: dict, index: int) -> dict:
         "height": row.get("height"),
         "detail_image_id": row.get("id"),
     }
+
+
+def _evidence_link(
+    *,
+    label: str,
+    url: str,
+    meta: str = "",
+    ok: bool | None = None,
+) -> dict:
+    payload = {
+        "type": "link",
+        "label": label,
+        "url": url,
+    }
+    if meta:
+        payload["meta"] = meta
+    if ok is not None:
+        payload["ok"] = bool(ok)
+    return payload
+
+
+def _evidence_status(*, label: str, meta: str, ok: bool | None = None) -> dict:
+    payload = {
+        "type": "status",
+        "label": label,
+        "meta": meta,
+    }
+    if ok is not None:
+        payload["ok"] = bool(ok)
+    return payload
+
+
+def _compact_evidence_text(value: Any, *, limit: int = 180) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _copywriting_evidence(product_id: int, lang: str) -> list[dict]:
+    from appcore import medias
+
+    rows = medias.list_copywritings(int(product_id), (lang or "").strip().lower()) or []
+    evidence: list[dict] = []
+    for index, row in enumerate(rows[:3], start=1):
+        title = _compact_evidence_text(row.get("title") or row.get("ad_title") or "")
+        body = _compact_evidence_text(
+            row.get("body")
+            or row.get("description")
+            or row.get("ad_body")
+            or row.get("primary_text")
+            or ""
+        )
+        evidence.append(
+            {
+                "type": "text",
+                "label": f"文案 {index}",
+                "title": title,
+                "body": body,
+            }
+        )
+    return evidence
+
+
+def _evidence_if(items: list[dict]) -> dict:
+    return {"evidence": items} if items else {}
+
+
+def _link_rows_by_domain(link_status: dict) -> dict[str, dict]:
+    rows = link_status.get("links") if isinstance(link_status, dict) else []
+    result: dict[str, dict] = {}
+    for row in rows or []:
+        domain = str(row.get("domain") or "").strip().lower()
+        if domain:
+            result[domain] = row
+    return result
+
+
+def _shopify_image_evidence(readiness: dict, link_status: dict) -> list[dict]:
+    details = (readiness or {}).get("shopify_image_domain_details") or []
+    if not details:
+        reason = str((readiness or {}).get("shopify_image_reason") or "").strip()
+        if not reason:
+            return []
+        return [
+            _evidence_status(
+                label="商品图替换",
+                meta=reason,
+                ok=bool((readiness or {}).get("shopify_image_confirmed")),
+            )
+        ]
+
+    links_by_domain = _link_rows_by_domain(link_status)
+    evidence: list[dict] = []
+    for detail in details:
+        domain = str(detail.get("domain") or "").strip().lower()
+        confirmed = bool(detail.get("confirmed"))
+        meta = "已确认" if confirmed else str(detail.get("reason") or "未完成").strip()
+        link = links_by_domain.get(domain) or {}
+        url = str(link.get("url") or "").strip()
+        label = f"{domain} 商品图替换" if domain else "商品图替换"
+        if url:
+            evidence.append(_evidence_link(label=label, url=url, meta=meta, ok=confirmed))
+        else:
+            evidence.append(_evidence_status(label=label, meta=meta, ok=confirmed))
+    return evidence
+
+
+def _product_link_evidence(link_status: dict) -> list[dict]:
+    evidence: list[dict] = []
+    for link in (link_status or {}).get("links") or []:
+        url = str(link.get("url") or "").strip()
+        if not url:
+            continue
+        domain = str(link.get("domain") or "").strip()
+        ok = bool(link.get("ok"))
+        meta = "ok" if ok else str(
+            link.get("error") or link.get("http_status") or "not_ready"
+        )
+        evidence.append(
+            _evidence_link(
+                label=f"{domain} 商品链接" if domain else "商品链接",
+                url=url,
+                meta=meta,
+                ok=ok,
+            )
+        )
+    return evidence
 
 
 def _review_step(
@@ -1217,6 +1429,137 @@ def _acceptance_check(
     return payload
 
 
+def _normalize_child_acceptance_step_key(step_key: str) -> str:
+    key = str(step_key or "").strip().lower()
+    if key not in CHILD_ACCEPTANCE_STEP_LABELS:
+        raise ValueError("unknown step")
+    return key
+
+
+def _manual_confirmed_child_step_keys(task_id: int) -> set[str]:
+    rows = query_all(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type=%s ORDER BY id ASC",
+        (int(task_id), CHILD_MANUAL_STEP_CONFIRMED_EVENT),
+    )
+    confirmed: set[str] = set()
+    for row in rows or []:
+        payload = _parse_event_payload_obj(row.get("payload_json"))
+        try:
+            confirmed.add(_normalize_child_acceptance_step_key(payload.get("key") or ""))
+        except ValueError:
+            continue
+    return confirmed
+
+
+def _manual_upload_url_for_child_step(
+    *,
+    key: str,
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    item: dict | None,
+) -> str:
+    item_id = int(item["id"]) if item and item.get("id") else None
+    action_by_key = {
+        "localized_media_item": "translate",
+        "translated_video": "video",
+        "translated_cover": "cover",
+        "translated_copywriting": "copywriting",
+        "push_texts": "copywriting",
+        "product_listed": "product_links",
+        "language_supported": "product_links",
+        "detail_images": "detail_images",
+        "shopify_images": "product_links",
+        "product_links": "product_links",
+    }
+    focus_by_key = {
+        "shopify_images": "shopify_images",
+        "product_links": "product_links",
+    }
+    return _readiness_locate_url(
+        task_id=task_id,
+        product_id=product_id,
+        product_code=product_code,
+        lang=lang,
+        action=action_by_key.get(key, "translate"),
+        item_id=item_id,
+        focus=focus_by_key.get(key, ""),
+    )
+
+
+def _apply_child_manual_confirmations(
+    checks: list[dict],
+    *,
+    confirmed_keys: set[str],
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    item: dict | None,
+) -> list[dict]:
+    normalized_confirmed = {
+        _normalize_child_acceptance_step_key(key)
+        for key in (confirmed_keys or set())
+        if str(key or "").strip()
+    }
+    for check in checks:
+        key = str(check.get("key") or "").strip()
+        check["manual_upload_url"] = _manual_upload_url_for_child_step(
+            key=key,
+            task_id=task_id,
+            product_id=product_id,
+            product_code=product_code,
+            lang=lang,
+            item=item,
+        )
+        if key not in normalized_confirmed:
+            continue
+        system_ok = bool(check.get("ok"))
+        check["system_ok"] = system_ok
+        check["manual_confirmed"] = True
+        check["ok"] = True
+        reason = str(check.get("reason") or "").strip()
+        check["reason"] = (
+            f"{reason}；已人工确认完成" if reason else "已人工确认完成"
+        )
+    return checks
+
+
+def _missing_child_acceptance_keys(checks: list[dict]) -> list[str]:
+    missing = []
+    for check in checks:
+        if not check.get("required") or check.get("ok"):
+            continue
+        key = str(check.get("key") or "").strip()
+        missing.append(CHILD_ACCEPTANCE_MISSING_ALIASES.get(key, key))
+    return missing
+
+
+def _missing_item_child_acceptance_checks() -> list[dict]:
+    checks = [
+        _acceptance_check(
+            "localized_media_item",
+            CHILD_ACCEPTANCE_STEP_LABELS["localized_media_item"],
+            False,
+            reason="未找到该语种 media_item",
+        )
+    ]
+    for key in CHILD_ACCEPTANCE_STEP_KEYS:
+        if key == "localized_media_item":
+            continue
+        checks.append(
+            _acceptance_check(
+                key,
+                CHILD_ACCEPTANCE_STEP_LABELS[key],
+                False,
+                reason="系统未找到目标语种素材，需手动传素材或人工确认完成",
+            )
+        )
+    return checks
+
+
 def _readiness_bool(readiness: dict, key: str) -> bool:
     return bool((readiness or {}).get(key))
 
@@ -1243,6 +1586,10 @@ def _detail_images_status(product_id: int, lang: str) -> dict:
         "source_count": source_count,
         "target_count": target_count,
         "reason": reason,
+        "evidence": [
+            _review_detail_image_asset(row, index)
+            for index, row in enumerate(target_rows[:6], start=1)
+        ],
     }
 
 
@@ -1307,6 +1654,310 @@ def _product_link_availability_status(
     }
 
 
+def _recent_copywriting_translate_task_id(product_id: int, lang: str) -> str:
+    lang_code = (lang or "").strip().lower()
+    if not product_id or not lang_code:
+        return ""
+    rows = query_all(
+        "SELECT id, state_json FROM projects "
+        "WHERE type='copywriting_translate' AND deleted_at IS NULL "
+        "ORDER BY updated_at DESC, created_at DESC LIMIT 100"
+    )
+    for row in rows or []:
+        state = _parse_event_payload_obj(row.get("state_json"))
+        if (str(state.get("target_lang") or "").strip().lower()) != lang_code:
+            continue
+        target_copy_id = _positive_int(state.get("target_copy_id"))
+        if not target_copy_id:
+            continue
+        copy_row = query_one(
+            "SELECT product_id FROM media_copywritings WHERE id=%s",
+            (target_copy_id,),
+        )
+        if copy_row and int(copy_row.get("product_id") or 0) == int(product_id):
+            return str(row.get("id") or "").strip()
+    return ""
+
+
+def _detail_image_preview_rows(product_id: int, lang: str) -> list[dict]:
+    from appcore import medias
+
+    rows = medias.list_detail_images(int(product_id), (lang or "").strip().lower()) or []
+    return [
+        dict(row)
+        for row in rows
+        if not medias.detail_image_is_gif(row)
+    ][:3]
+
+
+def _recent_detail_image_translate_task_id(product_id: int, lang: str) -> str:
+    lang_code = (lang or "").strip().lower()
+    if not product_id or not lang_code:
+        return ""
+    row = query_one(
+        "SELECT image_translate_task_id "
+        "FROM media_product_detail_images "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "  AND image_translate_task_id IS NOT NULL AND image_translate_task_id<>'' "
+        "ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+        (int(product_id), lang_code),
+    )
+    return str((row or {}).get("image_translate_task_id") or "").strip()
+
+
+def _readiness_locate_url(
+    *,
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    action: str,
+    item_id: int | None = None,
+    focus: str = "",
+) -> str:
+    extra: dict[str, Any] = {}
+    if item_id:
+        extra["item"] = int(item_id)
+    if focus:
+        extra["focus"] = focus
+    return _medias_search_url(
+        product_code=product_code,
+        task_id=task_id,
+        product_id=product_id,
+        lang=lang,
+        action=action,
+        extra=extra,
+    )
+
+
+def _child_check_actions(
+    *,
+    key: str,
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    item: dict | None,
+    links: list[dict] | None = None,
+) -> list[dict]:
+    item_id = int(item["id"]) if item and item.get("id") else None
+    if key == "localized_media_item":
+        if item_id:
+            return [
+                _action(
+                    "定位素材",
+                    _readiness_locate_url(
+                        task_id=task_id,
+                        product_id=product_id,
+                        product_code=product_code,
+                        lang=lang,
+                        action="video",
+                        item_id=item_id,
+                    ),
+                    "locate",
+                    primary=True,
+                )
+            ]
+        return [
+            _action(
+                "去生成/绑定素材",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="translate",
+                ),
+                "locate",
+                primary=True,
+            )
+        ]
+    if key == "translated_video":
+        actions: list[dict] = []
+        object_url = _review_media_object_url((item or {}).get("object_key"))
+        if object_url:
+            actions.append(_action("预览视频", object_url, "preview", primary=True))
+        actions.append(
+            _action(
+                "定位素材",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="video",
+                    item_id=item_id,
+                ),
+                "locate",
+                primary=not bool(object_url),
+            )
+        )
+        return actions
+    if key == "translated_cover":
+        actions = []
+        if item_id and (item or {}).get("cover_object_key"):
+            actions.append(_action("查看封面", f"/medias/item-cover/{item_id}", "preview", primary=True))
+        actions.append(
+            _action(
+                "定位封面",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="cover",
+                    item_id=item_id,
+                ),
+                "locate",
+                primary=not actions,
+            )
+        )
+        return actions
+    if key == "translated_copywriting":
+        actions = [
+            _action(
+                "定位文案",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="copywriting",
+                ),
+                "locate",
+                primary=True,
+            )
+        ]
+        copy_task_id = _recent_copywriting_translate_task_id(product_id, lang)
+        if copy_task_id:
+            actions.append(
+                _action(
+                    "查看文案翻译任务",
+                    f"/copywriting-translate/{quote(copy_task_id, safe='')}",
+                    "task",
+                )
+            )
+        return actions
+    if key == "detail_images":
+        actions = [
+            _action(
+                "定位详情图",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="detail_images",
+                ),
+                "locate",
+                primary=True,
+            )
+        ]
+        for idx, row in enumerate(_detail_image_preview_rows(product_id, lang)[:3], start=1):
+            image_id = row.get("id")
+            if image_id:
+                actions.append(_action(f"查看详情图 {idx}", f"/medias/detail-image/{int(image_id)}", "preview"))
+        image_task_id = _recent_detail_image_translate_task_id(product_id, lang)
+        if image_task_id:
+            actions.append(
+                _action(
+                    "查看图片翻译任务",
+                    f"/image-translate/{quote(image_task_id, safe='')}",
+                    "task",
+                )
+            )
+        return actions
+    if key == "shopify_images":
+        return [
+            _action(
+                "检查商品图替换",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="product_links",
+                    focus="shopify_images",
+                ),
+                "locate",
+                primary=True,
+            )
+        ]
+    if key == "product_links":
+        actions = [
+            _action(
+                "检查产品链接",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="product_links",
+                    focus="product_links",
+                ),
+                "locate",
+                primary=True,
+            )
+        ]
+        for row in links or []:
+            url = str(row.get("url") or "").strip()
+            if not url:
+                continue
+            domain = str(row.get("domain") or "").strip() or "链接"
+            actions.append(_action(f"打开 {domain}", url, "external"))
+        return actions
+    if key == "push_texts":
+        return [
+            _action(
+                "定位文案",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="copywriting",
+                ),
+                "locate",
+            )
+        ]
+    if key in {"product_listed", "language_supported"}:
+        return [
+            _action(
+                "检查产品配置",
+                _readiness_locate_url(
+                    task_id=task_id,
+                    product_id=product_id,
+                    product_code=product_code,
+                    lang=lang,
+                    action="product_links",
+                ),
+                "locate",
+            )
+        ]
+    return []
+
+
+def _artifact_actions(row: dict) -> list[dict]:
+    actions: list[dict] = []
+    object_url = _review_media_object_url(row.get("object_key"))
+    if object_url:
+        actions.append(_action("预览视频", object_url, "preview", primary=True))
+    item_id = _positive_int(row.get("id"))
+    if item_id and row.get("cover_object_key"):
+        actions.append(_action("查看封面", f"/medias/item-cover/{item_id}", "preview"))
+    locate_url = _medias_search_url(
+        product_code=row.get("product_code"),
+        task_id=_positive_int(row.get("task_id")),
+        product_id=_positive_int(row.get("product_id")),
+        lang=row.get("lang"),
+        action="history",
+        extra={"item": item_id},
+    )
+    actions.append(_action("定位素材", locate_url, "locate"))
+    actions.append(_action("翻译任务记录", locate_url, "task"))
+    return actions
+
+
 def _child_acceptance_payload(
     *,
     task_id: int,
@@ -1314,6 +1965,8 @@ def _child_acceptance_payload(
     item: dict | None,
     product: dict | None,
     readiness: dict,
+    include_evidence: bool = True,
+    manual_confirmed_keys: set[str] | None = None,
 ) -> dict:
     product_id = int(row["media_product_id"])
     lang = (row.get("country_code") or "").strip().lower()
@@ -1322,64 +1975,141 @@ def _child_acceptance_payload(
         or row.get("product_code")
         or ""
     )
+    if manual_confirmed_keys is None:
+        manual_confirmed_keys = _manual_confirmed_child_step_keys(int(task_id))
 
     if not item:
-        checks = [
-            _acceptance_check(
-                "localized_media_item",
-                "目标语种素材",
-                False,
-                reason="未找到该语种 media_item",
-            )
-        ]
+        media_search_url = _medias_search_url(
+            product_code=product_code,
+            task_id=task_id,
+            product_id=product_id,
+            lang=lang,
+        )
+        checks = _missing_item_child_acceptance_checks()
+        checks = _apply_child_manual_confirmations(
+            checks,
+            confirmed_keys=manual_confirmed_keys,
+            task_id=task_id,
+            product_id=product_id,
+            product_code=product_code,
+            lang=lang,
+            item=None,
+        )
+        missing = _missing_child_acceptance_keys(checks)
         return {
-            "ready": False,
-            "missing": ["lang_item_missing"],
+            "ready": not missing,
+            "missing": missing,
             "readiness": {},
             "checks": checks,
             "country_code": row["country_code"],
             "product_code": product_code,
-            "media_search_url": _medias_search_url(
-                product_code=product_code,
-                task_id=task_id,
-                product_id=product_id,
-                lang=lang,
-            ),
+            "media_search_url": media_search_url,
+            "manual_confirmed_steps": sorted(manual_confirmed_keys),
         }
 
+    media_search_url = _medias_search_url(
+        product_code=product_code,
+        task_id=task_id,
+        product_id=product_id,
+        lang=lang,
+    )
     detail_status = _detail_images_status(product_id, lang)
     link_status = _product_link_availability_status(product_id, lang, product)
+    video_asset = _review_video_asset(item, label="视频翻译结果") if include_evidence else None
+    cover_asset = (
+        _review_item_cover_asset(item, label="封面翻译结果")
+        if include_evidence
+        else None
+    )
+    copywriting_evidence = (
+        _copywriting_evidence(product_id, lang) if include_evidence else []
+    )
+    shopify_evidence = (
+        _shopify_image_evidence(readiness, link_status) if include_evidence else []
+    )
+    product_link_evidence = (
+        _product_link_evidence(link_status) if include_evidence else []
+    )
     checks = [
-        _acceptance_check("localized_media_item", "目标语种素材", True),
+        _acceptance_check(
+            "localized_media_item",
+            "目标语种素材",
+            True,
+            **_evidence_if(
+                [
+                    _evidence_link(
+                        label="打开目标语种素材",
+                        url=media_search_url,
+                        meta=f"media_item #{int(item['id'])}",
+                    )
+                ]
+            ),
+        ),
         _acceptance_check(
             "translated_video",
             "视频翻译结果",
             _readiness_bool(readiness, "has_object"),
+            **_evidence_if([video_asset] if video_asset else []),
         ),
         _acceptance_check(
             "translated_cover",
             "封面翻译结果",
             _readiness_bool(readiness, "has_cover"),
+            **_evidence_if([cover_asset] if cover_asset else []),
         ),
         _acceptance_check(
             "translated_copywriting",
             "文案翻译结果",
             _readiness_bool(readiness, "has_copywriting"),
+            **_evidence_if(copywriting_evidence),
         ),
         _acceptance_check(
             "push_texts",
             "推送文案格式",
             _readiness_bool(readiness, "has_push_texts"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="推送文案格式",
+                        meta="英文三段文案可解析"
+                        if _readiness_bool(readiness, "has_push_texts")
+                        else "英文三段文案不可解析",
+                        ok=_readiness_bool(readiness, "has_push_texts"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "product_listed",
             "商品在架状态",
             _readiness_bool(readiness, "is_listed"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="商品在架状态",
+                        meta="已在架"
+                        if _readiness_bool(readiness, "is_listed")
+                        else "未在架",
+                        ok=_readiness_bool(readiness, "is_listed"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "language_supported",
             "广告语言配置",
             _readiness_bool(readiness, "lang_supported"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="广告语言配置",
+                        meta=f"{str(row['country_code']).upper()} 已配置"
+                        if _readiness_bool(readiness, "lang_supported")
+                        else f"{str(row['country_code']).upper()} 未配置",
+                        ok=_readiness_bool(readiness, "lang_supported"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "detail_images",
@@ -1389,12 +2119,14 @@ def _child_acceptance_payload(
             reason=detail_status.get("reason") or "",
             source_count=int(detail_status.get("source_count") or 0),
             target_count=int(detail_status.get("target_count") or 0),
+            **_evidence_if(detail_status.get("evidence") or []),
         ),
         _acceptance_check(
             "shopify_images",
             "链接商品图替换",
             _readiness_bool(readiness, "shopify_image_confirmed"),
             reason=(readiness or {}).get("shopify_image_reason") or "",
+            **_evidence_if(shopify_evidence),
         ),
         _acceptance_check(
             "product_links",
@@ -1403,13 +2135,33 @@ def _child_acceptance_payload(
             required=bool(link_status.get("required")),
             reason=link_status.get("reason") or "",
             links=link_status.get("links") or [],
+            **_evidence_if(product_link_evidence),
         ),
     ]
-    missing = [
-        check["key"]
-        for check in checks
-        if check.get("required") and not check.get("ok")
-    ]
+    for check in checks:
+        check["actions"] = (
+            _child_check_actions(
+                key=str(check.get("key") or ""),
+                task_id=task_id,
+                product_id=product_id,
+                product_code=product_code,
+                lang=lang,
+                item=item,
+                links=check.get("links") or [],
+            )
+            if include_evidence
+            else []
+        )
+    checks = _apply_child_manual_confirmations(
+        checks,
+        confirmed_keys=manual_confirmed_keys,
+        task_id=task_id,
+        product_id=product_id,
+        product_code=product_code,
+        lang=lang,
+        item=item,
+    )
+    missing = _missing_child_acceptance_keys(checks)
     return {
         "ready": not missing,
         "missing": missing,
@@ -1422,12 +2174,8 @@ def _child_acceptance_payload(
         "country_code": row["country_code"],
         "product_code": product_code,
         "media_item_id": item["id"],
-        "media_search_url": _medias_search_url(
-            product_code=product_code,
-            task_id=task_id,
-            product_id=product_id,
-            lang=lang,
-        ),
+        "media_search_url": media_search_url,
+        "manual_confirmed_steps": sorted(manual_confirmed_keys),
     }
 
 
@@ -1462,6 +2210,48 @@ def get_child_readiness(task_id: int) -> dict:
         product=product,
         readiness=readiness,
     )
+
+
+def confirm_child_step(
+    *,
+    task_id: int,
+    step_key: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> dict:
+    """Record a manual fallback confirmation for one child acceptance step."""
+    normalized_key = _normalize_child_acceptance_step_key(step_key)
+    row = query_one(
+        "SELECT id, assignee_id, status FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["assignee_id"] != int(actor_user_id) and not is_admin:
+        raise PermissionError("forbidden")
+    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+        raise StateError("child not confirmable")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                _write_event(
+                    cur,
+                    int(task_id),
+                    CHILD_MANUAL_STEP_CONFIRMED_EVENT,
+                    int(actor_user_id),
+                    {"key": normalized_key},
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+    return {"step_key": normalized_key}
 
 
 def list_unbound_items_for_task(task_id: int) -> list[dict]:
@@ -1534,7 +2324,12 @@ def list_task_artifacts(
             f"ORDER BY mi.lang, mi.id DESC",
             child_ids,
         )
-    return [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["actions"] = _artifact_actions(item)
+        items.append(item)
+    return items
 
 
 def submit_child(*, task_id: int, actor_user_id: int) -> None:
@@ -1551,18 +2346,16 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
     if row["assignee_id"] != int(actor_user_id):
         raise StateError("only assignee can submit")
 
-    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
-    if not item:
-        raise NotReadyError(missing=["lang_item_missing"],
-                            detail=f"missing: lang_item_missing (no media_item with lang={row['country_code']})")
     product = _find_product(row["media_product_id"])
-    readiness = pushes.compute_readiness(item, product)
+    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
+    readiness = pushes.compute_readiness(item, product) if item else {}
     payload = _child_acceptance_payload(
         task_id=int(task_id),
         row=row,
         item=item,
         product=product,
         readiness=readiness,
+        include_evidence=False,
     )
     if not payload["ready"]:
         missing = payload["missing"]

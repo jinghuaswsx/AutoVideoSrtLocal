@@ -43,6 +43,16 @@ def test_medias_task_bridge_opens_translate_modal_for_translate_action():
     assert ".js-translate[data-pid=" in source
 
 
+def test_medias_task_bridge_handles_translation_product_actions():
+    source = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "action === 'product_links'" in source
+    assert "action === 'copywriting'" in source
+    assert "action === 'detail_images'" in source
+    assert "action === 'video' || action === 'cover'" in source
+    assert "mbridgeFocusTarget" in source
+
+
 def test_translate_modal_payload_carries_task_center_child_id():
     source = (ROOT / "web" / "static" / "medias_translate_modal.js").read_text(
         encoding="utf-8"
@@ -71,6 +81,11 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "function tcRenderCurrentReviewEntry" in source
     assert "function tcRenderReviewAssetList" in source
     assert "function tcRenderReviewAsset" in source
+    assert "function tcRenderReadinessEvidence" in source
+    assert "function tcRenderReadinessEvidenceItem" in source
+    assert "<video class=\"tc-readiness-video\"" in source
+    assert "tc-readiness-image" in source
+    assert "tc-readiness-link" in source
     assert "tcRenderEventTimeline(events, reviewAssets)" in source
     assert "<video class=\"tc-review-video\"" in source
     assert "当前审核内容" in source

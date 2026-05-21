@@ -40,7 +40,7 @@
     { code: 'copywriting', label: '文案翻译', note: '调用多语言标题翻译并直接回填到小语种文案' },
     { code: 'detail_images', label: '商品详情图翻译', note: '按语种排队创建图片翻译任务，两种语言之间间隔 10 秒' },
     { code: 'video_covers', label: '视频封面翻译', note: '为所选语种批量创建封面图翻译任务，完成后自动回填' },
-    { code: 'videos', label: '视频翻译', note: '按原始视频和语种依次创建任务，每个任务之间间隔 5 秒，并停在选声音步骤' },
+    { code: 'videos', label: '视频翻译', note: '按原始视频和语种依次创建任务，每个任务之间间隔 5 秒；AI 音色排名完成后会自动选声音并继续' },
   ];
 
   const FONT_FAMILIES = {

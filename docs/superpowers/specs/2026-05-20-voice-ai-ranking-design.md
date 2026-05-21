@@ -135,7 +135,7 @@
 
 ## 2026-05-21 AI Top1 自动确认与设置开关
 
-- API 设置模块（`/settings?tab=bindings`）新增全局开关“自动音色选择”，默认开启。
+- 视频翻译设置模块（`/settings?tab=omni_preset`，设置页 tab 名称显示为“视频翻译设置”）新增全局开关“自动音色选择”，默认开启。
 - 开关开启时，Multi-language video translation、Omni video translation 和
   English Redub 共享音色选择器在当前场景 AI 排名完成后，必须自动选择
   `llm_rank=1` 的音色，并直接复用现有 `/confirm-voice` 流程进入后续步骤，
@@ -144,5 +144,7 @@
   进入 `speed_fallback` 模式，则继续保留人工选择 / 人工确认路径。
 - 开关关闭时，行为恢复为上一版：AI 排名完成后挂起等待人工干预，允许用户手动选
   音色或使用兜底排序按钮继续。
+- 该开关虽然放在“视频翻译设置”入口下，但仍是共享音色选择器的全局行为开关；
+  Multi、Omni、English Redub 三个模块继续共用这一配置，不拆分成模块级独立开关。
 - 自动确认逻辑不新增独立后端接口，不改 `confirm-voice` 契约，不跳过现有字幕样式
   参数写回，也不改变 `selected_voice_id` / `task_state` / resume step 的后端语义。

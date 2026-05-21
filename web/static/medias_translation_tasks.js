@@ -108,7 +108,7 @@
           <div class="mtt-card__stats">
             <span><strong>${pct}%</strong> (${Number(progress.done || 0) + Number(progress.skipped || 0)}/${Number(progress.total || 0)})</span>
             <span>执行中 ${Number(progress.running || 0) + Number(progress.dispatching || 0) + Number(progress.syncing_result || 0)}</span>
-            <span>等待选声音 ${Number(task.waiting_voice_count || 0)}</span>
+            <span>需人工选音 ${Number(task.waiting_voice_count || 0)}</span>
             <span>失败 ${Number(task.failed_count || 0)}</span>
           </div>
         </div>
@@ -126,7 +126,7 @@
       actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="force-backfill-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。">强制回填</button>');
     }
     if (item.detail_url) {
-      actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
+      actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '人工选声音' : '查看详情'}</a>`);
     }
     if (item.retryable) {
       actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>');
@@ -143,7 +143,7 @@
             <span>${esc(item.summary || '')}</span>
             ${item.child_task_id ? `<span>子任务 <code>${esc(String(item.child_task_id).slice(0, 8))}</code></span>` : ''}
             ${item.force_backfill_summary ? `<span>${esc(item.force_backfill_summary)}</span>` : ''}
-            ${item.manual_step === 'voice_selection' ? '<span class="mtt-item__manual">卡在选择声音</span>' : ''}
+            ${item.manual_step === 'voice_selection' ? '<span class="mtt-item__manual">等待人工选声音</span>' : ''}
           </div>
           ${item.error ? `<div class="mtt-item__error">${esc(item.error)}</div>` : ''}
         </div>

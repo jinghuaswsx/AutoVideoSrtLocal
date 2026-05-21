@@ -152,6 +152,15 @@ def api_list():
     bucket = (request.args.get("bucket") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
+    raw_task_id = (request.args.get("task_id") or "").strip()
+    task_id = None
+    if raw_task_id:
+        try:
+            parsed_task_id = int(raw_task_id)
+        except ValueError:
+            return _json_response({"error": "invalid task_id"}, 400)
+        if parsed_task_id > 0:
+            task_id = parsed_task_id
     if tab == "all":
         if not _is_admin():
             return _json_response({"error": "需要管理员权限"}, 403)
@@ -159,6 +168,8 @@ def api_list():
         pass
     else:
         return _json_response({"error": "invalid tab"}, 400)
+    if bucket == "all":
+        bucket = ""
     if bucket and bucket not in {"todo", "review", "done"}:
         return _json_response({"error": "invalid bucket"}, 400)
 
@@ -172,6 +183,7 @@ def api_list():
             bucket=bucket,
             page=page,
             page_size=page_size,
+            task_id=task_id,
         )
     )
 
@@ -210,35 +222,50 @@ def api_create_parent():
         ensure_translation_work_user(raw_processor_id)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
+    raw_source_reuse = None
+    if item_id is not None:
+        from appcore import task_raw_source_bridge
+
+        raw_source_reuse = task_raw_source_bridge.find_ready_raw_source_for_media_item(item_id)
     try:
-        parent_id = tasks_svc.create_parent_task(
-            media_product_id=product_id,
-            media_item_id=item_id,
-            countries=countries,
-            translator_id=translator_id,
-            language_assignments=language_assignments,
-            raw_processor_id=raw_processor_id,
-            created_by=int(current_user.id),
-        )
+        create_kwargs = {
+            "media_product_id": product_id,
+            "media_item_id": item_id,
+            "countries": countries,
+            "translator_id": translator_id,
+            "language_assignments": language_assignments,
+            "raw_processor_id": raw_processor_id,
+            "created_by": int(current_user.id),
+        }
+        if raw_source_reuse:
+            create_kwargs["reused_raw_source_id"] = int(raw_source_reuse["id"])
+        parent_id = tasks_svc.create_parent_task(**create_kwargs)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
-    from appcore import task_raw_video_processing
+    if raw_source_reuse:
+        raw_processing = {
+            "status": "skipped",
+            "reason": "raw_source_ready",
+            "raw_source_id": int(raw_source_reuse["id"]),
+        }
+    else:
+        from appcore import task_raw_video_processing
 
-    try:
-        raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
-            task_id=parent_id,
-            actor_user_id=raw_processor_id,
-        )
-    except Exception as exc:  # noqa: BLE001
         try:
-            task_raw_video_processing.record_niuma_start_failed(
-                parent_task_id=parent_id,
+            raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
+                task_id=parent_id,
                 actor_user_id=raw_processor_id,
-                error=str(exc),
             )
-        except Exception:  # noqa: BLE001
-            current_app.logger.exception("record niuma start failure failed task_id=%s", parent_id)
-        raw_processing = {"status": "start_failed", "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            try:
+                task_raw_video_processing.record_niuma_start_failed(
+                    parent_task_id=parent_id,
+                    actor_user_id=raw_processor_id,
+                    error=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                current_app.logger.exception("record niuma start failure failed task_id=%s", parent_id)
+            raw_processing = {"status": "start_failed", "error": str(exc)}
     _audit_task_action(
         parent_id,
         "task_parent_created",
@@ -248,6 +275,10 @@ def api_create_parent():
             "countries": countries,
             "translator_id": translator_id,
             "raw_processor_id": raw_processor_id,
+            **(
+                {"reused_raw_source_id": int(raw_source_reuse["id"])}
+                if raw_source_reuse else {}
+            ),
             **({"language_assignments": language_assignments} if language_assignments else {}),
         },
     )
@@ -529,6 +560,31 @@ def api_child_readiness(tid: int):
     except tasks_svc.StateError as exc:
         return _json_response({"error": str(exc)}, 404)
     return _json_response(payload)
+
+
+@bp.route("/api/child/<int:tid>/steps/<step_key>/confirm", methods=["POST"])
+@login_required
+def api_child_step_confirm(tid: int, step_key: str):
+    """人工兜底确认某个子任务验收步骤已完成。"""
+    try:
+        result = tasks_svc.confirm_child_step(
+            task_id=tid,
+            step_key=step_key,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, 403)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    _audit_task_action(
+        tid,
+        "task_child_step_confirmed",
+        {"step_key": result["step_key"]},
+    )
+    return _json_response({"ok": True, "step_key": result["step_key"]})
 
 
 @bp.route("/api/<int:tid>/artifacts", methods=["GET"])

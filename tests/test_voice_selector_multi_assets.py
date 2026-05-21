@@ -83,6 +83,8 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "preview_words_per_second" in SCRIPT
     assert "speed_match_score" in SCRIPT
     assert "combined_score" not in SCRIPT
+    assert "source_rate_unavailable" in SCRIPT
+    assert "原视频语速不可比，按音色排序，等待 AI 推荐排名" in SCRIPT
     assert "语速未维护，按音色排序" in SCRIPT
     assert "语速参考" in SCRIPT
     assert ".vs-row-speed" in TEMPLATE
@@ -256,6 +258,29 @@ def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
     assert "await launch();" in SCRIPT
     assert "maybeAutoConfirmTopAiVoice();" in load_block
     assert "await maybeAutoConfirmTopAiVoice();" in rerun_block
+
+
+def test_voice_selector_multi_auto_confirm_is_waiting_only_and_idempotent():
+    load_block = SCRIPT[
+        SCRIPT.index("async function loadVoicePage"):
+        SCRIPT.index("async function loadLibrary")
+    ]
+    gate_block = SCRIPT[
+        SCRIPT.index("function canAutoConfirmTopAiVoice"):
+        SCRIPT.index("async function maybeAutoConfirmTopAiVoice")
+    ]
+
+    assert "let persistedSelectedVoiceId = null;" in SCRIPT
+    assert 'let voiceMatchStepStatus = "";' in SCRIPT
+    assert "persistedSelectedVoiceId = data.selected_voice_id || null;" in load_block
+    assert "selectedVoiceId = persistedSelectedVoiceId;" in load_block
+    assert 'voiceMatchStepStatus = (data.pipeline && data.pipeline.voice_match) || "";' in load_block
+    assert "function canAutoConfirmTopAiVoice()" in SCRIPT
+    assert "if (launched || autoConfirmingVoice) return false;" in gate_block
+    assert "if (persistedSelectedVoiceId) return false;" in gate_block
+    assert 'if (voiceMatchStepStatus !== "waiting") return false;' in gate_block
+    assert 'if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;' in gate_block
+    assert "if (!canAutoConfirmTopAiVoice()) return false;" in SCRIPT
 
 
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():

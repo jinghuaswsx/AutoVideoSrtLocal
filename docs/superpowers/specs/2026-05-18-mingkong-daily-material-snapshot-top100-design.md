@@ -321,28 +321,41 @@ Indexes:
 
 After each 05:00 or 17:00 material snapshot is stored:
 
-1. Find previous snapshot candidates from `mingkong_material_daily_snapshots` where
-   `snapshot_date < current_snapshot_date`.
-2. Choose the previous candidate whose `snapshot_at` is closest to exactly 24 hours
-   before the current `snapshot_at`. For example, a 17:00 current snapshot should prefer
-   the previous day's 17:00 snapshot over the previous day's 05:00 snapshot.
-3. Store the chosen previous snapshot in Top100 rows as `previous_snapshot_date`,
+1. Find previous snapshot candidates from successful `mingkong_material_sync_runs`
+   joined to `mingkong_material_daily_snapshots`, where
+   `snapshot_date < current_snapshot_date`. Orphan snapshot rows without a successful
+   run are only a legacy fallback when no successful run candidate exists.
+2. Prefer candidates whose `source_product_count` and `source_product_limit` are at
+   least as large as the current run. This prevents a Top500 run from comparing against
+   an older Top300 run and treating rank 301-500 materials as brand-new spend.
+3. From the compatible candidate set, choose the previous candidate whose `snapshot_at`
+   is closest to exactly 24 hours before the current `snapshot_at`. For example, a 17:00
+   current snapshot should prefer the previous day's 17:00 snapshot over the previous
+   day's 05:00 snapshot.
+4. Store the chosen previous snapshot in Top100 rows as `previous_snapshot_date`,
    `previous_snapshot_at`, `previous_snapshot_slot`, and `comparison_interval_seconds`.
-4. Join current rows to previous rows by `material_key`.
-5. Compute:
+5. Join current rows to previous rows by `material_key`.
+6. Compute:
 
 ```text
 yesterday_spend_delta =
   max(0, current.cumulative_90_spend - previous.cumulative_90_spend)
 ```
 
-6. If no previous row exists for the material:
+7. If no previous snapshot exists at all:
    - `previous_cumulative_90_spend = NULL`
    - `is_new_material = 1`
    - `yesterday_spend_delta = current.cumulative_90_spend` for ranking purposes
-7. If the raw difference is negative, clamp to `0` and keep enough summary data for
+8. If a previous snapshot exists but no previous row exists for the material:
+   - If the same `product_code` existed in the previous snapshot, treat it as a newly
+     observed material on an already tracked product and use
+     `yesterday_spend_delta = current.cumulative_90_spend`.
+   - If the `product_code` did not exist in the previous snapshot, the baseline is
+     unknown because the product was not tracked then; use `yesterday_spend_delta = 0`
+     so old 90-day cumulative spend cannot inflate the daily Top100.
+9. If the raw difference is negative, clamp to `0` and keep enough summary data for
    operators to notice possible upstream reset behavior.
-8. Take the Top100 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
+10. Take the Top100 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
    spend, ads count, product rank, and material key.
 
 ## New Top100 Entry Calculation

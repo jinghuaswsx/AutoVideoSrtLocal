@@ -3326,6 +3326,9 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   var productId = parseInt(params.get('product') || '0', 10);
   var lang      = (params.get('lang') || '').toLowerCase().trim();
   var action    = params.get('action') || '';
+  var itemId    = params.get('item') || '';
+  var focus     = params.get('focus') || '';
+  var detailImageId = params.get('detail_image') || '';
 
   /* ── 1. Banner ── */
   var banner = document.createElement('div');
@@ -3392,6 +3395,64 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       btn.click();
       return true;
     }
+    function mbridgeCssEscape(value) {
+      value = String(value || '');
+      if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+      return value.replace(/["\\]/g, '\\$&');
+    }
+    function mbridgeHighlight(el) {
+      if (!el) return false;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'box-shadow 180ms, background 180ms';
+      el.style.boxShadow = '0 0 0 3px oklch(72% 0.16 85)';
+      el.style.background = 'oklch(97% 0.04 85)';
+      setTimeout(function() {
+        el.style.boxShadow = '';
+        el.style.background = '';
+      }, 2800);
+      return true;
+    }
+    function mbridgeFocusTarget() {
+      var edMask = document.getElementById('edMask');
+      if (!edMask || edMask.hidden) return false;
+      if (action === 'product_links') {
+        var linkBtn = document.getElementById('edProductLinksOpenBtn');
+        if (linkBtn && !linkBtn.disabled) linkBtn.click();
+        setTimeout(function() {
+          if (focus === 'shopify_images') {
+            mbridgeHighlight(document.querySelector('.oc-product-links-shopify'));
+            return;
+          }
+          mbridgeHighlight(document.getElementById('edProductLinksList'));
+        }, 900);
+        return true;
+      }
+      if (action === 'copywriting') {
+        return mbridgeHighlight(document.getElementById('edCwSection'));
+      }
+      if (action === 'detail_images') {
+        if (detailImageId) {
+          var detailCard = document.querySelector('.oc-detail-image[data-id="' + mbridgeCssEscape(detailImageId) + '"]');
+          if (mbridgeHighlight(detailCard)) return true;
+        }
+        return mbridgeHighlight(document.getElementById('edDetailImagesSection'));
+      }
+      if (action === 'video' || action === 'cover') {
+        if (itemId) {
+          var itemCard = document.querySelector('.oc-vitem[data-item="' + mbridgeCssEscape(itemId) + '"]');
+          if (mbridgeHighlight(itemCard)) return true;
+        }
+        return mbridgeHighlight(document.getElementById('edItemsSection'));
+      }
+      return false;
+    }
+    function mbridgeWaitFocusTarget() {
+      var focusTried = 0;
+      var focusInterval = setInterval(function() {
+        focusTried++;
+        if (mbridgeFocusTarget() || focusTried > 20) clearInterval(focusInterval);
+      }, 350);
+    }
 
     if (action === 'translate' && clickRowAction('.js-translate[data-pid="' + productId + '"]')) {
       return;
@@ -3409,7 +3470,10 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     editBtn.click();
 
     /* ── 4. Switch lang tab after modal opens (async fetch inside openEdit) ── */
-    if (!lang) return;
+    if (!lang) {
+      mbridgeWaitFocusTarget();
+      return;
+    }
 
     var langTried = 0;
     var langInterval = setInterval(function tryLang() {
@@ -3427,6 +3491,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       }
       clearInterval(langInterval);
       tab.click();
+      mbridgeWaitFocusTarget();
     }, 400);
 
   }, 400);

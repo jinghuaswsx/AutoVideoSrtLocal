@@ -121,10 +121,13 @@ def test_dashboard_sidebar_settings_group_includes_browser_monitor():
     settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
     lab_group_idx = nav_html.index('<details class="sidebar-group sidebar-lab-group"')
     browser_monitor_idx = nav_html.index("url_for('browser_monitor.page')", settings_group_idx)
+    bulk_admin_idx = nav_html.index("url_for('bulk_translate_pages.admin_tasks_page')", settings_group_idx)
 
     assert "浏览器监控" in nav_html
     assert settings_group_idx < browser_monitor_idx
+    assert browser_monitor_idx < bulk_admin_idx
     assert nav_html.index("浏览器监控", browser_monitor_idx) < lab_group_idx
+    assert nav_html.index("批量翻译任务管理", bulk_admin_idx) < lab_group_idx
 
 
 def test_dashboard_sidebar_groups_task_center_entries():
@@ -133,15 +136,19 @@ def test_dashboard_sidebar_groups_task_center_entries():
     nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
 
     task_group_idx = nav_html.index('<details class="sidebar-group sidebar-task-group"')
-    raw_pool_idx = nav_html.index('href="/raw-video-pool/"', task_group_idx)
     task_center_idx = nav_html.index('href="/tasks/"', task_group_idx)
-    bulk_admin_idx = nav_html.index("url_for('bulk_translate_pages.admin_tasks_page')", task_group_idx)
+    raw_pool_idx = nav_html.index('href="/raw-video-pool/"', task_group_idx)
     settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
+    task_group_end = nav_html.index("</details>", task_group_idx)
+    task_group_html = nav_html[task_group_idx:task_group_end]
+    settings_group_html = nav_html[settings_group_idx:nav_html.index('<details class="sidebar-group sidebar-lab-group"')]
 
-    assert "原始素材任务库" in nav_html
+    assert "原始素材处理" in nav_html
     assert "任务中心" in nav_html
     assert "批量翻译任务管理" in nav_html
-    assert task_group_idx < raw_pool_idx < task_center_idx < bulk_admin_idx < settings_group_idx
+    assert task_group_idx < task_center_idx < raw_pool_idx < settings_group_idx
+    assert "bulk_translate_pages.admin_tasks_page" not in task_group_html
+    assert "bulk_translate_pages.admin_tasks_page" in settings_group_html
     assert 'data-default-href="{{ task_group_href }}"' in nav_html
     assert '<details class="sidebar-group sidebar-task-group" open' not in nav_html
 
@@ -152,7 +159,7 @@ def test_dashboard_sidebar_task_group_opens_when_child_active(authed_client_no_d
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert '<details class="sidebar-group sidebar-task-group" open>' in html
-    assert re.search(r'<summary[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span>', html)
+    assert re.search(r'<summary[^>]*data-default-href="/tasks/"[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span>', html)
     assert re.search(r'<a href="/raw-video-pool/"[^>]*class="active"', html)
 
 

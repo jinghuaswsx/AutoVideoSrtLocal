@@ -308,6 +308,93 @@ def test_create_parent_task_supports_per_language_assignments(monkeypatch):
     assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_BLOCKED)
 
 
+def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.lastrowid = 100
+            self.rowcount = 1
+            self._next_id = 100
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+            if sql.startswith("INSERT INTO tasks"):
+                self.lastrowid = self._next_id
+                self._next_id += 1
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    notifications = []
+    conn = FakeConn()
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_parent_assigned": staticmethod(lambda *args, **kwargs: notifications.append("parent_assigned")),
+                "notify_pending_raw_task": staticmethod(lambda *args, **kwargs: notifications.append("pending_raw")),
+                "notify_child_blocked": staticmethod(lambda *args, **kwargs: notifications.append("child_blocked")),
+                "notify_child_assigned": staticmethod(lambda *args, **kwargs: notifications.append("child_assigned")),
+            },
+        ),
+        raising=False,
+    )
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=7,
+        media_item_id=8,
+        countries=["DE", "FR"],
+        language_assignments={"DE": 9, "FR": 10},
+        raw_processor_id=88,
+        reused_raw_source_id=301,
+        created_by=1,
+    )
+
+    assert parent_id == 100
+    inserts = [
+        args for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO tasks")
+    ]
+    assert inserts[0][2:4] == (88, tasks.PARENT_RAW_DONE)
+    assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_ASSIGNED)
+    assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_ASSIGNED)
+    events = [
+        args[1] for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO task_events")
+    ]
+    assert "raw_source_reused" in events
+    assert notifications == ["child_assigned", "child_assigned"]
+
+
 def test_create_parent_task_rejects_empty_countries(
     db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
@@ -690,11 +777,115 @@ def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
         lambda product_id, lang, product: {"ok": True, "required": True, "reason": ""},
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
 
     with pytest.raises(tasks.NotReadyError) as exc:
         tasks.submit_child(task_id=44, actor_user_id=2)
 
     assert "detail_images" in exc.value.missing
+
+
+def test_submit_child_passes_when_missing_step_is_manually_confirmed(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    conn = FakeConn()
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "parent_task_id": 10,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_ASSIGNED,
+            "assignee_id": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 1,
+            "object_key": "x",
+            "cover_object_key": "c",
+            "lang": lang,
+            "product_id": product_id,
+        },
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: {"detail_images"})
+    monkeypatch.setattr(
+        "appcore.pushes.compute_readiness",
+        lambda i, p: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {
+            "ok": False,
+            "required": True,
+            "reason": "英文详情图 2 张，目标语种详情图 0 张",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+
+    tasks.submit_child(task_id=44, actor_user_id=2)
+
+    assert any(
+        "UPDATE tasks SET status=%s" in sql
+        and args == (tasks.CHILD_REVIEW, 44, tasks.CHILD_ASSIGNED)
+        for sql, args in conn.cursor_obj.executed
+    )
+    assert any(
+        "INSERT INTO task_events" in sql and args[1] == "submitted"
+        for sql, args in conn.cursor_obj.executed
+    )
 
 
 def test_submit_child_fails_when_target_lang_item_missing(
