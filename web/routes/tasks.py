@@ -151,6 +151,7 @@ def api_list():
     tab = (request.args.get("tab") or "mine").strip()
     keyword = (request.args.get("keyword") or "").strip()
     high_status = (request.args.get("status") or "").strip()
+    bucket = (request.args.get("bucket") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
     if tab == "all":
@@ -160,6 +161,8 @@ def api_list():
         pass
     else:
         return _json_response({"error": "invalid tab"}, 400)
+    if bucket and bucket not in {"todo", "review", "done"}:
+        return _json_response({"error": "invalid bucket"}, 400)
 
     return _json_response(
         tasks_svc.list_task_center_items(
@@ -168,6 +171,7 @@ def api_list():
             can_process_raw_video=_has_capability("can_process_raw_video"),
             keyword=keyword,
             high_status=high_status,
+            bucket=bucket,
             page=page,
             page_size=page_size,
         )
