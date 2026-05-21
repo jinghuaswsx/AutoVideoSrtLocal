@@ -907,6 +907,39 @@ def test_child_acceptance_payload_marks_only_result_steps_as_manual_submittable(
         assert "manual_output" not in by_key[status_key]
 
 
+def test_detail_images_status_keeps_all_target_image_evidence(monkeypatch):
+    from appcore import medias, tasks
+
+    source_rows = [
+        {"id": 100 + idx, "object_key": f"1/medias/9/en-{idx}.jpg"}
+        for idx in range(1, 11)
+    ]
+    target_rows = [
+        {
+            "id": 200 + idx,
+            "object_key": f"1/medias/9/de-{idx}.jpg",
+            "file_size": idx * 1000,
+            "width": 800,
+            "height": 1200,
+        }
+        for idx in range(1, 11)
+    ]
+
+    def fake_list_detail_images(product_id, lang):
+        assert product_id == 9
+        return source_rows if lang == "en" else target_rows
+
+    monkeypatch.setattr(medias, "list_detail_images", fake_list_detail_images)
+    monkeypatch.setattr(medias, "detail_image_is_gif", lambda row: False)
+
+    status = tasks._detail_images_status(9, "DE")
+
+    assert status["source_count"] == 10
+    assert status["target_count"] == 10
+    assert len(status["evidence"]) == 10
+    assert [item["detail_image_id"] for item in status["evidence"]] == list(range(201, 211))
+
+
 def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     from appcore import medias, tasks
 

@@ -143,13 +143,17 @@
 .tc-review-image { display:block; width:100%; max-height:260px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
 .tc-review-asset-meta { margin-top:6px; font-size:12px; color:var(--tc-fg-muted); overflow-wrap:anywhere; }
 .tc-readiness-evidence { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:8px 0 2px 20px; }
+.tc-readiness-evidence--image-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; align-items:start; }
 .tc-readiness-evidence-item { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; color:var(--tc-fg); }
+.tc-readiness-evidence--image-grid .tc-readiness-evidence-item { padding:5px; }
 .tc-readiness-evidence-item.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
 .tc-readiness-link { display:inline-flex; max-width:100%; color:var(--tc-accent); font-weight:700; overflow-wrap:anywhere; }
 .tc-readiness-video { display:block; width:100%; max-height:300px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
 .tc-readiness-image-link { display:block; }
 .tc-readiness-image { display:block; width:100%; max-height:220px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
+.tc-readiness-evidence--image-grid .tc-readiness-image { height:150px; max-height:none; }
 .tc-readiness-meta { margin-top:5px; color:var(--tc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.tc-readiness-meta--image { margin-top:3px; font-size:11px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tc-readiness-title { font-weight:700; color:var(--tc-fg); margin-bottom:3px; overflow-wrap:anywhere; }
 .tc-readiness-body { color:var(--tc-fg-muted); line-height:1.45; overflow-wrap:anywhere; }
 .tc-readiness-copy-lines { display:grid; gap:3px; min-width:0; margin-top:4px; }
@@ -181,6 +185,7 @@
   .tc-event-facts { grid-template-columns:1fr; }
   .tc-review-grid { grid-template-columns:1fr; }
   .tc-readiness-evidence { grid-template-columns:1fr; }
+  .tc-readiness-evidence--image-grid { grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); }
   .tc-niuma-meta,
   .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
   .tc-raw-self-review-actions { grid-template-columns:1fr; gap:10px; }
@@ -683,6 +688,18 @@ function tcReadinessEvidenceMeta(item) {
   if (item && item.lang) parts.push(tcLanguageLabel(item.lang));
   return parts.join(' · ');
 }
+function tcReadinessEvidenceGridClass(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length < 3) return '';
+  const allImages = list.every(function(item) {
+    return String((item && item.type) || '').trim() === 'image';
+  });
+  return allImages ? ' tc-readiness-evidence--image-grid' : '';
+}
+function tcRenderReadinessImageMeta(label, rawMeta) {
+  const title = rawMeta ? ' title="' + tcAttr(rawMeta) + '"' : '';
+  return '<div class="tc-readiness-meta tc-readiness-meta--image"' + title + '><strong>' + label + '</strong></div>';
+}
 function tcRenderReadinessTextLines(item) {
   const rawLines = Array.isArray(item && item.lines) ? item.lines : [];
   const lines = rawLines.length ? rawLines : [
@@ -704,7 +721,8 @@ function tcRenderReadinessEvidenceItem(item) {
   const type = String((item && item.type) || '').trim();
   const url = String((item && item.url) || '').trim();
   const label = tcEsc((item && item.label) || '产物');
-  const meta = tcEsc(tcReadinessEvidenceMeta(item || {}));
+  const rawMeta = tcReadinessEvidenceMeta(item || {});
+  const meta = tcEsc(rawMeta);
   const className = 'tc-readiness-evidence-item' + tcReadinessEvidenceClass(item);
   const metaHtml = meta ? '<div class="tc-readiness-meta">' + meta + '</div>' : '';
   if (type === 'video' && url) {
@@ -718,7 +736,7 @@ function tcRenderReadinessEvidenceItem(item) {
       + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
       + '<img class="tc-readiness-image" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
       + '</a>'
-      + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+      + tcRenderReadinessImageMeta(label, rawMeta)
       + '</div>';
   }
   if (type === 'link' && url) {
@@ -752,7 +770,7 @@ function tcRenderReadinessEvidenceItem(item) {
 function tcRenderReadinessEvidence(evidence) {
   const items = Array.isArray(evidence) ? evidence : [];
   if (!items.length) return '';
-  return '<div class="tc-readiness-evidence">' + items.map(tcRenderReadinessEvidenceItem).join('') + '</div>';
+  return '<div class="tc-readiness-evidence' + tcReadinessEvidenceGridClass(items) + '">' + items.map(tcRenderReadinessEvidenceItem).join('') + '</div>';
 }
 function tcSubtitleRemovalBadgeClass(status) {
   const key = String(status || '').trim();

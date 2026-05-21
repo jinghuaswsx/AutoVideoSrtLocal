@@ -1683,7 +1683,7 @@ def _detail_images_status(product_id: int, lang: str) -> dict:
         "reason": reason,
         "evidence": [
             _review_detail_image_asset(row, index)
-            for index, row in enumerate(target_rows[:6], start=1)
+            for index, row in enumerate(target_rows, start=1)
         ],
     }
 

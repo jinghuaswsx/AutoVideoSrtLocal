@@ -110,3 +110,14 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "原始视频素材审核结果" in source
     assert "结果反馈" in source
     assert "错误摘要" not in source
+
+
+def test_task_center_readiness_images_use_compact_grid():
+    source = (ROOT / "web" / "templates" / "tasks_list.html").read_text(encoding="utf-8")
+
+    assert "function tcReadinessEvidenceGridClass" in source
+    assert "function tcRenderReadinessImageMeta" in source
+    assert "tc-readiness-evidence--image-grid" in source
+    assert "tc-readiness-meta--image" in source
+    assert "tcReadinessEvidenceGridClass(items)" in source
+    assert "tcRenderReadinessImageMeta(label, rawMeta)" in source
