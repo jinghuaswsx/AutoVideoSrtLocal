@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, redirect, request, url_for
 from flask_login import current_user, login_required
-
-from web.auth import permission_required
 
 from appcore import raw_video_pool as rvp_svc
 from web.services.artifact_download import safe_task_file_response
@@ -30,35 +28,14 @@ MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
 ALLOWED_EXT = (".mp4", ".mov", ".webm", ".mkv")
 
 
-def _is_admin() -> bool:
-    return getattr(current_user, "is_superadmin", False)
-
-
 def _viewer_role() -> str:
     return getattr(current_user, "role", "user") or "user"
 
 
-def _can_process_raw_video() -> bool:
-    if _is_admin():
-        return True
-    has_permission = getattr(current_user, "has_permission", None)
-    if callable(has_permission):
-        return bool(has_permission("can_process_raw_video"))
-    perms = getattr(current_user, "permissions", None) or {}
-    if isinstance(perms, dict):
-        return bool(perms.get("can_process_raw_video"))
-    return False
-
-
 @bp.route("/", methods=["GET"])
 @login_required
-@permission_required("raw_video_pool")
 def index():
-    return render_template(
-        "raw_video_pool_list.html",
-        is_admin=_is_admin(),
-        can_process_raw_video=_can_process_raw_video(),
-    )
+    return redirect(url_for("tasks.index"))
 
 
 @bp.route("/api/list", methods=["GET"])

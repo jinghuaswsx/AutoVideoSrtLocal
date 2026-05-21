@@ -396,9 +396,8 @@ def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
 
     assert "new URLSearchParams({" in tasks_template
     assert "window.open(url, '_blank', 'noopener,noreferrer');" in tasks_template
-    assert "window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');" in tasks_template
+    assert "window.open('/raw-video-pool/'" not in tasks_template
     assert "window.open(url, '_blank');" not in tasks_template
-    assert "window.open('/raw-video-pool/', '_blank');" not in tasks_template
     assert "window.open('/medias?product_id=' + encodeURIComponent(pid || ''), '_blank', 'noopener,noreferrer');" in order_template
     assert "window.open('/medias?product_id=' + pid, '_blank');" not in order_template
     assert "const taskId = String(data.task_id || '');" in medias_js

@@ -73,7 +73,7 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     image_translate_idx = nav_html.index('href="/image-translate"')
     subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
     mk_selection_idx = nav_html.index('href="/xuanpin/mk"')
-    task_group_idx = nav_html.index("sidebar-task-group")
+    task_center_idx = nav_html.index('href="/tasks/"')
     settings_group_idx = nav_html.index("sidebar-settings-group")
     lab_group_idx = nav_html.index("sidebar-lab-group")
 
@@ -81,8 +81,8 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     assert data_group_idx < order_analytics_idx < product_profit_idx < order_profit_idx
     assert material_group_idx < image_translate_idx < subtitle_removal_idx < title_translate_idx
     assert video_group_idx < multi_translate_idx < omni_translate_idx
-    assert video_group_idx < mk_selection_idx < task_group_idx
-    assert task_group_idx < settings_group_idx < lab_group_idx
+    assert video_group_idx < mk_selection_idx < task_center_idx
+    assert task_center_idx < settings_group_idx < lab_group_idx
 
 
 def test_dashboard_sidebar_moves_lab_group_to_bottom():
@@ -130,37 +130,31 @@ def test_dashboard_sidebar_settings_group_includes_browser_monitor():
     assert nav_html.index("批量翻译任务管理", bulk_admin_idx) < lab_group_idx
 
 
-def test_dashboard_sidebar_groups_task_center_entries():
+def test_dashboard_sidebar_uses_single_task_menu_entry():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
     nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
 
-    task_group_idx = nav_html.index('<details class="sidebar-group sidebar-task-group"')
-    task_center_idx = nav_html.index('href="/tasks/"', task_group_idx)
-    raw_pool_idx = nav_html.index('href="/raw-video-pool/"', task_group_idx)
+    task_center_idx = nav_html.index('href="/tasks/"')
     settings_group_idx = nav_html.index('<details class="sidebar-group sidebar-settings-group"')
-    task_group_end = nav_html.index("</details>", task_group_idx)
-    task_group_html = nav_html[task_group_idx:task_group_end]
     settings_group_html = nav_html[settings_group_idx:nav_html.index('<details class="sidebar-group sidebar-lab-group"')]
 
-    assert "去字幕原始视频素材处理" in nav_html
-    assert "任务中心" in nav_html
+    assert "sidebar-task-group" not in nav_html
+    assert 'href="/raw-video-pool/"' not in nav_html
+    assert "小语种视频翻译" in nav_html
     assert "批量翻译任务管理" in nav_html
-    assert task_group_idx < task_center_idx < raw_pool_idx < settings_group_idx
-    assert "bulk_translate_pages.admin_tasks_page" not in task_group_html
+    assert task_center_idx < settings_group_idx
     assert "bulk_translate_pages.admin_tasks_page" in settings_group_html
-    assert 'data-default-href="{{ task_group_href }}"' in nav_html
-    assert '<details class="sidebar-group sidebar-task-group" open' not in nav_html
 
 
-def test_dashboard_sidebar_task_group_opens_when_child_active(authed_client_no_db):
-    resp = authed_client_no_db.get("/raw-video-pool/")
+def test_dashboard_sidebar_marks_single_task_entry_active(authed_client_no_db):
+    resp = authed_client_no_db.get("/tasks/")
 
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert '<details class="sidebar-group sidebar-task-group" open>' in html
-    assert re.search(r'<summary[^>]*data-default-href="/tasks/"[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span>', html)
-    assert re.search(r'<a href="/raw-video-pool/"[^>]*class="active"', html)
+    assert "sidebar-task-group" not in html
+    assert re.search(r'<a href="/tasks/"[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span> 小语种视频翻译', html)
+    assert 'href="/raw-video-pool/"' not in html
 
 
 def test_dashboard_sidebar_hides_offline_video_translation_entries():
