@@ -768,9 +768,8 @@
       or request.path.startswith('/productivity-stats')
       or request.path.startswith('/admin/security-audit')
     %}
-    {% set task_group_active =
-      request.path.startswith('/raw-video-pool/')
-      or (request.path.startswith('/tasks/') and not request.path.startswith('/tasks/api'))
+    {% set task_center_active =
+      request.path.startswith('/tasks/') and not request.path.startswith('/tasks/api')
     %}
     <a class="sidebar-brand" href="{{ url_for('projects.root') }}">
       <div class="sidebar-brand-icon">🎬</div>
@@ -956,32 +955,10 @@
         <span class="nav-icon">🔍</span> 选品中心
       </a>
       {% endif %}
-      {% set task_group_href = "" %}
       {% if has_permission('task_center') %}
-        {% set task_group_href = "/tasks/" %}
-      {% elif has_permission('raw_video_pool') %}
-        {% set task_group_href = "/raw-video-pool/" %}
-      {% endif %}
-      {% if has_permission('raw_video_pool') or has_permission('task_center') %}
-      <details class="sidebar-group sidebar-task-group" {% if task_group_active %}open{% endif %}>
-        <summary data-sidebar-group-summary data-default-href="{{ task_group_href }}" {% if task_group_active %}class="active"{% endif %}>
-          <span class="nav-icon">📋</span>
-          <span class="nav-label">任务中心</span>
-          <span class="sidebar-group-caret">⌄</span>
-        </summary>
-        <div class="sidebar-subnav">
-          {% if has_permission('task_center') %}
-          <a href="/tasks/" {% if request.path.startswith('/tasks/') and not request.path.startswith('/tasks/api') %}class="active"{% endif %}>
-            <span class="nav-icon">📋</span> 任务中心
-          </a>
-          {% endif %}
-          {% if has_permission('raw_video_pool') %}
-          <a href="/raw-video-pool/" {% if request.path.startswith('/raw-video-pool/') %}class="active"{% endif %}>
-            <span class="nav-icon">🎬</span> 去字幕原始视频素材处理
-          </a>
-          {% endif %}
-        </div>
-      </details>
+      <a href="/tasks/" {% if task_center_active %}class="active"{% endif %}>
+        <span class="nav-icon">📋</span> 小语种视频翻译
+      </a>
       {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
