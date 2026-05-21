@@ -782,7 +782,11 @@ def step_translate_shot_limit(runner, task_id: str) -> None:
     variant_state["localized_translation"] = localized_translation
     variants["normal"] = variant_state
 
-    cfg = task.get("plugin_config") or {}
+    try:
+        cfg = runner._resolve_plugin_config(task_id)
+    except Exception:
+        log.warning("[omni] failed to resolve plugin_config for shot translate", exc_info=True)
+        cfg = task.get("plugin_config") or {}
     if cfg.get("tts_strategy") == "sentence_reconcile" or cfg.get("subtitle") == "sentence_units":
         av_sentences: list[dict[str, Any]] = []
         for fallback_index, (unit, tr) in enumerate(zip(translation_units, translations)):
