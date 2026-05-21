@@ -12,9 +12,7 @@ from appcore import mk_import as mk_import_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
 from appcore.users import (
-    ensure_raw_processor_user,
     ensure_translation_work_user,
-    list_raw_processors,
     list_translation_work_users,
     list_translators,
 )
@@ -219,7 +217,7 @@ def api_create_parent():
             translator_id=translator_id,
             language_assignments=language_assignments,
         )
-        ensure_raw_processor_user(raw_processor_id)
+        ensure_translation_work_user(raw_processor_id)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
     try:
@@ -511,7 +509,7 @@ def api_translators():
 @login_required
 @admin_required
 def api_raw_processors():
-    return _json_response({"users": list_raw_processors()})
+    return _json_response({"users": list_translation_work_users()})
 
 
 @bp.route("/api/translation-work-users", methods=["GET"])

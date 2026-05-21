@@ -937,7 +937,7 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
       <div style="margin-bottom:12px;">
         <label>原视频处理人：</label>
         <select id="tcCreateRawProcessor" class="tc-input" style="width:100%;">
-          ${rawOpts || '<option value="">没有可用的原视频处理人（请确保有用户拥有 can_process_raw_video 权限）</option>'}
+          ${rawOpts || '<option value="">没有可用的原视频处理人（请确保有用户在翻译工作范围内）</option>'}
         </select>
       </div>
       <div style="margin-bottom:12px;">
