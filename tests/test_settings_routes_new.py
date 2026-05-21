@@ -904,7 +904,7 @@ def test_settings_bindings_voice_selection_shows_three_provider_channels(admin_n
     assert 'value="gemini_vertex"' not in row_html
 
 
-def test_settings_bindings_renders_voice_ai_auto_select_checkbox_checked_by_default(admin_no_db_client):
+def test_settings_omni_preset_renders_voice_ai_auto_select_checkbox_checked_by_default(admin_no_db_client):
     with patch("web.routes.settings._provider_rows_by_group",
                return_value=_fake_provider_groups()), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
@@ -912,28 +912,27 @@ def test_settings_bindings_renders_voice_ai_auto_select_checkbox_checked_by_defa
          patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
          patch("web.routes.settings.get_image_translate_default_model",
                return_value="gemini-3.1-flash-image-preview"):
-        resp = admin_no_db_client.get("/settings?tab=bindings")
+        resp = admin_no_db_client.get("/settings?tab=omni_preset")
 
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert 'name="voice_ai_auto_select_enabled"' in body
     assert '默认自动选择 AI 排名第一音色' in body
+    assert '视频翻译设置' in body
+    assert 'Omni 实验预设' not in body
     assert 'name="voice_ai_auto_select_enabled" value="1"' in body
     assert 'checked' in body.split('name="voice_ai_auto_select_enabled"', 1)[1].split(">", 1)[0]
 
 
 def test_settings_post_bindings_accepts_voice_selection_vertex_adc(admin_no_db_client):
-    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
-         patch("web.routes.settings.set_voice_ai_auto_select_enabled") as m_set_auto:
+    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "bindings",
-            "voice_ai_auto_select_enabled": "1",
             "binding_voice_selection.assess_provider": "gemini_vertex_adc",
             "binding_voice_selection.assess_model": "gemini-3.5-flash",
         })
 
     assert resp.status_code in (302, 303)
-    m_set_auto.assert_called_once_with(True)
     m_upsert.assert_any_call(
         "voice_selection.assess",
         provider="gemini_vertex_adc",
@@ -942,23 +941,31 @@ def test_settings_post_bindings_accepts_voice_selection_vertex_adc(admin_no_db_c
     )
 
 
-def test_settings_post_bindings_turns_off_voice_ai_auto_select_when_checkbox_absent(admin_no_db_client):
-    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
+def test_settings_post_omni_preset_turns_on_voice_ai_auto_select_when_checkbox_present(admin_no_db_client):
+    with patch("web.routes.settings.english_redub_settings.set_voice_match_strategy") as m_set_strategy, \
          patch("web.routes.settings.set_voice_ai_auto_select_enabled") as m_set_auto:
         resp = admin_no_db_client.post("/settings", data={
-            "tab": "bindings",
-            "binding_video_score.run_provider": "gemini_aistudio",
-            "binding_video_score.run_model": "gemini-3.5-flash",
+            "tab": "omni_preset",
+            "voice_ai_auto_select_enabled": "1",
+            "english_redub_voice_match_strategy": "timbre_speed",
         })
 
     assert resp.status_code in (302, 303)
+    m_set_strategy.assert_called_once_with("timbre_speed")
+    m_set_auto.assert_called_once_with(True)
+
+
+def test_settings_post_omni_preset_turns_off_voice_ai_auto_select_when_checkbox_absent(admin_no_db_client):
+    with patch("web.routes.settings.english_redub_settings.set_voice_match_strategy") as m_set_strategy, \
+         patch("web.routes.settings.set_voice_ai_auto_select_enabled") as m_set_auto:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "omni_preset",
+            "english_redub_voice_match_strategy": "legacy",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_set_strategy.assert_called_once_with("legacy")
     m_set_auto.assert_called_once_with(False)
-    m_upsert.assert_any_call(
-        "video_score.run",
-        provider="gemini_aistudio",
-        model="gemini-3.5-flash",
-        updated_by=1,
-    )
 
 
 def test_settings_post_bindings_rejects_voice_selection_doubao(admin_no_db_client):

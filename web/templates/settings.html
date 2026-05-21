@@ -126,7 +126,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <a href="{{ url_for('settings.index', tab='audio_separation') }}"
      class="settings-tab {{ 'active' if active_tab == 'audio_separation' }}">人声分离</a>
   <a href="{{ url_for('settings.index', tab='omni_preset') }}"
-     class="settings-tab {{ 'active' if active_tab == 'omni_preset' }}">Omni 实验预设</a>
+     class="settings-tab {{ 'active' if active_tab == 'omni_preset' }}">视频翻译设置</a>
   {% endif %}
 </div>
 
@@ -357,25 +357,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     每个业务功能指定使用哪个供应商和模型。<br>
     留空保持当前。想恢复某行默认值，点右侧「恢复默认」。
     修改对所有用户生效（全局配置）。
-  </div>
-
-  <div class="bindings-module">
-    <h3>TTS 音色自动化</h3>
-    <div class="binding-row">
-      <div>
-        <div class="binding-label">自动音色选择</div>
-        <div class="binding-desc">开启后 AI 排名完成会自动选中 AI #1 并继续后续步骤；关闭则挂起等待人工干预。</div>
-        <div class="binding-code">voice_ai_auto_select_enabled</div>
-      </div>
-      <div style="grid-column: span 2;">
-        <label style="display:flex;align-items:center;gap:8px;margin-top:20px;">
-          <input type="checkbox" name="voice_ai_auto_select_enabled" value="1"
-                 {{ 'checked' if voice_ai_auto_select_enabled else '' }}>
-          <span>默认自动选择 AI 排名第一音色</span>
-        </label>
-      </div>
-      <div></div>
-    </div>
   </div>
 
   {% for module_code, module_label in module_labels.items() %}
@@ -1136,7 +1117,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 {% endif %}
 
 {# ═════════════════════════════════════════════════════════════
-   Tab · Omni 实验预设管理（Phase 5）
+   Tab · 视频翻译设置（原 Omni 实验预设）
    ═════════════════════════════════════════════════════════════ #}
 {% if can_manage_pricing and active_tab == 'omni_preset' %}
 <style>
@@ -1267,11 +1248,29 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <input type="hidden" name="tab" value="omni_preset">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
     <div>
-      <h2>英语视频重新配音</h2>
-      <div class="step-desc">只影响 <code>/english-redub</code> 的推荐音色排序；Omni / Multi 原有音色匹配不变。</div>
+      <h2>视频翻译设置</h2>
+      <div class="step-desc">集中管理共享音色选择器的自动化策略，以及 English Redub 的推荐音色排序实验开关。</div>
     </div>
     <button class="btn btn-primary btn-sm" type="submit">保存</button>
   </div>
+  <hr class="divider">
+  <label style="margin-top:0;">TTS 音色自动化</label>
+  <div class="binding-row" style="padding:14px 0 6px;">
+    <div>
+      <div class="binding-label">自动音色选择</div>
+      <div class="binding-desc">开启后 AI 排名完成会自动选中 AI #1 并继续后续步骤；关闭则挂起等待人工干预。</div>
+      <div class="binding-code">voice_ai_auto_select_enabled</div>
+    </div>
+    <div style="grid-column: span 2;">
+      <label style="display:flex;align-items:center;gap:8px;margin-top:20px;">
+        <input type="checkbox" name="voice_ai_auto_select_enabled" value="1"
+               {{ 'checked' if voice_ai_auto_select_enabled else '' }}>
+        <span>默认自动选择 AI 排名第一音色</span>
+      </label>
+    </div>
+    <div></div>
+  </div>
+  <hr class="divider">
   <label for="englishRedubVoiceMatchStrategy">音色推荐策略</label>
   <select id="englishRedubVoiceMatchStrategy" name="english_redub_voice_match_strategy">
     <option value="legacy" {{ 'selected' if english_redub_voice_match_strategy == 'legacy' }}>旧音色匹配</option>
