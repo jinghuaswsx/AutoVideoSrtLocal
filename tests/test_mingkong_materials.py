@@ -449,6 +449,85 @@ def test_choose_previous_snapshot_prefers_candidate_closest_to_24_hours():
     assert chosen["comparison_interval_seconds"] == 86520
 
 
+def test_previous_material_snapshot_prefers_compatible_source_count(monkeypatch):
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query(sql, args=()):
+        if "JOIN mingkong_material_sync_runs" in sql:
+            return [
+                {
+                    "snapshot_date": date(2026, 5, 20),
+                    "snapshot_at": datetime(2026, 5, 20, 13, 27, 11),
+                    "snapshot_slot": "1700",
+                    "source_product_count": 500,
+                    "source_product_limit": 500,
+                },
+                {
+                    "snapshot_date": date(2026, 5, 20),
+                    "snapshot_at": datetime(2026, 5, 20, 6, 0, 12),
+                    "snapshot_slot": "0600",
+                    "source_product_count": 300,
+                    "source_product_limit": 300,
+                },
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    chosen = mm._previous_material_snapshot_for(
+        snapshot_date="2026-05-21",
+        snapshot_at="2026-05-21 05:00:02",
+        min_source_product_count=500,
+        min_source_product_limit=500,
+    )
+
+    assert chosen["snapshot_at"] == "2026-05-20 13:27:11"
+    assert chosen["source_product_count"] == 500
+
+
+def test_build_top100_rows_does_not_inflate_untracked_products():
+    rows = mm.build_top100_rows(
+        snapshot_date="2026-05-21",
+        snapshot_at="2026-05-21 05:00:02",
+        previous_snapshot_date="2026-05-20",
+        previous_snapshot_at="2026-05-20 13:27:11",
+        comparison_interval_seconds=55971,
+        current_rows=[
+            {
+                "material_key": "unknown-product-video",
+                "product_code": "newly-tracked-product",
+                "cumulative_90_spend": 100000.0,
+                "video_ads_count": 9,
+                "rank_position": 1,
+            },
+            {
+                "material_key": "new-video-on-known-product",
+                "product_code": "known-product",
+                "cumulative_90_spend": 1200.0,
+                "video_ads_count": 2,
+                "rank_position": 2,
+            },
+            {
+                "material_key": "matched-video",
+                "product_code": "matched-product",
+                "cumulative_90_spend": 900.0,
+                "video_ads_count": 1,
+                "rank_position": 3,
+            },
+        ],
+        previous_by_key={"matched-video": {"cumulative_90_spend": 700.0}},
+        previous_product_codes={"known-product", "matched-product"},
+        previous_top100_keys=set(),
+        limit=100,
+    )
+
+    by_key = {row["material_key"]: row for row in rows}
+    assert by_key["unknown-product-video"]["yesterday_spend_delta"] == 0.0
+    assert by_key["new-video-on-known-product"]["yesterday_spend_delta"] == 1200.0
+    assert by_key["matched-video"]["yesterday_spend_delta"] == 200.0
+    assert rows[0]["material_key"] == "new-video-on-known-product"
+
+
 def test_select_mingkong_product_prefers_spend_over_video_count_after_exact_match():
     items = [
         {
