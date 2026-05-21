@@ -23,6 +23,7 @@ from appcore.llm_providers._helpers.gemini_calls import (
     _is_retryable,
     genai_types,
 )
+from appcore.llm_providers._helpers.vertex_json import parse_json_content
 from appcore.llm_provider_configs import (
     ProviderConfigError,
     credential_provider_for_adapter,
@@ -201,11 +202,21 @@ class GeminiVertexAdapter(LLMAdapter):
                     "output_tokens": output_tokens,
                 }
                 if response_schema is not None:
+                    raw_text = resp.text or ""
                     parsed = getattr(resp, "parsed", None)
                     if parsed is None:
-                        parsed = json.loads(resp.text or "{}")
+                        try:
+                            parsed = parse_json_content(raw_text or "{}")
+                        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                            return {
+                                "text": raw_text,
+                                "json": None,
+                                "raw": resp,
+                                "usage": usage,
+                                "json_parse_error": str(exc),
+                            }
                     return {
-                        "text": None,
+                        "text": raw_text,
                         "json": parsed,
                         "raw": resp,
                         "usage": usage,

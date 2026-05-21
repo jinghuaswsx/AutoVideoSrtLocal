@@ -1,3 +1,5 @@
+import pytest
+
 from appcore.llm_media_optimizer import OptimizedMedia
 from pipeline import video_ai_review
 
@@ -19,6 +21,70 @@ def _review_payload():
         },
         "usage": {},
     }
+
+
+def test_assess_parses_markdown_wrapped_json_text(monkeypatch):
+    raw = """```json
+{
+  "dimensions": {
+    "translation_fidelity": 91,
+    "naturalness": 89
+  },
+  "overall_score": 90,
+  "verdict": "recommend",
+  "verdict_reason": "整体自然",
+  "issues": [],
+  "highlights": ["表达清晰"]
+}
+```"""
+
+    monkeypatch.setattr(
+        video_ai_review.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: {"text": raw, "usage": {}},
+    )
+
+    result = video_ai_review.assess(
+        source_language="zh",
+        target_language="en",
+        source_text="源文案",
+        target_text="target script",
+        task_id="task-video-review",
+        user_id=7,
+    )
+
+    assert result["overall_score"] == 90
+    assert result["verdict"] == "recommend"
+    assert result["raw_response"]["dimensions"]["naturalness"] == 89
+
+
+def test_assess_reports_stable_error_for_invalid_json_text(monkeypatch):
+    raw = '{"dimensions": "unterminated}'
+
+    monkeypatch.setattr(
+        video_ai_review.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: {
+            "text": raw,
+            "json": None,
+            "json_parse_error": "Unterminated string starting at: line 1 column 16",
+            "usage": {},
+        },
+    )
+
+    with pytest.raises(video_ai_review.VideoReviewResponseInvalidError) as exc_info:
+        video_ai_review.assess(
+            source_language="zh",
+            target_language="en",
+            source_text="源文案",
+            target_text="target script",
+            task_id="task-video-review",
+            user_id=7,
+        )
+
+    message = str(exc_info.value)
+    assert "AI 视频分析返回内容不是有效 JSON" in message
+    assert "Unterminated string" not in message
 
 
 def test_assess_optimizes_videos_before_llm_and_records_debug(monkeypatch, tmp_path):

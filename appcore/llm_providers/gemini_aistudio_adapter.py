@@ -15,6 +15,7 @@ from appcore.llm_providers._helpers.gemini_calls import (
     _extract_gemini_tokens,
     _is_retryable,
 )
+from appcore.llm_providers._helpers.vertex_json import parse_json_content
 from appcore.llm_provider_configs import (
     credential_provider_for_adapter,
     require_provider_config,
@@ -76,10 +77,20 @@ class GeminiAIStudioAdapter(LLMAdapter):
                 input_tokens, output_tokens = _extract_gemini_tokens(resp)
                 usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
                 if response_schema is not None:
+                    raw_text = resp.text or ""
                     parsed = getattr(resp, "parsed", None)
                     if parsed is None:
-                        parsed = json.loads(resp.text or "{}")
-                    return {"text": None, "json": parsed, "raw": resp, "usage": usage}
+                        try:
+                            parsed = parse_json_content(raw_text or "{}")
+                        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                            return {
+                                "text": raw_text,
+                                "json": None,
+                                "raw": resp,
+                                "usage": usage,
+                                "json_parse_error": str(exc),
+                            }
+                    return {"text": raw_text, "json": parsed, "raw": resp, "usage": usage}
                 return {"text": resp.text or "", "json": None, "raw": resp, "usage": usage}
             except Exception as exc:
                 last_err = exc

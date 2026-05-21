@@ -23,6 +23,7 @@ from appcore.llm_media_optimizer import (
     media_debug_snapshot,
     prepare_video_for_llm,
 )
+from pipeline.llm_util import parse_json_response
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,25 @@ _LANG_LABEL: dict[str, str] = {
 
 class VideoReviewResponseInvalidError(RuntimeError):
     """LLM 输出 schema 不合法。"""
+
+
+def _parse_review_json(raw_text: str) -> dict[str, Any]:
+    """Parse model JSON while keeping user-facing errors stable.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-05-21-video-ai-review-json-parse-hardening.md
+    """
+    preview = (raw_text or "").strip()[:200]
+    try:
+        payload = parse_json_response(raw_text)
+    except Exception as exc:
+        suffix = f"；原始响应预览：{preview!r}" if preview else "；原始响应为空"
+        raise VideoReviewResponseInvalidError(
+            "AI 视频分析返回内容不是有效 JSON" + suffix
+        ) from exc
+    if not isinstance(payload, dict):
+        raise VideoReviewResponseInvalidError("AI 视频分析返回内容不是 JSON object")
+    return payload
 
 
 def _system_prompt(*, has_source_video: bool, has_target_video: bool,
@@ -269,12 +289,9 @@ def assess(
         if payload is None:
             raw_text = (result.get("text") or "").strip()
             debug_call["response_preview"] = raw_text[:4000]
-            try:
-                payload = json.loads(raw_text)
-            except Exception as exc:
-                raise VideoReviewResponseInvalidError(
-                    f"non-JSON: {raw_text[:200]!r}"
-                ) from exc
+            if result.get("json_parse_error"):
+                debug_call["json_parse_error"] = result["json_parse_error"]
+            payload = _parse_review_json(raw_text)
 
         if not isinstance(payload, dict) or "dimensions" not in payload:
             raise VideoReviewResponseInvalidError("response missing dimensions")
