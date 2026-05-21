@@ -332,7 +332,8 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
         user_id=2,
         can_process_raw_video=True,
         keyword="Product",
-        high_status="completed",
+        high_status="",
+        bucket="done",
         page=2,
         page_size=5,
     ) == {
@@ -371,13 +372,47 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "t.status IN (%s, %s)" in captured["sql"]
     assert captured["args"] == (
         2,
-        tasks.PARENT_PENDING,
-        1,
         "%Product%",
         tasks.PARENT_ALL_DONE,
         tasks.CHILD_DONE,
         5,
         5,
+    )
+
+
+def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="mine",
+        user_id=7,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="todo",
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.assignee_id=%s" in captured["sql"]
+    assert "t.parent_task_id IS NULL AND t.status=%s" not in captured["sql"]
+    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        7,
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.CHILD_ASSIGNED,
+        20,
+        0,
     )
 
 
