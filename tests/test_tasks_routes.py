@@ -52,6 +52,15 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th>" in body
 
 
+def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "待派单素材" not in body
+    assert 'data-section-tab="dispatch"' not in body
+    assert "tcTabDispatch" not in body
+
+
 def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
