@@ -4,6 +4,15 @@ from datetime import datetime
 import pytest
 
 
+def test_copywriting_translate_child_detail_url_points_to_readonly_page():
+    from appcore import bulk_translate_projection as mod
+
+    assert (
+        mod._child_detail_url("copywriting_translate", "copy-1")
+        == "/copywriting-translate/copy-1"
+    )
+
+
 def test_list_user_tasks_filters_by_user_and_status(monkeypatch):
     from appcore import bulk_translate_projection as mod
 

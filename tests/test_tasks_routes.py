@@ -13,6 +13,16 @@ def test_task_center_child_translate_jump_uses_product_code_search(authed_client
     assert "tcChildJumpTranslate(taskId, country, productId, productCode)" in body
 
 
+def test_task_center_renders_backend_product_actions(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcRenderActionLinks" in body
+    assert "tc-action-link--primary" in body
+    assert "check.actions" in body
+    assert "it.actions" in body
+
+
 def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

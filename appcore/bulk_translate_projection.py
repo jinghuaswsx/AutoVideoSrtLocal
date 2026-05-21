@@ -513,7 +513,7 @@ def _child_detail_url(task_type: str | None, child_task_id: str | None) -> str |
     if task_type == "image_translate":
         return f"/image-translate/{child_task_id}"
     if task_type == "copywriting_translate":
-        return None
+        return f"/copywriting-translate/{child_task_id}"
     return None
 
 

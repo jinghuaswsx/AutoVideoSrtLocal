@@ -8,12 +8,14 @@
 """
 from __future__ import annotations
 
+import json
 import uuid
 
-from flask import Blueprint, request
+from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+from appcore.db import query_one
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
 from appcore import project_state as project_store
 from appcore.task_recovery import try_register_active_task, unregister_active_task
@@ -28,6 +30,89 @@ from web.services.copywriting_translate import (
 
 bp = Blueprint("copywriting_translate", __name__,
                 url_prefix="/api/copywriting-translate")
+pages_bp = Blueprint("copywriting_translate_pages", __name__)
+
+
+def _is_admin_user() -> bool:
+    return (
+        bool(getattr(current_user, "is_superadmin", False))
+        or bool(getattr(current_user, "is_admin", False))
+        or getattr(current_user, "role", "") == "admin"
+    )
+
+
+def _parse_state_json(value) -> dict:
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _positive_int(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _stringify_time(value) -> str:
+    if not value:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat(sep=" ")
+    return str(value)
+
+
+def _load_copy_row(copy_id) -> dict | None:
+    normalized = _positive_int(copy_id)
+    if not normalized:
+        return None
+    row = query_one(
+        "SELECT id, product_id, lang, idx, title, body, description, "
+        "ad_carrier, ad_copy, ad_keywords, created_at, updated_at "
+        "FROM media_copywritings WHERE id=%s",
+        (normalized,),
+    )
+    return dict(row) if row else None
+
+
+def _load_copywriting_translate_detail(task_id: str) -> dict:
+    row = query_one(
+        "SELECT id, user_id, status, state_json, created_at, updated_at "
+        "FROM projects "
+        "WHERE id=%s AND type='copywriting_translate' AND deleted_at IS NULL",
+        (task_id,),
+    )
+    if not row:
+        abort(404)
+    if str(row.get("user_id")) != str(getattr(current_user, "id", "")) and not _is_admin_user():
+        abort(404)
+    state = _parse_state_json(row.get("state_json"))
+    source_copy_id = _positive_int(state.get("source_copy_id"))
+    target_copy_id = _positive_int(state.get("target_copy_id"))
+    parent_task_id = str(state.get("parent_task_id") or "").strip()
+    return {
+        "task": {
+            "id": str(row.get("id") or task_id),
+            "status": row.get("status") or "",
+            "source_lang": state.get("source_lang") or "",
+            "target_lang": state.get("target_lang") or "",
+            "parent_task_id": parent_task_id,
+            "parent_task_url": f"/tasks/{parent_task_id}" if parent_task_id else "",
+            "source_copy_id": source_copy_id,
+            "target_copy_id": target_copy_id,
+            "tokens_used": int(state.get("tokens_used") or 0),
+            "last_error": state.get("last_error") or "",
+            "created_at": _stringify_time(row.get("created_at")),
+            "updated_at": _stringify_time(row.get("updated_at")),
+        },
+        "source_copy": _load_copy_row(source_copy_id),
+        "target_copy": _load_copy_row(target_copy_id),
+    }
 
 
 def _subscribe_socketio(bus: EventBus, socketio) -> None:
@@ -144,4 +229,19 @@ def start():
         )
     return copywriting_translate_flask_response(
         build_copywriting_translate_started_response(task_id=task_id)
+    )
+
+
+@bp.get("/<task_id>")
+@login_required
+def api_detail(task_id: str):
+    return jsonify(_load_copywriting_translate_detail(task_id))
+
+
+@pages_bp.get("/copywriting-translate/<task_id>")
+@login_required
+def detail_page(task_id: str):
+    return render_template(
+        "copywriting_translate_detail.html",
+        detail=_load_copywriting_translate_detail(task_id),
     )

@@ -517,7 +517,7 @@
     if (taskType === 'multi_translate') return `/multi-translate/${childTaskId}`;
     if (taskType === 'image_translate') return `/image-translate/${childTaskId}`;
     if (taskType === 'translate_lab') return `/translate-lab/${childTaskId}`;
-    if (taskType === 'copywriting_translate') return `/copywriting/${childTaskId}`;
+    if (taskType === 'copywriting_translate') return `/copywriting-translate/${childTaskId}`;
     return '';
   }
 

@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block title %}文案翻译详情{% endblock %}
+{% block page_title %}文案翻译详情{% endblock %}
+{% block content %}
+{% set task = detail.task or {} %}
+{% set source = detail.source_copy or {} %}
+{% set target = detail.target_copy or {} %}
+<style>
+  .ctd-shell { display:grid; gap:16px; max-width:1120px; margin:0 auto; }
+  .ctd-card { background:var(--bg-card); border:1px solid var(--border-main); border-radius:8px; padding:16px; }
+  .ctd-card h2 { font-size:16px; margin:0 0 12px; }
+  .ctd-meta { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+  .ctd-meta div { display:grid; gap:4px; }
+  .ctd-meta label { color:#64748b; font-size:12px; }
+  .ctd-meta strong { font-size:14px; overflow-wrap:anywhere; }
+  .ctd-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+  .ctd-copy { display:grid; gap:10px; }
+  .ctd-field label { display:block; color:#64748b; font-size:12px; margin-bottom:4px; }
+  .ctd-field pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px; min-height:44px; font-family:inherit; line-height:1.55; }
+  .ctd-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .ctd-btn { display:inline-flex; align-items:center; justify-content:center; min-height:32px; padding:0 12px; border-radius:6px; background:#2563eb; color:#fff; text-decoration:none; font-size:13px; }
+  .ctd-btn.secondary { background:#fff; color:#334155; border:1px solid #cbd5e1; }
+  @media (max-width:760px) { .ctd-grid { grid-template-columns:1fr; } }
+</style>
+<div class="ctd-shell">
+  <section class="ctd-card">
+    <h2>任务信息</h2>
+    <div class="ctd-meta">
+      <div><label>任务 ID</label><strong>{{ task.id or "—" }}</strong></div>
+      <div><label>状态</label><strong>{{ task.status or "—" }}</strong></div>
+      <div><label>源语言</label><strong>{{ task.source_lang or "—" }}</strong></div>
+      <div><label>目标语种</label><strong>{{ task.target_lang or "—" }}</strong></div>
+      <div><label>Token</label><strong>{{ task.tokens_used or 0 }}</strong></div>
+      <div><label>创建时间</label><strong>{{ task.created_at or "—" }}</strong></div>
+      <div><label>更新时间</label><strong>{{ task.updated_at or "—" }}</strong></div>
+    </div>
+    <div class="ctd-actions" style="margin-top:14px;">
+      {% if task.parent_task_url %}
+      <a class="ctd-btn secondary" href="{{ task.parent_task_url }}" target="_blank" rel="noopener noreferrer">父任务详情</a>
+      {% endif %}
+      <a class="ctd-btn secondary" href="/api/copywriting-translate/{{ task.id }}" target="_blank" rel="noopener noreferrer">查看 JSON</a>
+    </div>
+  </section>
+
+  {% if task.last_error %}
+  <section class="ctd-card">
+    <h2>失败原因</h2>
+    <div class="ctd-field"><pre>{{ task.last_error }}</pre></div>
+  </section>
+  {% endif %}
+
+  <div class="ctd-grid">
+    <section class="ctd-card ctd-copy">
+      <h2>源英文文案 #{{ task.source_copy_id or "—" }}</h2>
+      <div class="ctd-field"><label>标题</label><pre>{{ source.title or "" }}</pre></div>
+      <div class="ctd-field"><label>文案</label><pre>{{ source.body or "" }}</pre></div>
+      <div class="ctd-field"><label>描述</label><pre>{{ source.description or "" }}</pre></div>
+      <div class="ctd-field"><label>广告文案</label><pre>{{ source.ad_copy or "" }}</pre></div>
+      <div class="ctd-field"><label>关键词</label><pre>{{ source.ad_keywords or "" }}</pre></div>
+    </section>
+
+    <section class="ctd-card ctd-copy">
+      <h2>目标语种文案 #{{ task.target_copy_id or "—" }}</h2>
+      <div class="ctd-field"><label>标题</label><pre>{{ target.title or "" }}</pre></div>
+      <div class="ctd-field"><label>文案</label><pre>{{ target.body or "" }}</pre></div>
+      <div class="ctd-field"><label>描述</label><pre>{{ target.description or "" }}</pre></div>
+      <div class="ctd-field"><label>广告文案</label><pre>{{ target.ad_copy or "" }}</pre></div>
+      <div class="ctd-field"><label>关键词</label><pre>{{ target.ad_keywords or "" }}</pre></div>
+    </section>
+  </div>
+</div>
+{% endblock %}

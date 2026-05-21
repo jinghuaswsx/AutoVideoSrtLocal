@@ -48,6 +48,11 @@
 .tc-btn--primary { background:var(--tc-accent); color:#fff; border:none; }
 .tc-btn--primary:hover { background:var(--tc-accent-hover); }
 .tc-btn--danger { background:var(--tc-danger); color:#fff; border:none; }
+.tc-action-links { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
+.tc-action-link { display:inline-flex; align-items:center; justify-content:center; min-height:24px; height:auto; padding:4px 8px; font-size:11px; line-height:1.2; text-decoration:none; white-space:nowrap; }
+.tc-action-link--primary { background:var(--tc-accent); border-color:var(--tc-accent); color:#fff; }
+.tc-action-link--primary:hover { background:var(--tc-accent-hover); }
+.tc-action-link--disabled { color:var(--tc-fg-muted); background:var(--tc-bg-muted); cursor:not-allowed; }
 .tc-table-scroll { overflow-x:auto; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
@@ -663,6 +668,28 @@ function tcMediasUrl(taskId, productId, lang, productCode, action) {
   if (action) params.set('action', action);
   return '/medias/?' + params.toString();
 }
+function tcSafeHref(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return '';
+}
+function tcRenderActionLinks(actions) {
+  const list = Array.isArray(actions) ? actions : [];
+  if (!list.length) return '';
+  return '<div class="tc-action-links">' + list.map(function(action) {
+    const label = tcEsc(action.label || '查看');
+    const href = tcSafeHref(action.url);
+    const disabledReason = String(action.disabled_reason || '').trim();
+    if (!href || disabledReason) {
+      const title = disabledReason ? ' title="' + tcAttr(disabledReason) + '"' : '';
+      return '<span class="tc-btn tc-action-link tc-action-link--disabled"' + title + '>' + label + '</span>';
+    }
+    const primaryClass = action.primary ? ' tc-action-link--primary' : '';
+    return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+  }).join('') + '</div>';
+}
 
 async function tcFetchJson(url, opts) {
   const rsp = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts || {}));
@@ -950,11 +977,14 @@ async function tcOpenDetail(id) {
         wrap.innerHTML = items.map(function(it) {
           const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
           const href = tcMediasUrl(it.task_id || '', it.product_id || '', it.lang || '', it.product_code || '', 'history');
-          return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border);">'
+          const actions = tcRenderActionLinks(it.actions || [
+            {label: '素材库', url: href, kind: 'locate', primary: true}
+          ]);
+          return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
             + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
             + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
             + pushedBadge
-            + '<a href="' + tcEsc(href) + '" target="_blank" rel="noopener" class="tc-btn" style="font-size:10px; height:22px; padding:0 6px;">素材库</a>'
+            + actions
             + '</div>';
         }).join('');
       })
@@ -987,9 +1017,13 @@ async function tcOpenDetail(id) {
                     return tcEsc(label);
                   }).join('<br>') + '</div>'
                 : '';
-              return '<div style="padding:5px 0; border-bottom:1px dashed var(--tc-border);">'
+              const actions = tcRenderActionLinks(check.actions || []);
+              return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
+                + '<div style="min-width:0; flex:1 1 260px;">'
                 + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
                 + reason + links
+                + '</div>'
+                + actions
                 + '</div>';
             }).join('');
             return;

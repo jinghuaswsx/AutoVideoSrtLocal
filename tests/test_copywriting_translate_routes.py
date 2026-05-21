@@ -2,6 +2,8 @@
 
 patch DB + eventlet.spawn,不依赖真实 DB / 后台线程。
 """
+import json
+
 import pytest
 
 
@@ -176,6 +178,106 @@ def test_start_custom_source_lang(client_patched):
     assert resp.status_code == 202
     state = client_patched._inserted[0]["state"]
     assert state["source_lang"] == "zh"
+
+
+def _copywriting_translate_detail_query(project_user_id: int = 1):
+    def fake_query_one(sql, args=()):
+        if "FROM projects" in sql:
+            return {
+                "id": "copy-1",
+                "user_id": project_user_id,
+                "status": "done",
+                "state_json": json.dumps(
+                    {
+                        "source_copy_id": 101,
+                        "source_lang": "en",
+                        "target_lang": "de",
+                        "parent_task_id": "bulk-1",
+                        "target_copy_id": 202,
+                        "tokens_used": 88,
+                    },
+                    ensure_ascii=False,
+                ),
+                "created_at": "2026-05-21 10:00:00",
+                "updated_at": "2026-05-21 10:03:00",
+            }
+        if args == (101,):
+            return {
+                "id": 101,
+                "product_id": 9,
+                "lang": "en",
+                "title": "Source",
+                "body": "Source body",
+                "description": "Source description",
+            }
+        if args == (202,):
+            return {
+                "id": 202,
+                "product_id": 9,
+                "lang": "de",
+                "title": "Ziel",
+                "body": "Ziel body",
+                "description": "Ziel description",
+            }
+        raise AssertionError(sql)
+
+    return fake_query_one
+
+
+def test_detail_api_returns_readonly_payload(client_patched, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.query_one",
+        _copywriting_translate_detail_query(),
+        raising=False,
+    )
+
+    resp = client_patched.get("/api/copywriting-translate/copy-1")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["task"] == {
+        "id": "copy-1",
+        "status": "done",
+        "source_lang": "en",
+        "target_lang": "de",
+        "parent_task_id": "bulk-1",
+        "parent_task_url": "/tasks/bulk-1",
+        "source_copy_id": 101,
+        "target_copy_id": 202,
+        "tokens_used": 88,
+        "last_error": "",
+        "created_at": "2026-05-21 10:00:00",
+        "updated_at": "2026-05-21 10:03:00",
+    }
+    assert data["source_copy"]["body"] == "Source body"
+    assert data["target_copy"]["title"] == "Ziel"
+
+
+def test_detail_page_renders_readonly_payload(client_patched, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.query_one",
+        _copywriting_translate_detail_query(),
+        raising=False,
+    )
+
+    resp = client_patched.get("/copywriting-translate/copy-1")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "copy-1" in body
+    assert "Source body" in body
+    assert "Ziel body" in body
+
+
+def test_detail_rejects_non_owner_non_admin(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.query_one",
+        _copywriting_translate_detail_query(project_user_id=1),
+        raising=False,
+    )
+
+    assert authed_user_client_no_db.get("/api/copywriting-translate/copy-1").status_code == 404
+    assert authed_user_client_no_db.get("/copywriting-translate/copy-1").status_code == 404
 
 
 def test_start_unauthenticated_rejected():
