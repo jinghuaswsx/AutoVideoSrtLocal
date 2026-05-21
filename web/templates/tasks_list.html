@@ -53,6 +53,9 @@
 .tc-action-link--primary { background:var(--tc-accent); border-color:var(--tc-accent); color:#fff; }
 .tc-action-link--primary:hover { background:var(--tc-accent-hover); }
 .tc-action-link--disabled { color:var(--tc-fg-muted); background:var(--tc-bg-muted); cursor:not-allowed; }
+.tc-manual-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
+.tc-manual-action { display:inline-flex; align-items:center; justify-content:center; min-height:26px; height:auto; padding:4px 9px; font-size:12px; line-height:1.2; text-decoration:none; white-space:nowrap; }
+.tc-manual-confirmed { color:var(--tc-success-fg); background:var(--tc-success-bg); border-color:var(--tc-success-bg); cursor:default; }
 .tc-table-scroll { overflow-x:auto; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
@@ -762,9 +765,59 @@ function tcRenderActionLinks(actions) {
     return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   }).join('') + '</div>';
 }
+function tcReadinessManualUploadUrl(check, fallbackUrl) {
+  const direct = tcSafeHref(check && check.manual_upload_url);
+  if (direct) return direct;
+  const actions = Array.isArray(check && check.actions) ? check.actions : [];
+  for (let i = 0; i < actions.length; i += 1) {
+    const href = tcSafeHref(actions[i] && actions[i].url);
+    if (href) return href;
+  }
+  return tcSafeHref(fallbackUrl);
+}
+function tcRenderReadinessManualActions(taskId, check, fallbackUrl) {
+  const stepKey = String((check && check.key) || '').trim();
+  if (!stepKey) return '';
+  const uploadUrl = tcReadinessManualUploadUrl(check, fallbackUrl);
+  const upload = uploadUrl
+    ? '<a class="tc-btn tc-manual-action" href="' + tcAttr(uploadUrl) + '" target="_blank" rel="noopener noreferrer">手动传素材</a>'
+    : '<span class="tc-btn tc-manual-action tc-action-link--disabled">手动传素材</span>';
+  const confirmed = Boolean(check && check.manual_confirmed);
+  const confirm = confirmed
+    ? '<span class="tc-btn tc-manual-action tc-manual-confirmed">已确认完成</span>'
+    : '<button type="button" class="tc-btn tc-manual-action tc-btn--primary" onclick="tcConfirmChildStep(' + Number(taskId || 0) + ', \'' + tcInlineArg(stepKey) + '\', \'' + tcInlineArg((check && check.label) || stepKey) + '\')">确认完成</button>';
+  return '<div class="tc-manual-actions">' + upload + confirm + '</div>';
+}
+async function tcConfirmChildStep(taskId, stepKey, label) {
+  if (!taskId || !stepKey) return;
+  const name = label || stepKey;
+  if (!confirm('确认步骤「' + name + '」已由人工完成？')) return;
+  try {
+    await tcFetchJson('/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm', {
+      method: 'POST',
+      body: '{}',
+    });
+    if (TC_DETAIL_TASK_ID === taskId) {
+      tcOpenDetail(taskId);
+    } else {
+      tcRender();
+    }
+  } catch (e) {
+    alert('确认失败：' + (e.message || 'unknown'));
+  }
+}
+function tcCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? String(meta.getAttribute('content') || '') : '';
+}
 
 async function tcFetchJson(url, opts) {
-  const rsp = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts || {}));
+  const options = Object.assign({}, opts || {});
+  const headers = Object.assign({'Content-Type':'application/json'}, options.headers || {});
+  const token = tcCsrfToken();
+  if (token) headers['X-CSRFToken'] = token;
+  options.headers = headers;
+  const rsp = await fetch(url, options);
   if (!rsp.ok) {
     const body = await rsp.json().catch(() => ({error: rsp.statusText}));
     throw new Error(body.error || rsp.statusText);
@@ -1093,6 +1146,7 @@ async function tcOpenDetail(id) {
                     return tcEsc(label);
                   }).join('<br>') + '</div>'
                 : '';
+              const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
               const actions = tcRenderActionLinks(check.actions || []);
               return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
                 + '<div style="min-width:0; flex:1 1 260px;">'
@@ -1100,6 +1154,7 @@ async function tcOpenDetail(id) {
                 + reason + links
                 + evidence
                 + '</div>'
+                + manualActions
                 + actions
                 + '</div>';
             }).join('');

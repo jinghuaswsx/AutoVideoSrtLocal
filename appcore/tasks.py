@@ -37,6 +37,23 @@ PARENT_NON_TERMINAL = (
 PARENT_TERMINAL = (PARENT_ALL_DONE, PARENT_CANCELLED)
 CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
+CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
+CHILD_ACCEPTANCE_STEP_LABELS = {
+    "localized_media_item": "目标语种素材",
+    "translated_video": "视频翻译结果",
+    "translated_cover": "封面翻译结果",
+    "translated_copywriting": "文案翻译结果",
+    "push_texts": "推送文案格式",
+    "product_listed": "商品在架状态",
+    "language_supported": "广告语言配置",
+    "detail_images": "产品详情图翻译",
+    "shopify_images": "链接商品图替换",
+    "product_links": "商品链接探活",
+}
+CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
+CHILD_ACCEPTANCE_MISSING_ALIASES = {
+    "localized_media_item": "lang_item_missing",
+}
 RAW_NIUMA_EVENT_TYPES = {
     "raw_niuma_submitted",
     "raw_niuma_done",
@@ -1375,6 +1392,137 @@ def _acceptance_check(
     return payload
 
 
+def _normalize_child_acceptance_step_key(step_key: str) -> str:
+    key = str(step_key or "").strip().lower()
+    if key not in CHILD_ACCEPTANCE_STEP_LABELS:
+        raise ValueError("unknown step")
+    return key
+
+
+def _manual_confirmed_child_step_keys(task_id: int) -> set[str]:
+    rows = query_all(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type=%s ORDER BY id ASC",
+        (int(task_id), CHILD_MANUAL_STEP_CONFIRMED_EVENT),
+    )
+    confirmed: set[str] = set()
+    for row in rows or []:
+        payload = _parse_event_payload_obj(row.get("payload_json"))
+        try:
+            confirmed.add(_normalize_child_acceptance_step_key(payload.get("key") or ""))
+        except ValueError:
+            continue
+    return confirmed
+
+
+def _manual_upload_url_for_child_step(
+    *,
+    key: str,
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    item: dict | None,
+) -> str:
+    item_id = int(item["id"]) if item and item.get("id") else None
+    action_by_key = {
+        "localized_media_item": "translate",
+        "translated_video": "video",
+        "translated_cover": "cover",
+        "translated_copywriting": "copywriting",
+        "push_texts": "copywriting",
+        "product_listed": "product_links",
+        "language_supported": "product_links",
+        "detail_images": "detail_images",
+        "shopify_images": "product_links",
+        "product_links": "product_links",
+    }
+    focus_by_key = {
+        "shopify_images": "shopify_images",
+        "product_links": "product_links",
+    }
+    return _readiness_locate_url(
+        task_id=task_id,
+        product_id=product_id,
+        product_code=product_code,
+        lang=lang,
+        action=action_by_key.get(key, "translate"),
+        item_id=item_id,
+        focus=focus_by_key.get(key, ""),
+    )
+
+
+def _apply_child_manual_confirmations(
+    checks: list[dict],
+    *,
+    confirmed_keys: set[str],
+    task_id: int,
+    product_id: int,
+    product_code: str,
+    lang: str,
+    item: dict | None,
+) -> list[dict]:
+    normalized_confirmed = {
+        _normalize_child_acceptance_step_key(key)
+        for key in (confirmed_keys or set())
+        if str(key or "").strip()
+    }
+    for check in checks:
+        key = str(check.get("key") or "").strip()
+        check["manual_upload_url"] = _manual_upload_url_for_child_step(
+            key=key,
+            task_id=task_id,
+            product_id=product_id,
+            product_code=product_code,
+            lang=lang,
+            item=item,
+        )
+        if key not in normalized_confirmed:
+            continue
+        system_ok = bool(check.get("ok"))
+        check["system_ok"] = system_ok
+        check["manual_confirmed"] = True
+        check["ok"] = True
+        reason = str(check.get("reason") or "").strip()
+        check["reason"] = (
+            f"{reason}；已人工确认完成" if reason else "已人工确认完成"
+        )
+    return checks
+
+
+def _missing_child_acceptance_keys(checks: list[dict]) -> list[str]:
+    missing = []
+    for check in checks:
+        if not check.get("required") or check.get("ok"):
+            continue
+        key = str(check.get("key") or "").strip()
+        missing.append(CHILD_ACCEPTANCE_MISSING_ALIASES.get(key, key))
+    return missing
+
+
+def _missing_item_child_acceptance_checks() -> list[dict]:
+    checks = [
+        _acceptance_check(
+            "localized_media_item",
+            CHILD_ACCEPTANCE_STEP_LABELS["localized_media_item"],
+            False,
+            reason="未找到该语种 media_item",
+        )
+    ]
+    for key in CHILD_ACCEPTANCE_STEP_KEYS:
+        if key == "localized_media_item":
+            continue
+        checks.append(
+            _acceptance_check(
+                key,
+                CHILD_ACCEPTANCE_STEP_LABELS[key],
+                False,
+                reason="系统未找到目标语种素材，需手动传素材或人工确认完成",
+            )
+        )
+    return checks
+
+
 def _readiness_bool(readiness: dict, key: str) -> bool:
     return bool((readiness or {}).get(key))
 
@@ -1781,6 +1929,7 @@ def _child_acceptance_payload(
     product: dict | None,
     readiness: dict,
     include_evidence: bool = True,
+    manual_confirmed_keys: set[str] | None = None,
 ) -> dict:
     product_id = int(row["media_product_id"])
     lang = (row.get("country_code") or "").strip().lower()
@@ -1789,6 +1938,8 @@ def _child_acceptance_payload(
         or row.get("product_code")
         or ""
     )
+    if manual_confirmed_keys is None:
+        manual_confirmed_keys = _manual_confirmed_child_step_keys(int(task_id))
 
     if not item:
         media_search_url = _medias_search_url(
@@ -1797,30 +1948,26 @@ def _child_acceptance_payload(
             product_id=product_id,
             lang=lang,
         )
-        checks = [
-            _acceptance_check(
-                "localized_media_item",
-                "目标语种素材",
-                False,
-                reason="未找到该语种 media_item",
-            )
-        ]
-        checks[0]["actions"] = _child_check_actions(
-            key="localized_media_item",
+        checks = _missing_item_child_acceptance_checks()
+        checks = _apply_child_manual_confirmations(
+            checks,
+            confirmed_keys=manual_confirmed_keys,
             task_id=task_id,
             product_id=product_id,
             product_code=product_code,
             lang=lang,
             item=None,
         )
+        missing = _missing_child_acceptance_keys(checks)
         return {
-            "ready": False,
-            "missing": ["lang_item_missing"],
+            "ready": not missing,
+            "missing": missing,
             "readiness": {},
             "checks": checks,
             "country_code": row["country_code"],
             "product_code": product_code,
             "media_search_url": media_search_url,
+            "manual_confirmed_steps": sorted(manual_confirmed_keys),
         }
 
     media_search_url = _medias_search_url(
@@ -1955,20 +2102,29 @@ def _child_acceptance_payload(
         ),
     ]
     for check in checks:
-        check["actions"] = _child_check_actions(
-            key=str(check.get("key") or ""),
-            task_id=task_id,
-            product_id=product_id,
-            product_code=product_code,
-            lang=lang,
-            item=item,
-            links=check.get("links") or [],
+        check["actions"] = (
+            _child_check_actions(
+                key=str(check.get("key") or ""),
+                task_id=task_id,
+                product_id=product_id,
+                product_code=product_code,
+                lang=lang,
+                item=item,
+                links=check.get("links") or [],
+            )
+            if include_evidence
+            else []
         )
-    missing = [
-        check["key"]
-        for check in checks
-        if check.get("required") and not check.get("ok")
-    ]
+    checks = _apply_child_manual_confirmations(
+        checks,
+        confirmed_keys=manual_confirmed_keys,
+        task_id=task_id,
+        product_id=product_id,
+        product_code=product_code,
+        lang=lang,
+        item=item,
+    )
+    missing = _missing_child_acceptance_keys(checks)
     return {
         "ready": not missing,
         "missing": missing,
@@ -1982,6 +2138,7 @@ def _child_acceptance_payload(
         "product_code": product_code,
         "media_item_id": item["id"],
         "media_search_url": media_search_url,
+        "manual_confirmed_steps": sorted(manual_confirmed_keys),
     }
 
 
@@ -2016,6 +2173,48 @@ def get_child_readiness(task_id: int) -> dict:
         product=product,
         readiness=readiness,
     )
+
+
+def confirm_child_step(
+    *,
+    task_id: int,
+    step_key: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> dict:
+    """Record a manual fallback confirmation for one child acceptance step."""
+    normalized_key = _normalize_child_acceptance_step_key(step_key)
+    row = query_one(
+        "SELECT id, assignee_id, status FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["assignee_id"] != int(actor_user_id) and not is_admin:
+        raise PermissionError("forbidden")
+    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+        raise StateError("child not confirmable")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                _write_event(
+                    cur,
+                    int(task_id),
+                    CHILD_MANUAL_STEP_CONFIRMED_EVENT,
+                    int(actor_user_id),
+                    {"key": normalized_key},
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+    return {"step_key": normalized_key}
 
 
 def list_unbound_items_for_task(task_id: int) -> list[dict]:
@@ -2110,12 +2309,9 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
     if row["assignee_id"] != int(actor_user_id):
         raise StateError("only assignee can submit")
 
-    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
-    if not item:
-        raise NotReadyError(missing=["lang_item_missing"],
-                            detail=f"missing: lang_item_missing (no media_item with lang={row['country_code']})")
     product = _find_product(row["media_product_id"])
-    readiness = pushes.compute_readiness(item, product)
+    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
+    readiness = pushes.compute_readiness(item, product) if item else {}
     payload = _child_acceptance_payload(
         task_id=int(task_id),
         row=row,
