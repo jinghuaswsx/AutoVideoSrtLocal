@@ -114,6 +114,59 @@ def test_create_or_reuse_pending_task_inserts_ready_task(monkeypatch):
     assert calls[1][2]["replace_status"] == sit.REPLACE_PENDING
 
 
+def test_create_or_reuse_pending_task_allows_worker_to_resolve_missing_shopify_id(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sit, "find_active_task", lambda product_id, lang: None)
+    monkeypatch.setattr(
+        sit.medias,
+        "get_product",
+        lambda pid: {"id": pid, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr(sit.medias, "is_valid_language", lambda lang: lang == "it")
+    monkeypatch.setattr(sit.medias, "resolve_shopify_product_id", lambda pid, domain=None: None)
+    monkeypatch.setattr(
+        sit.medias,
+        "list_shopify_localizer_images",
+        lambda pid, lang: [{"id": f"{lang}-1"}],
+    )
+    monkeypatch.setattr(
+        sit.product_link_domains,
+        "resolve_product_page_url_rows",
+        lambda product, lang: [
+            {
+                "domain": "newjoyloo.com",
+                "lang": lang,
+                "status_key": f"newjoyloo.com:{lang}",
+                "url": f"https://newjoyloo.com/{lang}/products/demo-rjc",
+            }
+        ],
+    )
+    monkeypatch.setattr(sit, "get_task", lambda task_id: None)
+    monkeypatch.setattr(
+        sit,
+        "execute",
+        lambda sql, args=(): calls.append((sql, args)) or 44,
+    )
+    monkeypatch.setattr(
+        sit,
+        "update_enabled_domain_statuses",
+        lambda *args, **kwargs: calls.append(("status", args, kwargs)) or {},
+    )
+
+    task = sit.create_or_reuse_task(7, "it")
+
+    assert task["status"] == sit.TASK_PENDING
+    assert task["shopify_product_id"] == ""
+    assert calls[0][1][:5] == (
+        7,
+        "demo-rjc",
+        "it",
+        "",
+        "https://newjoyloo.com/it/products/demo-rjc",
+    )
+    assert calls[1][2]["replace_status"] == sit.REPLACE_PENDING
+
+
 def test_evaluate_candidate_returns_all_enabled_domain_link_urls(monkeypatch):
     monkeypatch.setattr(
         sit.medias,

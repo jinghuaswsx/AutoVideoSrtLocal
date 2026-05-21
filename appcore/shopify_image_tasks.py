@@ -260,33 +260,28 @@ def evaluate_candidate(product_id: int, lang: str, domain: str | None = None) ->
         return {"ready": False, "block_code": "already_confirmed", "product": product}
 
     shopify_product_id = medias.resolve_shopify_product_id(int(product_id), domain)
-    if not shopify_product_id:
-        return {
-            "ready": False,
-            "block_code": "shopify_product_id_missing",
-            "product": product,
-        }
+    normalized_shopify_product_id = str(shopify_product_id or "").strip()
 
     if not medias.list_shopify_localizer_images(int(product_id), "en"):
         return {
             "ready": False,
             "block_code": "english_references_not_ready",
             "product": product,
-            "shopify_product_id": shopify_product_id,
+            "shopify_product_id": normalized_shopify_product_id,
         }
     if not medias.list_shopify_localizer_images(int(product_id), normalized_lang):
         return {
             "ready": False,
             "block_code": "localized_images_not_ready",
             "product": product,
-            "shopify_product_id": shopify_product_id,
+            "shopify_product_id": normalized_shopify_product_id,
         }
 
     link_urls = resolve_link_urls(product, normalized_lang)
     return {
         "ready": True,
         "product": product,
-        "shopify_product_id": str(shopify_product_id).strip(),
+        "shopify_product_id": normalized_shopify_product_id,
         "link_url": link_urls[0]["url"] if link_urls else "",
         "link_urls": link_urls,
     }
