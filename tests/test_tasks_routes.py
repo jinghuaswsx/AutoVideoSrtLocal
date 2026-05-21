@@ -155,7 +155,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
     )
 
     rsp = authed_user_client_no_db.get(
-        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&bucket=todo&page=3&page_size=150"
+        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&bucket=todo&page=3&page_size=150&task_id=44"
     )
 
     assert rsp.status_code == 200
@@ -173,7 +173,16 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "bucket": "todo",
         "page": 3,
         "page_size": 100,
+        "task_id": 44,
     }
+
+
+def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "task_id=' + encodeURIComponent(String(id || ''))" in body
+    assert "'&task_id='" in body
 
 
 def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):

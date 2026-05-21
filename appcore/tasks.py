@@ -401,6 +401,7 @@ def list_task_center_items(
     page: int,
     page_size: int,
     bucket: str = "",
+    task_id: int | None = None,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
     where = ["1=1"]
@@ -412,9 +413,13 @@ def list_task_center_items(
     elif tab != "all":
         raise ValueError("invalid tab")
 
+    if task_id:
+        where.append("t.id=%s")
+        args.append(int(task_id))
     if keyword:
-        where.append("p.name LIKE %s")
-        args.append(f"%{keyword}%")
+        like = f"%{keyword}%"
+        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
+        args.extend([like, like])
     if high_status == "in_progress":
         where.append("t.status NOT IN (%s, %s, %s)")
         args.extend([PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
@@ -431,8 +436,8 @@ def list_task_center_items(
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
     elif bucket == "done":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_ALL_DONE, CHILD_DONE])
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
     elif bucket:
         raise ValueError("invalid bucket")
 

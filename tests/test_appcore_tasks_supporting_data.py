@@ -368,16 +368,84 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "source_mi.filename AS source_media_filename" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
     assert "u.display_name AS assignee_display_name" in captured["sql"]
-    assert "p.name LIKE %s" in captured["sql"]
-    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
+        "%Product%",
+        tasks.PARENT_RAW_DONE,
         tasks.PARENT_ALL_DONE,
         tasks.CHILD_DONE,
         5,
         5,
     )
+
+
+def test_list_task_center_items_done_bucket_includes_raw_done_and_product_code_search(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="multifunctional-roadside-safety-light-rjc",
+        high_status="",
+        bucket="done",
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        "%multifunctional-roadside-safety-light-rjc%",
+        "%multifunctional-roadside-safety-light-rjc%",
+        tasks.PARENT_RAW_DONE,
+        tasks.PARENT_ALL_DONE,
+        tasks.CHILD_DONE,
+        20,
+        0,
+    )
+
+
+def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_id=442,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.id=%s" in captured["sql"]
+    assert captured["args"] == (442, 20, 0)
 
 
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
