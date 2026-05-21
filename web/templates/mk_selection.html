@@ -182,9 +182,13 @@
 .mk-status-icon--product { color:var(--oc-accent); }
 .mk-status-icon--video { color:var(--oc-success-fg); }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
+.mk-line-clamp--1 { -webkit-line-clamp:1; min-height:1.35em; }
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
 .mk-video-card-title { font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); }
+.mk-video-product-link-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:center; gap:6px; min-height:24px; }
+.mk-video-product-link { min-width:0; color:var(--oc-accent); text-decoration:none; font-size:12px; line-height:1.35; }
+.mk-video-product-link:hover { text-decoration:underline; }
 .mk-video-summary-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--oc-sp-2) var(--oc-sp-3); }
 .mk-video-summary-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; line-height:1.4; color:var(--oc-fg-muted); }
 .mk-video-summary-item .value { color:var(--oc-fg); font-weight:600; }
@@ -404,9 +408,13 @@
 strong.mk-video-product-name { color:var(--oc-fg); }
 .mk-video-product-code { color:var(--oc-fg-muted); font-size:12px; line-height:1.35; }
 .mk-video-product-code-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
+.mk-video-product-actions { display:inline-flex; align-items:center; gap:4px; }
 .mk-media-search-link { width:24px; height:24px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-accent); text-decoration:none; }
 .mk-media-search-link:hover { background:var(--oc-bg-muted); border-color:var(--oc-accent); }
 .mk-media-search-link svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.mk-icon-copy-btn { width:24px; height:24px; padding:0; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-fg-muted); cursor:pointer; }
+.mk-icon-copy-btn:hover { background:var(--oc-bg-muted); border-color:var(--oc-accent); color:var(--oc-accent); }
+.mk-icon-copy-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
 .mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
 .mk-material-state { font-size:12px; line-height:1; }
@@ -606,13 +614,43 @@ async function copyMkText(value, button) {
       textarea.remove();
     }
     if (button) {
-      const old = button.textContent;
-      button.textContent = '已复制';
-      setTimeout(() => { button.textContent = old || '复制'; }, 900);
+      const isIconButton = button.classList && button.classList.contains('mk-icon-copy-btn');
+      if (isIconButton) {
+        const oldHtml = button.dataset.copyHtml || button.innerHTML;
+        const oldLabel = button.getAttribute('aria-label') || button.title || '复制';
+        button.dataset.copyHtml = oldHtml;
+        button.innerHTML = mkCheckIconSvg();
+        button.setAttribute('aria-label', '已复制');
+        button.title = '已复制';
+        setTimeout(() => {
+          button.innerHTML = button.dataset.copyHtml || oldHtml;
+          button.setAttribute('aria-label', oldLabel);
+          button.title = oldLabel;
+        }, 900);
+      } else {
+        const old = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(() => { button.textContent = old || '复制'; }, 900);
+      }
     }
   } catch (_err) {
-    if (button) button.textContent = '复制失败';
+    if (button) {
+      if (button.classList && button.classList.contains('mk-icon-copy-btn')) {
+        button.setAttribute('aria-label', '复制失败');
+        button.title = '复制失败';
+      } else {
+        button.textContent = '复制失败';
+      }
+    }
   }
+}
+
+function mkCopyIconSvg() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+}
+
+function mkCheckIconSvg() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
 }
 
 function renderTwoLineCopyBlock(value, href, extraClass) {
@@ -795,6 +833,18 @@ function renderMkMediaSearchLink(r) {
   const href = directUrl || (fallbackCode ? `/medias/?q=${encodeURIComponent(fallbackCode)}` : '');
   if (!href) return '';
   return `<a class="mk-media-search-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="搜索素材管理" aria-label="搜索素材管理">${'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>'}</a>`;
+}
+
+function renderMkProductCodeCopyButton(productCode) {
+  const text = String(productCode || '').trim();
+  if (!text) return '';
+  return `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(text)}" onclick="copyMkText(this.dataset.copyText, this)" title="复制 product code" aria-label="复制 product code">${mkCopyIconSvg()}</button>`;
+}
+
+function renderMkProductLinkCopyButton(productLink) {
+  const text = String(productLink || '').trim();
+  if (!text) return '';
+  return `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(text)}" onclick="copyMkText(this.dataset.copyText, this)" title="复制产品链接" aria-label="复制产品链接">${mkCopyIconSvg()}</button>`;
 }
 
 function runMkSearch() {
@@ -1064,7 +1114,13 @@ function renderMkVideoMaterialCard(r) {
   const videoName = escapeHtml(r.video_name || '未命名素材');
   const safeCoverUrl = escapeHtml(coverUrl);
   const safeVideoUrl = escapeHtml(videoUrl);
-  const safeProductUrl = safeExternalHref(r.product_url || r.mk_product_link || '');
+  const productLinkRaw = String(r.mk_product_link || r.product_url || '').trim();
+  const safeProductUrl = safeExternalHref(productLinkRaw);
+  const productLinkCopyHtml = renderMkProductLinkCopyButton(productLinkRaw);
+  const productLinkLabel = escapeHtml(productLinkRaw);
+  const productLinkHtml = productLinkRaw
+    ? `<div class="mk-video-product-link-row">${safeProductUrl ? `<a class="mk-video-product-link mk-line-clamp mk-line-clamp--1" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${productLinkLabel}">${productLinkLabel}</a>` : `<span class="mk-video-product-link mk-line-clamp mk-line-clamp--1" title="${productLinkLabel}">${productLinkLabel}</span>`}${productLinkCopyHtml}</div>`
+    : '';
   const rawProductName = r.mk_product_name || r.product_name || '--';
   const rawProductHandle = r.product_handle || r.product_code || '';
   const safeProductName = escapeHtml(rawProductName);
@@ -1072,6 +1128,10 @@ function renderMkVideoMaterialCard(r) {
   const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
   const statusIconsHtml = renderMkStatusIconCluster(r);
   const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
+  const productCodeCopyHtml = renderMkProductCodeCopyButton(rawProductHandle);
+  const productCodeActionsHtml = (productCodeCopyHtml || mediaSearchLinkHtml)
+    ? `<span class="mk-video-product-actions">${productCodeCopyHtml}${mediaSearchLinkHtml}</span>`
+    : '';
   const isMaterialImported = Boolean(r.has_local_material_in_library);
   const productStatus = r.product_ad_status || {};
   const materialStatus = r.material_ad_status || {};
@@ -1101,10 +1161,11 @@ function renderMkVideoMaterialCard(r) {
       ${safeProductUrl ? `<a class="mk-video-product-name mk-line-clamp mk-line-clamp--2" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong class="mk-video-product-name mk-line-clamp mk-line-clamp--2" title="${safeProductName}">${safeProductName}</strong>`}
       <div class="mk-video-product-code-row">
         <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
-        ${mediaSearchLinkHtml}
+        ${productCodeActionsHtml}
       </div>
     </div>
     <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
+    ${productLinkHtml}
     <div class="mk-video-summary-row">
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
       <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
@@ -1130,6 +1191,8 @@ function renderMkVideoMaterialCard(r) {
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-cover-url="${safeCoverUrl}"
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
+        data-mki-video-path="${escapeHtml(videoPath)}"
+        data-mki-cover-path="${escapeHtml(coverPath)}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
@@ -1150,6 +1213,8 @@ function renderMkVideoMaterialCard(r) {
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-cover-url="${safeCoverUrl}"
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
+        data-mki-video-path="${escapeHtml(videoPath)}"
+        data-mki-cover-path="${escapeHtml(coverPath)}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
@@ -1268,6 +1333,8 @@ async function openDetail(mkId, mkName) {
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-cover-url="${safeCoverUrl}"
             data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
+            data-mki-video-path="${escapeHtml(videoPath)}"
+            data-mki-cover-path="${escapeHtml(coverPath)}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
@@ -1287,6 +1354,8 @@ async function openDetail(mkId, mkName) {
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-cover-url="${safeCoverUrl}"
             data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
+            data-mki-video-path="${escapeHtml(videoPath)}"
+            data-mki-cover-path="${escapeHtml(coverPath)}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
@@ -2106,6 +2175,8 @@ async function mkiHandleClick(btn) {
       duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
       cover_url: btn.dataset.mkiCoverUrl || null,
       cover_object_key: btn.dataset.mkiCoverObjectKey || null,
+      video_path: btn.dataset.mkiVideoPath || null,
+      cover_path: btn.dataset.mkiCoverPath || null,
       product_name: btn.dataset.mkiProductName,
       product_link: btn.dataset.mkiProductLink || null,
       main_image: btn.dataset.mkiMainImage || null,
@@ -2456,6 +2527,8 @@ async function mkiXiaoHandleClick(btn) {
       duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
       cover_url: btn.dataset.mkiCoverUrl || null,
       cover_object_key: btn.dataset.mkiCoverObjectKey || null,
+      video_path: btn.dataset.mkiVideoPath || null,
+      cover_path: btn.dataset.mkiCoverPath || null,
       product_name: btn.dataset.mkiProductName,
       product_link: btn.dataset.mkiProductLink || null,
       main_image: btn.dataset.mkiMainImage || null,
