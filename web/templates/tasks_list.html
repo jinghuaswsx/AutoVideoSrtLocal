@@ -41,7 +41,7 @@
 .tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
 .tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
-.tc-btn { height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); cursor:pointer; font-size:13px; }
+.tc-btn { display:inline-flex; align-items:center; justify-content:center; height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg); cursor:pointer; font-size:13px; line-height:1.2; text-align:center; text-decoration:none; }
 .tc-btn:hover { background:var(--tc-bg-muted); }
 .tc-btn:disabled { background:var(--tc-bg-muted); border-color:var(--tc-border); color:var(--tc-fg-muted); cursor:not-allowed; opacity:.72; }
 .tc-btn:disabled:hover { background:var(--tc-bg-muted); }
@@ -680,7 +680,11 @@ function tcRenderSubtitleRemovalVideo(label, url, hint) {
     + '<video class="tc-niuma-video" controls preload="metadata" src="' + tcAttr(safeUrl) + '"></video>'
     + '</div>';
 }
-function tcRenderSubtitleRemovalComparison(context) {
+function tcShouldShowSubtitleRemovalComparison(event) {
+  return String(event && event.event_type || '') !== 'raw_niuma_submitted';
+}
+function tcRenderSubtitleRemovalComparison(event, context) {
+  if (!tcShouldShowSubtitleRemovalComparison(event)) return '';
   const comparison = context && context.comparison ? context.comparison : {};
   if (!comparison.result_video_url) return '';
   const source = tcRenderSubtitleRemovalVideo(
@@ -698,6 +702,7 @@ function tcRenderSubtitleRemovalComparison(context) {
 }
 function tcHasSubtitleRemovalComparison(events) {
   return (Array.isArray(events) ? events : []).some(function(event) {
+    if (!tcShouldShowSubtitleRemovalComparison(event)) return false;
     const context = event && event.payload_context ? event.payload_context.subtitle_removal : null;
     const comparison = context && context.comparison ? context.comparison : null;
     return Boolean(comparison && comparison.source_video_url && comparison.result_video_url);
@@ -746,7 +751,7 @@ function tcRenderSubtitleRemovalContext(event) {
     tcRenderSubtitleRemovalMeta('已过时间', elapsed),
     tcRenderSubtitleRemovalMeta('最近更新时间', context.last_updated_at ? tcFormatTime(context.last_updated_at) : ''),
     tcRenderSubtitleRemovalMeta('字幕移除任务 ID', context.task_id || ''),
-    tcRenderSubtitleRemovalMeta('错误摘要', context.error || ''),
+    tcRenderSubtitleRemovalMeta('结果反馈', context.error || ''),
   ].filter(Boolean).join('');
   const action = detailUrl
     ? '<a class="tc-btn tc-btn--primary" href="' + tcAttr(detailUrl) + '" target="_blank" rel="noopener">字幕移除任务页</a>'
@@ -757,7 +762,7 @@ function tcRenderSubtitleRemovalContext(event) {
     + action
     + '</div>'
     + (meta ? '<div class="tc-niuma-meta">' + meta + '</div>' : '')
-    + tcRenderSubtitleRemovalComparison(context)
+    + tcRenderSubtitleRemovalComparison(event, context)
     + '</div>';
 }
 function tcScrollToReviewTarget(eventType) {

@@ -73,6 +73,19 @@ def test_task_center_raw_review_self_actions_render_in_step(authed_client_no_db)
     assert "去字幕原始视频素材处理" in body
 
 
+def test_task_center_niuma_step_uses_status_only_and_centered_detail_button(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-btn { display:inline-flex; align-items:center; justify-content:center;" in body
+    assert "text-align:center;" in body
+    assert "text-decoration:none;" in body
+    assert "结果反馈" in body
+    assert "错误摘要" not in body
+    assert "function tcShouldShowSubtitleRemovalComparison" in body
+    assert "String(event && event.event_type || '') !== 'raw_niuma_submitted'" in body
+
+
 def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
