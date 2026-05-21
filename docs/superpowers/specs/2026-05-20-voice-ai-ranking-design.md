@@ -132,3 +132,17 @@
   长时间未完成时可以继续推进，避免音色选择卡死。
 - 兜底按钮只改变共享选择器前端的排序和选择门禁，不改后端缓存、候选数据结构、
   rerank 接口契约，也不删除已有 AI 评估结果。
+
+## 2026-05-21 AI Top1 自动确认与设置开关
+
+- API 设置模块（`/settings?tab=bindings`）新增全局开关“自动音色选择”，默认开启。
+- 开关开启时，Multi-language video translation、Omni video translation 和
+  English Redub 共享音色选择器在当前场景 AI 排名完成后，必须自动选择
+  `llm_rank=1` 的音色，并直接复用现有 `/confirm-voice` 流程进入后续步骤，
+  不再等待人工点击“开始处理”。
+- 自动确认只在 `ai_rank` 模式下生效；若用户主动点击“强制音色语速匹配排序”
+  进入 `speed_fallback` 模式，则继续保留人工选择 / 人工确认路径。
+- 开关关闭时，行为恢复为上一版：AI 排名完成后挂起等待人工干预，允许用户手动选
+  音色或使用兜底排序按钮继续。
+- 自动确认逻辑不新增独立后端接口，不改 `confirm-voice` 契约，不跳过现有字幕样式
+  参数写回，也不改变 `selected_voice_id` / `task_state` / resume step 的后端语义。

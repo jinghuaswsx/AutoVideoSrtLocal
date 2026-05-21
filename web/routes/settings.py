@@ -50,6 +50,10 @@ from appcore.gemini_image import (
     list_image_models,
 )
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
+from appcore.voice_ai_selection_settings import (
+    is_voice_ai_auto_select_enabled,
+    set_voice_ai_auto_select_enabled,
+)
 from web.services.settings_ai_pricing import (
     build_ai_pricing_error_response,
     build_ai_pricing_list_response,
@@ -436,6 +440,7 @@ def index():
         openrouter_openai_image2_default_quality=openrouter_openai_image2_default_quality,
         meta_hot_posts_translate_binding=_meta_hot_posts_translate_binding_view(bindings_rows),
         bindings_grouped=bindings_grouped,
+        voice_ai_auto_select_enabled=is_voice_ai_auto_select_enabled(),
         module_labels=MODULE_LABELS,
         binding_allowed_providers=BINDING_ALLOWED_PROVIDERS,
         active_tab=active_tab,
@@ -571,6 +576,10 @@ def _handle_bindings_post() -> None:
     if restore and restore in USE_CASES and restore not in HIDDEN_BINDING_CODES:
         llm_bindings.delete(restore)
         return
+
+    set_voice_ai_auto_select_enabled(
+        request.form.get("voice_ai_auto_select_enabled") in ("1", "on", "true", "yes")
+    )
 
     for code in USE_CASES:
         if code in HIDDEN_BINDING_CODES:
