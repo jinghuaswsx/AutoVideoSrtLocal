@@ -420,6 +420,8 @@
   let autoConfirmingVoice = false;
   let selectedVoiceId = null;
   let selectedVoiceName = null;
+  let persistedSelectedVoiceId = null;
+  let voiceMatchStepStatus = "";
   let launched = false;
   let pollHandle = null;
   let pollDelay = 3000;
@@ -945,11 +947,13 @@
       if (!data || seq !== libraryRequestSeq) return;
       applyVoiceAiRankPayload(data);
       mergeVoiceItems(allItems, data.items || [], loadedVoiceIds);
-      selectedVoiceId = data.selected_voice_id || null;
+      persistedSelectedVoiceId = data.selected_voice_id || null;
+      selectedVoiceId = persistedSelectedVoiceId;
       if (selectedVoiceId && !selectedVoiceName) {
         const selected = allItems.find(v => v.voice_id === selectedVoiceId);
         selectedVoiceName = selected ? (selected.name || selected.voice_id) : null;
       }
+      voiceMatchStepStatus = (data.pipeline && data.pipeline.voice_match) || "";
       voiceTotal = Number(data.total || 0);
       const responsePage = Number(data.page || pageToLoad);
       const responsePageSize = Number(data.page_size || VOICE_PAGE_SIZE);
@@ -1302,10 +1306,16 @@
     selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
   }
 
-  async function maybeAutoConfirmTopAiVoice() {
+  function canAutoConfirmTopAiVoice() {
     if (launched || autoConfirmingVoice) return false;
+    if (persistedSelectedVoiceId) return false;
+    if (voiceMatchStepStatus !== "waiting") return false;
     if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;
-    if (!hasUsableVoiceAiRank()) return false;
+    return hasUsableVoiceAiRank();
+  }
+
+  async function maybeAutoConfirmTopAiVoice() {
+    if (!canAutoConfirmTopAiVoice()) return false;
     const topAiRow = sortedVoiceRows().find(({ rec, aiRank }) => !!rec && aiRank === 1);
     if (!topAiRow || !topAiRow.v || !topAiRow.v.voice_id) return false;
     selectedVoiceId = topAiRow.v.voice_id;
