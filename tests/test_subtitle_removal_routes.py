@@ -752,6 +752,38 @@ def test_subtitle_removal_source_video_artifact_prefers_public_source_backup(
     ]
 
 
+def test_subtitle_removal_source_video_artifact_does_not_fallback_to_overwritten_local_when_public_source_fails(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    overwritten_video_path = task_dir / "source-now-cleaned.mp4"
+    overwritten_video_path.write_bytes(b"cleaned-result")
+    task = store.create_subtitle_removal(
+        "sr-source-video-public-fail",
+        str(overwritten_video_path),
+        str(task_dir),
+        original_filename="video.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        source_tos_key="uploads/1/sr-source-video-public-fail/original-with-subtitles.mp4",
+        source_object_info={"public_source_storage_backend": "tos"},
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_source_storage.generate_public_source_url",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("signing failed")),
+    )
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source-video")
+
+    assert response.status_code == 404
+    assert response.data != b"cleaned-result"
+
+
 def test_state_api_returns_detail_payload(tmp_path, authed_client_no_db):
     video_path = tmp_path / "source.mp4"
     video_path.write_bytes(b"video")

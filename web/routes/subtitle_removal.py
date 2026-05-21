@@ -918,6 +918,7 @@ def get_source_video_artifact(task_id: str):
             return redirect(source_url)
         except Exception:
             log.exception("[subtitle_removal] source video public url failed task_id=%s", task_id)
+            abort(404)
 
     video_path = (task.get("video_path") or "").strip()
     if video_path and os.path.exists(video_path):
