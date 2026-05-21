@@ -97,6 +97,17 @@ Do not modify:
   works. Tests must cover the shared service directly and route contracts for
   both Multi and Omni so the modules cannot drift apart during merges.
 
+## 2026-05-21 Auto-Confirm Idempotency
+
+- The shared voice selector may auto-confirm the AI-ranked top voice only when
+  the task is still blocked at `voice_match=waiting` and no
+  `selected_voice_id` has been persisted.
+- Once `selected_voice_id` exists, or once `voice_match` is already `done`, page
+  load and background refresh must never call `/confirm-voice` automatically.
+- This guard applies equally to Multi and Omni because both pages load
+  `web/static/voice_selector_multi.js`.
+- Manual re-confirmation through an explicit user click remains allowed.
+
 ## Verification
 
 Run:

@@ -258,6 +258,29 @@ def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
     assert "await maybeAutoConfirmTopAiVoice();" in rerun_block
 
 
+def test_voice_selector_multi_auto_confirm_is_waiting_only_and_idempotent():
+    load_block = SCRIPT[
+        SCRIPT.index("async function loadVoicePage"):
+        SCRIPT.index("async function loadLibrary")
+    ]
+    gate_block = SCRIPT[
+        SCRIPT.index("function canAutoConfirmTopAiVoice"):
+        SCRIPT.index("async function maybeAutoConfirmTopAiVoice")
+    ]
+
+    assert "let persistedSelectedVoiceId = null;" in SCRIPT
+    assert 'let voiceMatchStepStatus = "";' in SCRIPT
+    assert "persistedSelectedVoiceId = data.selected_voice_id || null;" in load_block
+    assert "selectedVoiceId = persistedSelectedVoiceId;" in load_block
+    assert 'voiceMatchStepStatus = (data.pipeline && data.pipeline.voice_match) || "";' in load_block
+    assert "function canAutoConfirmTopAiVoice()" in SCRIPT
+    assert "if (launched || autoConfirmingVoice) return false;" in gate_block
+    assert "if (persistedSelectedVoiceId) return false;" in gate_block
+    assert 'if (voiceMatchStepStatus !== "waiting") return false;' in gate_block
+    assert 'if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;' in gate_block
+    assert "if (!canAutoConfirmTopAiVoice()) return false;" in SCRIPT
+
+
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
     rematch_block = SCRIPT[
         SCRIPT.index("async function onGenderPillClick"):
