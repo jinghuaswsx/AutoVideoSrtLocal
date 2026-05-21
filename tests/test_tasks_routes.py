@@ -1,3 +1,6 @@
+import io
+
+
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
@@ -30,18 +33,31 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "function tcStatusLabel(status)" in body
     assert "blocked: '等待前置完成'" in body
     assert "assigned: '待处理'" in body
-    assert "raw_in_progress: '原素材处理中'" in body
+    assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
     assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
     assert "function tcTaskRowAction(it)" in body
     assert "tcDisabledTaskAction('等待前置完成')" in body
     assert "tcOpenDetail(id)" in body
     assert "去处理" in body
-    assert "处理原素材" in body
+    assert "处理去字幕原始视频" in body
     assert "认领处理" not in body
     assert "查看结果" in body
     assert "查看记录" in body
     assert ">详情</button>" not in body
     assert "<td>${tcEsc(it.status)}</td>" not in body
+
+
+def test_task_center_raw_review_self_actions_render_in_step(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcRenderRawSelfReviewActions" in body
+    assert "审核通过，结果视频入库" in body
+    assert "手动提交修改后的结果视频" in body
+    assert "tcOpenManualRawResult" in body
+    assert "tcManualRawResultModal" in body
+    assert "manual_result" in body
+    assert "去字幕原始视频素材处理" in body
 
 
 def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_no_db):
@@ -676,10 +692,109 @@ def test_parent_action_routes_registered_admin(authed_client_no_db):
     assert rsp.status_code in (200, 400, 403, 404, 500)
 
 
+def test_parent_approve_allows_non_admin_service_authorized_assignee(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+    audit_calls = []
+
+    def fake_approve_raw(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_raw",
+        fake_approve_raw,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_user_client_no_db.post("/tasks/api/parent/44/approve")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True}
+    assert captured == {
+        "task_id": 44,
+        "actor_user_id": 2,
+        "is_admin": False,
+    }
+    assert audit_calls == [(44, "task_parent_approved", None)]
+
+
+def test_parent_approve_maps_service_permission_denied_for_non_assignee(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    def fake_approve_raw(**kwargs):
+        raise PermissionError("only assignee or admin can approve")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_raw",
+        fake_approve_raw,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.post("/tasks/api/parent/44/approve")
+
+    assert rsp.status_code == 403
+    assert rsp.get_json() == {"error": "only assignee or admin can approve"}
+
+
+def test_parent_manual_result_uploads_video_and_auto_approves(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    calls = {"upload": [], "approve": [], "audit": []}
+
+    def fake_replace_processed_video(**kwargs):
+        calls["upload"].append(kwargs)
+        return 12
+
+    def fake_approve_raw(**kwargs):
+        calls["approve"].append(kwargs)
+
+    monkeypatch.setattr(
+        "web.routes.tasks.rvp_svc.replace_processed_video",
+        fake_replace_processed_video,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_raw",
+        fake_approve_raw,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: calls["audit"].append((task_id, action, detail)),
+    )
+
+    rsp = authed_user_client_no_db.post(
+        "/tasks/api/parent/44/manual_result",
+        data={"file": (io.BytesIO(b"fixed-video"), "fixed.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True, "new_size": 12, "approved": True}
+    assert calls["upload"][0]["task_id"] == 44
+    assert calls["upload"][0]["actor_user_id"] == 2
+    assert calls["upload"][0]["uploaded_file"].filename == "fixed.mp4"
+    assert calls["upload"][0]["allowed_statuses"] == ("raw_review",)
+    assert calls["upload"][0]["mark_uploaded_after"] is False
+    assert calls["approve"] == [
+        {"task_id": 44, "actor_user_id": 2, "is_admin": False}
+    ]
+    assert calls["audit"] == [
+        (44, "task_parent_manual_result_uploaded", {"new_size": 12}),
+        (44, "task_parent_approved", {"source": "manual_result"}),
+    ]
+
+
 def test_parent_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
     """Non-admin user gets 403 on admin-only endpoints."""
-    rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/approve")
-    assert rsp.status_code == 403
     rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/reject", json={"reason": "x"})
     assert rsp.status_code == 403
     rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/cancel", json={"reason": "x"})

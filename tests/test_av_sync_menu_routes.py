@@ -143,7 +143,7 @@ def test_dashboard_sidebar_groups_task_center_entries():
     task_group_html = nav_html[task_group_idx:task_group_end]
     settings_group_html = nav_html[settings_group_idx:nav_html.index('<details class="sidebar-group sidebar-lab-group"')]
 
-    assert "原始素材处理" in nav_html
+    assert "去字幕原始视频素材处理" in nav_html
     assert "任务中心" in nav_html
     assert "批量翻译任务管理" in nav_html
     assert task_group_idx < task_center_idx < raw_pool_idx < settings_group_idx

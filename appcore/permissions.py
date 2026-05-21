@@ -62,7 +62,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
     ("pushes",                GROUP_BUSINESS,   "推送管理",         True,  True),
     ("task_center",           GROUP_BUSINESS,   "任务中心",         True,  True),
-    ("raw_video_pool",        GROUP_BUSINESS,   "原始素材任务库",   True,  True),
+    ("raw_video_pool",        GROUP_BUSINESS,   "去字幕原始视频素材处理", True,  True),
     ("projects",              GROUP_BUSINESS,   "视频翻译",         True,  True),
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
     ("omni_translate",        GROUP_BUSINESS,   "全能视频翻译",     True,  True),
@@ -79,7 +79,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("ai_billing",            GROUP_MANAGEMENT, "API 账单",         True,  False),
     ("productivity_stats",    GROUP_MANAGEMENT, "员工产能报表",     True,  False),
     # C. 任务能力
-    ("can_process_raw_video", GROUP_CAPABILITY, "原始视频处理人",   True,  False),
+    ("can_process_raw_video", GROUP_CAPABILITY, "去字幕原始视频素材处理人", True,  False),
     ("can_translate",         GROUP_CAPABILITY, "翻译员",           True,  False),
     ("work_scope_translation", GROUP_CAPABILITY, "翻译工作",         False, False),
     # D. 超管 / 系统类

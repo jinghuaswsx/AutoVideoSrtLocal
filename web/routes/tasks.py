@@ -9,6 +9,7 @@ from flask_login import current_user, login_required
 
 from web.auth import permission_required
 from appcore import mk_import as mk_import_svc
+from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
 from appcore.users import (
@@ -20,9 +21,13 @@ from web.services.tasks_responses import (
     build_tasks_payload_response,
     tasks_flask_response,
 )
+from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+
+MANUAL_RESULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+MANUAL_RESULT_ALLOWED_EXT = (".mp4", ".mov", ".webm", ".mkv")
 
 
 def _json_response(payload, status_code: int = 200):
@@ -383,14 +388,62 @@ def api_parent_upload_done(tid: int):
 
 @bp.route("/api/parent/<int:tid>/approve", methods=["POST"])
 @login_required
-@admin_required
 def api_parent_approve(tid: int):
     try:
-        tasks_svc.approve_raw(task_id=tid, actor_user_id=int(current_user.id))
+        tasks_svc.approve_raw(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
     except tasks_svc.StateError as e:
         return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_parent_approved")
     return _json_response({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/manual_result", methods=["POST"])
+@login_required
+def api_parent_manual_result(tid: int):
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return _json_response({"error": "no_file"}, 400)
+    uploaded.seek(0, 2)
+    size = uploaded.tell()
+    uploaded.seek(0)
+    if size > MANUAL_RESULT_MAX_UPLOAD_BYTES:
+        return _json_response({"error": "file_too_large", "max_mb": 500}, 413)
+    filename = client_filename_basename(uploaded.filename)
+    if not filename.lower().endswith(MANUAL_RESULT_ALLOWED_EXT):
+        return _json_response({"error": "unsupported_type"}, 415)
+    uploaded.filename = filename
+    try:
+        new_size = rvp_svc.replace_processed_video(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            uploaded_file=uploaded,
+            allowed_statuses=(tasks_svc.PARENT_RAW_REVIEW,),
+            mark_uploaded_after=False,
+        )
+        _audit_task_action(
+            tid,
+            "task_parent_manual_result_uploaded",
+            {"new_size": new_size},
+        )
+        tasks_svc.approve_raw(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except rvp_svc.PermissionDenied as e:
+        return _json_response({"error": str(e)}, 403)
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
+    except (rvp_svc.StateError, tasks_svc.StateError) as e:
+        return _json_response({"error": str(e)}, 400)
+    _audit_task_action(tid, "task_parent_approved", {"source": "manual_result"})
+    return _json_response({"ok": True, "new_size": new_size, "approved": True})
 
 
 @bp.route("/api/parent/<int:tid>/reject", methods=["POST"])

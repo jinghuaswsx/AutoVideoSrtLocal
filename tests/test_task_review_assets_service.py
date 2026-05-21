@@ -35,7 +35,7 @@ def test_parent_raw_review_assets_attach_video_to_raw_steps(monkeypatch):
 
     assert payload["current_review"] == {
         "event_type": "raw_uploaded",
-        "title": "当前待审核：原素材视频",
+        "title": "当前待审核：去字幕原始视频素材",
         "asset_count": 1,
     }
     steps = {step["event_type"]: step for step in payload["steps"]}
@@ -43,7 +43,7 @@ def test_parent_raw_review_assets_attach_video_to_raw_steps(monkeypatch):
     assert steps["raw_uploaded"]["review_target"] is True
     asset = steps["raw_uploaded"]["assets"][0]
     assert asset["type"] == "video"
-    assert asset["label"] == "原素材视频"
+    assert asset["label"] == "去字幕原始视频素材"
     assert asset["url"] == "/medias/object?object_key=1%2Fmedias%2F7%2Fraw%20final.mp4"
     assert asset["filename"] == "raw-final.mp4"
     assert asset["file_size"] == 26214400

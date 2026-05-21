@@ -1,4 +1,4 @@
-"""D 子系统：原始素材任务库 Blueprint。"""
+"""D 子系统：去字幕原始视频素材处理 Blueprint。"""
 from __future__ import annotations
 
 import os

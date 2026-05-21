@@ -192,6 +192,14 @@ def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):
             return False
 
         def execute(self, sql, args=()):
+            if "SELECT id, status, assignee_id FROM tasks" in sql:
+                self.row = {
+                    "id": args[0],
+                    "status": tasks.PARENT_RAW_REVIEW,
+                    "assignee_id": 11,
+                }
+                self.rowcount = 1
+                return
             if "UPDATE tasks SET status=%s" in sql and "parent_task_id IS NULL" in sql:
                 sequence.append("parent_approved")
                 self.rowcount = 1
@@ -213,6 +221,9 @@ def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):
 
         def fetchall(self):
             return list(self.rows)
+
+        def fetchone(self):
+            return getattr(self, "row", None)
 
     class FakeConnection:
         def begin(self):

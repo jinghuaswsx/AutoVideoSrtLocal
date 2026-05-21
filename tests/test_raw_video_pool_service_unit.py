@@ -135,6 +135,63 @@ def test_replace_processed_video_records_manual_upload_event(monkeypatch, tmp_pa
     assert payload["new_size"] == len(b"manual-video")
 
 
+def test_replace_processed_video_can_update_raw_review_without_reupload_mark(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import raw_video_pool
+    from appcore import tasks
+
+    target = tmp_path / "demo.mp4"
+    target.write_bytes(b"old")
+    queries = [
+        {
+            "id": 5,
+            "status": "raw_review",
+            "assignee_id": 9,
+            "media_item_id": 11,
+            "viewer_role": "user",
+        },
+        {
+            "id": 11,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+        },
+    ]
+
+    monkeypatch.setattr(raw_video_pool, "query_one", lambda sql, args=(): queries.pop(0))
+    monkeypatch.setattr(raw_video_pool, "_resolve_local_path", lambda object_key: str(target))
+    marked = []
+    monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
+
+    executed = []
+    monkeypatch.setattr(raw_video_pool, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+
+    class FakeFile:
+        filename = "fixed.mp4"
+
+        def save(self, path):
+            with open(path, "wb") as fh:
+                fh.write(b"fixed-video")
+
+    new_size = raw_video_pool.replace_processed_video(
+        task_id=5,
+        actor_user_id=9,
+        uploaded_file=FakeFile(),
+        allowed_statuses=("raw_review",),
+        mark_uploaded_after=False,
+    )
+
+    assert new_size == len(b"fixed-video")
+    assert target.read_bytes() == b"fixed-video"
+    assert marked == []
+    event_args = [
+        args for sql, args in executed
+        if "INSERT INTO task_events" in sql
+    ][0]
+    assert event_args[1] == "raw_manual_uploaded"
+
+
 def test_resolve_local_path_prefers_local_media_storage(monkeypatch, tmp_path):
     from appcore import raw_video_pool
 

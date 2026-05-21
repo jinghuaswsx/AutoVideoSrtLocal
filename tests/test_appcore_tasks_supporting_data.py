@@ -2,6 +2,36 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
+
+def test_parent_raw_approval_permission_allows_admin_or_assignee():
+    from appcore import tasks
+
+    row = {"assignee_id": 9}
+
+    tasks._ensure_parent_raw_approval_allowed(
+        row,
+        actor_user_id=9,
+        is_admin=False,
+    )
+    tasks._ensure_parent_raw_approval_allowed(
+        row,
+        actor_user_id=3,
+        is_admin=True,
+    )
+
+
+def test_parent_raw_approval_permission_rejects_non_assignee_user():
+    from appcore import tasks
+
+    with pytest.raises(PermissionError, match="only assignee or admin can approve"):
+        tasks._ensure_parent_raw_approval_allowed(
+            {"assignee_id": 9},
+            actor_user_id=3,
+            is_admin=False,
+        )
+
 
 def test_list_enabled_target_languages_excludes_english_and_returns_display_labels(monkeypatch):
     from appcore import tasks

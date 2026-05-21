@@ -1,4 +1,4 @@
-"""D 子系统：原始素材任务库 service。
+"""D 子系统：去字幕原始视频素材处理 service。
 
 详见 docs/superpowers/specs/2026-04-26-raw-video-pool-design.md
 """
@@ -192,7 +192,14 @@ def stream_original_video(task_id: int, viewer_user_id: int) -> tuple[str, str]:
     return local_path, item["filename"]
 
 
-def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) -> int:
+def replace_processed_video(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    uploaded_file,
+    allowed_statuses: tuple[str, ...] = ("raw_in_progress",),
+    mark_uploaded_after: bool = True,
+) -> int:
     """Save uploaded file to original location, then call C's mark_uploaded.
 
     Returns new file size. Raises PermissionDenied / StateError.
@@ -201,8 +208,9 @@ def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) 
     row = _check_view_permission(task_id, actor_user_id)
     if row.get("assignee_id") != int(actor_user_id):
         raise PermissionDenied("only assignee can upload processed")
-    if row.get("status") != "raw_in_progress":
-        raise StateError(f"expected raw_in_progress, got {row.get('status')}")
+    allowed = tuple(str(status) for status in (allowed_statuses or ("raw_in_progress",)))
+    if row.get("status") not in allowed:
+        raise StateError(f"expected {'/'.join(allowed)}, got {row.get('status')}")
     if not row.get("media_item_id"):
         raise StateError("task has no media_item")
     item = query_one("SELECT * FROM media_items WHERE id=%s", (row["media_item_id"],))
@@ -230,8 +238,9 @@ def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) 
         },
     )
 
-    # Auto-trigger C's mark_uploaded (translates state to raw_review)
-    from appcore import tasks as tasks_svc
-    tasks_svc.mark_uploaded(task_id=task_id, actor_user_id=actor_user_id)
+    if mark_uploaded_after:
+        # Auto-trigger C's mark_uploaded (translates state to raw_review)
+        from appcore import tasks as tasks_svc
+        tasks_svc.mark_uploaded(task_id=task_id, actor_user_id=actor_user_id)
 
     return new_size

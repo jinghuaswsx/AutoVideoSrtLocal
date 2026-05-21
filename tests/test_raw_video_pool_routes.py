@@ -1,7 +1,7 @@
 def test_index_renders(authed_client_no_db):
     rsp = authed_client_no_db.get("/raw-video-pool/")
     assert rsp.status_code == 200
-    assert "原始素材任务库".encode("utf-8") in rsp.data
+    assert "去字幕原始视频素材处理".encode("utf-8") in rsp.data
 
 
 def test_api_list_smoke(authed_client_no_db, monkeypatch):

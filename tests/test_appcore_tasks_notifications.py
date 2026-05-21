@@ -26,6 +26,12 @@ class FakeCursor:
             self.rowcount = 2
         elif sql.startswith("UPDATE tasks SET status=%s, last_reason=NULL"):
             self.rowcount = 1
+        elif sql.startswith("SELECT id, status, assignee_id FROM tasks"):
+            self._fetchone = {
+                "id": args[0],
+                "status": tasks.PARENT_RAW_REVIEW,
+                "assignee_id": 1,
+            }
         elif "SELECT id FROM tasks WHERE parent_task_id" in sql:
             self._fetchall = [{"id": 201}, {"id": 202}]
         else:

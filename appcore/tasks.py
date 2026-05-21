@@ -865,22 +865,46 @@ def claim_parent(*, task_id: int, actor_user_id: int) -> None:
         conn.close()
 
 
-def approve_raw(*, task_id: int, actor_user_id: int) -> None:
+def _ensure_parent_raw_approval_allowed(
+    row: dict,
+    *,
+    actor_user_id: int,
+    is_admin: bool,
+) -> None:
+    if is_admin:
+        return
+    if int(row.get("assignee_id") or 0) == int(actor_user_id):
+        return
+    raise PermissionError("only assignee or admin can approve")
+
+
+def approve_raw(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:
     from appcore import task_raw_source_bridge
 
-    """管理员审核通过原始视频，自动 unblock 所有 blocked 子任务。"""
+    """审核通过原始视频，自动入库并 unblock 所有 blocked 子任务。"""
     conn = get_conn()
     try:
         conn.begin()
         try:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT id, status, assignee_id FROM tasks "
+                    "WHERE id=%s AND parent_task_id IS NULL FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row or row.get("status") != PARENT_RAW_REVIEW:
+                    raise StateError("parent not in raw_review")
+                _ensure_parent_raw_approval_allowed(
+                    row,
+                    actor_user_id=actor_user_id,
+                    is_admin=is_admin,
+                )
+                cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
                     (PARENT_RAW_DONE, int(task_id), PARENT_RAW_REVIEW),
                 )
-                if cur.rowcount == 0:
-                    raise StateError("parent not in raw_review")
                 _write_event(cur, task_id, "approved", actor_user_id, None)
 
                 raw_result = task_raw_source_bridge.ensure_raw_source_for_parent_task(
@@ -1274,7 +1298,7 @@ def _load_review_media_item(media_item_id: Any) -> dict | None:
 
 def _parent_review_assets_payload(row: dict) -> dict:
     item = _load_review_media_item(row.get("media_item_id"))
-    asset = _review_video_asset(item, label="原素材视频")
+    asset = _review_video_asset(item, label="去字幕原始视频素材")
     assets = [asset] if asset else []
     review_target = row.get("status") == PARENT_RAW_REVIEW
     steps = [
@@ -1301,7 +1325,7 @@ def _parent_review_assets_payload(row: dict) -> dict:
     if review_target:
         current_review = {
             "event_type": "raw_uploaded",
-            "title": "当前待审核：原素材视频",
+            "title": "当前待审核：去字幕原始视频素材",
             "asset_count": len(assets),
         }
     return {

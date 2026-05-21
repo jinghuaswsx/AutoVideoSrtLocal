@@ -48,6 +48,7 @@
 .tc-btn--primary { background:var(--tc-accent); color:#fff; border:none; }
 .tc-btn--primary:hover { background:var(--tc-accent-hover); }
 .tc-btn--danger { background:var(--tc-danger); color:#fff; border:none; }
+.tc-btn--large { min-height:44px; height:auto; padding:10px 16px; font-size:14px; font-weight:700; line-height:1.35; white-space:normal; }
 .tc-action-links { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
 .tc-action-link { display:inline-flex; align-items:center; justify-content:center; min-height:24px; height:auto; padding:4px 8px; font-size:11px; line-height:1.2; text-decoration:none; white-space:nowrap; }
 .tc-action-link--primary { background:var(--tc-accent); border-color:var(--tc-accent); color:#fff; }
@@ -141,6 +142,16 @@
 .tc-niuma-video-label { font-size:13px; font-weight:700; margin-bottom:3px; color:var(--tc-fg); }
 .tc-niuma-video-hint { font-size:12px; color:var(--tc-fg-muted); margin-bottom:8px; line-height:1.4; }
 .tc-niuma-video { display:block; width:270px; height:480px; object-fit:contain; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-raw-self-review { margin-top:14px; padding-top:12px; border-top:1px dashed var(--tc-border-strong); }
+.tc-raw-self-review-note { margin-bottom:8px; font-size:12px; line-height:1.5; color:var(--tc-fg-muted); }
+.tc-raw-self-review-actions { display:grid; grid-template-columns:repeat(2, minmax(220px, 1fr)); gap:28px; }
+.tc-manual-result-modal { display:none; position:fixed; top:0; right:0; bottom:0; width:var(--tc-detail-drawer-w); min-width:720px; max-width:100vw; background:rgba(15, 23, 42, 0.38); z-index:1700; }
+.tc-manual-result-dialog { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:520px; max-width:calc(100% - 48px); background:#fff; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); padding:22px; box-shadow:0 18px 44px rgba(15, 23, 42, 0.20); }
+.tc-manual-result-dialog h3 { margin:0 0 10px; font-size:18px; line-height:1.3; }
+.tc-manual-result-hint { margin:0 0 12px; color:var(--tc-fg-muted); font-size:13px; line-height:1.5; }
+.tc-manual-result-status { display:none; margin-top:12px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg-subtle); font-size:13px; line-height:1.5; }
+.tc-manual-result-status.is-success { display:block; border-color:transparent; background:var(--tc-success-bg); color:var(--tc-success-fg); }
+.tc-manual-result-status.is-error { display:block; border-color:transparent; background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 
 @media (max-width: 1100px) {
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
@@ -149,6 +160,7 @@
   .tc-readiness-evidence { grid-template-columns:1fr; }
   .tc-niuma-meta,
   .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
+  .tc-raw-self-review-actions { grid-template-columns:1fr; gap:10px; }
 }
 
 /* ── 移动端适配 ── */
@@ -165,6 +177,7 @@
   .tc-filters #tcRefresh { flex: 0 0 auto; }
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
+  .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
   .tc-table { font-size: 12px; }
   .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
@@ -173,7 +186,8 @@
 @media (max-width: 480px) {
   /* 弹窗全屏化 */
   #tcCreateModal > div,
-  #tcReasonModal > div {
+  #tcReasonModal > div,
+  .tc-manual-result-dialog {
     top: 0 !important;
     left: 0 !important;
     transform: none !important;
@@ -192,7 +206,7 @@
   <div class="tc-header">
     <div>
       <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
-      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理素材原始视频处理与翻译任务</p>
+      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理去字幕原始视频素材处理与翻译任务</p>
     </div>
   </div>
 
@@ -250,10 +264,25 @@
       </div>
     </div>
   </div>
+
+  <div id="tcManualRawResultModal" class="tc-manual-result-modal" aria-hidden="true">
+    <div class="tc-manual-result-dialog" role="dialog" aria-modal="true" aria-labelledby="tcManualRawResultTitle">
+      <h3 id="tcManualRawResultTitle">手动提交修改后的结果视频</h3>
+      <p class="tc-manual-result-hint">上传你已经处理好的可用视频。提交成功后，这个视频会作为本步骤最终结果直接进入产品的原始视频素材库。</p>
+      <input type="file" id="tcManualRawResultFile" accept="video/mp4,video/webm,video/quicktime,video/x-matroska" style="width:100%; margin-bottom:8px;" />
+      <div style="font-size:12px; color:var(--tc-fg-muted);">支持 mp4 / mov / webm / mkv，最大 500MB。</div>
+      <div id="tcManualRawResultStatus" class="tc-manual-result-status"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap;">
+        <button class="tc-btn" onclick="tcCloseManualRawResult()">关闭</button>
+        <button class="tc-btn tc-btn--primary" id="tcManualRawResultSubmit" onclick="tcSubmitManualRawResult()">提交并入库</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 const TC_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+const TC_CURRENT_USER_ID = {{ current_user.id|int }};
 const TC_CAPS = {
   can_process_raw_video: {{ 'true' if capabilities.can_process_raw_video else 'false' }},
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
@@ -280,6 +309,20 @@ let TC_LANGUAGE_LOAD_PROMISE = null;
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
+function tcCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? String(meta.getAttribute('content') || '') : '';
+}
+function tcJsonHeaders() {
+  const headers = {'Content-Type':'application/json'};
+  const token = tcCsrfToken();
+  if (token) headers['X-CSRFToken'] = token;
+  return headers;
+}
+function tcFormHeaders() {
+  const token = tcCsrfToken();
+  return token ? {'X-CSRFToken': token} : {};
+}
 function tcInlineArg(s) {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
 }
@@ -334,9 +377,9 @@ function tcFormatElapsedSince(s) {
 function tcStatusLabel(status) {
   const labels = {
     pending: '待接手',
-    raw_in_progress: '原素材处理中',
-    raw_review: '原素材待审核',
-    raw_done: '原素材已通过',
+    raw_in_progress: '去字幕原始视频素材处理中',
+    raw_review: '去字幕原始视频素材待审核',
+    raw_done: '去字幕原始视频素材已通过',
     all_done: '全部完成',
     blocked: '等待前置完成',
     assigned: '待处理',
@@ -423,13 +466,13 @@ function tcEventPayloadUserDisplay(event, payload, key) {
 }
 const TC_EVENT_TEXT = {
   created: { title: '创建任务', progress: '已指派/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
-  claimed: { title: '原始视频任务接手', progress: '原始视频处理中', tone: 'info', summary: '处理人已接手原始视频处理。' },
+  claimed: { title: '去字幕原始视频素材任务接手', progress: '去字幕原始视频素材处理中', tone: 'info', summary: '处理人已接手去字幕原始视频素材处理。' },
   raw_niuma_submitted: { title: '提交牛马去字幕', progress: '自动去字幕中', tone: 'info', summary: '原始视频已提交到牛马去字幕流程。' },
   raw_niuma_done: { title: '牛马去字幕完成', progress: '等待提交审核', tone: 'success', summary: '自动去字幕已完成，可以进入原始视频审核。' },
   raw_niuma_failed: { title: '牛马去字幕失败', progress: '需要人工处理', tone: 'danger', summary: '自动去字幕没有成功，需要查看失败原因或改走手动上传。' },
   raw_niuma_timeout: { title: '牛马去字幕超时', progress: '需要人工确认', tone: 'danger', summary: '自动去字幕等待超时，需要确认外部任务状态。' },
   raw_manual_uploaded: { title: '手动上传原始视频', progress: '原始视频已补传', tone: 'success', summary: '处理人已手动上传处理后的原始视频文件。' },
-  raw_uploaded: { title: '提交原始视频审核', progress: '等待管理员审核', tone: 'info', summary: '处理人已提交原始视频，等待管理员通过或打回。' },
+  raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待审核', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
   approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
   rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
   cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
@@ -643,7 +686,35 @@ function tcHasSubtitleRemovalComparison(events) {
 }
 function tcShouldSuppressReviewAssets(eventType, suppressRawReviewAssets) {
   if (!suppressRawReviewAssets) return false;
-  return ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded'].includes(String(eventType || ''));
+  return ['raw_niuma_done', 'raw_uploaded'].includes(String(eventType || ''));
+}
+function tcRawSelfReviewAnchorEvent(events) {
+  const ordered = ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded'];
+  for (let i = 0; i < ordered.length; i += 1) {
+    const wanted = ordered[i];
+    if ((Array.isArray(events) ? events : []).some(event => String(event && event.event_type || '') === wanted)) {
+      return wanted;
+    }
+  }
+  return '';
+}
+function tcCanReviewRawTask(task) {
+  if (!task || task.parent_task_id || task.status !== 'raw_review') return false;
+  if (TC_IS_ADMIN) return true;
+  return Number(task.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0);
+}
+function tcRenderRawSelfReviewActions(task, event, anchorEventType) {
+  if (!tcCanReviewRawTask(task)) return '';
+  if (String(event && event.event_type || '') !== String(anchorEventType || '')) return '';
+  const id = Number(task.id || 0);
+  if (!id) return '';
+  return '<div class="tc-raw-self-review">'
+    + '<div class="tc-raw-self-review-note">确认结果可用后可直接入库；如果画面仍有问题，上传你手动处理后的最终视频。</div>'
+    + '<div class="tc-raw-self-review-actions">'
+    + '<button class="tc-btn tc-btn--primary tc-btn--large" onclick="tcApproveRawSelfReview(' + id + ')">审核通过，结果视频入库</button>'
+    + '<button class="tc-btn tc-btn--large" onclick="tcOpenManualRawResult(' + id + ')">手动提交修改后的结果视频</button>'
+    + '</div>'
+    + '</div>';
 }
 function tcRenderSubtitleRemovalContext(event) {
   const context = event && event.payload_context ? event.payload_context.subtitle_removal : null;
@@ -693,12 +764,13 @@ function tcRenderCurrentReviewEntry(reviewAssets) {
     + action
     + '</div>';
 }
-function tcRenderEventTimeline(events, reviewAssets) {
+function tcRenderEventTimeline(task, events, reviewAssets) {
   if (!events.length) {
     return '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无审核流程记录</div>';
   }
   const reviewByEvent = tcReviewAssetsByEvent(reviewAssets);
   const suppressRawReviewAssets = tcHasSubtitleRemovalComparison(events);
+  const rawSelfReviewAnchor = tcRawSelfReviewAnchorEvent(events);
   return '<div class="tc-process-timeline">' + events.map(function(event, index) {
     const h = tcHumanEvent(event, index);
     const reviewStep = reviewByEvent[event.event_type] || null;
@@ -707,6 +779,7 @@ function tcRenderEventTimeline(events, reviewAssets) {
       ? ''
       : tcRenderReviewAssetList(reviewStep);
     const subtitleRemovalHtml = tcRenderSubtitleRemovalContext(event);
+    const rawSelfReviewHtml = tcRenderRawSelfReviewActions(task, event, rawSelfReviewAnchor);
     const facts = h.facts.length
       ? '<div class="tc-event-facts">' + h.facts.map(function(fact) {
           return '<div class="tc-event-fact"><strong>' + tcEsc(fact.label) + '</strong><span>' + tcEsc(fact.value) + '</span></div>';
@@ -727,6 +800,7 @@ function tcRenderEventTimeline(events, reviewAssets) {
       + facts
       + subtitleRemovalHtml
       + reviewAssetsHtml
+      + rawSelfReviewHtml
       + tech
       + '</div>';
   }).join('') + '</div>';
@@ -765,7 +839,9 @@ function tcRenderActionLinks(actions) {
 }
 
 async function tcFetchJson(url, opts) {
-  const rsp = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts || {}));
+  const options = Object.assign({}, opts || {});
+  options.headers = Object.assign(tcJsonHeaders(), options.headers || {});
+  const rsp = await fetch(url, options);
   if (!rsp.ok) {
     const body = await rsp.json().catch(() => ({error: rsp.statusText}));
     throw new Error(body.error || rsp.statusText);
@@ -879,10 +955,12 @@ function tcTaskRowAction(it) {
       return tcActiveTaskAction(id, '查看', false);
     }
     if (status === 'raw_in_progress') {
-      return (TC_CAPS.can_process_raw_video || TC_IS_ADMIN) ? tcActiveTaskAction(id, '处理原素材', true) : tcDisabledTaskAction('原素材处理中');
+      return (TC_CAPS.can_process_raw_video || TC_IS_ADMIN) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中');
     }
     if (status === 'raw_review') {
-      return TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核');
+      return (TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0))
+        ? tcActiveTaskAction(id, '审核', true)
+        : tcDisabledTaskAction('等待审核');
     }
     if (status === 'raw_done' || status === 'all_done') return tcActiveTaskAction(id, '查看结果', false);
     if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
@@ -1156,7 +1234,7 @@ function tcRenderDetail(task, events, reviewAssets) {
   const isParent = !task.parent_task_id;
   const buttons = tcDetailButtons(task, isParent);
   const reviewEntry = tcRenderCurrentReviewEntry(reviewAssets);
-  const eventTimeline = tcRenderEventTimeline(events, reviewAssets);
+  const eventTimeline = tcRenderEventTimeline(task, events, reviewAssets);
   const identityRows = tcRenderDetailIdentityRows(task, isParent);
   return `
     <div class="tc-detail-title-block">
@@ -1165,7 +1243,7 @@ function tcRenderDetail(task, events, reviewAssets) {
     </div>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
     <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
-      ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段）'} ·
+      ${isParent ? '父任务（去字幕原始视频素材处理段）' : '子任务（' + tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段）'} ·
       负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
     </div>
     ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
@@ -1189,11 +1267,7 @@ function tcDetailButtons(task, isParent) {
   const status = task.status;
   const btns = [];
   if (isParent) {
-    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">去原始素材任务库处理</button>`);
-    if (status === 'raw_review' && TC_IS_ADMIN) {
-      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'approve')">通过</button>`);
-      btns.push(`<button class="tc-btn" onclick="tcOpenReason('parent', ${id}, 'reject')">打回</button>`);
-    }
+    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">去字幕原始视频素材处理</button>`);
     if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
     }
@@ -1234,6 +1308,82 @@ async function tcAction(kind, id, action) {
   }
 }
 
+async function tcApproveRawSelfReview(id) {
+  await tcAction('parent', id, 'approve');
+}
+
+let TC_MANUAL_RAW_TASK_ID = null;
+let TC_MANUAL_RAW_SUBMITTED = false;
+
+function tcSetManualRawResultStatus(message, tone) {
+  const el = document.getElementById('tcManualRawResultStatus');
+  if (!el) return;
+  el.className = 'tc-manual-result-status' + (tone ? ' is-' + tone : '');
+  el.textContent = message || '';
+}
+
+function tcOpenManualRawResult(taskId) {
+  TC_MANUAL_RAW_TASK_ID = Number(taskId || 0);
+  TC_MANUAL_RAW_SUBMITTED = false;
+  const input = document.getElementById('tcManualRawResultFile');
+  const submit = document.getElementById('tcManualRawResultSubmit');
+  if (input) input.value = '';
+  if (submit) submit.disabled = false;
+  tcSetManualRawResultStatus('', '');
+  const modal = document.getElementById('tcManualRawResultModal');
+  modal.style.display = 'block';
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function tcCloseManualRawResult() {
+  const modal = document.getElementById('tcManualRawResultModal');
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden', 'true');
+  const shouldRefresh = TC_MANUAL_RAW_SUBMITTED && TC_DETAIL_TASK_ID === TC_MANUAL_RAW_TASK_ID;
+  const taskId = TC_MANUAL_RAW_TASK_ID;
+  TC_MANUAL_RAW_TASK_ID = null;
+  TC_MANUAL_RAW_SUBMITTED = false;
+  if (shouldRefresh) {
+    tcRender();
+    tcOpenDetail(taskId);
+  }
+}
+
+async function tcSubmitManualRawResult() {
+  if (!TC_MANUAL_RAW_TASK_ID) return;
+  const input = document.getElementById('tcManualRawResultFile');
+  const file = input && input.files ? input.files[0] : null;
+  if (!file) {
+    tcSetManualRawResultStatus('请选择要提交的视频文件。', 'error');
+    return;
+  }
+  if (file.size > 500 * 1024 * 1024) {
+    tcSetManualRawResultStatus('文件超过 500MB 限制。', 'error');
+    return;
+  }
+  const submit = document.getElementById('tcManualRawResultSubmit');
+  if (submit) submit.disabled = true;
+  tcSetManualRawResultStatus('上传并入库中...', '');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const rsp = await fetch('/tasks/api/parent/' + encodeURIComponent(TC_MANUAL_RAW_TASK_ID) + '/manual_result', {
+      method: 'POST',
+      headers: tcFormHeaders(),
+      body: fd,
+    });
+    const body = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) {
+      throw new Error(body.error || body.detail || rsp.statusText);
+    }
+    TC_MANUAL_RAW_SUBMITTED = true;
+    tcSetManualRawResultStatus('已提交并入库，文件大小 ' + tcFormatBytes(body.new_size || file.size) + '。关闭弹窗后会刷新抽屉里的结果视频。', 'success');
+  } catch (e) {
+    if (submit) submit.disabled = false;
+    tcSetManualRawResultStatus('提交失败：' + (e.message || 'unknown'), 'error');
+  }
+}
+
 function tcChildJumpTranslate(taskId, country, productId, productCode) {
   const url = tcMediasUrl(taskId, productId, country, productCode, 'translate');
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -1243,7 +1393,7 @@ function tcChildJumpHistory(taskId, country, productId, productCode) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 function tcParentUploadDone(id, productId) {
-  // D 子系统上线后，处理人在"原始素材任务库"完成下载/上传/自动 mark_uploaded 全流程。
+  // D 子系统上线后，处理人在"去字幕原始视频素材处理"完成下载/上传/自动 mark_uploaded 全流程。
   // 这里只做跳转，不再保留 prompt fallback。
   window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');
 }
