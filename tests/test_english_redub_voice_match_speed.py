@@ -30,6 +30,27 @@ def test_compute_source_speech_rate_uses_words_when_available():
     assert rate["source_chars_per_second"] > 10
 
 
+def test_compute_source_speech_rate_ignores_non_word_like_timed_tokens():
+    from pipeline.voice_match_speed import compute_source_speech_rate
+
+    utterances = [
+        {
+            "text": "这款收纳盒真的非常方便",
+            "start_time": 0.0,
+            "end_time": 3.2,
+            "words": [
+                {"word": "这款收纳盒真的非常方便", "start": 0.0, "end": 3.2},
+            ],
+        }
+    ]
+
+    rate = compute_source_speech_rate(utterances)
+
+    assert rate["source_words_per_second"] == 0.0
+    assert rate["sample_utterance_count"] == 0
+    assert rate["ignored_utterance_count"] == 1
+
+
 def test_rank_speed_aware_keeps_timbre_dominant_when_speed_differs():
     from pipeline.voice_match_speed import rank_speed_aware_candidates
 
@@ -94,6 +115,53 @@ def test_speed_aware_match_marks_missing_preview_rates_after_lazy_fill(monkeypat
     assert ranked[0]["speed_match_score"] is None
     assert ranked[0]["combined_score"] == ranked[0]["similarity"]
     assert ranked[0]["voice_speed_status"] == "missing_preview_rate"
+    assert ranked[0]["voice_match_strategy_effective"] == "legacy_fallback"
+
+
+def test_speed_aware_match_falls_back_when_source_tokens_are_not_word_like(monkeypatch):
+    from pipeline import voice_match_speed
+
+    candidates = [
+        {"voice_id": "a", "similarity": 0.9},
+        {"voice_id": "b", "similarity": 0.8},
+    ]
+    monkeypatch.setattr(
+        voice_match_speed.voice_match,
+        "match_candidates",
+        lambda *args, **kwargs: candidates,
+    )
+    monkeypatch.setattr(
+        voice_match_speed.voice_preview_speech_rate,
+        "get_rates_for_voices",
+        lambda *, language, voice_ids: {"a": 3.8, "b": 2.9},
+    )
+    monkeypatch.setattr(
+        voice_match_speed.voice_library_sync,
+        "compute_missing_preview_speech_rates",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("source fallback should not lazy-fill previews")),
+    )
+
+    ranked = voice_match_speed.match_candidates_speed_aware(
+        np.array([1.0, 0.0], dtype=np.float32),
+        language="en",
+        source_utterances=[
+            {
+                "text": "这款收纳盒真的非常方便",
+                "start_time": 0.0,
+                "end_time": 3.2,
+                "words": [
+                    {"word": "这款收纳盒真的非常方便", "start": 0.0, "end": 3.2},
+                ],
+            }
+        ],
+    )
+
+    assert [row["voice_id"] for row in ranked] == ["a", "b"]
+    assert ranked[0]["source_words_per_second"] is None
+    assert ranked[0]["preview_words_per_second"] is None
+    assert ranked[0]["speed_match_score"] is None
+    assert ranked[0]["combined_score"] == ranked[0]["similarity"]
+    assert ranked[0]["voice_speed_status"] == "source_rate_unavailable"
     assert ranked[0]["voice_match_strategy_effective"] == "legacy_fallback"
 
 

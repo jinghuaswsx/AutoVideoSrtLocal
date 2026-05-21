@@ -1089,6 +1089,9 @@
     const sourceRate = fmtRate(rec.source_words_per_second);
     const previewRate = fmtRate(rec.preview_words_per_second);
     const speedScore = fmtScore(rec.speed_match_score);
+    if (status === "source_rate_unavailable") {
+      return `<div class="vs-row-speed vs-row-speed-missing">原视频语速不可比，按音色排序，等待 AI 推荐排名</div>`;
+    }
     if (!previewRate || status === "missing_preview_rate") {
       const sourceText = sourceRate ? `原视频 ${escapeHtml(sourceRate)} 词/秒 · ` : "";
       return `<div class="vs-row-speed vs-row-speed-missing">${sourceText}语速未维护，按音色排序</div>`;
