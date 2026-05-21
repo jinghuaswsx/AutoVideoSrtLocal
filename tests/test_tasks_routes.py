@@ -4,7 +4,7 @@ import io
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
-    assert b"\xe4\xbb\xbb\xe5\x8a\xa1\xe4\xb8\xad\xe5\xbf\x83" in rsp.data  # "任务中心" in UTF-8
+    assert "小语种视频翻译".encode("utf-8") in rsp.data
 
 
 def test_task_center_child_translate_jump_uses_product_code_search(authed_client_no_db):
@@ -84,6 +84,14 @@ def test_task_center_niuma_step_uses_status_only_and_centered_detail_button(auth
     assert "错误摘要" not in body
     assert "function tcShouldShowSubtitleRemovalComparison" in body
     assert "String(event && event.event_type || '') !== 'raw_niuma_submitted'" in body
+
+
+def test_task_center_does_not_jump_to_legacy_raw_pool_page(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcParentUploadDone" not in body
+    assert "window.open('/raw-video-pool/'" not in body
 
 
 def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_no_db):
