@@ -468,7 +468,7 @@ def list_task_center_items(
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {' AND '.join(where)} "
-        "ORDER BY t.id DESC "
+        "ORDER BY t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*args, int(page_size), offset))

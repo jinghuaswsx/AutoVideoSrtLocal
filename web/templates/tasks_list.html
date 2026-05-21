@@ -209,12 +209,13 @@
   <div id="tcOverviewPanel">
     <div class="tc-overview-head">
       <div>
-        <div class="tc-overview-title">任务总览</div>
-        <div class="tc-overview-note">按处理进度查看任务。</div>
+        <div class="tc-overview-title">任务列表</div>
+        <div class="tc-overview-note">默认按创建时间倒序展示。</div>
       </div>
     </div>
     <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
-      <button class="tc-subtab active" type="button" data-bucket="todo">待处理任务</button>
+      <button class="tc-subtab active" type="button" data-bucket="all">任务总览</button>
+      <button class="tc-subtab" type="button" data-bucket="todo">待处理任务</button>
       <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
       <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
     </div>
@@ -262,7 +263,7 @@ const TC_CAPS = {
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
 };
 let TC_CURRENT_SECTION = 'overview';
-let TC_CURRENT_BUCKET = 'todo';
+let TC_CURRENT_BUCKET = 'all';
 let TC_TASK_PAGE = 1;
 const TC_TASK_PAGE_SIZE = 20;
 let TC_TASK_CACHE = new Map();
@@ -839,7 +840,7 @@ document.querySelectorAll('[data-bucket]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('[data-bucket]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    TC_CURRENT_BUCKET = btn.dataset.bucket || 'todo';
+    TC_CURRENT_BUCKET = btn.dataset.bucket || 'all';
     TC_TASK_PAGE = 1;
     tcRender();
   });
@@ -888,11 +889,11 @@ async function tcRenderTaskList(wrap, tab, bucket) {
       <td>${country}</td>
       <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span></td>
       <td>${tcEsc(it.assignee_display_name || it.assignee_username || '—')}</td>
-      <td>${tcEsc(tcFormatTime(it.updated_at || it.created_at))}</td>
+      <td>${tcEsc(tcFormatTime(it.created_at))}</td>
       <td>${tcTaskRowAction(it)}</td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
+  wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
 }
 function tcRenderTaskPager(data, itemCount) {
   const page = Number(data.page || TC_TASK_PAGE || 1);

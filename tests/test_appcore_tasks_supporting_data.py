@@ -370,6 +370,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert "ORDER BY t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",

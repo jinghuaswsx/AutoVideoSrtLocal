@@ -70,7 +70,7 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
     assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
-    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th>" in body
+    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
 def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
@@ -198,6 +198,25 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "page_size": 100,
         "task_id": 44,
     }
+
+
+def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&bucket=all")
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == ""
 
 
 def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
@@ -913,9 +932,14 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
     assert 'data-section-tab="overview"' in body
+    assert "let TC_CURRENT_BUCKET = 'all';" in body
+    assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
+    assert '>任务总览</button>' in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
     assert 'data-bucket="done"' in body
+    assert "<th>创建时间</th>" in body
+    assert "<th>更新时间</th>" not in body
     assert "tcRender" in body  # JS bootstrapped
     assert "tcCreateRawProcessor" in body
     assert "原视频处理人" in body

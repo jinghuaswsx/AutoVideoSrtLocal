@@ -168,6 +168,8 @@ def api_list():
         pass
     else:
         return _json_response({"error": "invalid tab"}, 400)
+    if bucket == "all":
+        bucket = ""
     if bucket and bucket not in {"todo", "review", "done"}:
         return _json_response({"error": "invalid bucket"}, 400)
 
