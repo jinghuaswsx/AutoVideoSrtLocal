@@ -4,6 +4,17 @@ def test_index_renders(authed_client_no_db):
     assert "原始素材任务库".encode("utf-8") in rsp.data
 
 
+def test_index_requires_login():
+    from web.app import create_app
+
+    app = create_app()
+    client = app.test_client()
+
+    rsp = client.get("/raw-video-pool/", follow_redirects=False)
+
+    assert rsp.status_code in (302, 401)
+
+
 def test_api_list_smoke(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.raw_video_pool.rvp_svc.list_visible_tasks",
@@ -13,6 +24,42 @@ def test_api_list_smoke(authed_client_no_db, monkeypatch):
     rsp = authed_client_no_db.get("/raw-video-pool/api/list")
     assert rsp.status_code == 200
     assert rsp.get_json() == {"items": [{"id": 7}], "total": 1}
+
+
+def test_api_list_delegates_pagination_params(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_visible_tasks(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.raw_video_pool.rvp_svc.list_visible_tasks",
+        fake_list_visible_tasks,
+    )
+
+    rsp = authed_client_no_db.get("/raw-video-pool/api/list?bucket=todo&page=3&page_size=150")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"items": [], "page": 3, "page_size": 100}
+    assert captured["bucket"] == "todo"
+    assert captured["page"] == 3
+    assert captured["page_size"] == 100
+
+
+def test_index_uses_four_tabs_pagination_and_task_entry(authed_client_no_db):
+    rsp = authed_client_no_db.get("/raw-video-pool/")
+    body = rsp.data.decode("utf-8")
+
+    assert "任务总览" in body
+    assert 'data-rvp-bucket="overview"' in body
+    assert 'data-rvp-bucket="todo"' in body
+    assert 'data-rvp-bucket="review"' in body
+    assert 'data-rvp-bucket="done"' in body
+    assert "待认领" not in body
+    assert "rvpRenderTaskPager" in body
+    assert "<th>任务入口</th>" in body
+    assert "任务详情" in body
 
 
 def test_index_exposes_admin_processing_capability(authed_client_no_db):

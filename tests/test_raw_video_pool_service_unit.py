@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 
@@ -8,7 +9,7 @@ def test_list_visible_tasks_includes_raw_source_status(monkeypatch):
     from appcore import raw_video_pool
 
     rows_by_status = {
-        "pending": [
+        "items": [
             {
                 "task_id": 1,
                 "media_product_id": 7,
@@ -17,52 +18,85 @@ def test_list_visible_tasks_includes_raw_source_status(monkeypatch):
                 "product_name": "Product",
                 "mp4_filename": "demo.mp4",
                 "mp4_size": 123,
+                "status": "raw_in_progress",
                 "raw_source_id": None,
                 "raw_processing_event": "raw_niuma_submitted",
+                "raw_processing_payload": json.dumps({"subtitle_task_id": "tcraw-1-demo"}),
                 "country_codes": "DE,FR",
                 "created_at": None,
                 "claimed_at": None,
-                "updated_at": None,
+                "updated_at": datetime(2026, 5, 21, 9, 30, 0),
             }
         ],
-        "in_progress": [
-            {
-                "task_id": 2,
-                "media_product_id": 8,
-                "media_item_id": 12,
-                "assignee_id": 99,
-                "product_name": "Ready Product",
-                "mp4_filename": "ready.mp4",
-                "mp4_size": 456,
-                "raw_source_id": 201,
-                "raw_processing_event": "raw_niuma_done",
-                "country_codes": "JA",
-                "created_at": None,
-                "claimed_at": None,
-                "updated_at": None,
-            }
-        ],
-        "review": [],
     }
 
     def fake_query_all(sql, args=()):
-        if "t.status = 'pending'" in sql:
-            return rows_by_status["pending"]
-        if "t.status = 'raw_in_progress'" in sql:
-            return rows_by_status["in_progress"]
-        if "t.status = 'raw_review'" in sql:
-            return rows_by_status["review"]
+        if "LIMIT" in sql:
+            return rows_by_status["items"]
         raise AssertionError(sql)
 
+    def fake_query_one(sql, args=()):
+        if "COUNT(*) AS total" in sql:
+            return {"total": 1}
+        return {"overview": 1, "todo": 1, "review": 0, "done": 0}
+
     monkeypatch.setattr(raw_video_pool, "query_all", fake_query_all)
+    monkeypatch.setattr(raw_video_pool, "query_one", fake_query_one)
 
-    result = raw_video_pool.list_visible_tasks(viewer_user_id=99, viewer_role="admin")
+    result = raw_video_pool.list_visible_tasks(
+        viewer_user_id=99,
+        viewer_role="admin",
+        bucket="todo",
+        page=1,
+        page_size=20,
+    )
 
-    assert result["pending"][0]["raw_source_status"] == "not_ready"
-    assert result["pending"][0]["raw_processing_status"] == "niuma_running"
-    assert result["in_progress"][0]["raw_source_status"] == "ready"
-    assert result["in_progress"][0]["raw_processing_status"] == "niuma_done"
-    assert result["in_progress"][0]["raw_source_id"] == 201
+    assert result["items"][0]["raw_source_status"] == "not_ready"
+    assert result["items"][0]["raw_processing_status"] == "niuma_running"
+    assert result["items"][0]["status"] == "raw_in_progress"
+    assert result["items"][0]["updated_at"] == "2026-05-21T09:30:00"
+    assert result["items"][0]["task_detail_url"] == "/subtitle-removal/tcraw-1-demo"
+    assert result["counts"] == {"overview": 1, "todo": 1, "review": 0, "done": 0}
+
+
+def test_list_visible_tasks_returns_paginated_bucket_payload(monkeypatch):
+    from appcore import raw_video_pool
+
+    captured = {"list_sql": "", "list_args": ()}
+
+    def fake_query_all(sql, args=()):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    def fake_query_one(sql, args=()):
+        if "COUNT(*) AS total" in sql:
+            return {"total": 23}
+        return {"overview": 23, "todo": 7, "review": 4, "done": 12}
+
+    monkeypatch.setattr(raw_video_pool, "query_all", fake_query_all)
+    monkeypatch.setattr(raw_video_pool, "query_one", fake_query_one)
+
+    result = raw_video_pool.list_visible_tasks(
+        viewer_user_id=99,
+        viewer_role="admin",
+        bucket="todo",
+        page=2,
+        page_size=10,
+    )
+
+    assert result == {
+        "items": [],
+        "page": 2,
+        "page_size": 10,
+        "total": 23,
+        "total_pages": 3,
+        "bucket": "todo",
+        "counts": {"overview": 23, "todo": 7, "review": 4, "done": 12},
+    }
+    assert "pending" not in captured["list_sql"].lower()
+    assert "raw_in_progress" in captured["list_sql"]
+    assert captured["list_args"][-2:] == (10, 10)
 
 
 def test_list_visible_tasks_user_queries_escape_like_percent_for_pymysql(monkeypatch):
@@ -77,11 +111,21 @@ def test_list_visible_tasks_user_queries_escape_like_percent_for_pymysql(monkeyp
 
     monkeypatch.setattr(raw_video_pool, "query_all", fake_query_all)
 
+    monkeypatch.setattr(
+        raw_video_pool,
+        "query_one",
+        lambda sql, args=(): {"total": 0} if "COUNT(*) AS total" in sql else {
+            "overview": 0,
+            "todo": 0,
+            "review": 0,
+            "done": 0,
+        },
+    )
+
     result = raw_video_pool.list_visible_tasks(viewer_user_id=99, viewer_role="user")
 
-    assert result == {"pending": [], "in_progress": [], "review": []}
-    assert len(formatted_queries) == 2
-    assert all("LIKE CONCAT('%/', i.filename)" in sql for sql in formatted_queries)
+    assert result["items"] == []
+    assert any("LIKE CONCAT('%/', i.filename)" in sql for sql in formatted_queries)
 
 
 def test_replace_processed_video_records_manual_upload_event(monkeypatch, tmp_path):

@@ -8,6 +8,7 @@ import logging
 import json
 import os
 from typing import Any
+from urllib.parse import quote
 
 from appcore import local_media_storage
 from appcore.db import execute, query_all, query_one
@@ -27,17 +28,45 @@ class StateError(RawVideoPoolError):
     pass
 
 
-def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
-    """Returns {'pending': [...], 'in_progress': [...], 'review': [...]}.
+BUCKET_STATUSES = {
+    "overview": ("raw_in_progress", "raw_review", "raw_done", "all_done"),
+    "todo": ("raw_in_progress",),
+    "review": ("raw_review",),
+    "done": ("raw_done", "all_done"),
+}
 
-    - admin/superadmin: 看全部 pending + in_progress + review
-    - 其他: pending 看全部公开池；in_progress + review 仅看自己 assignee
+
+def list_visible_tasks(
+    *,
+    viewer_user_id: int,
+    viewer_role: str,
+    bucket: str = "overview",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """Returns paginated raw-video processing tasks.
+
+    - admin/superadmin: 看全部已指派原素材任务
+    - 其他: 只看自己 assignee 的任务
     """
     is_admin = viewer_role in ("admin", "superadmin")
+    bucket = bucket if bucket in BUCKET_STATUSES else "overview"
+    page = max(1, int(page))
+    page_size = min(100, max(1, int(page_size)))
+    offset = (page - 1) * page_size
+
+    visibility_where = ["t.parent_task_id IS NULL"]
+    visibility_args: list[Any] = []
+    if not is_admin:
+        visibility_where.append("t.assignee_id = %s")
+        visibility_args.append(int(viewer_user_id))
+
+    bucket_statuses = BUCKET_STATUSES[bucket]
+    list_where = visibility_where + [_status_filter_sql("t.status", bucket_statuses)]
 
     base_select = """
         SELECT t.id AS task_id, t.media_product_id, t.media_item_id,
-               t.assignee_id, t.created_at, t.claimed_at, t.updated_at,
+               t.assignee_id, t.status, t.created_at, t.claimed_at, t.updated_at,
                p.name AS product_name,
                i.filename AS mp4_filename, i.file_size AS mp4_size,
                (SELECT rs.id
@@ -57,36 +86,36 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                     'raw_manual_uploaded'
                   )
                 ORDER BY te.id DESC LIMIT 1) AS raw_processing_event,
+               (SELECT te.payload_json
+                FROM task_events te
+                WHERE te.task_id = t.id
+                  AND te.event_type IN (
+                    'raw_niuma_submitted',
+                    'raw_niuma_done',
+                    'raw_niuma_failed',
+                    'raw_niuma_timeout'
+                  )
+                ORDER BY te.id DESC LIMIT 1) AS raw_processing_payload,
                (SELECT GROUP_CONCAT(country_code ORDER BY country_code SEPARATOR ',')
                 FROM tasks c WHERE c.parent_task_id = t.id) AS country_codes
         FROM tasks t
         JOIN media_products p ON p.id = t.media_product_id
         LEFT JOIN media_items i ON i.id = t.media_item_id
-        WHERE t.parent_task_id IS NULL
     """
 
-    pending = query_all(
-        base_select + " AND t.status = 'pending' ORDER BY t.created_at DESC LIMIT 200"
+    rows = query_all(
+        base_select
+        + f" WHERE {' AND '.join(list_where)} "
+        + "ORDER BY t.updated_at DESC, t.id DESC LIMIT %s OFFSET %s",
+        (*visibility_args, page_size, offset),
     )
-
-    if is_admin:
-        in_progress = query_all(
-            base_select + " AND t.status = 'raw_in_progress' ORDER BY t.claimed_at DESC LIMIT 200"
-        )
-        review = query_all(
-            base_select + " AND t.status = 'raw_review' ORDER BY t.updated_at DESC LIMIT 200"
-        )
-    else:
-        in_progress = query_all(
-            base_select + " AND t.status = 'raw_in_progress' AND t.assignee_id = %s "
-            "ORDER BY t.claimed_at DESC LIMIT 200",
-            (int(viewer_user_id),),
-        )
-        review = query_all(
-            base_select + " AND t.status = 'raw_review' AND t.assignee_id = %s "
-            "ORDER BY t.updated_at DESC LIMIT 200",
-            (int(viewer_user_id),),
-        )
+    total_row = query_one(
+        "SELECT COUNT(*) AS total FROM tasks t "
+        f"WHERE {' AND '.join(list_where)}",
+        tuple(visibility_args),
+    ) or {}
+    total = int(total_row.get("total") or 0)
+    counts = _bucket_counts(visibility_where, tuple(visibility_args))
 
     def _shape(rows):
         out = []
@@ -96,23 +125,80 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                 "media_product_id": r["media_product_id"],
                 "media_item_id": r["media_item_id"],
                 "assignee_id": r["assignee_id"],
+                "status": r.get("status"),
                 "product_name": r["product_name"],
                 "mp4_filename": r["mp4_filename"],
                 "mp4_size": r["mp4_size"],
                 "raw_source_id": r.get("raw_source_id"),
                 "raw_source_status": _raw_source_status(r),
                 "raw_processing_status": _raw_processing_status(r),
+                "task_detail_url": _task_detail_url(r.get("raw_processing_payload")),
                 "country_codes": r["country_codes"] or "",
-                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-                "claimed_at": r["claimed_at"].isoformat() if r["claimed_at"] else None,
+                "created_at": _isoformat(r.get("created_at")),
+                "claimed_at": _isoformat(r.get("claimed_at")),
+                "updated_at": _isoformat(r.get("updated_at")),
             })
         return out
 
     return {
-        "pending": _shape(pending),
-        "in_progress": _shape(in_progress),
-        "review": _shape(review),
+        "items": _shape(rows),
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": (total + page_size - 1) // page_size if total else 0,
+        "bucket": bucket,
+        "counts": counts,
     }
+
+
+def _status_filter_sql(column: str, statuses: tuple[str, ...]) -> str:
+    quoted = ", ".join("'" + status.replace("'", "''") + "'" for status in statuses)
+    return f"{column} IN ({quoted})"
+
+
+def _bucket_counts(where: list[str], args: tuple[Any, ...]) -> dict:
+    row = query_one(
+        "SELECT "
+        "SUM(CASE WHEN t.status IN ('raw_in_progress', 'raw_review', 'raw_done', 'all_done') THEN 1 ELSE 0 END) AS overview, "
+        "SUM(CASE WHEN t.status = 'raw_in_progress' THEN 1 ELSE 0 END) AS todo, "
+        "SUM(CASE WHEN t.status = 'raw_review' THEN 1 ELSE 0 END) AS review, "
+        "SUM(CASE WHEN t.status IN ('raw_done', 'all_done') THEN 1 ELSE 0 END) AS done "
+        "FROM tasks t "
+        f"WHERE {' AND '.join(where)}",
+        args,
+    ) or {}
+    return {
+        "overview": int(row.get("overview") or 0),
+        "todo": int(row.get("todo") or 0),
+        "review": int(row.get("review") or 0),
+        "done": int(row.get("done") or 0),
+    }
+
+
+def _isoformat(value: Any) -> str | None:
+    if not value:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _task_detail_url(raw_payload: Any) -> str:
+    payload = _parse_payload(raw_payload)
+    subtitle_task_id = str(payload.get("subtitle_task_id") or payload.get("task_id") or "").strip()
+    if not subtitle_task_id:
+        return ""
+    return f"/subtitle-removal/{quote(subtitle_task_id, safe='')}"
+
+
+def _parse_payload(raw_payload: Any) -> dict:
+    if isinstance(raw_payload, dict):
+        return raw_payload
+    try:
+        payload = json.loads(raw_payload or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _raw_source_status(row: dict) -> str:
