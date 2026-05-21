@@ -267,6 +267,19 @@ def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_
     assert "'&task_id='" in body
 
 
+def test_task_detail_drawer_checks_task_before_secondary_fetches(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    start = body.index("async function tcOpenDetail")
+    end = body.index("function tcCloseDetail", start)
+    fn = body[start:end]
+
+    missing_task_check = fn.index("if (!task)")
+    assert missing_task_check < fn.index("'/tasks/api/' + id + '/events'")
+    assert missing_task_check < fn.index("'/tasks/api/' + id + '/review-assets'")
+
+
 def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):
     captured = []
 
