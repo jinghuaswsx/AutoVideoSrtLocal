@@ -24,6 +24,9 @@ from web.services.tasks_responses import (
     build_tasks_payload_response,
     tasks_flask_response,
 )
+from web.services.material_evaluation_trigger import (
+    trigger_material_evaluation,
+)
 from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
@@ -138,6 +141,25 @@ def _audit_task_action(task_id: int, action: str, detail: dict | None = None) ->
         target_type="task",
         target_id=task_id,
         detail=detail,
+    )
+
+
+def _trigger_material_evaluation(
+    *,
+    product_id: int,
+    media_item_id: int | None,
+    force: bool,
+    manual: bool,
+    product_url_override: str | None = None,
+) -> bool:
+    return trigger_material_evaluation(
+        product_id=product_id,
+        media_item_id=media_item_id,
+        force=force,
+        manual=manual,
+        product_url_override=product_url_override,
+        user_id=int(getattr(current_user, "id", 0) or 0) or None,
+        entrypoint="tasks.product_evaluation",
     )
 
 
@@ -286,6 +308,7 @@ def api_create_parent():
             countries,
         )
         raw_processor_id = int(payload["raw_processor_id"])
+        product_url_override = str(payload.get("product_link") or "").strip() or None
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
@@ -349,6 +372,7 @@ def api_create_parent():
             "countries": countries,
             "translator_id": translator_id,
             "raw_processor_id": raw_processor_id,
+            **({"product_link": product_url_override} if product_url_override else {}),
             **(
                 {"reused_raw_source_id": int(raw_source_reuse["id"])}
                 if raw_source_reuse else {}
@@ -356,6 +380,20 @@ def api_create_parent():
             **({"language_assignments": language_assignments} if language_assignments else {}),
         },
     )
+    try:
+        _trigger_material_evaluation(
+            product_id=product_id,
+            media_item_id=item_id,
+            force=False,
+            manual=False,
+            product_url_override=product_url_override,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "trigger material evaluation after parent task create failed product_id=%s item_id=%s",
+            product_id,
+            item_id,
+        )
     return _json_response({"parent_task_id": parent_id, "raw_processing": raw_processing})
 
 
@@ -412,6 +450,20 @@ def api_import_and_create():
             "is_new_product": result["is_new_product"],
         },
     )
+    try:
+        _trigger_material_evaluation(
+            product_id=int(result.get("media_product_id") or 0),
+            media_item_id=int(result.get("media_item_id") or 0),
+            force=False,
+            manual=False,
+            product_url_override=str(meta.get("product_link") or "").strip() or None,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "trigger material evaluation after import-and-create failed product_id=%s item_id=%s",
+            result.get("media_product_id"),
+            result.get("media_item_id"),
+        )
     return _json_response(result)
 
 

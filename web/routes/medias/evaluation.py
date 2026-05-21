@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from flask import abort
+from flask import abort, request
 from flask_login import login_required
 
 from appcore import material_evaluation, medias
@@ -25,24 +25,83 @@ def _routes_module():
     return routes
 
 
-def _build_product_evaluation_response(pid: int):
+def _optional_media_item_id() -> int | None:
+    raw = None
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        raw = payload.get("media_item_id")
+    if raw is None:
+        raw = request.args.get("media_item_id")
+    try:
+        value = int(raw or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _optional_product_url_override() -> str | None:
+    payload = {}
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+    raw = (
+        payload.get("product_url_override")
+        or payload.get("product_link")
+        or payload.get("source_product_url")
+        or request.args.get("product_url_override")
+        or request.args.get("product_link")
+        or request.args.get("source_product_url")
+    )
+    text = str(raw or "").strip()
+    return text or None
+
+
+def _response_kwargs() -> dict:
+    kwargs = {}
+    media_item_id = _optional_media_item_id()
+    product_url_override = _optional_product_url_override()
+    if media_item_id:
+        kwargs["media_item_id"] = media_item_id
+    if product_url_override:
+        kwargs["product_url_override"] = product_url_override
+    return kwargs
+
+
+def _build_product_evaluation_response(
+    pid: int,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+):
     return _build_product_evaluation_response_impl(
         pid,
+        media_item_id=media_item_id,
+        product_url_override=product_url_override,
         evaluate_product_fn=material_evaluation.evaluate_product_if_ready,
         material_evaluation_message_fn=_routes_module()._material_evaluation_message,
     )
 
 
-def _build_product_evaluation_preview_response(pid: int):
+def _build_product_evaluation_preview_response(
+    pid: int,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+):
     return _build_product_evaluation_preview_response_impl(
         pid,
+        media_item_id=media_item_id,
+        product_url_override=product_url_override,
         build_request_debug_payload_fn=material_evaluation.build_request_debug_payload,
     )
 
 
-def _build_product_evaluation_payload_response(pid: int):
+def _build_product_evaluation_payload_response(
+    pid: int,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+):
     return _build_product_evaluation_payload_response_impl(
         pid,
+        media_item_id=media_item_id,
+        product_url_override=product_url_override,
         build_request_debug_payload_fn=material_evaluation.build_request_debug_payload,
     )
 
@@ -58,7 +117,8 @@ def api_product_evaluate(pid: int):
     if not _can_access_product(p):
         abort(404)
     routes = _routes_module()
-    result = routes._build_product_evaluation_response(pid)
+    kwargs = _response_kwargs()
+    result = routes._build_product_evaluation_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_response(pid)
     return routes._media_evaluation_flask_response(result)
 
 
@@ -69,7 +129,8 @@ def api_product_evaluate_request_preview(pid: int):
     if not _can_access_product(p):
         abort(404)
     routes = _routes_module()
-    result = routes._build_product_evaluation_preview_response(pid)
+    kwargs = _response_kwargs()
+    result = routes._build_product_evaluation_preview_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_preview_response(pid)
     return routes._media_evaluation_flask_response(result)
 
 
@@ -80,5 +141,6 @@ def api_product_evaluate_request_payload(pid: int):
     if not _can_access_product(p):
         abort(404)
     routes = _routes_module()
-    result = routes._build_product_evaluation_payload_response(pid)
+    kwargs = _response_kwargs()
+    result = routes._build_product_evaluation_payload_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_payload_response(pid)
     return routes._media_evaluation_flask_response(result)

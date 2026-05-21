@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from appcore import llm_bindings, llm_client, local_media_storage, medias, pushes, tos_clients
 from appcore.db import execute, query, query_one
@@ -21,9 +21,10 @@ from appcore.llm_media_optimizer import SHORT_CLIP_AUDIO, prepare_video_for_llm
 logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
-EVALUATION_PROVIDER = "gemini_aistudio"
-EVALUATION_MODEL = "gemini-3.5-flash"
+EVALUATION_PROVIDER = "openrouter"
+EVALUATION_MODEL = "google/gemini-3.5-flash"
 EVALUATION_SEARCH_ENABLED = True
+EVALUATION_CLIP_SECONDS = 30
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
@@ -36,12 +37,47 @@ _SUPPORTED_EVALUATION_PROVIDERS = {
     "gemini_vertex",
     "gemini_vertex_adc",
 }
+_TARGET_EVALUATION_LANGUAGES = (
+    {"code": "de", "name": "德语", "country": "德国"},
+    {"code": "fr", "name": "法语", "country": "法国"},
+    {"code": "it", "name": "意大利语", "country": "意大利"},
+    {"code": "es", "name": "西班牙语", "country": "西班牙"},
+    {"code": "ja", "name": "日语", "country": "日本"},
+)
+
+
+def evaluation_target_languages() -> list[dict[str, str]]:
+    return [dict(item) for item in _TARGET_EVALUATION_LANGUAGES]
 
 
 def _search_tools_for_provider(provider: str) -> list[dict]:
     if (provider or "").strip().lower() == "openrouter":
         return [{"type": "openrouter:web_search"}]
     return [{"google_search": {}}]
+
+
+def _clean_product_url_override(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return raw
+
+
+def _resolve_evaluation_product_url(
+    product: dict,
+    *,
+    product_url_override: str | None = None,
+) -> str:
+    override = _clean_product_url_override(product_url_override)
+    if override:
+        return override
+    return pushes.resolve_product_page_url("en", product)
 
 
 def _normalize_model_for_provider(provider: str, model: str) -> str:
@@ -97,10 +133,11 @@ def _looks_like_image_key(object_key: str) -> bool:
     return _has_suffix(object_key, _IMAGE_SUFFIXES)
 
 
-def _make_eval_clip_15s(
+def _make_eval_clip_seconds(
     product_id: int,
     item: dict,
     *,
+    seconds: int,
     clips_root: Path | None = None,
 ) -> Path:
     src_path = _materialize_media(item["object_key"])
@@ -108,14 +145,15 @@ def _make_eval_clip_15s(
     root = clips_root or EVAL_CLIPS_ROOT
     out_dir = root / str(int(product_id))
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{item_id}_15s.mp4"
-    llm_out_path = out_dir / f"{item_id}_15s_llm.mp4"
+    clip_seconds = max(1, int(seconds))
+    out_path = out_dir / f"{item_id}_{clip_seconds}s.mp4"
+    llm_out_path = out_dir / f"{item_id}_{clip_seconds}s_llm.mp4"
     if llm_out_path.is_file() and llm_out_path.stat().st_size > 0:
         return llm_out_path
 
     duration = item.get("duration_seconds")
     try:
-        if duration is not None and float(duration) <= 15:
+        if duration is not None and float(duration) <= clip_seconds:
             return _optimize_eval_clip_for_llm(
                 src_path,
                 llm_out_path=llm_out_path,
@@ -139,7 +177,7 @@ def _make_eval_clip_15s(
         "-i",
         str(src_path),
         "-t",
-        "15",
+        str(clip_seconds),
         "-c",
         "copy",
         "-avoid_negative_ts",
@@ -169,6 +207,34 @@ def _make_eval_clip_15s(
     except FileNotFoundError as exc:
         logger.warning("ffmpeg not found for eval clip, fallback to original: %s", exc)
     return src_path
+
+
+def _make_eval_clip_30s(
+    product_id: int,
+    item: dict,
+    *,
+    clips_root: Path | None = None,
+) -> Path:
+    return _make_eval_clip_seconds(
+        product_id,
+        item,
+        seconds=EVALUATION_CLIP_SECONDS,
+        clips_root=clips_root,
+    )
+
+
+def _make_eval_clip_15s(
+    product_id: int,
+    item: dict,
+    *,
+    clips_root: Path | None = None,
+) -> Path:
+    return _make_eval_clip_seconds(
+        product_id,
+        item,
+        seconds=15,
+        clips_root=clips_root,
+    )
 
 
 def _optimize_eval_clip_for_llm(
@@ -206,13 +272,15 @@ def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:
         if isinstance(item, dict):
             code = str(item.get("code") or "").strip().lower()
             name = str(item.get("name") or item.get("name_zh") or code).strip()
+            country = str(item.get("country") or "").strip()
         else:
             code = str((item or ["", ""])[0]).strip().lower()
             name = str((item or ["", ""])[1] if len(item) > 1 else code).strip()
+            country = ""
         if not code or code == "en" or code in seen:
             continue
         seen.add(code)
-        normalized.append({"code": code, "name": name or code})
+        normalized.append({"code": code, "name": name or code, "country": country or name or code})
     return normalized
 
 
@@ -238,6 +306,8 @@ def build_response_schema(languages: list[Any]) -> dict:
                         "score",
                         "risk_level",
                         "decision",
+                        "recommendation",
+                        "summary",
                         "reason",
                         "suggestions",
                     ],
@@ -254,6 +324,11 @@ def build_response_schema(languages: list[Any]) -> dict:
                             "type": "string",
                             "enum": ["适合推广", "谨慎推广", "不适合推广"],
                         },
+                        "recommendation": {
+                            "type": "string",
+                            "enum": ["做", "不做"],
+                        },
+                        "summary": {"type": "string", "maxLength": 120},
                         "reason": {"type": "string", "maxLength": 100},
                         "suggestions": {
                             "type": "array",
@@ -283,7 +358,10 @@ def build_prompt(
     as_of_date: date | None = None,
 ) -> str:
     langs = _normalize_languages(languages)
-    lang_text = "、".join(f"{item['name']}({item['code']})" for item in langs)
+    lang_text = "、".join(
+        f"{item.get('country') or item['name']} / {item['name']}({item['code']})"
+        for item in langs
+    )
     product_name = str(product.get("name") or "").strip() or "未命名商品"
     product_code = str(product.get("product_code") or "").strip() or "无"
     eval_date = as_of_date or datetime.now().date()
@@ -329,7 +407,9 @@ def build_prompt(
 
 输出要求：
 - 必须覆盖上面列出的每一个语种，不能遗漏或新增。
-- 每个语种返回结构化 JSON 字段：lang、country、is_suitable、score、risk_level、decision、reason、suggestions。
+- 每个语种返回结构化 JSON 字段：lang、country、is_suitable、score、risk_level、decision、recommendation、summary、reason、suggestions。
+- recommendation 只能返回“做”或“不做”；若不建议搬运视频素材本土化后投放 Meta，则 recommendation 必须是“不做”。
+- summary 和 reason 都必须是中文，summary 为一句结论摘要，reason 为 100 字以内的核心判断依据。
 - reason 必须是中文，100 字以内。
 - score 为 0-100，越高代表越适合当前日期在该目标国家推广。
 """
@@ -368,6 +448,8 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
                 "score": 50,
                 "risk_level": "high",
                 "decision": "谨慎推广",
+                "recommendation": "不做",
+                "summary": "模型未返回该语种结果，需人工复核。",
                 "reason": "模型未返回该语种结果，需人工复核。",
                 "suggestions": ["补充人工判断"],
             }
@@ -384,6 +466,10 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
         if risk_level not in {"low", "medium", "high"}:
             risk_level = "medium"
         reason = str(row.get("reason") or "模型未提供明确判断依据。").strip()[:100]
+        summary = str(row.get("summary") or reason or "模型未提供明确结论。").strip()[:120]
+        recommendation = str(row.get("recommendation") or "").strip()
+        if recommendation not in {"做", "不做"}:
+            recommendation = "做" if is_suitable and score >= 60 else "不做"
         suggestions = row.get("suggestions") or []
         if not isinstance(suggestions, list):
             suggestions = [str(suggestions)]
@@ -395,6 +481,8 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
             "score": score,
             "risk_level": risk_level,
             "decision": decision,
+            "recommendation": recommendation,
+            "summary": summary,
             "reason": reason,
             "suggestions": [str(item).strip() for item in suggestions if str(item).strip()][:3],
         })
@@ -495,7 +583,7 @@ def _materialize_required_eval_video(
 ) -> tuple[Path | None, dict | None]:
     video_key = str(video.get("object_key") or "").strip()
     try:
-        path = _make_eval_clip_15s(product_id, video)
+        path = _make_eval_clip_30s(product_id, video)
     except Exception:
         logger.info(
             "material evaluation preflight video materialize failed: product_id=%s object_key=%s",
@@ -550,17 +638,26 @@ def _debug_media_entry(
     return entry
 
 
-def build_request_debug_payload(product_id: int, *, include_base64: bool = False) -> dict:
+def build_request_debug_payload(
+    product_id: int,
+    *,
+    include_base64: bool = False,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+) -> dict:
     product_id = int(product_id)
     product = medias.get_product(product_id)
     if not product:
         raise ValueError("product_missing")
 
-    languages = _normalize_languages(medias.list_enabled_languages_kv())
+    languages = evaluation_target_languages()
     if not languages:
         raise ValueError("missing_languages")
 
-    product_url = pushes.resolve_product_page_url("en", product)
+    product_url = _resolve_evaluation_product_url(
+        product,
+        product_url_override=product_url_override,
+    )
     if not product_url:
         raise ValueError("missing_product_link")
 
@@ -568,13 +665,13 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
     if not cover_key or not _looks_like_image_key(cover_key):
         raise ValueError("missing_cover")
 
-    video = _first_english_video(product_id)
+    video = _selected_english_video(product_id, media_item_id=media_item_id)
     if not video:
         raise ValueError("missing_video")
     video_key = str(video.get("object_key") or "").strip()
 
     cover_path = _materialize_media(cover_key) if include_base64 else None
-    video_path = _make_eval_clip_15s(product_id, video) if include_base64 else None
+    video_path = _make_eval_clip_30s(product_id, video) if include_base64 else None
     system_prompt = build_system_prompt()
     user_prompt = build_prompt(product, product_url, languages)
     response_schema = build_response_schema(languages)
@@ -630,6 +727,7 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
             "product_url": product_url,
             "user_id": product.get("user_id"),
         },
+        "media_item_id": int(media_item_id) if media_item_id else video.get("id"),
         "languages": languages,
         "prompts": {
             "system": system_prompt,
@@ -683,13 +781,25 @@ def find_ready_product_ids(limit: int = 5) -> list[int]:
     return [int(row["id"]) for row in rows]
 
 
-def evaluate_product_if_ready(product_id: int, *, force: bool = False,
-                              manual: bool = False) -> dict:
+def evaluate_product_if_ready(
+    product_id: int,
+    *,
+    force: bool = False,
+    manual: bool = False,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+) -> dict:
     pid = int(product_id)
     if not _enter_product(pid):
         return {"status": "running", "product_id": pid}
     try:
-        return _evaluate_product_if_ready(pid, force=force, manual=manual)
+        return _evaluate_product_if_ready(
+            pid,
+            force=force,
+            manual=manual,
+            media_item_id=media_item_id,
+            product_url_override=product_url_override,
+        )
     finally:
         _leave_product(pid)
 
@@ -707,19 +817,28 @@ def _leave_product(product_id: int) -> None:
         _ACTIVE_PRODUCT_IDS.discard(product_id)
 
 
-def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
-                               manual: bool = False) -> dict:
+def _evaluate_product_if_ready(
+    product_id: int,
+    *,
+    force: bool = False,
+    manual: bool = False,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+) -> dict:
     product = medias.get_product(product_id)
     if not product:
         return {"status": "product_missing", "product_id": product_id}
     if not force and str(product.get("ai_evaluation_result") or "").strip():
         return {"status": "already_evaluated", "product_id": product_id}
 
-    languages = _normalize_languages(medias.list_enabled_languages_kv())
+    languages = evaluation_target_languages()
     if not languages:
         return {"status": "missing_languages", "product_id": product_id}
 
-    product_url = pushes.resolve_product_page_url("en", product)
+    product_url = _resolve_evaluation_product_url(
+        product,
+        product_url_override=product_url_override,
+    )
     if not product_url:
         return {"status": "missing_product_link", "product_id": product_id}
     link_error = _product_link_preflight_error(product_id, product_url)
@@ -732,7 +851,7 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
     if not _looks_like_image_key(cover_key):
         return {"status": "missing_cover", "product_id": product_id}
 
-    video = _first_english_video(product_id)
+    video = _selected_english_video(product_id, media_item_id=media_item_id)
     if not video:
         return {"status": "missing_video", "product_id": product_id}
     video_key = str(video.get("object_key") or "").strip()
@@ -804,6 +923,8 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             "search_tools": llm_config["search_tools"],
             "evaluated_at": datetime.now(UTC).isoformat(),
             "product_id": product_id,
+            "requested_media_item_id": int(media_item_id) if media_item_id else None,
+            "product_url_override": _clean_product_url_override(product_url_override) or None,
             "product_url": product_url,
             "cover_object_key": cover_key,
             "video_item_id": video.get("id"),
@@ -838,6 +959,8 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
                 "search_tools": llm_config["search_tools"],
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "product_id": product_id,
+                "requested_media_item_id": int(media_item_id) if media_item_id else None,
+                "product_url_override": _clean_product_url_override(product_url_override) or None,
                 "product_url": product_url,
                 "cover_object_key": cover_key,
                 "video_item_id": video.get("id"),
@@ -953,6 +1076,25 @@ def _first_english_video(product_id: int) -> dict | None:
         if object_key and _looks_like_video_item(item):
             return {**item, "object_key": object_key}
     return None
+
+
+def _selected_english_video(
+    product_id: int,
+    *,
+    media_item_id: int | None = None,
+) -> dict | None:
+    item_id = int(media_item_id or 0)
+    if item_id > 0:
+        try:
+            item = medias.get_item(item_id)
+        except Exception:
+            item = None
+        if item and int(item.get("product_id") or 0) == int(product_id):
+            lang = str(item.get("lang") or "").strip().lower()
+            object_key = str(item.get("object_key") or "").strip()
+            if lang == "en" and object_key and _looks_like_video_item(item):
+                return {**item, "object_key": object_key}
+    return _first_english_video(product_id)
 
 
 def _materialize_media(object_key: str) -> Path:

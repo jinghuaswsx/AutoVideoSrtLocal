@@ -1,7 +1,7 @@
 """mk-import Blueprint — A 子系统：明空选品自动入素材库 API。"""
 from __future__ import annotations
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 from flask_login import current_user, login_required
 
 from appcore import mk_import as mk_import_svc
@@ -20,6 +20,9 @@ from web.services.mk_import import (
     build_mk_import_too_many_filenames_response,
     mk_import_flask_response,
 )
+from web.services.material_evaluation_trigger import (
+    trigger_material_evaluation,
+)
 
 bp = Blueprint("mk_import", __name__, url_prefix="/mk-import")
 
@@ -27,6 +30,25 @@ bp = Blueprint("mk_import", __name__, url_prefix="/mk-import")
 def _is_admin() -> bool:
     return getattr(current_user, "role", "") in ("admin", "superadmin") or \
         getattr(current_user, "is_admin", False)
+
+
+def _trigger_material_evaluation(
+    *,
+    product_id: int,
+    media_item_id: int | None,
+    force: bool,
+    manual: bool,
+    product_url_override: str | None = None,
+) -> bool:
+    return trigger_material_evaluation(
+        product_id=product_id,
+        media_item_id=media_item_id,
+        force=force,
+        manual=manual,
+        product_url_override=product_url_override,
+        user_id=int(getattr(current_user, "id", 0) or 0) or None,
+        entrypoint="mk_import.video",
+    )
 
 
 @bp.route("/check", methods=["GET", "POST"])
@@ -75,6 +97,23 @@ def import_video():
             translator_id=int(product_owner_id) if product_owner_id is not None else None,
             actor_user_id=int(current_user.id),
         )
+        product_id = int(result.get("media_product_id") or 0)
+        item_id = int(result.get("media_item_id") or 0)
+        if product_id and item_id:
+            try:
+                _trigger_material_evaluation(
+                    product_id=product_id,
+                    media_item_id=item_id,
+                    force=True,
+                    manual=False,
+                    product_url_override=str(meta.get("product_link") or "").strip() or None,
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "trigger material evaluation after mk import failed product_id=%s item_id=%s",
+                    product_id,
+                    item_id,
+                )
         return mk_import_flask_response(build_mk_import_success_response(result))
     except ValueError as e:
         return mk_import_flask_response(build_mk_import_bad_payload_response(str(e)))

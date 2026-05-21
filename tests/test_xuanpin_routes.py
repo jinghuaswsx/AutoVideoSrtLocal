@@ -229,6 +229,24 @@ def test_xuanpin_mk_small_language_task_requires_imported_material(authed_client
     assert "mkiXiaoCreateFromImportedMaterial" in body
 
 
+def test_xuanpin_mk_cards_include_ai_evaluation_button_and_language_hints(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "eval_country_table.js" in body
+    assert "mkiAiEvaluateFromCard" in body
+    assert "mki-ai-btn" in body
+    assert "AI评估" in body
+    assert "data-mki-ai-product-id" in body
+    assert "data-mki-product-link" in body
+    assert "product_link: btn.dataset.mkiProductLink || null" in body
+    assert "AI建议：" in body
+    assert "mkiXiaoLoadAiSuggestions" in body
+    assert "mkiXiaoApplyAiSuggestions" in body
+    assert "mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink)" in body
+
+
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
