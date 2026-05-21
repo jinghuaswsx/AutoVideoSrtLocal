@@ -65,6 +65,25 @@ def test_list_visible_tasks_includes_raw_source_status(monkeypatch):
     assert result["in_progress"][0]["raw_source_id"] == 201
 
 
+def test_list_visible_tasks_user_queries_escape_like_percent_for_pymysql(monkeypatch):
+    from appcore import raw_video_pool
+
+    formatted_queries = []
+
+    def fake_query_all(sql, args=()):
+        if args:
+            formatted_queries.append(sql % args)
+        return []
+
+    monkeypatch.setattr(raw_video_pool, "query_all", fake_query_all)
+
+    result = raw_video_pool.list_visible_tasks(viewer_user_id=99, viewer_role="user")
+
+    assert result == {"pending": [], "in_progress": [], "review": []}
+    assert len(formatted_queries) == 2
+    assert all("LIKE CONCAT('%/', i.filename)" in sql for sql in formatted_queries)
+
+
 def test_replace_processed_video_records_manual_upload_event(monkeypatch, tmp_path):
     from appcore import raw_video_pool
     from appcore import tasks

@@ -359,6 +359,25 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     修改对所有用户生效（全局配置）。
   </div>
 
+  <div class="bindings-module">
+    <h3>TTS 音色自动化</h3>
+    <div class="binding-row">
+      <div>
+        <div class="binding-label">自动音色选择</div>
+        <div class="binding-desc">开启后 AI 排名完成会自动选中 AI #1 并继续后续步骤；关闭则挂起等待人工干预。</div>
+        <div class="binding-code">voice_ai_auto_select_enabled</div>
+      </div>
+      <div style="grid-column: span 2;">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:20px;">
+          <input type="checkbox" name="voice_ai_auto_select_enabled" value="1"
+                 {{ 'checked' if voice_ai_auto_select_enabled else '' }}>
+          <span>默认自动选择 AI 排名第一音色</span>
+        </label>
+      </div>
+      <div></div>
+    </div>
+  </div>
+
   {% for module_code, module_label in module_labels.items() %}
     {% if bindings_grouped.get(module_code) %}
     <div class="bindings-module">

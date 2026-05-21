@@ -44,7 +44,7 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
                 FROM media_raw_sources rs
                 WHERE rs.product_id = t.media_product_id
                   AND rs.deleted_at IS NULL
-                  AND (rs.display_name = i.filename OR rs.video_object_key LIKE CONCAT('%/', i.filename))
+                  AND (rs.display_name = i.filename OR rs.video_object_key LIKE CONCAT('%%/', i.filename))
                 ORDER BY rs.id ASC LIMIT 1) AS raw_source_id,
                (SELECT te.event_type
                 FROM task_events te

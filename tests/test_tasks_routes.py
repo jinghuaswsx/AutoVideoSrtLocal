@@ -21,16 +21,35 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "blocked: '等待前置完成'" in body
     assert "assigned: '待处理'" in body
     assert "raw_in_progress: '原素材处理中'" in body
-    assert "<td>${tcEsc(tcStatusLabel(it.status))}</td>" in body
+    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
     assert "function tcTaskRowAction(it)" in body
     assert "tcDisabledTaskAction('等待前置完成')" in body
     assert "tcOpenDetail(id)" in body
     assert "去处理" in body
     assert "处理原素材" in body
+    assert "认领处理" not in body
     assert "查看结果" in body
     assert "查看记录" in body
     assert ">详情</button>" not in body
     assert "<td>${tcEsc(it.status)}</td>" not in body
+
+
+def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "任务总览" in body
+    assert 'data-section-tab="overview"' in body
+    assert 'data-bucket="todo"' in body
+    assert 'data-bucket="review"' in body
+    assert 'data-bucket="done"' in body
+    assert "待处理任务" in body
+    assert "待审核任务" in body
+    assert "已完成任务" in body
+    assert "function tcRenderTaskPager" in body
+    assert "TC_TASK_PAGE_SIZE" in body
+    assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
+    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th>" in body
 
 
 def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_no_db):
@@ -136,7 +155,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
     )
 
     rsp = authed_user_client_no_db.get(
-        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&page=3&page_size=150"
+        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&bucket=todo&page=3&page_size=150&task_id=44"
     )
 
     assert rsp.status_code == 200
@@ -151,9 +170,19 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "can_process_raw_video": False,
         "keyword": "abc",
         "high_status": "in_progress",
+        "bucket": "todo",
         "page": 3,
         "page_size": 100,
+        "task_id": 44,
     }
+
+
+def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "task_id=' + encodeURIComponent(String(id || ''))" in body
+    assert "'&task_id='" in body
 
 
 def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):
@@ -760,8 +789,10 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     """Verify the rendered tasks_list.html bootstraps the tab UI + JS."""
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
-    assert 'data-tab="mine"' in body
-    assert 'data-tab="all"' in body
+    assert 'data-section-tab="overview"' in body
+    assert 'data-bucket="todo"' in body
+    assert 'data-bucket="review"' in body
+    assert 'data-bucket="done"' in body
     assert "tcRender" in body  # JS bootstrapped
     assert "tcCreateRawProcessor" in body
     assert "原视频处理人" in body

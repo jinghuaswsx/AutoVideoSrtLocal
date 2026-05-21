@@ -400,29 +400,26 @@ def list_task_center_items(
     high_status: str,
     page: int,
     page_size: int,
+    bucket: str = "",
+    task_id: int | None = None,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
     where = ["1=1"]
     args: list = []
 
     if tab == "mine":
-        where.append(
-            "(t.assignee_id=%s OR "
-            "(t.parent_task_id IS NULL AND t.status=%s AND %s))"
-        )
-        args.extend(
-            [
-                int(user_id),
-                PARENT_PENDING,
-                1 if can_process_raw_video else 0,
-            ]
-        )
+        where.append("t.assignee_id=%s")
+        args.append(int(user_id))
     elif tab != "all":
         raise ValueError("invalid tab")
 
+    if task_id:
+        where.append("t.id=%s")
+        args.append(int(task_id))
     if keyword:
-        where.append("p.name LIKE %s")
-        args.append(f"%{keyword}%")
+        like = f"%{keyword}%"
+        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
+        args.extend([like, like])
     if high_status == "in_progress":
         where.append("t.status NOT IN (%s, %s, %s)")
         args.extend([PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
@@ -432,6 +429,17 @@ def list_task_center_items(
     elif high_status == "terminated":
         where.append("t.status=%s")
         args.append(PARENT_CANCELLED)
+    if bucket == "todo":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED])
+    elif bucket == "review":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
+    elif bucket == "done":
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
+    elif bucket:
+        raise ValueError("invalid bucket")
 
     assignee_name_expr = _user_display_name_expr("u")
     sql = (
