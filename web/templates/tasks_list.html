@@ -441,6 +441,7 @@ const TC_EVENT_TEXT = {
   completed: { title: '任务完成', progress: '已完成', tone: 'success', summary: '任务已经完成。' },
   raw_source_created: { title: '原始素材入库', progress: '已生成素材库记录', tone: 'success', summary: '审核通过后，系统已把原始视频同步到原始素材库。' },
   raw_source_updated: { title: '原始素材更新', progress: '已更新素材库记录', tone: 'success', summary: '审核通过后，系统已更新原始素材库记录。' },
+  raw_source_reused: { title: '复用原始素材', progress: '已跳过原视频处理', tone: 'success', summary: '该视频已绑定原始素材，本次任务无需再次提交牛马处理。' },
   assignee_changed: { title: '负责人变更', progress: '负责人已同步', tone: 'info', summary: '产品负责人变化后，未完成任务的负责人已同步。' },
 };
 function tcEventFacts(payload, event) {

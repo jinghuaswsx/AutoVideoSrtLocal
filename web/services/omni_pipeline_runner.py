@@ -49,5 +49,10 @@ def resume(task_id: str, start_step: str, user_id: int | None = None) -> bool:
 
 
 runner_dispatch.register_omni_translate_runner(
-    start=lambda task_id, user_id=None: start(task_id, user_id=user_id)
+    start=lambda task_id, user_id=None: start(task_id, user_id=user_id),
+    resume=lambda task_id, start_step, user_id=None: resume(
+        task_id,
+        start_step,
+        user_id=user_id,
+    ),
 )

@@ -591,6 +591,7 @@ def create_parent_task(
     translator_id: int | None = None,
     language_assignments: dict[str, int] | None = None,
     raw_processor_id: int | None = None,
+    reused_raw_source_id: int | None = None,
     created_by: int,
 ) -> int:
     """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
@@ -604,13 +605,27 @@ def create_parent_task(
         translator_id=translator_id,
         language_assignments=language_assignments,
     )
+    reuse_raw_source_id = _positive_int(reused_raw_source_id)
 
     conn = get_conn()
     try:
         conn.begin()
         try:
             with conn.cursor() as cur:
-                if raw_processor_id is not None:
+                if reuse_raw_source_id is not None:
+                    cur.execute(
+                        "INSERT INTO tasks "
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, NOW(), %s)",
+                        (
+                            int(media_product_id),
+                            int(media_item_id) if media_item_id is not None else None,
+                            int(raw_processor_id) if raw_processor_id is not None else None,
+                            PARENT_RAW_DONE,
+                            int(created_by),
+                        ),
+                    )
+                elif raw_processor_id is not None:
                     cur.execute(
                         "INSERT INTO tasks "
                         "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
@@ -645,9 +660,23 @@ def create_parent_task(
                     created_payload["language_assignments"] = assignment_map
                 if raw_processor_id is not None:
                     created_payload["raw_processor_id"] = int(raw_processor_id)
+                if reuse_raw_source_id is not None:
+                    created_payload["raw_source_id"] = reuse_raw_source_id
+                    created_payload["raw_processing_skipped"] = True
                 _write_event(cur, parent_id, "created", created_by, created_payload)
                 product_name = _product_name_for_notification(cur, int(media_product_id))
-                if raw_processor_id is not None:
+                if reuse_raw_source_id is not None:
+                    _write_event(
+                        cur,
+                        parent_id,
+                        "raw_source_reused",
+                        created_by,
+                        {
+                            "raw_source_id": reuse_raw_source_id,
+                            "media_item_id": int(media_item_id) if media_item_id is not None else None,
+                        },
+                    )
+                elif raw_processor_id is not None:
                     notifications_svc.notify_parent_assigned(
                         cur,
                         task_id=parent_id,
@@ -660,6 +689,7 @@ def create_parent_task(
                         task_id=parent_id,
                         product_name=product_name,
                     )
+                child_status = CHILD_ASSIGNED if reuse_raw_source_id is not None else CHILD_BLOCKED
                 for country in norm_countries:
                     child_assignee_id = assignment_map[country]
                     cur.execute(
@@ -669,18 +699,25 @@ def create_parent_task(
                         "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                         (parent_id, int(media_product_id),
                          int(media_item_id) if media_item_id is not None else None,
-                         country, child_assignee_id, CHILD_BLOCKED, int(created_by)),
+                         country, child_assignee_id, child_status, int(created_by)),
                     )
                     child_id = cur.lastrowid
                     _write_event(cur, child_id, "created", created_by,
                                  {"country": country})
-                    notifications_svc.notify_child_blocked(
-                        cur,
-                        task_id=child_id,
-                        assignee_id=child_assignee_id,
-                        product_name=product_name,
-                        country_code=country,
-                    )
+                    if reuse_raw_source_id is not None:
+                        notifications_svc.notify_child_assigned(
+                            cur,
+                            task_id=child_id,
+                            product_name=product_name,
+                        )
+                    else:
+                        notifications_svc.notify_child_blocked(
+                            cur,
+                            task_id=child_id,
+                            assignee_id=child_assignee_id,
+                            product_name=product_name,
+                            country_code=country,
+                        )
             conn.commit()
             return int(parent_id)
         except Exception:

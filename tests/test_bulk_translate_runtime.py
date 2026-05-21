@@ -327,6 +327,7 @@ def test_compute_progress_counts_new_statuses(runtime_env):
 def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(mod, "generate_plan", lambda *args, **kwargs: [_item(0, kind="videos")])
+    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: False, raising=False)
 
     task_id = mod.create_bulk_translate_task(
         user_id=1,
@@ -368,6 +369,146 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
     assert state["plan"][0]["child_task_id"] == "omni-1"
     assert state["plan"][0]["child_task_type"] == "omni_translate"
     assert state["plan"][0]["status"] == "awaiting_voice"
+
+
+def test_sync_auto_confirms_top_ai_voice_instead_of_waiting_manual(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="videos", lang="de", ref={"source_raw_id": 301})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={
+            "subtitle_font": "Impact",
+            "subtitle_size": 18,
+            "subtitle_position_y": 0.55,
+            "subtitle_position": "bottom",
+        },
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "omni-1"
+    state["plan"][0]["child_task_type"] = "omni_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "running"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows["omni-1"] = {
+        "id": "omni-1",
+        "user_id": 1,
+        "type": "omni_translate",
+        "status": "running",
+        "state_json": json.dumps(
+            {
+                "target_lang": "de",
+                "steps": {"voice_match": "waiting", "alignment": "pending"},
+                "current_review_step": "voice_match",
+                "voice_ai_rank_status": "done",
+                "voice_match_candidates": [
+                    {"voice_id": "voice-second", "name": "Second", "llm_rank": 2},
+                    {"voice_id": "voice-top", "name": "Top Pick", "llm_rank": 1},
+                ],
+                "video_path": "demo.mp4",
+                "task_dir": "out/omni-1",
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": None,
+    }
+    resumes = []
+    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: True, raising=False)
+    monkeypatch.setattr(
+        mod,
+        "_next_step_after_voice_match",
+        lambda child_task_type, child_task_id, child_state, user_id: "alignment",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_resume_voice_child_runner",
+        lambda child_task_type, child_task_id, next_step, user_id: resumes.append(
+            (child_task_type, child_task_id, next_step, user_id)
+        ) or True,
+        raising=False,
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert "auto_confirm_voice" in result["actions"]
+    assert resumes == [("omni_translate", "omni-1", "alignment", 1)]
+    child_state = json.loads(fake_db.rows["omni-1"]["state_json"])
+    assert child_state["selected_voice_id"] == "voice-top"
+    assert child_state["selected_voice_name"] == "Top Pick"
+    assert child_state["voice_id"] == "voice-top"
+    assert child_state["subtitle_size"] == 18
+    assert child_state["subtitle_position_y"] == 0.55
+    assert child_state["steps"]["voice_match"] == "done"
+    assert child_state["current_review_step"] == ""
+    parent_state = _load_state(fake_db, task_id)
+    assert parent_state["plan"][0]["status"] == "running"
+    assert parent_state["plan"][0]["auto_voice_confirmed_voice_id"] == "voice-top"
+    assert fake_db.rows[task_id]["status"] == "running"
+
+
+def test_sync_keeps_voice_ai_ranking_pending_as_running_progress(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="videos", lang="de", ref={"source_raw_id": 301})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "omni-1"
+    state["plan"][0]["child_task_type"] = "omni_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "running"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows["omni-1"] = {
+        "id": "omni-1",
+        "user_id": 1,
+        "type": "omni_translate",
+        "status": "running",
+        "state_json": json.dumps(
+            {
+                "target_lang": "de",
+                "steps": {"voice_match": "waiting", "alignment": "pending"},
+                "current_review_step": "voice_match",
+                "voice_ai_rank_status": "running",
+                "voice_match_candidates": [
+                    {"voice_id": "voice-a", "name": "A"},
+                    {"voice_id": "voice-b", "name": "B"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": None,
+    }
+    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: True, raising=False)
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == []
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "running"
+    assert state["progress"]["running"] == 1
+    assert state["progress"]["awaiting_voice"] == 0
+    assert fake_db.rows[task_id]["status"] == "running"
 
 
 def test_run_scheduler_dispatches_due_items_without_waiting_for_active_children(runtime_env, monkeypatch):

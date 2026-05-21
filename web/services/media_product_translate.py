@@ -98,7 +98,15 @@ def build_product_translation_tasks_response(
 
     for task_id in list_task_ids(scope_user_id, product_id):
         try:
-            sync_task(task_id, user_id=scope_user_id)
+            sync_result = sync_task(task_id, user_id=scope_user_id) or {}
+            if "auto_confirm_voice" in (sync_result.get("actions") or []):
+                start_bulk_scheduler_background(
+                    task_id,
+                    user_id=scope_user_id,
+                    entrypoint="medias.translation_tasks.sync",
+                    action="resume_after_auto_voice_confirm",
+                    details={"source": "medias_translation_tasks"},
+                )
         except Exception:
             log.warning("bulk translation child sync failed task_id=%s", task_id, exc_info=True)
 

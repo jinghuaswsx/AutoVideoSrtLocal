@@ -72,6 +72,7 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
                 raw_source_id,
             ),
         )
+        _bind_media_item_to_raw_source(payload.get("item_id"), raw_source_id)
         return {"raw_source_id": raw_source_id, "created": False, "updated": True}
 
     raw_source_id = medias.create_raw_source(
@@ -85,7 +86,42 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
         width=width,
         height=height,
     )
+    _bind_media_item_to_raw_source(payload.get("item_id"), int(raw_source_id))
     return {"raw_source_id": int(raw_source_id), "created": True, "updated": False}
+
+
+def find_ready_raw_source_for_media_item(media_item_id: int) -> dict | None:
+    item = query_one(
+        "SELECT id AS item_id, product_id, filename, source_raw_id "
+        "FROM media_items "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (int(media_item_id),),
+    )
+    if not item:
+        return None
+
+    product_id = int(item.get("product_id") or 0)
+    if product_id <= 0:
+        return None
+
+    source_raw_id = _positive_int(item.get("source_raw_id"))
+    if source_raw_id:
+        bound = query_one(
+            "SELECT * FROM media_raw_sources "
+            "WHERE id=%s AND product_id=%s AND deleted_at IS NULL",
+            (source_raw_id, product_id),
+        )
+        if bound:
+            return dict(bound)
+
+    filename = _basename(item.get("filename"))
+    if not filename:
+        return None
+    existing = _find_existing_raw_source(product_id, filename)
+    if existing:
+        _bind_media_item_to_raw_source(item.get("item_id"), int(existing["id"]))
+        return dict(existing)
+    return None
 
 
 def _load_parent_task_payload(task_id: int) -> dict | None:
@@ -107,6 +143,18 @@ def _find_existing_raw_source(product_id: int, filename: str) -> dict | None:
         "AND (display_name=%s OR video_object_key LIKE %s) "
         "ORDER BY id ASC LIMIT 1",
         (int(product_id), filename, f"%/{filename}"),
+    )
+
+
+def _bind_media_item_to_raw_source(media_item_id, raw_source_id) -> None:
+    item_id = _positive_int(media_item_id)
+    source_id = _positive_int(raw_source_id)
+    if not item_id or not source_id:
+        return
+    execute(
+        "UPDATE media_items SET source_raw_id=%s "
+        "WHERE id=%s AND (source_raw_id IS NULL OR source_raw_id<>%s)",
+        (source_id, item_id, source_id),
     )
 
 
@@ -174,3 +222,11 @@ def _safe_probe_video(source_path: Path) -> dict:
 
 def _basename(value) -> str:
     return os.path.basename(str(value or "").replace("\\", "/")).strip()
+
+
+def _positive_int(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None

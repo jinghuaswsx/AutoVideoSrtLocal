@@ -26,25 +26,35 @@ def _float_value(value, default: float = 0.0) -> float:
         return default
 
 
+def _word_parts(text: str) -> list[str]:
+    return _WORD_RE.findall(str(text or ""))
+
+
 def _word_count(text: str) -> int:
-    return len(_WORD_RE.findall(str(text or "")))
+    return len(_word_parts(text))
+
+
+def _word_char_count(text: str) -> int:
+    return sum(len(part) for part in _word_parts(text))
 
 
 def _word_timing_rate(utterance: dict) -> tuple[int, int, float] | None:
-    words = [
-        word
-        for word in (utterance.get("words") or [])
-        if isinstance(word, dict) and str(word.get("word") or word.get("text") or "").strip()
-    ]
-    if not words:
+    timed_words: list[tuple[dict, list[str]]] = []
+    for word in utterance.get("words") or []:
+        if not isinstance(word, dict):
+            continue
+        parts = _word_parts(str(word.get("word") or word.get("text") or ""))
+        if parts:
+            timed_words.append((word, parts))
+    if not timed_words:
         return None
     starts = [
         _float_value(word.get("start", word.get("start_time")), -1.0)
-        for word in words
+        for word, _parts in timed_words
     ]
     ends = [
         _float_value(word.get("end", word.get("end_time")), -1.0)
-        for word in words
+        for word, _parts in timed_words
     ]
     valid_starts = [value for value in starts if value >= 0]
     valid_ends = [value for value in ends if value >= 0]
@@ -53,8 +63,9 @@ def _word_timing_rate(utterance: dict) -> tuple[int, int, float] | None:
     duration = max(valid_ends) - min(valid_starts)
     if duration <= 0:
         return None
-    char_count = sum(len(str(word.get("word") or word.get("text") or "")) for word in words)
-    return len(words), char_count, duration
+    word_count = sum(len(parts) for _word, parts in timed_words)
+    char_count = sum(len(part) for _word, parts in timed_words for part in parts)
+    return word_count, char_count, duration
 
 
 def _utterance_rate_sample(utterance: dict) -> tuple[float, float] | None:
@@ -65,7 +76,7 @@ def _utterance_rate_sample(utterance: dict) -> tuple[float, float] | None:
         duration = end - start
         text = str(utterance.get("text") or "")
         words = _word_count(text)
-        chars = len(text.replace(" ", ""))
+        chars = _word_char_count(text)
     else:
         words, chars, duration = timing
     if duration <= 0 or words <= 0:
