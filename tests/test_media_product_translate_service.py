@@ -45,6 +45,40 @@ def test_build_product_translation_tasks_response_syncs_and_projects_tasks():
     ]
 
 
+def test_build_product_translation_tasks_response_resumes_after_auto_voice(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    scheduler_calls = []
+    monkeypatch.setattr(
+        svc,
+        "start_bulk_scheduler_background",
+        lambda *args, **kwargs: scheduler_calls.append((args, kwargs)) or True,
+    )
+
+    result = svc.build_product_translation_tasks_response(
+        product_id=123,
+        scope_user_id=7,
+        list_product_task_ids_fn=lambda user_id, product_id: ["bt-1"],
+        sync_task_with_children_once_fn=lambda task_id, user_id=None: {
+            "actions": ["auto_confirm_voice"],
+        },
+        list_product_tasks_fn=lambda user_id, product_id: [{"id": "bt-1"}],
+    )
+
+    assert result.status_code == 200
+    assert scheduler_calls == [
+        (
+            ("bt-1",),
+            {
+                "user_id": 7,
+                "entrypoint": "medias.translation_tasks.sync",
+                "action": "resume_after_auto_voice_confirm",
+                "details": {"source": "medias_translation_tasks"},
+            },
+        )
+    ]
+
+
 def test_build_product_translate_response_maps_success_and_errors():
     from web.services import media_product_translate as svc
 

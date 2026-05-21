@@ -4,8 +4,8 @@
 - 生成父任务计划并持久化
 - 串行创建子任务（支持延迟派发）
 - 轮询子任务状态并回填结果
-- 在视频任务进入选音色时停在 waiting_manual
-- 所有恢复/重跑都必须手工触发
+- 视频任务进入 AI 选音时按子任务实际状态同步，必要时自动确认 top1 并继续
+- 仅自动选音不可用时进入人工处理；失败恢复/重跑仍需手工触发
 """
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
 _RUNNING_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
 _OMNI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
+_VOICE_AI_RANK_READY_STATUSES = {"done", "derived_from_all"}
+_VOICE_AI_RANK_PENDING_STATUSES = {"running", "queued"}
 
 
 def _positive_int_or_none(value) -> int | None:
@@ -522,11 +524,27 @@ def sync_task_with_children_once(
                 or _completed_item_needs_result_sync(item)
             )
         ):
+            before_auto_voice_confirmed_at = item.get("auto_voice_confirmed_at")
             parent_status = _poll_active_item(task_id, item, state, bus=None)
+            if (
+                item.get("auto_voice_confirmed_at")
+                and item.get("auto_voice_confirmed_at") != before_auto_voice_confirmed_at
+            ):
+                actions.append("auto_confirm_voice")
             if _normalized_status(item.get("status")) == "done":
                 actions.append("sync_child_result")
             if parent_status in {"failed", "error"}:
                 break
+            continue
+
+        if _child_needs_voice(child_state):
+            before_auto_voice_confirmed_at = item.get("auto_voice_confirmed_at")
+            _poll_active_item(task_id, item, state, bus=None)
+            if (
+                item.get("auto_voice_confirmed_at")
+                and item.get("auto_voice_confirmed_at") != before_auto_voice_confirmed_at
+            ):
+                actions.append("auto_confirm_voice")
 
     # 与 _derive_parent_status 保持单一事实来源：同样不能在还有 pending/active
     # 时把父级写成 failed —— 否则 scheduler 下一轮直接退出，pending 永远 stuck。
@@ -579,6 +597,18 @@ def _apply_child_snapshot(
     child_status = _normalized_status(child_state.get("_project_status"))
 
     if _child_needs_voice(child_state):
+        auto_voice_state = _maybe_auto_confirm_child_voice(
+            parent_task_id,
+            item,
+            parent_state,
+            child_state,
+        )
+        if auto_voice_state in {"confirmed", "pending"}:
+            item["status"] = "running"
+            item["error"] = None
+            _save_state(parent_task_id, parent_state, status="running")
+            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+            return
         item["status"] = "awaiting_voice"
         _save_state(parent_task_id, parent_state, status="running")
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
@@ -758,6 +788,225 @@ def _roll_up_cost_once_for_item(parent_state: dict, item: dict, child_state: dic
         return
     _roll_up_cost(parent_state, item, child_state)
     item["cost_rolled_up"] = True
+
+
+def _maybe_auto_confirm_child_voice(
+    parent_task_id: str,
+    item: dict,
+    parent_state: dict,
+    child_state: dict,
+) -> str:
+    if not _voice_ai_auto_select_enabled():
+        return "manual"
+
+    rank_status = _normalized_voice_ai_rank_status(child_state.get("voice_ai_rank_status"))
+    if rank_status in _VOICE_AI_RANK_PENDING_STATUSES:
+        return "pending"
+
+    candidate = _pick_top_ai_voice_candidate(child_state)
+    if not candidate:
+        return "manual"
+
+    child_task_id = (item.get("child_task_id") or item.get("sub_task_id") or "").strip()
+    child_task_type = (
+        item.get("child_task_type")
+        or _child_type_for_kind(item.get("kind"))
+        or ""
+    ).strip()
+    if not child_task_id or not child_task_type:
+        return "manual"
+
+    user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0) or None
+    try:
+        _persist_auto_voice_confirmation(child_task_id, child_state, parent_state, candidate)
+        next_step = _next_step_after_voice_match(
+            child_task_type,
+            child_task_id,
+            child_state,
+            user_id,
+        )
+        _resume_voice_child_runner(child_task_type, child_task_id, next_step, user_id)
+    except Exception:
+        log.exception(
+            "bulk_translate auto voice confirmation failed parent_task_id=%s child_task_id=%s",
+            parent_task_id,
+            child_task_id,
+        )
+        return "manual"
+
+    confirmed_at = _now_iso()
+    item["auto_voice_confirmed_at"] = confirmed_at
+    item["auto_voice_confirmed_voice_id"] = candidate["voice_id"]
+    item["auto_voice_confirmed_voice_name"] = candidate["voice_name"]
+    _append_audit(
+        parent_state,
+        int(user_id or 0),
+        "auto_confirm_voice",
+        {
+            "idx": item.get("idx"),
+            "child_task_id": child_task_id,
+            "child_task_type": child_task_type,
+            "voice_id": candidate["voice_id"],
+            "voice_name": candidate["voice_name"],
+        },
+    )
+    return "confirmed"
+
+
+def _voice_ai_auto_select_enabled() -> bool:
+    try:
+        from appcore.voice_ai_selection_settings import is_voice_ai_auto_select_enabled
+
+        return bool(is_voice_ai_auto_select_enabled())
+    except Exception:
+        log.warning("voice AI auto-select setting lookup failed; defaulting enabled", exc_info=True)
+        return True
+
+
+def _normalized_voice_ai_rank_status(status) -> str:
+    return str(status or "").strip().lower()
+
+
+def _normalized_voice_ai_rank(value) -> int | None:
+    try:
+        rank = int(value)
+    except (TypeError, ValueError):
+        return None
+    return rank if 1 <= rank <= 10 else None
+
+
+def _pick_top_ai_voice_candidate(child_state: dict) -> dict | None:
+    status = _normalized_voice_ai_rank_status(child_state.get("voice_ai_rank_status"))
+    if status not in _VOICE_AI_RANK_READY_STATUSES:
+        return None
+
+    for candidate in child_state.get("voice_match_candidates") or []:
+        if _normalized_voice_ai_rank(candidate.get("llm_rank")) != 1:
+            continue
+        voice_id = str(candidate.get("voice_id") or "").strip()
+        if not voice_id:
+            continue
+        voice_name = str(candidate.get("name") or candidate.get("voice_name") or voice_id).strip()
+        return {"voice_id": voice_id, "voice_name": voice_name or voice_id}
+    return None
+
+
+def _persist_auto_voice_confirmation(
+    child_task_id: str,
+    child_state: dict,
+    parent_state: dict,
+    candidate: dict,
+) -> None:
+    params = dict(parent_state.get("video_params_snapshot") or {})
+    subtitle_font = (
+        params.get("subtitle_font")
+        or child_state.get("subtitle_font")
+        or "Impact"
+    )
+    subtitle_size = _coerce_int(
+        params.get("subtitle_size", child_state.get("subtitle_size")),
+        14,
+    )
+    subtitle_position_y = _coerce_float(
+        params.get("subtitle_position_y", child_state.get("subtitle_position_y")),
+        0.68,
+    )
+    subtitle_position = (
+        params.get("subtitle_position")
+        or child_state.get("subtitle_position")
+        or "bottom"
+    )
+
+    child_state["selected_voice_id"] = candidate["voice_id"]
+    child_state["selected_voice_name"] = candidate["voice_name"]
+    child_state["voice_id"] = candidate["voice_id"]
+    child_state["subtitle_font"] = subtitle_font
+    child_state["subtitle_size"] = subtitle_size
+    child_state["subtitle_position_y"] = subtitle_position_y
+    child_state["subtitle_position"] = subtitle_position
+    child_state["current_review_step"] = ""
+    child_state.setdefault("steps", {})["voice_match"] = "done"
+
+    persisted_state = {
+        key: value
+        for key, value in child_state.items()
+        if key != "_project_status"
+    }
+    save_project_state(child_task_id, persisted_state, execute_func=execute)
+
+    store.update(
+        child_task_id,
+        selected_voice_id=candidate["voice_id"],
+        selected_voice_name=candidate["voice_name"],
+        voice_id=candidate["voice_id"],
+        subtitle_font=subtitle_font,
+        subtitle_size=subtitle_size,
+        subtitle_position_y=subtitle_position_y,
+        subtitle_position=subtitle_position,
+        current_review_step="",
+    )
+    store.set_step(child_task_id, "voice_match", "done")
+    store.set_current_review_step(child_task_id, "")
+
+
+def _coerce_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _next_step_after_voice_match(
+    child_task_type: str,
+    child_task_id: str,
+    child_state: dict,
+    user_id: int | None,
+) -> str:
+    if child_task_type != "omni_translate":
+        return "alignment"
+    try:
+        from appcore.events import EventBus
+        from appcore.runtime_omni import OmniTranslateRunner
+
+        runner = OmniTranslateRunner(bus=EventBus(), user_id=user_id)
+        steps = runner._get_pipeline_steps(
+            child_task_id,
+            child_state.get("video_path", ""),
+            child_state.get("task_dir", ""),
+        )
+        names = [name for name, _fn in steps]
+        idx = names.index("voice_match")
+        if idx + 1 < len(names):
+            return names[idx + 1]
+    except Exception:
+        log.warning(
+            "bulk_translate could not resolve next step after voice_match for %s; fallback alignment",
+            child_task_id,
+            exc_info=True,
+        )
+    return "alignment"
+
+
+def _resume_voice_child_runner(
+    child_task_type: str,
+    child_task_id: str,
+    next_step: str,
+    user_id: int | None,
+) -> object:
+    if child_task_type == "omni_translate":
+        return runner_dispatch.resume_omni_translate_runner(child_task_id, next_step, user_id=user_id)
+    if child_task_type == "multi_translate":
+        return runner_dispatch.resume_multi_translate_runner(child_task_id, next_step, user_id=user_id)
+    if child_task_type == "ja_translate":
+        return runner_dispatch.resume_ja_translate_runner(child_task_id, next_step, user_id=user_id)
+    raise RuntimeError(f"unsupported voice child runner type: {child_task_type}")
 
 
 def _should_refresh_from_child(item: dict) -> bool:
