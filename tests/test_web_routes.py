@@ -406,6 +406,15 @@ def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
     assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer');" not in medias_js
 
 
+def test_task_center_copy_buttons_use_direct_clipboard_without_prompt_fallback():
+    source = Path("web/templates/tasks_list.html").read_text(encoding="utf-8")
+
+    assert "function tcCopyText(text, btn)" in source
+    assert "document.createElement('textarea')" in source
+    assert "document.execCommand('copy')" in source
+    assert "window.prompt(" not in source
+
+
 def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():
     scripts = Path("web/templates/_copywriting_scripts.html").read_text(encoding="utf-8")
 
