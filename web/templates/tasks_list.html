@@ -90,10 +90,20 @@
   box-shadow:-8px 0 24px rgba(15, 23, 42, 0.12);
   z-index:999;
   overflow-y:auto;
-  padding:32px;
+  padding:0;
 }
-.tc-drawer-close { position:absolute; top:16px; right:16px; }
-.tc-detail-title-block { margin-bottom:8px; padding-right:72px; }
+.tc-detail-loading { padding:32px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--tc-fg-muted); }
+.tc-detail-shell { min-height:100%; padding:0 32px 32px; }
+.tc-detail-sticky { position:sticky; top:0; z-index:3; margin:0 -32px 14px; padding:24px 32px 14px; background:var(--tc-bg); border-bottom:1px solid var(--tc-border); box-shadow:0 8px 18px rgba(15, 23, 42, .06); }
+.tc-detail-sticky-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.tc-detail-sticky-main { min-width:0; flex:1 1 auto; }
+.tc-detail-sticky-actions { flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.tc-detail-refresh { min-height:42px; height:auto; padding:9px 18px; font-size:15px; font-weight:800; box-shadow:0 8px 16px rgba(31, 127, 190, .18); }
+.tc-detail-status { margin-top:10px; font-size:13px; }
+.tc-detail-meta { margin-top:6px; font-size:13px; color:var(--tc-fg-muted); }
+.tc-detail-reason { background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; }
+.tc-detail-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.tc-detail-title-block { margin-bottom:8px; }
 .tc-detail-title-block h3 { margin:0 0 8px; font-size:20px; line-height:1.3; overflow-wrap:anywhere; }
 .tc-detail-ident { display:flex; flex-direction:column; gap:6px; }
 .tc-detail-ident-row { display:grid; grid-template-columns:92px minmax(0, 1fr) auto; gap:8px; align-items:center; font-size:13px; }
@@ -253,7 +263,6 @@
   <div id="tcTableWrap"></div>
 
   <div id="tcDetailDrawer">
-    <button class="tc-btn tc-drawer-close" onclick="tcCloseDetail()">关闭</button>
     <div id="tcDetailBody"></div>
   </div>
 
@@ -309,6 +318,7 @@
 <script>
 const TC_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 const TC_CURRENT_USER_ID = {{ current_user.id|int }};
+const TC_INITIAL_DETAIL_TASK_ID = {{ initial_task_id|default(0)|int }};
 const TC_CAPS = {
   can_process_raw_video: {{ 'true' if capabilities.can_process_raw_video else 'false' }},
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
@@ -1268,117 +1278,149 @@ async function tcSubmitCreate() {
   } catch (e) { alert('创建失败：' + e.message); }
 }
 let TC_DETAIL_TASK_ID = null;
-async function tcOpenDetail(id) {
-  TC_DETAIL_TASK_ID = id;
-  const drawer = document.getElementById('tcDetailDrawer');
-  const body = document.getElementById('tcDetailBody');
-  body.innerHTML = '加载中...';
-  drawer.style.display = 'block';
+function tcDetailListUrl(id) {
+  return '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
+    + '&task_id=' + encodeURIComponent(String(id || ''))
+    + '&page_size=1';
+}
+async function tcFetchDetailTask(id, forceRefresh) {
+  const numericId = Number(id || 0);
+  const cachedTask = !forceRefresh ? (TC_TASK_CACHE.get(numericId) || null) : null;
+  if (cachedTask) return cachedTask;
+  const taskResp = await tcFetchJson(tcDetailListUrl(id));
+  const task = (taskResp.items || []).find(t => Number(t.id) === numericId);
+  if (task) TC_TASK_CACHE.set(numericId, task);
+  return task || null;
+}
+function tcRenderArtifactsRows(data) {
+  const wrap = document.getElementById('tcArtifactsRows');
+  const panel = document.getElementById('tcArtifactsPanel');
+  if (!wrap || !panel) return;
+  const items = data.items || [];
+  if (!items.length) { wrap.textContent = '暂无产出素材'; panel.style.display = 'block'; return; }
+  panel.style.display = 'block';
+  wrap.innerHTML = items.map(function(it) {
+    const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
+    const href = tcMediasUrl(it.task_id || '', it.product_id || '', it.lang || '', it.product_code || '', 'history');
+    const actions = tcRenderActionLinks(it.actions || [
+      {label: '素材库', url: href, kind: 'locate', primary: true}
+    ]);
+    return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
+      + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
+      + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
+      + pushedBadge
+      + actions
+      + '</div>';
+  }).join('');
+}
+async function tcLoadArtifacts(id) {
   try {
-    const cachedTask = TC_TASK_CACHE.get(Number(id || 0)) || null;
-    const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
-      + '&task_id=' + encodeURIComponent(String(id || ''))
-      + '&page_size=1';
-    const taskResp = cachedTask ? {items: [cachedTask]} : await tcFetchJson(detailListUrl);
-    const task = (taskResp.items || []).find(t => Number(t.id) === Number(id));
-    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
+    const data = await tcFetchJson('/tasks/api/' + id + '/artifacts');
+    tcRenderArtifactsRows(data || {});
+  } catch (e) {
+    const wrap = document.getElementById('tcArtifactsRows');
+    if (wrap) wrap.textContent = '加载失败';
+  }
+}
+async function tcLoadReadiness(id, task) {
+  if (!task || !task.parent_task_id) return;
+  const wrap = document.getElementById('tcReadinessRows');
+  if (!wrap) return;
+  try {
+    const data = await tcFetchJson('/tasks/api/child/' + id + '/readiness');
+    if (data.error) { wrap.textContent = data.error; return; }
+    const mediaUrl = data.media_search_url || tcMediasUrl(id, task.media_product_id, data.country_code || task.country_code, data.product_code || task.product_code || '', 'translate');
+    const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
+    if (Array.isArray(data.checks) && data.checks.length) {
+      wrap.innerHTML = jump + data.checks.map(function(check) {
+        const ok = !!check.ok || (!check.required && check.ok !== false);
+        const icon = ok ? '✓' : '✗';
+        const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
+        const counts = (check.source_count !== undefined || check.target_count !== undefined)
+          ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
+          : '';
+        const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
+        const evidence = tcRenderReadinessEvidence(check.evidence || []);
+        const links = !evidence && Array.isArray(check.links) && check.links.length
+          ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
+              const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
+              return tcEsc(label);
+            }).join('<br>') + '</div>'
+          : '';
+        const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
+        const actions = tcRenderActionLinks(check.actions || []);
+        return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
+          + '<div style="min-width:0; flex:1 1 260px;">'
+          + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+          + reason + links
+          + evidence
+          + '</div>'
+          + manualActions
+          + actions
+          + '</div>';
+      }).join('');
+      return;
+    }
+    const labels = {
+      has_object: '视频', has_video: '视频', has_cover: '封面',
+      has_copywriting: '文案', has_push_texts: '推送文案',
+      is_listed: '商品在架', lang_supported: '广告语言', shopify_image_confirmed: '链接商品图替换',
+    };
+    const entries = Object.entries(data.readiness || {});
+    if (!entries.length) {
+      wrap.innerHTML = jump + '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(tcLanguageLabel(data.country_code)) + ' 添加视频</span>';
+      return;
+    }
+    wrap.innerHTML = jump + entries.map(([k, v]) => {
+      const label = labels[k] || k;
+      const icon = v ? '✓' : '✗';
+      const color = v ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
+      return `<span style="margin-right:14px; color:${color};"><strong>${icon}</strong> ${tcEsc(label)}</span>`;
+    }).join('');
+  } catch (e) {
+    wrap.textContent = '加载失败：' + (e.message || 'unknown');
+  }
+}
+function tcSetDetailRefreshBusy(btn, busy) {
+  if (!btn) return;
+  btn.disabled = !!busy;
+  btn.textContent = busy ? '刷新中...' : '刷新最新状态';
+}
+async function tcLoadDetail(id, options) {
+  const opts = Object.assign({forceRefresh: false, keepContent: false}, options || {});
+  TC_DETAIL_TASK_ID = id;
+  const body = document.getElementById('tcDetailBody');
+  if (!opts.keepContent) {
+    body.innerHTML = '<div class="tc-detail-loading"><span>加载中...</span><button class="tc-btn" onclick="tcCloseDetail()">关闭</button></div>';
+  }
+  try {
+    const task = await tcFetchDetailTask(id, opts.forceRefresh);
+    if (!task) { body.innerHTML = '<div class="tc-detail-loading"><span>任务未找到（可能不在当前可见范围）</span><button class="tc-btn" onclick="tcCloseDetail()">关闭</button></div>'; return; }
     const [eventsResp, reviewAssetsResp] = await Promise.all([
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
     body.innerHTML = tcRenderDetail(task, eventsResp.events || [], reviewAssetsResp || {});
-    // fetch artifacts for both parent and child tasks
-    fetch('/tasks/api/' + id + '/artifacts')
-      .then(r => r.json())
-      .then(data => {
-        const wrap = document.getElementById('tcArtifactsRows');
-        const panel = document.getElementById('tcArtifactsPanel');
-        if (!wrap || !panel) return;
-        const items = data.items || [];
-        if (!items.length) { wrap.textContent = '暂无产出素材'; panel.style.display = 'block'; return; }
-        panel.style.display = 'block';
-        wrap.innerHTML = items.map(function(it) {
-          const pushedBadge = it.pushed_at ? '<span style="color:oklch(38% 0.09 165); font-size:10px;">已推送</span>' : '<span style="color:var(--tc-fg-muted); font-size:10px;">未推送</span>';
-          const href = tcMediasUrl(it.task_id || '', it.product_id || '', it.lang || '', it.product_code || '', 'history');
-          const actions = tcRenderActionLinks(it.actions || [
-            {label: '素材库', url: href, kind: 'locate', primary: true}
-          ]);
-          return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
-            + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
-            + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
-            + pushedBadge
-            + actions
-            + '</div>';
-        }).join('');
-      })
-      .catch(function(e) {
-        const wrap = document.getElementById('tcArtifactsRows');
-        if (wrap) wrap.textContent = '加载失败';
-      });
-    if (task.parent_task_id) {
-      // child task — fetch readiness
-      fetch('/tasks/api/child/' + id + '/readiness')
-        .then(r => r.json())
-        .then(data => {
-          const wrap = document.getElementById('tcReadinessRows');
-          if (!wrap) return;
-          if (data.error) { wrap.textContent = data.error; return; }
-          const mediaUrl = data.media_search_url || tcMediasUrl(id, task.media_product_id, data.country_code || task.country_code, data.product_code || task.product_code || '', 'translate');
-          const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
-          if (Array.isArray(data.checks) && data.checks.length) {
-            wrap.innerHTML = jump + data.checks.map(function(check) {
-              const ok = !!check.ok || (!check.required && check.ok !== false);
-              const icon = ok ? '✓' : '✗';
-              const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
-              const counts = (check.source_count !== undefined || check.target_count !== undefined)
-                ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
-                : '';
-              const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
-              const evidence = tcRenderReadinessEvidence(check.evidence || []);
-              const links = !evidence && Array.isArray(check.links) && check.links.length
-                ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
-                    const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
-                    return tcEsc(label);
-                  }).join('<br>') + '</div>'
-                : '';
-              const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
-              const actions = tcRenderActionLinks(check.actions || []);
-              return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
-                + '<div style="min-width:0; flex:1 1 260px;">'
-                + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-                + reason + links
-                + evidence
-                + '</div>'
-                + manualActions
-                + actions
-                + '</div>';
-            }).join('');
-            return;
-          }
-          const labels = {
-            has_object: '视频', has_video: '视频', has_cover: '封面',
-            has_copywriting: '文案', has_push_texts: '推送文案',
-            is_listed: '商品在架', lang_supported: '广告语言', shopify_image_confirmed: '链接商品图替换',
-          };
-          const entries = Object.entries(data.readiness || {});
-          if (!entries.length) {
-            wrap.innerHTML = jump + '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(tcLanguageLabel(data.country_code)) + ' 添加视频</span>';
-            return;
-          }
-          wrap.innerHTML = jump + entries.map(([k, v]) => {
-            const label = labels[k] || k;
-            const icon = v ? '✓' : '✗';
-            const color = v ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
-            return `<span style="margin-right:14px; color:${color};"><strong>${icon}</strong> ${tcEsc(label)}</span>`;
-          }).join('');
-        })
-        .catch(e => {
-          const wrap = document.getElementById('tcReadinessRows');
-          if (wrap) wrap.textContent = '加载失败：' + (e.message || 'unknown');
-        });
-    }
+    tcLoadArtifacts(id);
+    tcLoadReadiness(id, task);
   } catch (e) {
-    body.innerHTML = '加载失败：' + tcEsc(e.message);
+    body.innerHTML = '<div class="tc-detail-loading"><span>加载失败：' + tcEsc(e.message) + '</span><button class="tc-btn" onclick="tcCloseDetail()">关闭</button></div>';
+  }
+}
+async function tcOpenDetail(id) {
+  const drawer = document.getElementById('tcDetailDrawer');
+  drawer.style.display = 'block';
+  await tcLoadDetail(id);
+}
+async function tcRefreshDetail(id, btn) {
+  const taskId = Number(id || TC_DETAIL_TASK_ID || 0);
+  if (!taskId) return;
+  id = taskId;
+  tcSetDetailRefreshBusy(btn, true);
+  try {
+    await tcLoadDetail(id, {forceRefresh: true, keepContent: true});
+  } finally {
+    tcSetDetailRefreshBusy(btn, false);
   }
 }
 function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; }
@@ -1407,29 +1449,42 @@ function tcRenderDetail(task, events, reviewAssets) {
   const reviewEntry = tcRenderCurrentReviewEntry(reviewAssets);
   const eventTimeline = tcRenderEventTimeline(task, events, reviewAssets);
   const identityRows = tcRenderDetailIdentityRows(task, isParent);
+  const taskId = Number(task.id || 0);
   return `
-    <div class="tc-detail-title-block">
-      <h3>${tcEsc(task.product_name)}</h3>
-      ${identityRows}
+    <div class="tc-detail-shell">
+      <div class="tc-detail-sticky">
+        <div class="tc-detail-sticky-top">
+          <div class="tc-detail-sticky-main">
+            <div class="tc-detail-title-block">
+              <h3>${tcEsc(task.product_name)}</h3>
+              ${identityRows}
+            </div>
+            <div class="tc-detail-status"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
+            <div class="tc-detail-meta">
+              ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
+              负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
+            </div>
+            ${task.last_reason ? `<div class="tc-detail-reason">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
+          </div>
+          <div class="tc-detail-sticky-actions">
+            <button class="tc-btn" onclick="tcCloseDetail()">关闭</button>
+            <button type="button" class="tc-btn tc-btn--primary tc-detail-refresh" data-detail-refresh onclick="tcRefreshDetail(${taskId}, this)">刷新最新状态</button>
+          </div>
+        </div>
+        ${buttons ? `<div class="tc-detail-toolbar">${buttons}</div>` : ''}
+      </div>
+      <div id="tcArtifactsPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px; display:none;">
+        <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">产出素材</div>
+        <div id="tcArtifactsRows">暂无</div>
+      </div>
+      ${!isParent ? `<div id="tcReadinessPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">
+    <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})</div>
+    <div id="tcReadinessRows">加载中...</div>
+  </div>` : ''}
+      ${reviewEntry}
+      <h4 style="margin:0 0 10px; font-size:14px;">审核流程</h4>
+      ${eventTimeline}
     </div>
-    <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
-    <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
-      ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
-      负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
-    </div>
-    ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
-    <div id="tcArtifactsPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px; display:none;">
-      <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">产出素材</div>
-      <div id="tcArtifactsRows">暂无</div>
-    </div>
-    ${!isParent ? `<div id="tcReadinessPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">
-  <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})</div>
-  <div id="tcReadinessRows">加载中...</div>
-</div>` : ''}
-    ${reviewEntry}
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
-    <h4 style="margin:0 0 10px; font-size:14px;">审核流程</h4>
-    ${eventTimeline}
   `;
 }
 
@@ -1636,24 +1691,22 @@ async function tcBindSubmit() {
   } catch (e) { alert('绑定失败：' + e.message); }
 }
 
-// Auto-open task detail if ?task_id=N is in URL
-(function tcDeepLink() {
-  var params = new URLSearchParams(window.location.search);
-  var dlTaskId = parseInt(params.get('task_id') || '0');
-  if (!dlTaskId) return;
-  var waited = 0;
-  var check = setInterval(function() {
-    waited++;
-    // Wait for table rows to appear (tcRender completed)
-    var rows = document.querySelectorAll('.tc-table tr[data-task-id]');
-    if (rows.length || waited > 15) {
-      clearInterval(check);
-      tcOpenDetail(dlTaskId);
-    }
-  }, 400);
-})();
+function tcInitialDetailTaskId() {
+  const configured = Number(TC_INITIAL_DETAIL_TASK_ID || 0);
+  if (configured > 0) return configured;
+  const params = new URLSearchParams(window.location.search);
+  const queryTaskId = parseInt(params.get('task_id') || '0');
+  if (queryTaskId > 0) return queryTaskId;
+  const match = String(window.location.pathname || '').match(/^\/tasks\/detail\/(\d+)\/?$/);
+  return match ? parseInt(match[1] || '0') : 0;
+}
+async function tcInitialRender() {
+  await tcRender();
+  var dlTaskId = tcInitialDetailTaskId();
+  if (dlTaskId) tcOpenDetail(dlTaskId);
+}
 
-tcRender();
+tcInitialRender();
 </script>
 
 <!-- 手动绑定产出物 modal -->

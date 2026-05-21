@@ -185,18 +185,30 @@ def _validate_translation_targets(
     ensure_translation_work_user(translator_id)
 
 
-@bp.route("/")
-@login_required
-@permission_required("task_center")
-def index():
+def _render_task_center(initial_task_id: int | None = None):
     return render_template(
         "tasks_list.html",
         is_admin=_is_admin(),
+        initial_task_id=int(initial_task_id or 0),
         capabilities={
             "can_process_raw_video": _has_capability("can_process_raw_video"),
             "can_translate": _has_capability("can_translate"),
         },
     )
+
+
+@bp.route("/")
+@login_required
+@permission_required("task_center")
+def index():
+    return _render_task_center()
+
+
+@bp.route("/detail/<int:task_id>")
+@login_required
+@permission_required("task_center")
+def detail(task_id: int):
+    return _render_task_center(task_id)
 
 
 @bp.route("/api/list", methods=["GET"])
