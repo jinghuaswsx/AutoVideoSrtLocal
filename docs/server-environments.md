@@ -2,19 +2,19 @@
 
 最后更新：2026-04-23
 
-本文记录 `AutoVideoSrtLocal` 当前线上环境和测试环境的实际部署位置。后续测试、联调、发布都以 `172.30.254.14` 服务器为准，不再在 Windows 开发机本地安装或启动 MySQL、Gunicorn、systemd 等运行服务。
+本文记录 `AutoVideoSrtLocal` 当前线上环境和测试环境的实际部署位置。后续测试、联调、发布都以 `172.16.254.106` 服务器为准，不再在 Windows 开发机本地安装或启动 MySQL、Gunicorn、systemd 等运行服务。
 
 ## 连接信息
 
-- 服务器地址：`172.30.254.14`
+- 服务器地址：`172.16.254.106`
 - SSH 用户：`root`
 - SSH key：`C:\Users\admin\.ssh\CC.pem`
-- 连接示例：`ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14`
+- 连接示例：`ssh -i C:\Users\admin\.ssh\CC.pem root@172.16.254.106`
 - 敏感配置：以服务器上的 `.env`、密钥文件和系统服务为准，不写入仓库文档。
 
 ## 线上环境
 
-- 访问地址：`http://172.30.254.14/`
+- 访问地址：`http://172.16.254.106/`
 - 监听端口：`80`
 - 应用目录：`/opt/autovideosrt`
 - systemd 服务：`autovideosrt.service`
@@ -48,7 +48,7 @@ systemctl status autovideosrt --no-pager -l
 
 ## 测试环境
 
-- 访问地址：`http://172.30.254.14:8080/`
+- 访问地址：`http://172.16.254.106:8080/`
 - 监听端口：`8080`
 - 应用目录：`/opt/autovideosrt-test`
 - systemd 服务：`autovideosrt-test.service`
@@ -83,8 +83,8 @@ systemctl status autovideosrt-test --no-pager -l
 
 ## 强制工作规则
 
-- 本项目的功能验证、页面验证、接口验证、数据库验证默认走测试环境 `http://172.30.254.14:8080/`。
-- 需要发布或验证线上行为时，才操作线上环境 `http://172.30.254.14/`。
+- 本项目的功能验证、页面验证、接口验证、数据库验证默认走测试环境 `http://172.16.254.106:8080/`。
+- 需要发布或验证线上行为时，才操作线上环境 `http://172.16.254.106/`。
 - 不要在 Windows 开发机本地安装、初始化、启动或依赖 MySQL；项目数据库以服务器 MySQL 为准。
 - 不要在 Windows 开发机本地长期启动项目 Web 服务来替代测试环境；需要联调时使用测试环境服务。
 - 不要为了测试随意改线上目录或重启线上服务；先在测试环境验证，用户明确要求发布线上时再动线上。

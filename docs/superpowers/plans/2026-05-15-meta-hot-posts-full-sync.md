@@ -481,7 +481,7 @@ sleep 10
 systemctl is-active autovideosrt
 curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" --max-time 30 http://127.0.0.1/
 '@
-$script | ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 "bash -s"
+$script | ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 "bash -s"
 ```
 
 Expected: both services active, test and production return 200 or 302.
@@ -491,7 +491,7 @@ Expected: both services active, test and production return 200 or 302.
 Run:
 
 ```powershell
-ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 "cd /opt/autovideosrt && /opt/autovideosrt/venv/bin/python -m tools.meta_hot_posts.main --mode sync --target-count 0 --max-pages 120"
+ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 "cd /opt/autovideosrt && /opt/autovideosrt/venv/bin/python -m tools.meta_hot_posts.main --mode sync --target-count 0 --max-pages 120"
 ```
 
 Expected summary under current interface size:
@@ -521,7 +521,7 @@ print(query_one("SELECT COUNT(*) AS c FROM meta_hot_posts"))
 print(query_one("SELECT COUNT(*) AS c FROM meta_hot_posts WHERE first_seen_at >= CURDATE() AND first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)"))
 print(query_one("SELECT task_code,status,summary_json,error_message FROM scheduled_task_runs WHERE task_code='meta_hot_posts_sync_tick' ORDER BY id DESC LIMIT 1"))
 '@
-$py | ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 "cd /opt/autovideosrt && /opt/autovideosrt/venv/bin/python -"
+$py | ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 "cd /opt/autovideosrt && /opt/autovideosrt/venv/bin/python -"
 ```
 
 Expected:

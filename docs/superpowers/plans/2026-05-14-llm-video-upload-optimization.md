@@ -410,7 +410,7 @@ Use the AGENTS publish sequence, not `deploy/publish.sh`, after tests pass:
 
 ```bash
 git push origin HEAD:master
-ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 '
+ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 '
 set -e
 cd /opt/autovideosrt-test && git pull origin master --ff-only
 systemctl restart autovideosrt-test && sleep 3

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ServerHost = "172.30.254.14",
+    [string]$ServerHost = "172.16.254.106",
     [string]$User = "root",
     [string]$KeyPath = "C:\Users\admin\.ssh\CC.pem",
     [int]$CdpPort = 9223

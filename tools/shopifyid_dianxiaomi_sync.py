@@ -23,7 +23,7 @@ CHROME_EXECUTABLES = (
     Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
 )
-SSH_HOST = "172.30.254.14"
+SSH_HOST = "172.16.254.106"
 SSH_USER = "root"
 SSH_KEY_PATH = Path(r"C:\Users\admin\.ssh\CC.pem")
 REMOTE_MEDIA_TABLE = "media_products"

@@ -54,7 +54,7 @@
 Add to end of `config.py`:
 ```python
 # MySQL
-DB_HOST = _env("DB_HOST", "172.30.254.14")
+DB_HOST = _env("DB_HOST", "172.16.254.106")
 DB_PORT = int(_env("DB_PORT", "3306"))
 DB_NAME = _env("DB_NAME", "auto_video")
 DB_USER = _env("DB_USER", "root")
@@ -1576,7 +1576,7 @@ echo "Deploy complete. Running on port 80."
 
 SSH to server and run:
 ```bash
-ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14
+ssh -i C:\Users\admin\.ssh\CC.pem root@172.16.254.106
 
 # On server:
 mkdir -p /opt/autovideosrt
@@ -1626,7 +1626,7 @@ Expected: HTML response with login page.
 
 - [ ] **Step 5: Test from browser**
 
-Open `http://172.30.254.14` in browser.
+Open `http://172.16.254.106` in browser.
 Login as `admin` / `admin123`.
 Verify project list page loads.
 

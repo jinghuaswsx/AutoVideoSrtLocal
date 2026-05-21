@@ -2,7 +2,7 @@
 
 日期：2026-05-07
 分支：`feature/pushes-skip-push`
-入口：[/pushes/](http://172.30.254.14/pushes/)
+入口：[/pushes/](http://172.16.254.106/pushes/)
 
 ## 背景
 
@@ -102,11 +102,11 @@ ALTER TABLE media_items
   - `test_status_filter_skipped_returns_only_marked`
   - `test_pending_filter_excludes_skipped`
 - 跑 `tests/test_pushes_stats.py` 确认 stats 计算路径（统计是否要把 skipped 排除—**先按"不排除"**实现，因为统计聚焦 push 行为，stats 路径没动）
-- Playwright 端到端：admin 登录 → 进入 [/pushes/](http://172.30.254.14/pushes/) → 标记某条素材 → 验证按钮切换 + 筛选「标记不推送」能查到 → 恢复 → 验证回到 pending
+- Playwright 端到端：admin 登录 → 进入 [/pushes/](http://172.16.254.106/pushes/) → 标记某条素材 → 验证按钮切换 + 筛选「标记不推送」能查到 → 恢复 → 验证回到 pending
 
 ## 部署
 
-测试环境（172.30.254.14:8080）→ 验证 → 用户确认 → 上线（172.30.254.14:80）。
+测试环境（172.16.254.106:8080）→ 验证 → 用户确认 → 上线（172.16.254.106:80）。
 启动器自动 apply migration + 登记 schema_migrations，不需要手动跑 SQL。
 
 ## 不做的事

@@ -100,10 +100,10 @@ EOF
 )"
 git -C g:/Code/AutoVideoSrtLocal/.worktrees/task-medias-bridge push -u origin feature/task-medias-bridge
 
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git fetch && git checkout feature/task-medias-bridge && git pull && systemctl restart autovideosrt-test && sleep 3 && /opt/autovideosrt/venv/bin/python -m pytest tests/test_tasks_routes.py -q 2>&1 | tail -5'
 
-curl -sS -o /dev/null -w "/tasks/api/child/1/readiness  HTTP %{http_code}\n" http://172.30.254.14:8080/tasks/api/child/1/readiness
+curl -sS -o /dev/null -w "/tasks/api/child/1/readiness  HTTP %{http_code}\n" http://172.16.254.106:8080/tasks/api/child/1/readiness
 ```
 
 ---

@@ -498,7 +498,7 @@ Replace entire content of `tools/open_server_browser_tunnel.ps1` with:
 ```powershell
 [CmdletBinding()]
 param(
-    [string]$ServerHost = "172.30.254.14",
+    [string]$ServerHost = "172.16.254.106",
     [string]$User = "root",
     [string]$KeyPath = "C:\Users\admin\.ssh\CC.pem",
     [int]$CdpPort = 9222
@@ -554,7 +554,7 @@ Replace entire content of `tools/open_mk_server_browser_tunnel.ps1` with:
 ```powershell
 [CmdletBinding()]
 param(
-    [string]$ServerHost = "172.30.254.14",
+    [string]$ServerHost = "172.16.254.106",
     [string]$User = "root",
     [string]$KeyPath = "C:\Users\admin\.ssh\CC.pem",
     [int]$CdpPort = 9223
@@ -739,7 +739,7 @@ This task happens after the worktree is merged to master and pushed to origin. S
 - [ ] **Step 0: Pre-flight checks**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt && git status --short && echo "---" && \
    who | grep -E "cjh.*:0" && echo "---" && \
    ls -la /run/user/1000/gdm/Xauthority'
@@ -755,7 +755,7 @@ If any check fails, stop and fix before continuing.
 - [ ] **Step 1: Stop legacy services on server**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'systemctl stop autovideosrt-browser autovideosrt-mk-browser && \
    sleep 2 && \
    pgrep -af "Xvfb :2|x11vnc -display :2|websockify .*60[0-9][0-9]" || echo "[ok] legacy Xvfb/x11vnc(:20,:21)/websockify cleared"'
@@ -766,7 +766,7 @@ Expected: services stop cleanly, then `[ok] legacy Xvfb/x11vnc(:20,:21)/websocki
 - [ ] **Step 2: Pull and reinstall**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt && git pull --ff-only && \
    bash deploy/server_browser/install_server_browser.sh && \
    bash deploy/server_browser/install_mk_browser.sh'
@@ -777,7 +777,7 @@ Expected: install scripts finish without error; CDP probes report Chromium versi
 - [ ] **Step 3: Verify systemd unit health**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'systemctl status autovideosrt-browser autovideosrt-mk-browser --no-pager -l | sed -n "1,40p"'
 ```
 
@@ -786,7 +786,7 @@ Expected: both `Active: active (running)`, no recent restart loops.
 - [ ] **Step 4: Verify CDP endpoints**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'curl -fsS http://127.0.0.1:9222/json/version && echo "---9223---" && curl -fsS http://127.0.0.1:9223/json/version'
 ```
 
@@ -795,7 +795,7 @@ Expected: both return JSON with `Browser: Chrome/...`.
 - [ ] **Step 5: Verify Chromium runs as cjh on display :0**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'ps -eo user,pid,cmd | grep -E "(chrom|google-chrome)" | grep -v grep'
 ```
 
@@ -813,7 +813,7 @@ If the user can interact (close popups, etc.) the desktop integration works.
 - [ ] **Step 7: End-to-end Shopify ID sync smoke test**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   '/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py \
      --skip-login-prompt \
      --browser-mode server-cdp \
@@ -826,7 +826,7 @@ Expected: ends with `同步完成：` summary block (店小秘在线商品总数
 - [ ] **Step 8: Final state check**
 
 ```bash
-ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i ~/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'pgrep -af "Xvfb |x11vnc -display :2|websockify" || echo "[ok] legacy stack cleared"'
 ```
 

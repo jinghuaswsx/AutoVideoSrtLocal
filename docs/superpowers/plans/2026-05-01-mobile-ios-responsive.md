@@ -142,7 +142,7 @@ PC-only 工作台。允许横滚不强求塌陷。
 按 CLAUDE.md 硬规则：worktree 完成后的固定收尾顺序——
 1. 提交合并代码：在 worktree commit → 切回主 worktree → merge 到 master
 2. push origin/master
-3. 部署到 LocalServer：`ssh root@172.30.254.14 'cd /opt/autovideosrt && git pull && systemctl restart autovideosrt-web'`
+3. 部署到 LocalServer：`ssh root@172.16.254.106 'cd /opt/autovideosrt && git pull && systemctl restart autovideosrt-web'`
 4. healthcheck：curl `/login` 200 + 抽样 `/pushes`
 5. cleanup：`git worktree remove ...` + `git branch -d feature/mobile-ios-responsive`
 

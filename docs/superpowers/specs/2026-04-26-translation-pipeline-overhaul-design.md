@@ -487,7 +487,7 @@ History selector: if multiple runs exist, dropdown to pick which run to display.
 
 After deploy: use the existing test command from project memory (`tests/test_productivity_stats_routes.py` pattern):
 ```
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -m pytest tests/test_asr_clean.py tests/test_translation_quality.py \
      tests/test_omni_translate_routes.py tests/test_multi_translate_routes.py -q 2>&1 | tail -20'

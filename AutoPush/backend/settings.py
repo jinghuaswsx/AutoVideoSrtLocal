@@ -14,7 +14,7 @@ class Settings:
     def __init__(self) -> None:
         self.autovideo_base_url = getenv(
             "AUTOVIDEO_BASE_URL",
-            "http://172.30.254.14",
+            "http://172.16.254.106",
         ).rstrip("/")
         self.autovideo_api_key = getenv(
             "AUTOVIDEO_API_KEY",

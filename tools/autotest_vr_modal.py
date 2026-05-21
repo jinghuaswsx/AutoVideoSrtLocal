@@ -1,6 +1,6 @@
 """自测 AI 视频分析 Modal 的胶囊 tab + 智能 trigger + 重新评估按钮。
 
-用 Playwright 直连线上 172.30.254.14，禁缓存重新加载，截图保存到 /tmp。
+用 Playwright 直连线上 172.16.254.106，禁缓存重新加载，截图保存到 /tmp。
 跑完用脚本 + 截图肉眼验证，不要再让用户回看。
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-BASE = "http://172.30.254.14"
+BASE = "http://172.16.254.106"
 USER = "admin"
 PASSWORD = "709709@"
 OUT_DIR = Path("/tmp/vr_autotest")

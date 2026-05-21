@@ -55,7 +55,7 @@ def _reload_config(monkeypatch, env: dict[str, str]):
 def test_autovideo_base_url_default(monkeypatch):
     monkeypatch.delenv("AUTOVIDEO_BASE_URL", raising=False)
     cfg = _reload_config(monkeypatch, {})
-    assert cfg.AUTOVIDEO_BASE_URL == "http://172.30.254.14"
+    assert cfg.AUTOVIDEO_BASE_URL == "http://172.16.254.106"
 
 
 def test_autovideo_base_url_env_override(monkeypatch):
@@ -90,7 +90,7 @@ Expected: FAIL — `AttributeError: module 'config' has no attribute 'AUTOVIDEO_
 在 `config.py` 第 63 行 `PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")` 之后插入：
 ```python
 # 推送管理 - push-module 纯前端直连模式
-AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://172.30.254.14")
+AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://172.16.254.106")
 AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "")
 PUSH_MEDIAS_TARGET = _env(
     "PUSH_MEDIAS_TARGET",
@@ -1569,8 +1569,8 @@ Expected: ALL PASS
 4. 切回「推送列表」：仍正常
 5. DevTools Console 无报错
 6. DevTools Network 可见：
-   - 获取素材 → GET http://172.30.254.14/openapi/materials/{code}
-   - 加载推送载荷 → GET http://172.30.254.14/openapi/materials/{code}/push-payload?lang=...
+   - 获取素材 → GET http://172.16.254.106/openapi/materials/{code}
+   - 加载推送载荷 → GET http://172.16.254.106/openapi/materials/{code}/push-payload?lang=...
    - 推送 → POST http://172.17.254.77:22400/dify/shopify/medias
 ```
 

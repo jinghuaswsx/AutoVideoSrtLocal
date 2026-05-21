@@ -229,7 +229,7 @@ python -m pytest -q tests/ 2>&1 | tail -50
 
 **服务器 pytest**：
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && \
    /opt/autovideosrt/venv/bin/pip install -r requirements.txt && \
    systemctl restart autovideosrt-test && sleep 3 && \

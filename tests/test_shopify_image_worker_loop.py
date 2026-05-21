@@ -186,7 +186,7 @@ def test_open_shopify_target_uses_manual_id_without_bootstrap(monkeypatch):
 
     result = controller.open_shopify_target(
         target="ez",
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",
@@ -197,7 +197,7 @@ def test_open_shopify_target_uses_manual_id_without_bootstrap(monkeypatch):
     assert result["shopify_product_id"] == "855"
     assert result["url"] == session.build_ez_url("855")
     assert opened == [(r"C:\chrome-shopify-image", [session.build_ez_url("855")])]
-    assert saved[0]["base_url"] == "http://172.30.254.14"
+    assert saved[0]["base_url"] == "http://172.16.254.106"
 
 
 def test_open_shopify_target_fetches_id_and_opens_detail_url(monkeypatch):
@@ -216,7 +216,7 @@ def test_open_shopify_target_fetches_id_and_opens_detail_url(monkeypatch):
 
     result = controller.open_shopify_target(
         target="detail",
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",
@@ -248,7 +248,7 @@ def test_open_shopify_target_falls_back_to_storefront_id_when_bootstrap_not_read
 
     result = controller.open_shopify_target(
         target="ez",
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",

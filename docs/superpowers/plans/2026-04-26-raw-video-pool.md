@@ -886,5 +886,5 @@ async function tcParentUploadDone(id, productId) {
 - [ ] curl smoke 4 endpoints
 - [ ] merge feature/raw-video-pool 到 master + push
 - [ ] SSH /opt/autovideosrt git pull + restart autovideosrt
-- [ ] curl http://172.30.254.14/login 验证 200
+- [ ] curl http://172.16.254.106/login 验证 200
 - [ ] CronDelete 自己

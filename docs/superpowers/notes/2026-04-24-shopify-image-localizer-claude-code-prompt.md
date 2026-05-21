@@ -26,7 +26,7 @@ G:\Code\AutoVideoSrtLocal\.worktrees\merge-master-publish
 - OpenAPI：/openapi/medias/shopify-image-localizer/languages 和 /bootstrap
 - Shopify ID 只从 media_products.shopifyid 取；缺失时接口会返回中文提示
 - 本地 GUI、下载、落盘、manifest、持久化浏览器、登录检测都已打通
-- EXE 打包已可用，打包后的默认配置走正式环境 http://172.30.254.14
+- EXE 打包已可用，打包后的默认配置走正式环境 http://172.16.254.106
 - 浏览器目录固定为 C:\chrome-shopify-image
 - 样例商品是 dino-glider-launcher-toy-rjc，Shopify 商品 ID 是 8552296546477，目标语言先用 de
 

@@ -1808,7 +1808,7 @@ git push origin master
 按 [CLAUDE.md](../../../CLAUDE.md) §发布流程的 Path B（Windows 工作站）：
 
 ```powershell
-ssh -i "$env:USERPROFILE\.ssh\CC.pem" -o BatchMode=yes root@172.30.254.14 @'
+ssh -i "$env:USERPROFILE\.ssh\CC.pem" -o BatchMode=yes root@172.16.254.106 @'
 set -e
 cd /opt/autovideosrt-test
 git config --global --add safe.directory /opt/autovideosrt-test || true
@@ -1824,7 +1824,7 @@ curl -s -o /dev/null -w "TEST HTTP %{http_code}\n" http://127.0.0.1:8080/product
 
 ### Step 12.5: 测试环境 UI 自验
 
-- [ ] 浏览器访问 `http://172.30.254.14:8080/product-profit`，admin 登录，过一遍 4 个 Tab。
+- [ ] 浏览器访问 `http://172.16.254.106:8080/product-profit`，admin 登录，过一遍 4 个 Tab。
 
 ### Step 12.6: 清理 worktree（按 CLAUDE.md 硬规则）
 

@@ -1697,7 +1697,7 @@ def test_fetch_bootstrap_sends_optional_shopify_product_id(monkeypatch):
     monkeypatch.setattr(api_client.requests, "post", fake_post)
 
     payload = api_client.fetch_bootstrap(
-        "http://172.30.254.14",
+        "http://172.16.254.106",
         "demo-key",
         "sonic-lens-refresher-rjc",
         "it",
@@ -1718,7 +1718,7 @@ def test_fetch_bootstrap_ready_passes_shopify_product_id_override(monkeypatch):
     monkeypatch.setattr(
         run_product_cdp.settings,
         "load_runtime_config",
-        lambda root=None: {"base_url": "http://172.30.254.14", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
+        lambda root=None: {"base_url": "http://172.16.254.106", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
     )
 
     def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):
@@ -1797,7 +1797,7 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     monkeypatch.setattr(controller.run_product_cdp, "run", fake_run)
 
     result = controller.run_shopify_localizer(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="sonic-lens-refresher-rjc",
@@ -1814,7 +1814,7 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     assert captured_args[0].replace_shopify_cdn is True
     assert captured_args[0].no_preserve_detail_size is False
     assert captured_args[0].detail_size_reference_locale == "en"
-    assert saved_config[0]["base_url"] == "http://172.30.254.14"
+    assert saved_config[0]["base_url"] == "http://172.16.254.106"
     assert browser_cleanups == []
     assert any("复用现有浏览器会话" in message for message in statuses)
     assert any("开始连续替换流程" in message for message in statuses)
@@ -1846,7 +1846,7 @@ def test_controller_backfills_resolved_shopify_id_before_batch_runner(monkeypatc
     monkeypatch.setattr(controller.run_product_cdp, "run", fake_run)
 
     result = controller.run_shopify_localizer(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="dual-auto-fuse-tester-puller-rjc",

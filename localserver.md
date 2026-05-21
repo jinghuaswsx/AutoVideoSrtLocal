@@ -1,4 +1,4 @@
-ip 172.30.254.14
+ip 172.16.254.106
 rootuser: root
 ssh_key_file: "C:\Users\admin\.ssh\CC.pem"
 

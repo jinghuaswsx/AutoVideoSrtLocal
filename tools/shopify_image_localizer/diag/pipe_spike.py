@@ -61,7 +61,7 @@ def main() -> None:
                 "--window-position=2560,0",
                 "--window-size=1440,2512",
                 "--proxy-server=http://127.0.0.1:7890",
-                "--proxy-bypass-list=127.0.0.1;localhost;172.30.254.14;<local>",
+                "--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>",
             ],
         )
         # 所有 new document 都会预执行这段

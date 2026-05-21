@@ -1190,7 +1190,7 @@ EOF
 
 > 最后一道闸：必须在浏览器里实际跑一条多语种翻译任务，肉眼确认所有改动符合 spec 的 §8 验证条目。
 
-- [ ] **Step 1: 部署到 LocalServer（172.30.254.14）**
+- [ ] **Step 1: 部署到 LocalServer（172.16.254.106）**
 
 > 这一步得等 master 合并后才能做。先合并、再部署。
 
@@ -1199,13 +1199,13 @@ EOF
 git switch master  # 在 G:/Code/AutoVideoSrtLocal 主目录里
 git merge --no-ff feature/tts-streaming-progress -m "merge feature/tts-streaming-progress"
 git push origin master
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt && git pull && systemctl restart autovideosrt-web && systemctl status autovideosrt-web --no-pager | head -20'
 ```
 
 - [ ] **Step 2: 浏览器跑一条任务 — 流式进度可见**
 
-打开 `http://172.30.254.14/multi-translate/<task_id>`，新建或重跑一条 30s 左右的英→中翻译任务。
+打开 `http://172.16.254.106/multi-translate/<task_id>`，新建或重跑一条 30s 左右的英→中翻译任务。
 进入 TTS 步骤后 1 分钟内观察：
 
 - [ ] step-msg 那行从 `加载配音模板` → `第 1 轮 · 切分朗读文案中` → `第 1 轮 · 生成 ElevenLabs 音频 1/N` … `N/N` → `校验语言 / 测量时长`，每条变化间隔 ≤ 5s。

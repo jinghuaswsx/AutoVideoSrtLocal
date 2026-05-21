@@ -1575,7 +1575,7 @@ Expected: `active`, HTTP 302 (login redirect, route exists). Migration auto-appl
 
 - [ ] **Step 4: Post-deploy smoke**
 
-Log in to `http://172.30.254.14/order-analytics` as admin → 广告分析 → 人工录入 → verify the sub-tab loads and "+ 新增/编辑" works on prod.
+Log in to `http://172.16.254.106/order-analytics` as admin → 广告分析 → 人工录入 → verify the sub-tab loads and "+ 新增/编辑" works on prod.
 
 ---
 

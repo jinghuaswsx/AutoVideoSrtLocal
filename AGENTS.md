@@ -5,7 +5,7 @@
 - Python 3.12 / Flask / SQLite（生产单机）/ gunicorn + systemd
 - Playwright sync API（CDP 接管浏览器）；不要在 asyncio loop 内直接调用 sync API
 - LLM 统一入口 `appcore.llm_client`（OpenRouter / Doubao / Gemini AIStudio / Vertex）
-- 部署：本机 = 生产（172.30.254.14），`/opt/autovideosrt`，`autovideosrt.service`
+- 部署：本机 = 生产（172.16.254.106），`/opt/autovideosrt`，`autovideosrt.service`
 
 ## Structure
 - `appcore/` — 业务逻辑、LLM 编排、定时任务、广告/订单分析
@@ -33,8 +33,8 @@
 - **主工作目录零污染**：除非用户当条消息明确说「马上 hotfix」，否则只能在 `git worktree add` 隔离目录里改代码。
 - **`master` 只 hotfix**：常规需求 / 重构 / 跨模块改动一律走 worktree。
 - **文档驱动代码**：改代码前必须先有文档锚点（本文件 / spec / 模块级 `CLAUDE.md`）。无锚点 = 无授权。
-- **本机即生产**：`/opt/autovideosrt` 是 root 拥有；用户明确「发测试 / 上线」时，Windows 开发机可直接 `ssh root@172.30.254.14`，Ubuntu 服务器上只操作 `/opt/autovideosrt-test` / `/opt/autovideosrt`。禁用 SSH 跳板、`gh auth login`。
-- **服务重启需明示**：用户没说「发测试 / 上线」就别 `systemctl restart`；默认验证去 `http://172.30.254.14:8080/` 测试环境。
+- **本机即生产**：`/opt/autovideosrt` 是 root 拥有；用户明确「发测试 / 上线」时，Windows 开发机可直接 `ssh root@172.16.254.106`，Ubuntu 服务器上只操作 `/opt/autovideosrt-test` / `/opt/autovideosrt`。禁用 SSH 跳板、`gh auth login`。
+- **服务重启需明示**：用户没说「发测试 / 上线」就别 `systemctl restart`；默认验证去 `http://172.16.254.106:8080/` 测试环境。
 - **DB 凭据走 `infra_credentials`**：不要只改 `.env`；UI `/settings?tab=infrastructure` 是首选。
 - **定时任务一律登记**：APScheduler / systemd timer / crontab / 后台轮询，全部同步到 `appcore/scheduled_tasks.py` + Web 后台「定时任务」模块。
 - **Wine 打包**：Wine ≥ 11、Windows Python ≥ 3.12.10，build 必须 `xvfb-run`，`wine ./*.exe` 不能当 smoke。
@@ -55,7 +55,7 @@
 ## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）
 ```bash
 git push origin HEAD:master
-ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 '
+ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 '
 set -e
 cd /opt/autovideosrt-test && git pull origin master --ff-only
 systemctl restart autovideosrt-test && sleep 3

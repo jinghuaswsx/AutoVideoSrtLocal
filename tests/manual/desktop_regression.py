@@ -33,7 +33,7 @@ ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="http://172.30.254.14:8080")
+    parser.add_argument("--base", default="http://172.16.254.106:8080")
     parser.add_argument("--user", default=os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin"))
     parser.add_argument("--pwd", default=os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", ""))
     parser.add_argument("--width", type=int, default=1440)

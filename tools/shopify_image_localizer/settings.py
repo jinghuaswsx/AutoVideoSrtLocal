@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-PRODUCTION_BASE_URL = "http://172.30.254.14"
+PRODUCTION_BASE_URL = "http://172.16.254.106"
 DEFAULT_API_KEY = os.getenv("SHOPIFY_IMAGE_LOCALIZER_API_KEY", "").strip()
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"

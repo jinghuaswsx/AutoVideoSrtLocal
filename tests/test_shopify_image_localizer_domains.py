@@ -112,7 +112,7 @@ def test_load_runtime_config_repairs_empty_runtime_credentials_from_default_conf
     settings.default_config_path(tmp_path).write_text(
         json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "packaged-openapi-key",
                 "browser_user_data_dir": r"C:\chrome-shopify-image",
                 "shopify_domain": "newjoyloo.com",
@@ -124,7 +124,7 @@ def test_load_runtime_config_repairs_empty_runtime_credentials_from_default_conf
     settings.config_path(tmp_path).write_text(
         json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "",
                 "browser_user_data_dir": "",
                 "shopify_domain": "omurio.com",
@@ -156,7 +156,7 @@ def test_load_runtime_config_accepts_utf8_bom_config_files(tmp_path) -> None:
         "\ufeff"
         + json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "packaged-openapi-key",
                 "browser_user_data_dir": r"C:\chrome-shopify-image",
                 "shopify_domain": "newjoyloo.com",
@@ -169,7 +169,7 @@ def test_load_runtime_config_accepts_utf8_bom_config_files(tmp_path) -> None:
         "\ufeff"
         + json.dumps(
             {
-                "base_url": "http://172.30.254.14",
+                "base_url": "http://172.16.254.106",
                 "api_key": "",
                 "browser_user_data_dir": "",
                 "shopify_domain": "omurio.com",
@@ -300,7 +300,7 @@ def test_controller_login_reuses_cdp_chrome_with_google_first_tab(
     )
 
     result = controller.open_shopify_login_page(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         shopify_domain="omurio.com",
@@ -332,7 +332,7 @@ def test_confirm_shopify_login_capture_slug_from_current_browser_url(
         lambda timeout_s=0, **_kwargs: ("https://admin.shopify.com/store/7t1gn3-sv?country=US", "active_tab"),
     )
     settings.save_runtime_config(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=str(profile_dir),
         shopify_domain="omurio.com",
@@ -372,7 +372,7 @@ def test_confirm_shopify_login_rejects_known_domain_mismatched_store_slug(
         ),
     )
     settings.save_runtime_config(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=str(profile_dir),
         shopify_domain="newjoyloo.com",
@@ -426,7 +426,7 @@ def test_confirm_shopify_login_capture_slug_uses_current_browser_url_not_history
         raising=False,
     )
     settings.save_runtime_config(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=str(profile_dir),
         shopify_domain="omurio.com",
@@ -590,7 +590,7 @@ def test_confirm_shopify_login_capture_slug_from_manual_url(
     )
     monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
     settings.save_runtime_config(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=str(profile_dir),
         shopify_domain="omurio.com",
@@ -668,7 +668,7 @@ def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatc
     # 把 runtime config 指向 tmp_path 并写入 omurio.com → abc-xyz 缓存
     monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
     settings.save_runtime_config(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         shopify_domain="omurio.com",
@@ -693,7 +693,7 @@ def test_controller_target_uses_cached_store_slug(monkeypatch: pytest.MonkeyPatc
 
     result = controller.open_shopify_target(
         target="ez",
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",

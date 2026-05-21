@@ -733,13 +733,13 @@ def test_generate_local_cover_image_posts_docs_image_edit_payload():
         source_mime="image/png",
         model="gpt-image-2",
         api_key="sk-test",
-        base_url="http://172.30.254.14:82/v1",
+        base_url="http://172.16.254.106:82/v1",
         post_fn=fake_post,
     )
 
     assert out.startswith(b"\x89PNG")
     assert mime == "image/png"
-    assert posted["url"] == "http://172.30.254.14:82/v1/images/edits"
+    assert posted["url"] == "http://172.16.254.106:82/v1/images/edits"
     assert posted["headers"]["Authorization"] == "Bearer sk-test"
     assert posted["data"]["model"] == "gpt-image-2"
     assert posted["data"]["prompt"] == "make a cover"
