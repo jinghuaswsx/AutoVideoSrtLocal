@@ -428,6 +428,7 @@ def list_task_center_items(
     page_size: int,
     bucket: str = "",
     task_id: int | None = None,
+    task_type: str = "",
     parent_only: bool = False,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
@@ -441,6 +442,12 @@ def list_task_center_items(
         raise ValueError("invalid tab")
     if parent_only:
         where.append("t.parent_task_id IS NULL")
+    if task_type == "raw":
+        where.append("t.parent_task_id IS NULL")
+    elif task_type == "translate":
+        where.append("t.parent_task_id IS NOT NULL")
+    elif task_type:
+        raise ValueError("invalid task_type")
 
     if task_id:
         where.append("t.id=%s")

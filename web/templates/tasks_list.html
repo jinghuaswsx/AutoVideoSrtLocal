@@ -41,6 +41,7 @@
 .tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
 .tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
+.tc-select { min-width:120px; background:var(--tc-bg); color:var(--tc-fg); }
 .tc-btn { display:inline-flex; align-items:center; justify-content:center; height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg); cursor:pointer; font-size:13px; line-height:1.2; text-align:center; text-decoration:none; }
 .tc-btn:hover { background:var(--tc-bg-muted); }
 .tc-btn:disabled { background:var(--tc-bg-muted); border-color:var(--tc-border); color:var(--tc-fg-muted); cursor:not-allowed; opacity:.72; }
@@ -182,6 +183,7 @@
   .tc-subtab { white-space: nowrap; flex: 0 0 auto; }
   .tc-filters { gap: 8px; }
   .tc-filters #tcKeyword { width: 100% !important; flex: 1 1 100%; }
+  .tc-filters #tcTaskTypeFilter { flex: 0 0 auto; }
   .tc-filters #tcRefresh { flex: 0 0 auto; }
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
@@ -240,6 +242,11 @@
 
   <div class="tc-filters" id="tcFilters">
     <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
+    <select id="tcTaskTypeFilter" class="tc-input tc-select" aria-label="任务类型筛选">
+      <option value="all" selected>全部</option>
+      <option value="raw">去字幕任务</option>
+      <option value="translate">翻译任务</option>
+    </select>
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -983,6 +990,8 @@ document.querySelectorAll('[data-bucket]').forEach(btn => {
 });
 document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+document.getElementById('tcTaskTypeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcTaskTypeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
@@ -1006,10 +1015,12 @@ async function tcRender() {
 
 async function tcRenderTaskList(wrap, tab, bucket) {
   const kw = document.getElementById('tcKeyword').value.trim();
+  const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
   const params = new URLSearchParams({
     tab,
     keyword: kw,
     bucket,
+    task_type: taskType,
     page: String(TC_TASK_PAGE),
     page_size: String(TC_TASK_PAGE_SIZE),
   });

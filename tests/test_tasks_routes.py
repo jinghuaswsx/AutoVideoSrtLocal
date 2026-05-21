@@ -104,6 +104,21 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
+def test_task_center_overview_has_task_type_filter_before_refresh(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    select_pos = body.index('id="tcTaskTypeFilter"')
+    refresh_pos = body.index('id="tcRefresh"')
+    assert select_pos < refresh_pos
+    assert '<option value="all" selected>全部</option>' in body
+    assert '<option value="raw">去字幕任务</option>' in body
+    assert '<option value="translate">翻译任务</option>' in body
+    assert "tcTaskTypeFilter" in body
+    assert "task_type: taskType" in body
+    assert "tcTaskTypeFilter').addEventListener('keyup'" in body
+
+
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -237,7 +252,43 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "page": 3,
         "page_size": 100,
         "task_id": 44,
+        "task_type": "",
     }
+
+
+def test_api_list_delegates_task_type_filter(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&task_type=translate")
+
+    assert rsp.status_code == 200
+    assert captured["task_type"] == "translate"
+
+
+def test_api_list_rejects_invalid_task_type(authed_user_client_no_db, monkeypatch):
+    def fake_list_task_center_items(**kwargs):
+        raise AssertionError("invalid task_type should be rejected before service call")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&task_type=unknown")
+
+    assert rsp.status_code == 400
+    assert rsp.get_json()["error"] == "invalid task_type"
 
 
 def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_no_db, monkeypatch):

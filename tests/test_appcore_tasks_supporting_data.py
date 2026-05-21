@@ -519,6 +519,47 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
     )
 
 
+def test_list_task_center_items_filters_by_task_type(monkeypatch):
+    from appcore import tasks
+
+    captured = []
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_type="raw",
+    ) == {"items": [], "page": 1, "page_size": 20}
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_type="translate",
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.parent_task_id IS NULL" in captured[0]["sql"]
+    assert captured[0]["args"] == (20, 0)
+    assert "t.parent_task_id IS NOT NULL" in captured[1]["sql"]
+    assert captured[1]["args"] == (20, 0)
+
+
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
     from appcore import tasks
 
