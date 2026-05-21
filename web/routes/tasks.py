@@ -498,6 +498,32 @@ def api_parent_claim(tid: int):
     return _json_response({"ok": True, "raw_processing": raw_processing})
 
 
+@bp.route("/api/parent/<int:tid>/force_niuma_rerun", methods=["POST"])
+@login_required
+def api_parent_force_niuma_rerun(tid: int):
+    from appcore import task_raw_video_processing
+
+    try:
+        raw_processing = task_raw_video_processing.force_rerun_niuma_processing_for_parent_task(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
+    except task_raw_video_processing.RawVideoProcessingError as e:
+        return _json_response({"error": str(e)}, 400)
+    _audit_task_action(
+        tid,
+        "task_parent_force_niuma_rerun",
+        {
+            "subtitle_task_id": raw_processing.get("subtitle_task_id"),
+            "status": raw_processing.get("status"),
+        },
+    )
+    return _json_response({"ok": True, "raw_processing": raw_processing})
+
+
 @bp.route("/api/parent/<int:tid>/upload_done", methods=["POST"])
 @login_required
 def api_parent_upload_done(tid: int):

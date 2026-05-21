@@ -17,10 +17,57 @@ from pipeline.ffutil import probe_media_info
 
 WATCH_TIMEOUT_SECONDS = 10 * 60
 WATCH_INTERVAL_SECONDS = 10
+PARENT_RAW_IN_PROGRESS = "raw_in_progress"
+RERUN_ALLOWED_PARENT_STATUSES = {PARENT_RAW_IN_PROGRESS}
+RAW_NIUMA_LIFECYCLE_EVENT_TYPES = (
+    "raw_niuma_submitted",
+    "raw_niuma_done",
+    "raw_niuma_failed",
+    "raw_niuma_timeout",
+)
 
 
 class RawVideoProcessingError(RuntimeError):
     pass
+
+
+def force_rerun_niuma_processing_for_parent_task(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> dict:
+    payload = _load_parent_task_payload(int(task_id))
+    if not payload:
+        raise RawVideoProcessingError("parent task media item not found")
+    status = str(payload.get("status") or "").strip()
+    if status not in RERUN_ALLOWED_PARENT_STATUSES:
+        raise RawVideoProcessingError(f"parent task not rerunnable in status {status or 'unknown'}")
+    assignee_id = int(payload.get("assignee_id") or 0)
+    if assignee_id <= 0:
+        raise RawVideoProcessingError("parent task assignee required")
+    if not is_admin and assignee_id != int(actor_user_id):
+        raise PermissionError("only assignee or admin can force rerun")
+
+    previous_subtitle_task_id = _latest_subtitle_task_id(int(task_id))
+    execute(
+        "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+        "WHERE id=%s AND parent_task_id IS NULL",
+        (PARENT_RAW_IN_PROGRESS, int(task_id)),
+    )
+    event_payload = {"assignee_id": assignee_id}
+    if previous_subtitle_task_id:
+        event_payload["previous_subtitle_task_id"] = previous_subtitle_task_id
+    _write_event(
+        int(task_id),
+        "raw_niuma_force_rerun",
+        int(actor_user_id),
+        event_payload,
+    )
+    return start_niuma_processing_for_parent_task(
+        task_id=int(task_id),
+        actor_user_id=assignee_id,
+    )
 
 
 def start_niuma_processing_for_parent_task(
@@ -220,13 +267,42 @@ def attach_niuma_result_to_parent_task(
 
 def _load_parent_task_payload(task_id: int) -> dict | None:
     return query_one(
-        "SELECT t.id AS task_id, t.media_item_id, t.assignee_id, "
+        "SELECT t.id AS task_id, t.media_item_id, t.assignee_id, t.status, "
         "       i.filename, i.object_key "
         "FROM tasks t "
         "JOIN media_items i ON i.id=t.media_item_id "
         "WHERE t.id=%s AND t.parent_task_id IS NULL AND i.deleted_at IS NULL",
         (int(task_id),),
     )
+
+
+def _latest_subtitle_task_id(task_id: int) -> str:
+    placeholders = ", ".join(["%s"] * len(RAW_NIUMA_LIFECYCLE_EVENT_TYPES))
+    row = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s "
+        f"AND event_type IN ({placeholders}) "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id), *RAW_NIUMA_LIFECYCLE_EVENT_TYPES),
+    )
+    payload = _parse_payload_json(row.get("payload_json") if row else None)
+    raw = payload.get("subtitle_task_id") or payload.get("task_id") or ""
+    return str(raw or "").strip()
+
+
+def _parse_payload_json(raw) -> dict:
+    value = raw
+    for _ in range(2):
+        if not isinstance(value, str):
+            break
+        text = value.strip()
+        if not text or text[0] not in "{[\"":
+            break
+        try:
+            value = json.loads(text)
+        except (TypeError, ValueError):
+            break
+    return value if isinstance(value, dict) else {}
 
 
 def _resolve_media_item_path(object_key: str) -> Path:

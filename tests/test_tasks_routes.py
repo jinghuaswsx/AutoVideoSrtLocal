@@ -125,6 +125,16 @@ def test_task_center_niuma_step_uses_status_only_and_centered_detail_button(auth
     assert "String(event && event.event_type || '') !== 'raw_niuma_submitted'" in body
 
 
+def test_task_center_parent_detail_exposes_force_niuma_rerun_button(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "强制重跑" in body
+    assert "tcCanForceRerunNiuma" in body
+    assert "tcForceRerunNiuma" in body
+    assert "force_niuma_rerun" in body
+
+
 def test_task_center_does_not_jump_to_legacy_raw_pool_page(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -892,6 +902,43 @@ def test_parent_action_routes_registered_admin(authed_client_no_db):
     # bind_item — needs DB; just verify route registered
     rsp = authed_client_no_db.patch("/tasks/api/parent/9999/bind_item", json={"media_item_id": 1})
     assert rsp.status_code in (200, 400, 403, 404, 500)
+
+
+def test_parent_force_niuma_rerun_delegates_to_processing_service(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+    audit_calls = []
+
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.force_rerun_niuma_processing_for_parent_task",
+        lambda **kwargs: captured.update(kwargs) or {
+            "status": "submitted",
+            "subtitle_task_id": "tcraw-new",
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/parent/44/force_niuma_rerun")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {
+        "ok": True,
+        "raw_processing": {"status": "submitted", "subtitle_task_id": "tcraw-new"},
+    }
+    assert captured == {"task_id": 44, "actor_user_id": 1, "is_admin": True}
+    assert audit_calls == [
+        (
+            44,
+            "task_parent_force_niuma_rerun",
+            {"subtitle_task_id": "tcraw-new", "status": "submitted"},
+        )
+    ]
 
 
 def test_parent_approve_allows_non_admin_service_authorized_assignee(

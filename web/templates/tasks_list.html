@@ -552,6 +552,7 @@ const TC_EVENT_TEXT = {
   created: { title: '创建任务', progress: '已指派/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
   claimed: { title: '去字幕原始视频素材任务接手', progress: '去字幕原始视频素材处理中', tone: 'info', summary: '处理人已接手去字幕原始视频素材处理。' },
   raw_niuma_submitted: { title: '提交牛马去字幕', progress: '自动去字幕中', tone: 'info', summary: '原始视频已提交到牛马去字幕流程。' },
+  raw_niuma_force_rerun: { title: '强制重跑牛马去字幕', progress: '已重新提交', tone: 'warning', summary: '用户已要求当前去字幕任务从头重新跑一遍。' },
   raw_niuma_done: { title: '牛马去字幕完成', progress: '等待提交审核', tone: 'success', summary: '自动去字幕已完成，可以进入原始视频审核。' },
   raw_niuma_failed: { title: '牛马去字幕失败', progress: '需要人工处理', tone: 'danger', summary: '自动去字幕没有成功，需要查看失败原因或改走手动上传。' },
   raw_niuma_timeout: { title: '牛马去字幕超时', progress: '需要人工确认', tone: 'danger', summary: '自动去字幕等待超时，需要确认外部任务状态。' },
@@ -580,6 +581,8 @@ function tcEventFacts(payload, event) {
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
   add('原始素材 ID', payload.raw_source_id);
+  add('处理人', tcEventPayloadUserDisplay(event, payload, 'assignee_id'));
+  add('上次字幕任务', payload.previous_subtitle_task_id);
   add('处理阶段', payload.stage);
   add('文件', payload.filename || tcExtractFilenameFromError(payload.error));
   add('文件大小', tcFormatBytes(payload.new_size || payload.size));
@@ -1522,6 +1525,9 @@ function tcDetailButtons(task, isParent) {
   const status = task.status;
   const btns = [];
   if (isParent) {
+    if (tcCanForceRerunNiuma(task, isParent)) {
+      btns.push(`<button class="tc-btn" onclick="tcForceRerunNiuma(${id})">强制重跑</button>`);
+    }
     if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
     }
@@ -1548,6 +1554,13 @@ function tcDetailButtons(task, isParent) {
   return btns.join('');
 }
 
+function tcCanForceRerunNiuma(task, isParent) {
+  if (!isParent || !task) return false;
+  if (String(task.status || '') !== 'raw_in_progress') return false;
+  const assigneeId = Number(task.assignee_id || 0);
+  return !!(TC_IS_ADMIN || (assigneeId && assigneeId === Number(TC_CURRENT_USER_ID || 0)));
+}
+
 async function tcAction(kind, id, action) {
   try {
     await tcFetchJson(`/tasks/api/${kind}/${id}/${action}`, {method:'POST', body:'{}'});
@@ -1559,6 +1572,20 @@ async function tcAction(kind, id, action) {
     } else {
       alert(action + ' 失败：' + e.message);
     }
+  }
+}
+
+async function tcForceRerunNiuma(id) {
+  if (!confirm('确认强制重跑牛马去字幕？系统会保留旧记录，并重新提交一条新的去字幕任务。')) return;
+  try {
+    await tcFetchJson('/tasks/api/parent/' + encodeURIComponent(id) + '/force_niuma_rerun', {
+      method: 'POST',
+      body: '{}',
+    });
+    tcRender();
+    if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
+  } catch (e) {
+    alert('强制重跑失败：' + (e.message || 'unknown'));
   }
 }
 

@@ -215,6 +215,86 @@ def test_start_niuma_processing_rejects_runner_start_failure(monkeypatch, tmp_pa
         )
 
 
+def test_force_rerun_niuma_resets_parent_and_starts_as_assignee(monkeypatch):
+    from appcore import task_raw_video_processing as processing
+
+    events = []
+    executed = []
+    started = []
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_item_id": 11,
+            "assignee_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
+        },
+    )
+    monkeypatch.setattr(processing, "_latest_subtitle_task_id", lambda task_id: "tcraw-old")
+    monkeypatch.setattr(processing, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+    monkeypatch.setattr(
+        processing,
+        "_write_event",
+        lambda task_id, event_type, actor_user_id, payload=None: events.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+    monkeypatch.setattr(
+        processing,
+        "start_niuma_processing_for_parent_task",
+        lambda **kwargs: started.append(kwargs) or {
+            "status": "submitted",
+            "subtitle_task_id": "tcraw-new",
+        },
+    )
+
+    result = processing.force_rerun_niuma_processing_for_parent_task(
+        task_id=5,
+        actor_user_id=1,
+        is_admin=True,
+    )
+
+    assert executed[0][1] == (processing.PARENT_RAW_IN_PROGRESS, 5)
+    assert events == [
+        (
+            5,
+            "raw_niuma_force_rerun",
+            1,
+            {"previous_subtitle_task_id": "tcraw-old", "assignee_id": 9},
+        )
+    ]
+    assert started == [{"task_id": 5, "actor_user_id": 9}]
+    assert result == {"status": "submitted", "subtitle_task_id": "tcraw-new"}
+
+
+def test_force_rerun_niuma_rejects_non_assignee(monkeypatch):
+    from appcore import task_raw_video_processing as processing
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_item_id": 11,
+            "assignee_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
+        },
+    )
+
+    with pytest.raises(PermissionError, match="only assignee or admin can force rerun"):
+        processing.force_rerun_niuma_processing_for_parent_task(
+            task_id=5,
+            actor_user_id=3,
+            is_admin=False,
+        )
+
+
 def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatch, tmp_path):
     from appcore import task_raw_video_processing as processing
     from appcore import tasks
