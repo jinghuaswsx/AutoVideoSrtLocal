@@ -437,9 +437,30 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     monkeypatch.setattr(
         tasks,
         "_find_target_lang_item",
-        lambda product_id, lang: {"id": 5, "product_id": product_id, "lang": lang},
+        lambda product_id, lang: {
+            "id": 5,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": "robot-kit-de.mp4",
+            "display_name": "德语视频",
+            "object_key": "1/medias/9/robot kit de.mp4",
+            "cover_object_key": "1/medias/9/robot-kit-de-cover.jpg",
+            "file_size": 10485760,
+        },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(
+        tasks,
+        "_copywriting_evidence",
+        lambda product_id, lang: [
+            {
+                "type": "text",
+                "label": "文案 1",
+                "title": "Roboter Bausatz",
+                "body": "Ein Lernspielzeug fuer Kinder.",
+            }
+        ],
+    )
     monkeypatch.setattr(
         pushes,
         "compute_readiness",
@@ -451,6 +472,9 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "is_listed": True,
             "lang_supported": True,
             "shopify_image_confirmed": True,
+            "shopify_image_domain_details": [
+                {"domain": "newjoyloo.com", "confirmed": True, "reason": ""}
+            ],
         },
     )
     monkeypatch.setattr(pushes, "is_ready", lambda readiness: True)
@@ -463,6 +487,14 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "source_count": 3,
             "target_count": 0,
             "reason": "英文详情图 3 张，目标语种详情图 0 张",
+            "evidence": [
+                {
+                    "type": "image",
+                    "label": "详情图 1",
+                    "url": "/medias/detail-image/301",
+                    "filename": "de-detail-1.jpg",
+                }
+            ],
         },
     )
     monkeypatch.setattr(
@@ -486,111 +518,76 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     )
 
     payload = tasks.get_child_readiness(44)
-    assert payload == {
-        "ready": False,
-        "missing": ["detail_images", "product_links"],
-        "readiness": {
-            "has_object": True,
-            "has_cover": True,
-            "has_copywriting": True,
-            "has_push_texts": True,
-            "is_listed": True,
-            "lang_supported": True,
-            "shopify_image_confirmed": True,
-        },
-        "country_code": "DE",
-        "product_code": "robot-kit-rjc",
-        "media_item_id": 5,
-        "media_search_url": (
-            "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
-        ),
-        "checks": [
-            {
-                "key": "localized_media_item",
-                "label": "目标语种素材",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "translated_video",
-                "label": "视频翻译结果",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "translated_cover",
-                "label": "封面翻译结果",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "translated_copywriting",
-                "label": "文案翻译结果",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "push_texts",
-                "label": "推送文案格式",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "product_listed",
-                "label": "商品在架状态",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "language_supported",
-                "label": "广告语言配置",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "detail_images",
-                "label": "产品详情图翻译",
-                "ok": False,
-                "required": True,
-                "reason": "英文详情图 3 张，目标语种详情图 0 张",
-                "source_count": 3,
-                "target_count": 0,
-            },
-            {
-                "key": "shopify_images",
-                "label": "链接商品图替换",
-                "ok": True,
-                "required": True,
-                "reason": "",
-            },
-            {
-                "key": "product_links",
-                "label": "商品链接探活",
-                "ok": False,
-                "required": True,
-                "reason": "newjoyloo.com 未探活",
-                "links": [
-                    {
-                        "domain": "newjoyloo.com",
-                        "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
-                        "ok": False,
-                        "error": "missing_probe",
-                        "http_status": None,
-                        "checked_at": "",
-                    }
-                ],
-            },
-        ],
+    assert payload["ready"] is False
+    assert payload["missing"] == ["detail_images", "product_links"]
+    assert payload["country_code"] == "DE"
+    assert payload["product_code"] == "robot-kit-rjc"
+    assert payload["media_item_id"] == 5
+    assert payload["media_search_url"] == (
+        "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+    )
+    assert payload["readiness"] == {
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "has_push_texts": True,
+        "is_listed": True,
+        "lang_supported": True,
+        "shopify_image_confirmed": True,
     }
     assert payload["checks"][7]["key"] == "detail_images"
     assert payload["checks"][9]["key"] == "product_links"
+    checks = {check["key"]: check for check in payload["checks"]}
+    assert checks["localized_media_item"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "打开目标语种素材",
+            "url": (
+                "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+            ),
+            "meta": "media_item #5",
+        }
+    ]
+    assert checks["translated_video"]["evidence"][0] == {
+        "type": "video",
+        "label": "视频翻译结果",
+        "url": "/medias/object?object_key=1%2Fmedias%2F9%2Frobot%20kit%20de.mp4",
+        "filename": "robot-kit-de.mp4",
+        "display_name": "德语视频",
+        "file_size": 10485760,
+        "lang": "de",
+        "media_item_id": 5,
+    }
+    assert checks["translated_cover"]["evidence"][0] == {
+        "type": "image",
+        "label": "封面翻译结果",
+        "url": "/medias/item-cover/5",
+        "filename": "robot-kit-de-cover.jpg",
+        "display_name": "robot-kit-de-cover.jpg",
+        "file_size": None,
+        "lang": "de",
+        "media_item_id": 5,
+    }
+    assert checks["translated_copywriting"]["evidence"][0]["title"] == "Roboter Bausatz"
+    assert checks["detail_images"]["evidence"][0]["url"] == "/medias/detail-image/301"
+    assert checks["shopify_images"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "newjoyloo.com 商品图替换",
+            "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+            "ok": True,
+            "meta": "已确认",
+        }
+    ]
+    assert checks["product_links"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "newjoyloo.com 商品链接",
+            "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+            "ok": False,
+            "meta": "missing_probe",
+        }
+    ]
 
 
 def test_bind_parent_media_item_validates_product_and_updates(monkeypatch):

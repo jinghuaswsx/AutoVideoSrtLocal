@@ -71,6 +71,11 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "function tcRenderCurrentReviewEntry" in source
     assert "function tcRenderReviewAssetList" in source
     assert "function tcRenderReviewAsset" in source
+    assert "function tcRenderReadinessEvidence" in source
+    assert "function tcRenderReadinessEvidenceItem" in source
+    assert "<video class=\"tc-readiness-video\"" in source
+    assert "tc-readiness-image" in source
+    assert "tc-readiness-link" in source
     assert "tcRenderEventTimeline(events, reviewAssets)" in source
     assert "<video class=\"tc-review-video\"" in source
     assert "当前审核内容" in source

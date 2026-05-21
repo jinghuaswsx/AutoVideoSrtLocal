@@ -1002,23 +1002,27 @@ def _review_video_asset(
         "filename": filename,
         "display_name": item.get("display_name") or filename,
         "file_size": item.get("file_size"),
-        "lang": item.get("lang"),
+        "lang": str(item.get("lang") or "").strip().lower(),
         "media_item_id": item.get("id"),
     }
 
 
-def _review_item_cover_asset(item: dict | None) -> dict | None:
+def _review_item_cover_asset(
+    item: dict | None,
+    *,
+    label: str = "封面",
+) -> dict | None:
     if not item or not item.get("cover_object_key"):
         return None
     filename = _review_object_filename(item.get("cover_object_key"))
     return {
         "type": "image",
-        "label": "封面",
+        "label": label,
         "url": f"/medias/item-cover/{int(item['id'])}",
         "filename": filename,
         "display_name": filename or "封面",
         "file_size": None,
-        "lang": item.get("lang"),
+        "lang": str(item.get("lang") or "").strip().lower(),
         "media_item_id": item.get("id"),
     }
 
@@ -1036,6 +1040,134 @@ def _review_detail_image_asset(row: dict, index: int) -> dict:
         "height": row.get("height"),
         "detail_image_id": row.get("id"),
     }
+
+
+def _evidence_link(
+    *,
+    label: str,
+    url: str,
+    meta: str = "",
+    ok: bool | None = None,
+) -> dict:
+    payload = {
+        "type": "link",
+        "label": label,
+        "url": url,
+    }
+    if meta:
+        payload["meta"] = meta
+    if ok is not None:
+        payload["ok"] = bool(ok)
+    return payload
+
+
+def _evidence_status(*, label: str, meta: str, ok: bool | None = None) -> dict:
+    payload = {
+        "type": "status",
+        "label": label,
+        "meta": meta,
+    }
+    if ok is not None:
+        payload["ok"] = bool(ok)
+    return payload
+
+
+def _compact_evidence_text(value: Any, *, limit: int = 180) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _copywriting_evidence(product_id: int, lang: str) -> list[dict]:
+    from appcore import medias
+
+    rows = medias.list_copywritings(int(product_id), (lang or "").strip().lower()) or []
+    evidence: list[dict] = []
+    for index, row in enumerate(rows[:3], start=1):
+        title = _compact_evidence_text(row.get("title") or row.get("ad_title") or "")
+        body = _compact_evidence_text(
+            row.get("body")
+            or row.get("description")
+            or row.get("ad_body")
+            or row.get("primary_text")
+            or ""
+        )
+        evidence.append(
+            {
+                "type": "text",
+                "label": f"文案 {index}",
+                "title": title,
+                "body": body,
+            }
+        )
+    return evidence
+
+
+def _evidence_if(items: list[dict]) -> dict:
+    return {"evidence": items} if items else {}
+
+
+def _link_rows_by_domain(link_status: dict) -> dict[str, dict]:
+    rows = link_status.get("links") if isinstance(link_status, dict) else []
+    result: dict[str, dict] = {}
+    for row in rows or []:
+        domain = str(row.get("domain") or "").strip().lower()
+        if domain:
+            result[domain] = row
+    return result
+
+
+def _shopify_image_evidence(readiness: dict, link_status: dict) -> list[dict]:
+    details = (readiness or {}).get("shopify_image_domain_details") or []
+    if not details:
+        reason = str((readiness or {}).get("shopify_image_reason") or "").strip()
+        if not reason:
+            return []
+        return [
+            _evidence_status(
+                label="商品图替换",
+                meta=reason,
+                ok=bool((readiness or {}).get("shopify_image_confirmed")),
+            )
+        ]
+
+    links_by_domain = _link_rows_by_domain(link_status)
+    evidence: list[dict] = []
+    for detail in details:
+        domain = str(detail.get("domain") or "").strip().lower()
+        confirmed = bool(detail.get("confirmed"))
+        meta = "已确认" if confirmed else str(detail.get("reason") or "未完成").strip()
+        link = links_by_domain.get(domain) or {}
+        url = str(link.get("url") or "").strip()
+        label = f"{domain} 商品图替换" if domain else "商品图替换"
+        if url:
+            evidence.append(_evidence_link(label=label, url=url, meta=meta, ok=confirmed))
+        else:
+            evidence.append(_evidence_status(label=label, meta=meta, ok=confirmed))
+    return evidence
+
+
+def _product_link_evidence(link_status: dict) -> list[dict]:
+    evidence: list[dict] = []
+    for link in (link_status or {}).get("links") or []:
+        url = str(link.get("url") or "").strip()
+        if not url:
+            continue
+        domain = str(link.get("domain") or "").strip()
+        ok = bool(link.get("ok"))
+        meta = "ok" if ok else str(
+            link.get("error") or link.get("http_status") or "not_ready"
+        )
+        evidence.append(
+            _evidence_link(
+                label=f"{domain} 商品链接" if domain else "商品链接",
+                url=url,
+                meta=meta,
+                ok=ok,
+            )
+        )
+    return evidence
 
 
 def _review_step(
@@ -1240,6 +1372,10 @@ def _detail_images_status(product_id: int, lang: str) -> dict:
         "source_count": source_count,
         "target_count": target_count,
         "reason": reason,
+        "evidence": [
+            _review_detail_image_asset(row, index)
+            for index, row in enumerate(target_rows[:6], start=1)
+        ],
     }
 
 
@@ -1311,6 +1447,7 @@ def _child_acceptance_payload(
     item: dict | None,
     product: dict | None,
     readiness: dict,
+    include_evidence: bool = True,
 ) -> dict:
     product_id = int(row["media_product_id"])
     lang = (row.get("country_code") or "").strip().lower()
@@ -1321,6 +1458,12 @@ def _child_acceptance_payload(
     )
 
     if not item:
+        media_search_url = _medias_search_url(
+            product_code=product_code,
+            task_id=task_id,
+            product_id=product_id,
+            lang=lang,
+        )
         checks = [
             _acceptance_check(
                 "localized_media_item",
@@ -1336,47 +1479,112 @@ def _child_acceptance_payload(
             "checks": checks,
             "country_code": row["country_code"],
             "product_code": product_code,
-            "media_search_url": _medias_search_url(
-                product_code=product_code,
-                task_id=task_id,
-                product_id=product_id,
-                lang=lang,
-            ),
+            "media_search_url": media_search_url,
         }
 
+    media_search_url = _medias_search_url(
+        product_code=product_code,
+        task_id=task_id,
+        product_id=product_id,
+        lang=lang,
+    )
     detail_status = _detail_images_status(product_id, lang)
     link_status = _product_link_availability_status(product_id, lang, product)
+    video_asset = _review_video_asset(item, label="视频翻译结果") if include_evidence else None
+    cover_asset = (
+        _review_item_cover_asset(item, label="封面翻译结果")
+        if include_evidence
+        else None
+    )
+    copywriting_evidence = (
+        _copywriting_evidence(product_id, lang) if include_evidence else []
+    )
+    shopify_evidence = (
+        _shopify_image_evidence(readiness, link_status) if include_evidence else []
+    )
+    product_link_evidence = (
+        _product_link_evidence(link_status) if include_evidence else []
+    )
     checks = [
-        _acceptance_check("localized_media_item", "目标语种素材", True),
+        _acceptance_check(
+            "localized_media_item",
+            "目标语种素材",
+            True,
+            **_evidence_if(
+                [
+                    _evidence_link(
+                        label="打开目标语种素材",
+                        url=media_search_url,
+                        meta=f"media_item #{int(item['id'])}",
+                    )
+                ]
+            ),
+        ),
         _acceptance_check(
             "translated_video",
             "视频翻译结果",
             _readiness_bool(readiness, "has_object"),
+            **_evidence_if([video_asset] if video_asset else []),
         ),
         _acceptance_check(
             "translated_cover",
             "封面翻译结果",
             _readiness_bool(readiness, "has_cover"),
+            **_evidence_if([cover_asset] if cover_asset else []),
         ),
         _acceptance_check(
             "translated_copywriting",
             "文案翻译结果",
             _readiness_bool(readiness, "has_copywriting"),
+            **_evidence_if(copywriting_evidence),
         ),
         _acceptance_check(
             "push_texts",
             "推送文案格式",
             _readiness_bool(readiness, "has_push_texts"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="推送文案格式",
+                        meta="英文三段文案可解析"
+                        if _readiness_bool(readiness, "has_push_texts")
+                        else "英文三段文案不可解析",
+                        ok=_readiness_bool(readiness, "has_push_texts"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "product_listed",
             "商品在架状态",
             _readiness_bool(readiness, "is_listed"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="商品在架状态",
+                        meta="已在架"
+                        if _readiness_bool(readiness, "is_listed")
+                        else "未在架",
+                        ok=_readiness_bool(readiness, "is_listed"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "language_supported",
             "广告语言配置",
             _readiness_bool(readiness, "lang_supported"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="广告语言配置",
+                        meta=f"{str(row['country_code']).upper()} 已配置"
+                        if _readiness_bool(readiness, "lang_supported")
+                        else f"{str(row['country_code']).upper()} 未配置",
+                        ok=_readiness_bool(readiness, "lang_supported"),
+                    )
+                ]
+            ),
         ),
         _acceptance_check(
             "detail_images",
@@ -1386,12 +1594,14 @@ def _child_acceptance_payload(
             reason=detail_status.get("reason") or "",
             source_count=int(detail_status.get("source_count") or 0),
             target_count=int(detail_status.get("target_count") or 0),
+            **_evidence_if(detail_status.get("evidence") or []),
         ),
         _acceptance_check(
             "shopify_images",
             "链接商品图替换",
             _readiness_bool(readiness, "shopify_image_confirmed"),
             reason=(readiness or {}).get("shopify_image_reason") or "",
+            **_evidence_if(shopify_evidence),
         ),
         _acceptance_check(
             "product_links",
@@ -1400,6 +1610,7 @@ def _child_acceptance_payload(
             required=bool(link_status.get("required")),
             reason=link_status.get("reason") or "",
             links=link_status.get("links") or [],
+            **_evidence_if(product_link_evidence),
         ),
     ]
     missing = [
@@ -1419,12 +1630,7 @@ def _child_acceptance_payload(
         "country_code": row["country_code"],
         "product_code": product_code,
         "media_item_id": item["id"],
-        "media_search_url": _medias_search_url(
-            product_code=product_code,
-            task_id=task_id,
-            product_id=product_id,
-            lang=lang,
-        ),
+        "media_search_url": media_search_url,
     }
 
 
@@ -1560,6 +1766,7 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
         item=item,
         product=product,
         readiness=readiness,
+        include_evidence=False,
     )
     if not payload["ready"]:
         missing = payload["missing"]
