@@ -2,6 +2,7 @@ def test_index_renders(authed_client_no_db):
     rsp = authed_client_no_db.get("/raw-video-pool/")
     assert rsp.status_code == 200
     assert "去字幕原始视频素材处理".encode("utf-8") in rsp.data
+    assert "处理人在这里认领任务".encode("utf-8") not in rsp.data
 
 
 def test_index_requires_login():
