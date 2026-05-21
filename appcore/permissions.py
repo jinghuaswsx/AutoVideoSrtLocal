@@ -61,7 +61,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("image_translate",       GROUP_BUSINESS,   "图片翻译",         True,  True),
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
     ("pushes",                GROUP_BUSINESS,   "推送管理",         True,  True),
-    ("task_center",           GROUP_BUSINESS,   "小语种视频翻译",   True,  True),
+    ("task_center",           GROUP_BUSINESS,   "任务中心",         True,  True),
     ("raw_video_pool",        GROUP_BUSINESS,   "去字幕原始视频素材处理", True,  True),
     ("projects",              GROUP_BUSINESS,   "视频翻译",         True,  True),
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
