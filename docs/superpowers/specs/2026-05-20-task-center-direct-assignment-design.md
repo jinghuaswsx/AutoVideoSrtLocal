@@ -50,7 +50,7 @@
 ### `POST /tasks/api/parent`
 
 - 新增必填参数：`raw_processor_id`
-- 校验该用户具备 `can_process_raw_video`
+- 创建直指派链路校验该用户在“翻译工作”人员范围内；旧 `claim` 兼容入口仍沿用 `can_process_raw_video`。
 
 ### `tasks_list.html`
 

@@ -122,6 +122,16 @@
 .tc-review-image-link { display:block; }
 .tc-review-image { display:block; width:100%; max-height:260px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
 .tc-review-asset-meta { margin-top:6px; font-size:12px; color:var(--tc-fg-muted); overflow-wrap:anywhere; }
+.tc-readiness-evidence { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:8px 0 2px 20px; }
+.tc-readiness-evidence-item { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; color:var(--tc-fg); }
+.tc-readiness-evidence-item.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
+.tc-readiness-link { display:inline-flex; max-width:100%; color:var(--tc-accent); font-weight:700; overflow-wrap:anywhere; }
+.tc-readiness-video { display:block; width:100%; max-height:300px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-readiness-image-link { display:block; }
+.tc-readiness-image { display:block; width:100%; max-height:220px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
+.tc-readiness-meta { margin-top:5px; color:var(--tc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.tc-readiness-title { font-weight:700; color:var(--tc-fg); margin-bottom:3px; overflow-wrap:anywhere; }
+.tc-readiness-body { color:var(--tc-fg-muted); line-height:1.45; overflow-wrap:anywhere; }
 .tc-niuma-panel { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
@@ -136,6 +146,7 @@
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
   .tc-event-facts { grid-template-columns:1fr; }
   .tc-review-grid { grid-template-columns:1fr; }
+  .tc-readiness-evidence { grid-template-columns:1fr; }
   .tc-niuma-meta,
   .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
 }
@@ -207,7 +218,7 @@
   </div>
 
   <div class="tc-filters" id="tcFilters">
-    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名" style="width:240px;">
+    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -525,6 +536,67 @@ function tcRenderReviewAssetList(stepAssets) {
     + '<div class="tc-review-assets-head">' + badge + '<span>' + tcEsc(stepAssets.title || '步骤产物') + '</span></div>'
     + body
     + '</div>';
+}
+function tcReadinessEvidenceClass(item) {
+  if (item && item.ok === false) return ' is-bad';
+  return '';
+}
+function tcReadinessEvidenceMeta(item) {
+  const parts = [];
+  if (item && item.meta) parts.push(item.meta);
+  if (item && item.filename) parts.push(item.filename);
+  if (item && item.file_size !== undefined && item.file_size !== null && item.file_size !== '') {
+    const size = tcFormatBytes(item.file_size);
+    if (size) parts.push(size);
+  }
+  if (item && item.lang) parts.push(tcLanguageLabel(item.lang));
+  return parts.join(' · ');
+}
+function tcRenderReadinessEvidenceItem(item) {
+  const type = String((item && item.type) || '').trim();
+  const url = String((item && item.url) || '').trim();
+  const label = tcEsc((item && item.label) || '产物');
+  const meta = tcEsc(tcReadinessEvidenceMeta(item || {}));
+  const className = 'tc-readiness-evidence-item' + tcReadinessEvidenceClass(item);
+  const metaHtml = meta ? '<div class="tc-readiness-meta">' + meta + '</div>' : '';
+  if (type === 'video' && url) {
+    return '<div class="' + className + '">'
+      + '<video class="tc-readiness-video" controls preload="metadata" src="' + tcAttr(url) + '"></video>'
+      + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+      + '</div>';
+  }
+  if (type === 'image' && url) {
+    return '<div class="' + className + '">'
+      + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+      + '<img class="tc-readiness-image" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
+      + '</a>'
+      + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+      + '</div>';
+  }
+  if (type === 'link' && url) {
+    return '<div class="' + className + '">'
+      + '<a class="tc-readiness-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">' + label + '</a>'
+      + metaHtml
+      + '</div>';
+  }
+  if (type === 'text') {
+    const title = String((item && item.title) || '').trim();
+    const body = String((item && item.body) || '').trim();
+    return '<div class="' + className + '">'
+      + '<div class="tc-readiness-title">' + label + (title ? ' · ' + tcEsc(title) : '') + '</div>'
+      + (body ? '<div class="tc-readiness-body">' + tcEsc(body) + '</div>' : '')
+      + metaHtml
+      + '</div>';
+  }
+  return '<div class="' + className + '">'
+    + '<div class="tc-readiness-title">' + label + '</div>'
+    + metaHtml
+    + '</div>';
+}
+function tcRenderReadinessEvidence(evidence) {
+  const items = Array.isArray(evidence) ? evidence : [];
+  if (!items.length) return '';
+  return '<div class="tc-readiness-evidence">' + items.map(tcRenderReadinessEvidenceItem).join('') + '</div>';
 }
 function tcSubtitleRemovalBadgeClass(status) {
   const key = String(status || '').trim();
@@ -892,7 +964,7 @@ async function tcOpenCreateModal(pid, pname, ownerId) {
       <div style="margin-bottom:12px;">
         <label>原视频处理人：</label>
         <select id="tcCreateRawProcessor" class="tc-input" style="width:100%;">
-          ${rawOpts || '<option value="">没有可用的原视频处理人（请确保有用户拥有 can_process_raw_video 权限）</option>'}
+          ${rawOpts || '<option value="">没有可用的原视频处理人（请确保有用户在翻译工作范围内）</option>'}
         </select>
       </div>
       <div style="margin-bottom:12px;">
@@ -956,8 +1028,11 @@ async function tcOpenDetail(id) {
   drawer.style.display = 'block';
   try {
     const cachedTask = TC_TASK_CACHE.get(Number(id || 0)) || null;
+    const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
+      + '&task_id=' + encodeURIComponent(String(id || ''))
+      + '&page_size=1';
     const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
-      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson('/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine') + '&page_size=100'),
+      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson(detailListUrl),
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
@@ -1011,7 +1086,8 @@ async function tcOpenDetail(id) {
                 ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
                 : '';
               const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
-              const links = Array.isArray(check.links) && check.links.length
+              const evidence = tcRenderReadinessEvidence(check.evidence || []);
+              const links = !evidence && Array.isArray(check.links) && check.links.length
                 ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
                     const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
                     return tcEsc(label);
@@ -1022,6 +1098,7 @@ async function tcOpenDetail(id) {
                 + '<div style="min-width:0; flex:1 1 260px;">'
                 + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
                 + reason + links
+                + evidence
                 + '</div>'
                 + actions
                 + '</div>';

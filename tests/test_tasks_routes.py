@@ -117,6 +117,8 @@ def test_task_create_modal_supports_per_language_assignments_and_owner_hint(auth
     assert "const rawOpts = rawProcessors.map" in body
     assert "原负责人：" in body
     assert "仅提示，不会自动带入" in body
+    assert "翻译工作范围" in body
+    assert "can_process_raw_video 权限" not in body
     assert "tcCreateTranslator_" in body
     assert "language_assignments[country] = translatorId;" in body
     assert "translator_id, raw_processor_id" not in body
@@ -165,7 +167,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
     )
 
     rsp = authed_user_client_no_db.get(
-        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&bucket=todo&page=3&page_size=150"
+        "/tasks/api/list?tab=mine&keyword=abc&status=in_progress&bucket=todo&page=3&page_size=150&task_id=44"
     )
 
     assert rsp.status_code == 200
@@ -183,7 +185,16 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "bucket": "todo",
         "page": 3,
         "page_size": 100,
+        "task_id": 44,
     }
+
+
+def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "task_id=' + encodeURIComponent(String(id || ''))" in body
+    assert "'&task_id='" in body
 
 
 def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):
@@ -271,6 +282,63 @@ def test_translation_work_users_route_returns_users(authed_client_no_db, monkeyp
     assert resp.get_json() == {"users": expected}
 
 
+def test_raw_processors_route_uses_translation_work_user_scope(authed_client_no_db, monkeypatch):
+    expected = [{"id": 10, "username": "gq", "display_name": "顾倩"}]
+    monkeypatch.setattr("web.routes.tasks.list_translation_work_users", lambda: expected)
+    monkeypatch.setattr(
+        "web.routes.tasks.list_raw_processors",
+        lambda: (_ for _ in ()).throw(AssertionError("raw processor scope should not be used")),
+        raising=False,
+    )
+
+    resp = authed_client_no_db.get("/tasks/api/raw-processors")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"users": expected}
+
+
+def test_create_parent_validates_raw_processor_with_translation_work_scope(authed_client_no_db, monkeypatch):
+    ensure_calls = []
+    audit_calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_translation_work_user",
+        lambda user_id: ensure_calls.append(user_id) or None,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_raw_processor_user",
+        lambda user_id: (_ for _ in ()).throw(AssertionError("raw processor permission should not be used")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: 123,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
+        lambda **kwargs: {"status": "submitted"},
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+            "raw_processor_id": 8,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert ensure_calls == [9, 8]
+    assert audit_calls[0][2]["raw_processor_id"] == 8
+
+
 def test_create_parent_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
     calls = []
     monkeypatch.setattr(
@@ -307,7 +375,6 @@ def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeyp
         "web.routes.tasks.ensure_translation_work_user",
         lambda user_id: ensure_calls.append(user_id) or None,
     )
-    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: None)
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.create_parent_task",
         lambda **kwargs: captured.update(kwargs) or 321,
@@ -342,7 +409,7 @@ def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeyp
         "raw_processor_id": 8,
         "created_by": 1,
     }
-    assert sorted(ensure_calls) == [9, 10]
+    assert sorted(ensure_calls) == [8, 9, 10]
     assert audit_calls == [
         (
             321,
@@ -360,8 +427,6 @@ def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeyp
 
 
 def test_create_parent_rejects_missing_language_assignments(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: None)
-
     resp = authed_client_no_db.post(
         "/tasks/api/parent",
         json={
@@ -467,8 +532,12 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
     audit_calls = []
     ensure_calls = []
 
-    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: ensure_calls.append(("translator", user_id)) or None)
-    monkeypatch.setattr("web.routes.tasks.ensure_raw_processor_user", lambda user_id: ensure_calls.append(("raw", user_id)) or None)
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: ensure_calls.append(("translation_work", user_id)) or None)
+    monkeypatch.setattr(
+        "web.routes.tasks.ensure_raw_processor_user",
+        lambda user_id: (_ for _ in ()).throw(AssertionError("raw processor permission should not be used")),
+        raising=False,
+    )
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.create_parent_task",
         lambda **kwargs: 123,
@@ -498,7 +567,7 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
         "parent_task_id": 123,
         "raw_processing": {"status": "submitted", "subtitle_task_id": "tcraw-123"},
     }
-    assert ensure_calls == [("translator", 9), ("raw", 8)]
+    assert ensure_calls == [("translation_work", 9), ("translation_work", 8)]
     assert audit_calls == [
         (123, "task_parent_created", {
             "media_product_id": 1,

@@ -1562,7 +1562,6 @@ async function mkiCheckRenderedButtons() {
 
 // mk-import: product owner and task assignment users
 const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
-const MKI_RAW_PROCESSORS_API = '/tasks/api/raw-processors';
 let mkiProductOwnerResolve = null;
 let mkiProductOwnersCache = null;
 
@@ -1577,12 +1576,6 @@ function mkiUserOption(user) {
 
 async function mkiFetchActiveUsers() {
   const r = await fetch(MKI_ACTIVE_USERS_API);
-  const data = await r.json();
-  return data.users || [];
-}
-
-async function mkiFetchRawProcessors() {
-  const r = await fetch(MKI_RAW_PROCESSORS_API);
   const data = await r.json();
   return data.users || [];
 }
@@ -2318,11 +2311,7 @@ async function mkiXiaoOpenModal(options = {}) {
       mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
     } catch (e) { mkiXiaoTranslatorsCache = []; }
   }
-  if (!mkiXiaoRawProcessorsCache) {
-    try {
-      mkiXiaoRawProcessorsCache = await mkiFetchRawProcessors();
-    } catch (e) { mkiXiaoRawProcessorsCache = []; }
-  }
+  mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
   if (!mkiXiaoTranslatorsCache.length) {
     alert('没有可用翻译工作用户');
     return null;

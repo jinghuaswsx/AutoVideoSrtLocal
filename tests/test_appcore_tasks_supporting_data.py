@@ -368,16 +368,84 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "source_mi.filename AS source_media_filename" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
     assert "u.display_name AS assignee_display_name" in captured["sql"]
-    assert "p.name LIKE %s" in captured["sql"]
-    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
+        "%Product%",
+        tasks.PARENT_RAW_DONE,
         tasks.PARENT_ALL_DONE,
         tasks.CHILD_DONE,
         5,
         5,
     )
+
+
+def test_list_task_center_items_done_bucket_includes_raw_done_and_product_code_search(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="multifunctional-roadside-safety-light-rjc",
+        high_status="",
+        bucket="done",
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        "%multifunctional-roadside-safety-light-rjc%",
+        "%multifunctional-roadside-safety-light-rjc%",
+        tasks.PARENT_RAW_DONE,
+        tasks.PARENT_ALL_DONE,
+        tasks.CHILD_DONE,
+        20,
+        0,
+    )
+
+
+def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_id=442,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.id=%s" in captured["sql"]
+    assert captured["args"] == (442, 20, 0)
 
 
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
@@ -484,11 +552,26 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "id": 5,
             "product_id": product_id,
             "lang": lang,
-            "object_key": "media/de/result.mp4",
-            "cover_object_key": "media/de/cover.jpg",
+            "filename": "robot-kit-de.mp4",
+            "display_name": "德语视频",
+            "object_key": "1/medias/9/robot kit de.mp4",
+            "cover_object_key": "1/medias/9/robot-kit-de-cover.jpg",
+            "file_size": 10485760,
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(
+        tasks,
+        "_copywriting_evidence",
+        lambda product_id, lang: [
+            {
+                "type": "text",
+                "label": "文案 1",
+                "title": "Roboter Bausatz",
+                "body": "Ein Lernspielzeug fuer Kinder.",
+            }
+        ],
+    )
     monkeypatch.setattr(
         pushes,
         "compute_readiness",
@@ -500,6 +583,9 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "is_listed": True,
             "lang_supported": True,
             "shopify_image_confirmed": True,
+            "shopify_image_domain_details": [
+                {"domain": "newjoyloo.com", "confirmed": True, "reason": ""}
+            ],
         },
     )
     monkeypatch.setattr(pushes, "is_ready", lambda readiness: True)
@@ -512,6 +598,14 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "source_count": 3,
             "target_count": 0,
             "reason": "英文详情图 3 张，目标语种详情图 0 张",
+            "evidence": [
+                {
+                    "type": "image",
+                    "label": "详情图 1",
+                    "url": "/medias/detail-image/301",
+                    "filename": "de-detail-1.jpg",
+                }
+            ],
         },
     )
     monkeypatch.setattr(
@@ -553,72 +647,120 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     )
 
     payload = tasks.get_child_readiness(44)
-    payload_without_checks = dict(payload)
-    checks = payload_without_checks.pop("checks")
-    assert payload_without_checks == {
-        "ready": False,
-        "missing": ["detail_images", "product_links"],
-        "readiness": {
-            "has_object": True,
-            "has_cover": True,
-            "has_copywriting": True,
-            "has_push_texts": True,
-            "is_listed": True,
-            "lang_supported": True,
-            "shopify_image_confirmed": True,
-        },
-        "country_code": "DE",
-        "product_code": "robot-kit-rjc",
-        "media_item_id": 5,
-        "media_search_url": (
-            "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
-        ),
+    assert payload["ready"] is False
+    assert payload["missing"] == ["detail_images", "product_links"]
+    assert payload["country_code"] == "DE"
+    assert payload["product_code"] == "robot-kit-rjc"
+    assert payload["media_item_id"] == 5
+    assert payload["media_search_url"] == (
+        "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+    )
+    assert payload["readiness"] == {
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "has_push_texts": True,
+        "is_listed": True,
+        "lang_supported": True,
+        "shopify_image_confirmed": True,
     }
-    by_key = {check["key"]: check for check in checks}
-    assert by_key["localized_media_item"]["ok"] is True
-    assert by_key["translated_video"]["actions"][0] == {
+    assert payload["checks"][7]["key"] == "detail_images"
+    assert payload["checks"][9]["key"] == "product_links"
+    checks = {check["key"]: check for check in payload["checks"]}
+    assert checks["localized_media_item"]["actions"][0]["url"].endswith("action=video&item=5")
+    assert checks["localized_media_item"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "打开目标语种素材",
+            "url": (
+                "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
+            ),
+            "meta": "media_item #5",
+        }
+    ]
+    assert checks["translated_video"]["evidence"][0] == {
+        "type": "video",
+        "label": "视频翻译结果",
+        "url": "/medias/object?object_key=1%2Fmedias%2F9%2Frobot%20kit%20de.mp4",
+        "filename": "robot-kit-de.mp4",
+        "display_name": "德语视频",
+        "file_size": 10485760,
+        "lang": "de",
+        "media_item_id": 5,
+    }
+    assert checks["translated_video"]["actions"][0] == {
         "label": "预览视频",
-        "url": "/medias/object?object_key=media%2Fde%2Fresult.mp4",
+        "url": "/medias/object?object_key=1%2Fmedias%2F9%2Frobot%20kit%20de.mp4",
         "kind": "preview",
         "primary": True,
     }
-    assert by_key["translated_video"]["actions"][1]["url"] == (
+    assert checks["translated_video"]["actions"][1]["url"] == (
         "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=video&item=5"
     )
-    assert by_key["translated_cover"]["actions"][0] == {
+    assert checks["translated_cover"]["evidence"][0] == {
+        "type": "image",
+        "label": "封面翻译结果",
+        "url": "/medias/item-cover/5",
+        "filename": "robot-kit-de-cover.jpg",
+        "display_name": "robot-kit-de-cover.jpg",
+        "file_size": None,
+        "lang": "de",
+        "media_item_id": 5,
+    }
+    assert checks["translated_cover"]["actions"][0] == {
         "label": "查看封面",
         "url": "/medias/item-cover/5",
         "kind": "preview",
         "primary": True,
     }
-    assert by_key["translated_cover"]["actions"][1]["url"].endswith("action=cover&item=5")
-    assert by_key["translated_copywriting"]["actions"][0]["url"].endswith("action=copywriting")
-    assert by_key["translated_copywriting"]["actions"][1] == {
+    assert checks["translated_cover"]["actions"][1]["url"].endswith("action=cover&item=5")
+    assert checks["translated_copywriting"]["evidence"][0]["title"] == "Roboter Bausatz"
+    assert checks["translated_copywriting"]["actions"][0]["url"].endswith("action=copywriting")
+    assert checks["translated_copywriting"]["actions"][1] == {
         "label": "查看文案翻译任务",
         "url": "/copywriting-translate/copy-1",
         "kind": "task",
     }
-    assert by_key["detail_images"]["source_count"] == 3
-    assert by_key["detail_images"]["target_count"] == 0
-    assert by_key["detail_images"]["actions"][0]["url"].endswith("action=detail_images")
-    assert by_key["detail_images"]["actions"][1:4] == [
+    assert checks["detail_images"]["evidence"][0]["url"] == "/medias/detail-image/301"
+    assert checks["detail_images"]["source_count"] == 3
+    assert checks["detail_images"]["target_count"] == 0
+    assert checks["detail_images"]["actions"][0]["url"].endswith("action=detail_images")
+    assert checks["detail_images"]["actions"][1:4] == [
         {"label": "查看详情图 1", "url": "/medias/detail-image/31", "kind": "preview"},
         {"label": "查看详情图 2", "url": "/medias/detail-image/32", "kind": "preview"},
         {"label": "查看详情图 3", "url": "/medias/detail-image/33", "kind": "preview"},
     ]
-    assert by_key["detail_images"]["actions"][4] == {
+    assert checks["detail_images"]["actions"][4] == {
         "label": "查看图片翻译任务",
         "url": "/image-translate/img-1",
         "kind": "task",
     }
-    assert by_key["shopify_images"]["actions"][0]["url"].endswith("action=product_links&focus=shopify_images")
-    assert by_key["product_links"]["actions"][0]["url"].endswith("action=product_links&focus=product_links")
-    assert by_key["product_links"]["actions"][1] == {
+    assert checks["shopify_images"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "newjoyloo.com 商品图替换",
+            "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+            "ok": True,
+            "meta": "已确认",
+        }
+    ]
+    assert checks["shopify_images"]["actions"][0]["url"].endswith("action=product_links&focus=shopify_images")
+    assert checks["product_links"]["evidence"] == [
+        {
+            "type": "link",
+            "label": "newjoyloo.com 商品链接",
+            "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
+            "ok": False,
+            "meta": "missing_probe",
+        }
+    ]
+    assert checks["product_links"]["actions"][0]["url"].endswith("action=product_links&focus=product_links")
+    assert checks["product_links"]["actions"][1] == {
         "label": "打开 newjoyloo.com",
         "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
         "kind": "external",
     }
-    assert list(by_key) == [
+    assert list(checks) == [
         "localized_media_item",
         "translated_video",
         "translated_cover",

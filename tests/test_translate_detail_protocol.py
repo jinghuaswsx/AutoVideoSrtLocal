@@ -101,33 +101,38 @@ def test_build_voice_library_payload_skips_merge_when_no_candidates():
 
 
 def test_build_voice_library_payload_includes_voice_ai_rankings():
-    payload = build_voice_library_payload(
-        state={
-            "target_lang": "de",
-            "steps": {"voice_match": "waiting"},
-            "voice_match_candidates": [
-                {"voice_id": "v1", "similarity": 0.91, "llm_rank": 2, "llm_reason_summary": "slightly flat"},
-            ],
-            "voice_ai_rankings": [
-                {"voice_id": "v1", "llm_rank": 2, "reason_summary": "slightly flat"},
-            ],
-            "voice_ai_rank_status": "done",
-            "voice_ai_rank_usage_log_id": 34567,
-            "voice_ai_rank_debug": {
-                "request": {"raw": {"model": "google/gemini-3.5-flash"}},
-                "result": {"raw": {"rankings": []}},
+    with patch(
+        "web.services.translate_detail_protocol.is_voice_ai_auto_select_enabled",
+        return_value=False,
+    ):
+        payload = build_voice_library_payload(
+            state={
+                "target_lang": "de",
+                "steps": {"voice_match": "waiting"},
+                "voice_match_candidates": [
+                    {"voice_id": "v1", "similarity": 0.91, "llm_rank": 2, "llm_reason_summary": "slightly flat"},
+                ],
+                "voice_ai_rankings": [
+                    {"voice_id": "v1", "llm_rank": 2, "reason_summary": "slightly flat"},
+                ],
+                "voice_ai_rank_status": "done",
+                "voice_ai_rank_usage_log_id": 34567,
+                "voice_ai_rank_debug": {
+                    "request": {"raw": {"model": "google/gemini-3.5-flash"}},
+                    "result": {"raw": {"rankings": []}},
+                },
             },
-        },
-        owner_user_id=1,
-        items=[{"voice_id": "v1", "name": "A"}],
-        total=1,
-    )
+            owner_user_id=1,
+            items=[{"voice_id": "v1", "name": "A"}],
+            total=1,
+        )
 
     assert payload["voice_ai_rankings"] == [
         {"voice_id": "v1", "llm_rank": 2, "reason_summary": "slightly flat"},
     ]
     assert payload["voice_ai_rank_status"] == "done"
     assert payload["voice_ai_rank_usage_log_id"] == 34567
+    assert payload["voice_ai_auto_select_enabled"] is False
     assert payload["voice_ai_rank_debug"]["request"]["raw"]["model"] == "google/gemini-3.5-flash"
     assert payload["candidates"][0]["llm_rank"] == 2
 

@@ -31,7 +31,7 @@
 2. 加入素材库进度弹窗、已入库素材卡片创建任务都提交 `raw_processor_id`。
 3. 现有单翻译员小弹窗不扩展为完整按语言独立分配 UI；勾选的所有语种先映射到同一个翻译负责人，生成 `language_assignments`。
 4. `translator_id` 继续保留在 payload 中，作为旧兼容字段和事件展示辅助。
-5. 原视频处理人从 `/tasks/api/raw-processors` 加载，创建前必须选择。
+5. 原视频处理人复用“翻译工作”人员范围，创建前必须选择。
 6. 创建任务确认后小语种弹窗不立即关闭，必须在弹窗内展示创建中、成功任务 ID/跳转入口，或失败请求与后端错误原因。
 
 ## 不做
@@ -39,15 +39,14 @@
 - 不改变任务中心完整创建弹窗，它已经支持按语言独立分配。
 - 不新增数据库字段或迁移。
 - 不自动补建本次失败的生产任务；数据修复与功能修复分开处理。
-- 不放宽后端对 `raw_processor_id` 的校验。
+- 不取消 `raw_processor_id` 必填；仅把候选与校验范围调整为“翻译工作”人员范围。
 
 ## 实现
 
 `web/templates/mk_selection.html`：
 
-1. 小语种弹窗加载两个用户列表：
-   - `/tasks/api/translation-work-users` 用于翻译负责人。
-   - `/tasks/api/raw-processors` 用于原视频处理人。
+1. 小语种弹窗加载 `/tasks/api/translation-work-users`，用于翻译负责人和原视频处理人两个下拉。
+   - `/tasks/api/raw-processors` 作为任务中心兼容接口，返回同一批“翻译工作”用户。
 2. 弹窗返回：
    - `translatorId`
    - `rawProcessorId`

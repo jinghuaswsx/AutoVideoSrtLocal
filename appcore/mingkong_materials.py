@@ -207,6 +207,27 @@ def _spend_from_row(row: dict[str, Any], key: str, metadata: dict[str, Any] | No
     return stored
 
 
+def _normalized_product_code(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _delta_from_previous_baseline(
+    *,
+    current_spend: float,
+    previous_spend: float | None,
+    product_code: Any,
+    previous_product_codes: set[str] | None,
+    has_previous_snapshot: bool,
+) -> float:
+    if previous_spend is not None:
+        return max(0.0, current_spend - previous_spend)
+    if not has_previous_snapshot or previous_product_codes is None:
+        return current_spend
+    if _normalized_product_code(product_code) in previous_product_codes:
+        return current_spend
+    return 0.0
+
+
 def _metadata_for_write(row: dict[str, Any]) -> dict[str, Any]:
     metadata = dict(row.get("mk_video_metadata") or {})
     spends_text = str(row.get("video_spends_text") or "").strip()
@@ -935,10 +956,17 @@ def build_top100_rows(
     current_rows: list[dict[str, Any]],
     previous_by_key: dict[str, dict[str, Any]],
     previous_top100_keys: set[str],
+    previous_product_codes: set[str] | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     resolved_snapshot_at = _coerce_datetime(snapshot_at) if snapshot_at else ""
     snapshot_slot = _snapshot_slot_for(resolved_snapshot_at) if resolved_snapshot_at else ""
+    normalized_previous_product_codes = (
+        {_normalized_product_code(item) for item in previous_product_codes if _normalized_product_code(item)}
+        if previous_product_codes is not None
+        else None
+    )
+    has_previous_snapshot = bool(previous_snapshot_date or previous_snapshot_at)
     ranked: list[dict[str, Any]] = []
     for current in current_rows:
         material_key = str(current.get("material_key") or "")
@@ -952,7 +980,13 @@ def build_top100_rows(
             if previous is None
             else _spend_from_row(previous, "cumulative_90_spend", _metadata_for_row(previous))
         )
-        delta = current_spend if previous_spend is None else max(0.0, current_spend - previous_spend)
+        delta = _delta_from_previous_baseline(
+            current_spend=current_spend,
+            previous_spend=previous_spend,
+            product_code=current.get("product_code"),
+            previous_product_codes=normalized_previous_product_codes,
+            has_previous_snapshot=has_previous_snapshot,
+        )
         row = dict(current)
         row["source_product_rank_position"] = _as_int(
             current.get("source_product_rank_position") or current.get("rank_position")
@@ -1200,15 +1234,19 @@ def _enrich_material_yesterday_delta(
         return items
 
     resolved_snapshot_at = _coerce_datetime(snapshot_at)
+    current_run = _snapshot_run_metadata(resolved_snapshot_at)
     previous_snapshot = (
         _previous_material_snapshot_for(
             snapshot_date=_coerce_date(snapshot_date),
             snapshot_at=resolved_snapshot_at,
+            min_source_product_count=_as_int(current_run.get("source_product_count")),
+            min_source_product_limit=_as_int(current_run.get("source_product_limit")),
         )
         if snapshot_date and resolved_snapshot_at
         else None
     )
     previous_by_key: dict[str, dict[str, Any]] = {}
+    previous_product_codes: set[str] | None = None
     if previous_snapshot:
         keys = sorted(
             {str(item.get("material_key") or "") for item in items if item.get("material_key")}
@@ -1229,6 +1267,26 @@ def _enrich_material_yesterday_delta(
                 for row in rows or []
                 if row.get("material_key")
             }
+        product_codes = sorted(
+            {_normalized_product_code(item.get("product_code")) for item in items if item.get("product_code")}
+        )
+        previous_product_codes = set()
+        if product_codes:
+            placeholders = ",".join(["%s"] * len(product_codes))
+            rows = query(
+                f"""
+                SELECT DISTINCT product_code
+                FROM mingkong_material_daily_snapshots
+                WHERE snapshot_at = %s
+                  AND product_code IN ({placeholders})
+                """,
+                tuple([previous_snapshot["snapshot_at"]] + product_codes),
+            )
+            previous_product_codes = {
+                _normalized_product_code(row.get("product_code"))
+                for row in rows or []
+                if row.get("product_code")
+            }
 
     for item in items:
         current_spend = _spend_from_row(item, "cumulative_90_spend", _metadata_for_row(item))
@@ -1238,7 +1296,13 @@ def _enrich_material_yesterday_delta(
             if previous_row is None
             else _spend_from_row(previous_row, "cumulative_90_spend", _metadata_for_row(previous_row))
         )
-        delta = current_spend if previous_spend is None else max(0.0, current_spend - previous_spend)
+        delta = _delta_from_previous_baseline(
+            current_spend=current_spend,
+            previous_spend=previous_spend,
+            product_code=item.get("product_code"),
+            previous_product_codes=previous_product_codes,
+            has_previous_snapshot=bool(previous_snapshot),
+        )
         item["current_cumulative_90_spend"] = current_spend
         item["previous_cumulative_90_spend"] = previous_spend
         item["yesterday_spend_delta"] = round(delta, 2)
@@ -1760,8 +1824,76 @@ def _previous_material_snapshot(snapshot_date: str) -> str:
     return selected["snapshot_date"] if selected else ""
 
 
-def _previous_material_snapshot_for(*, snapshot_date: str, snapshot_at: str) -> dict[str, Any] | None:
+def _snapshot_run_metadata(snapshot_at: str | None) -> dict[str, Any]:
+    resolved = _coerce_datetime(snapshot_at)
+    if not resolved:
+        return {}
+    return query_one(
+        """
+        SELECT snapshot_at, snapshot_slot, ranking_snapshot_date, status,
+               source_product_count, source_product_limit
+        FROM mingkong_material_sync_runs
+        WHERE snapshot_at = %s
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (resolved,),
+    ) or {}
+
+
+def _filter_compatible_snapshot_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    min_source_product_count: int | None = None,
+    min_source_product_limit: int | None = None,
+) -> list[dict[str, Any]]:
+    min_count = _as_int(min_source_product_count)
+    min_limit = _as_int(min_source_product_limit)
+    if min_count <= 0 and min_limit <= 0:
+        return rows
+    compatible = []
+    for row in rows:
+        count_ok = min_count <= 0 or _as_int(row.get("source_product_count")) >= min_count
+        limit_ok = min_limit <= 0 or _as_int(row.get("source_product_limit")) >= min_limit
+        if count_ok and limit_ok:
+            compatible.append(row)
+    return compatible or rows
+
+
+def _previous_material_snapshot_for(
+    *,
+    snapshot_date: str,
+    snapshot_at: str,
+    min_source_product_count: int | None = None,
+    min_source_product_limit: int | None = None,
+) -> dict[str, Any] | None:
     rows = query(
+        """
+        SELECT s.snapshot_date, s.snapshot_at, s.snapshot_slot,
+               r.source_product_count, r.source_product_limit, r.ranking_snapshot_date
+        FROM (
+            SELECT snapshot_date, snapshot_at, snapshot_slot
+            FROM mingkong_material_daily_snapshots
+            WHERE snapshot_date < %s
+              AND snapshot_at < %s
+            GROUP BY snapshot_date, snapshot_at, snapshot_slot
+        ) s
+        JOIN mingkong_material_sync_runs r
+          ON r.snapshot_at = s.snapshot_at AND r.status = 'success'
+        ORDER BY s.snapshot_at DESC
+        LIMIT 14
+        """,
+        (snapshot_date, snapshot_at),
+    )
+    if rows:
+        candidates = _filter_compatible_snapshot_candidates(
+            rows,
+            min_source_product_count=min_source_product_count,
+            min_source_product_limit=min_source_product_limit,
+        )
+        return choose_previous_snapshot_for_24h(snapshot_at, candidates)
+
+    fallback_rows = query(
         """
         SELECT snapshot_date, snapshot_at, snapshot_slot
         FROM mingkong_material_daily_snapshots
@@ -1773,7 +1905,7 @@ def _previous_material_snapshot_for(*, snapshot_date: str, snapshot_at: str) -> 
         """,
         (snapshot_date, snapshot_at),
     )
-    return choose_previous_snapshot_for_24h(snapshot_at, rows or [])
+    return choose_previous_snapshot_for_24h(snapshot_at, fallback_rows or [])
 
 
 def _snapshot_rows_by_date(snapshot_date: str, snapshot_at: str | None = None) -> list[dict[str, Any]]:
@@ -1908,9 +2040,12 @@ def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) ->
             snapshot_date=snapshot_date,
         )
     selected_snapshot_at = identity.get("snapshot_at") or ""
+    current_run = _snapshot_run_metadata(selected_snapshot_at)
     previous_snapshot = _previous_material_snapshot_for(
         snapshot_date=_coerce_date(snapshot_date),
         snapshot_at=selected_snapshot_at or f"{snapshot_date} 00:00:00",
+        min_source_product_count=_as_int(current_run.get("source_product_count")),
+        min_source_product_limit=_as_int(current_run.get("source_product_limit")),
     )
     previous_snapshot_date = previous_snapshot["snapshot_date"] if previous_snapshot else ""
     previous_snapshot_at = previous_snapshot["snapshot_at"] if previous_snapshot else ""
@@ -1925,6 +2060,11 @@ def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) ->
         for row in previous_rows
         if row.get("material_key")
     }
+    previous_product_codes = {
+        _normalized_product_code(row.get("product_code"))
+        for row in previous_rows
+        if row.get("product_code")
+    }
     top100_rows = build_top100_rows(
         snapshot_date=snapshot_date,
         snapshot_at=selected_snapshot_at,
@@ -1937,6 +2077,7 @@ def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) ->
         current_rows=current_rows,
         previous_by_key=previous_by_key,
         previous_top100_keys=_previous_top100_keys(previous_snapshot_date, previous_snapshot_at or None),
+        previous_product_codes=previous_product_codes if previous_snapshot else None,
         limit=100,
     )
     inserted = _replace_top100_rows(top100_rows)

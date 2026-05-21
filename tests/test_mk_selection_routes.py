@@ -338,8 +338,10 @@ def test_mk_import_progress_footer_actions_open_new_tabs():
 def test_mk_selection_small_language_modal_matches_task_parent_contract():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "const MKI_RAW_PROCESSORS_API = '/tasks/api/raw-processors';" in template
+    assert "const MKI_RAW_PROCESSORS_API" not in template
     assert "let mkiXiaoRawProcessorsCache = null;" in template
+    assert "mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;" in template
+    assert "mkiFetchRawProcessors" not in template
     assert 'id="mkiXiaoRawProcessor"' in template
     assert "请选择原视频处理人" in template
     assert "function mkiXiaoLanguageAssignments(selection)" in template
