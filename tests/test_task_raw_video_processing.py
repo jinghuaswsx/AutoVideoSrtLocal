@@ -64,9 +64,11 @@ def test_start_niuma_processing_resolves_local_media_storage_source(monkeypatch,
     )
 
     assert result["subtitle_task_id"] == "tcraw-5-fixed"
-    assert uploaded["local_path"] == str(source)
+    subtitle_source = Path(created["video_path"])
+    assert uploaded["local_path"] == str(subtitle_source)
     assert uploaded["public_key"] == "public/tcraw-5-fixed/demo.mp4"
-    assert created["video_path"] == str(source)
+    assert subtitle_source != source
+    assert subtitle_source.read_bytes() == b"video"
     assert updates[0][1]["source_tos_key"] == "public/tcraw-5-fixed/demo.mp4"
     assert runner_calls == [("tcraw-5-fixed", 9)]
     assert watcher_calls[0]["subtitle_task_id"] == "tcraw-5-fixed"
@@ -120,6 +122,63 @@ def test_start_niuma_processing_prepares_subtitle_task_and_watcher(monkeypatch, 
     assert watcher_calls[0]["parent_task_id"] == 5
     assert events[0][1] == "raw_niuma_submitted"
     assert events[0][3]["subtitle_backend"] == "niuma"
+
+
+def test_start_niuma_processing_keeps_subtitle_source_copy_after_parent_media_is_replaced(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import task_raw_video_processing as processing
+
+    source = tmp_path / "media-store" / "source.mp4"
+    source.parent.mkdir()
+    source.write_bytes(b"original-with-subtitles")
+    task_dir = tmp_path / "subtitle-task"
+    created = {}
+    updates = []
+    uploaded = {}
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_item_id": 11,
+            "assignee_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+        },
+    )
+    monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: source)
+    monkeypatch.setattr(processing, "_probe_media_info", lambda path: {"width": 720, "height": 1280, "duration": 15, "resolution": "720x1280"})
+    monkeypatch.setattr(processing, "_task_dir", lambda task_id: str(task_dir))
+    monkeypatch.setattr(processing, "_new_subtitle_task_id", lambda parent_task_id: "tcraw-5-fixed")
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "build_public_source_object_key", lambda user_id, task_id, filename: f"public/{task_id}/{filename}")
+
+    def fake_upload_public_source(local_path, object_key):
+        uploaded["local_path"] = local_path
+        uploaded["object_key"] = object_key
+        return "tos_backup"
+
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "upload_public_source", fake_upload_public_source)
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "with_public_source_info", lambda task, backend, object_key: {"public_source_storage_backend": backend, "public_source_key": object_key})
+    monkeypatch.setattr(processing.task_state, "create_subtitle_removal", lambda task_id, video_path, task_dir, original_filename=None, user_id=None: created.update(locals()))
+    monkeypatch.setattr(processing.task_state, "update", lambda task_id, **fields: updates.append((task_id, fields)))
+    monkeypatch.setattr(processing, "_write_event", lambda *args, **kwargs: None)
+
+    processing.start_niuma_processing_for_parent_task(
+        task_id=5,
+        actor_user_id=9,
+        start_runner_fn=lambda task_id, user_id=None: True,
+        start_watcher_fn=lambda **kwargs: None,
+    )
+    source.write_bytes(b"cleaned-result")
+
+    subtitle_source = Path(created["video_path"])
+    assert subtitle_source != source
+    assert subtitle_source.read_bytes() == b"original-with-subtitles"
+    assert uploaded["local_path"] == str(subtitle_source)
+    assert updates[0][1]["source_tos_key"] == "public/tcraw-5-fixed/demo.mp4"
 
 
 def test_start_niuma_processing_rejects_runner_start_failure(monkeypatch, tmp_path):

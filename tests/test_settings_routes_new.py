@@ -904,18 +904,58 @@ def test_settings_bindings_voice_selection_shows_three_provider_channels(admin_n
     assert 'value="gemini_vertex"' not in row_html
 
 
+def test_settings_bindings_renders_voice_ai_auto_select_checkbox_checked_by_default(admin_no_db_client):
+    with patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups()), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.is_voice_ai_auto_select_enabled", return_value=True), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=bindings")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert 'name="voice_ai_auto_select_enabled"' in body
+    assert '默认自动选择 AI 排名第一音色' in body
+    assert 'name="voice_ai_auto_select_enabled" value="1"' in body
+    assert 'checked' in body.split('name="voice_ai_auto_select_enabled"', 1)[1].split(">", 1)[0]
+
+
 def test_settings_post_bindings_accepts_voice_selection_vertex_adc(admin_no_db_client):
-    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
+    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
+         patch("web.routes.settings.set_voice_ai_auto_select_enabled") as m_set_auto:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "bindings",
+            "voice_ai_auto_select_enabled": "1",
             "binding_voice_selection.assess_provider": "gemini_vertex_adc",
             "binding_voice_selection.assess_model": "gemini-3.5-flash",
         })
 
     assert resp.status_code in (302, 303)
+    m_set_auto.assert_called_once_with(True)
     m_upsert.assert_any_call(
         "voice_selection.assess",
         provider="gemini_vertex_adc",
+        model="gemini-3.5-flash",
+        updated_by=1,
+    )
+
+
+def test_settings_post_bindings_turns_off_voice_ai_auto_select_when_checkbox_absent(admin_no_db_client):
+    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
+         patch("web.routes.settings.set_voice_ai_auto_select_enabled") as m_set_auto:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "bindings",
+            "binding_video_score.run_provider": "gemini_aistudio",
+            "binding_video_score.run_model": "gemini-3.5-flash",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_set_auto.assert_called_once_with(False)
+    m_upsert.assert_any_call(
+        "video_score.run",
+        provider="gemini_aistudio",
         model="gemini-3.5-flash",
         updated_by=1,
     )

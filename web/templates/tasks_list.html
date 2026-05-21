@@ -31,6 +31,13 @@
 .tc-tabs { display:flex; gap:var(--tc-sp-2); border-bottom:1px solid var(--tc-border); margin-bottom:var(--tc-sp-4); }
 .tc-tab { background:transparent; border:none; padding:8px 14px; font-size:14px; color:var(--tc-fg-muted); cursor:pointer; border-bottom:2px solid transparent; }
 .tc-tab.active { color:var(--tc-accent); border-bottom-color:var(--tc-accent); }
+.tc-overview-head { display:flex; align-items:center; justify-content:space-between; gap:var(--tc-sp-3); flex-wrap:wrap; margin-bottom:var(--tc-sp-3); }
+.tc-overview-title { font-size:16px; font-weight:700; }
+.tc-overview-note { font-size:12px; color:var(--tc-fg-muted); }
+.tc-subtabs { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; margin-bottom:var(--tc-sp-4); }
+.tc-subtab { height:32px; padding:0 12px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg-muted); cursor:pointer; font-size:13px; }
+.tc-subtab:hover { background:var(--tc-bg-muted); }
+.tc-subtab.active { border-color:var(--tc-accent); background:var(--tc-accent-subtle); color:var(--tc-accent); font-weight:700; }
 .tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
 .tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
@@ -41,10 +48,14 @@
 .tc-btn--primary { background:var(--tc-accent); color:#fff; border:none; }
 .tc-btn--primary:hover { background:var(--tc-accent-hover); }
 .tc-btn--danger { background:var(--tc-danger); color:#fff; border:none; }
-.tc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.tc-table-scroll { overflow-x:auto; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
+.tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
 .tc-table td { padding:10px 12px; border-bottom:1px solid var(--tc-border); }
 .tc-table tr:hover td { background:var(--tc-bg-subtle); }
+.tc-task-name { font-weight:700; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tc-task-meta { margin-top:3px; color:var(--tc-fg-muted); font-size:12px; }
+.tc-pager { display:flex; align-items:center; justify-content:flex-end; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); }
 .tc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
 .tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
@@ -106,6 +117,16 @@
 .tc-review-image-link { display:block; }
 .tc-review-image { display:block; width:100%; max-height:260px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
 .tc-review-asset-meta { margin-top:6px; font-size:12px; color:var(--tc-fg-muted); overflow-wrap:anywhere; }
+.tc-readiness-evidence { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:8px 0 2px 20px; }
+.tc-readiness-evidence-item { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; color:var(--tc-fg); }
+.tc-readiness-evidence-item.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
+.tc-readiness-link { display:inline-flex; max-width:100%; color:var(--tc-accent); font-weight:700; overflow-wrap:anywhere; }
+.tc-readiness-video { display:block; width:100%; max-height:300px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-readiness-image-link { display:block; }
+.tc-readiness-image { display:block; width:100%; max-height:220px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
+.tc-readiness-meta { margin-top:5px; color:var(--tc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.tc-readiness-title { font-weight:700; color:var(--tc-fg); margin-bottom:3px; overflow-wrap:anywhere; }
+.tc-readiness-body { color:var(--tc-fg-muted); line-height:1.45; overflow-wrap:anywhere; }
 .tc-niuma-panel { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
@@ -120,6 +141,7 @@
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
   .tc-event-facts { grid-template-columns:1fr; }
   .tc-review-grid { grid-template-columns:1fr; }
+  .tc-readiness-evidence { grid-template-columns:1fr; }
   .tc-niuma-meta,
   .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
 }
@@ -130,9 +152,11 @@
   .tc-tabs { gap: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .tc-tabs::-webkit-scrollbar { display: none; }
   .tc-tab { white-space: nowrap; flex: 0 0 auto; padding: 10px 14px; }
+  .tc-subtabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tc-subtabs::-webkit-scrollbar { display: none; }
+  .tc-subtab { white-space: nowrap; flex: 0 0 auto; }
   .tc-filters { gap: 8px; }
   .tc-filters #tcKeyword { width: 100% !important; flex: 1 1 100%; }
-  .tc-filters #tcStatus { flex: 1 1 calc(50% - 4px); min-width: 120px; }
   .tc-filters #tcRefresh { flex: 0 0 auto; }
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
@@ -168,21 +192,28 @@
   </div>
 
   <div class="tc-tabs">
-    <button class="tc-tab active" data-tab="mine" id="tcTabMine">我的任务</button>
+    <button class="tc-tab active" data-section-tab="overview" id="tcTabOverview">任务总览</button>
     {% if is_admin %}
-    <button class="tc-tab" data-tab="all" id="tcTabAll">全部任务</button>
-    <button class="tc-tab" data-tab="dispatch" id="tcTabDispatch">待派单素材</button>
+    <button class="tc-tab" data-section-tab="dispatch" id="tcTabDispatch">待派单素材</button>
     {% endif %}
   </div>
 
+  <div id="tcOverviewPanel">
+    <div class="tc-overview-head">
+      <div>
+        <div class="tc-overview-title">任务总览</div>
+        <div class="tc-overview-note">按处理进度查看任务。</div>
+      </div>
+    </div>
+    <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
+      <button class="tc-subtab active" type="button" data-bucket="todo">待处理任务</button>
+      <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
+      <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
+    </div>
+  </div>
+
   <div class="tc-filters" id="tcFilters">
-    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名" style="width:240px;">
-    <select id="tcStatus" class="tc-input">
-      <option value="">全部状态</option>
-      <option value="in_progress">进行中</option>
-      <option value="completed">已完成</option>
-      <option value="terminated">终止</option>
-    </select>
+    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -222,7 +253,11 @@ const TC_CAPS = {
   can_process_raw_video: {{ 'true' if capabilities.can_process_raw_video else 'false' }},
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
 };
-let TC_CURRENT_TAB = 'mine';
+let TC_CURRENT_SECTION = 'overview';
+let TC_CURRENT_BUCKET = 'todo';
+let TC_TASK_PAGE = 1;
+const TC_TASK_PAGE_SIZE = 20;
+let TC_TASK_CACHE = new Map();
 const TC_LANGUAGE_FALLBACKS = {
   DE: '德语',
   FR: '法语',
@@ -293,7 +328,7 @@ function tcFormatElapsedSince(s) {
 }
 function tcStatusLabel(status) {
   const labels = {
-    pending: '待认领',
+    pending: '待接手',
     raw_in_progress: '原素材处理中',
     raw_review: '原素材待审核',
     raw_done: '原素材已通过',
@@ -383,7 +418,7 @@ function tcEventPayloadUserDisplay(event, payload, key) {
 }
 const TC_EVENT_TEXT = {
   created: { title: '创建任务', progress: '已指派/待解锁', tone: 'info', summary: '任务已经创建，系统记录了目标国家和负责人。' },
-  claimed: { title: '认领原始视频任务', progress: '原始视频处理中', tone: 'info', summary: '处理人已接手原始视频处理。' },
+  claimed: { title: '原始视频任务接手', progress: '原始视频处理中', tone: 'info', summary: '处理人已接手原始视频处理。' },
   raw_niuma_submitted: { title: '提交牛马去字幕', progress: '自动去字幕中', tone: 'info', summary: '原始视频已提交到牛马去字幕流程。' },
   raw_niuma_done: { title: '牛马去字幕完成', progress: '等待提交审核', tone: 'success', summary: '自动去字幕已完成，可以进入原始视频审核。' },
   raw_niuma_failed: { title: '牛马去字幕失败', progress: '需要人工处理', tone: 'danger', summary: '自动去字幕没有成功，需要查看失败原因或改走手动上传。' },
@@ -496,6 +531,67 @@ function tcRenderReviewAssetList(stepAssets) {
     + '<div class="tc-review-assets-head">' + badge + '<span>' + tcEsc(stepAssets.title || '步骤产物') + '</span></div>'
     + body
     + '</div>';
+}
+function tcReadinessEvidenceClass(item) {
+  if (item && item.ok === false) return ' is-bad';
+  return '';
+}
+function tcReadinessEvidenceMeta(item) {
+  const parts = [];
+  if (item && item.meta) parts.push(item.meta);
+  if (item && item.filename) parts.push(item.filename);
+  if (item && item.file_size !== undefined && item.file_size !== null && item.file_size !== '') {
+    const size = tcFormatBytes(item.file_size);
+    if (size) parts.push(size);
+  }
+  if (item && item.lang) parts.push(tcLanguageLabel(item.lang));
+  return parts.join(' · ');
+}
+function tcRenderReadinessEvidenceItem(item) {
+  const type = String((item && item.type) || '').trim();
+  const url = String((item && item.url) || '').trim();
+  const label = tcEsc((item && item.label) || '产物');
+  const meta = tcEsc(tcReadinessEvidenceMeta(item || {}));
+  const className = 'tc-readiness-evidence-item' + tcReadinessEvidenceClass(item);
+  const metaHtml = meta ? '<div class="tc-readiness-meta">' + meta + '</div>' : '';
+  if (type === 'video' && url) {
+    return '<div class="' + className + '">'
+      + '<video class="tc-readiness-video" controls preload="metadata" src="' + tcAttr(url) + '"></video>'
+      + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+      + '</div>';
+  }
+  if (type === 'image' && url) {
+    return '<div class="' + className + '">'
+      + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+      + '<img class="tc-readiness-image" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
+      + '</a>'
+      + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+      + '</div>';
+  }
+  if (type === 'link' && url) {
+    return '<div class="' + className + '">'
+      + '<a class="tc-readiness-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">' + label + '</a>'
+      + metaHtml
+      + '</div>';
+  }
+  if (type === 'text') {
+    const title = String((item && item.title) || '').trim();
+    const body = String((item && item.body) || '').trim();
+    return '<div class="' + className + '">'
+      + '<div class="tc-readiness-title">' + label + (title ? ' · ' + tcEsc(title) : '') + '</div>'
+      + (body ? '<div class="tc-readiness-body">' + tcEsc(body) + '</div>' : '')
+      + metaHtml
+      + '</div>';
+  }
+  return '<div class="' + className + '">'
+    + '<div class="tc-readiness-title">' + label + '</div>'
+    + metaHtml
+    + '</div>';
+}
+function tcRenderReadinessEvidence(evidence) {
+  const items = Array.isArray(evidence) ? evidence : [];
+  if (!items.length) return '';
+  return '<div class="tc-readiness-evidence">' + items.map(tcRenderReadinessEvidenceItem).join('') + '</div>';
 }
 function tcSubtitleRemovalBadgeClass(status) {
   const key = String(status || '').trim();
@@ -649,55 +745,91 @@ async function tcFetchJson(url, opts) {
   return rsp.json();
 }
 
-document.querySelectorAll('.tc-tab').forEach(btn => {
+document.querySelectorAll('[data-section-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tc-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('[data-section-tab]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    TC_CURRENT_TAB = btn.dataset.tab;
+    TC_CURRENT_SECTION = btn.dataset.sectionTab || 'overview';
+    TC_TASK_PAGE = 1;
     tcRender();
   });
 });
-document.getElementById('tcRefresh').addEventListener('click', tcRender);
-document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') tcRender(); });
-document.getElementById('tcStatus').addEventListener('change', tcRender);
+document.querySelectorAll('[data-bucket]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-bucket]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    TC_CURRENT_BUCKET = btn.dataset.bucket || 'todo';
+    TC_TASK_PAGE = 1;
+    tcRender();
+  });
+});
+document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
+  const filters = document.getElementById('tcFilters');
+  const overview = document.getElementById('tcOverviewPanel');
+  const isOverview = TC_CURRENT_SECTION === 'overview';
+  if (filters) filters.style.display = isOverview ? 'flex' : 'none';
+  if (overview) overview.style.display = isOverview ? 'block' : 'none';
   wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
   try {
     await tcLoadLanguageLabels();
-    if (TC_CURRENT_TAB === 'dispatch') {
+    if (TC_CURRENT_SECTION === 'dispatch') {
       await tcRenderDispatchPool(wrap);
     } else {
-      await tcRenderTaskList(wrap, TC_CURRENT_TAB);
+      await tcRenderTaskList(wrap, TC_IS_ADMIN ? 'all' : 'mine', TC_CURRENT_BUCKET);
     }
   } catch (e) {
     wrap.innerHTML = `<div class="tc-empty">加载失败：${tcEsc(e.message)}</div>`;
   }
 }
 
-async function tcRenderTaskList(wrap, tab) {
+async function tcRenderTaskList(wrap, tab, bucket) {
   const kw = document.getElementById('tcKeyword').value.trim();
-  const status = document.getElementById('tcStatus').value;
-  const params = new URLSearchParams({tab, keyword: kw, status});
+  const params = new URLSearchParams({
+    tab,
+    keyword: kw,
+    bucket,
+    page: String(TC_TASK_PAGE),
+    page_size: String(TC_TASK_PAGE_SIZE),
+  });
   const data = await tcFetchJson('/tasks/api/list?' + params.toString());
-  if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>'; return; }
+  TC_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || 0), it]));
+  if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0); return; }
   const rows = data.items.map(it => {
     const kind = it.parent_task_id ? '子任务' : '父任务';
     const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
-    return `<tr data-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
-      <td>${tcEsc(it.product_name)}</td>
+    return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
+      <td><div class="tc-task-name" title="${tcAttr(it.product_name || '')}">${tcEsc(it.product_name)}</div><div class="tc-task-meta">#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</div></td>
       <td>${kind}</td>
       <td>${country}</td>
-      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcHighLevelLabel(it.high_level))}</span></td>
-      <td>${tcEsc(tcStatusLabel(it.status))}</td>
+      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span></td>
       <td>${tcEsc(it.assignee_display_name || it.assignee_username || '—')}</td>
+      <td>${tcEsc(tcFormatTime(it.updated_at || it.created_at))}</td>
       <td>${tcTaskRowAction(it)}</td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<table class="tc-table"><thead><tr>
-    <th>产品</th><th>类型</th><th>国家</th><th>高层</th><th>子状态</th><th>负责人</th><th>操作</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
+  wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
+}
+function tcRenderTaskPager(data, itemCount) {
+  const page = Number(data.page || TC_TASK_PAGE || 1);
+  const pageSize = Number(data.page_size || TC_TASK_PAGE_SIZE);
+  const total = Number(data.total || 0);
+  const totalPages = Number(data.total_pages || 0);
+  const hasPrev = page > 1;
+  const hasNext = totalPages ? page < totalPages : itemCount >= pageSize;
+  const totalText = total ? ` · 共 ${total} 条` : '';
+  return `<div class="tc-pager">
+    <span>第 ${page}${totalPages ? ' / ' + totalPages : ''} 页${totalText}</span>
+    <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskPage(-1)">上一页</button>
+    <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
+  </div>`;
+}
+function tcTaskPage(delta) {
+  TC_TASK_PAGE = Math.max(1, TC_TASK_PAGE + Number(delta || 0));
+  tcRender();
 }
 function tcOpenDetailAction(id) {
   tcOpenDetail(id);
@@ -716,7 +848,7 @@ function tcTaskRowAction(it) {
   if (!id) return tcDisabledTaskAction('不可处理');
   if (isParent) {
     if (status === 'pending') {
-      return TC_CAPS.can_process_raw_video ? tcActiveTaskAction(id, '认领处理', true) : tcDisabledTaskAction('无处理权限');
+      return tcActiveTaskAction(id, '查看', false);
     }
     if (status === 'raw_in_progress') {
       return (TC_CAPS.can_process_raw_video || TC_IS_ADMIN) ? tcActiveTaskAction(id, '处理原素材', true) : tcDisabledTaskAction('原素材处理中');
@@ -747,9 +879,9 @@ async function tcRenderDispatchPool(wrap) {
     <td>${it.en_item_count}</td>
     <td><button class="tc-btn tc-btn--primary" onclick="tcOpenCreateModal(${it.product_id}, '${tcEsc(it.product_name).replace(/'/g, "&#39;")}', ${it.owner_id || 'null'})">创建任务</button></td>
   </tr>`).join('');
-  wrap.innerHTML = `<table class="tc-table"><thead><tr>
+  wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr>
     <th>产品名</th><th>已有英文 item 数</th><th>操作</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 let TC_CREATE_CTX = null;
 async function tcOpenCreateModal(pid, pname, ownerId) {
@@ -868,8 +1000,12 @@ async function tcOpenDetail(id) {
   body.innerHTML = '加载中...';
   drawer.style.display = 'block';
   try {
+    const cachedTask = TC_TASK_CACHE.get(Number(id || 0)) || null;
+    const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
+      + '&task_id=' + encodeURIComponent(String(id || ''))
+      + '&page_size=1';
     const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
-      tcFetchJson('/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine') + '&page_size=100'),
+      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson(detailListUrl),
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
@@ -920,7 +1056,8 @@ async function tcOpenDetail(id) {
                 ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
                 : '';
               const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
-              const links = Array.isArray(check.links) && check.links.length
+              const evidence = tcRenderReadinessEvidence(check.evidence || []);
+              const links = !evidence && Array.isArray(check.links) && check.links.length
                 ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
                     const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
                     return tcEsc(label);
@@ -929,6 +1066,7 @@ async function tcOpenDetail(id) {
               return '<div style="padding:5px 0; border-bottom:1px dashed var(--tc-border);">'
                 + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
                 + reason + links
+                + evidence
                 + '</div>';
             }).join('');
             return;

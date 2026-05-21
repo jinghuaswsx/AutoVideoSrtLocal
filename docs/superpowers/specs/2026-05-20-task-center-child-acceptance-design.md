@@ -55,6 +55,9 @@
 - `blocked` 子任务文案显示为“等待前置完成”，操作按钮禁用，不能打开详情抽屉误导用户以为可以处理。
 - 可执行入口使用动作文案，不再使用泛化的“详情”：子任务可处理时显示“去处理”，父任务原素材处理中显示“处理原素材”，审核节点显示“审核”，完成态显示“查看结果”，取消态显示“查看记录”。
 - 仅对当前用户具备对应动作权限、且任务状态可推进的行显示可点击按钮；不可推进但需要展示状态的行显示禁用按钮。
+- 搜索框必须同时匹配产品名和 `product_code`，支持用户用 `multifunctional-roadside-safety-light-rjc` 这类产品编码找回任务。
+- 父任务原素材审核通过后的 `raw_done` 状态代表原素材处理阶段已完成，必须继续出现在任务总览的“已完成任务”里，并保留“查看结果”入口，直到所有子任务完成后再进入整单 `all_done`。
+- `/tasks/?task_id=<id>` 深链必须按任务 ID 精确加载，不依赖当前分页、bucket 或前 100 条列表命中。
 
 ## 不做范围
 
@@ -67,6 +70,6 @@
 
 1. `pytest tests/test_appcore_tasks_supporting_data.py tests/test_tasks_routes.py::test_task_center_child_translate_jump_uses_product_code_search tests/test_tasks_routes.py::test_child_readiness_delegates_to_tasks_service tests/test_tasks_routes.py::test_child_readiness_maps_missing_child_to_404 tests/test_appcore_tasks.py::test_submit_child_fails_when_detail_images_not_ready tests/test_task_raw_source_bridge.py::test_approve_raw_ensures_raw_source_before_unblocking_children -q`
 2. `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
-3. 手工检查 `/tasks/` 页面 JS 中素材管理跳转包含 `q=<product_code>`、`from_task`、`lang`。
+3. 手工检查 `/tasks/` 页面 JS 中素材管理跳转包含 `q=<product_code>`、`from_task`、`lang`；`?task_id=<id>` 可打开不在当前 bucket 的任务。
 
 不运行会连接本机 MySQL 的 DB fixture 测试；本项目规则禁止用本机 MySQL 做验证。

@@ -238,6 +238,26 @@ def test_voice_selector_multi_force_fallback_preserves_ai_badges_but_uses_voice_
     assert "function voiceAiRankBadgeHtml(rec)" in SCRIPT
 
 
+def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
+    load_block = SCRIPT[
+        SCRIPT.index("async function loadVoicePage"):
+        SCRIPT.index("async function loadLibrary")
+    ]
+    rerun_block = SCRIPT[
+        SCRIPT.index("async function rerunVoiceAiRanking"):
+        SCRIPT.index("function updateLaunchState")
+    ]
+
+    assert 'let voiceAiAutoSelectEnabled = true;' in SCRIPT
+    assert 'let autoConfirmingVoice = false;' in SCRIPT
+    assert "function maybeAutoConfirmTopAiVoice()" in SCRIPT
+    assert "voiceAiAutoSelectEnabled = data.voice_ai_auto_select_enabled !== false;" in SCRIPT
+    assert 'if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;' in SCRIPT
+    assert "await launch();" in SCRIPT
+    assert "maybeAutoConfirmTopAiVoice();" in load_block
+    assert "await maybeAutoConfirmTopAiVoice();" in rerun_block
+
+
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
     rematch_block = SCRIPT[
         SCRIPT.index("async function onGenderPillClick"):
@@ -251,6 +271,7 @@ def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads
     assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {" in SCRIPT
     assert "body: JSON.stringify({ gender: currentVoiceAiRankGender() })," in SCRIPT
     assert "applyVoiceAiRankPayload(data);" in rematch_block
+    assert "await maybeAutoConfirmTopAiVoice();" in rematch_block
 
 
 def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_and_omni_translate():
