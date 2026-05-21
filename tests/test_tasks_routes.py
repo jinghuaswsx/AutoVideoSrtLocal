@@ -4,7 +4,7 @@ import io
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
-    assert "小语种视频翻译".encode("utf-8") in rsp.data
+    assert "任务中心".encode("utf-8") in rsp.data
 
 
 def test_task_center_child_translate_jump_uses_product_code_search(authed_client_no_db):

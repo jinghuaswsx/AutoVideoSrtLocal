@@ -141,7 +141,7 @@ def test_dashboard_sidebar_uses_single_task_menu_entry():
 
     assert "sidebar-task-group" not in nav_html
     assert 'href="/raw-video-pool/"' not in nav_html
-    assert "小语种视频翻译" in nav_html
+    assert "任务中心" in nav_html
     assert "批量翻译任务管理" in nav_html
     assert task_center_idx < settings_group_idx
     assert "bulk_translate_pages.admin_tasks_page" in settings_group_html
@@ -153,7 +153,7 @@ def test_dashboard_sidebar_marks_single_task_entry_active(authed_client_no_db):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "sidebar-task-group" not in html
-    assert re.search(r'<a href="/tasks/"[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span> 小语种视频翻译', html)
+    assert re.search(r'<a href="/tasks/"[^>]*class="active"[^>]*>\s*<span class="nav-icon">📋</span> 任务中心', html)
     assert 'href="/raw-video-pool/"' not in html
 
 
