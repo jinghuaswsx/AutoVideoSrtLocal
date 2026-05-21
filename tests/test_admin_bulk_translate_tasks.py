@@ -13,6 +13,9 @@ def test_admin_bulk_translate_sidebar_and_page(authed_client_no_db):
 
     assert "批量翻译任务管理" in html
     assert 'href="/admin/bulk-translate/tasks"' in html
+    assert '<details class="sidebar-group sidebar-settings-group" open>' in html
+    assert '<details class="sidebar-group sidebar-task-group" open>' not in html
+    assert 'href="/admin/bulk-translate/tasks" class="active"' in html
     assert "data-admin-bulk-tasks" in html
     assert "admin_bulk_translate_tasks.js" in html
     assert "进行中" in html
