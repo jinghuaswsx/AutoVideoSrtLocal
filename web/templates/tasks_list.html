@@ -57,6 +57,11 @@
 .tc-manual-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
 .tc-manual-action { display:inline-flex; align-items:center; justify-content:center; min-height:26px; height:auto; padding:4px 9px; font-size:12px; line-height:1.2; text-decoration:none; white-space:nowrap; }
 .tc-manual-confirmed { color:var(--tc-success-fg); background:var(--tc-success-bg); border-color:var(--tc-success-bg); cursor:default; }
+.tc-manual-modal-field { margin-bottom:10px; }
+.tc-manual-modal-field label { display:block; font-size:12px; font-weight:700; color:var(--tc-fg-muted); margin-bottom:4px; }
+.tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
+.tc-manual-modal-status.is-ok { color:var(--tc-success-fg); }
+.tc-manual-modal-status.is-error { color:var(--tc-danger-fg); }
 .tc-table-scroll { overflow-x:auto; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
@@ -190,7 +195,8 @@
   /* 弹窗全屏化 */
   #tcCreateModal > div,
   #tcReasonModal > div,
-  .tc-manual-result-dialog {
+  .tc-manual-result-dialog,
+  #tcManualSubmitModal > div {
     top: 0 !important;
     left: 0 !important;
     transform: none !important;
@@ -276,6 +282,18 @@
       <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap;">
         <button class="tc-btn" onclick="tcCloseManualRawResult()">关闭</button>
         <button class="tc-btn tc-btn--primary" id="tcManualRawResultSubmit" onclick="tcSubmitManualRawResult()">提交并入库</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tcManualSubmitModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1550;">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:520px; max-width:92vw; max-height:86vh; overflow-y:auto;">
+      <h3 id="tcManualSubmitTitle" style="margin:0 0 12px;">手动提交</h3>
+      <div id="tcManualSubmitBody"></div>
+      <div id="tcManualSubmitStatus" class="tc-manual-modal-status"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+        <button class="tc-btn" type="button" onclick="tcCloseManualSubmit()">取消</button>
+        <button class="tc-btn tc-btn--primary" type="button" id="tcManualSubmitBtn" onclick="tcSubmitManualOutput()">提交</button>
       </div>
     </div>
   </div>
@@ -838,55 +856,100 @@ function tcRenderActionLinks(actions) {
     return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   }).join('') + '</div>';
 }
-function tcReadinessManualUploadUrl(check, fallbackUrl) {
-  const direct = tcSafeHref(check && check.manual_upload_url);
-  if (direct) return direct;
-  const actions = Array.isArray(check && check.actions) ? check.actions : [];
-  for (let i = 0; i < actions.length; i += 1) {
-    const href = tcSafeHref(actions[i] && actions[i].url);
-    if (href) return href;
-  }
-  return tcSafeHref(fallbackUrl);
-}
 function tcRenderReadinessManualActions(taskId, check, fallbackUrl) {
   const stepKey = String((check && check.key) || '').trim();
   if (!stepKey) return '';
-  const uploadUrl = tcReadinessManualUploadUrl(check, fallbackUrl);
-  const upload = uploadUrl
-    ? '<a class="tc-btn tc-manual-action" href="' + tcAttr(uploadUrl) + '" target="_blank" rel="noopener noreferrer">手动传素材</a>'
-    : '<span class="tc-btn tc-manual-action tc-action-link--disabled">手动传素材</span>';
-  const confirmed = Boolean(check && check.manual_confirmed);
-  const confirm = confirmed
-    ? '<span class="tc-btn tc-manual-action tc-manual-confirmed">已确认完成</span>'
-    : '<button type="button" class="tc-btn tc-manual-action tc-btn--primary" onclick="tcConfirmChildStep(' + Number(taskId || 0) + ', \'' + tcInlineArg(stepKey) + '\', \'' + tcInlineArg((check && check.label) || stepKey) + '\')">确认完成</button>';
-  return '<div class="tc-manual-actions">' + upload + confirm + '</div>';
+  const manualOutput = check && check.manual_output;
+  if (!manualOutput || !manualOutput.kind) return '';
+  const label = tcInlineArg((check && check.label) || stepKey);
+  const kind = tcInlineArg(manualOutput.kind);
+  const accept = tcInlineArg(manualOutput.accept || '');
+  const multiple = manualOutput.multiple ? 'true' : 'false';
+  return '<div class="tc-manual-actions">'
+    + '<button type="button" class="tc-btn tc-manual-action tc-btn--primary" onclick="tcOpenManualSubmit('
+    + Number(taskId || 0) + ', \'' + tcInlineArg(stepKey) + '\', \'' + label + '\', \'' + kind + '\', \'' + accept + '\', ' + multiple
+    + ')">手动提交</button>'
+    + '</div>';
 }
-async function tcConfirmChildStep(taskId, stepKey, label) {
-  if (!taskId || !stepKey) return;
-  const name = label || stepKey;
-  if (!confirm('确认步骤「' + name + '」已由人工完成？')) return;
-  try {
-    await tcFetchJson('/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm', {
-      method: 'POST',
-      body: '{}',
-    });
-    if (TC_DETAIL_TASK_ID === taskId) {
-      tcOpenDetail(taskId);
-    } else {
-      tcRender();
+let TC_MANUAL_SUBMIT_CTX = null;
+function tcManualTextFieldsHtml() {
+  return '<div class="tc-manual-modal-field"><label>标题</label><input id="tcManualTitle" class="tc-input" style="width:100%;" type="text"></div>'
+    + '<div class="tc-manual-modal-field"><label>文案</label><textarea id="tcManualMessage" class="tc-input" style="width:100%; height:120px; padding:8px; resize:vertical;"></textarea></div>'
+    + '<div class="tc-manual-modal-field"><label>描述</label><textarea id="tcManualDescription" class="tc-input" style="width:100%; height:90px; padding:8px; resize:vertical;"></textarea></div>';
+}
+function tcManualFileFieldHtml(kind, accept, multiple) {
+  const hint = kind === 'video' ? '提交该步骤最终使用的视频文件' : (multiple ? '提交该步骤最终使用的图片，可多选' : '提交该步骤最终使用的图片');
+  return '<div class="tc-manual-modal-field"><label>' + tcEsc(hint) + '</label>'
+    + '<input id="tcManualFiles" class="tc-input" style="width:100%; height:auto; padding:6px;" type="file"'
+    + (accept ? ' accept="' + tcAttr(accept) + '"' : '')
+    + (multiple ? ' multiple' : '')
+    + '></div>';
+}
+function tcOpenManualSubmit(taskId, stepKey, label, kind, accept, multiple) {
+  TC_MANUAL_SUBMIT_CTX = {taskId, stepKey, label, kind, accept, multiple: !!multiple};
+  document.getElementById('tcManualSubmitTitle').textContent = '手动提交 · ' + (label || stepKey);
+  document.getElementById('tcManualSubmitBody').innerHTML = kind === 'text'
+    ? tcManualTextFieldsHtml()
+    : tcManualFileFieldHtml(kind, accept, !!multiple);
+  const status = document.getElementById('tcManualSubmitStatus');
+  status.textContent = '';
+  status.className = 'tc-manual-modal-status';
+  document.getElementById('tcManualSubmitBtn').disabled = false;
+  document.getElementById('tcManualSubmitModal').style.display = 'block';
+}
+function tcCloseManualSubmit() {
+  document.getElementById('tcManualSubmitModal').style.display = 'none';
+  TC_MANUAL_SUBMIT_CTX = null;
+}
+async function tcSubmitManualOutput() {
+  const ctx = TC_MANUAL_SUBMIT_CTX;
+  if (!ctx) return;
+  const status = document.getElementById('tcManualSubmitStatus');
+  const btn = document.getElementById('tcManualSubmitBtn');
+  const form = new FormData();
+  if (ctx.kind === 'text') {
+    form.set('title', document.getElementById('tcManualTitle').value.trim());
+    form.set('message', document.getElementById('tcManualMessage').value.trim());
+    form.set('description', document.getElementById('tcManualDescription').value.trim());
+  } else {
+    const input = document.getElementById('tcManualFiles');
+    const files = input ? Array.from(input.files || []) : [];
+    if (!files.length) {
+      status.textContent = '请选择要提交的文件';
+      status.className = 'tc-manual-modal-status is-error';
+      return;
     }
+    files.forEach(file => form.append(ctx.multiple ? 'files' : 'file', file));
+  }
+  try {
+    btn.disabled = true;
+    status.textContent = '提交中...';
+    status.className = 'tc-manual-modal-status';
+    const result = await tcFetchJson('/tasks/api/child/' + ctx.taskId + '/steps/' + encodeURIComponent(ctx.stepKey) + '/manual-output', {
+      method: 'POST',
+      body: form,
+    });
+    status.textContent = result && result.completion && result.completion.completed
+      ? '提交成功，任务已自动完成'
+      : '提交成功，系统会按最新素材状态自动收口任务';
+    status.className = 'tc-manual-modal-status is-ok';
+    window.setTimeout(() => {
+      const taskId = ctx.taskId;
+      tcCloseManualSubmit();
+      if (TC_DETAIL_TASK_ID === taskId) tcOpenDetail(taskId);
+      tcRender();
+    }, 500);
   } catch (e) {
-    alert('确认失败：' + (e.message || 'unknown'));
+    btn.disabled = false;
+    status.textContent = '提交失败：' + (e.message || 'unknown');
+    status.className = 'tc-manual-modal-status is-error';
   }
 }
-function tcCsrfToken() {
-  const meta = document.querySelector('meta[name="csrf-token"]');
-  return meta ? String(meta.getAttribute('content') || '') : '';
-}
-
 async function tcFetchJson(url, opts) {
   const options = Object.assign({}, opts || {});
-  options.headers = Object.assign(tcJsonHeaders(), options.headers || {});
+  options.headers = options.body instanceof FormData
+    ? Object.assign(tcFormHeaders(), options.headers || {})
+    : Object.assign(tcJsonHeaders(), options.headers || {});
   const rsp = await fetch(url, options);
   if (!rsp.ok) {
     const body = await rsp.json().catch(() => ({error: rsp.statusText}));

@@ -26,15 +26,17 @@ def test_task_center_renders_backend_product_actions(authed_client_no_db):
     assert "it.actions" in body
 
 
-def test_task_detail_child_readiness_renders_manual_fallback_buttons(authed_client_no_db):
+def test_task_detail_child_readiness_renders_manual_submit_modal_without_confirm_buttons(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
 
     assert "function tcRenderReadinessManualActions" in body
-    assert "手动传素材" in body
-    assert "确认完成" in body
-    assert "tcConfirmChildStep" in body
-    assert "/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm" in body
+    assert "手动提交" in body
+    assert "tcOpenManualSubmit" in body
+    assert "tcManualSubmitModal" in body
+    assert "确认完成" not in body
+    assert "tcConfirmChildStep" not in body
+    assert "/steps/' + encodeURIComponent(stepKey) + '/confirm" not in body
 
 
 def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
@@ -1266,3 +1268,60 @@ def test_child_step_confirm_route_maps_service_errors(authed_client_no_db, monke
     rsp = authed_client_no_db.post("/tasks/api/child/44/steps/detail_images/confirm")
     assert rsp.status_code == 404
     assert rsp.get_json() == {"error": "child task not found"}
+
+
+def test_child_step_manual_output_route_delegates_text_payload(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fake_submit_child_step_manual_output(**kwargs):
+        captured.update(kwargs)
+        return {
+            "step_key": "translated_copywriting",
+            "kind": "text",
+            "manual": True,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.submit_child_step_manual_output",
+        fake_submit_child_step_manual_output,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/child/44/steps/translated_copywriting/manual-output",
+        json={"title": "Titel", "message": "Beschreibung", "description": "Detail"},
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {
+        "ok": True,
+        "step_key": "translated_copywriting",
+        "kind": "text",
+        "manual": True,
+    }
+    assert captured == {
+        "task_id": 44,
+        "step_key": "translated_copywriting",
+        "actor_user_id": 1,
+        "is_admin": True,
+        "text": {"title": "Titel", "message": "Beschreibung", "description": "Detail"},
+        "files": [],
+    }
+    assert audit_calls == [
+        (44, "task_child_step_manual_output_submitted", {"step_key": "translated_copywriting", "kind": "text"})
+    ]
+
+
+def test_child_step_manual_output_route_rejects_status_only_step(authed_client_no_db):
+    rsp = authed_client_no_db.post(
+        "/tasks/api/child/44/steps/product_listed/manual-output",
+        json={},
+    )
+
+    assert rsp.status_code == 400
+    assert rsp.get_json() == {"error": "step does not accept manual output"}

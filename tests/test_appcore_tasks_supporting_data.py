@@ -568,7 +568,15 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "product_links",
     ]
     assert payload["checks"][0]["reason"] == "未找到该语种 media_item"
-    assert all(check["manual_upload_url"].startswith("/medias/?") for check in payload["checks"])
+    checks = {check["key"]: check for check in payload["checks"]}
+    assert checks["localized_media_item"]["manual_output"]["kind"] == "video"
+    assert checks["translated_video"]["manual_output"]["kind"] == "video"
+    assert checks["translated_cover"]["manual_output"]["kind"] == "image"
+    assert checks["translated_copywriting"]["manual_output"]["kind"] == "text"
+    assert checks["push_texts"]["manual_output"]["kind"] == "text"
+    assert checks["detail_images"]["manual_output"]["kind"] == "images"
+    assert "manual_output" not in checks["product_listed"]
+    assert "manual_upload_url" not in checks["localized_media_item"]
     assert "FROM tasks t" in captured["sql"]
     assert "parent_task_id IS NOT NULL" in captured["sql"]
     assert captured["args"] == (44,)
@@ -816,7 +824,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     ]
 
 
-def test_get_child_readiness_applies_manual_step_confirmations(monkeypatch):
+def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monkeypatch):
     from appcore import pushes, tasks
 
     monkeypatch.setattr(
@@ -874,13 +882,12 @@ def test_get_child_readiness_applies_manual_step_confirmations(monkeypatch):
     payload = tasks.get_child_readiness(44)
     checks = {check["key"]: check for check in payload["checks"]}
 
-    assert payload["ready"] is True
-    assert payload["missing"] == []
+    assert payload["ready"] is False
+    assert payload["missing"] == ["translated_cover"]
     assert payload["manual_confirmed_steps"] == ["translated_cover"]
-    assert checks["translated_cover"]["ok"] is True
-    assert checks["translated_cover"]["system_ok"] is False
+    assert checks["translated_cover"]["ok"] is False
     assert checks["translated_cover"]["manual_confirmed"] is True
-    assert "人工确认完成" in checks["translated_cover"]["reason"]
+    assert "人工确认完成" not in checks["translated_cover"]["reason"]
 
 
 def test_list_task_artifacts_includes_direct_actions(monkeypatch):

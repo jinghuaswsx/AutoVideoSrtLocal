@@ -287,7 +287,8 @@ def resolve_push_texts(product_id: int) -> list[dict[str, str]]:
     """
     row = query_one(
         "SELECT body FROM media_copywritings "
-        "WHERE product_id=%s AND lang='en' AND idx=1 LIMIT 1",
+        "WHERE product_id=%s AND lang='en' AND idx=1 "
+        "ORDER BY (manually_edited_at IS NULL), manually_edited_at DESC, id DESC LIMIT 1",
         (product_id,),
     )
     if not row:
@@ -834,7 +835,7 @@ def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
     return query_one(
         "SELECT title, body, description FROM media_copywritings "
         "WHERE product_id=%s AND lang=%s "
-        "ORDER BY idx ASC, id ASC LIMIT 1",
+        "ORDER BY idx ASC, (manually_edited_at IS NULL), manually_edited_at DESC, id DESC LIMIT 1",
         (product_id, lang),
     )
 
@@ -847,7 +848,7 @@ def _list_first_enabled_copywritings(product_id: int) -> list[dict]:
     rows = query(
         "SELECT lang, title, body, description FROM media_copywritings "
         "WHERE product_id=%s "
-        "ORDER BY lang ASC, idx ASC, id ASC",
+        "ORDER BY lang ASC, idx ASC, (manually_edited_at IS NULL), manually_edited_at DESC, id DESC",
         (product_id,),
     )
     first_rows: dict[str, dict] = {}

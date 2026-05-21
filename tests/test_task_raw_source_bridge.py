@@ -243,6 +243,15 @@ def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):
 
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConnection())
     monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": args[0],
+            "status": tasks.PARENT_RAW_REVIEW,
+            "assignee_id": 11,
+        },
+    )
+    monkeypatch.setattr(
         bridge,
         "ensure_raw_source_for_parent_task",
         lambda **kwargs: sequence.append("raw_source_synced")

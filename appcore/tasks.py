@@ -38,6 +38,7 @@ PARENT_TERMINAL = (PARENT_ALL_DONE, PARENT_CANCELLED)
 CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
 CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
+CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -53,6 +54,14 @@ CHILD_ACCEPTANCE_STEP_LABELS = {
 CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
 CHILD_ACCEPTANCE_MISSING_ALIASES = {
     "localized_media_item": "lang_item_missing",
+}
+CHILD_MANUAL_OUTPUT_STEP_KINDS = {
+    "localized_media_item": "video",
+    "translated_video": "video",
+    "translated_cover": "image",
+    "translated_copywriting": "text",
+    "push_texts": "text",
+    "detail_images": "images",
 }
 RAW_NIUMA_EVENT_TYPES = {
     "raw_niuma_submitted",
@@ -71,7 +80,7 @@ SUBTITLE_REMOVAL_STATUS_LABELS = {
 
 # ---- 高层状态 rollup ----
 def high_level_status(status: str) -> str:
-    if status in (PARENT_ALL_DONE, CHILD_DONE):
+    if status in (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE):
         return "completed"
     if status in (PARENT_CANCELLED, CHILD_CANCELLED):
         return "terminated"
@@ -438,11 +447,11 @@ def list_task_center_items(
         where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         args.extend([like, like])
     if high_status == "in_progress":
-        where.append("t.status NOT IN (%s, %s, %s)")
-        args.extend([PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
+        where.append("t.status NOT IN (%s, %s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
     elif high_status == "completed":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_ALL_DONE, CHILD_DONE])
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
     elif high_status == "terminated":
         where.append("t.status=%s")
         args.append(PARENT_CANCELLED)
@@ -615,13 +624,13 @@ def create_parent_task(
                 if reuse_raw_source_id is not None:
                     cur.execute(
                         "INSERT INTO tasks "
-                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
-                        "VALUES (NULL, %s, %s, %s, %s, NOW(), %s)",
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, completed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, NOW(), NOW(), %s)",
                         (
                             int(media_product_id),
                             int(media_item_id) if media_item_id is not None else None,
                             int(raw_processor_id) if raw_processor_id is not None else None,
-                            PARENT_RAW_DONE,
+                            PARENT_ALL_DONE,
                             int(created_by),
                         ),
                     )
@@ -821,7 +830,7 @@ def _normalize_language_assignments(
 
 
 def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
-    """处理人标"已上传"，转入待审核。"""
+    """处理人标"已上传"，随后按 raw source 是否具备自动收口。"""
     conn = get_conn()
     try:
         conn.begin()
@@ -855,6 +864,7 @@ def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
             raise
     finally:
         conn.close()
+    complete_raw_parent_if_ready(task_id=task_id, actor_user_id=actor_user_id)
 
 
 def claim_parent(*, task_id: int, actor_user_id: int) -> None:
@@ -896,44 +906,90 @@ def _ensure_parent_raw_approval_allowed(
 
 
 def approve_raw(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:
+    """Legacy admin action: reconcile the raw task instead of requiring review."""
+    row = query_one(
+        "SELECT id, status, assignee_id FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("parent task not found")
+    _ensure_parent_raw_approval_allowed(
+        row,
+        actor_user_id=actor_user_id,
+        is_admin=is_admin,
+    )
+    result = complete_raw_parent_if_ready(task_id=task_id, actor_user_id=actor_user_id)
+    if not result.get("completed"):
+        raise StateError("raw source not ready")
+
+
+def complete_raw_parent_if_ready(*, task_id: int, actor_user_id: int | None = None) -> dict:
+    """Complete a raw-processing parent task once its processed raw source exists."""
     from appcore import task_raw_source_bridge
 
-    """审核通过原始视频，自动入库并 unblock 所有 blocked 子任务。"""
+    try:
+        raw_result = task_raw_source_bridge.ensure_raw_source_for_parent_task(
+            task_id=task_id,
+            actor_user_id=actor_user_id,
+        )
+    except task_raw_source_bridge.RawSourceBridgeError:
+        task_row = query_one(
+            "SELECT media_item_id FROM tasks WHERE id=%s AND parent_task_id IS NULL",
+            (int(task_id),),
+        ) or {}
+        media_item_id = _positive_int(task_row.get("media_item_id"))
+        existing = (
+            task_raw_source_bridge.find_ready_raw_source_for_media_item(media_item_id)
+            if media_item_id else None
+        )
+        if not existing:
+            raise
+        raw_result = {
+            "raw_source_id": int(existing["id"]),
+            "created": False,
+            "updated": False,
+        }
+    raw_source_id = raw_result.get("raw_source_id")
+    raw_event_type = (
+        "raw_source_created" if raw_result.get("created")
+        else "raw_source_updated" if raw_result.get("updated")
+        else "raw_source_ready"
+    )
+
     conn = get_conn()
     try:
         conn.begin()
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, status, assignee_id FROM tasks "
-                    "WHERE id=%s AND parent_task_id IS NULL FOR UPDATE",
-                    (int(task_id),),
+                    "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NULL AND status IN (%s,%s,%s,%s,%s)",
+                    (
+                        PARENT_ALL_DONE,
+                        int(task_id),
+                        PARENT_PENDING,
+                        PARENT_RAW_IN_PROGRESS,
+                        PARENT_RAW_REVIEW,
+                        PARENT_RAW_DONE,
+                        PARENT_ALL_DONE,
+                    ),
                 )
-                row = cur.fetchone()
-                if not row or row.get("status") != PARENT_RAW_REVIEW:
-                    raise StateError("parent not in raw_review")
-                _ensure_parent_raw_approval_allowed(
-                    row,
-                    actor_user_id=actor_user_id,
-                    is_admin=is_admin,
-                )
-                cur.execute(
-                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
-                    "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
-                    (PARENT_RAW_DONE, int(task_id), PARENT_RAW_REVIEW),
-                )
-                _write_event(cur, task_id, "approved", actor_user_id, None)
-
-                raw_result = task_raw_source_bridge.ensure_raw_source_for_parent_task(
-                    task_id=task_id,
-                    actor_user_id=actor_user_id,
+                if cur.rowcount == 0:
+                    raise StateError("parent not completable")
+                _write_event(
+                    cur,
+                    task_id,
+                    raw_event_type,
+                    actor_user_id,
+                    {"raw_source_id": raw_source_id},
                 )
                 _write_event(
                     cur,
                     task_id,
-                    "raw_source_created" if raw_result.get("created") else "raw_source_updated",
+                    "auto_completed",
                     actor_user_id,
-                    {"raw_source_id": raw_result.get("raw_source_id")},
+                    {"reason": "raw_source_ready", "raw_source_id": raw_source_id},
                 )
 
                 cur.execute(
@@ -967,6 +1023,7 @@ def approve_raw(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> 
             raise
     finally:
         conn.close()
+    return {"completed": True, "raw_source_id": raw_source_id}
 
 
 MIN_REASON_LEN = 10
@@ -1476,41 +1533,22 @@ def _manual_confirmed_child_step_keys(task_id: int) -> set[str]:
     return confirmed
 
 
-def _manual_upload_url_for_child_step(
-    *,
-    key: str,
-    task_id: int,
-    product_id: int,
-    product_code: str,
-    lang: str,
-    item: dict | None,
-) -> str:
-    item_id = int(item["id"]) if item and item.get("id") else None
-    action_by_key = {
-        "localized_media_item": "translate",
-        "translated_video": "video",
-        "translated_cover": "cover",
-        "translated_copywriting": "copywriting",
-        "push_texts": "copywriting",
-        "product_listed": "product_links",
-        "language_supported": "product_links",
-        "detail_images": "detail_images",
-        "shopify_images": "product_links",
-        "product_links": "product_links",
+def _manual_output_config_for_child_step(key: str) -> dict | None:
+    kind = CHILD_MANUAL_OUTPUT_STEP_KINDS.get(str(key or "").strip())
+    if not kind:
+        return None
+    accept_by_kind = {
+        "video": "video/mp4,video/quicktime",
+        "image": "image/jpeg,image/png,image/webp,image/gif",
+        "images": "image/jpeg,image/png,image/webp,image/gif",
+        "text": "",
     }
-    focus_by_key = {
-        "shopify_images": "shopify_images",
-        "product_links": "product_links",
+    multiple_by_kind = {"images": True}
+    return {
+        "kind": kind,
+        "accept": accept_by_kind.get(kind, ""),
+        "multiple": bool(multiple_by_kind.get(kind)),
     }
-    return _readiness_locate_url(
-        task_id=task_id,
-        product_id=product_id,
-        product_code=product_code,
-        lang=lang,
-        action=action_by_key.get(key, "translate"),
-        item_id=item_id,
-        focus=focus_by_key.get(key, ""),
-    )
 
 
 def _apply_child_manual_confirmations(
@@ -1530,24 +1568,12 @@ def _apply_child_manual_confirmations(
     }
     for check in checks:
         key = str(check.get("key") or "").strip()
-        check["manual_upload_url"] = _manual_upload_url_for_child_step(
-            key=key,
-            task_id=task_id,
-            product_id=product_id,
-            product_code=product_code,
-            lang=lang,
-            item=item,
-        )
+        manual_output = _manual_output_config_for_child_step(key)
+        if manual_output:
+            check["manual_output"] = manual_output
         if key not in normalized_confirmed:
             continue
-        system_ok = bool(check.get("ok"))
-        check["system_ok"] = system_ok
         check["manual_confirmed"] = True
-        check["ok"] = True
-        reason = str(check.get("reason") or "").strip()
-        check["reason"] = (
-            f"{reason}；已人工确认完成" if reason else "已人工确认完成"
-        )
     return checks
 
 
@@ -1578,7 +1604,7 @@ def _missing_item_child_acceptance_checks() -> list[dict]:
                 key,
                 CHILD_ACCEPTANCE_STEP_LABELS[key],
                 False,
-                reason="系统未找到目标语种素材，需手动传素材或人工确认完成",
+                reason="系统未找到目标语种素材，需手动提交对应结果或补齐目标语种素材",
             )
         )
     return checks
@@ -2203,17 +2229,13 @@ def _child_acceptance_payload(
     }
 
 
-def get_child_readiness(task_id: int) -> dict:
+def _child_readiness_payload_for_row(
+    *,
+    task_id: int,
+    row: dict,
+    include_evidence: bool = True,
+) -> dict:
     from appcore import pushes
-
-    row = query_one(
-        "SELECT t.media_product_id, t.country_code, p.product_code "
-        "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
-        "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
-        (int(task_id),),
-    )
-    if not row:
-        raise StateError("child task not found")
 
     item = _find_target_lang_item(row["media_product_id"], row["country_code"])
     if not item:
@@ -2223,6 +2245,7 @@ def get_child_readiness(task_id: int) -> dict:
             item=None,
             product=None,
             readiness={},
+            include_evidence=include_evidence,
         )
 
     product = _find_product(row["media_product_id"])
@@ -2233,7 +2256,82 @@ def get_child_readiness(task_id: int) -> dict:
         item=item,
         product=product,
         readiness=readiness,
+        include_evidence=include_evidence,
     )
+
+
+def get_child_readiness(task_id: int) -> dict:
+    row = query_one(
+        "SELECT t.media_product_id, t.country_code, p.product_code "
+        "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
+        "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+
+    return _child_readiness_payload_for_row(
+        task_id=int(task_id),
+        row=row,
+    )
+
+
+def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -> dict:
+    """Mark a translation child task done once its material is push-ready."""
+    row = query_one(
+        "SELECT * FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["status"] == CHILD_DONE:
+        return {"completed": True, "already_completed": True, "missing": []}
+    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+        return {
+            "completed": False,
+            "status": row["status"],
+            "missing": [],
+        }
+
+    payload = _child_readiness_payload_for_row(
+        task_id=int(task_id),
+        row=row,
+        include_evidence=False,
+    )
+    if not payload["ready"]:
+        return {
+            "completed": False,
+            "status": row["status"],
+            "missing": payload["missing"],
+        }
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, "
+                    "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN (%s,%s)",
+                    (CHILD_DONE, int(task_id), CHILD_ASSIGNED, CHILD_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not completable")
+                _write_event(
+                    cur,
+                    task_id,
+                    "auto_completed",
+                    actor_user_id,
+                    {"reason": "push_ready"},
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+    return {"completed": True, "missing": []}
 
 
 def confirm_child_step(
@@ -2276,6 +2374,178 @@ def confirm_child_step(
     finally:
         conn.close()
     return {"step_key": normalized_key}
+
+
+def _manual_text_payload(text: dict | None) -> dict:
+    payload = text or {}
+    title = str(payload.get("title") or "").strip()
+    message = str(payload.get("message") or payload.get("body") or "").strip()
+    description = str(payload.get("description") or "").strip()
+    if not any((title, message, description)):
+        raise ValueError("text payload required")
+    if not title or not message or not description:
+        raise ValueError("title, message and description are required")
+    return {"title": title, "message": message, "description": description}
+
+
+def _manual_push_text_body(fields: dict) -> str:
+    return (
+        f"标题: {fields['title']}\n"
+        f"文案: {fields['message']}\n"
+        f"描述: {fields['description']}"
+    )
+
+
+def _record_manual_output_event(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    payload: dict,
+) -> None:
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            CHILD_MANUAL_STEP_OUTPUT_EVENT,
+            int(actor_user_id),
+            json.dumps(payload, ensure_ascii=False),
+        ),
+    )
+
+
+def _create_manual_copywriting(
+    *,
+    product_id: int,
+    lang: str,
+    step_key: str,
+    fields: dict,
+) -> int:
+    idx = 1 if step_key == "push_texts" else 0
+    body = _manual_push_text_body(fields) if step_key == "push_texts" else fields["message"]
+    return int(execute(
+        "INSERT INTO media_copywritings "
+        "(product_id, lang, idx, title, body, description, auto_translated, manually_edited_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, 0, NOW())",
+        (
+            int(product_id),
+            lang,
+            idx,
+            fields["title"],
+            body,
+            fields["description"],
+        ),
+    ) or 0)
+
+
+def submit_child_step_manual_output(
+    *,
+    task_id: int,
+    step_key: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+    text: dict | None = None,
+    files: list[dict] | None = None,
+) -> dict:
+    """Persist a manual result for a child acceptance step.
+
+    Manual results are real media/text records. They do not mark a condition
+    complete by themselves unless the resulting material satisfies readiness.
+    """
+    from appcore import medias
+
+    normalized_key = _normalize_child_acceptance_step_key(step_key)
+    kind = CHILD_MANUAL_OUTPUT_STEP_KINDS.get(normalized_key)
+    if not kind:
+        raise ValueError("step does not accept manual output")
+
+    row = query_one(
+        "SELECT id, assignee_id, status, media_product_id, country_code "
+        "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["assignee_id"] != int(actor_user_id) and not is_admin:
+        raise PermissionError("forbidden")
+    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+        raise StateError("child not editable")
+
+    product_id = int(row["media_product_id"])
+    lang = str(row.get("country_code") or "").strip().lower()
+    file_items = list(files or [])
+    result: dict[str, Any] = {"step_key": normalized_key, "kind": kind, "manual": True}
+
+    if kind == "text":
+        fields = _manual_text_payload(text)
+        copywriting_id = _create_manual_copywriting(
+            product_id=product_id,
+            lang="en" if normalized_key == "push_texts" else lang,
+            step_key=normalized_key,
+            fields=fields,
+        )
+        result["copywriting_id"] = copywriting_id
+    elif kind == "video":
+        if len(file_items) != 1:
+            raise ValueError("one video file required")
+        file_info = file_items[0]
+        item_id = medias.create_item(
+            product_id,
+            int(actor_user_id),
+            str(file_info.get("filename") or "manual-video.mp4"),
+            str(file_info["object_key"]),
+            display_name=str(file_info.get("filename") or "manual-video.mp4"),
+            file_size=file_info.get("file_size"),
+            lang=lang,
+            task_id=int(task_id),
+        )
+        result["media_item_id"] = int(item_id)
+        result["object_key"] = file_info["object_key"]
+    elif kind == "image":
+        if len(file_items) != 1:
+            raise ValueError("one image file required")
+        item = _find_target_lang_item(product_id, lang)
+        if not item or not item.get("object_key"):
+            raise ValueError("target media item required before cover")
+        file_info = file_items[0]
+        item_id = medias.create_item(
+            product_id,
+            int(actor_user_id),
+            str(item.get("filename") or file_info.get("filename") or "manual-cover.mp4"),
+            str(item["object_key"]),
+            display_name=str(item.get("display_name") or item.get("filename") or "manual cover"),
+            file_size=item.get("file_size"),
+            cover_object_key=str(file_info["object_key"]),
+            lang=lang,
+            task_id=int(task_id),
+        )
+        result["media_item_id"] = int(item_id)
+        result["object_key"] = file_info["object_key"]
+    elif kind == "images":
+        if not file_items:
+            raise ValueError("image files required")
+        created_ids = []
+        for file_info in file_items:
+            created_ids.append(medias.add_detail_image(
+                product_id,
+                lang,
+                str(file_info["object_key"]),
+                content_type=file_info.get("content_type") or None,
+                file_size=file_info.get("file_size"),
+                origin_type="manual",
+            ))
+        result["detail_image_ids"] = [int(image_id) for image_id in created_ids]
+
+    _record_manual_output_event(
+        task_id=int(task_id),
+        actor_user_id=int(actor_user_id),
+        payload=result,
+    )
+    result["completion"] = complete_child_if_ready(
+        task_id=int(task_id),
+        actor_user_id=int(actor_user_id),
+    )
+    return result
 
 
 def list_unbound_items_for_task(task_id: int) -> list[dict]:
@@ -2358,7 +2628,6 @@ def list_task_artifacts(
 
 def submit_child(*, task_id: int, actor_user_id: int) -> None:
     """翻译员提交子任务；调 compute_readiness 做产物齐全 gate。"""
-    from appcore import pushes
     row = query_one(
         "SELECT * FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -2370,40 +2639,13 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
     if row["assignee_id"] != int(actor_user_id):
         raise StateError("only assignee can submit")
 
-    product = _find_product(row["media_product_id"])
-    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
-    readiness = pushes.compute_readiness(item, product) if item else {}
-    payload = _child_acceptance_payload(
+    result = complete_child_if_ready(
         task_id=int(task_id),
-        row=row,
-        item=item,
-        product=product,
-        readiness=readiness,
-        include_evidence=False,
+        actor_user_id=int(actor_user_id),
     )
-    if not payload["ready"]:
-        missing = payload["missing"]
+    if not result.get("completed"):
+        missing = result.get("missing") or []
         raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
-
-    conn = get_conn()
-    try:
-        conn.begin()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
-                    "WHERE id=%s AND status=%s",
-                    (CHILD_REVIEW, int(task_id), CHILD_ASSIGNED),
-                )
-                if cur.rowcount == 0:
-                    raise StateError("child not in assigned (race)")
-                _write_event(cur, task_id, "submitted", actor_user_id, None)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-    finally:
-        conn.close()
 
 
 def approve_child(*, task_id: int, actor_user_id: int) -> None:

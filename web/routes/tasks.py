@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 from functools import wraps
 
 from flask import Blueprint, current_app, render_template, request
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
+from appcore import local_media_storage, object_keys
 from appcore import mk_import as mk_import_svc
 from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
@@ -25,6 +28,7 @@ from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
+_MANUAL_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 MANUAL_RESULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 MANUAL_RESULT_ALLOWED_EXT = (".mp4", ".mov", ".webm", ".mkv")
@@ -39,6 +43,53 @@ def _json_response(payload, status_code: int = 200):
 def _is_admin() -> bool:
     return getattr(current_user, "is_admin", False) or \
         getattr(current_user, "role", "") in ("admin", "superadmin")
+
+
+def _manual_upload_filename(filename: str) -> str:
+    raw = os.path.basename(str(filename or "manual.bin").replace("\\", "/")).strip()
+    safe = _MANUAL_FILENAME_SAFE_RE.sub("_", raw).strip("._")
+    return safe or "manual.bin"
+
+
+def _manual_output_text_payload() -> dict:
+    if request.is_json:
+        body = request.get_json(silent=True) or {}
+    else:
+        body = request.form
+    return {
+        "title": str(body.get("title") or "").strip(),
+        "message": str(body.get("message") or body.get("body") or "").strip(),
+        "description": str(body.get("description") or "").strip(),
+    }
+
+
+def _manual_output_uploaded_files(tid: int, step_key: str) -> list[dict]:
+    incoming = []
+    incoming.extend(request.files.getlist("file"))
+    incoming.extend(request.files.getlist("files"))
+    files = []
+    seen = set()
+    for storage in incoming:
+        if not storage or not storage.filename:
+            continue
+        if id(storage) in seen:
+            continue
+        seen.add(id(storage))
+        filename = _manual_upload_filename(storage.filename)
+        object_key = object_keys.build_media_object_key(
+            int(current_user.id),
+            f"task-{int(tid)}",
+            f"manual_{step_key}_{filename}",
+        )
+        path = local_media_storage.write_stream(object_key, storage.stream)
+        file_size = path.stat().st_size if path and path.exists() else None
+        files.append({
+            "filename": filename,
+            "object_key": object_key,
+            "content_type": storage.mimetype or storage.content_type or "",
+            "file_size": file_size,
+        })
+    return files
 
 
 def _user_perms() -> dict:
@@ -638,6 +689,35 @@ def api_child_step_confirm(tid: int, step_key: str):
         {"step_key": result["step_key"]},
     )
     return _json_response({"ok": True, "step_key": result["step_key"]})
+
+
+@bp.route("/api/child/<int:tid>/steps/<step_key>/manual-output", methods=["POST"])
+@login_required
+def api_child_step_manual_output(tid: int, step_key: str):
+    """人工提交某个子任务验收步骤所需的真实结果。"""
+    if str(step_key or "").strip().lower() not in tasks_svc.CHILD_MANUAL_OUTPUT_STEP_KINDS:
+        return _json_response({"error": "step does not accept manual output"}, 400)
+    try:
+        result = tasks_svc.submit_child_step_manual_output(
+            task_id=tid,
+            step_key=step_key,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+            text=_manual_output_text_payload(),
+            files=_manual_output_uploaded_files(tid, step_key),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, 403)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    _audit_task_action(
+        tid,
+        "task_child_step_manual_output_submitted",
+        {"step_key": result["step_key"], "kind": result["kind"]},
+    )
+    return _json_response({"ok": True, **result})
 
 
 @bp.route("/api/<int:tid>/artifacts", methods=["GET"])

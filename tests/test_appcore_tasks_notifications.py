@@ -174,6 +174,15 @@ def test_approve_raw_notifies_children_after_unblock(monkeypatch):
 
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
     monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": args[0],
+            "status": tasks.PARENT_RAW_REVIEW,
+            "assignee_id": 1,
+        },
+    )
+    monkeypatch.setattr(
         "appcore.task_raw_source_bridge.ensure_raw_source_for_parent_task",
         lambda **kwargs: {"created": True, "raw_source_id": 55},
     )

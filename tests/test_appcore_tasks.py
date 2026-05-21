@@ -18,6 +18,7 @@ def test_status_constants_present():
 def test_high_level_status_rollup():
     assert tasks.high_level_status("pending") == "in_progress"
     assert tasks.high_level_status("raw_in_progress") == "in_progress"
+    assert tasks.high_level_status("raw_done") == "completed"
     assert tasks.high_level_status("review") == "in_progress"
     assert tasks.high_level_status("done") == "completed"
     assert tasks.high_level_status("all_done") == "completed"
@@ -384,7 +385,7 @@ def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
         args for sql, args in conn.cursor_obj.executed
         if sql.startswith("INSERT INTO tasks")
     ]
-    assert inserts[0][2:4] == (88, tasks.PARENT_RAW_DONE)
+    assert inserts[0][2:4] == (88, tasks.PARENT_ALL_DONE)
     assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_ASSIGNED)
     assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_ASSIGNED)
     events = [
@@ -534,7 +535,7 @@ def test_approve_raw_unblocks_children(
     tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
 
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_RAW_DONE
+    assert parent["status"] == tasks.PARENT_ALL_DONE
 
     children = query_all(
         "SELECT * FROM tasks WHERE parent_task_id=%s", (parent_id,)
@@ -547,7 +548,7 @@ def test_approve_raw_unblocks_children(
         (parent_id, parent_id),
     )
     types = [e["event_type"] for e in events]
-    assert "approved" in types
+    assert "auto_completed" in types
     assert types.count("unblocked") >= 2
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
@@ -565,7 +566,10 @@ def test_reject_raw_returns_to_in_progress_with_same_assignee(
         created_by=db_user_admin,
     )
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
-    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    execute(
+        "UPDATE tasks SET status=%s WHERE id=%s",
+        (tasks.PARENT_RAW_REVIEW, parent_id),
+    )
     tasks.reject_raw(task_id=parent_id, actor_user_id=db_user_admin,
                      reason="字幕没去干净请重做一遍谢谢")
     row = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
@@ -606,10 +610,8 @@ def test_cancel_parent_cascades_non_done_children(
         translator_id=db_user_translator,
         created_by=db_user_admin,
     )
-    # 走一遍，让 DE 子任务 done
+    # 走一遍领取父任务，再模拟 DE 子任务已完成，验证取消只影响未完成子任务。
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
-    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
-    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
     de_id = query_one(
         "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
         (parent_id,),
@@ -661,7 +663,6 @@ def test_submit_child_passes_with_ready(
                                       "has_copywriting": True, "has_push_texts": True,
                                       "is_listed": True, "lang_supported": True,
                                       "shopify_image_confirmed": True})
-    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
     monkeypatch.setattr(
         tasks,
         "_detail_images_status",
@@ -675,7 +676,7 @@ def test_submit_child_passes_with_ready(
 
     tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     row = query_one("SELECT * FROM tasks WHERE id=%s", (child_id,))
-    assert row["status"] == tasks.CHILD_REVIEW
+    assert row["status"] == tasks.CHILD_DONE
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
@@ -785,43 +786,9 @@ def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
     assert "detail_images" in exc.value.missing
 
 
-def test_submit_child_passes_when_missing_step_is_manually_confirmed(monkeypatch):
+def test_submit_child_ignores_manual_confirmations_when_step_result_missing(monkeypatch):
     from appcore import tasks
 
-    class FakeCursor:
-        def __init__(self):
-            self.rowcount = 1
-            self.executed = []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def execute(self, sql, args=None):
-            self.executed.append((sql, args))
-
-    class FakeConn:
-        def __init__(self):
-            self.cursor_obj = FakeCursor()
-
-        def begin(self):
-            pass
-
-        def cursor(self):
-            return self.cursor_obj
-
-        def commit(self):
-            pass
-
-        def rollback(self):
-            pass
-
-        def close(self):
-            pass
-
-    conn = FakeConn()
     monkeypatch.setattr(
         tasks,
         "query_one",
@@ -873,19 +840,313 @@ def test_submit_child_passes_when_missing_step_is_manually_confirmed(monkeypatch
         "_product_link_availability_status",
         lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
     )
+    monkeypatch.setattr(
+        tasks,
+        "get_conn",
+        lambda: (_ for _ in ()).throw(AssertionError("submit should fail before opening a DB transaction")),
+    )
+
+    with pytest.raises(tasks.NotReadyError) as exc:
+        tasks.submit_child(task_id=44, actor_user_id=2)
+
+    assert "detail_images" in exc.value.missing
+
+
+def test_child_acceptance_payload_marks_only_result_steps_as_manual_submittable(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": False, "required": True, "reason": "missing detail"},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": False, "required": True, "reason": "link down", "links": []},
+    )
+
+    payload = tasks._child_acceptance_payload(
+        task_id=44,
+        row={
+            "id": 44,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "product_code": "demo-rjc",
+        },
+        item={
+            "id": 1,
+            "product_id": 9,
+            "lang": "de",
+            "object_key": "",
+            "cover_object_key": "",
+        },
+        product={"id": 9, "product_code": "demo-rjc"},
+        readiness={
+            "has_object": False,
+            "has_cover": False,
+            "has_copywriting": False,
+            "has_push_texts": False,
+            "is_listed": False,
+            "lang_supported": False,
+            "shopify_image_confirmed": False,
+        },
+        include_evidence=False,
+        manual_confirmed_keys=set(),
+    )
+
+    by_key = {check["key"]: check for check in payload["checks"]}
+    assert by_key["localized_media_item"]["manual_output"]["kind"] == "video"
+    assert by_key["translated_video"]["manual_output"]["kind"] == "video"
+    assert by_key["translated_cover"]["manual_output"]["kind"] == "image"
+    assert by_key["translated_copywriting"]["manual_output"]["kind"] == "text"
+    assert by_key["push_texts"]["manual_output"]["kind"] == "text"
+    assert by_key["detail_images"]["manual_output"]["kind"] == "images"
+
+    for status_key in ("product_listed", "language_supported", "shopify_images", "product_links"):
+        assert "manual_output" not in by_key[status_key]
+
+
+def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
+    from appcore import medias, tasks
+
+    events = []
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "assignee_id": 2,
+            "status": tasks.CHILD_ASSIGNED,
+            "media_product_id": 9,
+            "country_code": "DE",
+        },
+    )
+    monkeypatch.setattr(
+        medias,
+        "create_item",
+        lambda *args, **kwargs: events.append(("media_item", args, kwargs)) or 301,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_record_manual_output_event",
+        lambda **kwargs: events.append(("event", kwargs)),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_child_if_ready",
+        lambda **kwargs: events.append(("complete", kwargs)) or {"completed": True, "missing": []},
+    )
+
+    result = tasks.submit_child_step_manual_output(
+        task_id=44,
+        step_key="translated_video",
+        actor_user_id=2,
+        files=[{"filename": "manual.mp4", "object_key": "1/medias/manual.mp4", "file_size": 123}],
+    )
+
+    assert result["media_item_id"] == 301
+    assert result["completion"] == {"completed": True, "missing": []}
+    assert events[-1] == ("complete", {"task_id": 44, "actor_user_id": 2})
+
+
+def test_submit_child_marks_done_when_readiness_ready(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+            self.rowcount = 1
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    conn = FakeConn()
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "parent_task_id": 10,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_ASSIGNED,
+            "assignee_id": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 1,
+            "object_key": "x",
+            "cover_object_key": "c",
+            "lang": lang,
+            "product_id": product_id,
+        },
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(
+        "appcore.pushes.compute_readiness",
+        lambda i, p: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
 
     tasks.submit_child(task_id=44, actor_user_id=2)
 
     assert any(
         "UPDATE tasks SET status=%s" in sql
-        and args == (tasks.CHILD_REVIEW, 44, tasks.CHILD_ASSIGNED)
+        and args == (tasks.CHILD_DONE, 44, tasks.CHILD_ASSIGNED, tasks.CHILD_REVIEW)
         for sql, args in conn.cursor_obj.executed
     )
     assert any(
-        "INSERT INTO task_events" in sql and args[1] == "submitted"
+        "completed_at=COALESCE(completed_at, NOW())" in sql
+        for sql, _args in conn.cursor_obj.executed
+    )
+    assert any(
+        "INSERT INTO task_events" in sql and args[1] == "auto_completed"
         for sql, args in conn.cursor_obj.executed
     )
+
+
+def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(monkeypatch):
+    from appcore import tasks
+    from appcore import task_raw_source_bridge as bridge
+
+    sequence = []
+
+    class FakeCursor:
+        rowcount = 1
+        rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            if "UPDATE tasks SET status=%s" in sql and "parent_task_id IS NULL" in sql:
+                sequence.append(("parent_done", args[0], args[1]))
+                self.rowcount = 1
+                return
+            if "SELECT id FROM tasks WHERE parent_task_id" in sql:
+                sequence.append("select_children")
+                self.rows = [{"id": 701}, {"id": 702}]
+                self.rowcount = 2
+                return
+            if "UPDATE tasks SET status=%s" in sql and "WHERE id IN" in sql:
+                sequence.append(("children_assigned", args[0], args[1:]))
+                self.rowcount = 2
+                return
+            if "INSERT INTO task_events" in sql:
+                sequence.append(("event", args[0], args[1]))
+                self.rowcount = 1
+                return
+            if "SELECT media_product_id FROM tasks" in sql:
+                self.rows = [{"media_product_id": 9}]
+                return
+            if "SELECT name FROM media_products" in sql:
+                self.rows = [{"name": "demo product"}]
+                return
+            raise AssertionError(sql)
+
+        def fetchall(self):
+            return list(self.rows)
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def begin(self):
+            sequence.append("begin")
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            sequence.append("commit")
+
+        def rollback(self):
+            sequence.append("rollback")
+
+        def close(self):
+            sequence.append("close")
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(
+        bridge,
+        "ensure_raw_source_for_parent_task",
+        lambda **kwargs: sequence.append("raw_source_ready")
+        or {"raw_source_id": 301, "created": True, "updated": False},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_child_assigned": staticmethod(
+                    lambda cur, *, task_id, product_name: sequence.append(("child_notified", task_id, product_name))
+                )
+            },
+        ),
+        raising=False,
+    )
+
+    result = tasks.complete_raw_parent_if_ready(task_id=501, actor_user_id=11)
+
+    assert result == {"completed": True, "raw_source_id": 301}
+    assert "raw_source_ready" in sequence
+    assert ("parent_done", tasks.PARENT_ALL_DONE, 501) in sequence
+    assert ("children_assigned", tasks.CHILD_ASSIGNED, (701, 702)) in sequence
+    assert ("event", 501, "auto_completed") in sequence
 
 
 def test_submit_child_fails_when_target_lang_item_missing(
@@ -913,7 +1174,7 @@ def test_submit_child_fails_when_target_lang_item_missing(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
-def test_approve_child_auto_all_done_when_last_child(
+def test_submit_child_auto_done_keeps_parent_raw_task_completed(
     monkeypatch, db_user_admin, db_user_translator, db_product
 ):
     from appcore import tasks
@@ -928,22 +1189,37 @@ def test_approve_child_auto_all_done_when_last_child(
     tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
     monkeypatch.setattr(tasks, "_find_target_lang_item",
-                        lambda product_id, lang: {"id": 1})
+                        lambda product_id, lang: {
+                            "id": 1,
+                            "object_key": "x",
+                            "cover_object_key": "c",
+                            "lang": lang,
+                            "product_id": product_id,
+                        })
     monkeypatch.setattr("appcore.pushes.compute_readiness",
-                        lambda i, p: {"ok": True})
-    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+                        lambda i, p: {"has_object": True, "has_cover": True,
+                                      "has_copywriting": True, "has_push_texts": True,
+                                      "is_listed": True, "lang_supported": True,
+                                      "shopify_image_confirmed": True})
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
 
     de_id, fr_id = (
         query_one("SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'", (parent_id,))["id"],
         query_one("SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='FR'", (parent_id,))["id"],
     )
     tasks.submit_child(task_id=de_id, actor_user_id=db_user_translator)
-    tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin)
-    parent = query_one("SELECT status FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_RAW_DONE   # 还没全部完成
-
     tasks.submit_child(task_id=fr_id, actor_user_id=db_user_translator)
-    tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin)
+    children = query_all("SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,))
+    assert all(child["status"] == tasks.CHILD_DONE for child in children)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
     assert parent["status"] == tasks.PARENT_ALL_DONE
     assert parent["completed_at"] is not None
@@ -965,14 +1241,11 @@ def test_reject_child_returns_to_assigned(
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
-    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda *a, **k: {"id": 1})
-    monkeypatch.setattr("appcore.pushes.compute_readiness", lambda *a, **k: {"ok": True})
-    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
     de_id = query_one(
         "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
         (parent_id,),
     )["id"]
-    tasks.submit_child(task_id=de_id, actor_user_id=db_user_translator)
+    execute("UPDATE tasks SET status=%s WHERE id=%s", (tasks.CHILD_REVIEW, de_id))
     tasks.reject_child(task_id=de_id, actor_user_id=db_user_admin,
                        reason="DE 文案翻译有错请修改")
     row = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
@@ -1006,7 +1279,7 @@ def test_cancel_child_does_not_change_parent(
     de = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
     assert de["status"] == tasks.CHILD_CANCELLED
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_RAW_DONE
+    assert parent["status"] == tasks.PARENT_ALL_DONE
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
