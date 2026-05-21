@@ -1261,11 +1261,32 @@ def _evidence_status(*, label: str, meta: str, ok: bool | None = None) -> dict:
     return payload
 
 
-def _compact_evidence_text(value: Any, *, limit: int = 180) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "..."
+def _evidence_text_value(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _copywriting_structured_text(row: dict) -> dict[str, str]:
+    from appcore.pushes import CopywritingParseError, parse_copywriting_body
+
+    raw_body = _evidence_text_value(row.get("body"))
+    try:
+        parsed = parse_copywriting_body(raw_body)
+    except CopywritingParseError:
+        parsed = {}
+    return {
+        "title": _evidence_text_value(
+            parsed.get("title") or row.get("title") or row.get("ad_title")
+        ),
+        "body": _evidence_text_value(
+            parsed.get("message")
+            or row.get("body")
+            or row.get("ad_body")
+            or row.get("primary_text")
+        ),
+        "description": _evidence_text_value(
+            parsed.get("description") or row.get("description")
+        ),
+    }
 
 
 def _copywriting_evidence(product_id: int, lang: str) -> list[dict]:
@@ -1274,20 +1295,19 @@ def _copywriting_evidence(product_id: int, lang: str) -> list[dict]:
     rows = medias.list_copywritings(int(product_id), (lang or "").strip().lower()) or []
     evidence: list[dict] = []
     for index, row in enumerate(rows[:3], start=1):
-        title = _compact_evidence_text(row.get("title") or row.get("ad_title") or "")
-        body = _compact_evidence_text(
-            row.get("body")
-            or row.get("description")
-            or row.get("ad_body")
-            or row.get("primary_text")
-            or ""
-        )
+        structured = _copywriting_structured_text(row or {})
         evidence.append(
             {
                 "type": "text",
                 "label": f"文案 {index}",
-                "title": title,
-                "body": body,
+                "title": structured["title"],
+                "body": structured["body"],
+                "description": structured["description"],
+                "lines": [
+                    {"label": "标题", "value": structured["title"]},
+                    {"label": "文案", "value": structured["body"]},
+                    {"label": "描述", "value": structured["description"]},
+                ],
             }
         )
     return evidence

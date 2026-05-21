@@ -944,6 +944,47 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     ]
 
 
+def test_copywriting_evidence_preserves_three_structured_lines(monkeypatch):
+    from appcore import medias, tasks
+
+    long_title = "Das ultimative Spiel fuer jede Grillparty mit extra langem Titel"
+    long_message = "Werfen, vier in einer Reihe platzieren und gewinnen ohne abgeschnittene Struktur"
+    long_description = "Laesst sich im Handumdrehen flach zusammenklappen und bleibt voll sichtbar"
+    monkeypatch.setattr(
+        medias,
+        "list_copywritings",
+        lambda product_id, lang: [
+            {
+                "title": "",
+                "body": (
+                    f"标题: {long_title}\n"
+                    f"文案: {long_message}\n"
+                    f"描述: {long_description}"
+                ),
+                "description": "",
+            }
+        ],
+    )
+
+    evidence = tasks._copywriting_evidence(9, "de")
+
+    assert evidence == [
+        {
+            "type": "text",
+            "label": "文案 1",
+            "title": long_title,
+            "body": long_message,
+            "description": long_description,
+            "lines": [
+                {"label": "标题", "value": long_title},
+                {"label": "文案", "value": long_message},
+                {"label": "描述", "value": long_description},
+            ],
+        }
+    ]
+    assert "..." not in "".join(line["value"] for line in evidence[0]["lines"])
+
+
 def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monkeypatch):
     from appcore import pushes, tasks
 
