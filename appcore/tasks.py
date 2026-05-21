@@ -128,6 +128,17 @@ def _user_display_name_expr(alias: str) -> str:
     return f"{prefix}username"
 
 
+def _projects_recent_order_clause() -> str:
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projects' "
+        "AND COLUMN_NAME = 'updated_at'"
+    )
+    if row:
+        return "ORDER BY updated_at DESC, created_at DESC"
+    return "ORDER BY created_at DESC"
+
+
 def _parse_event_payload_obj(payload_json: Any) -> dict:
     value = payload_json
     for _ in range(2):
@@ -428,6 +439,7 @@ def list_task_center_items(
     page_size: int,
     bucket: str = "",
     task_id: int | None = None,
+    task_type: str = "",
     parent_only: bool = False,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
@@ -441,6 +453,12 @@ def list_task_center_items(
         raise ValueError("invalid tab")
     if parent_only:
         where.append("t.parent_task_id IS NULL")
+    if task_type == "raw":
+        where.append("t.parent_task_id IS NULL")
+    elif task_type == "translate":
+        where.append("t.parent_task_id IS NOT NULL")
+    elif task_type:
+        raise ValueError("invalid task_type")
 
     if task_id:
         where.append("t.id=%s")
@@ -1715,10 +1733,11 @@ def _recent_copywriting_translate_task_id(product_id: int, lang: str) -> str:
     lang_code = (lang or "").strip().lower()
     if not product_id or not lang_code:
         return ""
+    order_clause = _projects_recent_order_clause()
     rows = query_all(
         "SELECT id, state_json FROM projects "
         "WHERE type='copywriting_translate' AND deleted_at IS NULL "
-        "ORDER BY updated_at DESC, created_at DESC LIMIT 100"
+        f"{order_clause} LIMIT 100"
     )
     for row in rows or []:
         state = _parse_event_payload_obj(row.get("state_json"))

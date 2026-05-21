@@ -128,7 +128,7 @@ HOME_REDIRECT_ORDER = [
     ("meta_hot_posts",   "/xuanpin/meta-hot-posts"),
     ("mk_selection",     "/xuanpin/mk"),
     ("task_center",      "/tasks/"),
-    ("raw_video_pool",   "/raw-video-pool/"),
+    ("raw_video_pool",   "/tasks/"),
     ("bulk_translate_admin", "/bulk-translate/admin"),
     ("omni_translate",   "/omni-translate"),
     ("api_config",       "/settings"),

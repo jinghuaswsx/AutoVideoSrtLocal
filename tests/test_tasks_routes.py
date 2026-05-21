@@ -4,7 +4,7 @@ import io
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
-    assert b"\xe4\xbb\xbb\xe5\x8a\xa1\xe4\xb8\xad\xe5\xbf\x83" in rsp.data  # "任务中心" in UTF-8
+    assert "任务中心".encode("utf-8") in rsp.data
 
 
 def test_task_center_child_translate_jump_uses_product_code_search(authed_client_no_db):
@@ -44,16 +44,26 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     body = rsp.data.decode("utf-8")
 
     assert "function tcStatusLabel(status)" in body
-    assert "blocked: '等待前置完成'" in body
+    assert "blocked: '等待 去字幕原始素材'" in body
     assert "assigned: '待处理'" in body
     assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
     assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
+    assert "function tcTaskTypeLabel(task)" in body
+    assert "const kind = tcTaskTypeLabel(it);" in body
+    assert "task && task.parent_task_id ? '小语种翻译' : '去字幕'" in body
+    assert "function tcTaskStatusCell(it)" in body
+    assert "<td>${tcTaskStatusCell(it)}</td>" in body
+    assert "tcActiveTaskAction(parentId, '去查看等待的任务', false)" in body
     assert "function tcTaskRowAction(it)" in body
-    assert "tcDisabledTaskAction('等待前置完成')" in body
+    assert "tcDisabledTaskAction('等待 去字幕原始素材')" in body
+    assert "function tcBlockedTaskAction(it)" not in body
+    assert "if (status === 'blocked') return tcDisabledTaskAction('等待 去字幕原始素材');" in body
     assert "tcOpenDetail(id)" in body
     assert "去处理" in body
     assert "处理去字幕原始视频" in body
     assert "认领处理" not in body
+    assert "const kind = it.parent_task_id ? '子任务' : '父任务';" not in body
+    assert "等待前置完成" not in body
     assert "查看结果" in body
     assert "查看记录" in body
     assert ">详情</button>" not in body
@@ -73,6 +83,27 @@ def test_task_center_raw_review_self_actions_render_in_step(authed_client_no_db)
     assert "去字幕原始视频素材处理" in body
 
 
+def test_task_center_niuma_step_uses_status_only_and_centered_detail_button(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-btn { display:inline-flex; align-items:center; justify-content:center;" in body
+    assert "text-align:center;" in body
+    assert "text-decoration:none;" in body
+    assert "结果反馈" in body
+    assert "错误摘要" not in body
+    assert "function tcShouldShowSubtitleRemovalComparison" in body
+    assert "String(event && event.event_type || '') !== 'raw_niuma_submitted'" in body
+
+
+def test_task_center_does_not_jump_to_legacy_raw_pool_page(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcParentUploadDone" not in body
+    assert "window.open('/raw-video-pool/'" not in body
+
+
 def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -89,6 +120,21 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "TC_TASK_PAGE_SIZE" in body
     assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
     assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
+
+
+def test_task_center_overview_has_task_type_filter_before_refresh(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    select_pos = body.index('id="tcTaskTypeFilter"')
+    refresh_pos = body.index('id="tcRefresh"')
+    assert select_pos < refresh_pos
+    assert '<option value="all" selected>全部</option>' in body
+    assert '<option value="raw">去字幕任务</option>' in body
+    assert '<option value="translate">翻译任务</option>' in body
+    assert "tcTaskTypeFilter" in body
+    assert "task_type: taskType" in body
+    assert "tcTaskTypeFilter').addEventListener('keyup'" in body
 
 
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
@@ -130,7 +176,8 @@ def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no
     assert "payload.countries.map(tcLanguageLabel).join('、')" in body
     assert "tcLanguageLabel(payload.country)" in body
     assert "const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';" in body
-    assert "tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段" in body
+    assert "tcEsc(tcTaskTypeLabel(task))" in body
+    assert "'（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'" in body
     assert "翻译产物状态 (${tcEsc(tcLanguageLabel(task.country_code))})" in body
 
 
@@ -224,7 +271,43 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "page": 3,
         "page_size": 100,
         "task_id": 44,
+        "task_type": "",
     }
+
+
+def test_api_list_delegates_task_type_filter(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&task_type=translate")
+
+    assert rsp.status_code == 200
+    assert captured["task_type"] == "translate"
+
+
+def test_api_list_rejects_invalid_task_type(authed_user_client_no_db, monkeypatch):
+    def fake_list_task_center_items(**kwargs):
+        raise AssertionError("invalid task_type should be rejected before service call")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&task_type=unknown")
+
+    assert rsp.status_code == 400
+    assert rsp.get_json()["error"] == "invalid task_type"
 
 
 def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_no_db, monkeypatch):
@@ -252,6 +335,19 @@ def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_
 
     assert "task_id=' + encodeURIComponent(String(id || ''))" in body
     assert "'&task_id='" in body
+
+
+def test_task_detail_drawer_checks_task_before_secondary_fetches(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    start = body.index("async function tcOpenDetail")
+    end = body.index("function tcCloseDetail", start)
+    fn = body[start:end]
+
+    missing_task_check = fn.index("if (!task)")
+    assert missing_task_check < fn.index("'/tasks/api/' + id + '/events'")
+    assert missing_task_check < fn.index("'/tasks/api/' + id + '/review-assets'")
 
 
 def test_api_list_rejects_unknown_tab_without_querying_db(authed_user_client_no_db, monkeypatch):

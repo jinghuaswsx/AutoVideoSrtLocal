@@ -289,6 +289,45 @@ def test_list_task_events_does_not_require_projects_updated_at(monkeypatch):
     assert subtitle["detail_url"] == "/subtitle-removal/tcraw-44-b"
 
 
+def test_recent_copywriting_translate_task_does_not_require_projects_updated_at(monkeypatch):
+    import json
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        if "information_schema.COLUMNS" in sql:
+            assert "TABLE_NAME = 'projects'" in sql
+            assert "COLUMN_NAME = 'updated_at'" in sql
+            return None
+        if "FROM media_copywritings" in sql:
+            assert args == (123,)
+            return {"product_id": 599}
+        raise AssertionError(sql)
+
+    def fake_query_all(sql, args=()):
+        if "FROM projects" in sql:
+            captured["sql"] = sql
+            captured["args"] = args
+            assert "updated_at" not in sql
+            assert "ORDER BY created_at DESC" in sql
+            return [
+                {
+                    "id": "copy-task-de",
+                    "state_json": json.dumps(
+                        {"target_lang": "DE", "target_copy_id": 123}
+                    ),
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks._recent_copywriting_translate_task_id(599, "de") == "copy-task-de"
+    assert captured["args"] == ()
+
+
 def test_list_dispatch_pool_products_filters_active_parent_tasks(monkeypatch):
     from appcore import tasks
 
@@ -517,6 +556,47 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
         20,
         0,
     )
+
+
+def test_list_task_center_items_filters_by_task_type(monkeypatch):
+    from appcore import tasks
+
+    captured = []
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_type="raw",
+    ) == {"items": [], "page": 1, "page_size": 20}
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        task_type="translate",
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.parent_task_id IS NULL" in captured[0]["sql"]
+    assert captured[0]["args"] == (20, 0)
+    assert "t.parent_task_id IS NOT NULL" in captured[1]["sql"]
+    assert captured[1]["args"] == (20, 0)
 
 
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):

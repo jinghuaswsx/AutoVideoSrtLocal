@@ -41,7 +41,8 @@
 .tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
 .tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
-.tc-btn { height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); cursor:pointer; font-size:13px; }
+.tc-select { min-width:120px; background:var(--tc-bg); color:var(--tc-fg); }
+.tc-btn { display:inline-flex; align-items:center; justify-content:center; height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg); cursor:pointer; font-size:13px; line-height:1.2; text-align:center; text-decoration:none; }
 .tc-btn:hover { background:var(--tc-bg-muted); }
 .tc-btn:disabled { background:var(--tc-bg-muted); border-color:var(--tc-border); color:var(--tc-fg-muted); cursor:not-allowed; opacity:.72; }
 .tc-btn:disabled:hover { background:var(--tc-bg-muted); }
@@ -182,6 +183,7 @@
   .tc-subtab { white-space: nowrap; flex: 0 0 auto; }
   .tc-filters { gap: 8px; }
   .tc-filters #tcKeyword { width: 100% !important; flex: 1 1 100%; }
+  .tc-filters #tcTaskTypeFilter { flex: 0 0 auto; }
   .tc-filters #tcRefresh { flex: 0 0 auto; }
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
@@ -215,7 +217,7 @@
   <div class="tc-header">
     <div>
       <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
-      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理去字幕原始视频素材处理与翻译任务</p>
+      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
     </div>
   </div>
 
@@ -240,6 +242,11 @@
 
   <div class="tc-filters" id="tcFilters">
     <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
+    <select id="tcTaskTypeFilter" class="tc-input tc-select" aria-label="任务类型筛选">
+      <option value="all" selected>全部</option>
+      <option value="raw">去字幕任务</option>
+      <option value="translate">翻译任务</option>
+    </select>
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -364,15 +371,48 @@ async function tcCopyText(text, btn) {
       btn.disabled = false;
     }, 900);
   };
+  const markFailed = () => {
+    if (!btn) return;
+    btn.textContent = '复制失败';
+    btn.disabled = true;
+    window.setTimeout(() => {
+      btn.textContent = original || '复制';
+      btn.disabled = false;
+    }, 1200);
+  };
+  const copyWithTextarea = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.left = '-9999px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    try {
+      return document.execCommand('copy');
+    } catch (e) {
+      return false;
+    } finally {
+      textarea.remove();
+    }
+  };
   try {
-    if (navigator.clipboard && window.isSecureContext) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
       await navigator.clipboard.writeText(value);
-    } else {
-      window.prompt('复制文本', value);
+    } else if (!copyWithTextarea()) {
+      throw new Error('copy failed');
     }
     markCopied();
   } catch (e) {
-    window.prompt('复制文本', value);
+    if (copyWithTextarea()) {
+      markCopied();
+    } else {
+      markFailed();
+    }
   }
 }
 function tcFormatTime(s) {
@@ -400,13 +440,24 @@ function tcStatusLabel(status) {
     raw_review: '去字幕原始视频素材待审核',
     raw_done: '去字幕原始视频素材已通过',
     all_done: '全部完成',
-    blocked: '等待前置完成',
+    blocked: '等待 去字幕原始素材',
     assigned: '待处理',
     review: '待审核',
     done: '已完成',
     cancelled: '已取消',
   };
   return labels[status] || status || '—';
+}
+function tcTaskTypeLabel(task) {
+  return task && task.parent_task_id ? '小语种翻译' : '去字幕';
+}
+function tcTaskStatusCell(it) {
+  const badge = `<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>`;
+  const parentId = Number(it && it.parent_task_id || 0);
+  if (it && it.status === 'blocked' && parentId) {
+    return badge + '<div style="margin-top:6px;">' + tcActiveTaskAction(parentId, '去查看等待的任务', false) + '</div>';
+  }
+  return badge;
 }
 function tcHighLevelLabel(status) {
   const labels = {
@@ -680,7 +731,11 @@ function tcRenderSubtitleRemovalVideo(label, url, hint) {
     + '<video class="tc-niuma-video" controls preload="metadata" src="' + tcAttr(safeUrl) + '"></video>'
     + '</div>';
 }
-function tcRenderSubtitleRemovalComparison(context) {
+function tcShouldShowSubtitleRemovalComparison(event) {
+  return String(event && event.event_type || '') !== 'raw_niuma_submitted';
+}
+function tcRenderSubtitleRemovalComparison(event, context) {
+  if (!tcShouldShowSubtitleRemovalComparison(event)) return '';
   const comparison = context && context.comparison ? context.comparison : {};
   if (!comparison.result_video_url) return '';
   const source = tcRenderSubtitleRemovalVideo(
@@ -698,6 +753,7 @@ function tcRenderSubtitleRemovalComparison(context) {
 }
 function tcHasSubtitleRemovalComparison(events) {
   return (Array.isArray(events) ? events : []).some(function(event) {
+    if (!tcShouldShowSubtitleRemovalComparison(event)) return false;
     const context = event && event.payload_context ? event.payload_context.subtitle_removal : null;
     const comparison = context && context.comparison ? context.comparison : null;
     return Boolean(comparison && comparison.source_video_url && comparison.result_video_url);
@@ -746,7 +802,7 @@ function tcRenderSubtitleRemovalContext(event) {
     tcRenderSubtitleRemovalMeta('已过时间', elapsed),
     tcRenderSubtitleRemovalMeta('最近更新时间', context.last_updated_at ? tcFormatTime(context.last_updated_at) : ''),
     tcRenderSubtitleRemovalMeta('字幕移除任务 ID', context.task_id || ''),
-    tcRenderSubtitleRemovalMeta('错误摘要', context.error || ''),
+    tcRenderSubtitleRemovalMeta('结果反馈', context.error || ''),
   ].filter(Boolean).join('');
   const action = detailUrl
     ? '<a class="tc-btn tc-btn--primary" href="' + tcAttr(detailUrl) + '" target="_blank" rel="noopener">字幕移除任务页</a>'
@@ -757,7 +813,7 @@ function tcRenderSubtitleRemovalContext(event) {
     + action
     + '</div>'
     + (meta ? '<div class="tc-niuma-meta">' + meta + '</div>' : '')
-    + tcRenderSubtitleRemovalComparison(context)
+    + tcRenderSubtitleRemovalComparison(event, context)
     + '</div>';
 }
 function tcScrollToReviewTarget(eventType) {
@@ -978,6 +1034,8 @@ document.querySelectorAll('[data-bucket]').forEach(btn => {
 });
 document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+document.getElementById('tcTaskTypeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcTaskTypeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
@@ -1001,10 +1059,12 @@ async function tcRender() {
 
 async function tcRenderTaskList(wrap, tab, bucket) {
   const kw = document.getElementById('tcKeyword').value.trim();
+  const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
   const params = new URLSearchParams({
     tab,
     keyword: kw,
     bucket,
+    task_type: taskType,
     page: String(TC_TASK_PAGE),
     page_size: String(TC_TASK_PAGE_SIZE),
   });
@@ -1012,13 +1072,13 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   TC_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || 0), it]));
   if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0); return; }
   const rows = data.items.map(it => {
-    const kind = it.parent_task_id ? '子任务' : '父任务';
+    const kind = tcTaskTypeLabel(it);
     const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
     return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
       <td><div class="tc-task-name" title="${tcAttr(it.product_name || '')}">${tcEsc(it.product_name)}</div><div class="tc-task-meta">#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</div></td>
-      <td>${kind}</td>
+      <td>${tcEsc(kind)}</td>
       <td>${country}</td>
-      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span></td>
+      <td>${tcTaskStatusCell(it)}</td>
       <td>${tcEsc(it.assignee_display_name || it.assignee_username || '—')}</td>
       <td>${tcEsc(tcFormatTime(it.created_at))}</td>
       <td>${tcTaskRowAction(it)}</td>
@@ -1075,7 +1135,7 @@ function tcTaskRowAction(it) {
     if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
     return tcActiveTaskAction(id, '查看', false);
   }
-  if (status === 'blocked') return tcDisabledTaskAction('等待前置完成');
+  if (status === 'blocked') return tcDisabledTaskAction('等待 去字幕原始素材');
   if (status === 'assigned') {
     return (TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限');
   }
@@ -1219,13 +1279,13 @@ async function tcOpenDetail(id) {
     const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
       + '&task_id=' + encodeURIComponent(String(id || ''))
       + '&page_size=1';
-    const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
-      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson(detailListUrl),
+    const taskResp = cachedTask ? {items: [cachedTask]} : await tcFetchJson(detailListUrl);
+    const task = (taskResp.items || []).find(t => Number(t.id) === Number(id));
+    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
+    const [eventsResp, reviewAssetsResp] = await Promise.all([
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
-    const task = (taskResp.items || []).find(t => t.id === id);
-    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
     body.innerHTML = tcRenderDetail(task, eventsResp.events || [], reviewAssetsResp || {});
     // fetch artifacts for both parent and child tasks
     fetch('/tasks/api/' + id + '/artifacts')
@@ -1354,7 +1414,7 @@ function tcRenderDetail(task, events, reviewAssets) {
     </div>
     <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
     <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
-      ${isParent ? '父任务（去字幕原始视频素材处理段）' : '子任务（' + tcEsc(tcLanguageLabel(task.country_code)) + ' 翻译段）'} ·
+      ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
       负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
     </div>
     ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
@@ -1378,7 +1438,6 @@ function tcDetailButtons(task, isParent) {
   const status = task.status;
   const btns = [];
   if (isParent) {
-    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">去字幕原始视频素材处理</button>`);
     if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
     }
@@ -1502,11 +1561,6 @@ function tcChildJumpTranslate(taskId, country, productId, productCode) {
 function tcChildJumpHistory(taskId, country, productId, productCode) {
   const url = tcMediasUrl(taskId, productId, country, productCode, 'history');
   window.open(url, '_blank', 'noopener,noreferrer');
-}
-function tcParentUploadDone(id, productId) {
-  // D 子系统上线后，处理人在"去字幕原始视频素材处理"完成下载/上传/自动 mark_uploaded 全流程。
-  // 这里只做跳转，不再保留 prompt fallback。
-  window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');
 }
 let TC_REASON_CTX = null;
 function tcOpenReason(kind, id, action) {

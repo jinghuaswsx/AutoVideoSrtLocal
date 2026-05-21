@@ -396,14 +396,22 @@ def test_task_and_order_window_open_calls_use_noopener_and_encoded_params():
 
     assert "new URLSearchParams({" in tasks_template
     assert "window.open(url, '_blank', 'noopener,noreferrer');" in tasks_template
-    assert "window.open('/raw-video-pool/', '_blank', 'noopener,noreferrer');" in tasks_template
+    assert "window.open('/raw-video-pool/'" not in tasks_template
     assert "window.open(url, '_blank');" not in tasks_template
-    assert "window.open('/raw-video-pool/', '_blank');" not in tasks_template
     assert "window.open('/medias?product_id=' + encodeURIComponent(pid || ''), '_blank', 'noopener,noreferrer');" in order_template
     assert "window.open('/medias?product_id=' + pid, '_blank');" not in order_template
     assert "const taskId = String(data.task_id || '');" in medias_js
     assert "window.open(`/tasks/${encodeURIComponent(taskId)}`, '_blank', 'noopener,noreferrer');" in medias_js
     assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer');" not in medias_js
+
+
+def test_task_center_copy_buttons_use_direct_clipboard_without_prompt_fallback():
+    source = Path("web/templates/tasks_list.html").read_text(encoding="utf-8")
+
+    assert "function tcCopyText(text, btn)" in source
+    assert "document.createElement('textarea')" in source
+    assert "document.execCommand('copy')" in source
+    assert "window.prompt(" not in source
 
 
 def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():

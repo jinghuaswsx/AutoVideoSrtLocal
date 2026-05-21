@@ -100,6 +100,38 @@ def _product_link_warning(url: str) -> dict | None:
     }
 
 
+def _bind_imported_mk_material(**kwargs) -> dict:
+    from appcore import media_video_materials
+
+    return media_video_materials.bind_mk_material(**kwargs)
+
+
+def _mk_product_links_from_meta(meta: dict, fallback: str | None = None) -> list[str]:
+    links = []
+    raw_links = meta.get("product_links")
+    if isinstance(raw_links, list):
+        links.extend(str(item or "").strip() for item in raw_links if str(item or "").strip())
+    if links:
+        return links
+    first = str(meta.get("product_link") or fallback or "").strip()
+    if first and first not in links:
+        links.insert(0, first)
+    return links
+
+
+def _mk_binding_metadata(meta: dict, *, product_link: str | None, video_path: str, cover_path: str) -> dict:
+    metadata = dict(meta)
+    links = _mk_product_links_from_meta(meta, product_link)
+    if links:
+        metadata["product_link"] = links[0]
+        metadata["product_links"] = links
+    if video_path:
+        metadata["video_path"] = video_path
+    if cover_path:
+        metadata["cover_path"] = cover_path
+    return metadata
+
+
 from appcore.db import execute, query_all, query_one
 from appcore.medias import (
     create_item as _medias_create_item,
@@ -624,6 +656,39 @@ def import_mk_video(
                 pass
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise StorageError(f"insert media_item failed: {e}") from e
+
+    video_path = _mk_proxy_media_path(
+        meta.get("video_path") or meta.get("mk_video_path") or meta.get("mp4_url"),
+        _MK_VIDEO_PROXY_PATHS,
+    )
+    cover_path = _mk_proxy_media_path(
+        meta.get("cover_path") or meta.get("mk_video_image_path") or meta.get("cover_url"),
+        _MK_MEDIA_PROXY_PATHS,
+    )
+    if video_path:
+        try:
+            _bind_imported_mk_material(
+                media_item_id=int(item_id),
+                mk_product_id=meta.get("mk_product_id") or meta.get("mk_id") or payload.get("mk_id"),
+                mk_product_name=meta.get("mk_product_name") or meta.get("product_name") or payload.get("name"),
+                mk_video_path=video_path,
+                mk_video_name=filename,
+                mk_video_image_path=cover_path or None,
+                mk_video_metadata=_mk_binding_metadata(
+                    meta,
+                    product_link=meta.get("product_link") or product_link,
+                    video_path=video_path,
+                    cover_path=cover_path,
+                ),
+                bound_by=int(actor_user_id),
+            )
+        except Exception as exc:
+            log.warning("mk import binding failed item_id=%s video_path=%s: %s", item_id, video_path, exc)
+            warnings.append({
+                "type": "mk_material_binding_failed",
+                "message": "明空素材绑定信息写入失败",
+                "detail": str(exc),
+            })
 
     try:
         os.unlink(mp4_dest)
