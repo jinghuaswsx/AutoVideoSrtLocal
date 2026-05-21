@@ -13,7 +13,7 @@
 
 用法：
   python tools/wedev_sync.py
-  python tools/wedev_sync.py --project-url http://172.30.254.14 --wedev-url https://os.wedev.vip
+  python tools/wedev_sync.py --project-url http://172.16.254.106 --wedev-url https://os.wedev.vip
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from typing import Any
 import requests
 
 
-DEFAULT_PROJECT_URL = "http://172.30.254.14"
+DEFAULT_PROJECT_URL = "http://172.16.254.106"
 DEFAULT_WEDEV_URL = "https://os.wedev.vip"
 
 

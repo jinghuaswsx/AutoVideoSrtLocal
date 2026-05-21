@@ -42,9 +42,9 @@ def test_browser_monitor_page_renders_three_vnc_iframes(authed_client_no_db, mon
     assert "DXM01-Meta" in html
     assert "DXM02-MK" in html
     assert "DXM03-RJC" in html
-    assert 'src="http://172.30.254.14:6092/vnc.html?host=172.30.254.14&amp;port=6092&amp;autoconnect=true&amp;resize=remote"' in html
-    assert 'src="http://172.30.254.14:6093/vnc.html?host=172.30.254.14&amp;port=6093&amp;autoconnect=true&amp;resize=remote"' in html
-    assert 'src="http://172.30.254.14:6095/vnc.html?host=172.30.254.14&amp;port=6095&amp;autoconnect=true&amp;resize=remote"' in html
+    assert 'src="http://172.16.254.106:6092/vnc.html?host=172.16.254.106&amp;port=6092&amp;autoconnect=true&amp;resize=remote"' in html
+    assert 'src="http://172.16.254.106:6093/vnc.html?host=172.16.254.106&amp;port=6093&amp;autoconnect=true&amp;resize=remote"' in html
+    assert 'src="http://172.16.254.106:6095/vnc.html?host=172.16.254.106&amp;port=6095&amp;autoconnect=true&amp;resize=remote"' in html
 
 
 def test_browser_monitor_page_uses_watchdog_latest_summary(authed_client_no_db, monkeypatch):
@@ -143,7 +143,7 @@ from appcore import scheduled_tasks
 
 bp = Blueprint("browser_monitor", __name__, url_prefix="/browser-monitor")
 
-SERVER_HOST = "172.30.254.14"
+SERVER_HOST = "172.16.254.106"
 
 
 @dataclass(frozen=True)
@@ -315,7 +315,7 @@ Expected: pytest passes; compileall exits 0.
 If the local/test Web service is available, open:
 
 ```text
-http://172.30.254.14:8080/browser-monitor
+http://172.16.254.106:8080/browser-monitor
 ```
 
 Expected: after login, the page shows the four-grid layout and three noVNC frames.

@@ -8,7 +8,7 @@
 
 Shopify Image Localizer 桌面端历来由 admin 在 Windows 开发机上跑 `python -m tools.shopify_image_localizer.build_exe --version <ver>` 生成 EXE，再手工上传到 `/opt/autovideosrt/web/static/downloads/tools/`、写 `system_settings.shopify_image_localizer_release` JSON。每发版要切上下文到 Windows 机器，且 prod server 上的 Claude Code agent 无法独立闭环。
 
-AUT-18 决定把发布能力前移到 prod server（Ubuntu 24.04 / `172.30.254.14`）：
+AUT-18 决定把发布能力前移到 prod server（Ubuntu 24.04 / `172.16.254.106`）：
 
 1. 用 Wine 跑 Windows Python 3.12 + PyInstaller 出 EXE；
 2. 桥接到现有 `build_exe.py` 不重写打包逻辑；

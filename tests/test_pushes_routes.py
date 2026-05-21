@@ -1483,11 +1483,11 @@ def test_lookup_mk_id_skips_items_with_non_matching_tail(monkeypatch):
 
 def test_build_media_public_url_handles_none_and_format(monkeypatch):
     from appcore import pushes
-    monkeypatch.setattr("config.LOCAL_SERVER_BASE_URL", "http://172.30.254.14")
+    monkeypatch.setattr("config.LOCAL_SERVER_BASE_URL", "http://172.16.254.106")
     assert pushes.build_media_public_url(None) is None
     assert pushes.build_media_public_url("") is None
     assert pushes.build_media_public_url("u/1/m/320/demo.mp4") == \
-        "http://172.30.254.14/medias/obj/u/1/m/320/demo.mp4"
+        "http://172.16.254.106/medias/obj/u/1/m/320/demo.mp4"
 
 
 def test_public_media_object_rejects_traversal_and_non_user_scope():

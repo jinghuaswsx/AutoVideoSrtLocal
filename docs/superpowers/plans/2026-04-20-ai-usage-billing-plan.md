@@ -583,7 +583,7 @@ git branch -d feature/ai-usage-billing
 **日期:** 2026-04-21
 
 **测试环境发布**
-- 服务器: `172.30.254.14`
+- 服务器: `172.16.254.106`
 - 实际目录: `/data/autovideosrt-test`
 - 分支 / 提交: `feature/ai-usage-billing` @ `813c3ac`
 - 服务: `autovideosrt-test` 已重启并为 `active`

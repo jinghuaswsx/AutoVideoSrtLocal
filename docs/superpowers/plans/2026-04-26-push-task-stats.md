@@ -877,7 +877,7 @@ tab is admin-only and hidden from regular users."
 
 - [ ] **Step 4.3: 浏览器手动确认 `/pushes/stats` 渲染（无 JS 数据，但骨架 + 样式应已就位）**
 
-启动 dev server（用户已经知道怎么启），访问 `http://172.30.254.14/pushes/stats`，截图确认：
+启动 dev server（用户已经知道怎么启），访问 `http://172.16.254.106/pushes/stats`，截图确认：
 - Tab 头：「推送管理」 + 「任务统计」（后者高亮）
 - Toolbar：日期 + 6 个快捷按钮 + 筛选 + 重置
 - 表格：「员工 / 提交数 / 已推送 / 未推送 / 推送率」表头，body 显示「加载中…」
@@ -1145,7 +1145,7 @@ Run: `cd g:/Code/AutoVideoSrtLocal && python -m web.app` (run_in_background)
 
 > 服务在 dev 端口启动；确认日志没有启动错误。
 
-- [ ] **Step 6.2: 浏览器访问 `http://172.30.254.14/pushes/`，对照截图自检**
+- [ ] **Step 6.2: 浏览器访问 `http://172.16.254.106/pushes/`，对照截图自检**
 
 - [ ] Tab 头有「推送管理」 + 「任务统计」；前者高亮
 - [ ] 「推送管理」原表格、状态、缩略图、操作列都正常

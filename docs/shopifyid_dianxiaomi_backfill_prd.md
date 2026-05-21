@@ -225,7 +225,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_shopifyid_dia
 
 ```text
 同步完成：
-  正式库: root@172.30.254.14:auto_video
+  正式库: root@172.16.254.106:auto_video
   店小秘在线商品总数: 404
   抓取页数: 5
   抓取商品数: 404

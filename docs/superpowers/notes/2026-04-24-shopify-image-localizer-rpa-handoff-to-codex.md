@@ -43,7 +43,7 @@
 
 ## 2. 已完成 ✅
 
-### 2.1 服务端 OpenAPI（已部署到 172.30.254.14）
+### 2.1 服务端 OpenAPI（已部署到 172.16.254.106）
 
 - `GET /openapi/medias/shopify-image-localizer/languages`
 - `POST /openapi/medias/shopify-image-localizer/bootstrap`（**有不稳定 bug，见 §6**）
@@ -54,7 +54,7 @@
 
 接口验收命令：
 ```bash
-curl -X POST 'http://172.30.254.14/openapi/medias/shopify-image-localizer/bootstrap' \
+curl -X POST 'http://172.16.254.106/openapi/medias/shopify-image-localizer/bootstrap' \
   -H 'X-API-Key: $OPENAPI_MEDIA_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{"product_code":"dino-glider-launcher-toy-rjc","lang":"it"}'
@@ -64,7 +64,7 @@ curl -X POST 'http://172.30.254.14/openapi/medias/shopify-image-localizer/bootst
 
 接口已在 `list_shopify_localizer_images` 包装层过滤 `.gif` 后缀（[appcore/medias.py:329-345](appcore/medias.py#L329-L345)）；客户端在 [tools/shopify_image_localizer/controller.py:11-30](tools/shopify_image_localizer/controller.py#L11-L30) 也做了 `_drop_gifs` 兜底。
 
-> 注意：服务端的 GIF 过滤改动**还在本地 worktree**，**没有 deploy 到 172.30.254.14**。客户端兜底已生效。
+> 注意：服务端的 GIF 过滤改动**还在本地 worktree**，**没有 deploy 到 172.16.254.106**。客户端兜底已生效。
 
 ### 2.3 Hash 配对算法
 
@@ -198,7 +198,7 @@ tools/shopify_image_localizer/
 --no-default-browser-check
 --start-maximized
 --proxy-server=http://127.0.0.1:7890       # 自动探测，用户机器有 Clash
---proxy-bypass-list=127.0.0.1;localhost;172.30.254.14;<local>
+--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>
 ```
 
 不能加任何 `--remote-debugging-*`、`--enable-automation`、`--disable-blink-features`、`--disable-web-security`、`--disable-features` 等。

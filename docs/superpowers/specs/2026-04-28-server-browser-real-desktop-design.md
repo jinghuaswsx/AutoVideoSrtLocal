@@ -4,7 +4,7 @@
 
 当前 `autovideosrt-browser.service`（店小秘 Shopify ID 同步）和 `autovideosrt-mk-browser.service`（明空选品店小秘）跑在 `Xvfb (:20/:21) + openbox + x11vnc + websockify/noVNC` 链路上，用户要看浏览器只能在本地起 SSH 隧道开 noVNC，介入弹窗、登录态恢复都很别扭。
 
-2026-04-21 服务器迁到内网 LocalServer（172.30.254.14）后，Codex 已经把"真桌面"前置条件做好了：
+2026-04-21 服务器迁到内网 LocalServer（172.16.254.106）后，Codex 已经把"真桌面"前置条件做好了：
 - KDE Plasma X11 + GDM3 自动登录 cjh
 - Sunlogin 客户端 + KDE autostart
 - `x11vnc :0 → 5908`（带密码 `/etc/x11vnc-cjh.pass`）

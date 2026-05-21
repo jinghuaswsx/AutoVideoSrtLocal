@@ -717,7 +717,7 @@ Expected: both tests pass, confirming the shared shell did not regress the curre
 
 - [ ] **Step 3: Manually smoke-test a Japanese task on the test environment**
 
-Use the test environment at `http://172.30.254.14:8080/` and the sample video:
+Use the test environment at `http://172.16.254.106:8080/` and the sample video:
 
 `G:\BaiduSyncdisk\多平台公用文件夹\第一批视频素材\baseball-cap-organizer\2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-张晴.mp4`
 

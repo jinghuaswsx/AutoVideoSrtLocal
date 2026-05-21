@@ -9,7 +9,7 @@ cd "$REPO_ROOT"
 
 KEY="${SSH_KEY:-$HOME/.ssh/CC.pem}"
 SERVER_USER="root"
-SERVER_HOST="172.30.254.14"
+SERVER_HOST="172.16.254.106"
 SERVER_PORT="22"
 APP_DIR="/opt/autovideosrt"
 SERVICE="autovideosrt"

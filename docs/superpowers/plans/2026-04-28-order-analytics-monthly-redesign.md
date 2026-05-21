@@ -876,7 +876,7 @@ pkill -f "flask --app web.app:app run --port 5099" || true
 
 按 CLAUDE.md 的工作流：
 1. 主 worktree 上 push
-2. SSH 到服务器（172.30.254.14）`git pull && systemctl restart`
+2. SSH 到服务器（172.16.254.106）`git pull && systemctl restart`
 3. 健康检查（curl /order-analytics 返回 200，或浏览器肉眼确认）
 4. 这个改动属于 hotfix（≤ 50 行业务代码？看实际增删行）还是 worktree？— 后端 ~50 行 + 前端 ~150 行，**超过 hotfix 阈值，应在新 worktree 完成后再合并**。
 

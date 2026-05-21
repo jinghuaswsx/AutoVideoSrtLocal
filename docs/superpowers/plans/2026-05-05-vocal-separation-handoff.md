@@ -133,7 +133,7 @@ cebe3cf5  fix(ui): 分离 step 卡片 DOM-move 到音色选择上方
 
 ## 6 早上你要做的事
 
-1. 浏览器打开 `http://172.30.254.14/multi-translate/23d11009-...`
+1. 浏览器打开 `http://172.16.254.106/multi-translate/23d11009-...`
    - 看分离 step 卡片显示是否对（vocals_lufs=-9.4 / video_lufs=-8.4 / 两个播放器都能播）
    - 看响度匹配卡片显示 algorithm=B / 偏差 35.71% ⚠（接受这个偏差作为物理极限）
    - 听一下硬字幕 mp4：BG 是否能听到（应该能）、TTS 是否清晰

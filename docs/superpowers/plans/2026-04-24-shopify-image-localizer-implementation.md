@@ -481,7 +481,7 @@ Expected: FAIL，提示模块不存在。
 
 ```python
 # tools/shopify_image_localizer/settings.py
-DEFAULT_BASE_URL = "http://172.30.254.14"
+DEFAULT_BASE_URL = "http://172.16.254.106"
 DEFAULT_API_KEY = ""
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
@@ -894,7 +894,7 @@ def test_gui_exposes_product_code_language_and_start(monkeypatch):
     from tools.shopify_image_localizer import gui
 
     monkeypatch.setattr(gui.settings, "load_runtime_config", lambda root=None: {
-        "base_url": "http://172.30.254.14",
+        "base_url": "http://172.16.254.106",
         "api_key": "demo-key",
         "browser_user_data_dir": r"C:\chrome-shopify-image",
     })
@@ -928,7 +928,7 @@ def test_controller_runs_download_then_browser(monkeypatch, tmp_path):
     monkeypatch.setattr(controller.browser_runner, "run_shopify_localizer", lambda **kwargs: {"status": "done", "mode": "parallel"})
 
     result = controller.run_shopify_localizer(
-        base_url="http://172.30.254.14",
+        base_url="http://172.16.254.106",
         api_key="demo-key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",

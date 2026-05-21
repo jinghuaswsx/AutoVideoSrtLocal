@@ -41,10 +41,10 @@
 
 每个 noVNC iframe 直接加载内网 noVNC URL：
 
-- `http://172.30.254.14:6092/vnc.html?host=172.30.254.14&port=6092&autoconnect=true&resize=remote`
-- `http://172.30.254.14:6093/vnc.html?host=172.30.254.14&port=6093&autoconnect=true&resize=remote`
-- `http://172.30.254.14:6095/vnc.html?host=172.30.254.14&port=6095&autoconnect=true&resize=remote`
-- `http://172.30.254.14:6097/vnc.html?host=172.30.254.14&port=6097&autoconnect=true&resize=remote`
+- `http://172.16.254.106:6092/vnc.html?host=172.16.254.106&port=6092&autoconnect=true&resize=remote`
+- `http://172.16.254.106:6093/vnc.html?host=172.16.254.106&port=6093&autoconnect=true&resize=remote`
+- `http://172.16.254.106:6095/vnc.html?host=172.16.254.106&port=6095&autoconnect=true&resize=remote`
+- `http://172.16.254.106:6097/vnc.html?host=172.16.254.106&port=6097&autoconnect=true&resize=remote`
 
 移动端和窄屏下退化为单列堆叠，避免 iframe 被压到不可读。
 

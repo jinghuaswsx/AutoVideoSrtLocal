@@ -71,7 +71,7 @@
 ## 完整发布流程（按 CLAUDE.md，**这次会真正全部走完**）
 
 1. 编译 exe + 打 portable zip：`python -m tools.shopify_image_localizer.build_exe --version 2.6` → `G:\ShopifyRelease\ShopifyImageLocalizer-2.6\` + `ShopifyImageLocalizer-portable-2.6.zip`
-2. SCP 上传 zip 到 `root@172.30.254.14:/opt/autovideosrt/web/static/downloads/tools/`
+2. SCP 上传 zip 到 `root@172.16.254.106:/opt/autovideosrt/web/static/downloads/tools/`
 3. 通过 `appcore.shopify_image_localizer_release.set_release_info(...)` 写入数据库 `system_settings.shopify_image_localizer_release` JSON：
    ```python
    set_release_info(
@@ -82,7 +82,7 @@
        release_note="...",
    )
    ```
-4. HTTP HEAD 验证：`http://172.30.254.14/static/downloads/tools/ShopifyImageLocalizer-portable-2.6.zip` 返回 200。
+4. HTTP HEAD 验证：`http://172.16.254.106/static/downloads/tools/ShopifyImageLocalizer-portable-2.6.zip` 返回 200。
 5. 素材管理页 `/medias` 顶部「下载自动换图工具」按钮的版本号、发布时间应自动更新（来自数据库 JSON，不在前端硬编码）。
 
 ## 已知遗留事项

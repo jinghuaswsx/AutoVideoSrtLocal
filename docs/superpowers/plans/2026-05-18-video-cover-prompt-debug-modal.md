@@ -377,7 +377,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
     api_key = str(getattr(cfg, "api_key", "") or "")
     base_url = str(getattr(cfg, "base_url", "") or "").rstrip("/")
     if provider == "local":
-        base_url = base_url or "http://172.30.254.14:82/v1"
+        base_url = base_url or "http://172.16.254.106:82/v1"
         url = f"{base_url}/images/edits"
         content_type = "multipart/form-data"
     elif provider == "openrouter":

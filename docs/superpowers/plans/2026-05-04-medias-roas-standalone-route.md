@@ -1179,7 +1179,7 @@ python -m pytest tests/test_medias_roas_route.py tests/test_roas_form_partial.py
 
 - [ ] **Step 5: webapp-testing 独立页冒烟（手工）**
 
-启动开发服务器，用 `testuser.md` 凭据登录，浏览器打开 `http://172.30.254.14/medias/6/roas`（或本地等价地址）：
+启动开发服务器，用 `testuser.md` 凭据登录，浏览器打开 `http://172.16.254.106/medias/6/roas`（或本地等价地址）：
 1. 页面渲染：侧栏「素材管理」激活、面包屑「← 返回素材管理」、产品卡有 ID/英文名、表单字段已填入数据库现值
 2. 修改任一字段 → 等 ~1s → 顶部状态条「保存中…」→「已保存 ✓ HH:MM:SS」
 3. 刷新页面 → 字段值保留

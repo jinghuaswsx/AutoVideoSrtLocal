@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS tts_generation_stats (
 
 Run（本地或 LocalServer 都可，确认 SQL 可执行）：
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem root@172.30.254.14 "cd /opt/autovideosrt && set -a && . .env && set +a && /opt/autovideosrt/venv/bin/python -c '
+ssh -i C:/Users/admin/.ssh/CC.pem root@172.16.254.106 "cd /opt/autovideosrt && set -a && . .env && set +a && /opt/autovideosrt/venv/bin/python -c '
 import sys; sys.path.insert(0, \".\")
 from appcore.db import execute, query_one
 sql = open(\"/dev/stdin\").read()

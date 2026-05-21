@@ -1546,7 +1546,7 @@ oad.renderTable = function(data) {
 
 启动测试服务器并访问 `/order-analytics`：
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   "cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test"
 ```
 浏览器访问 `https://test.[domain]/order-analytics` 确认：
@@ -1852,7 +1852,7 @@ git commit -m "feat(dashboard): row action buttons + error state with retry (V1 
 - [ ] **Step 1: 部署到测试服务器**
 
 ```bash
-ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14 \
+ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.16.254.106 \
   'cd /opt/autovideosrt-test && git pull && systemctl restart autovideosrt-test && sleep 3 && \
    /opt/autovideosrt/venv/bin/python -m pytest tests/test_order_analytics_dashboard.py tests/test_order_analytics_ads.py -q 2>&1 | tail -20'
 ```
@@ -1890,7 +1890,7 @@ ssh -i C:/Users/admin/.ssh/CC.pem -o StrictHostKeyChecking=no root@172.30.254.14
 ```markdown
 ## 验收（2026-XX-XX）
 
-- 部署：测试服务器 172.30.254.14
+- 部署：测试服务器 172.16.254.106
 - 测试：pytest 全通过，N 个测试用例
 - 手工 happy path：✅ 全部通过
 - 边界场景：✅ 全部通过

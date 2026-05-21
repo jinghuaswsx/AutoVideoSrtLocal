@@ -7,7 +7,7 @@ Updated: 2026-04-24
 This feature must use production only:
 
 ```text
-http://172.30.254.14/openapi/medias/shopify-image-localizer/bootstrap
+http://172.16.254.106/openapi/medias/shopify-image-localizer/bootstrap
 ```
 
 Do not use the `:8080` test service for this workflow.

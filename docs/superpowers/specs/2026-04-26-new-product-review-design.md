@@ -521,7 +521,7 @@ service 层测试在服务器测试环境跑（`/opt/autovideosrt-test`），通
 
 ### 8.4 手动验收
 
-测试环境 `http://172.30.254.14:8080/`，账号使用 `testuser.md` 中的管理员凭据：
+测试环境 `http://172.16.254.106:8080/`，账号使用 `testuser.md` 中的管理员凭据：
 1. 在明空选品 Tab 入库一个新产品
 2. 切到"新品审核" Tab，看到该产品（mk_id 命中）
 3. 点【AI 评估】，等待 30-180 秒，看到矩阵填充
@@ -573,9 +573,9 @@ ALTER TABLE media_products
 按 CLAUDE.md "部署 migration：让自动机制跑"：服务器只跑 `git pull + restart`，启动时自动 apply migration。**不要**手动 SQL。
 
 ```bash
-ssh -i C:\Users\admin\.ssh\CC.pem ubuntu@172.30.254.14
+ssh -i C:\Users\admin\.ssh\CC.pem ubuntu@172.16.254.106
 sudo bash -c 'cd /opt/autovideosrt && git pull && systemctl restart autovideosrt'
-curl -sI http://172.30.254.14/login   # 验证 200
+curl -sI http://172.16.254.106/login   # 验证 200
 ```
 
 测试环境同流程，路径 `/opt/autovideosrt-test/`。

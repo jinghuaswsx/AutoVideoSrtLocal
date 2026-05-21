@@ -23,7 +23,7 @@ def _make_app(
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_domains_async", lambda self: None)
     runtime_config = runtime_config or {
-        "base_url": "http://172.30.254.14",
+        "base_url": "http://172.16.254.106",
         "api_key": "demo-key",
         "browser_user_data_dir": r"C:\chrome-shopify-image",
         "shopify_domain": "newjoyloo.com",
@@ -204,7 +204,7 @@ def test_gui_does_not_persist_empty_runtime_credentials_on_start(
     app = _make_app(
         monkeypatch,
         runtime_config={
-            "base_url": "http://172.30.254.14",
+            "base_url": "http://172.16.254.106",
             "api_key": "",
             "browser_user_data_dir": "",
             "shopify_domain": "newjoyloo.com",
@@ -284,7 +284,7 @@ def test_gui_login_status_label_when_unknown_domain_has_no_cached_slug_shows_pen
         monkeypatch,
         cached_slug="",
         runtime_config={
-            "base_url": "http://172.30.254.14",
+            "base_url": "http://172.16.254.106",
             "api_key": "demo-key",
             "browser_user_data_dir": r"C:\chrome-shopify-image",
             "shopify_domain": "omurio.com",
@@ -385,7 +385,7 @@ def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.Mon
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert app.login_shopify_button["text"] == "登录店铺"
         assert thread_args[0][1] == (
-            "http://172.30.254.14",
+            "http://172.16.254.106",
             "demo-key",
             r"C:\chrome-shopify-image",
             "omurio.com",
@@ -442,7 +442,7 @@ def test_gui_fast_domain_fetch_updates_dropdown_after_mainloop_starts(monkeypatc
         gui.settings,
         "load_runtime_config",
         lambda root=None: {
-            "base_url": "http://172.30.254.14",
+            "base_url": "http://172.16.254.106",
             "api_key": "demo-key",
             "browser_user_data_dir": r"C:\chrome-shopify-image",
             "shopify_domain": "newjoyloo.com",
@@ -509,7 +509,7 @@ def test_gui_login_button_uses_domain_dropdown_without_prompt(monkeypatch: pytes
 
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert thread_args[0][1] == (
-            "http://172.30.254.14",
+            "http://172.16.254.106",
             "demo-key",
             r"C:\chrome-shopify-image",
             "omurio.com",
@@ -698,7 +698,7 @@ def test_gui_batch_reuses_one_browser_without_per_language_restart(monkeypatch: 
         )
 
         app._run_batch(
-            base_url="http://172.30.254.14",
+            base_url="http://172.16.254.106",
             api_key="demo-key",
             browser_dir=r"C:\chrome-shopify-image",
             product_code="sonic-lens-refresher-rjc",
@@ -755,7 +755,7 @@ def test_gui_batch_restarts_browser_once_after_language_failure(monkeypatch: pyt
         )
 
         app._run_batch(
-            base_url="http://172.30.254.14",
+            base_url="http://172.16.254.106",
             api_key="demo-key",
             browser_dir=r"C:\chrome-shopify-image",
             product_code="sonic-lens-refresher-rjc",

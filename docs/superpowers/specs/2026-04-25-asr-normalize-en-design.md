@@ -11,7 +11,7 @@
 - `web/routes/multi_translate.py:400-401` 把 `source_language` 硬性限定为 `"zh"` / `"en"`。
 - 上传时跑一次 zh/en 二选一的快速判别，结果存到 `task["source_language"]` 仅作 LLM prompt 标签。
 
-**结果**：用户买到西班牙语、葡萄牙语、法语等素材进 `/multi-translate` 流水线，ASR 转写出非中英文文本后，pipeline 仍把它当 zh 或 en 强行往下走 —— prompt 告诉模型"原文是中文/英文"，与真实情况脱节，下游本地化（如西语 → 德语）频繁收敛失败。已知卡死案例：[/multi-translate/b3fa903d-b299-434f-965a-6b4ba39512ff](http://172.30.254.14/multi-translate/b3fa903d-b299-434f-965a-6b4ba39512ff)（西班牙语素材 → 德语本地化失败）。
+**结果**：用户买到西班牙语、葡萄牙语、法语等素材进 `/multi-translate` 流水线，ASR 转写出非中英文文本后，pipeline 仍把它当 zh 或 en 强行往下走 —— prompt 告诉模型"原文是中文/英文"，与真实情况脱节，下游本地化（如西语 → 德语）频繁收敛失败。已知卡死案例：[/multi-translate/b3fa903d-b299-434f-965a-6b4ba39512ff](http://172.16.254.106/multi-translate/b3fa903d-b299-434f-965a-6b4ba39512ff)（西班牙语素材 → 德语本地化失败）。
 
 **本次目标**：在 ASR 后插入 `asr_normalize` step，先用 Gemini 检测原文语言，再用 Claude Sonnet 把任意源语言的 ASR 文本统一标准化为高质量 en-US，下游 alignment / translate / tts / subtitle 全部从"英文源"出发，prompt 库收敛到单一起点。中文素材保留现有 `source_language=zh` 直跑路径不动。
 

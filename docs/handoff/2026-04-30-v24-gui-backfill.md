@@ -101,7 +101,7 @@ git branch -d fix/v24-gui-backfill
 
 ## 6. 服务器/部署上下文（仅备查，你这次用不到）
 
-- LocalServer：`172.30.254.14`，ssh key `~/.ssh/CC.pem`，root 用户
+- LocalServer：`172.16.254.106`，ssh key `~/.ssh/CC.pem`，root 用户
 - 项目目录：`/opt/autovideosrt/`
 - 下载目录：`/opt/autovideosrt/web/static/downloads/tools/`
 - 当前已上传：`ShopifyImageLocalizer-portable-2.5.zip`（**有 GUI bug，等 V2.6 出来覆盖**）

@@ -46,7 +46,7 @@
 - 2026-05-02 当前工作区继续收敛 P1-5 启动恢复状态写回：`task_recovery._persist_project_recovery` 改走 `appcore.project_state.save_project_state`，启动恢复矩阵和架构边界回归：`48 passed, 2 warnings`；扫描确认直接 `projects.state_json` 更新仅剩 `project_state` / `task_state` 状态基础设施。
 - 2026-05-01 当前工作区已重新执行 P1/P2 聚焦回归：`275 passed, 2 warnings`。覆盖数据库迁移安全、路径安全、架构边界、OpenAPI、调度元数据、任务状态、runner dispatch / lifecycle、图片翻译 runtime、字幕去除 runtime、translate_lab 路由、link_check runner、视频创作素材删除等。
 - 2026-05-02 当前工作区继续补齐 P1-8 第 7 项 Phase 1 验收：本地可执行组合回归已扩展到 `383 passed, 2 warnings`，并修正会误连 Windows 本机 MySQL 的测试隔离问题。
-- 2026-05-02 测试环境 `http://172.30.254.14:8080/` 已部署 `docs/graceful-shutdown-worker-lifecycle-spec` 分支，服务启动后已创建 `runtime_active_tasks` / `runtime_active_task_snapshots` 表，`python -m appcore.ops.active_tasks pre-restart` 在无活跃任务时返回 `no active tasks`。
+- 2026-05-02 测试环境 `http://172.16.254.106:8080/` 已部署 `docs/graceful-shutdown-worker-lifecycle-spec` 分支，服务启动后已创建 `runtime_active_tasks` / `runtime_active_task_snapshots` 表，`python -m appcore.ops.active_tasks pre-restart` 在无活跃任务时返回 `no active tasks`。
 - 2026-05-02 测试环境已验证 preflight 阻断场景：人工登记 `video_creation:phase1-preflight-smoke` 后，`pre-restart` 退出 `2` 并写入 `pre_restart_check` 快照；清理后再次返回 `no active tasks`。
 - 2026-05-02 测试环境 `autovideosrt-test.service` 已调整为 `TimeoutStopSec=60`，并显式设置 `AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT=45`；重启后服务为 `active (running)`，根路径返回 `302`，最近 5 分钟 warning journal 无新增记录。
 - 2026-05-02 使用超级管理员账号完成测试环境只读页面验收：`/scheduled-tasks` 返回 `200`，且页面可见 `active_task_pre_restart_check` 登记项；`/medias/`、`/voice-library/`、`/settings?tab=bindings` 均返回 `200`。
@@ -186,9 +186,9 @@
 - 已执行 `git diff --check`，未发现空白错误；仅有 Windows 工作区 LF/CRLF 换行提示。
 - 已对本批修改涉及的 63 个 Python 文件执行 `py_compile.compile(..., doraise=True)`，全部通过。
 - 未连接 Windows 本地 MySQL，遵守项目规则。
-- `G:\Code\AutoVideoSrtLocal\testuser.md` 中原账号在测试环境 `http://172.30.254.14:8080/` 和线上 `http://172.30.254.14/` 均未能登录成功。
+- `G:\Code\AutoVideoSrtLocal\testuser.md` 中原账号在测试环境 `http://172.16.254.106:8080/` 和线上 `http://172.16.254.106/` 均未能登录成功。
 - 用户补充的普通测试账号可在测试环境和线上登录，`/medias/`、`/voice-library/` 只读冒烟均为 `200`；`/scheduled-tasks`、`/settings?tab=bindings` 返回 `403`，说明该账号无管理员权限。
-- 使用用户确认的超级管理员账号完成只读冒烟：测试环境 `http://172.30.254.14:8080/` 与线上 `http://172.30.254.14/` 均可登录，`/medias/`、`/voice-library/`、`/scheduled-tasks`、`/settings?tab=bindings`、`/settings?tab=providers` 均返回 `200`。未把账号密码写入本文档。
+- 使用用户确认的超级管理员账号完成只读冒烟：测试环境 `http://172.16.254.106:8080/` 与线上 `http://172.16.254.106/` 均可登录，`/medias/`、`/voice-library/`、`/scheduled-tasks`、`/settings?tab=bindings`、`/settings?tab=providers` 均返回 `200`。未把账号密码写入本文档。
 
 ## 总体判断
 
