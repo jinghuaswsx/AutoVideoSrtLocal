@@ -579,6 +579,48 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
     ]
 
 
+def test_create_parent_skips_raw_niuma_when_raw_source_ready(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
+    monkeypatch.setattr(
+        "appcore.task_raw_source_bridge.find_ready_raw_source_for_media_item",
+        lambda item_id: {"id": 301, "product_id": 1, "display_name": "demo.mp4"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: captured.update(kwargs) or 123,
+    )
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("raw processing should be skipped")),
+    )
+    monkeypatch.setattr("web.routes.tasks._audit_task_action", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+            "raw_processor_id": 8,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["reused_raw_source_id"] == 301
+    assert resp.get_json() == {
+        "parent_task_id": 123,
+        "raw_processing": {
+            "status": "skipped",
+            "reason": "raw_source_ready",
+            "raw_source_id": 301,
+        },
+    }
+
+
 def test_import_and_create_returns_product_link_warnings(authed_client_no_db, monkeypatch):
     warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
 

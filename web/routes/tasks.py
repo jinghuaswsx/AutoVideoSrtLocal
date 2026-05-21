@@ -220,35 +220,50 @@ def api_create_parent():
         ensure_translation_work_user(raw_processor_id)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
+    raw_source_reuse = None
+    if item_id is not None:
+        from appcore import task_raw_source_bridge
+
+        raw_source_reuse = task_raw_source_bridge.find_ready_raw_source_for_media_item(item_id)
     try:
-        parent_id = tasks_svc.create_parent_task(
-            media_product_id=product_id,
-            media_item_id=item_id,
-            countries=countries,
-            translator_id=translator_id,
-            language_assignments=language_assignments,
-            raw_processor_id=raw_processor_id,
-            created_by=int(current_user.id),
-        )
+        create_kwargs = {
+            "media_product_id": product_id,
+            "media_item_id": item_id,
+            "countries": countries,
+            "translator_id": translator_id,
+            "language_assignments": language_assignments,
+            "raw_processor_id": raw_processor_id,
+            "created_by": int(current_user.id),
+        }
+        if raw_source_reuse:
+            create_kwargs["reused_raw_source_id"] = int(raw_source_reuse["id"])
+        parent_id = tasks_svc.create_parent_task(**create_kwargs)
     except ValueError as e:
         return _json_response({"error": str(e)}, 400)
-    from appcore import task_raw_video_processing
+    if raw_source_reuse:
+        raw_processing = {
+            "status": "skipped",
+            "reason": "raw_source_ready",
+            "raw_source_id": int(raw_source_reuse["id"]),
+        }
+    else:
+        from appcore import task_raw_video_processing
 
-    try:
-        raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
-            task_id=parent_id,
-            actor_user_id=raw_processor_id,
-        )
-    except Exception as exc:  # noqa: BLE001
         try:
-            task_raw_video_processing.record_niuma_start_failed(
-                parent_task_id=parent_id,
+            raw_processing = task_raw_video_processing.start_niuma_processing_for_parent_task(
+                task_id=parent_id,
                 actor_user_id=raw_processor_id,
-                error=str(exc),
             )
-        except Exception:  # noqa: BLE001
-            current_app.logger.exception("record niuma start failure failed task_id=%s", parent_id)
-        raw_processing = {"status": "start_failed", "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            try:
+                task_raw_video_processing.record_niuma_start_failed(
+                    parent_task_id=parent_id,
+                    actor_user_id=raw_processor_id,
+                    error=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                current_app.logger.exception("record niuma start failure failed task_id=%s", parent_id)
+            raw_processing = {"status": "start_failed", "error": str(exc)}
     _audit_task_action(
         parent_id,
         "task_parent_created",
@@ -258,6 +273,10 @@ def api_create_parent():
             "countries": countries,
             "translator_id": translator_id,
             "raw_processor_id": raw_processor_id,
+            **(
+                {"reused_raw_source_id": int(raw_source_reuse["id"])}
+                if raw_source_reuse else {}
+            ),
             **({"language_assignments": language_assignments} if language_assignments else {}),
         },
     )

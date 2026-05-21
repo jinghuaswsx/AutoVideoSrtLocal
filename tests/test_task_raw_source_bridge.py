@@ -64,6 +64,8 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
         return 101
 
     monkeypatch.setattr(bridge.medias, "create_raw_source", fake_create_raw_source)
+    executed = []
+    monkeypatch.setattr(bridge, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
 
     result = bridge.ensure_raw_source_for_parent_task(task_id=55, actor_user_id=4)
 
@@ -75,6 +77,10 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
     assert created["cover_object_key"] == "9/medias/7/raw_sources/demo.cover.jpg"
     assert copied["9/medias/7/raw_sources/demo.mp4"] == b"processed-video"
     assert copied["9/medias/7/raw_sources/demo.cover.jpg"] == b"cover"
+    assert any(
+        "UPDATE media_items SET source_raw_id=%s" in sql and args[:2] == (101, 11)
+        for sql, args in executed
+    )
 
 
 def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
@@ -139,6 +145,34 @@ def test_ensure_raw_source_requires_bound_media_item(monkeypatch):
 
     with pytest.raises(bridge.RawSourceBridgeError, match="parent task media item not found"):
         bridge.ensure_raw_source_for_parent_task(task_id=99, actor_user_id=1)
+
+
+def test_find_ready_raw_source_for_media_item_binds_existing_same_name(monkeypatch):
+    from appcore import task_raw_source_bridge as bridge
+
+    def fake_query_one(sql, args=()):
+        if "FROM media_items" in sql:
+            return {
+                "item_id": 11,
+                "product_id": 7,
+                "filename": "demo.mp4",
+                "source_raw_id": None,
+            }
+        if "FROM media_raw_sources" in sql:
+            return {"id": 202, "product_id": 7, "display_name": "demo.mp4"}
+        raise AssertionError(sql)
+
+    executed = []
+    monkeypatch.setattr(bridge, "query_one", fake_query_one)
+    monkeypatch.setattr(bridge, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+
+    result = bridge.find_ready_raw_source_for_media_item(11)
+
+    assert result["id"] == 202
+    assert any(
+        "UPDATE media_items SET source_raw_id=%s" in sql and args[:2] == (202, 11)
+        for sql, args in executed
+    )
 
 
 def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):

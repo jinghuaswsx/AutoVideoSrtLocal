@@ -308,6 +308,93 @@ def test_create_parent_task_supports_per_language_assignments(monkeypatch):
     assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_BLOCKED)
 
 
+def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.lastrowid = 100
+            self.rowcount = 1
+            self._next_id = 100
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+            if sql.startswith("INSERT INTO tasks"):
+                self.lastrowid = self._next_id
+                self._next_id += 1
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    notifications = []
+    conn = FakeConn()
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_parent_assigned": staticmethod(lambda *args, **kwargs: notifications.append("parent_assigned")),
+                "notify_pending_raw_task": staticmethod(lambda *args, **kwargs: notifications.append("pending_raw")),
+                "notify_child_blocked": staticmethod(lambda *args, **kwargs: notifications.append("child_blocked")),
+                "notify_child_assigned": staticmethod(lambda *args, **kwargs: notifications.append("child_assigned")),
+            },
+        ),
+        raising=False,
+    )
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=7,
+        media_item_id=8,
+        countries=["DE", "FR"],
+        language_assignments={"DE": 9, "FR": 10},
+        raw_processor_id=88,
+        reused_raw_source_id=301,
+        created_by=1,
+    )
+
+    assert parent_id == 100
+    inserts = [
+        args for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO tasks")
+    ]
+    assert inserts[0][2:4] == (88, tasks.PARENT_RAW_DONE)
+    assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_ASSIGNED)
+    assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_ASSIGNED)
+    events = [
+        args[1] for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO task_events")
+    ]
+    assert "raw_source_reused" in events
+    assert notifications == ["child_assigned", "child_assigned"]
+
+
 def test_create_parent_task_rejects_empty_countries(
     db_user_admin, db_user_translator, db_user_raw_processor, db_product
 ):
