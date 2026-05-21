@@ -7,6 +7,35 @@ def test_index_renders_for_admin(authed_client_no_db):
     assert "小语种视频翻译".encode("utf-8") in rsp.data
 
 
+def test_task_detail_route_renders_task_center_with_initial_detail_id(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/detail/44")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "小语种视频翻译" in body
+    assert "const TC_INITIAL_DETAIL_TASK_ID = 44;" in body
+    assert "tcOpenDetail(dlTaskId)" in body
+
+
+def test_task_detail_route_requires_login(authed_client_no_db):
+    client = authed_client_no_db.application.test_client()
+    rsp = client.get("/tasks/detail/44", follow_redirects=False)
+
+    assert rsp.status_code in (302, 401)
+
+
+def test_task_detail_drawer_sticks_header_and_refreshes_latest_status(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-detail-sticky { position:sticky; top:0;" in body
+    assert "刷新最新状态" in body
+    assert "function tcRefreshDetail" in body
+    assert "tcLoadDetail(id, {forceRefresh: true" in body
+    assert "tcLoadArtifacts(id)" in body
+    assert "tcLoadReadiness(id, task)" in body
+
+
 def test_task_center_child_translate_jump_uses_product_code_search(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -199,10 +228,8 @@ def test_task_create_modal_supports_per_language_assignments_and_owner_hint(auth
     assert "isOldProduct ? 'selected' : ''" not in body
 
 
-def test_index_requires_login():
-    from web.app import create_app
-    app = create_app()
-    client = app.test_client()
+def test_index_requires_login(authed_client_no_db):
+    client = authed_client_no_db.application.test_client()
     rsp = client.get("/tasks/", follow_redirects=False)
     assert rsp.status_code in (302, 401)
 
@@ -330,7 +357,7 @@ def test_task_detail_drawer_checks_task_before_secondary_fetches(authed_client_n
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
 
-    start = body.index("async function tcOpenDetail")
+    start = body.index("async function tcLoadDetail")
     end = body.index("function tcCloseDetail", start)
     fn = body[start:end]
 
