@@ -1219,13 +1219,13 @@ async function tcOpenDetail(id) {
     const detailListUrl = '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
       + '&task_id=' + encodeURIComponent(String(id || ''))
       + '&page_size=1';
-    const [taskResp, eventsResp, reviewAssetsResp] = await Promise.all([
-      cachedTask ? Promise.resolve({items: [cachedTask]}) : tcFetchJson(detailListUrl),
+    const taskResp = cachedTask ? {items: [cachedTask]} : await tcFetchJson(detailListUrl);
+    const task = (taskResp.items || []).find(t => Number(t.id) === Number(id));
+    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
+    const [eventsResp, reviewAssetsResp] = await Promise.all([
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
     ]);
-    const task = (taskResp.items || []).find(t => t.id === id);
-    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
     body.innerHTML = tcRenderDetail(task, eventsResp.events || [], reviewAssetsResp || {});
     // fetch artifacts for both parent and child tasks
     fetch('/tasks/api/' + id + '/artifacts')
