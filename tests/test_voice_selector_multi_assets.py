@@ -83,6 +83,8 @@ def test_voice_selector_multi_renders_speed_metadata():
     assert "preview_words_per_second" in SCRIPT
     assert "speed_match_score" in SCRIPT
     assert "combined_score" not in SCRIPT
+    assert "source_rate_unavailable" in SCRIPT
+    assert "原视频语速不可比，按音色排序，等待 AI 推荐排名" in SCRIPT
     assert "语速未维护，按音色排序" in SCRIPT
     assert "语速参考" in SCRIPT
     assert ".vs-row-speed" in TEMPLATE
