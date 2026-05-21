@@ -160,6 +160,19 @@ def test_compose_variant_uses_av_for_sentence_reconcile(monkeypatch, omni_runner
     assert omni_runner._resolve_compose_variant_name(task) == "av"
 
 
+def test_compose_variant_uses_resolved_default_when_task_has_no_plugin_config(
+    monkeypatch, omni_runner,
+):
+    cfg = dict(CFG_LAB_CURRENT)
+    cfg["tts_strategy"] = "sentence_reconcile"
+    cfg["subtitle"] = "sentence_units"
+    _patch_resolve_cfg(monkeypatch, cfg)
+
+    task = {"id": "omni-default-sentence-reconcile"}
+
+    assert omni_runner._resolve_compose_variant_name(task) == "av"
+
+
 def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
     monkeypatch, omni_runner,
 ):
@@ -228,6 +241,58 @@ def test_shot_limit_translate_prepares_av_sentences_for_sentence_reconcile(
         task["step_model_tags"]["translate"]
         == "gemini_aistudio · gemini-3.5-flash"
     )
+
+
+def test_shot_limit_translate_uses_resolved_default_for_sentence_reconcile(
+    monkeypatch, omni_runner,
+):
+    import appcore.task_state as task_state
+
+    task_id = "omni-shot-default-sentence-reconcile"
+    task_state.create(task_id, "/tmp/video.mp4", "/tmp/task", "video.mp4")
+    cfg = dict(CFG_LAB_CURRENT)
+    cfg["tts_strategy"] = "sentence_reconcile"
+    cfg["subtitle"] = "sentence_units"
+    _patch_resolve_cfg(monkeypatch, cfg)
+    task_state.update(
+        task_id,
+        target_lang="fr",
+        selected_voice_id="voice-1",
+        shots=[
+            {
+                "index": 1,
+                "start": 0.0,
+                "end": 2.0,
+                "duration": 2.0,
+                "source_text": "Source one",
+                "description": "shot one",
+            },
+        ],
+    )
+    monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda voice_id, lang: 10.0)
+    monkeypatch.setattr(
+        "pipeline.translate_v2.translate_shot",
+        lambda shot, **kwargs: {
+            "shot_index": shot["index"],
+            "translated_text": "Texte 1",
+            "char_count": 7,
+            "over_limit": False,
+            "retries": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.llm_bindings.resolve",
+        lambda use_case: {
+            "provider": "gemini_aistudio",
+            "model": "gemini-3.5-flash",
+        },
+    )
+
+    omni_runner._step_translate_shot_limit(task_id)
+
+    task = task_state.get(task_id)
+    assert "plugin_config" not in task
+    assert task["variants"]["av"]["sentences"][0]["text"] == "Texte 1"
 
 
 def test_shot_limit_translate_runs_units_concurrently_and_preserves_order(
