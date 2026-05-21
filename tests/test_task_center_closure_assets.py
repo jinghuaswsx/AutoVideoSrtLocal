@@ -83,6 +83,10 @@ def test_task_center_timeline_renders_review_assets_in_steps():
     assert "function tcRenderReviewAsset" in source
     assert "function tcRenderReadinessEvidence" in source
     assert "function tcRenderReadinessEvidenceItem" in source
+    assert "function tcRenderReadinessTextLines" in source
+    assert ".tc-readiness-copy-line" in source
+    assert "text-overflow:ellipsis" in source
+    assert "white-space:nowrap" in source
     assert "<video class=\"tc-readiness-video\"" in source
     assert "tc-readiness-image" in source
     assert "tc-readiness-link" in source

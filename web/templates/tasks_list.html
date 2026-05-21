@@ -142,6 +142,10 @@
 .tc-readiness-meta { margin-top:5px; color:var(--tc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .tc-readiness-title { font-weight:700; color:var(--tc-fg); margin-bottom:3px; overflow-wrap:anywhere; }
 .tc-readiness-body { color:var(--tc-fg-muted); line-height:1.45; overflow-wrap:anywhere; }
+.tc-readiness-copy-lines { display:grid; gap:3px; min-width:0; margin-top:4px; }
+.tc-readiness-copy-line { display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:6px; min-width:0; align-items:baseline; font-size:12px; line-height:1.45; }
+.tc-readiness-copy-label { color:var(--tc-fg); font-weight:700; }
+.tc-readiness-copy-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg-muted); }
 .tc-niuma-panel { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
@@ -666,6 +670,23 @@ function tcReadinessEvidenceMeta(item) {
   if (item && item.lang) parts.push(tcLanguageLabel(item.lang));
   return parts.join(' · ');
 }
+function tcRenderReadinessTextLines(item) {
+  const rawLines = Array.isArray(item && item.lines) ? item.lines : [];
+  const lines = rawLines.length ? rawLines : [
+    {label: '标题', value: item && item.title},
+    {label: '文案', value: item && item.body},
+    {label: '描述', value: item && item.description},
+  ].filter(function(line) { return String(line.value || '').trim(); });
+  if (!lines.length) return '';
+  return '<div class="tc-readiness-copy-lines">' + lines.map(function(line) {
+    const label = String((line && line.label) || '').trim() || '内容';
+    const value = String((line && line.value) || '').trim();
+    return '<div class="tc-readiness-copy-line">'
+      + '<span class="tc-readiness-copy-label">' + tcEsc(label) + '</span>'
+      + '<span class="tc-readiness-copy-text" title="' + tcAttr(value) + '">' + tcEsc(value || '—') + '</span>'
+      + '</div>';
+  }).join('') + '</div>';
+}
 function tcRenderReadinessEvidenceItem(item) {
   const type = String((item && item.type) || '').trim();
   const url = String((item && item.url) || '').trim();
@@ -696,6 +717,14 @@ function tcRenderReadinessEvidenceItem(item) {
   if (type === 'text') {
     const title = String((item && item.title) || '').trim();
     const body = String((item && item.body) || '').trim();
+    const textLines = tcRenderReadinessTextLines(item || {});
+    if (textLines) {
+      return '<div class="' + className + '">'
+        + '<div class="tc-readiness-title">' + label + '</div>'
+        + textLines
+        + metaHtml
+        + '</div>';
+    }
     return '<div class="' + className + '">'
       + '<div class="tc-readiness-title">' + label + (title ? ' · ' + tcEsc(title) : '') + '</div>'
       + (body ? '<div class="tc-readiness-body">' + tcEsc(body) + '</div>' : '')
