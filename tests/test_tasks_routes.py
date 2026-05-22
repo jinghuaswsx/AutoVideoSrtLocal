@@ -276,6 +276,19 @@ def test_task_detail_readiness_embeds_product_link_manager(authed_client_no_db):
     assert "tcLoadProductLinkManager(data, task)" in body
 
 
+def test_task_detail_readiness_groups_product_link_checks_into_manager_card(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-product-link-combo" in body
+    assert "function tcIsProductLinkCombinedCheck" in body
+    assert "function tcRenderProductLinkCombinedCard" in body
+    assert "tcIsProductLinkCombinedCheck(check)" in body
+    assert "tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks)" in body
+    assert "tcRenderProductLinkManagerShell(data, task)" in body
+    assert "}).join('') + tcRenderProductLinkManagerShell(data, task)" not in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
