@@ -24,6 +24,21 @@ def test_task_detail_route_requires_login(authed_client_no_db):
     assert rsp.status_code in (302, 401)
 
 
+def test_task_center_row_actions_navigate_to_detail_route(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcTaskDetailUrl(id)" in body
+    assert "window.location.href = tcTaskDetailUrl(id);" in body
+    start = body.index("function tcOpenDetailAction")
+    end = body.index("function tcActiveTaskAction", start)
+    action_helper = body[start:end]
+
+    assert "tcTaskDetailUrl(id)" in action_helper
+    assert "tcOpenDetail(" not in action_helper
+
+
 def test_task_detail_drawer_sticks_header_and_refreshes_latest_status(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

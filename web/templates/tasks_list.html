@@ -1320,8 +1320,12 @@ function tcTaskPage(delta) {
   TC_TASK_PAGE = Math.max(1, TC_TASK_PAGE + Number(delta || 0));
   tcRender();
 }
+function tcTaskDetailUrl(id) {
+  const taskId = Number(id || 0);
+  return taskId > 0 ? '/tasks/detail/' + encodeURIComponent(String(taskId)) : '/tasks/';
+}
 function tcOpenDetailAction(id) {
-  tcOpenDetail(id);
+  window.location.href = tcTaskDetailUrl(id);
 }
 function tcActiveTaskAction(id, label, primary) {
   const cls = primary ? 'tc-btn tc-btn--primary' : 'tc-btn';
