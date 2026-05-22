@@ -967,7 +967,7 @@ def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db,
     assert data["detail_url"] == f"/image-translate/{data['task_id']}"
     assert created["preset"] == "detail"
     assert created["target_language"] == "de"
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
     assert created["medias_context"]["entry"] == "medias_edit_detail"
     assert created["medias_context"]["product_id"] == 123
@@ -1750,14 +1750,14 @@ def _setup_detail_translate(monkeypatch):
     return created
 
 
-def test_detail_translate_defaults_to_sequential(authed_client_no_db, monkeypatch):
+def test_detail_translate_defaults_to_parallel(authed_client_no_db, monkeypatch):
     created = _setup_detail_translate(monkeypatch)
     resp = authed_client_no_db.post(
         "/medias/api/products/1/detail-images/translate-from-en",
         json={"lang": "de"},
     )
     assert resp.status_code == 201, resp.get_json()
-    assert created["concurrency_mode"] == "sequential"
+    assert created["concurrency_mode"] == "parallel"
 
 
 def test_detail_translate_accepts_parallel(authed_client_no_db, monkeypatch):

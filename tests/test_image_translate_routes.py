@@ -49,7 +49,7 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.get("/api/image-translate/models")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["channel"] == "local_image_2"
+    assert data["channel"] == "apimart"
     assert data["default_model_id"] == "gpt-image-2"
     assert any(m["id"] == "gpt-image-2" for m in data["items"])
 
@@ -140,9 +140,9 @@ def test_medias_default_image_task_uses_local_image2_low_serial(authed_client_no
         json={"lang": "de"},
     )
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
-    assert created["concurrency_mode"] == "sequential"
+    assert created["concurrency_mode"] == "parallel"
 
 
 def test_medias_default_image_task_ignores_global_default_model(authed_client_no_db, monkeypatch):
@@ -178,7 +178,7 @@ def test_medias_default_image_task_ignores_global_default_model(authed_client_no
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
 
 
@@ -448,7 +448,7 @@ def test_medias_default_image_task_ignores_openrouter_default(authed_client_no_d
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
 
 
@@ -506,7 +506,7 @@ def test_medias_default_image_task_ignores_doubao_default(authed_client_no_db, m
     )
 
     assert resp.status_code == 201
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
 
 
@@ -1753,9 +1753,9 @@ def test_upload_complete_defaults_to_channel_safe_mode(authed_client_no_db, monk
     resp = _post_complete(authed_client_no_db)
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
-    assert mem[task_id]["channel"] == "local_image_2"
+    assert mem[task_id]["channel"] == "apimart"
     assert mem[task_id]["model_id"] == "gpt-image-2"
-    assert mem[task_id]["concurrency_mode"] == "sequential"
+    assert mem[task_id]["concurrency_mode"] == "parallel"
 
 
 def test_upload_complete_accepts_openrouter_parallel(authed_client_no_db, monkeypatch):

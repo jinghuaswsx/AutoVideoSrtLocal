@@ -364,7 +364,7 @@ def _patch_store(monkeypatch, store):
 def test_get_channel_returns_default_when_unset(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {})
-    assert its.get_channel() == "local_image_2"
+    assert its.get_channel() == "apimart"
 
 
 def test_get_channel_returns_persisted_value(monkeypatch):
@@ -376,7 +376,7 @@ def test_get_channel_returns_persisted_value(monkeypatch):
 def test_get_channel_falls_back_on_invalid_value(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {"image_translate.channel": "mystery"})
-    assert its.get_channel() == "local_image_2"
+    assert its.get_channel() == "apimart"
 
 
 def test_get_channel_accepts_vertex_adc_channel(monkeypatch):
@@ -432,14 +432,15 @@ def test_get_default_model_returns_channel_default_when_unset(monkeypatch):
     assert its.get_default_model("doubao") == "doubao-seedream-5-0-260128"
 
 
-def test_material_image_translate_defaults_to_local_image2_low_serial(monkeypatch):
+def test_material_image_translate_defaults_to_apimart_image2_parallel(monkeypatch):
     from appcore import image_translate_settings as its
     from appcore import task_state
 
     _patch_store(monkeypatch, {})
 
-    assert its.get_material_image_translate_default_channel() == "local_image_2"
+    assert its.get_material_image_translate_default_channel() == "apimart"
     assert its.get_material_image_translate_default_model() == "gpt-image-2"
+    assert its.get_material_image_translate_default_concurrency_mode() == "parallel"
     assert task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE == "sequential"
 
 

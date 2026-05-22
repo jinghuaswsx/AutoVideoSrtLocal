@@ -5522,7 +5522,7 @@
     const group = $('edDetailTranslateModeGroup');
     if (group) {
       group.querySelectorAll('.oc-chip').forEach(ch => {
-        const active = ch.dataset.mode === 'sequential';
+        const active = ch.dataset.mode === 'parallel';
         ch.classList.toggle('on', active);
         ch.setAttribute('aria-checked', active ? 'true' : 'false');
       });

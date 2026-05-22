@@ -294,7 +294,7 @@ def _build_detail_translate_from_en_response(
         body,
         is_product_listed_fn=medias.is_product_listed,
         parse_lang_fn=_parse_lang,
-        default_concurrency_mode=task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
+        default_concurrency_mode=its.get_material_image_translate_default_concurrency_mode(),
         output_dir=OUTPUT_DIR,
         list_detail_images_fn=medias.list_detail_images,
         detail_images_is_gif_fn=_detail_images_is_gif,

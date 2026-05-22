@@ -62,11 +62,23 @@
         <div class="form-row">
             <label>处理模式</label>
             <div id="itConcurrencyPills" class="it-pill-group" role="radiogroup">
-                <button type="button" class="it-pill is-active" data-value="sequential" role="radio" aria-checked="true">串行（默认）</button>
-                <button type="button" class="it-pill" data-value="parallel" role="radio" aria-checked="false">并行</button>
+                <button type="button"
+                        class="it-pill {{ 'is-active' if image_translate_default_concurrency_mode == 'sequential' else '' }}"
+                        data-value="sequential"
+                        role="radio"
+                        aria-checked="{{ 'true' if image_translate_default_concurrency_mode == 'sequential' else 'false' }}">
+                    {{ '串行（默认）' if image_translate_default_concurrency_mode == 'sequential' else '串行' }}
+                </button>
+                <button type="button"
+                        class="it-pill {{ 'is-active' if image_translate_default_concurrency_mode == 'parallel' else '' }}"
+                        data-value="parallel"
+                        role="radio"
+                        aria-checked="{{ 'true' if image_translate_default_concurrency_mode == 'parallel' else 'false' }}">
+                    {{ '并行（默认）' if image_translate_default_concurrency_mode == 'parallel' else '并行' }}
+                </button>
             </div>
             <p class="hint">串行：一张一张跑，稳。并行：仅 OpenRouter 和 APIMART 可选，单批最多 15 张同时跑，快但对上游限流更敏感。</p>
-            <input type="hidden" id="itConcurrencyMode" value="sequential">
+            <input type="hidden" id="itConcurrencyMode" value="{{ image_translate_default_concurrency_mode }}">
         </div>
 
         <div class="form-row">
