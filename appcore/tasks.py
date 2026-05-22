@@ -942,7 +942,7 @@ def _normalize_language_assignments(
 
 
 def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
-    """处理人标"已上传"，随后按 raw source 是否具备自动收口。"""
+    """处理人标"已上传"，转入待人工审核。"""
     conn = get_conn()
     try:
         conn.begin()
@@ -976,7 +976,6 @@ def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
             raise
     finally:
         conn.close()
-    complete_raw_parent_if_ready(task_id=task_id, actor_user_id=actor_user_id)
 
 
 def claim_parent(*, task_id: int, actor_user_id: int) -> None:
@@ -1018,7 +1017,7 @@ def _ensure_parent_raw_approval_allowed(
 
 
 def approve_raw(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:
-    """Legacy admin action: reconcile the raw task instead of requiring review."""
+    """人工确认原视频可用后，写入原始素材库并解锁子任务。"""
     row = query_one(
         "SELECT id, status, assignee_id FROM tasks "
         "WHERE id=%s AND parent_task_id IS NULL",
@@ -1031,13 +1030,24 @@ def approve_raw(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> 
         actor_user_id=actor_user_id,
         is_admin=is_admin,
     )
-    result = complete_raw_parent_if_ready(task_id=task_id, actor_user_id=actor_user_id)
+    if row.get("status") != PARENT_RAW_REVIEW:
+        raise StateError("parent not in raw_review")
+    result = complete_raw_parent_if_ready(
+        task_id=task_id,
+        actor_user_id=actor_user_id,
+        approved_actor_user_id=actor_user_id,
+    )
     if not result.get("completed"):
         raise StateError("raw source not ready")
 
 
-def complete_raw_parent_if_ready(*, task_id: int, actor_user_id: int | None = None) -> dict:
-    """Complete a raw-processing parent task once its processed raw source exists."""
+def complete_raw_parent_if_ready(
+    *,
+    task_id: int,
+    actor_user_id: int | None = None,
+    approved_actor_user_id: int | None = None,
+) -> dict:
+    """Complete a reviewed raw-processing parent task once its raw source exists."""
     from appcore import task_raw_source_bridge
 
     try:
@@ -1076,19 +1086,17 @@ def complete_raw_parent_if_ready(*, task_id: int, actor_user_id: int | None = No
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
-                    "WHERE id=%s AND parent_task_id IS NULL AND status IN (%s,%s,%s,%s,%s)",
+                    "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
                     (
                         PARENT_ALL_DONE,
                         int(task_id),
-                        PARENT_PENDING,
-                        PARENT_RAW_IN_PROGRESS,
                         PARENT_RAW_REVIEW,
-                        PARENT_RAW_DONE,
-                        PARENT_ALL_DONE,
                     ),
                 )
                 if cur.rowcount == 0:
-                    raise StateError("parent not completable")
+                    raise StateError("parent not in raw_review")
+                if approved_actor_user_id is not None:
+                    _write_event(cur, task_id, "approved", approved_actor_user_id, None)
                 _write_event(
                     cur,
                     task_id,

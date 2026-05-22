@@ -501,6 +501,72 @@ def test_mark_uploaded_transitions_to_review(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
+def test_mark_uploaded_waits_for_manual_review_before_raw_source_sync(monkeypatch):
+    from appcore import tasks
+
+    sequence = []
+
+    class FakeCursor:
+        rowcount = 0
+        row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            if "SELECT status, assignee_id, media_item_id" in sql:
+                self.row = {
+                    "status": tasks.PARENT_RAW_IN_PROGRESS,
+                    "assignee_id": 9,
+                    "media_item_id": 11,
+                }
+                self.rowcount = 1
+                return
+            if "UPDATE tasks SET status=%s" in sql:
+                sequence.append(("parent_status", args[0]))
+                self.rowcount = 1
+                return
+            if "INSERT INTO task_events" in sql:
+                sequence.append(("event", args[1]))
+                self.rowcount = 1
+                return
+            raise AssertionError(sql)
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def begin(self):
+            sequence.append("begin")
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            sequence.append("commit")
+
+        def rollback(self):
+            sequence.append("rollback")
+
+        def close(self):
+            sequence.append("close")
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConnection())
+    monkeypatch.setattr(
+        tasks,
+        "complete_raw_parent_if_ready",
+        lambda **kwargs: pytest.fail("raw source sync must wait for manual approval"),
+    )
+
+    tasks.mark_uploaded(task_id=501, actor_user_id=9)
+
+    assert ("parent_status", tasks.PARENT_RAW_REVIEW) in sequence
+    assert ("event", "raw_uploaded") in sequence
+
+
 def test_mark_uploaded_requires_media_item(
     db_user_admin, db_user_translator, db_product
 ):
@@ -517,6 +583,28 @@ def test_mark_uploaded_requires_media_item(
         tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_approve_raw_requires_review_status_before_raw_source_sync(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": args[0],
+            "status": tasks.PARENT_RAW_IN_PROGRESS,
+            "assignee_id": 11,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_raw_parent_if_ready",
+        lambda **kwargs: pytest.fail("raw source sync must not run before raw review"),
+    )
+
+    with pytest.raises(tasks.StateError, match="raw_review"):
+        tasks.approve_raw(task_id=501, actor_user_id=11)
 
 
 def test_approve_raw_unblocks_children(
