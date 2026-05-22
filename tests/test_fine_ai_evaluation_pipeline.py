@@ -76,6 +76,27 @@ def test_pipeline_persists_visual_progress_steps_and_execution_log():
     assert any(log["level"] == "info" for log in de_step["logs"])
 
 
+def test_status_refreshes_progress_elapsed_seconds():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123)
+    stored = repository.rows[run["evaluation_run_id"]]
+    stored["progress"]["started_at"] = "2026-01-01T00:00:00Z"
+    stored["progress"]["elapsed_seconds"] = 0
+
+    status = service.get_status(123, run["evaluation_run_id"])
+
+    assert status["progress"]["elapsed_seconds"] > 0
+
+
 def test_pipeline_continues_when_one_country_fails():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 

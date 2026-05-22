@@ -50,3 +50,15 @@ def test_fine_ai_modal_renders_backend_progress_cards_and_logs():
     assert "mki-fine-ai-progress-fill" in body
     assert "mki-fine-ai-step-card is-running" in body
     assert "mkiFineAiElapsedLabel" in body
+
+
+def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "data-fine-ai-elapsed" in body
+    assert "function mkiFineAiStartElapsedTicker" in body
+    assert "function mkiFineAiStartingProgress" in body
+    assert "正在缓存当前视频素材并创建评估任务" in body
+    assert "step.key === 'data_preparation'" in body
+    assert "status: 'running'" in body
+    assert "mkiFineAiStartElapsedTicker(context);" in body

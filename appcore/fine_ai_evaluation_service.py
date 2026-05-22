@@ -494,7 +494,9 @@ class FineAiEvaluationService:
             "evaluation_run_id": run["evaluation_run_id"],
             "product_id": str(run.get("product_id") or ""),
             "status": run.get("status") or "queued",
-            "progress": run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES),
+            "progress": _fresh_progress_elapsed(
+                run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES)
+            ),
             "started_at": run.get("started_at"),
             "created_at": run.get("created_at"),
             "updated_at": run.get("updated_at"),
@@ -830,6 +832,12 @@ def _ensure_progress(
     out.setdefault("steps", _progress_steps(country_codes))
     out.setdefault("events", [])
     out.setdefault("started_at", _now_iso())
+    return out
+
+
+def _fresh_progress_elapsed(progress: dict[str, Any]) -> dict[str, Any]:
+    out = dict(progress or {})
+    out["elapsed_seconds"] = _elapsed_seconds(out.get("started_at"))
     return out
 
 
