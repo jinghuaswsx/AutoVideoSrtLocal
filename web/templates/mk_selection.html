@@ -2073,15 +2073,53 @@ function mkiFineAiAttachHeaderButtons(shell, context) {
   context.headerButtons = [latestBtn, rerunBtn];
 }
 
-async function mkiFineAiLoadLatest(context) {
+async function mkiFineAiLoadLatest(context, options = {}) {
   const shell = context.shell;
-  shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估...</div>';
+  if (!options.silent) {
+    shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估...</div>';
+  }
   try {
     const resp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, '/latest'));
-    shell.body.innerHTML = mkiFineAiRenderResult(resp.data || {});
+    const result = resp.data || {};
+    context.runId = result.evaluation_run_id || context.runId || '';
+    shell.body.innerHTML = mkiFineAiRenderResult(result);
     mkiFineAiBindModalEvents(context);
+    if (context.runId && ['queued', 'running'].includes(result.status)) {
+      await mkiFineAiPollStatus(context);
+    }
+    return true;
   } catch (e) {
-    shell.body.innerHTML = `<div class="ect-empty">暂无最近结果，可点击右上角“重新评估”。${escapeHtml(e.message || '')}</div>`;
+    if (!options.silent) {
+      shell.body.innerHTML = `<div class="ect-empty">暂无最近结果，可点击右上角“重新评估”。${escapeHtml(e.message || '')}</div>`;
+    }
+    return false;
+  }
+}
+
+async function mkiFineAiOpenLatestOrStart(context) {
+  if (context.loadingLatest || context.running) return;
+  context.loadingLatest = true;
+  const btn = context.button;
+  const original = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '检查结果中';
+  }
+  context.shell.body.innerHTML = '<div class="ect-empty">正在检查是否已有精细 AI 评估结果...</div>';
+  try {
+    const loaded = await mkiFineAiLoadLatest(context, {silent: true});
+    if (loaded) return;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original || '精细AI评估';
+    }
+    await mkiFineAiStartRun(context);
+  } finally {
+    context.loadingLatest = false;
+    if (btn && !context.running) {
+      btn.disabled = false;
+      btn.textContent = original || '精细AI评估';
+    }
   }
 }
 
@@ -2187,7 +2225,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
   const shell = window.EvalCountryTable.openModal('', {title});
   const context = {button: btn, shell, productId, productLink, running: false, runId: ''};
   mkiFineAiAttachHeaderButtons(shell, context);
-  await mkiFineAiStartRun(context);
+  await mkiFineAiOpenLatestOrStart(context);
 }
 
 function mkiEnsureImportedStatusIcon(card) {
