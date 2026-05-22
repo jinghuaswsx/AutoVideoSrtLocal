@@ -16,7 +16,13 @@ PRODUCT_FACT_SYSTEM_PROMPT = (
 
 COUNTRY_EVALUATION_SYSTEM_PROMPT = (
     "你是跨境电商市场研究员、广告素材审计专家和落地页本土化专家。"
+    "当前任务不调用搜索工具；找不到可靠来源时写未找到可靠来源，不要猜。"
     "只输出符合 schema 的 JSON，不输出 Markdown。"
+)
+
+JSON_REPAIR_SYSTEM_PROMPT = (
+    "你是 JSON 修复器。只根据输入的原始响应修复为符合 schema 的 JSON。"
+    "不要补充新事实，不要调用工具，不要输出 Markdown。"
 )
 
 
@@ -62,7 +68,7 @@ def build_country_evaluation_prompt(
         "3. 不要分析其他国家。\n"
         "4. 不要分析其他产品。\n"
         "5. 不要硬编码任何产品信息。\n"
-        "6. 使用该国家本地语言关键词、英文关键词、产品事实中生成的关键词进行调研。\n"
+        "6. 当前暂不调用搜索工具；只能基于输入、URL Context 可确认的信息和素材信息评估。\n"
         "7. 市场事实、竞品、价格、法规、广告政策、消费者偏好的结论必须尽量提供 source_url。\n"
         "8. 找不到可靠来源时，写“未找到可靠来源”，不要猜。\n"
         "9. 成本、运费、税费、目标 ROAS、目标 CPA 缺失时，不要做确定性利润判断。\n"
@@ -74,4 +80,17 @@ def build_country_evaluation_prompt(
         "需要完成：市场适配、竞品分析、价格适配、素材适配、落地页本土化、风险、结论、30 天测试计划。\n\n"
         "输入：\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def build_json_repair_prompt(*, raw_response: str, parse_error: str) -> str:
+    return (
+        "请修复下面这段大模型原始响应，使其成为一个合法 JSON object，并保持原始字段含义。\n"
+        "要求：\n"
+        "1. 只输出 JSON object，不输出解释或 Markdown。\n"
+        "2. 不要新增原始响应中没有依据的事实。\n"
+        "3. 如果某个字段无法修复，使用空字符串、空数组或 null，保持 schema 结构。\n\n"
+        f"解析错误：{parse_error}\n\n"
+        "原始响应：\n"
+        f"{raw_response}"
     )

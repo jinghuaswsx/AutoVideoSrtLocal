@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -33,7 +34,8 @@ from appcore.fine_ai_gemini_client import MODEL, PROVIDER, FineAiGeminiClient
 log = logging.getLogger(__name__)
 
 RUN_STATUSES = {"queued", "running", "completed", "partially_completed", "failed", "cancelled"}
-COUNTRY_PENDING_STATUSES = {"pending", "running", "completed", "failed", "skipped"}
+COUNTRY_PENDING_STATUSES = {"pending", "waiting", "running", "completed", "failed", "skipped"}
+PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS = 30
 
 
 class FineAiEvaluationError(RuntimeError):
@@ -58,6 +60,8 @@ class FineAiEvaluationService:
         product_snapshot_service=None,
         asset_snapshot_service=None,
         external_card_video_snapshot_service=None,
+        country_request_interval_seconds: float = 0,
+        country_request_sleeper=None,
     ):
         self.repository = repository or FineAiEvaluationRepository()
         self.gemini_client = gemini_client or FineAiGeminiClient()
@@ -66,6 +70,8 @@ class FineAiEvaluationService:
         self.external_card_video_snapshot_service = (
             external_card_video_snapshot_service or ExternalCardVideoSnapshotService()
         )
+        self.country_request_interval_seconds = max(0.0, float(country_request_interval_seconds or 0))
+        self.country_request_sleeper = country_request_sleeper or time.sleep
 
     def create_run(
         self,
@@ -323,9 +329,35 @@ class FineAiEvaluationService:
             return self.get_result(product_id, evaluation_run_id)
 
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
-        for code in country_codes:
+        for index, code in enumerate(country_codes):
             country = get_country_config(code)
             step_key = _country_step_key(code)
+            if index > 0 and self.country_request_interval_seconds > 0:
+                wait_label = _format_seconds(self.country_request_interval_seconds)
+                progress = _mark_progress_step(
+                    progress,
+                    step_key,
+                    "waiting",
+                    f"{code} 等待 {wait_label} 后再请求大模型，避免触发频率限制",
+                    debug=[
+                        {"label": "Country", "value": code},
+                        {"label": "Wait", "value": wait_label},
+                    ],
+                )
+                self.repository.update_run(
+                    evaluation_run_id,
+                    status="running",
+                    progress=_progress(
+                        country_codes,
+                        f"country_wait_{code}",
+                        waiting_country=code,
+                        completed_steps=_completed_step_count(progress),
+                        completed_countries=completed_codes,
+                        failed_countries=failed_codes,
+                        base_progress=progress,
+                    ),
+                )
+                self.country_request_sleeper(self.country_request_interval_seconds)
             progress = _mark_progress_step(
                 progress,
                 step_key,
@@ -383,7 +415,7 @@ class FineAiEvaluationService:
                         "status": "completed",
                         "full_result": result,
                         "metadata": call_metadata,
-                        "raw_response": {},
+                        "raw_response": _raw_response_from_metadata(call_metadata),
                     },
                 )
             except Exception as exc:
@@ -412,7 +444,7 @@ class FineAiEvaluationService:
                         "status": "failed",
                         "full_result": failed,
                         "metadata": call_metadata,
-                        "raw_response": {},
+                        "raw_response": _raw_response_from_metadata(call_metadata),
                         "error_message": str(exc)[:500],
                     },
                 )
@@ -690,7 +722,7 @@ class FineAiEvaluationService:
                     "status": "completed",
                     "full_result": result,
                     "metadata": call_metadata,
-                    "raw_response": {},
+                    "raw_response": _raw_response_from_metadata(call_metadata),
                 },
             )
         except Exception as exc:
@@ -716,7 +748,7 @@ class FineAiEvaluationService:
                     "status": "failed",
                     "full_result": failed,
                     "metadata": call_metadata,
-                    "raw_response": {},
+                    "raw_response": _raw_response_from_metadata(call_metadata),
                     "error_message": str(exc)[:500],
                 },
             )
@@ -786,12 +818,26 @@ _SERVICE: FineAiEvaluationService | None = None
 def get_service() -> FineAiEvaluationService:
     global _SERVICE
     if _SERVICE is None:
-        _SERVICE = FineAiEvaluationService()
+        _SERVICE = FineAiEvaluationService(
+            country_request_interval_seconds=PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS
+        )
     return _SERVICE
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _format_seconds(seconds: float) -> str:
+    value = float(seconds or 0)
+    if value.is_integer():
+        return f"{int(value)} 秒"
+    return f"{value:.1f} 秒"
+
+
+def _raw_response_from_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    raw = (metadata or {}).get("raw_response")
+    return dict(raw) if isinstance(raw, dict) else {}
 
 
 def _initial_progress(
@@ -832,6 +878,7 @@ def _progress(
     current_step: str,
     *,
     running_country: str | None = None,
+    waiting_country: str | None = None,
     completed_steps: int = 0,
     completed_countries: list[str] | None = None,
     failed_countries: list[str] | None = None,
@@ -845,6 +892,8 @@ def _progress(
             statuses[code] = "completed"
         elif code in failed:
             statuses[code] = "failed"
+        elif code == waiting_country:
+            statuses[code] = "waiting"
         elif code == running_country:
             statuses[code] = "running"
         else:
@@ -860,7 +909,7 @@ def _progress(
         "total_steps": len(progress.get("steps") or []),
         "completed_steps": int(completed_steps or completed_from_steps),
         "current_step": current_step,
-        "current_country": running_country or "",
+        "current_country": running_country or waiting_country or "",
         "countries": statuses,
         "started_at": started_at,
         "elapsed_seconds": _elapsed_seconds(started_at),
@@ -994,7 +1043,7 @@ def _mark_progress_step(
         previous_status = step.get("status")
         step["status"] = status
         step["message"] = message
-        if status == "running" and not step.get("started_at"):
+        if status in {"running", "waiting"} and not step.get("started_at"):
             step["started_at"] = now
         if status in {"completed", "failed", "skipped"}:
             if not step.get("started_at"):

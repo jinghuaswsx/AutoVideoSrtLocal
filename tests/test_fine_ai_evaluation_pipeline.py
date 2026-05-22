@@ -267,6 +267,75 @@ def test_pipeline_continues_when_one_country_fails():
     assert progress["countries"]["JP"] == "completed"
 
 
+def test_country_request_waits_between_countries_and_marks_progress():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    calls = []
+    sleep_calls = []
+    repository = InMemoryEvaluationRepository()
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+        stored = repository.rows[run["evaluation_run_id"]]
+        progress = stored["progress"]
+        fr_step = next(step for step in progress["steps"] if step["key"] == "country_FR")
+        assert progress["current_step"] == "country_wait_FR"
+        assert progress["countries"]["DE"] == "completed"
+        assert progress["countries"]["FR"] == "waiting"
+        assert fr_step["status"] == "waiting"
+        assert "等待 30 秒" in fr_step["message"]
+
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient(calls),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+        country_request_interval_seconds=30,
+        country_request_sleeper=fake_sleep,
+    )
+
+    run = service.create_run(123, countries=["DE", "FR"])
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "completed"
+    assert sleep_calls == [30]
+    assert [call[0] for call in calls] == ["product_facts", "country:DE", "country:FR"]
+    assert any("等待 30 秒" in event["message"] for event in result["progress"]["events"])
+
+
+def test_country_failure_persists_raw_response_debug():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    class RawFailureGeminiClient(FakeGeminiClient):
+        def generate_country_evaluation(self, *, product_snapshot, product_facts, country, asset_snapshot, asset_paths):
+            self.last_call_metadata = {
+                "provider": "fake-provider",
+                "model": "fake-model",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "raw_response": {
+                    "text_preview": '{"country_code": "DE", bad',
+                    "json_parse_error": "Expecting property name",
+                },
+            }
+            raise RuntimeError("JSON parse failed after repair")
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=RawFailureGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123, countries=["DE"])
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    stored_country = repository.country_rows[(run["evaluation_run_id"], "DE")]
+    assert result["status"] == "failed"
+    assert stored_country["raw_response"]["json_parse_error"] == "Expecting property name"
+    assert stored_country["raw_response"]["text_preview"] == '{"country_code": "DE", bad'
+
+
 def test_pipeline_handles_empty_assets_without_crashing():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 

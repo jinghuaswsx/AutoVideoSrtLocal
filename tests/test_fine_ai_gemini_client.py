@@ -1,4 +1,4 @@
-def test_fine_ai_gemini_client_invokes_vertex_adc_with_search_and_url_context(monkeypatch):
+def test_fine_ai_gemini_client_invokes_vertex_adc_without_search_and_with_url_context(monkeypatch):
     from appcore import fine_ai_gemini_client as mod
 
     calls = []
@@ -37,9 +37,127 @@ def test_fine_ai_gemini_client_invokes_vertex_adc_with_search_and_url_context(mo
     kwargs = calls[0][1]
     assert kwargs["provider_override"] == "gemini_vertex_adc"
     assert kwargs["model_override"] == "gemini-3.5-flash"
-    assert kwargs["google_search"] is True
+    assert kwargs["google_search"] is False
     assert kwargs["url_context"] is True
     assert "temperature" not in kwargs
+
+
+def test_fine_ai_gemini_client_uses_toolless_json_repair_call_after_parse_failure(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        if len(calls) == 1:
+            return {
+                "text": '{"country_code": "DE", bad',
+                "json": None,
+                "json_parse_error": "Expecting property name",
+                "usage": {"input_tokens": 10, "output_tokens": 20},
+            }
+        return {
+            "json": _country_result(),
+            "usage": {"input_tokens": 3, "output_tokens": 4},
+        }
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+
+    client = mod.FineAiGeminiClient()
+    result = client.generate_country_evaluation(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        product_facts={
+            "product_id": "123",
+            "product_name": "Sample",
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {"english_keywords": [], "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []}},
+        },
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国", "language": "German", "currency": "EUR"},
+        asset_snapshot={"cover_images": [], "product_images": [], "videos": []},
+        asset_paths=["G:/tmp/demo.mp4"],
+    )
+
+    assert result["country_code"] == "DE"
+    assert [call[0] for call in calls] == ["fine_ai_evaluation.country", "fine_ai_evaluation.country"]
+    first_kwargs = calls[0][1]
+    repair_kwargs = calls[1][1]
+    assert first_kwargs["google_search"] is False
+    assert first_kwargs["url_context"] is True
+    assert first_kwargs["media"] == ["G:/tmp/demo.mp4"]
+    assert repair_kwargs["google_search"] is False
+    assert repair_kwargs["url_context"] is False
+    assert repair_kwargs["media"] is None
+    assert "修复" in repair_kwargs["prompt"]
+    assert "Expecting property name" in repair_kwargs["prompt"]
+    assert client.last_call_metadata["json_repair_attempted"] is True
+    assert client.last_call_metadata["json_repair_succeeded"] is True
+    assert client.last_call_metadata["raw_response"]["json_parse_error"] == "Expecting property name"
+
+
+def test_fine_ai_gemini_client_retries_original_call_when_json_repair_fails(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        if len(calls) == 1:
+            return {
+                "text": '{"country_code": "DE", bad',
+                "json": None,
+                "json_parse_error": "Expecting property name",
+                "usage": {"input_tokens": 10, "output_tokens": 20},
+            }
+        if len(calls) == 2:
+            return {
+                "text": "still not json",
+                "json": None,
+                "json_parse_error": "No JSON object",
+                "usage": {"input_tokens": 3, "output_tokens": 4},
+            }
+        return {"json": _country_result(), "usage": {"input_tokens": 11, "output_tokens": 22}}
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+
+    client = mod.FineAiGeminiClient()
+    result = client.generate_country_evaluation(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        product_facts={
+            "product_id": "123",
+            "product_name": "Sample",
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {"english_keywords": [], "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []}},
+        },
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国", "language": "German", "currency": "EUR"},
+        asset_snapshot={"cover_images": [], "product_images": [], "videos": []},
+        asset_paths=[],
+    )
+
+    assert result["country_code"] == "DE"
+    assert len(calls) == 3
+    assert calls[0][1]["url_context"] is True
+    assert calls[1][1]["url_context"] is False
+    assert calls[2][1]["url_context"] is True
+    assert calls[2][1]["project_id"].endswith("-retry-2")
+    assert client.last_call_metadata["structured_retry_attempt"] == 2
 
 
 def test_fine_ai_gemini_client_repairs_markdown_wrapped_json():

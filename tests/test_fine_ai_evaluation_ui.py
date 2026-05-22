@@ -72,6 +72,19 @@ def test_fine_ai_modal_renders_backend_progress_cards_and_logs():
     assert "mkiFineAiElapsedLabel" in body
 
 
+def test_fine_ai_progress_renders_waiting_state_for_country_rate_limit():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "waiting: '等待中'" in body
+    assert "waiting: '等待中'" in script
+    assert ".mki-fine-ai-step-card.is-waiting" in body
+    assert ".mki-fine-ai-status-pill.is-waiting" in body
+    assert ".mki-fine-ai-step-card.is-waiting" in template
+    assert ".mki-fine-ai-status-pill.is-waiting" in template
+
+
 def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

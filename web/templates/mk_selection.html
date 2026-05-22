@@ -251,18 +251,21 @@
 .mki-fine-ai-step-list { display:grid; gap:10px; }
 .mki-fine-ai-step-card { border:1px solid var(--oc-border); border-left-width:5px; border-radius:8px; padding:12px 14px; background:#fff; transition:border-color .18s ease, box-shadow .18s ease, background .18s ease; }
 .mki-fine-ai-step-card.is-pending { border-left-color:oklch(76% 0.015 230); background:oklch(99% 0.003 230); }
+.mki-fine-ai-step-card.is-waiting { border-left-color:oklch(72% 0.15 75); background:oklch(98% 0.035 80); }
 .mki-fine-ai-step-card.is-running { border-color:oklch(76% 0.09 230); border-left-color:var(--oc-accent); background:oklch(97% 0.018 230); box-shadow:0 0 0 3px rgba(14,165,233,.10); }
 .mki-fine-ai-step-card.is-completed { border-left-color:oklch(58% 0.12 160); background:oklch(98% 0.018 160); }
 .mki-fine-ai-step-card.is-failed { border-left-color:oklch(55% 0.16 25); background:oklch(98% 0.018 25); }
 .mki-fine-ai-step-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; min-width:0; font-weight:800; color:var(--oc-fg); }
 .mki-fine-ai-step-dot { position:relative; width:10px; height:10px; flex:0 0 auto; border-radius:9999px; background:oklch(70% 0.02 230); }
+.mki-fine-ai-step-card.is-waiting .mki-fine-ai-step-dot { background:oklch(72% 0.15 75); }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot { background:var(--oc-accent); }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border-radius:inherit; border:2px solid rgba(14,165,233,.30); animation:mkiFineAiPulse 1.05s ease-out infinite; }
 .mki-fine-ai-step-card.is-completed .mki-fine-ai-step-dot { background:oklch(58% 0.12 160); }
 .mki-fine-ai-step-card.is-failed .mki-fine-ai-step-dot { background:oklch(55% 0.16 25); }
 .mki-fine-ai-status-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:9999px; font-size:12px; font-weight:700; }
 .mki-fine-ai-status-pill.is-pending { background:oklch(94% 0.010 230); color:var(--oc-fg-muted); }
+.mki-fine-ai-status-pill.is-waiting { background:oklch(94% 0.055 80); color:oklch(42% 0.12 65); }
 .mki-fine-ai-status-pill.is-running { background:oklch(91% 0.08 220); color:oklch(42% 0.14 235); }
 .mki-fine-ai-status-pill.is-completed { background:var(--oc-success-bg); color:var(--oc-success-fg); }
 .mki-fine-ai-status-pill.is-failed { background:oklch(96% 0.04 25); color:oklch(42% 0.14 25); }
@@ -2566,12 +2569,17 @@ function mkiFineAiSeverity(decision) {
 
 function mkiFineAiStatusLabel(status) {
   const value = String(status || '').toLowerCase();
-  if (value === 'running') return '正在请求中';
-  if (value === 'queued' || value === 'pending') return '等待开始';
-  if (value === 'completed') return '评估完成';
-  if (value === 'partially_completed') return '部分完成';
-  if (value === 'failed') return '评估失败';
-  if (value === 'cancelled') return '已取消';
+  const labels = {
+    running: '正在请求中',
+    queued: '等待开始',
+    pending: '等待开始',
+    waiting: '等待中',
+    completed: '评估完成',
+    partially_completed: '部分完成',
+    failed: '评估失败',
+    cancelled: '已取消',
+  };
+  if (labels[value]) return labels[value];
   return status || '未知状态';
 }
 
@@ -2587,10 +2595,14 @@ function mkiFineAiEffectiveStatus(progress, status) {
 
 function mkiFineAiStepStatusLabel(status) {
   const value = String(status || 'pending').toLowerCase();
-  if (value === 'running') return '执行中';
-  if (value === 'completed') return '已完成';
-  if (value === 'failed') return '失败';
-  if (value === 'skipped') return '已跳过';
+  const labels = {
+    running: '执行中',
+    waiting: '等待中',
+    completed: '已完成',
+    failed: '失败',
+    skipped: '已跳过',
+  };
+  if (labels[value]) return labels[value];
   return '等待';
 }
 
