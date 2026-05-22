@@ -147,6 +147,7 @@ def test_medias_js_wires_shopify_image_actions():
     assert "/shopify-image/${encodeURIComponent(lang)}/confirm" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/unavailable" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/requeue" in js
+    assert "标记链接不可用" not in js
 
 
 def test_product_links_modal_always_renders_shopify_action_buttons():
@@ -159,17 +160,41 @@ def test_product_links_modal_always_renders_shopify_action_buttons():
     assert 'data-product-links-action="shopify-confirm"' in row_actions
     assert 'data-product-links-action="shopify-requeue"' in row_actions
     assert 'data-product-links-action="shopify-unavailable"' in row_actions
+    assert "标记链接异常" in row_actions
+    assert "标记链接不可用" not in row_actions
     assert "status.replace_status !== 'confirmed'" not in row_actions
     assert "status.link_status !== 'unavailable'" not in row_actions
 
 
-def test_product_links_modal_renders_per_row_manual_link_confirm_button():
+def test_product_links_modal_renders_row_actions_in_requested_order_and_style():
     js = open("web/static/medias.js", encoding="utf-8").read()
     row_actions = js[
         js.index("function edProductLinksRowActions"):
         js.index("function edProductLinksRowHtml")
     ]
 
-    assert 'data-product-links-action="confirm-link"' in row_actions
-    assert "确认链接正常" in row_actions
+    expected_order = [
+        "重新检查链接可用性",
+        "确认链接正常",
+        "标记链接异常",
+        "确认图片正常",
+        "重新排队换图",
+    ]
+    positions = [row_actions.index(label) for label in expected_order]
+    assert positions == sorted(positions)
+    assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link"' in row_actions
+    assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm"' in row_actions
+    assert 'class="oc-btn ghost sm" data-product-links-action="shopify-unavailable"' in row_actions
     assert 'data-domain="${escapeHtml(item.domain)}"' in row_actions
+
+
+def test_manual_link_confirm_refreshes_product_detail_for_shopify_badges():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    confirm_fn = js[
+        js.index("async function edConfirmProductLinkNormal"):
+        js.index("function edOpenProductLinksModal")
+    ]
+
+    assert "manual_confirm: true" in confirm_fn
+    assert "const fresh = await fetchJSON('/medias/api/products/' + pid);" in confirm_fn
+    assert "edSetProductData(fresh);" in confirm_fn

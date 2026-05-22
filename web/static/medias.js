@@ -5125,7 +5125,7 @@
       }
       actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="requeue" data-lang="${escapeHtml(lang)}"${domainAttr}>重新排队换图</button>`);
       if (status.link_status !== 'unavailable') {
-        actions.push(`<button type="button" class="oc-btn text sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}"${domainAttr}>标记链接不可用</button>`);
+        actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}"${domainAttr}>标记链接异常</button>`);
       }
       return parts.join('') + `<span class="oc-link-check-actions">${actions.join('')}</span>`;
     }).join('');
@@ -5143,7 +5143,7 @@
     if (!pid || !lang || lang === 'en') return;
     let body = domain ? { domain } : null;
     if (action === 'unavailable') {
-      const reason = prompt('请填写链接不可用原因', '链接不可用，等待负责人处理');
+      const reason = prompt('请填写链接异常原因', '链接异常，等待负责人处理');
       if (reason === null) return;
       body = { ...(body || {}), reason };
     }
@@ -5737,12 +5737,12 @@
   function edProductLinksRowActions(lang, item) {
     const domainAttr = `data-domain="${escapeHtml(item.domain)}"`;
     const buttons = [];
-    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查可用性</button>`);
-    buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
+    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查链接可用性</button>`);
+    buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
     if (lang && lang !== 'en') {
-      buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
+      buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接异常</button>`);
+      buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
-      buttons.push(`<button type="button" class="oc-btn text sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接不可用</button>`);
     }
     return `<div class="oc-product-links-row-actions">${buttons.join('')}</div>`;
   }
@@ -5908,6 +5908,10 @@
         if (!item.checked_at) return acc;
         return !acc || item.checked_at > acc ? item.checked_at : acc;
       }, '');
+      if (state.lang && state.lang !== 'en') {
+        const fresh = await fetchJSON('/medias/api/products/' + pid);
+        edSetProductData(fresh);
+      }
     } catch (err) {
       state.error = '产品链接人工确认失败：' + (err && err.message ? err.message : err);
     } finally {

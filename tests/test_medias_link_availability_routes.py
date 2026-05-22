@@ -209,11 +209,17 @@ def test_link_availability_post_manual_confirm_marks_only_requested_domain(
     monkeypatch,
 ):
     calls: list[tuple] = []
+    normal_calls: list[tuple] = []
 
     def manual_confirm(*, product_id, lang, domain, link_url):
         calls.append((product_id, lang, domain, link_url))
 
     monkeypatch.setattr("appcore.link_availability.manual_confirm_result", manual_confirm)
+    monkeypatch.setattr(
+        "appcore.shopify_image_tasks.mark_link_normal",
+        lambda product_id, lang, *, domain=None: normal_calls.append((product_id, lang, domain)),
+        raising=False,
+    )
     monkeypatch.setattr(
         "appcore.link_availability.probe_and_record",
         lambda *args, **kwargs: pytest.fail("manual confirm should not run HTTP probe"),
@@ -260,6 +266,7 @@ def test_link_availability_post_manual_confirm_marks_only_requested_domain(
             "https://omurio.com/de/products/demo-rjc",
         )
     ]
+    assert normal_calls == [(7, "de", "omurio.com")]
     payload = response.get_json()
     assert [item["domain"] for item in payload["items"]] == ["newjoyloo.com", "omurio.com"]
     assert payload["items"][1]["ok"] is True

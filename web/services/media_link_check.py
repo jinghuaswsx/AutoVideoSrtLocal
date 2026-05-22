@@ -10,7 +10,7 @@ import uuid
 
 from flask import jsonify
 
-from appcore import link_availability, medias, product_link_domains
+from appcore import link_availability, medias, product_link_domains, shopify_image_tasks
 
 
 @dataclass(frozen=True)
@@ -343,6 +343,12 @@ def build_product_link_availability_run_response(
             domain=target["domain"],
             link_url=target["url"],
         )
+        if lang_code != "en":
+            shopify_image_tasks.mark_link_normal(
+                int(product.get("id") or 0),
+                lang_code,
+                domain=target["domain"],
+            )
         cached = list_fn(int(product.get("id") or 0), lang_code) or []
         cached_by_domain = {item["domain"]: item for item in cached}
         items: list[dict[str, Any]] = []
