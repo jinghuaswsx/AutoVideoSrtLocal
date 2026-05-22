@@ -76,6 +76,9 @@ The route passes this data directly to `web/templates/mk_video_material_detail.h
 - The cover and video frames use a fixed `270px` by `480px` centered portrait viewport
   inside each media panel, so the detail page does not stretch media across the full
   right-side panel.
+- Detail-page CSS is emitted directly inside `layout.html`'s `extra_style` stylesheet
+  block; the template must not add a nested `<style>` tag because that prevents the
+  media-size CSS variables from applying in browsers.
 - On narrow screens the two media panes stack.
 - The card entry opens in a new tab so operators do not lose the scanned list position.
 - On material cards, the filename action column shows `详情` above the filename-copy

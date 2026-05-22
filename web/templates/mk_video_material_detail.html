@@ -6,7 +6,6 @@
 {% endblock %}
 {% block extra_style %}
 {% include "_xuanpin_tabs_style.html" %}
-<style>
 :root {
   --mkd-bg: oklch(99% 0.004 230);
   --mkd-bg-muted: oklch(95% 0.010 230);
@@ -19,8 +18,8 @@
   --mkd-success-bg: oklch(95% 0.04 165);
   --mkd-success-fg: oklch(38% 0.09 165);
   --mkd-radius: 8px;
-  --mkd-media-frame-w: 220px;
-  --mkd-media-frame-h: 390px;
+  --mkd-media-frame-w: 270px;
+  --mkd-media-frame-h: 480px;
 }
 .mk-detail-page { color:var(--mkd-fg); }
 .mk-detail-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
@@ -59,7 +58,6 @@
   .mk-detail-meta-grid { grid-template-columns:1fr; }
   .mk-detail-title { font-size:20px; }
 }
-</style>
 {% endblock %}
 {% block content %}
 {% set active = "mk" %}

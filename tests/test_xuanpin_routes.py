@@ -199,6 +199,7 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "mk-detail-media-grid" in body
     assert "mk-detail-cover-frame" in body
     assert "mk-detail-video-frame" in body
+    assert body.count("<style>") == 1
     assert "--mkd-media-frame-w: 270px;" in body
     assert "--mkd-media-frame-h: 480px;" in body
     assert ".mk-detail-media-panel { border:1px solid var(--mkd-border); border-radius:var(--mkd-radius); background:#fff; padding:12px; display:flex; flex-direction:column; align-items:center;" in body
