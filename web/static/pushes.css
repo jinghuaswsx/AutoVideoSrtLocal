@@ -685,6 +685,13 @@
 .btn-push.btn-rework:hover:not(:disabled) {
   background: var(--oc-danger-hover);
 }
+.btn-push.btn-modal-material-push {
+  height: 64px;
+  min-width: 132px;
+  padding: 0 28px;
+  font-size: 16px;
+  font-weight: 700;
+}
 .btn-push.btn-disabled {
   background: var(--oc-bg-muted);
   color: var(--oc-fg-subtle);

@@ -1432,6 +1432,20 @@ def test_pushes_assets_include_rework_modal_controls():
     assert "gap: 100px" in style
 
 
+def test_pushes_modal_material_push_button_is_larger_than_rework_button():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    style = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "class: 'btn-push btn-modal-material-push'" in script
+    assert "class: 'btn-push btn-rework'" in script
+    assert ".btn-push.btn-modal-material-push" in style
+    assert "height: 64px" in style
+    assert "padding: 0 28px" in style
+    assert ".btn-push.btn-rework {\n  background: var(--oc-danger);" in style
+
+
 def test_pushes_quality_media_previews_are_side_by_side_180_by_320():
     from pathlib import Path
 
