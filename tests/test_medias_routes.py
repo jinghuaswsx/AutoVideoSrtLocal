@@ -438,7 +438,7 @@ def _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path):
         "_materialize_media",
         lambda object_key: cover_path if object_key.endswith("cover.jpg") else video_path,
     )
-    monkeypatch.setattr(r.material_evaluation, "_make_eval_clip_15s", lambda pid, item: video_path)
+    monkeypatch.setattr(r.material_evaluation, "_make_eval_clip_30s", lambda pid, item: video_path)
     return r
 
 
@@ -458,7 +458,11 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["media"][0]["role"] == "product_cover"
     assert payload["media"][0]["preview_url"] == "/medias/cover/123?lang=en"
     assert payload["media"][1]["role"] == "english_video"
-    assert payload["media"][1]["preview_url"].startswith("/medias/object?object_key=")
+    assert payload["media"][1]["preview_url"] == "/medias/api/products/123/evaluate/clip?media_item_id=456"
+    assert payload["media"][1]["original_preview_url"].startswith("/medias/object?object_key=")
+    assert payload["media"][1]["processing"]["max_height"] == 480
+    assert payload["media"][1]["processing"]["fps"] == 15
+    assert payload["media"][1]["processing"]["video_bitrate"] == "600k"
     assert payload["prompts"]["system"]
     assert payload["prompts"]["user"]
     assert payload["response_schema"]["type"] == "object"
@@ -468,6 +472,41 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["llm"]["google_search"] is True
     assert payload["llm"]["tools"] == [{"type": "openrouter:web_search"}]
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
+
+
+def test_manual_ai_evaluate_clip_serves_processed_eval_video(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    clip_path = tmp_path / "456_30s_llm.mp4"
+    clip_path.write_bytes(b"processed-video")
+    calls = []
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "evaluation_clip_preview_file",
+        lambda pid, media_item_id=None: calls.append((pid, media_item_id)) or clip_path,
+    )
+
+    resp = authed_client_no_db.get(
+        "/medias/api/products/123/evaluate/clip?media_item_id=456"
+    )
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "video/mp4"
+    assert resp.data == b"processed-video"
+    assert calls == [(123, 456)]
+
+
+def test_manual_ai_evaluate_clip_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get(
+        "/medias/api/products/123/evaluate/clip?media_item_id=456"
+    )
+
+    assert resp.status_code in {302, 403}
 
 
 def test_manual_ai_evaluate_request_preview_passes_mingkong_product_link(

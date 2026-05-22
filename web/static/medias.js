@@ -890,6 +890,17 @@
     }
   }
 
+  function formatAiEvaluationVideoProcessing(video) {
+    const info = video && video.processing || {};
+    const parts = [];
+    if (video && video.clip_seconds) parts.push(`${video.clip_seconds}秒短片`);
+    if (info.max_height) parts.push(`${info.max_height}P`);
+    if (info.fps) parts.push(`${info.fps}帧`);
+    if (info.video_bitrate) parts.push(`${String(info.video_bitrate).toUpperCase()}码率`);
+    if (info.drop_audio === false && info.audio_bitrate) parts.push(`音频${info.audio_bitrate}`);
+    return parts.join(' / ') || '-';
+  }
+
   function renderAiEvaluationRequestPreviewToPanel(panel, opts) {
     const options = opts || {};
     const preview = options.preview;
@@ -907,6 +918,8 @@
     const productUrl = safeExternalHref(product.product_url);
     const coverPreviewUrl = safeMediaSrc(cover.preview_url);
     const videoPreviewUrl = safeMediaSrc(video.preview_url);
+    const videoDisplayName = video.submitted_filename || video.filename || video.object_key || '';
+    const originalVideoUrl = safeMediaSrc(video.original_preview_url);
     panel.innerHTML = `
       <div class="ect-ai-actions">
         <button type="button" class="ect-ai-btn primary" data-ai-full-payload>请求报文</button>
@@ -916,7 +929,7 @@
           <h4>素材预览</h4>
           <div class="ect-ai-media">
             <div class="ect-ai-cover">${coverPreviewUrl ? `<img src="${escapeHtml(coverPreviewUrl)}" alt="商品主图">` : '暂无主图'}</div>
-            <div class="ect-ai-video-name" title="${escapeHtml(video.filename || video.object_key || '')}">${escapeHtml(video.filename || video.object_key || '暂无视频文件名')}</div>
+            <div class="ect-ai-video-name" title="${escapeHtml(videoDisplayName || video.object_key || '')}">${escapeHtml(videoDisplayName || '暂无视频文件名')}</div>
             <div class="ect-ai-video">${videoPreviewUrl ? `<video controls preload="metadata" src="${escapeHtml(videoPreviewUrl)}"></video>` : '暂无视频'}</div>
           </div>
         </div>
@@ -927,7 +940,9 @@
             <dt>产品 ID</dt><dd>${escapeHtml(product.product_code || '-')}</dd>
             <dt>产品链接</dt><dd>${productUrl ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(product.product_url)}</a>` : escapeHtml(product.product_url || '-')}</dd>
             <dt>主图</dt><dd>${escapeHtml(cover.object_key || '-')}</dd>
-            <dt>视频</dt><dd>${escapeHtml(video.object_key || '-')}</dd>
+            <dt>AI请求短片</dt><dd>${escapeHtml(formatAiEvaluationVideoProcessing(video))}</dd>
+            <dt>短片预览</dt><dd>${videoPreviewUrl ? `<a href="${escapeHtml(videoPreviewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(videoPreviewUrl)}</a>` : '-'}</dd>
+            <dt>原始视频</dt><dd>${originalVideoUrl ? `<a href="${escapeHtml(originalVideoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(video.object_key || originalVideoUrl)}</a>` : escapeHtml(video.object_key || '-')}</dd>
             <dt>语种</dt><dd>${escapeHtml((preview.languages || []).map((lang) => `${lang.name}(${lang.code})`).join('、') || '-')}</dd>
             <dt>UseCase</dt><dd>${escapeHtml(preview.llm && preview.llm.use_case || '-')}</dd>
             <dt>Provider</dt><dd>${escapeHtml(preview.llm && preview.llm.provider || '-')}</dd>

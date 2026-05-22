@@ -237,6 +237,26 @@ def _make_eval_clip_15s(
     )
 
 
+def _evaluation_clip_preview_url(product_id: int, media_item_id: int | None) -> str:
+    url = f"/medias/api/products/{int(product_id)}/evaluate/clip"
+    if media_item_id:
+        url += f"?media_item_id={int(media_item_id)}"
+    return url
+
+
+def _video_processing_debug(policy=SHORT_CLIP_AUDIO) -> dict:
+    return {
+        "policy_name": policy.name,
+        "max_height": policy.max_height,
+        "fps": policy.fps,
+        "video_bitrate": policy.video_bitrate,
+        "maxrate": policy.maxrate,
+        "bufsize": policy.bufsize,
+        "drop_audio": policy.drop_audio,
+        "audio_bitrate": policy.audio_bitrate,
+    }
+
+
 def _optimize_eval_clip_for_llm(
     clip_path: Path,
     *,
@@ -627,6 +647,20 @@ def _materialize_required_eval_video(
     return Path(path), None
 
 
+def evaluation_clip_preview_file(
+    product_id: int,
+    *,
+    media_item_id: int | None = None,
+) -> Path:
+    video = _selected_english_video(product_id, media_item_id=media_item_id)
+    if not video:
+        raise ValueError("missing_video")
+    path = _make_eval_clip_30s(int(product_id), video)
+    if not _is_ready_local_file(path):
+        raise ValueError("missing_video_file")
+    return Path(path)
+
+
 def _debug_media_entry(
     *,
     role: str,
@@ -635,6 +669,9 @@ def _debug_media_entry(
     preview_url: str,
     path: Path | None = None,
     item: dict | None = None,
+    original_preview_url: str | None = None,
+    clip_seconds: int | None = None,
+    processing: dict | None = None,
     include_base64: bool = False,
 ) -> dict:
     filename = Path(str(object_key or "")).name or (path.name if path else "")
@@ -647,12 +684,21 @@ def _debug_media_entry(
         "mime_type": mime_type,
         "preview_url": preview_url,
     }
+    if original_preview_url:
+        entry["original_preview_url"] = original_preview_url
+    if clip_seconds is not None:
+        entry["clip_seconds"] = int(clip_seconds)
+    if processing:
+        entry["processing"] = dict(processing)
     if item:
         entry.update({
             "item_id": item.get("id"),
             "duration_seconds": item.get("duration_seconds"),
             "file_size": item.get("file_size"),
         })
+    if path:
+        entry["submitted_filename"] = Path(path).name
+        entry["submitted_path"] = str(path)
     if include_base64 and path:
         data = path.read_bytes()
         entry["byte_size"] = len(data)
@@ -691,6 +737,8 @@ def build_request_debug_payload(
     if not video:
         raise ValueError("missing_video")
     video_key = str(video.get("object_key") or "").strip()
+    video_item_id = int(video.get("id") or 0) or None
+    video_processing = _video_processing_debug()
 
     cover_path = _materialize_media(cover_key) if include_base64 else None
     video_path = _make_eval_clip_30s(product_id, video) if include_base64 else None
@@ -711,9 +759,12 @@ def build_request_debug_payload(
             role="english_video",
             label="英文视频",
             object_key=video_key,
-            preview_url=f"/medias/object?object_key={quote(video_key, safe='')}",
+            preview_url=_evaluation_clip_preview_url(product_id, video_item_id),
+            original_preview_url=f"/medias/object?object_key={quote(video_key, safe='')}",
             path=video_path,
             item=video,
+            clip_seconds=EVALUATION_CLIP_SECONDS,
+            processing=video_processing,
             include_base64=include_base64,
         ),
     ]
@@ -727,8 +778,13 @@ def build_request_debug_payload(
             {
                 "role": item["role"],
                 "filename": item["filename"],
+                "submitted_filename": item.get("submitted_filename"),
                 "mime_type": item["mime_type"],
                 "object_key": item["object_key"],
+                "preview_url": item.get("preview_url"),
+                "original_preview_url": item.get("original_preview_url"),
+                "clip_seconds": item.get("clip_seconds"),
+                "processing": item.get("processing"),
                 "data_base64": item.get("base64") if include_base64 else "[omitted]",
             }
             for item in media

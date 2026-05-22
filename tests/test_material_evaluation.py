@@ -1415,6 +1415,56 @@ def test_build_request_debug_payload_base64_uses_llm_eval_video(monkeypatch, tmp
     assert payload["request"]["media"][1]["filename"] == "7.mp4"
 
 
+def test_build_request_debug_payload_preview_visualizes_processed_eval_clip(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    product = {
+        "id": 7,
+        "name": "Debug Product",
+        "product_code": "DP-7",
+        "product_link": "https://example.test/products/debug",
+        "user_id": 42,
+        "cover_object_key": "covers/7.jpg",
+    }
+    video = {
+        "id": 99,
+        "product_id": 7,
+        "lang": "en",
+        "object_key": "videos/7.mp4",
+        "filename": "7.mp4",
+        "duration_seconds": 65,
+        "file_size": 123,
+    }
+
+    monkeypatch.setattr(material_evaluation.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(material_evaluation.medias, "resolve_cover", lambda pid, lang: "covers/7.jpg")
+    monkeypatch.setattr(material_evaluation.medias, "list_items", lambda pid, lang=None: [video])
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: product["product_link"],
+    )
+
+    payload = material_evaluation.build_request_debug_payload(7, include_base64=False)
+
+    video_entry = payload["media"][1]
+    assert video_entry["role"] == "english_video"
+    assert video_entry["preview_url"] == "/medias/api/products/7/evaluate/clip?media_item_id=99"
+    assert video_entry["original_preview_url"] == "/medias/object?object_key=videos%2F7.mp4"
+    assert video_entry["clip_seconds"] == 30
+    assert video_entry["processing"] == {
+        "policy_name": "short_clip_audio",
+        "max_height": 480,
+        "fps": 15,
+        "video_bitrate": "600k",
+        "maxrate": "800k",
+        "bufsize": "1200k",
+        "drop_audio": False,
+        "audio_bitrate": "64k",
+    }
+    assert payload["request"]["media"][1]["processing"] == video_entry["processing"]
+
+
 def test_build_request_debug_payload_uses_requested_media_item_and_30s_clip(monkeypatch, tmp_path):
     from appcore import material_evaluation
 

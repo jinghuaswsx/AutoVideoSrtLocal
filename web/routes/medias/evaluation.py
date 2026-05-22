@@ -4,10 +4,13 @@
 """
 from __future__ import annotations
 
-from flask import abort, request
+import mimetypes
+
+from flask import abort, request, send_file
 from flask_login import login_required
 
 from appcore import material_evaluation, medias
+from web.auth import admin_required
 
 from . import bp
 from ._helpers import _can_access_product
@@ -144,3 +147,24 @@ def api_product_evaluate_request_payload(pid: int):
     kwargs = _response_kwargs()
     result = routes._build_product_evaluation_payload_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_payload_response(pid)
     return routes._media_evaluation_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/evaluate/clip", methods=["GET"])
+@login_required
+@admin_required
+def api_product_evaluate_clip(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    try:
+        path = material_evaluation.evaluation_clip_preview_file(
+            pid,
+            media_item_id=_optional_media_item_id(),
+        )
+    except ValueError:
+        abort(404)
+    return send_file(
+        str(path),
+        mimetype=mimetypes.guess_type(str(path))[0] or "video/mp4",
+        conditional=True,
+    )
