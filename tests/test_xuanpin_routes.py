@@ -316,6 +316,15 @@ def test_xuanpin_mk_import_progress_logs_product_record_visibility(authed_client
     assert body.index("检测到产品记录已存在，素材管理已可见") < body.index("fetch('/mk-import/video'")
 
 
+def test_xuanpin_mk_import_payload_sends_known_local_product_id(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const localProductId = Number(btn.dataset.mkiLocalProductId || 0);" in body
+    assert "media_product_id: localProductId > 0 ? localProductId : null" in body
+
+
 def test_xuanpin_mk_import_progress_waits_for_domain_save_before_next_actions(
     authed_client_no_db,
 ):

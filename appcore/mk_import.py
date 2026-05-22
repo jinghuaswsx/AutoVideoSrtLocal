@@ -40,6 +40,9 @@ class DBError(MkImportError):
 _RJC_SUFFIX_RE = re.compile(r"-rjc$", re.IGNORECASE)
 _MK_VIDEO_PROXY_PATHS = {"/xuanpin/api/mk-video", "/medias/api/mk-video"}
 _MK_MEDIA_PROXY_PATHS = {"/xuanpin/api/mk-media", "/medias/api/mk-media"}
+_PRODUCT_LINK_HEAD_TIMEOUT_SECONDS = 2.5
+_PRODUCT_LINK_GET_TIMEOUT_SECONDS = 3.0
+_MK_DETAIL_FETCH_TIMEOUT_SECONDS = 5
 
 
 def _normalize_product_code(code: str | None) -> str:
@@ -69,14 +72,19 @@ def _probe_product_link(url: str) -> tuple[bool, str | None]:
     if not url:
         return False, "empty url"
     try:
-        resp = requests.head(url, timeout=10, allow_redirects=True)
+        resp = requests.head(url, timeout=_PRODUCT_LINK_HEAD_TIMEOUT_SECONDS, allow_redirects=True)
     except requests.RequestException as exc:
         return False, str(exc)
     if 200 <= resp.status_code < 400:
         return True, None
     if resp.status_code in {403, 405}:
         try:
-            get_resp = requests.get(url, timeout=10, allow_redirects=True, stream=True)
+            get_resp = requests.get(
+                url,
+                timeout=_PRODUCT_LINK_GET_TIMEOUT_SECONDS,
+                allow_redirects=True,
+                stream=True,
+            )
         except requests.RequestException as exc:
             return False, str(exc)
         try:
@@ -98,6 +106,27 @@ def _product_link_warning(url: str) -> dict | None:
         "url": url,
         "detail": detail or "unavailable",
     }
+
+
+def _append_step_result(
+    step_results: dict[str, list[dict]],
+    step_key: str,
+    *,
+    key: str,
+    title: str,
+    status: str,
+    message: str,
+    logs: list[str] | None = None,
+) -> None:
+    row = {
+        "key": key,
+        "title": title,
+        "status": status,
+        "message": message,
+    }
+    if logs:
+        row["logs"] = [str(item) for item in logs if str(item or "").strip()]
+    step_results.setdefault(step_key, []).append(row)
 
 
 def _bind_imported_mk_material(**kwargs) -> dict:
@@ -146,15 +175,63 @@ def _find_existing_product(normalized_code: str) -> dict | None:
     Note: media_products.product_code is already stored lowercase per existing
     _validate_product_code logic, but may or may not have -RJC suffix.
     """
-    if not normalized_code:
+    normalized = _normalize_product_code(normalized_code)
+    if not normalized:
         return None
+    for code in dict.fromkeys([normalized, _product_code_with_rjc(normalized)]):
+        if not code:
+            continue
+        row = query_one(
+            "SELECT * FROM media_products "
+            "WHERE deleted_at IS NULL "
+            "AND product_code=%s "
+            "LIMIT 1",
+            (code,),
+        )
+        if row:
+            return row
     return query_one(
         "SELECT * FROM media_products "
         "WHERE deleted_at IS NULL "
         "AND LOWER(REGEXP_REPLACE(COALESCE(product_code, ''), '-rjc$', '')) = %s "
         "LIMIT 1",
-        (normalized_code,),
+        (normalized,),
     )
+
+
+def _find_existing_product_by_id(product_id: int | str | None, normalized_code: str) -> dict | None:
+    try:
+        resolved_id = int(product_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if resolved_id <= 0:
+        return None
+    row = query_one(
+        "SELECT * FROM media_products "
+        "WHERE id=%s AND deleted_at IS NULL "
+        "LIMIT 1",
+        (resolved_id,),
+    )
+    if not row:
+        return None
+    normalized = _normalize_product_code(normalized_code)
+    if normalized and _normalize_product_code(row.get("product_code")) != normalized:
+        log.warning(
+            "mk import ignored mismatched media_product_id=%s product_code=%s expected=%s",
+            resolved_id,
+            row.get("product_code"),
+            normalized,
+        )
+        return None
+    return row
+
+
+def _find_existing_product_from_meta(meta: dict, normalized_code: str) -> dict | None:
+    for key in ("media_product_id", "product_id", "local_product_id"):
+        existing = _find_existing_product_by_id(meta.get(key), normalized_code)
+        if existing:
+            return existing
+    return _find_existing_product(normalized_code)
 
 
 def _find_active_product_by_exact_code(product_code: str | None) -> dict | None:
@@ -416,7 +493,7 @@ def _fetch_mk_product_detail(mk_id: int | str | None) -> dict:
         resp = requests.get(
             f"{base_url}/api/marketing/medias/{resolved_mk_id}",
             headers=headers,
-            timeout=15,
+            timeout=_MK_DETAIL_FETCH_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         payload = resp.json() or {}
@@ -520,6 +597,7 @@ def import_mk_video(
         DBError         — product insert 失败
     """
     started = time.monotonic()
+    step_results: dict[str, list[dict]] = {}
     meta = mk_video_metadata
     filename = meta.get("filename")
     if not filename:
@@ -532,7 +610,7 @@ def import_mk_video(
     # 2. Find or create product
     raw_code = meta.get("product_code") or ""
     normalized = _normalize_product_code(raw_code)
-    existing = _find_existing_product(normalized)
+    existing = _find_existing_product_from_meta(meta, normalized)
     is_new = existing is None
     product_asset = _find_product_asset(normalized) if is_new else None
     mk_detail = _fetch_mk_product_detail(meta.get("mk_id")) if is_new else {}
@@ -588,14 +666,64 @@ def import_mk_video(
         product_id = existing["id"]
 
     owner_uid = int(translator_id) if is_new else int(existing["user_id"])
+    _append_step_result(
+        step_results,
+        "product",
+        key="product_lookup",
+        title="产品记录",
+        status="done",
+        message=f"新建产品：产品 #{product_id}" if is_new else f"复用已有产品：产品 #{product_id}",
+        logs=[
+            f"product_code={payload.get('product_code') if is_new else existing.get('product_code')}",
+            f"owner_user_id={owner_uid}",
+        ],
+    )
+    if product_link_warning:
+        _append_step_result(
+            step_results,
+            "product",
+            key="product_link_probe",
+            title="商品链接探测",
+            status="warning",
+            message="商品链接可能不可访问",
+            logs=[product_link_warning.get("detail") or "unavailable"],
+        )
+    else:
+        _append_step_result(
+            step_results,
+            "product",
+            key="product_link_probe",
+            title="商品链接探测",
+            status="done",
+            message="商品链接探测通过",
+            logs=[product_link] if product_link else None,
+        )
 
     # 3. Download MP4 to local temp
     tmp_dir = tempfile.mkdtemp(prefix="mki_")
     mp4_dest = os.path.join(tmp_dir, filename)
     try:
-        _download_mp4(meta["mp4_url"], mp4_dest, timeout=120)
+        downloaded_size = _download_mp4(meta["mp4_url"], mp4_dest, timeout=120)
+        _append_step_result(
+            step_results,
+            "download",
+            key="download_mp4",
+            title="原视频下载",
+            status="done",
+            message=f"已下载 {downloaded_size} 字节",
+            logs=[str(meta.get("mp4_url") or "")],
+        )
         object_key = object_keys.build_media_object_key(owner_uid, int(product_id), filename)
         file_size = _write_file_to_media_store(mp4_dest, object_key)
+        _append_step_result(
+            step_results,
+            "store",
+            key="store_media",
+            title="媒体文件写入",
+            status="done",
+            message=f"已写入媒体存储：{file_size} 字节",
+            logs=[object_key],
+        )
     except DownloadError:
         if is_new:
             try:
@@ -624,11 +752,31 @@ def import_mk_video(
         default_ext=".jpg",
     )
     if (meta.get("cover_object_key") or meta.get("cover_url")) and not cover_object_key:
+        _append_step_result(
+            step_results,
+            "store",
+            key="item_cover",
+            title="视频封面",
+            status="warning",
+            message="视频封面写入素材库失败",
+            logs=["cover source unavailable"],
+        )
         warnings.append({
             "type": "item_cover_import_failed",
             "message": "视频封面写入素材库失败",
             "detail": "cover source unavailable",
         })
+
+    elif cover_object_key:
+        _append_step_result(
+            step_results,
+            "store",
+            key="item_cover",
+            title="视频封面",
+            status="done",
+            message="视频封面已写入素材库",
+            logs=[cover_object_key],
+        )
 
     # 5. Insert media_items row via medias.create_item
     try:
@@ -643,6 +791,15 @@ def import_mk_video(
             cover_object_key=cover_object_key,
             lang="en",
             task_id=task_id,
+        )
+        _append_step_result(
+            step_results,
+            "store",
+            key="media_item",
+            title="素材记录",
+            status="done",
+            message=f"素材 ID：{item_id}",
+            logs=[f"filename={filename}", "lang=en"],
         )
     except Exception as e:
         try:
@@ -684,11 +841,31 @@ def import_mk_video(
             )
         except Exception as exc:
             log.warning("mk import binding failed item_id=%s video_path=%s: %s", item_id, video_path, exc)
+            _append_step_result(
+                step_results,
+                "store",
+                key="mk_binding",
+                title="明空素材绑定",
+                status="warning",
+                message="明空素材绑定信息写入失败",
+                logs=[str(exc)],
+            )
             warnings.append({
                 "type": "mk_material_binding_failed",
                 "message": "明空素材绑定信息写入失败",
                 "detail": str(exc),
             })
+
+        else:
+            _append_step_result(
+                step_results,
+                "store",
+                key="mk_binding",
+                title="明空素材绑定",
+                status="done",
+                message="已记录明空素材来源",
+                logs=[video_path],
+            )
 
     try:
         os.unlink(mp4_dest)
@@ -720,13 +897,40 @@ def import_mk_video(
         if product_cover_key:
             try:
                 _medias_set_product_cover(int(product_id), "en", product_cover_key)
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="new_product_enrichment",
+                    title="新品资料补充",
+                    status="done",
+                    message="商品主图已写入英文素材资料",
+                    logs=[product_cover_key],
+                )
             except Exception as exc:
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="new_product_enrichment",
+                    title="新品资料补充",
+                    status="warning",
+                    message="商品主图写入素材库失败",
+                    logs=[str(exc)],
+                )
                 warnings.append({
                     "type": "product_cover_import_failed",
                     "message": "商品主图写入素材库失败",
                     "detail": str(exc),
                 })
         elif product_cover_source_url or product_cover_source_key:
+            _append_step_result(
+                step_results,
+                "store",
+                key="new_product_enrichment",
+                title="新品资料补充",
+                status="warning",
+                message="商品主图写入素材库失败",
+                logs=["cover source unavailable"],
+            )
             warnings.append({
                 "type": "product_cover_import_failed",
                 "message": "商品主图写入素材库失败",
@@ -737,7 +941,25 @@ def import_mk_video(
         if copy_item:
             try:
                 _medias_replace_copywritings(int(product_id), [copy_item], lang="en")
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="new_product_enrichment",
+                    title="新品资料补充",
+                    status="done",
+                    message="英文文案已写入素材资料",
+                    logs=[str(copy_item.get("title") or copy_item.get("content") or "copywriting")],
+                )
             except Exception as exc:
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="new_product_enrichment",
+                    title="新品资料补充",
+                    status="warning",
+                    message="英文文案写入素材库失败",
+                    logs=[str(exc)],
+                )
                 warnings.append({
                     "type": "mk_copywriting_import_failed",
                     "message": "英文文案写入素材库失败",
@@ -752,6 +974,7 @@ def import_mk_video(
         "media_product_id": int(product_id),
         "is_new_product": is_new,
         "duration_ms": duration_ms,
+        "step_results": step_results,
     }
     if warnings:
         result["warnings"] = warnings
@@ -762,7 +985,7 @@ def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
     """Given mk metadata, return {product_id, item_id} if an English item exists."""
     raw_code = mk_video_metadata.get("product_code") or ""
     normalized = _normalize_product_code(raw_code)
-    existing = _find_existing_product(normalized)
+    existing = _find_existing_product_from_meta(mk_video_metadata, normalized)
     if not existing:
         return None
     warnings = []

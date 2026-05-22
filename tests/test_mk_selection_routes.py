@@ -203,6 +203,17 @@ def test_mk_import_progress_logs_product_record_visibility_in_product_step():
     assert template.index("检测到产品记录已存在，素材管理已可见") < template.index("fetch('/mk-import/video'")
 
 
+def test_mk_import_progress_renders_step_result_subcards():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ".mki-progress-subcard" in template
+    assert "function mkiImportProgressAppendStepResult(stepKey, result)" in template
+    assert "function mkiImportProgressRenderStepResults(data)" in template
+    assert "mkiImportProgressRenderStepResults(data);" in template
+    assert "mkiImportProgressAppendStepResult(failedStep, {" in template
+    assert "接口返回错误" in template
+
+
 def test_mk_small_language_modal_distinguishes_product_owner_from_translation_owner():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

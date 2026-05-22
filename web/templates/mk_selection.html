@@ -348,6 +348,29 @@
 }
 .mki-progress-step-log.info { background: oklch(97% .02 230); color: var(--oc-accent); }
 .mki-progress-step-log.success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-progress-subcards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.mki-progress-subcards[hidden] { display: none; }
+.mki-progress-subcard {
+  padding: 9px 10px; border: 1px solid var(--oc-border); border-radius: var(--oc-r);
+  background: #fff; color: var(--oc-fg); overflow-wrap: anywhere;
+}
+.mki-progress-subcard-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mki-progress-subcard-title { min-width: 0; font-size: 12px; line-height: 1.35; font-weight: 800; }
+.mki-progress-subcard-status {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; font-size: 12px; line-height: 1.2;
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+}
+.mki-progress-subcard-message { margin-top: 5px; font-size: 12px; line-height: 1.45; color: var(--oc-fg-muted); }
+.mki-progress-subcard-logs {
+  margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px;
+  font-size: 12px; line-height: 1.45; color: var(--oc-fg-muted);
+}
+.mki-progress-subcard.done { border-color: oklch(82% .10 160); background: oklch(98% .02 160); }
+.mki-progress-subcard.done .mki-progress-subcard-status { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-progress-subcard.warning { border-color: oklch(82% .11 78); background: oklch(98% .04 78); }
+.mki-progress-subcard.warning .mki-progress-subcard-status { background: oklch(92% .08 78); color: var(--oc-warning-fg); }
+.mki-progress-subcard.error { border-color: oklch(76% .13 25); background: oklch(98% .04 25); }
+.mki-progress-subcard.error .mki-progress-subcard-status { background: oklch(92% .07 25); color: oklch(42% .14 25); }
 .mki-progress-step-action { margin-top: 10px; }
 .mki-progress-step-action[hidden] { display: none; }
 .mki-progress-step-panel { display: flex; flex-direction: column; gap: 10px; }
@@ -3031,6 +3054,7 @@ function mkiImportProgressOpen(meta) {
         <div class="mki-progress-step-title">${escapeHtml(step.title)}</div>
         <div class="mki-progress-step-detail" data-mki-progress-detail>${escapeHtml(step.detail)}</div>
         <div class="mki-progress-step-log-list" data-mki-progress-log-list hidden></div>
+        <div class="mki-progress-subcards" data-mki-progress-subcards hidden></div>
         <div class="mki-progress-step-action" data-mki-progress-action="${escapeHtml(step.key)}" hidden>
           ${mkiImportProgressStepActionHtml(step.key)}
         </div>
@@ -3100,6 +3124,38 @@ function mkiImportProgressAppendStepLog(stepKey, message, kind = '') {
   list.hidden = false;
 }
 
+function mkiImportProgressAppendStepResult(stepKey, result) {
+  const stepEl = document.querySelector(`[data-mki-progress-step="${stepKey}"]`);
+  const list = stepEl && stepEl.querySelector('[data-mki-progress-subcards]');
+  if (!list || !result) return;
+  const rawStatus = String(result.status || 'done');
+  const status = ['done', 'warning', 'error', 'running', 'pending'].includes(rawStatus) ? rawStatus : 'done';
+  const title = String(result.title || result.key || '步骤结果');
+  const message = String(result.message || '');
+  const logs = Array.isArray(result.logs) ? result.logs.filter(Boolean) : [];
+  const card = document.createElement('div');
+  card.className = `mki-progress-subcard ${status}`;
+  card.innerHTML = `
+    <div class="mki-progress-subcard-head">
+      <strong class="mki-progress-subcard-title">${escapeHtml(title)}</strong>
+      <span class="mki-progress-subcard-status">${escapeHtml(mkiImportProgressStatusText(status))}</span>
+    </div>
+    ${message ? `<div class="mki-progress-subcard-message">${escapeHtml(message)}</div>` : ''}
+    ${logs.length ? `<ul class="mki-progress-subcard-logs">${logs.map(log => `<li>${escapeHtml(String(log))}</li>`).join('')}</ul>` : ''}
+  `;
+  list.appendChild(card);
+  list.hidden = false;
+}
+
+function mkiImportProgressRenderStepResults(data) {
+  const grouped = data && data.step_results;
+  if (!grouped || typeof grouped !== 'object') return;
+  Object.entries(grouped).forEach(([stepKey, results]) => {
+    if (!Array.isArray(results)) return;
+    results.forEach(result => mkiImportProgressAppendStepResult(stepKey, result));
+  });
+}
+
 function mkiImportProgressStepForError(errorCode) {
   if (errorCode === 'download_failed') return 'download';
   if (errorCode === 'storage_failed') return 'store';
@@ -3114,6 +3170,12 @@ function mkiImportProgressFail(message) {
   const errorText = message || '未知错误';
   const failedStep = mkiImportProgressFailedStep || 'product';
   mkiImportProgressSetStep(failedStep, 'error', errorText);
+  mkiImportProgressAppendStepResult(failedStep, {
+    key: 'request_error',
+    title: '接口返回错误',
+    status: 'error',
+    message: errorText,
+  });
   mkiImportProgressHideNextActions();
   const domainsPanel = document.getElementById('mkiImportProgressDomains');
   if (domainsPanel) domainsPanel.hidden = true;
@@ -3362,6 +3424,7 @@ function mkiImportProgressComplete(data, btn) {
   } else {
     mkiImportProgressAppendStepLog('product', `服务端确认复用已有产品：产品 #${productId}。`, 'info');
   }
+  mkiImportProgressRenderStepResults(data);
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
   if (data?.is_new_product) {
@@ -3488,6 +3551,7 @@ async function mkiHandleClick(btn) {
   btn.disabled = true;
   btn.textContent = '入库中...';
   try {
+    const localProductId = Number(btn.dataset.mkiLocalProductId || 0);
     const meta = {
       mp4_url: btn.dataset.mkiMp4Url,
       filename: btn.dataset.mkiFilename,
@@ -3502,6 +3566,7 @@ async function mkiHandleClick(btn) {
       main_image_object_key: btn.dataset.mkiMainImageObjectKey || null,
       product_code: btn.dataset.mkiProductCode,
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
+      media_product_id: localProductId > 0 ? localProductId : null,
     };
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
