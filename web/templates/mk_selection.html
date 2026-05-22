@@ -528,7 +528,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="this_month">本月</option>
         <option value="last_month">上月</option>
       </select>
-      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
+      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:240px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
@@ -941,12 +941,14 @@ function renderMkMaterialDetailHref(r) {
   return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
 }
 
-function runMkSearch() {
+function runMkSearch(options = {}) {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
-  if (currentMkLibraryTab === 'videos') {
+  if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {
     activeMkProductCode = '';
+  }
+  if (currentMkLibraryTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top100') {
     loadMkYesterdayTop100(1);
@@ -1053,7 +1055,7 @@ function openProductMaterialLibrary(productCode, productName) {
   activeMkProductCode = code;
   mkVideoMaterialsLoaded = true;
   document.getElementById('searchInput').value = code;
-  switchMkLibraryTab('videos');
+  switchMkLibraryTab('videos', {preserveProductCode: true});
   const label = String(productName || code).trim();
   document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的本地素材快照...`;
   loadMkLocalMaterialLibrary(1);

@@ -756,6 +756,39 @@ def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[i
     return page_num, size, (page_num - 1) * size
 
 
+def _material_keyword_condition(alias: str, keyword: str) -> tuple[str, list[Any]]:
+    kw = str(keyword or "").strip()
+    if not kw:
+        return "", []
+
+    product_terms = [kw]
+    lowered = kw.lower()
+    stripped = _strip_rjc(lowered)
+    existing = {term.lower() for term in product_terms}
+    if stripped and stripped not in existing:
+        product_terms.append(stripped)
+        existing.add(stripped)
+    with_rjc = f"{stripped}-rjc" if stripped else ""
+    if with_rjc and with_rjc not in existing:
+        product_terms.append(with_rjc)
+
+    columns = [
+        f"{alias}.product_code",
+        f"{alias}.product_name",
+        f"{alias}.mk_product_name",
+        f"{alias}.video_name",
+        f"{alias}.video_path",
+    ]
+    clauses: list[str] = []
+    args: list[Any] = []
+    for column in columns:
+        column_terms = product_terms if column.endswith(".product_code") else [kw]
+        for term in column_terms:
+            clauses.append(f"{column} LIKE %s")
+            args.append(f"%{term}%")
+    return "(" + " OR ".join(clauses) + ")", args
+
+
 def material_key_for(product_code: str, mk_product_id: int | str | None, video_path: str) -> str:
     normalized_path = normalize_mk_media_path(video_path)
     raw = "|".join(
@@ -1515,13 +1548,10 @@ def list_material_library(
         range_start, range_end = range_bounds
         where = ["r.status = 'success'", "s.snapshot_date BETWEEN %s AND %s"]
         args: list[Any] = [range_start, range_end]
-        if kw:
-            like = f"%{kw}%"
-            where.append(
-                "(s.product_code LIKE %s OR s.product_name LIKE %s OR s.mk_product_name LIKE %s "
-                "OR s.video_name LIKE %s OR s.video_path LIKE %s)"
-            )
-            args.extend([like, like, like, like, like])
+        keyword_sql, keyword_args = _material_keyword_condition("s", kw)
+        if keyword_sql:
+            where.append(keyword_sql)
+            args.extend(keyword_args)
         where_sql = " AND ".join(where)
         count_row = query_one(
             f"""
@@ -1590,13 +1620,10 @@ def list_material_library(
     else:
         where = ["s.snapshot_date = %s"]
         args = [snapshot]
-    if kw:
-        like = f"%{kw}%"
-        where.append(
-            "(s.product_code LIKE %s OR s.product_name LIKE %s OR s.mk_product_name LIKE %s "
-            "OR s.video_name LIKE %s OR s.video_path LIKE %s)"
-        )
-        args.extend([like, like, like, like, like])
+    keyword_sql, keyword_args = _material_keyword_condition("s", kw)
+    if keyword_sql:
+        where.append(keyword_sql)
+        args.extend(keyword_args)
     where_sql = " AND ".join(where)
     count_row = query_one(
         f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots s WHERE {where_sql}",
