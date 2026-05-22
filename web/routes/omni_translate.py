@@ -59,6 +59,7 @@ db_execute = translation_route_store.execute
 _PROJECT_STATE_COLUMNS = (
     "id, user_id, original_filename, display_name, task_dir, state_json"
 )
+_OPTIONAL_PROGRESS_STEPS = {"av_sync_audit"}
 
 
 def _json_response(payload: dict, status_code: int = 200):
@@ -440,6 +441,10 @@ def detail(task_id: str):
         state,
         include_analysis=False,
     )
+    pipeline_progress_steps = [
+        step for step in pipeline_main_steps
+        if step not in _OPTIONAL_PROGRESS_STEPS
+    ]
     pipeline_step_order = _omni_pipeline_steps_for_task(
         task_id,
         state,
@@ -452,6 +457,7 @@ def detail(task_id: str):
         target_lang=target_lang,
         translate_pref=translate_pref,
         pipeline_main_steps=pipeline_main_steps,
+        pipeline_progress_steps=pipeline_progress_steps,
         pipeline_step_order=pipeline_step_order,
         plugin_config_annotation=build_plugin_config_annotation(task_id, state),
     )
