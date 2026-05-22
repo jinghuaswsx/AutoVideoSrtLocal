@@ -118,6 +118,33 @@ def test_initial_progress_points_to_next_pending_step_after_data_preparation():
     assert progress["current_step"] == "product_fact_extraction"
 
 
+def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monkeypatch):
+    from appcore import fine_ai_evaluation_repository as repo_mod
+
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(repo_mod, "execute", fake_execute)
+    monkeypatch.setattr(repo_mod, "query_one", lambda sql, args=(): None)
+
+    repo_mod.FineAiEvaluationRepository().update_run(
+        "eval_test",
+        started_at="2026-05-22T07:46:12Z",
+        failed_at="2026-05-22T07:46:13Z",
+        completed_at="2026-05-22T07:46:14Z",
+    )
+
+    timestamp_args = captured["args"][:3]
+    assert [str(value) for value in timestamp_args] == [
+        "2026-05-22 07:46:12",
+        "2026-05-22 07:46:13",
+        "2026-05-22 07:46:14",
+    ]
+
+
 def test_pipeline_continues_when_one_country_fails():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
