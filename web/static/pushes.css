@@ -1504,6 +1504,37 @@
   border: 1px solid oklch(82% 0.08 25);
   border-radius: var(--oc-r-md); padding: var(--oc-sp-3); font-size: 13px;
 }
+.pm-link-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-sp-3);
+  margin: var(--oc-sp-3) 0;
+  padding: var(--oc-sp-3);
+  border: 1px solid var(--oc-warning);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-warning-bg);
+  color: var(--oc-warning-fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pm-link-confirm[hidden] {
+  display: none;
+}
+.pm-link-confirm-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.btn-mini.btn-manual-link-confirm {
+  flex: 0 0 auto;
+  border-color: var(--oc-warning);
+  color: var(--oc-warning-fg);
+  background: var(--oc-bg);
+}
+.btn-mini.btn-manual-link-confirm:hover {
+  border-color: var(--oc-warning-fg);
+  background: var(--oc-warning-bg);
+}
 .pm-response {
   padding: var(--oc-sp-3) var(--oc-sp-5);
   border-top: 1px solid var(--oc-border);

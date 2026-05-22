@@ -1012,9 +1012,14 @@
     return root;
   }
 
-  function describeError(e) {
+  function parseErrorBody(e) {
     let body = {};
     try { body = JSON.parse(e.body || '{}'); } catch (_) {}
+    return body;
+  }
+
+  function describeError(e) {
+    const body = parseErrorBody(e);
     const err = body.error || '';
     const detail = body.detail || body.message || body.response_body || e.body || e.message || '';
     if (err === 'not_ready') {
@@ -1151,6 +1156,14 @@
 
     const contentCard = el('section', { class: 'pm-section' }, [el('h4', {}, '推送内容')]);
     const loadingTip = el('p', { class: 'pm-empty' }, '加载中…');
+    const manualLinkConfirm = el('div', { class: 'pm-link-confirm', hidden: true });
+    const manualLinkConfirmText = el('div', { class: 'pm-link-confirm-text' });
+    const manualLinkConfirmBtn = el('button', {
+      type: 'button',
+      class: 'btn-mini btn-manual-link-confirm',
+    }, '人工确认链接正常');
+    manualLinkConfirm.appendChild(manualLinkConfirmText);
+    manualLinkConfirm.appendChild(manualLinkConfirmBtn);
     const paneConfirm = el('div', { class: 'pm-pane' });
     const paneJson = el('pre', { class: 'pm-pane pm-json', hidden: true });
     const paneLocalized = el('div', { class: 'pm-pane', hidden: true });
@@ -1158,6 +1171,7 @@
     const paneProductLinksJson = el('pre', { class: 'pm-pane pm-json', hidden: true });
     const paneProductLinks = el('div', { class: 'pm-pane', hidden: true });
     contentCard.appendChild(loadingTip);
+    contentCard.appendChild(manualLinkConfirm);
     contentCard.appendChild(paneConfirm);
     contentCard.appendChild(paneJson);
     contentCard.appendChild(paneLocalized);
@@ -1205,6 +1219,7 @@
     let productLinksPushed = false;
     let anyPushSucceeded = false;
     let payloadLoadFailed = false;
+    let manualLinkConfirmed = false;
 
     function isLocalizedMode(m = activeMode) {
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON;
@@ -1470,58 +1485,94 @@
     btnClose.addEventListener('click', close);
     btnRework.addEventListener('click', openReworkModal);
 
-    (async () => {
+    function showManualLinkConfirm(err) {
+      const body = parseErrorBody(err);
+      const url = body.url || '';
+      const detail = body.detail || body.message || '';
+      manualLinkConfirmText.textContent = `如果你已经自己打开确认链接正常，可以跳过本次自动探活继续。${url ? `链接：${url}` : ''}${detail ? `（${detail}）` : ''}`;
+      manualLinkConfirm.hidden = false;
+    }
+
+    function applyPayloadData(data) {
+      payloadData = data.payload;
+      mkId = data.mk_id || null;
+      localizedText = data.localized_text || null;
+      previewCoverUrl = data.preview_cover_url || null;
+      localizedTargetUrl = data.localized_push_target_url || '';
+      localizedTexts = (data.localized_texts_request && data.localized_texts_request.texts) || [];
+      productLinksPreview = data.product_links_push || null;
+      setQualityPanel(data.quality_check || null);
+
+      mkIdValue.textContent = mkId ? String(mkId) : '-';
+
+      clear(paneConfirm);
+      // 顶部显式打印推送地址
+      const pushUrlRow = el('div', { class: 'pm-kv', style: 'margin-bottom:12px' });
+      pushUrlRow.appendChild(el('span', { class: 'k' }, '推送地址'));
+      pushUrlRow.appendChild(el('span', { class: 'v' }, [
+        el('code', {}, data.push_url || '(未配置)'),
+      ]));
+      paneConfirm.appendChild(pushUrlRow);
+      if (manualLinkConfirmed) {
+        const confirmRow = el('div', { class: 'pm-kv pm-manual-link-row', style: 'margin-bottom:12px' });
+        confirmRow.appendChild(el('span', { class: 'k' }, '链接确认'));
+        confirmRow.appendChild(el('span', { class: 'v' }, '已人工确认链接正常，本次跳过自动探活'));
+        paneConfirm.appendChild(confirmRow);
+      }
+      paneConfirm.appendChild(renderPayloadView(payloadData, data.preview_cover_url || null));
+      paneJson.textContent = JSON.stringify(payloadData, null, 2);
+
+      clear(paneLocalized);
+      paneLocalized.appendChild(renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId));
+      paneLocalizedJson.textContent = JSON.stringify({
+        mk_id: mkId,
+        target_url: localizedTargetUrl,
+        texts: localizedTexts,
+      }, null, 2);
+
+      paneProductLinksJson.textContent = JSON.stringify(
+        productLinksPreview && productLinksPreview.payload
+          ? productLinksPreview.payload
+          : (productLinksPreview || {}),
+        null,
+        2,
+      );
+      clear(paneProductLinks);
+      paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
+
+      loadingTip.hidden = true;
+      manualLinkConfirm.hidden = true;
+      setMode(activeMode);
+    }
+
+    async function loadPayload() {
+      payloadLoadFailed = false;
+      payloadData = null;
+      loadingTip.hidden = false;
+      loadingTip.textContent = manualLinkConfirmed ? '已人工确认，正在重新加载载荷…' : '加载中…';
+      loadingTip.classList.remove('pm-error');
+      manualLinkConfirm.hidden = true;
+      syncPushButton();
       try {
-        const data = await fetchJSON(`/pushes/api/items/${itemId}/payload`);
-        payloadData = data.payload;
-        mkId = data.mk_id || null;
-        localizedText = data.localized_text || null;
-        previewCoverUrl = data.preview_cover_url || null;
-        localizedTargetUrl = data.localized_push_target_url || '';
-        localizedTexts = (data.localized_texts_request && data.localized_texts_request.texts) || [];
-        productLinksPreview = data.product_links_push || null;
-        setQualityPanel(data.quality_check || null);
-
-        mkIdValue.textContent = mkId ? String(mkId) : '-';
-
-        clear(paneConfirm);
-        // 顶部显式打印推送地址
-        const pushUrlRow = el('div', { class: 'pm-kv', style: 'margin-bottom:12px' });
-        pushUrlRow.appendChild(el('span', { class: 'k' }, '推送地址'));
-        pushUrlRow.appendChild(el('span', { class: 'v' }, [
-          el('code', {}, data.push_url || '(未配置)'),
-        ]));
-        paneConfirm.appendChild(pushUrlRow);
-        paneConfirm.appendChild(renderPayloadView(payloadData, data.preview_cover_url || null));
-        paneJson.textContent = JSON.stringify(payloadData, null, 2);
-
-        clear(paneLocalized);
-        paneLocalized.appendChild(renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId));
-        paneLocalizedJson.textContent = JSON.stringify({
-          mk_id: mkId,
-          target_url: localizedTargetUrl,
-          texts: localizedTexts,
-        }, null, 2);
-
-        paneProductLinksJson.textContent = JSON.stringify(
-          productLinksPreview && productLinksPreview.payload
-            ? productLinksPreview.payload
-            : (productLinksPreview || {}),
-          null,
-          2,
-        );
-        clear(paneProductLinks);
-        paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
-
-        loadingTip.remove();
-        setMode(activeMode);
+        const data = await fetchJSON(`/pushes/api/items/${itemId}/payload${manualLinkConfirmed ? '?manual_link_confirmed=1' : ''}`);
+        applyPayloadData(data);
       } catch (err) {
         payloadLoadFailed = true;
         loadingTip.textContent = `载荷加载失败：${describeError(err)}`;
         loadingTip.classList.add('pm-error');
+        if (parseErrorBody(err).error === 'link_not_adapted') {
+          showManualLinkConfirm(err);
+        }
         syncPushButton();
       }
-    })();
+    }
+
+    async function retryPayloadWithManualLinkConfirmation() {
+      manualLinkConfirmed = true;
+      await loadPayload();
+    }
+    manualLinkConfirmBtn.addEventListener('click', retryPayloadWithManualLinkConfirmation);
+    loadPayload();
 
     btnPush.addEventListener('click', async () => {
       if (!payloadData) return;
@@ -1549,6 +1600,7 @@
           const body = await fetchJSON(`/pushes/api/items/${itemId}/push`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manual_link_confirmed: manualLinkConfirmed }),
           });
           showResponse(body, false, '素材推送响应');
           showMkIdMatch(body.mk_id_match);

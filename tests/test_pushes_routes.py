@@ -759,6 +759,85 @@ def test_payload_rejects_probe_fail(logged_in_client, seeded_item, monkeypatch):
     assert resp.get_json()["error"] == "link_not_adapted"
 
 
+def test_payload_manual_link_confirmation_skips_probe(
+    authed_client_no_db,
+    monkeypatch,
+):
+    item = {
+        "id": 903,
+        "product_id": 316,
+        "lang": "de",
+        "filename": "de-demo.mp4",
+        "display_name": "de-demo.mp4",
+        "object_key": "79/medias/316/video.mp4",
+        "cover_object_key": "79/medias/316/cover.png",
+        "pushed_at": None,
+    }
+    product = {
+        "id": 316,
+        "name": "Demo",
+        "product_code": "demo-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "ad_supported_langs": "de",
+        "selling_points": "",
+        "importance": 3,
+        "listing_status": "上架",
+    }
+
+    def fail_probe(url):
+        raise AssertionError("manual link confirmation should skip probe_ad_url")
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item_arg, product_arg: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr("appcore.pushes.probe_ad_url", fail_probe)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item_arg, product_arg: {"videos": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "https://push.example.test",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_localized_text_payload",
+        lambda item_arg: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item_arg: {"texts": []},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.build_localized_texts_target_url", lambda mk_id: "")
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_links_push_preview",
+        lambda product_arg: {"target_url": "", "payload": None, "links": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes._quality_check_for_item",
+        lambda item_id: None,
+    )
+
+    resp = authed_client_no_db.get(
+        "/pushes/api/items/903/payload?manual_link_confirmed=1",
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "payload" in data
+    assert data["manual_link_confirmed"] is True
+
+
 def test_payload_success(logged_in_client, seeded_item, monkeypatch):
     pid, item_id = seeded_item
     monkeypatch.setattr("appcore.pushes.probe_ad_url", lambda url: (True, None))
@@ -1132,6 +1211,66 @@ def test_push_rejects_not_ready(logged_in_client, seeded_item, monkeypatch):
     data = resp.get_json()
     assert data["error"] == "not_ready"
     assert "has_cover" in data["missing"]
+
+
+def test_push_manual_link_confirmation_skips_probe_and_posts(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "http://downstream.invalid/push",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 11, "lang": "de", "pushed_at": None},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {"id": product_id, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {"ready": True},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.is_ready", lambda readiness: True)
+
+    def fail_probe(url):
+        raise AssertionError("manual link confirmation should skip probe_ad_url")
+
+    captured = {}
+
+    def fake_post_json_payload(target_url, payload, *, headers=None, timeout=30):
+        captured["url"] = target_url
+        captured["payload"] = payload
+        return {
+            "ok": True,
+            "upstream_status": 201,
+            "response_body": "created",
+            "response_body_full": "created-full",
+        }
+
+    monkeypatch.setattr("appcore.pushes.probe_ad_url", fail_probe)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item, product: {"mode": "create", "item_id": item["id"]},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.post_json_payload", fake_post_json_payload)
+    monkeypatch.setattr("web.routes.pushes.pushes.record_push_success", lambda **kwargs: None)
+    monkeypatch.setattr("web.routes.pushes.pushes.lookup_mk_id", lambda product_code: (None, "no_match"))
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/7/push",
+        json={"manual_link_confirmed": True},
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["manual_link_confirmed"] is True
+    assert captured["url"] == "http://downstream.invalid/push"
+    assert captured["payload"] == {"mode": "create", "item_id": 7}
 
 
 def test_push_success_marks_pushed(logged_in_client, seeded_item, monkeypatch):
