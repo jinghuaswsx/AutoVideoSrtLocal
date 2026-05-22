@@ -1190,6 +1190,45 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
     assert result["issue_keys"] == ["has_object", "has_push_texts"]
 
 
+def test_record_push_material_approved_writes_task_event(monkeypatch):
+    import json
+
+    from appcore import tasks
+
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+
+    result = tasks.record_push_material_approved(
+        task_id=44,
+        actor_user_id=1,
+        item_id=7,
+        product_code="demo-rjc",
+        lang="de",
+        upstream_status=201,
+    )
+
+    payload = json.loads(captured["args"][3])
+    assert "INSERT INTO task_events" in captured["sql"]
+    assert captured["args"][0] == 44
+    assert captured["args"][1] == "push_material_approved"
+    assert captured["args"][2] == 1
+    assert payload == {
+        "source": "push_management",
+        "item_id": 7,
+        "product_code": "demo-rjc",
+        "lang": "de",
+        "upstream_status": 201,
+    }
+    assert result["event_type"] == "push_material_approved"
+    assert result["task_id"] == 44
+
+
 def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(monkeypatch):
     from appcore import tasks
     from appcore import task_raw_source_bridge as bridge

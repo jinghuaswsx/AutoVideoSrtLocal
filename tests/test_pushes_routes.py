@@ -1263,6 +1263,63 @@ def test_push_route_delegates_downstream_post_to_appcore_helper_no_db(
     assert calls["record_success"]["response_body"] == "created-full"
 
 
+def test_push_success_records_task_review_flow_event_no_db(
+    authed_client_no_db, monkeypatch
+):
+    calls = {}
+
+    monkeypatch.setattr("web.routes.pushes.pushes.get_push_target_url", lambda: "http://downstream.invalid/push")
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 11,
+            "task_id": 44,
+            "lang": "de",
+            "pushed_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {"id": product_id, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.compute_readiness", lambda item, product: {"ready": True})
+    monkeypatch.setattr("web.routes.pushes.pushes.is_ready", lambda readiness: True)
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item, product: {"mode": "create", "item_id": item["id"]},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.post_json_payload",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "upstream_status": 201,
+            "response_body": "created",
+            "response_body_full": "created-full",
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.record_push_success", lambda **kwargs: None)
+    monkeypatch.setattr("web.routes.pushes.pushes.lookup_mk_id", lambda product_code: (None, "no_match"))
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.record_push_material_approved",
+        lambda **kwargs: calls.setdefault("task_event", kwargs),
+    )
+
+    response = authed_client_no_db.post("/pushes/api/items/7/push")
+
+    assert response.status_code == 200
+    assert calls["task_event"] == {
+        "task_id": 44,
+        "actor_user_id": 1,
+        "item_id": 7,
+        "product_code": "demo-rjc",
+        "lang": "de",
+        "upstream_status": 201,
+    }
+
+
 def test_push_requires_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.post("/pushes/api/items/99999/push")
     assert resp.status_code == 403

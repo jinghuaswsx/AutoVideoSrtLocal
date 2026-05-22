@@ -442,6 +442,24 @@ def api_push(item_id: int):
             "push_succeeded",
             detail={"upstream_status": post_result.get("upstream_status")},
         )
+        task_id = item.get("task_id")
+        if task_id:
+            try:
+                tasks_svc.record_push_material_approved(
+                    task_id=int(task_id),
+                    actor_user_id=int(current_user.id),
+                    item_id=int(item_id),
+                    product_code=product_code,
+                    lang=lang,
+                    upstream_status=post_result.get("upstream_status"),
+                )
+            except Exception:
+                log.warning(
+                    "record task push approved event failed item_id=%s task_id=%s",
+                    item_id,
+                    task_id,
+                    exc_info=True,
+                )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
         mk_id_match: dict[str, Any] = {"status": "skipped", "mk_id": None}

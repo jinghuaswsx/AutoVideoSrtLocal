@@ -642,7 +642,8 @@ const TC_EVENT_TEXT = {
   raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待审核', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
   approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
   rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
-  push_rework_rejected: { title: '推送管理打回重做', progress: '管理员已拒绝', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人修正后重新提交完成。' },
+  push_material_approved: { title: '管理员审核通过', progress: '已推送', tone: 'success', summary: '推送管理已完成素材推送，当前任务进入投放素材已通过状态。' },
+  push_rework_rejected: { title: '管理员审核拒绝', progress: '继续完善素材内容', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人按批注继续完善素材内容。' },
   cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
   unblocked: { title: '子任务解锁', progress: '可开始翻译', tone: 'success', summary: '原始视频审核通过后，翻译子任务已解锁。' },
   submitted: { title: '提交翻译验收', progress: '等待管理员验收', tone: 'info', summary: '翻译员已提交产物，等待管理员审核通过或打回。' },
@@ -664,14 +665,18 @@ function tcEventFacts(payload, event) {
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
   add('原始素材 ID', payload.raw_source_id);
-  if (Array.isArray(payload.issue_labels)) add('问题项', payload.issue_labels.join('、'));
+  if (Array.isArray(payload.issue_labels)) add('问题点', payload.issue_labels.join('、'));
   add('处理人', tcEventPayloadUserDisplay(event, payload, 'assignee_id'));
   add('上次字幕任务', payload.previous_subtitle_task_id);
   add('处理阶段', payload.stage);
   add('文件', payload.filename || tcExtractFilenameFromError(payload.error));
   add('文件大小', tcFormatBytes(payload.new_size || payload.size));
   add('失败原因', payload.error);
-  add('打回/取消原因', payload.reason);
+  if (String(event && event.event_type || '') === 'push_rework_rejected') {
+    add('管理员批注', payload.reason);
+  } else {
+    add('打回/取消原因', payload.reason);
+  }
   add('说明', payload.message);
   return facts;
 }

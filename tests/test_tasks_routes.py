@@ -220,6 +220,13 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "翻译员 ID" not in body
     assert "add('翻译员'," in body
     assert "/tasks/api/translation-work-users" in body
+    assert "push_material_approved" in body
+    assert "管理员审核通过" in body
+    assert "已推送" in body
+    assert "管理员审核拒绝" in body
+    assert "继续完善素材内容" in body
+    assert "问题点" in body
+    assert "管理员批注" in body
 
 
 def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no_db):

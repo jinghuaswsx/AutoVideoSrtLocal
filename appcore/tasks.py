@@ -40,6 +40,7 @@ CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
 CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
+CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -643,6 +644,39 @@ def _write_event(
             json.dumps(payload, ensure_ascii=False) if payload else None,
         ),
     )
+
+
+def record_push_material_approved(
+    *,
+    task_id: int,
+    actor_user_id: int | None,
+    item_id: int,
+    product_code: str | None = "",
+    lang: str | None = "",
+    upstream_status: int | None = None,
+) -> dict:
+    payload = {
+        "source": "push_management",
+        "item_id": int(item_id),
+        "product_code": str(product_code or "").strip(),
+        "lang": str(lang or "").strip().lower(),
+        "upstream_status": upstream_status,
+    }
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+            int(actor_user_id) if actor_user_id is not None else None,
+            json.dumps(payload, ensure_ascii=False),
+        ),
+    )
+    return {
+        "task_id": int(task_id),
+        "event_type": CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+        "payload": payload,
+    }
 
 
 def create_parent_task(
