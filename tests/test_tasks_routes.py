@@ -310,8 +310,10 @@ def test_task_detail_readiness_groups_product_link_checks_into_manager_card(auth
     body = rsp.data.decode("utf-8")
 
     assert ".tc-product-link-combo" in body
+    assert ".tc-readiness-evidence--domain-list" in body
     assert "function tcIsProductLinkCombinedCheck" in body
     assert "function tcRenderProductLinkCombinedCard" in body
+    assert "tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'})" in body
     assert "tcIsProductLinkCombinedCheck(check)" in body
     assert "tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks)" in body
     assert "tcRenderProductLinkManagerShell(data, task)" in body
