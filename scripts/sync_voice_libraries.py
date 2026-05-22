@@ -34,10 +34,8 @@ from pipeline.voice_library_sync import (  # noqa: E402
 )
 from appcore import medias  # noqa: E402
 from appcore.db import query  # noqa: E402
-from appcore.llm_provider_configs import (  # noqa: E402
-    ProviderConfigError,
-    require_provider_api_key,
-)
+from appcore.elevenlabs_keys import require_elevenlabs_api_key  # noqa: E402
+from appcore.llm_provider_configs import ProviderConfigError  # noqa: E402
 
 FALLBACK_LANGUAGES: list[str] = ["en", "de", "fr", "es", "it", "ja", "nl", "pt", "sv", "fi"]
 MAX_VOICES_PER_LANGUAGE = 1000
@@ -97,7 +95,7 @@ def _target_languages() -> list[str]:
 
 def _get_api_key() -> str:
     try:
-        return require_provider_api_key("elevenlabs_tts")
+        return require_elevenlabs_api_key()
     except ProviderConfigError as exc:
         raise RuntimeError(str(exc)) from exc
 

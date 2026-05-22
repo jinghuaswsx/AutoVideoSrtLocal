@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
-from appcore.llm_provider_configs import get_provider_config
+from appcore.elevenlabs_keys import get_elevenlabs_api_key
 
 log = logging.getLogger(__name__)
 
@@ -20,8 +20,7 @@ _ELEVENLABS_BASE = "https://api.elevenlabs.io"
 
 
 def _default_api_key() -> str | None:
-    cfg = get_provider_config("elevenlabs_tts")
-    return (cfg.api_key or None) if cfg else None
+    return get_elevenlabs_api_key()
 
 
 # ------------------------------------------------------------------

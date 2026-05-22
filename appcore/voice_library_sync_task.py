@@ -41,12 +41,10 @@ def _max_voices_per_language() -> int:
 
 
 def _get_api_key() -> str:
-    from appcore.llm_provider_configs import (
-        ProviderConfigError,
-        require_provider_api_key,
-    )
+    from appcore.elevenlabs_keys import require_elevenlabs_api_key
+    from appcore.llm_provider_configs import ProviderConfigError
     try:
-        return require_provider_api_key("elevenlabs_tts")
+        return require_elevenlabs_api_key()
     except ProviderConfigError as exc:
         raise RuntimeError(str(exc)) from exc
 

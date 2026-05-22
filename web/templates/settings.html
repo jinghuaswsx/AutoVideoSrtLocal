@@ -320,6 +320,16 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       <span class="hint" style="margin:0">状态：{{ row.api_key_mask if row.api_key_present else '未配置' }}</span>
     </div>
 
+    {% if row.provider_code == 'elevenlabs_tts' %}
+    <label>Active Key</label>
+    <select name="{{ prefix }}active_key_slot"
+            style="width:100%;background:var(--settings-surface);border:1.5px solid var(--settings-border);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--settings-fg);">
+      <option value="primary" {% if row.active_key_slot != 'backup' %}selected{% endif %}>主用 key（elevenlabs_tts）</option>
+      <option value="backup" {% if row.active_key_slot == 'backup' %}selected{% endif %}>备用 key（elevenlabs_tts_backup）</option>
+    </select>
+    <p class="hint" style="margin-top:6px;">备用 key 单独存放在 <code>elevenlabs_tts_backup</code> 行，切换后新请求立即读取生效。</p>
+    {% endif %}
+
     <label>Base URL</label>
     <input type="text" name="{{ prefix }}base_url" placeholder="https://..."
            value="{{ row.base_url }}" autocomplete="off">

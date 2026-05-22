@@ -135,6 +135,59 @@ def test_require_provider_api_key_returns_value_when_present(fake_db):
     assert lpc.require_provider_api_key("elevenlabs_tts") == "sk_live_xxx"
 
 
+def test_require_elevenlabs_api_key_defaults_to_primary(fake_db):
+    fake_db.seed("elevenlabs_tts", api_key="primary-key")
+    fake_db.seed("elevenlabs_tts_backup", api_key="backup-key")
+
+    from appcore.elevenlabs_keys import active_elevenlabs_key_slot, require_elevenlabs_api_key
+
+    assert active_elevenlabs_key_slot() == "primary"
+    assert require_elevenlabs_api_key() == "primary-key"
+
+
+def test_require_elevenlabs_api_key_uses_backup_when_selected(fake_db):
+    fake_db.seed(
+        "elevenlabs_tts",
+        api_key="primary-key",
+        extra_config=json.dumps({"active_key_slot": "backup"}),
+    )
+    fake_db.seed("elevenlabs_tts_backup", api_key="backup-key")
+
+    from appcore.elevenlabs_keys import active_elevenlabs_key_slot, require_elevenlabs_api_key
+
+    assert active_elevenlabs_key_slot() == "backup"
+    assert require_elevenlabs_api_key() == "backup-key"
+
+
+def test_require_elevenlabs_api_key_invalid_slot_falls_back_to_primary(fake_db):
+    fake_db.seed(
+        "elevenlabs_tts",
+        api_key="primary-key",
+        extra_config=json.dumps({"active_key_slot": "other"}),
+    )
+    fake_db.seed("elevenlabs_tts_backup", api_key="backup-key")
+
+    from appcore.elevenlabs_keys import active_elevenlabs_key_slot, require_elevenlabs_api_key
+
+    assert active_elevenlabs_key_slot() == "primary"
+    assert require_elevenlabs_api_key() == "primary-key"
+
+
+def test_require_elevenlabs_api_key_reports_missing_selected_backup(fake_db):
+    fake_db.seed(
+        "elevenlabs_tts",
+        api_key="primary-key",
+        extra_config=json.dumps({"active_key_slot": "backup"}),
+    )
+    fake_db.seed("elevenlabs_tts_backup", api_key=None)
+
+    from appcore.elevenlabs_keys import require_elevenlabs_api_key
+
+    with pytest.raises(lpc.ProviderConfigError) as exc_info:
+        require_elevenlabs_api_key()
+    assert "elevenlabs_tts_backup" in str(exc_info.value)
+
+
 def test_require_provider_api_key_raises_with_provider_code_in_message(fake_db):
     fake_db.seed("doubao_seedream", api_key=None)
     with pytest.raises(lpc.ProviderConfigError) as exc_info:
@@ -262,6 +315,20 @@ def test_save_provider_config_creates_google_vertex_adc_row(fake_db):
     assert cfg is not None
     assert cfg.api_key is None
     assert cfg.extra_config == {"project": "project-x", "location": "global"}
+
+
+def test_save_provider_config_creates_elevenlabs_backup_row(fake_db):
+    assert lpc.get_provider_config("elevenlabs_tts_backup") is None
+    lpc.save_provider_config(
+        "elevenlabs_tts_backup",
+        {"api_key": "backup-key", "base_url": "https://api.elevenlabs.io/v1"},
+        updated_by=1,
+    )
+    cfg = lpc.get_provider_config("elevenlabs_tts_backup")
+    assert cfg is not None
+    assert cfg.display_name == "ElevenLabs 配音（备用 Key）"
+    assert cfg.group_code == "tts"
+    assert cfg.api_key == "backup-key"
 
 
 # ---------------------------------------------------------------------------
