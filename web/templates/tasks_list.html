@@ -170,6 +170,18 @@
 .tc-lang-enable-status { flex:1 1 100%; min-height:16px; color:var(--tc-fg-muted); font-size:12px; line-height:1.35; }
 .tc-lang-enable-status.is-success { color:var(--tc-success-fg); }
 .tc-lang-enable-status.is-error { color:var(--tc-danger-fg); }
+.tc-product-link-combo { flex:1 1 100%; min-width:0; display:grid; gap:10px; margin:5px 0; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
+.tc-product-link-combo-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.tc-product-link-combo-title { display:grid; gap:2px; min-width:0; }
+.tc-product-link-combo-title strong { font-size:13px; color:var(--tc-fg); }
+.tc-product-link-combo-title span { color:var(--tc-fg-muted); font-size:12px; line-height:1.4; }
+.tc-product-link-combo-summary { display:grid; gap:8px; grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.tc-product-link-combo-check { display:grid; grid-template-columns:18px minmax(0, 1fr); gap:7px; padding:8px; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); min-width:0; }
+.tc-product-link-combo-icon { font-weight:800; line-height:1.4; }
+.tc-product-link-combo-body { min-width:0; }
+.tc-product-link-combo-body > span { font-weight:700; }
+.tc-product-link-combo .tc-readiness-evidence { margin-left:0; }
+.tc-product-link-combo .tc-product-link-manager { margin:0; }
 .tc-product-link-manager { margin:10px 0 2px 20px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-pl-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-pl-title { display:grid; gap:2px; min-width:0; }
@@ -215,6 +227,7 @@
   .tc-review-grid { grid-template-columns:1fr; }
   .tc-readiness-evidence { grid-template-columns:1fr; }
   .tc-readiness-evidence--image-grid { grid-template-columns:repeat(auto-fill, minmax(132px, 1fr)); }
+  .tc-product-link-combo-summary { grid-template-columns:1fr; }
   .tc-niuma-meta,
   .tc-niuma-comparison { grid-template-columns:270px; gap:16px; }
   .tc-raw-self-review-actions { grid-template-columns:1fr; gap:10px; }
@@ -1014,6 +1027,66 @@ function tcRenderActionLinks(actions) {
     return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   }).join('') + '</div>';
 }
+function tcIsProductLinkCombinedCheck(check) {
+  const key = String((check && check.key) || '').trim();
+  return key === 'shopify_images' || key === 'product_links';
+}
+function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
+  const opts = options || {};
+  const ok = !!check.ok || (!check.required && check.ok !== false);
+  const icon = ok ? '✓' : '✕';
+  const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
+  const counts = (check.source_count !== undefined || check.target_count !== undefined)
+    ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
+    : '';
+  const detailMargin = opts.mode === 'product-link-combo' ? '0' : '20px';
+  const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
+  const evidence = tcRenderReadinessEvidence(check.evidence || []);
+  const links = !evidence && Array.isArray(check.links) && check.links.length
+    ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + check.links.map(function(link) {
+        const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
+        return tcEsc(label);
+      }).join('<br>') + '</div>'
+    : '';
+  const langControls = String(check.key || '') === 'language_supported'
+    ? tcRenderAdSupportedLangControls(data, task)
+    : '';
+  if (opts.mode === 'product-link-combo') {
+    return '<div class="tc-product-link-combo-check">'
+      + '<div class="tc-product-link-combo-icon" style="color:' + color + ';">' + icon + '</div>'
+      + '<div class="tc-product-link-combo-body">'
+      + '<span style="color:' + color + ';">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+      + reason + links + evidence
+      + '</div>'
+      + '</div>';
+  }
+  const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
+  const actions = tcRenderActionLinks(check.actions || []);
+  return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
+    + '<div style="min-width:0; flex:1 1 260px;">'
+    + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+    + reason + links
+    + evidence
+    + langControls
+    + '</div>'
+    + manualActions
+    + actions
+    + '</div>';
+}
+function tcRenderProductLinkCombinedCard(data, task, checks) {
+  const rows = (Array.isArray(checks) ? checks : []).map(function(check) {
+    return tcRenderReadinessCheckRow(null, check, data, task, '', {mode: 'product-link-combo'});
+  }).join('');
+  const manager = tcRenderProductLinkManagerShell(data, task);
+  if (!rows && !manager) return '';
+  return '<div class="tc-product-link-combo" data-tc-product-link-combo>'
+    + '<div class="tc-product-link-combo-head">'
+    + '<div class="tc-product-link-combo-title"><strong>商品链接与图片状态</strong><span>链接商品图替换和商品链接探活统一在这里确认、重检和改进。</span></div>'
+    + '</div>'
+    + (rows ? '<div class="tc-product-link-combo-summary">' + rows + '</div>' : '')
+    + manager
+    + '</div>';
+}
 function tcProductLinkBadge(label, tone) {
   const kind = tone ? ' tc-pl-badge--' + tone : '';
   return '<span class="tc-pl-badge' + kind + '">' + tcEsc(label || '—') + '</span>';
@@ -1775,37 +1848,15 @@ async function tcLoadReadiness(id, task) {
     const mediaUrl = data.media_search_url || tcMediasUrl(id, task.media_product_id, data.country_code || task.country_code, data.product_code || task.product_code || '', 'translate');
     const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
     if (Array.isArray(data.checks) && data.checks.length) {
-      wrap.innerHTML = jump + data.checks.map(function(check) {
-        const ok = !!check.ok || (!check.required && check.ok !== false);
-        const icon = ok ? '✓' : '✗';
-        const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
-        const counts = (check.source_count !== undefined || check.target_count !== undefined)
-          ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
-          : '';
-        const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
-        const evidence = tcRenderReadinessEvidence(check.evidence || []);
-        const links = !evidence && Array.isArray(check.links) && check.links.length
-          ? '<div style="color:var(--tc-fg-muted); margin-left:20px; margin-top:2px;">' + check.links.map(function(link) {
-              const label = (link.domain || link.url || 'link') + ': ' + (link.ok ? 'ok' : (link.error || link.http_status || 'not_ready'));
-              return tcEsc(label);
-            }).join('<br>') + '</div>'
-          : '';
-        const langControls = String(check.key || '') === 'language_supported'
-          ? tcRenderAdSupportedLangControls(data, task)
-          : '';
-        const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
-        const actions = tcRenderActionLinks(check.actions || []);
-        return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
-          + '<div style="min-width:0; flex:1 1 260px;">'
-          + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-          + reason + links
-          + evidence
-          + langControls
-          + '</div>'
-          + manualActions
-          + actions
-          + '</div>';
-      }).join('') + tcRenderProductLinkManagerShell(data, task);
+      const linkCombinedChecks = [];
+      const rows = data.checks.map(function(check) {
+        if (tcIsProductLinkCombinedCheck(check)) {
+          linkCombinedChecks.push(check);
+          return '';
+        }
+        return tcRenderReadinessCheckRow(id, check, data, task, mediaUrl);
+      }).filter(Boolean);
+      wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks);
       tcLoadProductLinkManager(data, task);
       return;
     }
