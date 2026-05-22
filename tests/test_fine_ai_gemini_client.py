@@ -42,6 +42,59 @@ def test_fine_ai_gemini_client_invokes_vertex_adc_with_search_and_url_context(mo
     assert "temperature" not in kwargs
 
 
+def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    def fake_invoke(use_case_code, **kwargs):
+        return {
+            "json": _country_result(),
+            "text": '{"country_code":"DE"}',
+            "usage": {"input_tokens": 11, "output_tokens": 22},
+            "usage_log_id": 99,
+            "raw": {"provider_response_id": "raw-123", "nested": {"ok": True}},
+        }
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+
+    client = mod.FineAiGeminiClient()
+    result = client.generate_country_evaluation(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        product_facts={
+            "product_id": "123",
+            "product_name": "Sample",
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {"english_keywords": [], "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []}},
+        },
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国", "language": "German", "currency": "EUR"},
+        asset_snapshot={"cover_images": [], "product_images": [], "videos": []},
+        asset_paths=["G:/tmp/card_15s_llm.mp4"],
+    )
+
+    trace = client.last_call_trace
+    assert result["country_code"] == "DE"
+    assert trace["provider"] == "gemini_vertex_adc"
+    assert trace["model_id"] == "gemini-3.5-flash"
+    assert trace["use_case_code"] == "fine_ai_evaluation.country"
+    assert trace["request"]["system_prompt"] == mod.COUNTRY_EVALUATION_SYSTEM_PROMPT
+    assert "Sample" in trace["request"]["prompt"]
+    assert trace["request"]["payload"]["provider_override"] == "gemini_vertex_adc"
+    assert trace["request"]["payload"]["media"] == ["G:/tmp/card_15s_llm.mp4"]
+    assert trace["response"]["summary"]["input_tokens"] == 11
+    assert trace["response"]["parsed_json"]["country_code"] == "DE"
+    assert trace["response"]["raw_payload"]["raw"]["provider_response_id"] == "raw-123"
+    assert "api_key" not in repr(trace).lower()
+    assert "authorization" not in repr(trace).lower()
+
+
 def test_fine_ai_gemini_client_repairs_markdown_wrapped_json():
     from appcore.fine_ai_gemini_client import _parse_json_with_repair
 

@@ -72,6 +72,20 @@ def test_fine_ai_modal_renders_backend_progress_cards_and_logs():
     assert "mkiFineAiElapsedLabel" in body
 
 
+def test_fine_ai_modal_step_cards_show_model_badge_and_llm_trace_button():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiFineAiStepModelBadge" in body
+    assert "function mkiFineAiRenderLlmRequestButton" in body
+    assert "data-mki-fine-ai-llm-step" in body
+    assert "大模型请求" in body
+    assert "mkiFineAiOpenLlmTrace" in body
+    assert "mkiFineAiRenderLlmTraceModal" in body
+    assert "完整 User Prompt" in body
+    assert "完整请求报文" in body
+    assert "完整结果报文" in body
+
+
 def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -191,3 +205,20 @@ def test_fine_ai_standalone_result_inlines_country_summary_into_summary_step():
     assert "resultForSummary" in script
     assert "step.key || '') === 'summary'" in script
     assert "renderCountryDecisionSummary(resultForSummary)" in script
+
+
+def test_fine_ai_standalone_step_cards_show_model_badge_and_llm_trace_button():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "function stepModelBadge" in script
+    assert "function renderLlmRequestButton" in script
+    assert "data-fine-ai-llm-step" in script
+    assert "大模型请求" in script
+    assert "openLlmTrace" in script
+    assert "renderLlmTraceModal" in script
+    assert "完整 User Prompt" in script
+    assert "完整请求报文" in script
+    assert "完整结果报文" in script
+    assert ".mki-fine-ai-model-badge" in template
+    assert ".mki-fine-ai-llm-btn" in template

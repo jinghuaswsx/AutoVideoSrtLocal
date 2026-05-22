@@ -35,9 +35,27 @@
 .mki-fine-ai-step-card.is-completed { border-left-color:#16a34a; background:#f0fdf4; }
 .mki-fine-ai-step-card.is-failed { border-left-color:#dc2626; background:#fef2f2; }
 .mki-fine-ai-step-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; font-size:16px; }
+.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; font-size:16px; flex-wrap:wrap; }
 .mki-fine-ai-step-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
 .mki-fine-ai-step-rerun { min-height:28px; padding:0 10px; font-size:12px; }
+.mki-fine-ai-model-badge { display:inline-flex; align-items:center; max-width:100%; min-height:22px; padding:0 8px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#475569; font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:800; line-height:1.2; word-break:break-all; }
+.mki-fine-ai-llm-btn { min-height:28px; padding:0 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0284c7; font-size:12px; font-weight:800; cursor:pointer; }
+.mki-fine-ai-llm-btn:hover:not(:disabled) { border-color:#0ea5e9; background:#f8fbfd; }
+.mki-fine-ai-llm-btn:disabled { opacity:.45; cursor:not-allowed; }
+.mki-fine-ai-trace-shell { display:grid; gap:14px; }
+.mki-fine-ai-trace-section { border:1px solid #e2e8f0; border-radius:8px; padding:12px; background:#fff; }
+.mki-fine-ai-trace-section h4 { margin:0 0 10px; font-size:15px; }
+.mki-fine-ai-trace-section h5 { margin:12px 0 8px; font-size:13px; color:#64748b; }
+.mki-fine-ai-trace-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }
+.mki-fine-ai-trace-item { min-width:0; border:1px solid #dbe7ef; border-radius:6px; padding:8px; background:#f8fbfd; }
+.mki-fine-ai-trace-item span { display:block; margin-bottom:4px; color:#64748b; font-size:12px; }
+.mki-fine-ai-trace-item strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.fine-ai-trace-overlay { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.45); }
+.fine-ai-trace-modal { width:min(1120px, 96vw); max-height:88vh; display:flex; flex-direction:column; border-radius:8px; background:#f8fbfd; box-shadow:0 24px 60px rgba(15,23,42,.28); overflow:hidden; }
+.fine-ai-trace-modal-head { min-height:52px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 16px; border-bottom:1px solid #dbe7ef; background:#fff; }
+.fine-ai-trace-modal-head strong { font-size:16px; }
+.fine-ai-trace-modal-close { width:32px; height:32px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; cursor:pointer; font-size:20px; line-height:1; }
+.fine-ai-trace-modal-body { overflow:auto; padding:16px; }
 .mki-fine-ai-step-dot { position:relative; width:10px; height:10px; border-radius:999px; background:#94a3b8; flex:0 0 auto; }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot { background:#0284c7; }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border:2px solid rgba(14,165,233,.35); border-radius:inherit; animation:fineAiPulse 1.05s ease-out infinite; }

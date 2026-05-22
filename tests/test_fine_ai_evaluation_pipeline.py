@@ -76,6 +76,34 @@ def test_pipeline_persists_visual_progress_steps_and_execution_log():
     assert any(log["level"] == "info" for log in de_step["logs"])
 
 
+def test_pipeline_persists_llm_trace_on_llm_progress_steps_only():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    service = FineAiEvaluationService(
+        repository=InMemoryEvaluationRepository(),
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123, countries=["DE"])
+    result = service.run_evaluation(run["evaluation_run_id"])
+    steps = {step["key"]: step for step in result["progress"]["steps"]}
+
+    product_step = steps["product_fact_extraction"]
+    country_step = steps["country_DE"]
+    assert product_step["provider"] == "fake-provider"
+    assert product_step["model_id"] == "fake-model"
+    assert product_step["llm_trace"]["request"]["prompt"] == "full prompt for product_facts"
+    assert product_step["llm_trace"]["response"]["parsed_json"]["product_id"] == "123"
+    assert country_step["provider"] == "fake-provider"
+    assert country_step["model_id"] == "fake-model"
+    assert country_step["llm_trace"]["request"]["prompt"] == "full prompt for country:DE"
+    assert country_step["llm_trace"]["response"]["parsed_json"]["country_code"] == "DE"
+    assert "llm_trace" not in steps["data_preparation"]
+    assert "llm_trace" not in steps["summary"]
+
+
 def test_status_refreshes_progress_elapsed_seconds():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
@@ -605,6 +633,7 @@ class FakeGeminiClient:
         self.calls = calls
         self.fail_country = fail_country
         self.last_call_metadata = {}
+        self.last_call_trace = {}
 
     def generate_product_facts(self, *, product_snapshot, countries):
         self.calls.append(("product_facts", product_snapshot["product_id"]))
@@ -613,7 +642,7 @@ class FakeGeminiClient:
             "model": "fake-model",
             "usage": {"input_tokens": 12, "output_tokens": 34},
         }
-        return {
+        result = {
             "product_id": product_snapshot["product_id"],
             "product_name": product_snapshot["product_name"],
             "category_detected": None,
@@ -631,6 +660,8 @@ class FakeGeminiClient:
                 "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []},
             },
         }
+        self.last_call_trace = _fake_trace("product_facts", result, product_id=product_snapshot["product_id"])
+        return result
 
     def generate_country_evaluation(self, *, product_snapshot, product_facts, country, asset_snapshot, asset_paths):
         code = country["country_code"]
@@ -641,8 +672,31 @@ class FakeGeminiClient:
             "usage": {"input_tokens": 56, "output_tokens": 78},
         }
         if code == self.fail_country:
+            self.last_call_trace = _fake_trace(f"country:{code}", {"error": "simulated country failure"}, product_id=product_snapshot["product_id"])
             raise RuntimeError("simulated country failure")
-        return make_country_result(code, creative_missing=not asset_snapshot["product_images"] and not asset_snapshot["videos"])
+        result = make_country_result(code, creative_missing=not asset_snapshot["product_images"] and not asset_snapshot["videos"])
+        self.last_call_trace = _fake_trace(f"country:{code}", result, product_id=product_snapshot["product_id"])
+        return result
+
+
+def _fake_trace(stage, parsed_json, *, product_id):
+    return {
+        "provider": "fake-provider",
+        "model_id": "fake-model",
+        "use_case_code": f"fine_ai_evaluation.{stage}",
+        "project_id": f"fine-ai-product-{product_id}",
+        "request": {
+            "summary": {"media_count": 0},
+            "system_prompt": "system prompt",
+            "prompt": f"full prompt for {stage}",
+            "payload": {"prompt": f"full prompt for {stage}", "provider_override": "fake-provider"},
+        },
+        "response": {
+            "summary": {"input_tokens": 1, "output_tokens": 2},
+            "parsed_json": parsed_json,
+            "raw_payload": {"json": parsed_json, "usage": {"input_tokens": 1, "output_tokens": 2}},
+        },
+    }
 
 
 def make_country_result(code, *, creative_missing=False):

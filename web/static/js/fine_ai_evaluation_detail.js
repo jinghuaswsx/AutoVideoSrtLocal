@@ -5,6 +5,7 @@
   const terminalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
   let pollTimer = null;
   let elapsedTimer = null;
+  let currentPayload = {};
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -216,7 +217,120 @@
         <span>${escapeHtml(formatTs(row.ts))}</span>
         <strong>${escapeHtml(row.level || 'info')}</strong>
         <span>${escapeHtml(row.message || '')}</span>
+    </div>`).join('')}</div>`;
+  }
+
+  function isLlmStep(step) {
+    const key = String((step || {}).key || '');
+    return key === 'product_fact_extraction' || key.startsWith('country_');
+  }
+
+  function stepModelBadge(step) {
+    const trace = (step && step.llm_trace) || {};
+    const provider = String((step && (step.provider || step.model_provider)) || trace.provider || '').trim();
+    const model = String((step && (step.model_id || step.model)) || trace.model_id || trace.model || '').trim();
+    if (!provider && !model) return '';
+    return `<span class="mki-fine-ai-model-badge" title="${escapeHtml(`${provider || '-'} · ${model || '-'}`)}">${escapeHtml(provider || '-')} · ${escapeHtml(model || '-')}</span>`;
+  }
+
+  function hasLlmTrace(step) {
+    return Boolean(step && step.llm_trace && typeof step.llm_trace === 'object');
+  }
+
+  function renderLlmRequestButton(step) {
+    if (!isLlmStep(step)) return '';
+    const hasTrace = hasLlmTrace(step);
+    return `<button type="button"
+        class="mki-fine-ai-llm-btn"
+        data-fine-ai-llm-step="${escapeHtml(step.key || '')}"
+        ${hasTrace ? '' : 'disabled'}
+        title="${hasTrace ? '查看该步骤的大模型请求和结果报文' : '该步骤完成后可查看大模型请求'}">大模型请求</button>`;
+  }
+
+  function jsonBlock(value) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value || {}, null, 2);
+    return `<pre class="ect-modal-json">${escapeHtml(text || '{}')}</pre>`;
+  }
+
+  function traceGrid(rows) {
+    return `<div class="mki-fine-ai-trace-grid">${rows.map(row => `
+      <div class="mki-fine-ai-trace-item">
+        <span>${escapeHtml(row.label || '')}</span>
+        <strong title="${escapeHtml(String(row.value ?? ''))}">${escapeHtml(String(row.value ?? '-'))}</strong>
       </div>`).join('')}</div>`;
+  }
+
+  function renderLlmTraceModal(step) {
+    const trace = (step && step.llm_trace) || {};
+    const request = trace.request || {};
+    const response = trace.response || {};
+    const reqSummary = request.summary || {};
+    const resSummary = response.summary || {};
+    const rows = [
+      {label: '步骤', value: step?.title || step?.key || ''},
+      {label: 'Provider', value: trace.provider || step?.provider || '-'},
+      {label: 'Model', value: trace.model_id || step?.model_id || '-'},
+      {label: 'Use Case', value: trace.use_case_code || '-'},
+      {label: 'Project', value: trace.project_id || '-'},
+      {label: 'Media', value: reqSummary.media_count ?? '-'},
+      {label: 'Google Search', value: reqSummary.google_search ? 'on' : 'off'},
+      {label: 'URL Context', value: reqSummary.url_context ? 'on' : 'off'},
+      {label: 'Input Tokens', value: resSummary.input_tokens || '-'},
+      {label: 'Output Tokens', value: resSummary.output_tokens || '-'},
+    ];
+    const error = trace.error ? `<section class="mki-fine-ai-trace-section"><h4>错误</h4>${jsonBlock(trace.error)}</section>` : '';
+    return `<div class="mki-fine-ai-trace-shell">
+      <section class="mki-fine-ai-trace-section">
+        <h4>大模型调用概览</h4>
+        ${traceGrid(rows)}
+      </section>
+      <section class="mki-fine-ai-trace-section">
+        <h4>请求数据</h4>
+        <h5>完整 System Prompt</h5>
+        ${jsonBlock(request.system_prompt || '')}
+        <h5>完整 User Prompt</h5>
+        ${jsonBlock(request.prompt || '')}
+        <h5>完整请求报文</h5>
+        ${jsonBlock(request.payload || {})}
+      </section>
+      <section class="mki-fine-ai-trace-section">
+        <h4>结果数据</h4>
+        ${traceGrid([
+          {label: 'Has JSON', value: resSummary.has_json ? 'yes' : 'no'},
+          {label: 'Has Text', value: resSummary.has_text ? 'yes' : 'no'},
+          {label: 'Usage Log ID', value: resSummary.usage_log_id || '-'},
+        ])}
+        <h5>结构化结果 JSON</h5>
+        ${jsonBlock(response.parsed_json || {})}
+        <h5>完整结果报文</h5>
+        ${jsonBlock(response.raw_payload || {})}
+      </section>
+      ${error}
+    </div>`;
+  }
+
+  function stepByKey(stepKey) {
+    const steps = (((currentPayload || {}).progress || {}).steps || []);
+    return steps.find(step => String(step.key || '') === String(stepKey || '')) || null;
+  }
+
+  function openLlmTrace(step) {
+    if (!step || !hasLlmTrace(step)) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'fine-ai-trace-overlay';
+    overlay.innerHTML = `<div class="fine-ai-trace-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(`大模型请求 - ${step.title || step.key || ''}`)}">
+      <div class="fine-ai-trace-modal-head">
+        <strong>${escapeHtml(`大模型请求 - ${step.title || step.key || ''}`)}</strong>
+        <button type="button" class="fine-ai-trace-modal-close" aria-label="关闭">×</button>
+      </div>
+      <div class="fine-ai-trace-modal-body">${renderLlmTraceModal(step)}</div>
+    </div>`;
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close();
+    });
+    overlay.querySelector('.fine-ai-trace-modal-close').addEventListener('click', close);
+    document.body.appendChild(overlay);
   }
 
   function countryCodeFromStep(step) {
@@ -301,8 +415,10 @@
             <div class="mki-fine-ai-step-title">
               <span class="mki-fine-ai-step-dot"></span>
               <strong>${escapeHtml(step.title || step.key || '')}</strong>
+              ${stepModelBadge(step)}
             </div>
             <div class="mki-fine-ai-step-actions">
+              ${renderLlmRequestButton(step)}
               ${renderStepRerunButton(step, stepStatus)}
               <span class="mki-fine-ai-status-pill is-${escapeHtml(stepStatus)}">${escapeHtml(stepStatusLabel(stepStatus))}</span>
             </div>
@@ -568,15 +684,18 @@
   }
 
   function renderStatus(status) {
+    currentPayload = status || {};
     body.innerHTML = `
       ${renderContextCopyPanel(status)}
       ${renderProgress(status.progress || {}, status.status || 'running')}
     `;
+    bindRerunButtons();
     startElapsedTimer();
   }
 
   function renderResult(result) {
     stopElapsedTimer();
+    currentPayload = result || {};
     body.innerHTML = `
       ${renderContextCopyPanel(result)}
       ${renderProgress(result.progress || {}, result.status || '', result)}
@@ -617,6 +736,9 @@
   }
 
   function bindRerunButtons() {
+    body.querySelectorAll('[data-fine-ai-llm-step]').forEach(btn => {
+      btn.onclick = () => openLlmTrace(stepByKey(btn.dataset.fineAiLlmStep));
+    });
     body.querySelectorAll('[data-fine-ai-rerun]').forEach(btn => {
       btn.onclick = async () => {
         const code = btn.dataset.fineAiRerun || '';

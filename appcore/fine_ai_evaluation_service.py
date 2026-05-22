@@ -268,6 +268,8 @@ class FineAiEvaluationService:
                     "Product URL": product_snapshot.get("product_url") or product_snapshot.get("landing_page_url") or "",
                     "Country Count": len(country_codes),
                 }),
+                provider=metadata.get("provider") or PROVIDER,
+                model_id=metadata.get("model") or MODEL,
             )
             self.repository.update_run(
                 evaluation_run_id,
@@ -279,6 +281,7 @@ class FineAiEvaluationService:
                 product_snapshot=product_snapshot,
                 countries=country_configs(country_codes),
             )
+            call_trace = self._call_trace(product_facts)
             validate_json_schema(product_facts, PRODUCT_FACTS_SCHEMA)
             metadata = self._merge_call_metadata(metadata, "product_facts")
             progress = _mark_progress_step(
@@ -293,6 +296,7 @@ class FineAiEvaluationService:
                     }),
                     *_usage_debug(self._call_metadata()),
                 ],
+                llm_trace=call_trace,
             )
             self.repository.update_run(
                 evaluation_run_id,
@@ -311,6 +315,7 @@ class FineAiEvaluationService:
                 f"商品事实整理失败：{str(exc)[:160]}",
                 level="error",
                 debug=_llm_debug(metadata, {"Error": str(exc)[:500]}),
+                llm_trace=self._call_trace(error=exc),
             )
             self.repository.update_run(
                 evaluation_run_id,
@@ -338,6 +343,8 @@ class FineAiEvaluationService:
                     "Images": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or []),
                     "Videos": len(asset_snapshot.get("videos") or []),
                 }),
+                provider=metadata.get("provider") or PROVIDER,
+                model_id=metadata.get("model") or MODEL,
             )
             self.repository.update_run(
                 evaluation_run_id,
@@ -360,6 +367,7 @@ class FineAiEvaluationService:
                     asset_snapshot=asset_snapshot,
                     asset_paths=list(asset_snapshot.get("asset_paths") or []),
                 )
+                call_trace = self._call_trace(result)
                 result = _normalize_country_result(result, country, asset_snapshot)
                 validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
                 completed_codes.append(code)
@@ -374,6 +382,7 @@ class FineAiEvaluationService:
                         *_country_result_debug(result),
                         *_usage_debug(call_metadata),
                     ],
+                    llm_trace=call_trace,
                 )
                 self.repository.upsert_country(
                     evaluation_run_id,
@@ -383,7 +392,7 @@ class FineAiEvaluationService:
                         "status": "completed",
                         "full_result": result,
                         "metadata": call_metadata,
-                        "raw_response": {},
+                        "raw_response": _trace_raw_response(call_trace),
                     },
                 )
             except Exception as exc:
@@ -392,6 +401,7 @@ class FineAiEvaluationService:
                 failed = _failed_country_result(country, str(exc))
                 countries[code] = failed
                 call_metadata = self._call_metadata()
+                call_trace = self._call_trace(countries.get(code), error=exc)
                 progress = _mark_progress_step(
                     progress,
                     step_key,
@@ -403,6 +413,7 @@ class FineAiEvaluationService:
                         {"label": "Error", "value": str(exc)[:500]},
                         *_usage_debug(call_metadata),
                     ],
+                    llm_trace=call_trace,
                 )
                 self.repository.upsert_country(
                     evaluation_run_id,
@@ -412,7 +423,7 @@ class FineAiEvaluationService:
                         "status": "failed",
                         "full_result": failed,
                         "metadata": call_metadata,
-                        "raw_response": {},
+                        "raw_response": _trace_raw_response(call_trace),
                         "error_message": str(exc)[:500],
                     },
                 )
@@ -661,6 +672,8 @@ class FineAiEvaluationService:
                 "Language": country.get("language") or "",
                 "Currency": country.get("currency") or "",
             }),
+            provider=metadata.get("provider") or PROVIDER,
+            model_id=metadata.get("model") or MODEL,
         )
         try:
             result = self.gemini_client.generate_country_evaluation(
@@ -670,6 +683,7 @@ class FineAiEvaluationService:
                 asset_snapshot=asset_snapshot,
                 asset_paths=list(asset_snapshot.get("asset_paths") or []),
             )
+            call_trace = self._call_trace(result)
             result = _normalize_country_result(result, country, asset_snapshot)
             call_metadata = self._call_metadata()
             progress = _mark_progress_step(
@@ -681,6 +695,7 @@ class FineAiEvaluationService:
                     *_country_result_debug(result),
                     *_usage_debug(call_metadata),
                 ],
+                llm_trace=call_trace,
             )
             self.repository.upsert_country(
                 evaluation_run_id,
@@ -690,12 +705,13 @@ class FineAiEvaluationService:
                     "status": "completed",
                     "full_result": result,
                     "metadata": call_metadata,
-                    "raw_response": {},
+                    "raw_response": _trace_raw_response(call_trace),
                 },
             )
         except Exception as exc:
             failed = _failed_country_result(country, str(exc))
             call_metadata = self._call_metadata()
+            call_trace = self._call_trace(failed, error=exc)
             progress = _mark_progress_step(
                 progress,
                 _country_step_key(country_code),
@@ -707,6 +723,7 @@ class FineAiEvaluationService:
                     {"label": "Error", "value": str(exc)[:500]},
                     *_usage_debug(call_metadata),
                 ],
+                llm_trace=call_trace,
             )
             self.repository.upsert_country(
                 evaluation_run_id,
@@ -716,7 +733,7 @@ class FineAiEvaluationService:
                     "status": "failed",
                     "full_result": failed,
                     "metadata": call_metadata,
-                    "raw_response": {},
+                    "raw_response": _trace_raw_response(call_trace),
                     "error_message": str(exc)[:500],
                 },
             )
@@ -768,6 +785,28 @@ class FineAiEvaluationService:
 
     def _call_metadata(self) -> dict[str, Any]:
         return dict(getattr(self.gemini_client, "last_call_metadata", {}) or {})
+
+    def _call_trace(self, parsed_json: dict[str, Any] | None = None, error: Exception | None = None) -> dict[str, Any]:
+        trace = dict(getattr(self.gemini_client, "last_call_trace", {}) or {})
+        if not trace:
+            metadata = self._call_metadata()
+            trace = {
+                "provider": metadata.get("provider") or PROVIDER,
+                "model_id": metadata.get("model") or metadata.get("model_id") or MODEL,
+                "request": {"summary": {}, "system_prompt": "", "prompt": "", "payload": {}},
+                "response": {
+                    "summary": dict(metadata.get("usage") or {}),
+                    "parsed_json": parsed_json or {},
+                    "raw_payload": {},
+                },
+            }
+        if parsed_json is not None:
+            response = dict(trace.get("response") or {})
+            response.setdefault("parsed_json", parsed_json)
+            trace["response"] = response
+        if error is not None:
+            trace.setdefault("error", {"type": type(error).__name__, "message": str(error)[:1000]})
+        return trace
 
     def _merge_call_metadata(self, metadata: dict[str, Any], stage: str) -> dict[str, Any]:
         merged = dict(metadata or {})
@@ -897,13 +936,13 @@ def _progress_steps(
 ) -> list[dict[str, Any]]:
     steps = [
         _step("data_preparation", "数据准备", "准备商品链接、商品快照、素材数量和目标国家"),
-        _step("product_fact_extraction", "商品事实整理", "抽取跨国家共享的商品事实"),
+        _step("product_fact_extraction", "商品事实整理", "抽取跨国家共享的商品事实", llm=True),
     ]
     if include_link_check:
         steps.insert(0, _step("product_link_check", "商品链接检测", "检测当前商品链接，必要时从明空候选链接中选择可访问链接"))
     for code in country_codes:
         country = get_country_config(code)
-        steps.append(_step(_country_step_key(code), f"{code} {country['country_name_zh']}", "单国家市场、素材、落地页与风险评估"))
+        steps.append(_step(_country_step_key(code), f"{code} {country['country_name_zh']}", "单国家市场、素材、落地页与风险评估", llm=True))
     steps.append(_step("summary", "汇总结果", "聚合五国结论和下一步动作"))
     return steps
 
@@ -955,8 +994,8 @@ def _link_check_debug(link_check: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _step(key: str, title: str, description: str) -> dict[str, Any]:
-    return {
+def _step(key: str, title: str, description: str, *, llm: bool = False) -> dict[str, Any]:
+    step = {
         "key": key,
         "title": title,
         "description": description,
@@ -967,6 +1006,10 @@ def _step(key: str, title: str, description: str) -> dict[str, Any]:
         "logs": [],
         "debug": [],
     }
+    if llm:
+        step["provider"] = PROVIDER
+        step["model_id"] = MODEL
+    return step
 
 
 def _country_step_key(code: str) -> str:
@@ -981,6 +1024,9 @@ def _mark_progress_step(
     *,
     level: str = "info",
     debug: list[dict[str, Any]] | None = None,
+    llm_trace: dict[str, Any] | None = None,
+    provider: str | None = None,
+    model_id: str | None = None,
     event: bool = True,
 ) -> dict[str, Any]:
     now = _now_iso()
@@ -1002,15 +1048,39 @@ def _mark_progress_step(
             step["completed_at"] = now
         if debug is not None:
             step["debug"] = _compact_debug(debug)
+        if _is_llm_step_key(step_key):
+            trace_provider = (llm_trace or {}).get("provider") or provider or step.get("provider") or PROVIDER
+            trace_model = (
+                (llm_trace or {}).get("model_id")
+                or (llm_trace or {}).get("model")
+                or model_id
+                or step.get("model_id")
+                or MODEL
+            )
+            step["provider"] = str(trace_provider or "")[:120]
+            step["model_id"] = str(trace_model or "")[:240]
+        if llm_trace is not None:
+            step["llm_trace"] = llm_trace
         logs = list(step.get("logs") or [])
         if previous_status != status or message:
             logs.append({"ts": now, "level": level, "message": message})
         step["logs"] = logs[-20:]
         break
     if not found:
-        step = _step(step_key, step_key, "")
+        step = _step(step_key, step_key, "", llm=_is_llm_step_key(step_key))
         steps.append(step)
-        return _mark_progress_step({**out, "steps": steps}, step_key, status, message, level=level, debug=debug, event=event)
+        return _mark_progress_step(
+            {**out, "steps": steps},
+            step_key,
+            status,
+            message,
+            level=level,
+            debug=debug,
+            llm_trace=llm_trace,
+            provider=provider,
+            model_id=model_id,
+            event=event,
+        )
     out["steps"] = steps
     if event:
         events = list(out.get("events") or [])
@@ -1022,6 +1092,18 @@ def _mark_progress_step(
 
 def _completed_step_count(progress: dict[str, Any]) -> int:
     return sum(1 for step in progress.get("steps") or [] if step.get("status") in {"completed", "failed", "skipped"})
+
+
+def _is_llm_step_key(step_key: str) -> bool:
+    key = str(step_key or "")
+    return key == "product_fact_extraction" or key.startswith("country_")
+
+
+def _trace_raw_response(trace: dict[str, Any]) -> dict[str, Any]:
+    response = trace.get("response") if isinstance(trace, dict) else {}
+    if isinstance(response, dict) and isinstance(response.get("raw_payload"), dict):
+        return response["raw_payload"]
+    return {}
 
 
 def _elapsed_seconds(started_at: str | None) -> int:

@@ -255,7 +255,20 @@
 .mki-fine-ai-step-card.is-completed { border-left-color:oklch(58% 0.12 160); background:oklch(98% 0.018 160); }
 .mki-fine-ai-step-card.is-failed { border-left-color:oklch(55% 0.16 25); background:oklch(98% 0.018 25); }
 .mki-fine-ai-step-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; min-width:0; font-weight:800; color:var(--oc-fg); }
+.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; min-width:0; font-weight:800; color:var(--oc-fg); flex-wrap:wrap; }
+.mki-fine-ai-step-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; }
+.mki-fine-ai-model-badge { display:inline-flex; align-items:center; max-width:100%; min-height:22px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:9999px; background:#fff; color:var(--oc-fg-muted); font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700; line-height:1.2; word-break:break-all; }
+.mki-fine-ai-llm-btn { min-height:28px; padding:0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-accent); font-size:12px; font-weight:800; cursor:pointer; }
+.mki-fine-ai-llm-btn:hover:not(:disabled) { border-color:var(--oc-accent); background:var(--oc-bg-muted); }
+.mki-fine-ai-llm-btn:disabled { opacity:.45; cursor:not-allowed; }
+.mki-fine-ai-trace-shell { display:grid; gap:14px; }
+.mki-fine-ai-trace-section { border:1px solid var(--oc-border); border-radius:8px; padding:12px; background:#fff; }
+.mki-fine-ai-trace-section h4 { margin:0 0 10px; font-size:14px; }
+.mki-fine-ai-trace-section h5 { margin:12px 0 8px; font-size:13px; color:var(--oc-fg-muted); }
+.mki-fine-ai-trace-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }
+.mki-fine-ai-trace-item { min-width:0; border:1px solid var(--oc-border); border-radius:6px; padding:8px; background:var(--oc-bg-subtle); }
+.mki-fine-ai-trace-item span { display:block; margin-bottom:4px; color:var(--oc-fg-muted); font-size:12px; }
+.mki-fine-ai-trace-item strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
 .mki-fine-ai-step-dot { position:relative; width:10px; height:10px; flex:0 0 auto; border-radius:9999px; background:oklch(70% 0.02 230); }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot { background:var(--oc-accent); }
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border-radius:inherit; border:2px solid rgba(14,165,233,.30); animation:mkiFineAiPulse 1.05s ease-out infinite; }
@@ -2755,6 +2768,110 @@ function mkiFineAiRenderStepLogs(logs) {
     </div>`).join('')}</div>`;
 }
 
+function mkiFineAiIsLlmStep(step) {
+  const key = String((step || {}).key || '');
+  return key === 'product_fact_extraction' || key.startsWith('country_');
+}
+
+function mkiFineAiStepModelBadge(step) {
+  const trace = (step && step.llm_trace) || {};
+  const provider = String((step && (step.provider || step.model_provider)) || trace.provider || '').trim();
+  const model = String((step && (step.model_id || step.model)) || trace.model_id || trace.model || '').trim();
+  if (!provider && !model) return '';
+  return `<span class="mki-fine-ai-model-badge" title="${escapeHtml(`${provider || '-'} · ${model || '-'}`)}">${escapeHtml(provider || '-')} · ${escapeHtml(model || '-')}</span>`;
+}
+
+function mkiFineAiHasLlmTrace(step) {
+  return Boolean(step && step.llm_trace && typeof step.llm_trace === 'object');
+}
+
+function mkiFineAiRenderLlmRequestButton(step) {
+  if (!mkiFineAiIsLlmStep(step)) return '';
+  const hasTrace = mkiFineAiHasLlmTrace(step);
+  return `<button type="button"
+      class="mki-fine-ai-llm-btn"
+      data-mki-fine-ai-llm-step="${escapeHtml(step.key || '')}"
+      ${hasTrace ? '' : 'disabled'}
+      title="${hasTrace ? '查看该步骤的大模型请求和结果报文' : '该步骤完成后可查看大模型请求'}">大模型请求</button>`;
+}
+
+function mkiFineAiJsonBlock(value) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value || {}, null, 2);
+  return `<pre class="ect-modal-json">${escapeHtml(text || '{}')}</pre>`;
+}
+
+function mkiFineAiTraceGrid(rows) {
+  return `<div class="mki-fine-ai-trace-grid">${rows.map(row => `
+    <div class="mki-fine-ai-trace-item">
+      <span>${escapeHtml(row.label || '')}</span>
+      <strong title="${escapeHtml(String(row.value ?? ''))}">${escapeHtml(String(row.value ?? '-'))}</strong>
+    </div>`).join('')}</div>`;
+}
+
+function mkiFineAiRenderLlmTraceModal(step) {
+  const trace = (step && step.llm_trace) || {};
+  const request = trace.request || {};
+  const response = trace.response || {};
+  const reqSummary = request.summary || {};
+  const resSummary = response.summary || {};
+  const rows = [
+    {label: '步骤', value: step?.title || step?.key || ''},
+    {label: 'Provider', value: trace.provider || step?.provider || '-'},
+    {label: 'Model', value: trace.model_id || step?.model_id || '-'},
+    {label: 'Use Case', value: trace.use_case_code || '-'},
+    {label: 'Project', value: trace.project_id || '-'},
+    {label: 'Media', value: reqSummary.media_count ?? '-'},
+    {label: 'Google Search', value: reqSummary.google_search ? 'on' : 'off'},
+    {label: 'URL Context', value: reqSummary.url_context ? 'on' : 'off'},
+    {label: 'Input Tokens', value: resSummary.input_tokens || '-'},
+    {label: 'Output Tokens', value: resSummary.output_tokens || '-'},
+  ];
+  const error = trace.error ? `<section class="mki-fine-ai-trace-section"><h4>错误</h4>${mkiFineAiJsonBlock(trace.error)}</section>` : '';
+  return `<div class="mki-fine-ai-trace-shell">
+    <section class="mki-fine-ai-trace-section">
+      <h4>大模型调用概览</h4>
+      ${mkiFineAiTraceGrid(rows)}
+    </section>
+    <section class="mki-fine-ai-trace-section">
+      <h4>请求数据</h4>
+      <h5>完整 System Prompt</h5>
+      ${mkiFineAiJsonBlock(request.system_prompt || '')}
+      <h5>完整 User Prompt</h5>
+      ${mkiFineAiJsonBlock(request.prompt || '')}
+      <h5>完整请求报文</h5>
+      ${mkiFineAiJsonBlock(request.payload || {})}
+    </section>
+    <section class="mki-fine-ai-trace-section">
+      <h4>结果数据</h4>
+      ${mkiFineAiTraceGrid([
+        {label: 'Has JSON', value: resSummary.has_json ? 'yes' : 'no'},
+        {label: 'Has Text', value: resSummary.has_text ? 'yes' : 'no'},
+        {label: 'Usage Log ID', value: resSummary.usage_log_id || '-'},
+      ])}
+      <h5>结构化结果 JSON</h5>
+      ${mkiFineAiJsonBlock(response.parsed_json || {})}
+      <h5>完整结果报文</h5>
+      ${mkiFineAiJsonBlock(response.raw_payload || {})}
+    </section>
+    ${error}
+  </div>`;
+}
+
+function mkiFineAiOpenLlmTrace(step) {
+  if (!step || !mkiFineAiHasLlmTrace(step) || !window.EvalCountryTable) return;
+  const shell = window.EvalCountryTable.openModal('', {title: `大模型请求 - ${step.title || step.key || ''}`});
+  shell.body.innerHTML = mkiFineAiRenderLlmTraceModal(step);
+}
+
+function mkiFineAiRememberPayload(context, payload) {
+  if (context) context.fineAiPayload = payload || {};
+}
+
+function mkiFineAiStepByKey(context, stepKey) {
+  const steps = (((context || {}).fineAiPayload || {}).progress || {}).steps || [];
+  return steps.find(step => String(step.key || '') === String(stepKey || '')) || null;
+}
+
 function mkiFineAiRenderStepCards(progress) {
   const p = Object.assign(mkiFineAiDefaultProgress(), progress || {});
   const steps = Array.isArray(p.steps) && p.steps.length ? p.steps : mkiFineAiDefaultProgress().steps;
@@ -2766,8 +2883,12 @@ function mkiFineAiRenderStepCards(progress) {
         <div class="mki-fine-ai-step-title">
           <span class="mki-fine-ai-step-dot"></span>
           <strong>${escapeHtml(step.title || step.key || '')}</strong>
+          ${mkiFineAiStepModelBadge(step)}
         </div>
-        <span class="mki-fine-ai-status-pill is-${escapeHtml(status)}">${escapeHtml(mkiFineAiStepStatusLabel(status))}</span>
+        <div class="mki-fine-ai-step-actions">
+          ${mkiFineAiRenderLlmRequestButton(step)}
+          <span class="mki-fine-ai-status-pill is-${escapeHtml(status)}">${escapeHtml(mkiFineAiStepStatusLabel(status))}</span>
+        </div>
       </div>
       <p class="mki-fine-ai-step-desc">${escapeHtml(step.message || step.description || '')}</p>
       ${mkiFineAiRenderDebug(step.debug)}
@@ -2801,6 +2922,7 @@ function mkiFineAiRenderProgress(progress, status = 'running') {
 
 function mkiFineAiRenderStatus(data, context) {
   const payload = data || {};
+  mkiFineAiRememberPayload(context, payload);
   return `${mkiFineAiRenderContextCopyPanel(mkiFineAiContextSource(context, payload))}
     ${mkiFineAiRenderProgress(payload.progress || {}, payload.status || 'running')}`;
 }
@@ -2892,6 +3014,7 @@ function mkiFineAiRenderActions(frontend) {
 
 function mkiFineAiRenderResult(data, context) {
   const result = data || {};
+  mkiFineAiRememberPayload(context, result);
   const frontend = result.frontend || {};
   const summary = result.summary || {};
   return `
@@ -3162,6 +3285,7 @@ async function mkiFineAiPollStatus(context) {
     context.runId = status.evaluation_run_id || context.runId;
     mkiFineAiRefreshDetailButton(context);
     context.shell.body.innerHTML = mkiFineAiRenderStatus(status, context);
+    mkiFineAiBindModalEvents(context);
     if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
       const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
       mkiFineAiStopElapsedTicker(context);
@@ -3180,6 +3304,12 @@ async function mkiFineAiPollStatus(context) {
 
 function mkiFineAiBindModalEvents(context) {
   const shell = context.shell;
+  shell.body.querySelectorAll('[data-mki-fine-ai-llm-step]').forEach(btn => {
+    btn.onclick = () => {
+      const step = mkiFineAiStepByKey(context, btn.dataset.mkiFineAiLlmStep);
+      mkiFineAiOpenLlmTrace(step);
+    };
+  });
   shell.body.querySelectorAll('[data-mki-fine-ai-tab]').forEach(btn => {
     btn.onclick = () => {
       const code = btn.dataset.mkiFineAiTab;

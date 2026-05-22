@@ -38,6 +38,7 @@ COUNTRY_USE_CASE = "fine_ai_evaluation.country"
 class FineAiGeminiClient:
     def __init__(self):
         self.last_call_metadata: dict[str, Any] = {}
+        self.last_call_trace: dict[str, Any] = {}
 
     def generate_product_facts(
         self,
@@ -156,19 +157,20 @@ class FineAiGeminiClient:
         project_id: str | None,
     ) -> dict:
         self.last_call_metadata = {}
-        result = llm_client.invoke_generate(
-            use_case_code,
-            prompt=prompt,
-            system=system,
-            media=media or None,
-            response_schema=schema,
-            max_output_tokens=12288,
-            provider_override=PROVIDER,
-            model_override=MODEL,
-            google_search=google_search,
-            url_context=url_context,
-            project_id=project_id,
-            billing_extra={
+        self.last_call_trace = {}
+        request_payload = {
+            "use_case_code": use_case_code,
+            "prompt": prompt,
+            "system": system,
+            "media": media or None,
+            "response_schema": schema,
+            "max_output_tokens": 12288,
+            "provider_override": PROVIDER,
+            "model_override": MODEL,
+            "google_search": google_search,
+            "url_context": url_context,
+            "project_id": project_id,
+            "billing_extra": {
                 "provider": PROVIDER,
                 "model": MODEL,
                 "thinking_level": thinking_level,
@@ -176,15 +178,56 @@ class FineAiGeminiClient:
                 "url_context": bool(url_context),
                 "tools": tools or [],
             },
-        )
+        }
+        try:
+            result = llm_client.invoke_generate(
+                use_case_code,
+                prompt=prompt,
+                system=system,
+                media=media or None,
+                response_schema=schema,
+                max_output_tokens=12288,
+                provider_override=PROVIDER,
+                model_override=MODEL,
+                google_search=google_search,
+                url_context=url_context,
+                project_id=project_id,
+                billing_extra=request_payload["billing_extra"],
+            )
+        except Exception as exc:
+            self.last_call_trace = _build_call_trace(
+                request_payload=request_payload,
+                result={},
+                parsed_json=None,
+                thinking_level=thinking_level,
+                error=exc,
+            )
+            raise
         self.last_call_metadata = _response_metadata(result, thinking_level=thinking_level)
         payload = result.get("json")
-        if isinstance(payload, dict):
-            return payload
-        raw = result.get("text") or ""
-        parsed = _parse_json_with_repair(raw)
-        if not isinstance(parsed, dict):
-            raise ValueError("Gemini structured JSON response is not an object")
+        try:
+            if isinstance(payload, dict):
+                parsed = payload
+            else:
+                raw = result.get("text") or ""
+                parsed = _parse_json_with_repair(raw)
+            if not isinstance(parsed, dict):
+                raise ValueError("Gemini structured JSON response is not an object")
+        except Exception as exc:
+            self.last_call_trace = _build_call_trace(
+                request_payload=request_payload,
+                result=result,
+                parsed_json=None,
+                thinking_level=thinking_level,
+                error=exc,
+            )
+            raise
+        self.last_call_trace = _build_call_trace(
+            request_payload=request_payload,
+            result=result,
+            parsed_json=parsed,
+            thinking_level=thinking_level,
+        )
         return parsed
 
 
@@ -231,6 +274,85 @@ def _response_metadata(result: dict[str, Any], *, thinking_level: str) -> dict[s
     except Exception:
         log.debug("failed to extract Gemini metadata", exc_info=True)
     return metadata
+
+
+def _build_call_trace(
+    *,
+    request_payload: dict[str, Any],
+    result: dict[str, Any],
+    parsed_json: dict[str, Any] | None,
+    thinking_level: str,
+    error: Exception | None = None,
+) -> dict[str, Any]:
+    usage = result.get("usage") or {}
+    media = request_payload.get("media") or []
+    trace = {
+        "provider": PROVIDER,
+        "model_id": MODEL,
+        "use_case_code": request_payload.get("use_case_code") or "",
+        "project_id": request_payload.get("project_id") or "",
+        "request": {
+            "summary": {
+                "provider": PROVIDER,
+                "model_id": MODEL,
+                "use_case_code": request_payload.get("use_case_code") or "",
+                "project_id": request_payload.get("project_id") or "",
+                "media_count": len(media) if isinstance(media, list) else 1,
+                "google_search": bool(request_payload.get("google_search")),
+                "url_context": bool(request_payload.get("url_context")),
+                "thinking_level": thinking_level,
+                "max_output_tokens": request_payload.get("max_output_tokens"),
+            },
+            "system_prompt": request_payload.get("system") or "",
+            "prompt": request_payload.get("prompt") or "",
+            "payload": _redact_sensitive(_jsonable(request_payload)),
+        },
+        "response": {
+            "summary": {
+                "has_json": isinstance(result.get("json"), dict),
+                "has_text": bool(result.get("text")),
+                "input_tokens": usage.get("input_tokens") or usage.get("prompt_tokens") or "",
+                "output_tokens": usage.get("output_tokens") or usage.get("completion_tokens") or "",
+                "usage_log_id": result.get("usage_log_id") or "",
+            },
+            "parsed_json": _redact_sensitive(_jsonable(parsed_json or {})),
+            "raw_payload": _redact_sensitive(_jsonable(result or {})),
+        },
+    }
+    if error is not None:
+        trace["error"] = {
+            "type": type(error).__name__,
+            "message": str(error)[:1000],
+        }
+        trace["response"]["summary"]["error"] = str(error)[:500]
+    return trace
+
+
+def _redact_sensitive(value: Any) -> Any:
+    sensitive_keys = {
+        "api_key",
+        "apikey",
+        "authorization",
+        "cookie",
+        "secret",
+        "password",
+        "access_token",
+        "refresh_token",
+        "bearer",
+    }
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            key_text = str(key)
+            lowered = key_text.lower()
+            if any(token in lowered for token in sensitive_keys):
+                out[key_text] = "[redacted]"
+            else:
+                out[key_text] = _redact_sensitive(item)
+        return out
+    return value
 
 
 def _extract_grounding(raw: Any) -> dict[str, Any]:
