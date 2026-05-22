@@ -114,6 +114,36 @@ def _item_cover_url(item_id: int, item: dict) -> str | None:
     return None
 
 
+def _positive_int(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _resolve_rework_task_id(item: dict) -> int | None:
+    task_id = _positive_int((item or {}).get("task_id"))
+    if task_id is not None:
+        return task_id
+    product_id = _positive_int((item or {}).get("product_id"))
+    if product_id is None:
+        return None
+    lang = str((item or {}).get("lang") or "en").strip().lower() or "en"
+    if lang == "en":
+        return None
+    try:
+        return tasks_svc.infer_single_child_task_id_for_media_item(product_id, lang)
+    except Exception:
+        log.debug(
+            "infer rework task id failed product_id=%s lang=%s",
+            product_id,
+            lang,
+            exc_info=True,
+        )
+        return None
+
+
 def _quality_check_for_item(item_id: int) -> dict | None:
     try:
         return push_quality_checks.latest_for_item(item_id)
@@ -142,6 +172,9 @@ def _serialize_row(
     status_cache: dict | None = None,
 ) -> dict:
     item_shape = dict(row)
+    rework_task_id = _resolve_rework_task_id(item_shape)
+    if rework_task_id is not None and not item_shape.get("task_id"):
+        item_shape["task_id"] = rework_task_id
     product_shape = {
         "id": row.get("product_id"),
         "name": row.get("product_name"),
@@ -174,7 +207,7 @@ def _serialize_row(
     cover_url = _item_cover_url(item_id, row)
     return {
         "id": item_id,
-        "task_id": row.get("task_id"),
+        "task_id": rework_task_id,
         "product_id": row["product_id"],
         "product_name": row.get("product_name"),
         "product_code": row.get("product_code"),
@@ -339,13 +372,16 @@ def api_reject_to_task(item_id: int):
     item = medias.get_item(item_id)
     if not item:
         return _json_response({"error": "item_not_found"}, 404)
-    task_id = item.get("task_id")
+    linked_task_id = _positive_int(item.get("task_id"))
+    task_id = _resolve_rework_task_id(item)
     if not task_id:
         return _json_response({"error": "task_not_linked"}, 400)
 
     body = request.get_json(silent=True) or {}
     issue_keys = body.get("issue_keys") or body.get("issues") or []
     reason = str(body.get("reason") or "").strip()
+    if linked_task_id is None:
+        medias.update_item_task_id(item_id, int(task_id))
     try:
         result = tasks_svc.reject_child_from_push(
             task_id=int(task_id),
@@ -367,6 +403,10 @@ def api_reject_to_task(item_id: int):
             "reason": reason,
         },
     )
+    try:
+        pushes.refresh_push_status_cache_for_item(item_id)
+    except Exception:
+        log.debug("refresh push status cache failed item_id=%s", item_id, exc_info=True)
     return _json_response(result)
 
 

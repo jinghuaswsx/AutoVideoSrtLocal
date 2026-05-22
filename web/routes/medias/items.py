@@ -8,6 +8,7 @@ from flask import abort, request
 from flask_login import current_user, login_required
 
 from appcore import medias, object_keys
+from appcore import tasks as tasks_svc
 
 from . import bp
 from ._helpers import _parse_lang
@@ -133,6 +134,16 @@ def _build_item_thumbnail(item_id: int, pid: int, filename: str, object_key: str
     )
 
 
+def _resolve_item_upload_task_id(raw_task_id, *, product_id: int, lang: str, actor_user_id: int):
+    return tasks_svc.resolve_child_task_for_media_item_upload(
+        task_id=raw_task_id,
+        product_id=product_id,
+        lang=lang,
+        actor_user_id=actor_user_id,
+        is_admin=bool(getattr(current_user, "is_admin", False)),
+    )
+
+
 def _build_item_complete_response(pid: int, product: dict, body: dict):
     return _build_item_complete_response_impl(
         current_user.id,
@@ -143,6 +154,7 @@ def _build_item_complete_response(pid: int, product: dict, body: dict):
         parse_lang_fn=_parse_lang,
         validate_upload_filename_fn=_validate_item_upload_filename,
         is_media_available_fn=_is_media_available,
+        resolve_task_id_fn=_resolve_item_upload_task_id,
         create_item_fn=medias.create_item,
         cache_item_cover_fn=_cache_item_cover_object,
         build_item_thumbnail_fn=_build_item_thumbnail,

@@ -116,6 +116,7 @@ def build_item_complete_response(
     cache_item_cover_fn: Callable[[int, int, str], None],
     build_item_thumbnail_fn: Callable[[int, int, str, str], None],
     schedule_material_evaluation_fn: Callable[[int], object],
+    resolve_task_id_fn: Callable[..., int | None] | None = None,
     create_item_fn: Callable[..., int] = medias.create_item,
 ) -> MediaItemResponse:
     if is_product_listed_fn is not None and not is_product_listed_fn(product):
@@ -149,14 +150,39 @@ def build_item_complete_response(
     if cover_object_key and not is_media_available_fn(cover_object_key):
         cover_object_key = None
 
+    resolved_task_id = None
+    raw_task_id = body.get("task_id")
+    if raw_task_id is not None and str(raw_task_id).strip():
+        if resolve_task_id_fn is None:
+            return MediaItemResponse({"error": "task_resolver_missing"}, 400)
+        try:
+            resolved_task_id = resolve_task_id_fn(
+                raw_task_id,
+                product_id=product_id,
+                lang=lang,
+                actor_user_id=user_id,
+            )
+        except PermissionError as exc:
+            return MediaItemResponse({"error": "task_forbidden", "message": str(exc)}, 403)
+        except ValueError as exc:
+            return MediaItemResponse({"error": "task_invalid", "message": str(exc)}, 400)
+        except RuntimeError as exc:
+            return MediaItemResponse({"error": "task_state_error", "message": str(exc)}, 409)
+
+    create_kwargs = {
+        "file_size": file_size or None,
+        "cover_object_key": cover_object_key,
+        "lang": lang,
+    }
+    if resolved_task_id is not None:
+        create_kwargs["task_id"] = int(resolved_task_id)
+
     item_id = create_item_fn(
         product_id,
         user_id,
         filename,
         object_key,
-        file_size=file_size or None,
-        cover_object_key=cover_object_key,
-        lang=lang,
+        **create_kwargs,
     )
 
     if cover_object_key:

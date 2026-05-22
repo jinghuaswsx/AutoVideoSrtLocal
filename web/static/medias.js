@@ -9,6 +9,11 @@
     return window.MEDIAS_PRODUCT_DETAIL || null;
   }
 
+  function currentTaskBridgeId() {
+    const taskId = Number(window.MEDIAS_TASK_BRIDGE_TASK_ID || 0);
+    return Number.isFinite(taskId) && taskId > 0 ? taskId : null;
+  }
+
   function productDetailInitialLang() {
     const cfg = productDetailConfig() || {};
     const lang = String(cfg.initialLang || '').trim().toLowerCase();
@@ -3597,6 +3602,7 @@
           file_size: file.size,
           cover_object_key: state.pendingItemCover || null,
           lang,
+          task_id: currentTaskBridgeId(),
           skip_validation: true,
         }),
       });
@@ -6450,6 +6456,7 @@
           file_size: file.size,
           cover_object_key: edState.pendingItemCover,
           lang,
+          task_id: currentTaskBridgeId(),
         }),
       });
       row.className = 'oc-upload-row ok';

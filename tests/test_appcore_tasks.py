@@ -38,6 +38,83 @@ def test_find_target_lang_item_normalizes_country_code(monkeypatch):
     assert calls[0] == (7, "de")
 
 
+def test_infer_single_child_task_id_for_media_item_returns_unique_active_child(monkeypatch):
+    captured = {}
+
+    def fake_query_all(sql, args):
+        captured["args"] = args
+        return [{"id": 30}]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.infer_single_child_task_id_for_media_item(599, " DE ") == 30
+    assert captured["args"] == (
+        599,
+        "de",
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_DONE,
+    )
+
+
+def test_infer_single_child_task_id_for_media_item_ignores_ambiguous_matches(monkeypatch):
+    monkeypatch.setattr(
+        tasks,
+        "query_all",
+        lambda sql, args: [{"id": 30}, {"id": 31}],
+    )
+
+    assert tasks.infer_single_child_task_id_for_media_item(599, "de") is None
+
+
+def test_resolve_child_task_for_media_item_upload_accepts_matching_assignee(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["args"] = args
+        return {
+            "id": 30,
+            "assignee_id": 77,
+            "status": tasks.CHILD_DONE,
+            "media_product_id": 599,
+            "country_code": "DE",
+        }
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+
+    assert tasks.resolve_child_task_for_media_item_upload(
+        task_id="30",
+        product_id=599,
+        lang="de",
+        actor_user_id=77,
+        is_admin=False,
+    ) == 30
+    assert captured["args"] == (30,)
+
+
+def test_resolve_child_task_for_media_item_upload_rejects_other_assignee(monkeypatch):
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args: {
+            "id": 30,
+            "assignee_id": 77,
+            "status": tasks.CHILD_DONE,
+            "media_product_id": 599,
+            "country_code": "DE",
+        },
+    )
+
+    with pytest.raises(PermissionError):
+        tasks.resolve_child_task_for_media_item_upload(
+            task_id=30,
+            product_id=599,
+            lang="de",
+            actor_user_id=88,
+            is_admin=False,
+        )
+
+
 def test_import_and_create_task_passes_product_link_warnings(monkeypatch):
     captured = {}
     warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]

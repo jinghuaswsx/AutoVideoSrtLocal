@@ -62,6 +62,13 @@ def test_translate_modal_payload_carries_task_center_child_id():
     assert "task_center_task_id" in source
 
 
+def test_medias_item_upload_payload_carries_task_center_child_id():
+    source = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function currentTaskBridgeId()" in source
+    assert source.count("task_id: currentTaskBridgeId()") == 2
+
+
 def test_bulk_translate_task_views_use_language_labels_with_codes():
     list_source = (ROOT / "web" / "templates" / "bulk_translate_list.html").read_text(encoding="utf-8")
     detail_source = (ROOT / "web" / "static" / "bulk_translate_detail.js").read_text(encoding="utf-8")

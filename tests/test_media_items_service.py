@@ -352,6 +352,68 @@ def test_build_item_complete_response_creates_item_and_runs_best_effort_side_eff
     ]
 
 
+def test_build_item_complete_response_carries_task_center_task_id_to_created_item():
+    from web.services.media_items import (
+        ItemUploadValidation,
+        build_item_complete_response,
+    )
+
+    captured = {}
+
+    def resolve_task_id(raw_task_id, *, product_id, lang, actor_user_id):
+        captured["resolved"] = {
+            "raw_task_id": raw_task_id,
+            "product_id": product_id,
+            "lang": lang,
+            "actor_user_id": actor_user_id,
+        }
+        return 30
+
+    def create_item(pid, user_id, filename, object_key, **kwargs):
+        captured["created"] = {
+            "pid": pid,
+            "user_id": user_id,
+            "filename": filename,
+            "object_key": object_key,
+            "kwargs": kwargs,
+        }
+        return 1364
+
+    result = build_item_complete_response(
+        77,
+        599,
+        {"id": 599, "name": "Fast Paced Bouncing Battle"},
+        {
+            "object_key": "77/medias/599/video-de.mp4",
+            "filename": "video-de.mp4",
+            "file_size": 321,
+            "lang": "de",
+            "task_id": "30",
+        },
+        parse_lang_fn=lambda body: (body["lang"], None),
+        validate_upload_filename_fn=lambda filename, product, lang, **kwargs: ItemUploadValidation(
+            ok=True,
+            effective_lang="de",
+        ),
+        is_media_available_fn=lambda object_key: True,
+        resolve_task_id_fn=resolve_task_id,
+        create_item_fn=create_item,
+        cache_item_cover_fn=lambda *args: None,
+        build_item_thumbnail_fn=lambda *args: None,
+        schedule_material_evaluation_fn=lambda pid: None,
+    )
+
+    assert result.status_code == 201
+    assert result.payload == {"id": 1364}
+    assert captured["resolved"] == {
+        "raw_task_id": "30",
+        "product_id": 599,
+        "lang": "de",
+        "actor_user_id": 77,
+    }
+    assert captured["created"]["kwargs"]["task_id"] == 30
+
+
 def test_build_item_complete_response_rejects_unlisted_product_before_parsing():
     from web.services.media_items import build_item_complete_response
 

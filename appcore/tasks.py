@@ -195,6 +195,65 @@ def _positive_int(value: Any) -> int | None:
     return number if number > 0 else None
 
 
+def infer_single_child_task_id_for_media_item(product_id: int, lang: str) -> int | None:
+    product_id_int = _positive_int(product_id)
+    lang_norm = str(lang or "").strip().lower()
+    if not product_id_int or not lang_norm:
+        return None
+    rows = query_all(
+        "SELECT id FROM tasks "
+        "WHERE media_product_id=%s "
+        "AND LOWER(TRIM(COALESCE(country_code, '')))=%s "
+        "AND parent_task_id IS NOT NULL "
+        "AND status IN (%s,%s,%s) "
+        "ORDER BY id DESC",
+        (product_id_int, lang_norm, CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE),
+    )
+    task_ids = []
+    for row in rows or []:
+        task_id = _positive_int((row or {}).get("id"))
+        if task_id is not None and task_id not in task_ids:
+            task_ids.append(task_id)
+    return task_ids[0] if len(task_ids) == 1 else None
+
+
+def resolve_child_task_for_media_item_upload(
+    *,
+    task_id: int,
+    product_id: int,
+    lang: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> int:
+    task_id_int = _positive_int(task_id)
+    product_id_int = _positive_int(product_id)
+    lang_norm = str(lang or "").strip().lower()
+    if not task_id_int:
+        raise ValueError("task_id invalid")
+    if not product_id_int:
+        raise ValueError("product_id invalid")
+    if not lang_norm:
+        raise ValueError("lang invalid")
+
+    row = query_one(
+        "SELECT id, assignee_id, status, media_product_id, country_code "
+        "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+        (task_id_int,),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if int(row.get("media_product_id") or 0) != product_id_int:
+        raise StateError("child task product mismatch")
+    task_lang = str(row.get("country_code") or "").strip().lower()
+    if task_lang != lang_norm:
+        raise StateError("child task language mismatch")
+    if row.get("status") not in (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE):
+        raise StateError("child task not accepting output")
+    if not is_admin and int(row.get("assignee_id") or 0) != int(actor_user_id):
+        raise PermissionError("forbidden")
+    return task_id_int
+
+
 def _payload_user_ids(payload: dict) -> set[int]:
     ids: set[int] = set()
     for key in ("translator_id", "assignee_id", "old", "new"):

@@ -155,6 +155,72 @@ def test_pushes_api_items_list_does_not_load_quality_check(authed_client_no_db, 
     assert "quality_check" not in item
 
 
+def test_pushes_api_items_infers_task_id_for_unbound_task_center_video(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 1364,
+        "product_id": 599,
+        "product_name": "Fast Paced Bouncing Battle",
+        "product_code": "fast-paced-bouncing-battle-rjc",
+        "mk_id": 3579,
+        "localized_links_json": {},
+        "task_id": None,
+        "lang": "de",
+        "filename": "2026.04.09-demo-de.mp4",
+        "display_name": "2026.04.09-demo-de.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/demo.jpg",
+        "object_key": "videos/demo.mp4",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    _stub_push_list_context(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product, **kwargs: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status_from_readiness",
+        lambda item, product, readiness, **kwargs: "pending",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_product_page_url",
+        lambda lang, product: "https://example.com/de/products/fast-paced-bouncing-battle-rjc",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: 30,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.get(
+        "/pushes/api/items?status=pending&product=fast-paced-bouncing-battle-rjc&page=1",
+    )
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["id"] == 1364
+    assert item["task_id"] == 30
+
+
 def test_pushes_api_items_reuses_readiness_for_status(authed_client_no_db, monkeypatch):
     row = {
         "id": 102,
@@ -1675,7 +1741,7 @@ def test_push_product_links_from_pushes_modal_success(
 def test_push_rework_reject_delegates_to_task_service(
     authed_client_no_db, monkeypatch,
 ):
-    captured = {}
+    captured = {"refreshes": []}
 
     monkeypatch.setattr(
         "web.routes.pushes.medias.get_item",
@@ -1701,6 +1767,10 @@ def test_push_rework_reject_delegates_to_task_service(
         "web.routes.pushes.system_audit.record_from_request",
         fake_audit,
     )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.refresh_push_status_cache_for_item",
+        lambda item_id: captured["refreshes"].append(item_id),
+    )
 
     resp = authed_client_no_db.post(
         "/pushes/api/items/905/reject-to-task",
@@ -1721,6 +1791,7 @@ def test_push_rework_reject_delegates_to_task_service(
     assert captured["audit"]["action"] == "push_rework_rejected"
     assert captured["audit"]["target_id"] == 905
     assert captured["audit"]["detail"]["issue_keys"] == ["has_object", "has_push_texts"]
+    assert captured["refreshes"] == [905]
 
 
 def test_push_rework_reject_requires_task_link(
@@ -1729,6 +1800,11 @@ def test_push_rework_reject_requires_task_link(
     monkeypatch.setattr(
         "web.routes.pushes.medias.get_item",
         lambda item_id: {"id": item_id, "product_id": 318, "task_id": None},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: None,
+        raising=False,
     )
 
     resp = authed_client_no_db.post(
@@ -1741,6 +1817,72 @@ def test_push_rework_reject_requires_task_link(
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "task_not_linked"
+
+
+def test_push_rework_reject_infers_unbound_task_and_binds_item(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {"updates": [], "refreshes": []}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 599,
+            "task_id": None,
+            "lang": "de",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: 30,
+        raising=False,
+    )
+
+    def fake_reject_child_from_push(**kwargs):
+        captured["service"] = kwargs
+        return {
+            "task_id": kwargs["task_id"],
+            "status": "assigned",
+            "issue_keys": kwargs["issue_keys"],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.reject_child_from_push",
+        fake_reject_child_from_push,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.refresh_push_status_cache_for_item",
+        lambda item_id: captured["refreshes"].append(item_id),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.system_audit.record_from_request",
+        lambda **kwargs: captured.setdefault("audit", kwargs),
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1364/reject-to-task",
+        json={
+            "issue_keys": ["has_object"],
+            "reason": "任务中心产出的视频不符合要求，需要负责人重新处理",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["task_id"] == 30
+    assert captured["service"] == {
+        "task_id": 30,
+        "actor_user_id": 1,
+        "issue_keys": ["has_object"],
+        "reason": "任务中心产出的视频不符合要求，需要负责人重新处理",
+    }
+    assert captured["updates"] == [(1364, 30)]
+    assert captured["refreshes"] == [1364]
+    assert captured["audit"]["detail"]["task_id"] == 30
 
 
 def test_push_rework_reject_requires_admin(
