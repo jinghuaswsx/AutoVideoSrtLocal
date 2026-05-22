@@ -1182,7 +1182,11 @@
       disabled: !item.task_id,
       title: item.task_id ? '' : '这条素材没有关联任务，不能打回重做',
     }, '打回重做');
-    const btnPush = el('button', { type: 'button', class: 'btn-push', disabled: true }, '推送');
+    const btnPush = el('button', {
+      type: 'button',
+      class: 'btn-push btn-modal-material-push',
+      disabled: true,
+    }, '推送');
     footer.appendChild(btnRework);
     footer.appendChild(btnPush);
     mainPanel.appendChild(footer);
