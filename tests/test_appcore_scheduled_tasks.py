@@ -533,6 +533,19 @@ def test_task_definitions_include_push_quality_check():
     assert task["log_table"] == "scheduled_task_runs"
 
 
+def test_task_definitions_include_push_status_cache_refresh():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["push_status_cache_refresh"]
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "push_status_cache_refresh"
+    assert task["runner"] == "appcore.push_status_cache_scheduler.tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-22-pushes-status-cache-design.md" in task["description"]
+
+
 def test_task_definitions_include_apimart_balance_watchdog():
     from appcore import scheduled_tasks
 

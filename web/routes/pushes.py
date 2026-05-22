@@ -122,7 +122,12 @@ def _compute_readiness_for_list(
         return pushes.compute_readiness(item_shape, product_shape)
 
 
-def _serialize_row(row: dict, *, context: dict | None = None) -> dict:
+def _serialize_row(
+    row: dict,
+    *,
+    context: dict | None = None,
+    status_cache: dict | None = None,
+) -> dict:
     item_shape = dict(row)
     product_shape = {
         "id": row.get("product_id"),
@@ -139,13 +144,19 @@ def _serialize_row(row: dict, *, context: dict | None = None) -> dict:
         "ai_evaluation_detail": row.get("ai_evaluation_detail"),
         "listing_status": row.get("listing_status"),
     }
-    readiness = _compute_readiness_for_list(item_shape, product_shape, context)
-    status = pushes.compute_status_from_readiness(
-        item_shape,
-        product_shape,
-        readiness,
-        context=context,
-    )
+    cached_readiness = (status_cache or {}).get("readiness")
+    cached_status = (status_cache or {}).get("status")
+    if isinstance(cached_readiness, dict) and cached_status:
+        readiness = dict(cached_readiness)
+        status = str(cached_status)
+    else:
+        readiness = _compute_readiness_for_list(item_shape, product_shape, context)
+        status = pushes.compute_status_from_readiness(
+            item_shape,
+            product_shape,
+            readiness,
+            context=context,
+        )
     item_id = row["id"]
     cover_url = _item_cover_url(item_id, row)
     return {
@@ -221,8 +232,19 @@ def api_list():
         offset=0,
         limit=None,
     )
-    context = pushes.build_push_list_context(rows)
-    items = [_serialize_row(r, context=context) for r in rows]
+    status_cache_by_item_id = pushes.status_cache_for_rows(rows)
+    missing_cache_rows = [
+        r for r in rows if not status_cache_by_item_id.get(int(r.get("id") or 0))
+    ]
+    context = pushes.build_push_list_context(missing_cache_rows) if missing_cache_rows else None
+    items = [
+        _serialize_row(
+            r,
+            context=context,
+            status_cache=status_cache_by_item_id.get(int(r.get("id") or 0)),
+        )
+        for r in rows
+    ]
     if status_filter:
         valid = [s for s in status_filter if s in _VALID_STATUS_FILTERS]
         if valid:

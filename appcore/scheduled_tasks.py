@@ -276,6 +276,22 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "push_status_cache_refresh": {
+        "code": "push_status_cache_refresh",
+        "name": "推送状态缓存刷新",
+        "description": (
+            "每 2 分钟刷新推送管理列表的 status/readiness 缓存表，"
+            "列表接口优先读取 media_push_status_cache。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-22-pushes-status-cache-design.md"
+        ),
+        "schedule": "每 2 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "push_status_cache_refresh",
+        "runner": "appcore.push_status_cache_scheduler.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "apimart_balance_watchdog": {
         "code": "apimart_balance_watchdog",
         "name": "APIMART 余额看护",

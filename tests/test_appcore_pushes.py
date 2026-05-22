@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta
 
 import pytest
 from appcore import medias, pushes
@@ -337,6 +338,179 @@ def test_build_push_list_context_prefetches_status_inputs(monkeypatch):
     assert context["failed_latest_push_ids"] == {5}
     assert context["rework_readiness_by_task_id"] == {99: {"has_cover"}}
     assert len(calls) == 5
+
+
+def test_refresh_push_status_cache_rows_upserts_computed_entries(monkeypatch):
+    row = {
+        "id": 77,
+        "product_id": 7,
+        "task_id": 99,
+        "lang": "de",
+        "pushed_at": None,
+        "latest_push_id": None,
+        "skip_push": 0,
+        "product_name": "Demo",
+        "product_code": "demo-rjc",
+        "ad_supported_langs": "de",
+        "listing_status": "上架",
+    }
+    context = {"copywriting_langs": {(7, "de")}}
+    readiness = {
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "lang_supported": True,
+        "has_push_texts": True,
+        "shopify_image_confirmed": True,
+    }
+    upserts = []
+
+    monkeypatch.setattr(pushes, "build_push_list_context", lambda rows: context)
+    monkeypatch.setattr(pushes, "compute_readiness", lambda item, product, **kwargs: readiness)
+    monkeypatch.setattr(
+        pushes,
+        "compute_status_from_readiness",
+        lambda item, product, provided, **kwargs: "pending",
+    )
+    monkeypatch.setattr(pushes, "_upsert_push_status_cache_entries", lambda entries: upserts.extend(entries))
+
+    cache_map = pushes.refresh_push_status_cache_rows([row])
+
+    assert set(cache_map) == {77}
+    assert cache_map[77]["status"] == "pending"
+    assert cache_map[77]["readiness"] is readiness
+    assert len(upserts) == 1
+    entry = upserts[0]
+    assert entry["item_id"] == 77
+    assert entry["product_id"] == 7
+    assert entry["task_id"] == 99
+    assert entry["lang"] == "de"
+    assert entry["status"] == "pending"
+    assert entry["readiness"] is readiness
+
+
+def test_status_cache_for_rows_uses_fresh_cache_without_recompute(monkeypatch):
+    now = datetime.now()
+    cached = {
+        77: {
+            "item_id": 77,
+            "status": "pending",
+            "readiness": {"has_object": True},
+            "computed_at": now,
+        }
+    }
+
+    monkeypatch.setattr(pushes, "get_push_status_cache_map", lambda item_ids: cached)
+    monkeypatch.setattr(
+        pushes,
+        "refresh_push_status_cache_rows",
+        lambda rows: (_ for _ in ()).throw(AssertionError("fresh cache should not refresh")),
+    )
+
+    result = pushes.status_cache_for_rows(
+        [{"id": 77, "product_id": 7}],
+        max_age_seconds=300,
+    )
+
+    assert result == cached
+
+
+def test_status_cache_for_rows_refreshes_missing_and_stale_rows(monkeypatch):
+    now = datetime.now()
+    rows = [
+        {"id": 77, "product_id": 7},
+        {"id": 78, "product_id": 8},
+    ]
+    refreshed = {
+        77: {
+            "item_id": 77,
+            "status": "pending",
+            "readiness": {"has_object": True},
+            "computed_at": now,
+        },
+        78: {
+            "item_id": 78,
+            "status": "not_ready",
+            "readiness": {"has_object": False},
+            "computed_at": now,
+        },
+    }
+
+    monkeypatch.setattr(
+        pushes,
+        "get_push_status_cache_map",
+        lambda item_ids: {
+            77: {
+                "item_id": 77,
+                "status": "pending",
+                "readiness": {"old": True},
+                "computed_at": now - timedelta(seconds=301),
+            }
+        },
+    )
+    monkeypatch.setattr(
+        pushes,
+        "refresh_push_status_cache_rows",
+        lambda stale_rows: {int(row["id"]): refreshed[int(row["id"])] for row in stale_rows},
+    )
+
+    result = pushes.status_cache_for_rows(rows, max_age_seconds=300)
+
+    assert result == refreshed
+
+
+def test_refresh_push_status_cache_for_item_refreshes_single_joined_row(monkeypatch):
+    row = {"id": 77, "product_id": 7, "lang": "de"}
+    seen = {}
+
+    def fake_refresh(rows):
+        seen["rows"] = rows
+        return {77: {"status": "pending"}}
+
+    monkeypatch.setattr(pushes, "_get_push_row_for_status_cache", lambda item_id: row)
+    monkeypatch.setattr(pushes, "refresh_push_status_cache_rows", fake_refresh)
+
+    result = pushes.refresh_push_status_cache_for_item(77)
+
+    assert seen["rows"] == [row]
+    assert result == {77: {"status": "pending"}}
+
+
+def test_push_state_writes_refresh_status_cache_for_item(monkeypatch):
+    executed = []
+    refreshed = []
+
+    def fake_execute(sql, args=()):
+        executed.append((sql, args))
+        return 123 if sql.startswith("INSERT INTO media_push_logs") else 1
+
+    monkeypatch.setattr(pushes, "execute", fake_execute)
+    monkeypatch.setattr(
+        pushes,
+        "_refresh_push_status_cache_for_item_safely",
+        lambda item_id: refreshed.append(item_id),
+    )
+
+    log_id = pushes.record_push_success(
+        item_id=77,
+        operator_user_id=1,
+        payload={"ok": True},
+        response_body="ok",
+    )
+    pushes.record_push_failure(
+        item_id=78,
+        operator_user_id=1,
+        payload={"ok": False},
+        error_message="timeout",
+        response_body=None,
+    )
+    pushes.reset_push_state(79)
+    pushes.mark_skip_push(80, 1)
+    pushes.unmark_skip_push(81)
+
+    assert log_id == 123
+    assert refreshed == [77, 78, 79, 80, 81]
+    assert len(executed) == 7
 
 
 import requests

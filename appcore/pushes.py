@@ -6,13 +6,14 @@ import json
 import logging
 import re
 import urllib.parse
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
 import config
 from appcore import medias, product_link_domains, settings as system_settings, shopify_image_tasks
-from appcore.db import query, query_one, execute
+from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
 
@@ -659,6 +660,254 @@ def compute_status(
     if readiness is None:
         readiness = compute_readiness(item, product, context=context)
     return compute_status_from_readiness(item, product, readiness, context=context)
+
+
+PUSH_STATUS_CACHE_VERSION = 1
+PUSH_STATUS_CACHE_MAX_AGE_SECONDS = 300
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _push_product_shape_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row.get("product_id"),
+        "name": row.get("product_name"),
+        "product_code": row.get("product_code"),
+        "localized_links_json": row.get("localized_links_json"),
+        "ad_supported_langs": row.get("ad_supported_langs"),
+        "shopify_image_status_json": row.get("shopify_image_status_json"),
+        "selling_points": row.get("selling_points"),
+        "importance": row.get("importance"),
+        "remark": row.get("remark"),
+        "ai_score": row.get("ai_score"),
+        "ai_evaluation_result": row.get("ai_evaluation_result"),
+        "ai_evaluation_detail": row.get("ai_evaluation_detail"),
+        "listing_status": row.get("listing_status"),
+    }
+
+
+def _status_cache_entry_from_row(
+    row: dict[str, Any],
+    *,
+    context: dict[str, Any] | None = None,
+    computed_at: datetime | None = None,
+) -> dict[str, Any]:
+    item = dict(row)
+    product = _push_product_shape_from_row(row)
+    readiness = compute_readiness(item, product, context=context)
+    status = compute_status_from_readiness(item, product, readiness, context=context)
+    return {
+        "item_id": _safe_int(row.get("id")),
+        "product_id": _safe_int(row.get("product_id")) or None,
+        "task_id": _safe_int(row.get("task_id")) or None,
+        "lang": str(row.get("lang") or "en").strip().lower() or "en",
+        "latest_push_id": _safe_int(row.get("latest_push_id")) or None,
+        "pushed_at": row.get("pushed_at"),
+        "skip_push": 1 if row.get("skip_push") else 0,
+        "status": status,
+        "readiness": readiness,
+        "computed_at": computed_at or datetime.now(),
+    }
+
+
+def _upsert_push_status_cache_entries(entries: list[dict[str, Any]]) -> int:
+    if not entries:
+        return 0
+    sql = (
+        "INSERT INTO media_push_status_cache "
+        "(item_id, product_id, task_id, lang, latest_push_id, pushed_at, skip_push, "
+        "status, readiness_json, cache_version, computed_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE "
+        "product_id=VALUES(product_id), "
+        "task_id=VALUES(task_id), "
+        "lang=VALUES(lang), "
+        "latest_push_id=VALUES(latest_push_id), "
+        "pushed_at=VALUES(pushed_at), "
+        "skip_push=VALUES(skip_push), "
+        "status=VALUES(status), "
+        "readiness_json=VALUES(readiness_json), "
+        "cache_version=VALUES(cache_version), "
+        "computed_at=VALUES(computed_at)"
+    )
+    params = []
+    for entry in entries:
+        params.append(
+            (
+                entry["item_id"],
+                entry.get("product_id"),
+                entry.get("task_id"),
+                entry.get("lang") or "en",
+                entry.get("latest_push_id"),
+                entry.get("pushed_at"),
+                1 if entry.get("skip_push") else 0,
+                entry["status"],
+                json.dumps(entry.get("readiness") or {}, ensure_ascii=False, default=str),
+                PUSH_STATUS_CACHE_VERSION,
+                entry.get("computed_at") or datetime.now(),
+            )
+        )
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.executemany(sql, params)
+            return cur.rowcount
+    finally:
+        conn.close()
+
+
+def _parse_status_cache_readiness(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) -> dict[int, dict[str, Any]]:
+    ids = sorted({_safe_int(item_id) for item_id in item_ids if _safe_int(item_id)})
+    if not ids:
+        return {}
+    rows = query(
+        "SELECT item_id, status, readiness_json, computed_at "
+        f"FROM media_push_status_cache WHERE item_id IN ({_placeholders(ids)})",
+        tuple(ids),
+    )
+    result: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        item_id = _safe_int(row.get("item_id"))
+        if not item_id:
+            continue
+        readiness = _parse_status_cache_readiness(row.get("readiness_json"))
+        status = str(row.get("status") or "").strip()
+        if not status or not readiness:
+            continue
+        result[item_id] = {
+            "item_id": item_id,
+            "status": status,
+            "readiness": readiness,
+            "computed_at": row.get("computed_at"),
+        }
+    return result
+
+
+def refresh_push_status_cache_rows(rows: list[dict] | tuple[dict, ...]) -> dict[int, dict[str, Any]]:
+    rows = list(rows or [])
+    if not rows:
+        return {}
+    context = build_push_list_context(rows)
+    computed_at = datetime.now()
+    entries = [
+        _status_cache_entry_from_row(row, context=context, computed_at=computed_at)
+        for row in rows
+        if _safe_int(row.get("id"))
+    ]
+    _upsert_push_status_cache_entries(entries)
+    return {
+        int(entry["item_id"]): {
+            "item_id": int(entry["item_id"]),
+            "status": entry["status"],
+            "readiness": entry["readiness"],
+            "computed_at": entry["computed_at"],
+        }
+        for entry in entries
+    }
+
+
+def _cache_entry_is_stale(entry: dict[str, Any] | None, *, max_age_seconds: int | None) -> bool:
+    if not entry:
+        return True
+    if not entry.get("status") or not entry.get("readiness"):
+        return True
+    if max_age_seconds is None:
+        return False
+    computed_at = entry.get("computed_at")
+    if not isinstance(computed_at, datetime):
+        return True
+    return computed_at < datetime.now() - timedelta(seconds=max(1, int(max_age_seconds)))
+
+
+def status_cache_for_rows(
+    rows: list[dict] | tuple[dict, ...],
+    *,
+    max_age_seconds: int | None = PUSH_STATUS_CACHE_MAX_AGE_SECONDS,
+) -> dict[int, dict[str, Any]]:
+    rows = list(rows or [])
+    if not rows:
+        return {}
+    row_by_id = {_safe_int(row.get("id")): row for row in rows if _safe_int(row.get("id"))}
+    try:
+        cached = get_push_status_cache_map(row_by_id.keys())
+    except Exception:
+        log.debug("load push status cache failed; falling back to dynamic status", exc_info=True)
+        cached = {}
+    stale_rows = [
+        row
+        for item_id, row in row_by_id.items()
+        if _cache_entry_is_stale(cached.get(item_id), max_age_seconds=max_age_seconds)
+    ]
+    if stale_rows:
+        try:
+            cached.update(refresh_push_status_cache_rows(stale_rows))
+        except Exception:
+            log.debug("refresh push status cache rows failed; using dynamic fallback", exc_info=True)
+    return cached
+
+
+def refresh_push_status_cache(limit: int | None = None) -> dict[str, Any]:
+    safe_limit = max(1, int(limit)) if limit is not None else None
+    rows, _total = list_items_for_push(limit=safe_limit)
+    cache_map = refresh_push_status_cache_rows(rows)
+    status_counts: dict[str, int] = {}
+    for entry in cache_map.values():
+        status = str(entry.get("status") or "")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    return {
+        "scanned": len(rows or []),
+        "refreshed": len(cache_map),
+        "status_counts": status_counts,
+    }
+
+
+def _get_push_row_for_status_cache(item_id: int) -> dict | None:
+    owner_name_expr = medias._media_product_owner_name_expr()
+    return query_one(
+        f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
+        f"       p.localized_links_json, p.ad_supported_langs, "
+        f"       p.shopify_image_status_json, "
+        f"       p.selling_points, p.importance, "
+        f"       p.remark, p.ai_score, p.ai_evaluation_result, "
+        f"       p.ai_evaluation_detail, p.listing_status, "
+        f"       {owner_name_expr} AS owner_name "
+        f"FROM media_items i "
+        f"JOIN media_products p ON p.id = i.product_id "
+        f"LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE i.id=%s AND i.deleted_at IS NULL AND p.deleted_at IS NULL",
+        (_safe_int(item_id),),
+    )
+
+
+def refresh_push_status_cache_for_item(item_id: int) -> dict[int, dict[str, Any]]:
+    row = _get_push_row_for_status_cache(item_id)
+    if not row:
+        return {}
+    return refresh_push_status_cache_rows([row])
+
+
+def _refresh_push_status_cache_for_item_safely(item_id: int) -> None:
+    try:
+        refresh_push_status_cache_for_item(item_id)
+    except Exception:
+        log.debug("refresh push status cache failed item_id=%s", item_id, exc_info=True)
 
 
 # ---------- 链接模板与探活 ----------
@@ -1368,6 +1617,7 @@ def record_push_success(item_id: int, operator_user_id: int,
         "UPDATE media_items SET pushed_at=NOW(), latest_push_id=%s WHERE id=%s",
         (log_id, item_id),
     )
+    _refresh_push_status_cache_for_item_safely(item_id)
     return log_id
 
 
@@ -1385,6 +1635,7 @@ def record_push_failure(item_id: int, operator_user_id: int,
         "UPDATE media_items SET latest_push_id=%s WHERE id=%s",
         (log_id, item_id),
     )
+    _refresh_push_status_cache_for_item_safely(item_id)
     return log_id
 
 
@@ -1393,6 +1644,7 @@ def reset_push_state(item_id: int) -> None:
         "UPDATE media_items SET pushed_at=NULL, latest_push_id=NULL WHERE id=%s",
         (item_id,),
     )
+    _refresh_push_status_cache_for_item_safely(item_id)
 
 
 def mark_skip_push(item_id: int, operator_user_id: int | None) -> None:
@@ -1404,6 +1656,7 @@ def mark_skip_push(item_id: int, operator_user_id: int | None) -> None:
         "WHERE id=%s AND pushed_at IS NULL",
         (operator_user_id, item_id),
     )
+    _refresh_push_status_cache_for_item_safely(item_id)
 
 
 def unmark_skip_push(item_id: int) -> None:
@@ -1414,6 +1667,7 @@ def unmark_skip_push(item_id: int) -> None:
         "WHERE id=%s",
         (item_id,),
     )
+    _refresh_push_status_cache_for_item_safely(item_id)
 
 
 def list_item_logs(item_id: int, limit: int = 50) -> list[dict]:
