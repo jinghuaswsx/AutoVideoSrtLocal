@@ -90,3 +90,17 @@ def test_fine_ai_modal_has_standalone_page_button_and_status_mapping():
     assert "mkiFineAiRefreshDetailButton(context)" in body
     assert "function mkiFineAiEffectiveStatus" in body
     assert "completed_steps > 0" in body
+
+
+def test_fine_ai_standalone_failed_step_cards_can_confirm_and_rerun_country():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "function canRerunStep" in script
+    assert "data-fine-ai-step-rerun" in script
+    assert "window.confirm" in script
+    assert "markCountryStepRunning(code)" in script
+    assert "正在重新请求 AI 评估" in script
+    assert "config.rerun_url_template" in script
+    assert "mki-fine-ai-step-actions" in template
+    assert "mki-fine-ai-step-rerun" in template

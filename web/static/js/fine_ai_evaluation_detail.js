@@ -126,6 +126,53 @@
       </div>`).join('')}</div>`;
   }
 
+  function countryCodeFromStep(step) {
+    const match = String((step || {}).key || '').match(/^country_([A-Z]{2})$/i);
+    return match ? match[1].toUpperCase() : '';
+  }
+
+  function canRerunStep(step, stepStatus, runStatus) {
+    return Boolean(
+      config.rerun_url_template
+      && countryCodeFromStep(step)
+      && String(stepStatus || '').toLowerCase() === 'failed'
+      && terminalStatuses.includes(String(runStatus || '').toLowerCase())
+    );
+  }
+
+  function renderStepRerunButton(step, stepStatus, runStatus) {
+    if (!canRerunStep(step, stepStatus, runStatus)) return '';
+    const code = countryCodeFromStep(step);
+    return `<button type="button"
+        class="fine-ai-btn mki-fine-ai-step-rerun"
+        data-fine-ai-rerun="${escapeHtml(code)}"
+        data-fine-ai-step-rerun="${escapeHtml(step.key || '')}"
+        title="${escapeHtml(`重新请求 ${code} 的 AI 评估`)}">重跑AI评估</button>`;
+  }
+
+  function markCountryStepRunning(code) {
+    const normalized = String(code || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(normalized)) return;
+    const card = body.querySelector(`[data-fine-ai-step="country_${normalized}"]`);
+    if (!card) return;
+    card.classList.remove('is-failed', 'is-pending', 'is-completed', 'is-skipped');
+    card.classList.add('is-running');
+    const pill = card.querySelector('.mki-fine-ai-status-pill');
+    if (pill) {
+      pill.className = 'mki-fine-ai-status-pill is-running';
+      pill.textContent = stepStatusLabel('running');
+    }
+    const desc = card.querySelector('.mki-fine-ai-step-desc');
+    if (desc) {
+      desc.textContent = `${normalized} 正在重新请求 AI 评估`;
+    }
+    const btn = card.querySelector('[data-fine-ai-rerun]');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '请求中';
+    }
+  }
+
   function renderProgress(progress, status) {
     const p = {...defaultProgress(), ...(progress || {})};
     const steps = Array.isArray(p.steps) && p.steps.length ? p.steps : defaultProgress().steps;
@@ -162,7 +209,10 @@
               <span class="mki-fine-ai-step-dot"></span>
               <strong>${escapeHtml(step.title || step.key || '')}</strong>
             </div>
-            <span class="mki-fine-ai-status-pill is-${escapeHtml(stepStatus)}">${escapeHtml(stepStatusLabel(stepStatus))}</span>
+            <div class="mki-fine-ai-step-actions">
+              ${renderStepRerunButton(step, stepStatus, displayStatus)}
+              <span class="mki-fine-ai-status-pill is-${escapeHtml(stepStatus)}">${escapeHtml(stepStatusLabel(stepStatus))}</span>
+            </div>
           </div>
           <p class="mki-fine-ai-step-desc">${escapeHtml(step.message || step.description || '')}</p>
           ${renderDebug(step.debug)}
@@ -313,18 +363,22 @@
       btn.onclick = async () => {
         const code = btn.dataset.fineAiRerun || '';
         const url = String(config.rerun_url_template || '').replace('{country}', encodeURIComponent(code));
+        if (!url || !code) return;
+        const ok = window.confirm(`确认重新请求 ${code} 的 AI 评估？`);
+        if (!ok) return;
+        stopPoll();
+        markCountryStepRunning(code);
         btn.disabled = true;
-        btn.textContent = '重跑中';
+        btn.textContent = '请求中';
         try {
           await fetchJson(url, {
             method: 'POST',
             headers: csrfHeaders({'Content-Type': 'application/json'}),
             body: JSON.stringify({force_refresh: true, include_assets: true, include_videos: true}),
           });
-          stopPoll();
           await poll();
         } catch (err) {
-          btn.textContent = '重跑失败';
+          btn.textContent = '请求失败';
           btn.title = err.message || String(err);
         } finally {
           btn.disabled = false;
