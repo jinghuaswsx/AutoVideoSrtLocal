@@ -70,7 +70,11 @@
 .tc-table tr:hover td { background:var(--tc-bg-subtle); }
 .tc-task-name { font-weight:700; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tc-task-meta { margin-top:3px; color:var(--tc-fg-muted); font-size:12px; }
-.tc-pager { display:flex; align-items:center; justify-content:flex-end; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); }
+.tc-pager { display:flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); flex-wrap:wrap; }
+.tc-pager__summary { display:inline-flex; align-items:center; min-height:32px; font-weight:600; color:var(--tc-fg); }
+.tc-pager__controls { display:inline-flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); flex-wrap:wrap; }
+.tc-pager__jump { display:inline-flex; align-items:center; gap:6px; margin-left:var(--tc-sp-2); }
+.tc-pager__input { width:76px; text-align:center; }
 .tc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
 .tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
@@ -174,6 +178,25 @@
 .tc-readiness-copy-line { display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:6px; min-width:0; align-items:baseline; font-size:12px; line-height:1.45; }
 .tc-readiness-copy-label { color:var(--tc-fg); font-weight:700; }
 .tc-readiness-copy-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg-muted); }
+.tc-readiness-check-card { display:grid; grid-template-columns:18px minmax(0, 1fr); gap:8px; padding:10px; margin:6px 0; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); min-width:0; }
+.tc-readiness-check-card.is-ok { border-color:var(--tc-success-fg); background:var(--tc-success-bg); }
+.tc-readiness-check-card.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
+.tc-readiness-check-card.is-wait { border-color:var(--tc-warning-fg); background:var(--tc-warning-bg); }
+.tc-readiness-check-icon { font-weight:800; line-height:1.45; }
+.tc-readiness-check-card.is-ok .tc-readiness-check-icon,
+.tc-readiness-check-card.is-ok .tc-readiness-check-title { color:var(--tc-success-fg); }
+.tc-readiness-check-card.is-bad .tc-readiness-check-icon,
+.tc-readiness-check-card.is-bad .tc-readiness-check-title { color:var(--tc-danger-fg); }
+.tc-readiness-check-card.is-wait .tc-readiness-check-icon,
+.tc-readiness-check-card.is-wait .tc-readiness-check-title { color:var(--tc-warning-fg); }
+.tc-readiness-check-body { min-width:0; }
+.tc-readiness-check-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.tc-readiness-check-title { font-weight:700; overflow-wrap:anywhere; }
+.tc-readiness-check-card .tc-readiness-evidence,
+.tc-readiness-check-card .tc-lang-enable-strip { margin-left:0; }
+.tc-readiness-check-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.tc-readiness-check-actions .tc-action-links,
+.tc-readiness-check-actions .tc-manual-actions { justify-content:flex-start; margin-left:0; }
 .tc-lang-enable-strip { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 2px 20px; }
 .tc-lang-checkbox { display:inline-flex; align-items:center; gap:5px; min-height:26px; padding:3px 9px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg-muted); font-size:12px; line-height:1.2; cursor:pointer; }
 .tc-lang-checkbox:hover { background:var(--tc-bg-muted); }
@@ -397,7 +420,7 @@ const TC_CAPS = {
 let TC_CURRENT_SECTION = 'overview';
 let TC_CURRENT_BUCKET = 'all';
 let TC_TASK_PAGE = 1;
-const TC_TASK_PAGE_SIZE = 20;
+const TC_TASK_PAGE_SIZE = 50;
 let TC_TASK_CACHE = new Map();
 const TC_LANGUAGE_FALLBACKS = {
   DE: '德语',
@@ -642,7 +665,8 @@ const TC_EVENT_TEXT = {
   raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待审核', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
   approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
   rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
-  push_rework_rejected: { title: '推送管理打回重做', progress: '管理员已拒绝', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人修正后重新提交完成。' },
+  push_material_approved: { title: '管理员审核通过', progress: '已推送', tone: 'success', summary: '推送管理已完成素材推送，当前任务进入投放素材已通过状态。' },
+  push_rework_rejected: { title: '管理员审核拒绝', progress: '继续完善素材内容', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人按批注继续完善素材内容。' },
   cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
   unblocked: { title: '子任务解锁', progress: '可开始翻译', tone: 'success', summary: '原始视频审核通过后，翻译子任务已解锁。' },
   submitted: { title: '提交翻译验收', progress: '等待管理员验收', tone: 'info', summary: '翻译员已提交产物，等待管理员审核通过或打回。' },
@@ -664,14 +688,18 @@ function tcEventFacts(payload, event) {
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
   add('原始素材 ID', payload.raw_source_id);
-  if (Array.isArray(payload.issue_labels)) add('问题项', payload.issue_labels.join('、'));
+  if (Array.isArray(payload.issue_labels)) add('问题点', payload.issue_labels.join('、'));
   add('处理人', tcEventPayloadUserDisplay(event, payload, 'assignee_id'));
   add('上次字幕任务', payload.previous_subtitle_task_id);
   add('处理阶段', payload.stage);
   add('文件', payload.filename || tcExtractFilenameFromError(payload.error));
   add('文件大小', tcFormatBytes(payload.new_size || payload.size));
   add('失败原因', payload.error);
-  add('打回/取消原因', payload.reason);
+  if (String(event && event.event_type || '') === 'push_rework_rejected') {
+    add('管理员批注', payload.reason);
+  } else {
+    add('打回/取消原因', payload.reason);
+  }
   add('说明', payload.message);
   return facts;
 }
@@ -1107,6 +1135,23 @@ function tcReadinessCheckOk(check) {
   if (!check) return false;
   return !!(check && check.ok) || (!check.required && check.ok !== false);
 }
+function tcReadinessCheckStateClass(check) {
+  if (tcReadinessCheckOk(check)) return ' is-ok';
+  const reason = String((check && check.reason) || '').toLowerCase();
+  const isWaiting = !!(
+    check && (
+      check.manual_confirmed ||
+      check.waiting ||
+      check.pending ||
+      check.blocked ||
+      (!check.required && check.ok === false)
+    )
+  );
+  if (isWaiting || /(等待|待|确认|处理中|处理|队列|排队|pending|waiting|blocked|queue|processing|in_progress)/i.test(reason)) {
+    return ' is-wait';
+  }
+  return ' is-bad';
+}
 function tcProductLinkComboStateClass(checks) {
   const list = Array.isArray(checks) ? checks : [];
   if (!list.length) return '';
@@ -1115,12 +1160,13 @@ function tcProductLinkComboStateClass(checks) {
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const opts = options || {};
   const ok = tcReadinessCheckOk(check);
-  const icon = ok ? '✓' : '✕';
+  const stateClass = tcReadinessCheckStateClass(check);
+  const icon = ok ? '✓' : (stateClass.indexOf('is-wait') >= 0 ? '!' : '✕');
   const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
   const counts = (check.source_count !== undefined || check.target_count !== undefined)
     ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
     : '';
-  const detailMargin = opts.mode === 'product-link-combo' ? '0' : '20px';
+  const detailMargin = '0';
   const reason = opts.mode !== 'product-link-combo' && check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
   const evidence = tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'});
   const links = !evidence && Array.isArray(check.links) && check.links.length
@@ -1144,15 +1190,15 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   }
   const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
   const actions = tcRenderActionLinks(check.actions || []);
-  return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
-    + '<div style="min-width:0; flex:1 1 260px;">'
-    + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-    + reason + links
-    + evidence
-    + langControls
+  return '<div class="' + 'tc-readiness-check-card' + stateClass + '">'
+    + '<div class="tc-readiness-check-icon">' + icon + '</div>'
+    + '<div class="tc-readiness-check-body">'
+    + '<div class="tc-readiness-check-head">'
+    + '<span class="tc-readiness-check-title">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
     + '</div>'
-    + manualActions
-    + actions
+    + reason + links + evidence + langControls
+    + ((manualActions || actions) ? '<div class="tc-readiness-check-actions">' + manualActions + actions + '</div>' : '')
+    + '</div>'
     + '</div>';
 }
 function tcRenderProductLinkCombinedCard(data, task, checks) {
@@ -1676,6 +1722,7 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     page_size: String(TC_TASK_PAGE_SIZE),
   });
   const data = await tcFetchJson('/tasks/api/list?' + params.toString());
+  TC_TASK_PAGE = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
   TC_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || 0), it]));
   if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0); return; }
   const rows = data.items.map(it => {
@@ -1694,22 +1741,49 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
 }
 function tcRenderTaskPager(data, itemCount) {
-  const page = Number(data.page || TC_TASK_PAGE || 1);
-  const pageSize = Number(data.page_size || TC_TASK_PAGE_SIZE);
-  const total = Number(data.total || 0);
-  const totalPages = Number(data.total_pages || 0);
+  const page = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
+  const pageSize = Math.max(1, Number(data.page_size || TC_TASK_PAGE_SIZE));
+  const total = Math.max(0, Number(data.total || 0));
+  const explicitPages = Math.max(0, Number(data.total_pages || 0));
+  const totalPages = explicitPages || Math.max(1, total ? Math.ceil(total / pageSize) : page);
   const hasPrev = page > 1;
-  const hasNext = totalPages ? page < totalPages : itemCount >= pageSize;
-  const totalText = total ? ` · 共 ${total} 条` : '';
-  return `<div class="tc-pager">
-    <span>第 ${page}${totalPages ? ' / ' + totalPages : ''} 页${totalText}</span>
-    <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskPage(-1)">上一页</button>
-    <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
+  const hasNext = page < totalPages || (!explicitPages && itemCount >= pageSize);
+  return `<div class="tc-pager" aria-label="任务列表分页">
+    <span class="tc-pager__summary">共 ${total} 条 · 每页 ${pageSize} 条 · 第 ${page} / ${totalPages} 页</span>
+    <div class="tc-pager__controls">
+      <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskGotoPage(1)">第一页</button>
+      <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskPage(-1)">上一页</button>
+      <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
+      <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskGotoPage(${totalPages})">最后一页</button>
+      <form class="tc-pager__jump" onsubmit="return tcTaskJumpPage(event, ${totalPages})">
+        <label for="tcTaskPageJump">去</label>
+        <input id="tcTaskPageJump" class="tc-input tc-pager__input" type="number" min="1" max="${totalPages}" value="${page}" data-task-page-jump aria-label="跳转页码">
+        <span>页</span>
+        <button type="submit" class="tc-btn">跳转</button>
+      </form>
+    </div>
   </div>`;
 }
 function tcTaskPage(delta) {
-  TC_TASK_PAGE = Math.max(1, TC_TASK_PAGE + Number(delta || 0));
+  tcTaskGotoPage(TC_TASK_PAGE + Number(delta || 0));
+}
+function tcTaskGotoPage(page) {
+  TC_TASK_PAGE = tcNormalizeTaskPage(page, 1);
   tcRender();
+}
+function tcNormalizeTaskPage(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return Math.max(1, Math.trunc(parsed));
+  return Math.max(1, Math.trunc(Number(fallback || 1)));
+}
+function tcTaskJumpPage(event, totalPages) {
+  event.preventDefault();
+  const input = event.currentTarget.querySelector('[data-task-page-jump]');
+  const maxPage = Math.max(1, Number(totalPages || 1));
+  const target = Math.min(maxPage, tcNormalizeTaskPage(input ? input.value : 1, 1));
+  TC_TASK_PAGE = target;
+  tcRender();
+  return false;
 }
 function tcTaskDetailUrl(id) {
   const taskId = Number(id || 0);
@@ -1934,14 +2008,22 @@ async function tcLoadReadiness(id, task) {
     const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
     if (Array.isArray(data.checks) && data.checks.length) {
       const linkCombinedChecks = [];
+      const trailingChecks = [];
       const rows = data.checks.map(function(check) {
         if (tcIsProductLinkCombinedCheck(check)) {
           linkCombinedChecks.push(check);
           return '';
         }
+        if (String(check.key || '') === 'language_supported') {
+          trailingChecks.push(check);
+          return '';
+        }
         return tcRenderReadinessCheckRow(id, check, data, task, mediaUrl);
       }).filter(Boolean);
-      wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks);
+      const trailingRows = trailingChecks.map(function(check) {
+        return tcRenderReadinessCheckRow(id, check, data, task, mediaUrl);
+      });
+      wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks) + trailingRows.join('');
       tcLoadProductLinkManager(data, task);
       return;
     }

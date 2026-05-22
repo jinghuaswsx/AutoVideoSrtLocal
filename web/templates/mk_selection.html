@@ -528,7 +528,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="this_month">本月</option>
         <option value="last_month">上月</option>
       </select>
-      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
+      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:240px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
@@ -941,12 +941,14 @@ function renderMkMaterialDetailHref(r) {
   return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
 }
 
-function runMkSearch() {
+function runMkSearch(options = {}) {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
-  if (currentMkLibraryTab === 'videos') {
+  if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {
     activeMkProductCode = '';
+  }
+  if (currentMkLibraryTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top100') {
     loadMkYesterdayTop100(1);
@@ -1053,7 +1055,7 @@ function openProductMaterialLibrary(productCode, productName) {
   activeMkProductCode = code;
   mkVideoMaterialsLoaded = true;
   document.getElementById('searchInput').value = code;
-  switchMkLibraryTab('videos');
+  switchMkLibraryTab('videos', {preserveProductCode: true});
   const label = String(productName || code).trim();
   document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的本地素材快照...`;
   loadMkLocalMaterialLibrary(1);
@@ -1359,6 +1361,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-product-code="${productHandle}"
+        data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         data-mki-fine-ai-video-path="${escapeHtml(videoPath)}"
         data-mki-fine-ai-video-url="${safeVideoUrl}"
         data-mki-fine-ai-video-name="${escapeHtml(r.video_name || '')}"
@@ -1531,6 +1534,7 @@ async function openDetail(mkId, mkName) {
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml(detailProductLinkRaw)}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-mk-id="${escapeHtml(item.id || '')}"
             data-mki-fine-ai-video-path="${escapeHtml(videoPath)}"
             data-mki-fine-ai-video-url="${safeVideoUrl}"
             data-mki-fine-ai-video-name="${escapeHtml(v.name || '')}"
@@ -1701,9 +1705,15 @@ function mkiImportProgressOpenTasks() {
 async function mkiFetchJson(url, options = {}) {
   const resp = await fetch(url, options);
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const message = data && (data.error || data.message || data.detail) || resp.statusText || '请求失败';
-    throw new Error(message);
+  if (!resp.ok || data.success === false) {
+    const err = data && data.error;
+    const message = (err && typeof err === 'object' ? err.message : err)
+      || (data && (data.message || data.detail))
+      || resp.statusText
+      || '请求失败';
+    const error = new Error(message);
+    if (err && typeof err === 'object' && err.details) error.details = err.details;
+    throw error;
   }
   return data;
 }
@@ -2091,13 +2101,14 @@ function mkiFineAiFormatTs(ts) {
 
 function mkiFineAiDefaultProgress() {
   return {
-    total_steps: 8,
+    total_steps: 9,
     completed_steps: 0,
     current_step: 'queued',
     current_country: '',
     elapsed_seconds: 0,
     countries: {DE:'pending', FR:'pending', IT:'pending', ES:'pending', JP:'pending'},
     steps: [
+      {key:'product_link_check', title:'商品链接检测', status:'pending', message:'等待检测商品链接', logs:[], debug:[]},
       {key:'data_preparation', title:'数据准备', status:'pending', message:'等待后端创建任务', logs:[], debug:[]},
       {key:'product_fact_extraction', title:'商品事实整理', status:'pending', message:'等待请求大模型', logs:[], debug:[]},
       ...['DE', 'FR', 'IT', 'ES', 'JP'].map(code => ({key:`country_${code}`, title:`${code} 国家评估`, status:'pending', message:'等待前序国家完成', logs:[], debug:[]})),
@@ -2109,7 +2120,7 @@ function mkiFineAiDefaultProgress() {
 
 function mkiFineAiRenderProgressHeader(progress, status) {
   const p = Object.assign(mkiFineAiDefaultProgress(), progress || {});
-  const total = Math.max(1, Number(p.total_steps || 8));
+  const total = Math.max(1, Number(p.total_steps || 9));
   const done = Math.max(0, Math.min(total, Number(p.completed_steps || 0)));
   const pct = Math.round((done / total) * 100);
   const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '').replace('country_', '');
@@ -2169,14 +2180,19 @@ function mkiFineAiStartingProgress(context) {
   const startedAt = context.fineAiStartedAt || new Date().toISOString();
   context.fineAiStartedAt = startedAt;
   const progress = mkiFineAiDefaultProgress();
+  if (!context.externalProductLink) {
+    progress.steps = progress.steps.filter(step => step.key !== 'product_link_check');
+    progress.total_steps = progress.steps.length;
+  }
+  const firstStepKey = context.externalProductLink ? 'product_link_check' : 'data_preparation';
   const message = context.externalProductLink
-    ? '正在缓存当前视频素材并创建评估任务'
+    ? '正在检测商品链接可访问性'
     : '正在创建精细 AI 评估任务';
   progress.started_at = startedAt;
-  progress.current_step = 'data_preparation';
+  progress.current_step = firstStepKey;
   progress.elapsed_seconds = mkiFineAiSecondsSince(startedAt);
   progress.steps = progress.steps.map(step => {
-    if (step.key === 'data_preparation') {
+    if (step.key === firstStepKey) {
       return {
         ...step,
         status: 'running',
@@ -2191,7 +2207,7 @@ function mkiFineAiStartingProgress(context) {
     }
     return step;
   });
-  progress.events = [{ts: startedAt, level: 'info', step_key: 'data_preparation', message}];
+  progress.events = [{ts: startedAt, level: 'info', step_key: firstStepKey, message}];
   return progress;
 }
 
@@ -2492,6 +2508,71 @@ async function mkiFineAiOpenLatestOrStart(context) {
   }
 }
 
+function mkiFineAiApplyResolvedProductLink(context, linkCheck) {
+  const selected = String((linkCheck && linkCheck.selected_link) || '').trim();
+  if (!context || !selected) return;
+  context.productLink = selected;
+  if (!context.productId) context.externalProductLink = selected;
+  const card = context.button && context.button.closest('.mk-video-card');
+  if (!card) return;
+  card.querySelectorAll('[data-mki-product-link]').forEach(node => {
+    node.dataset.mkiProductLink = selected;
+  });
+  card.querySelectorAll('[data-mki-fine-ai-external-link]').forEach(node => {
+    if (!context.productId) node.dataset.mkiFineAiExternalLink = selected;
+  });
+  const safeHref = safeExternalHref(selected);
+  const productLinkNode = card.querySelector('.mk-video-product-link');
+  if (productLinkNode) {
+    productLinkNode.textContent = selected;
+    productLinkNode.title = selected;
+    if (safeHref && productLinkNode.tagName.toLowerCase() === 'a') {
+      productLinkNode.href = safeHref;
+    }
+  }
+  const productNameLink = card.querySelector('a.mk-video-product-name');
+  if (safeHref && productNameLink) {
+    productNameLink.href = safeHref;
+  }
+}
+
+function mkiFineAiLinkCheckDebugRows(linkCheck) {
+  const candidates = Array.isArray(linkCheck?.candidates) ? linkCheck.candidates : [];
+  const failed = candidates
+    .filter(item => !item.ok)
+    .slice(0, 4)
+    .map(item => `${item.http_status || '-'} ${item.error || ''}`.trim())
+    .filter(Boolean)
+    .join(' | ');
+  return [
+    {label:'原始链接', value: linkCheck?.original_link || '-'},
+    {label:'最终链接', value: linkCheck?.selected_link || '-'},
+    {label:'检测结果', value: linkCheck?.status || '-'},
+    {label:'候选数量', value: String(linkCheck?.candidate_count || candidates.length || 0)},
+    {label:'失败摘要', value: failed || '-'},
+  ];
+}
+
+function mkiFineAiRenderLinkCheckFailure(context, linkCheck, message) {
+  const progress = mkiFineAiStartingProgress(context);
+  const completedAt = new Date().toISOString();
+  const failureMessage = (linkCheck && linkCheck.message) || message || '商品链接不可访问';
+  progress.current_step = 'product_link_check';
+  progress.steps = progress.steps.map(step => {
+    if (step.key !== 'product_link_check') return step;
+    return {
+      ...step,
+      status: 'failed',
+      message: failureMessage,
+      completed_at: completedAt,
+      logs: [{ts: completedAt, level: 'error', message: failureMessage}],
+      debug: mkiFineAiLinkCheckDebugRows(linkCheck || {}),
+    };
+  });
+  progress.events = [{ts: completedAt, level: 'error', step_key: 'product_link_check', message: failureMessage}];
+  return mkiFineAiRenderProgress(progress, 'failed');
+}
+
 async function mkiFineAiStartRun(context) {
   if (context.running) return;
   context.running = true;
@@ -2518,6 +2599,7 @@ async function mkiFineAiStartRun(context) {
         ...(context.externalProductLink ? {
           product_name: context.productName || '',
           product_code: context.productCode || '',
+          mk_product_id: context.mkProductId || '',
           card_video_path: context.cardVideoPath || '',
           card_video_url: context.cardVideoUrl || '',
           card_video_name: context.cardVideoName || '',
@@ -2525,12 +2607,17 @@ async function mkiFineAiStartRun(context) {
         } : {}),
       }),
     });
+    mkiFineAiApplyResolvedProductLink(context, resp.data && resp.data.link_check);
     context.runId = resp.data && resp.data.evaluation_run_id;
     mkiFineAiRefreshDetailButton(context);
     await mkiFineAiPollStatus(context);
   } catch (e) {
     mkiFineAiStopElapsedTicker(context);
-    context.shell.body.innerHTML = `<div class="ect-empty">精细 AI 评估启动失败：${escapeHtml(e.message || e)}</div>`;
+    if (e && e.details && e.details.status === 'failed') {
+      context.shell.body.innerHTML = mkiFineAiRenderLinkCheckFailure(context, e.details, e.message || e);
+    } else {
+      context.shell.body.innerHTML = `<div class="ect-empty">精细 AI 评估启动失败：${escapeHtml(e.message || e)}</div>`;
+    }
   } finally {
     mkiFineAiStopElapsedTicker(context);
     context.running = false;
@@ -2606,6 +2693,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
   const cardVideoUrl = String(btn?.dataset.mkiFineAiVideoUrl || btn?.dataset.mkiMp4Url || '').trim();
   const cardVideoName = String(btn?.dataset.mkiFineAiVideoName || btn?.dataset.mkiFilename || '').trim();
   const cardVideoDuration = String(btn?.dataset.mkiFineAiVideoDuration || btn?.dataset.mkiDuration || '').trim();
+  const mkProductId = String(btn?.dataset.mkiMkId || '').trim();
   if (!productId && !externalProductLink) {
     mkiToast('warning', '商品链接缺失，无法进行精细 AI 评估');
     return;
@@ -2628,6 +2716,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
     externalProductLink,
     productName: String(btn?.dataset.mkiProductName || '').trim(),
     productCode: String(btn?.dataset.mkiProductCode || '').trim(),
+    mkProductId,
     cardVideoPath,
     cardVideoUrl,
     cardVideoName,

@@ -40,6 +40,7 @@ CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
 CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
+CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -470,7 +471,8 @@ def list_task_center_items(
     task_type: str = "",
     parent_only: bool = False,
 ) -> dict:
-    offset = (int(page) - 1) * int(page_size)
+    page_size = max(1, int(page_size))
+    requested_page = max(1, int(page))
     where = ["1=1"]
     args: list = []
 
@@ -516,6 +518,20 @@ def list_task_center_items(
     elif bucket:
         raise ValueError("invalid bucket")
 
+    where_sql = " AND ".join(where)
+    count_sql = (
+        "SELECT COUNT(*) AS total "
+        "FROM tasks t "
+        "JOIN media_products p ON p.id=t.media_product_id "
+        f"WHERE {where_sql}"
+    )
+    count_args = tuple(args)
+    total_row = query_one(count_sql, count_args) or {}
+    total = int(total_row.get("total") or 0)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(requested_page, total_pages)
+    offset = (page - 1) * page_size
+
     assignee_name_expr = _user_display_name_expr("u")
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
@@ -527,11 +543,11 @@ def list_task_center_items(
         "JOIN media_products p ON p.id=t.media_product_id "
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
-        f"WHERE {' AND '.join(where)} "
+        f"WHERE {where_sql} "
         "ORDER BY t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
-    rows = query_all(sql, (*args, int(page_size), offset))
+    rows = query_all(sql, (*count_args, page_size, offset))
     return {
         "items": [
             {
@@ -574,8 +590,10 @@ def list_task_center_items(
             }
             for row in rows
         ],
-        "page": int(page),
-        "page_size": int(page_size),
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
     }
 
 
@@ -643,6 +661,39 @@ def _write_event(
             json.dumps(payload, ensure_ascii=False) if payload else None,
         ),
     )
+
+
+def record_push_material_approved(
+    *,
+    task_id: int,
+    actor_user_id: int | None,
+    item_id: int,
+    product_code: str | None = "",
+    lang: str | None = "",
+    upstream_status: int | None = None,
+) -> dict:
+    payload = {
+        "source": "push_management",
+        "item_id": int(item_id),
+        "product_code": str(product_code or "").strip(),
+        "lang": str(lang or "").strip().lower(),
+        "upstream_status": upstream_status,
+    }
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+            int(actor_user_id) if actor_user_id is not None else None,
+            json.dumps(payload, ensure_ascii=False),
+        ),
+    )
+    return {
+        "task_id": int(task_id),
+        "event_type": CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+        "payload": payload,
+    }
 
 
 def create_parent_task(

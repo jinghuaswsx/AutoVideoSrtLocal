@@ -174,7 +174,18 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "已完成任务" in body
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
+    assert "const TC_TASK_PAGE_SIZE = 50;" in body
     assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
+    assert 'class="tc-pager__summary"' in body
+    assert "共 ${total} 条" in body
+    assert "每页 ${pageSize} 条" in body
+    assert "第 ${page} / ${totalPages} 页" in body
+    assert "第一页" in body
+    assert "最后一页" in body
+    assert "function tcTaskGotoPage" in body
+    assert "function tcTaskJumpPage" in body
+    assert "function tcNormalizeTaskPage" in body
+    assert "Number.isFinite(parsed)" in body
     assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
@@ -220,6 +231,13 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "翻译员 ID" not in body
     assert "add('翻译员'," in body
     assert "/tasks/api/translation-work-users" in body
+    assert "push_material_approved" in body
+    assert "管理员审核通过" in body
+    assert "已推送" in body
+    assert "管理员审核拒绝" in body
+    assert "继续完善素材内容" in body
+    assert "问题点" in body
+    assert "管理员批注" in body
 
 
 def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no_db):
@@ -338,6 +356,30 @@ def test_task_detail_product_link_combo_hides_duplicate_reason_and_uses_status_c
     assert "'tc-product-link-combo-check' + stateClass" in body
 
 
+def test_task_detail_readiness_moves_ad_language_after_product_link_combo(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "const trailingChecks = [];" in body
+    assert "String(check.key || '') === 'language_supported'" in body
+    assert (
+        "wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks) + trailingRows.join('');"
+        in body
+    )
+
+
+def test_task_detail_readiness_uses_card_tones_for_regular_checks(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-readiness-check-card.is-ok" in body
+    assert ".tc-readiness-check-card.is-bad" in body
+    assert ".tc-readiness-check-card.is-wait" in body
+    assert "function tcReadinessCheckStateClass" in body
+    assert "tcReadinessCheckStateClass(check)" in body
+    assert "'tc-readiness-check-card' + stateClass" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -434,6 +476,32 @@ def test_api_list_delegates_task_type_filter(authed_user_client_no_db, monkeypat
 
     assert rsp.status_code == 200
     assert captured["task_type"] == "translate"
+
+
+def test_api_list_defaults_to_50_items_per_page(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [],
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+            "total": 0,
+            "total_pages": 1,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine")
+
+    assert rsp.status_code == 200
+    assert captured["page_size"] == 50
+    assert rsp.get_json()["page_size"] == 50
 
 
 def test_api_list_rejects_invalid_task_type(authed_user_client_no_db, monkeypatch):

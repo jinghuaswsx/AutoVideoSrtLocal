@@ -202,6 +202,8 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "/xuanpin/api/mk-media?path=uploads2/winner.jpg" in body
     assert "/xuanpin/api/mk-video?path=uploads2/winner.mp4" in body
     assert "历史同步消耗" in body
+    assert ".mk-detail-history-table { width:min(100%, 980px);" in body
+    assert ".mk-detail-history-table th.num, .mk-detail-history-table td.num" in body
     assert "2026-05-22 05:00:02" in body
     assert "800" in body
 
@@ -441,6 +443,10 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
         "web.routes.medias._cache_mk_video",
         lambda media_path: f"mk/videos/cached-{media_path.rsplit('/', 1)[-1]}",
     )
+    monkeypatch.setattr(
+        "web.services.fine_ai_product_link_check.link_availability.probe",
+        lambda url: {"ok": True, "http_status": 200, "error": None, "elapsed_ms": 1},
+    )
 
     post = authed_client_no_db.post(
         "/xuanpin/api/fine-ai-evaluation",
@@ -467,24 +473,106 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
     assert result.status_code == 200
     assert rerun.status_code == 202
     assert post.get_json()["data"]["product_id"] == "0"
-    assert calls[0] == (
-        "create_external",
-        {
-            "product_link": "https://example.test/products/new-idea",
-            "product_name": "New Idea",
-            "product_code": "new-idea",
-            "card_video_path": "uploads2/selected-card.mp4",
-            "card_video_url": "/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
-            "card_video_name": "selected-card.mp4",
-            "card_video_duration_seconds": 18.5,
-            "card_video_object_key": "mk/videos/cached-selected-card.mp4",
-            "countries": ["DE", "FR", "IT", "ES", "JP"],
-            "force_refresh": True,
-            "locale": "zh-CN",
-        },
-    )
+    assert calls[0][0] == "create_external"
+    create_kwargs = calls[0][1]
+    assert create_kwargs["product_link"] == "https://example.test/products/new-idea"
+    assert create_kwargs["product_name"] == "New Idea"
+    assert create_kwargs["product_code"] == "new-idea"
+    assert create_kwargs["link_check_result"]["ok"] is True
+    assert create_kwargs["link_check_result"]["selected_link"] == "https://example.test/products/new-idea"
+    assert create_kwargs["card_video_path"] == "uploads2/selected-card.mp4"
+    assert create_kwargs["card_video_url"] == "/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4"
+    assert create_kwargs["card_video_name"] == "selected-card.mp4"
+    assert create_kwargs["card_video_duration_seconds"] == 18.5
+    assert create_kwargs["card_video_object_key"] == "mk/videos/cached-selected-card.mp4"
+    assert create_kwargs["countries"] == ["DE", "FR", "IT", "ES", "JP"]
+    assert create_kwargs["force_refresh"] is True
+    assert create_kwargs["locale"] == "zh-CN"
     assert ("start", "eval_external") in calls
     assert ("status", 0, "eval_external") in calls
+
+
+def test_xuanpin_fine_ai_external_link_replaces_unavailable_link_from_mingkong_candidates(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    calls = []
+    bad_link = "https://shop.example/products/bad"
+    good_link = "https://shop.example/products/good"
+
+    class FakeService:
+        def create_external_link_run(self, **kwargs):
+            calls.append(("create_external", kwargs))
+            return {
+                "evaluation_run_id": "eval_external",
+                "product_id": "0",
+                "status": "queued",
+                "countries": ["DE", "FR", "IT", "ES", "JP"],
+                "created_at": "2026-05-22T00:00:00Z",
+                "link_check": kwargs.get("link_check_result"),
+            }
+
+        def start_run_async(self, evaluation_run_id):
+            calls.append(("start", evaluation_run_id))
+            return True
+
+    probe_calls = []
+
+    def fake_probe(url: str):
+        probe_calls.append(url)
+        return {
+            "ok": url == good_link,
+            "http_status": 200 if url == good_link else 404,
+            "error": None if url == good_link else "http 404",
+            "elapsed_ms": 9,
+        }
+
+    monkeypatch.setattr("web.routes.xuanpin.get_fine_ai_evaluation_service", lambda: FakeService())
+    monkeypatch.setattr("web.routes.medias._normalize_mk_media_path", lambda media_path: media_path.strip())
+    monkeypatch.setattr(
+        "web.routes.medias._cache_mk_video",
+        lambda media_path: f"mk/videos/cached-{media_path.rsplit('/', 1)[-1]}",
+    )
+    monkeypatch.setattr(
+        "web.routes.medias._build_mk_detail_response",
+        lambda mk_id: SimpleNamespace(
+            status_code=200,
+            payload={
+                "data": {
+                    "item": {
+                        "product_links": [
+                            bad_link,
+                            good_link,
+                        ]
+                    }
+                }
+            },
+        ),
+    )
+    monkeypatch.setattr("web.services.fine_ai_product_link_check.link_availability.probe", fake_probe)
+
+    post = authed_client_no_db.post(
+        "/xuanpin/api/fine-ai-evaluation",
+        json={
+            "product_link": bad_link,
+            "product_name": "Link Candidate Product",
+            "product_code": "candidate-product",
+            "mk_product_id": 7788,
+            "card_video_path": "uploads2/selected-card.mp4",
+            "countries": ["DE", "FR", "IT", "ES", "JP"],
+        },
+    )
+
+    assert post.status_code == 202
+    payload = post.get_json()["data"]
+    assert payload["link_check"]["selected_link"] == good_link
+    assert payload["link_check"]["status"] == "replaced"
+    assert calls[0][1]["product_link"] == good_link
+    assert calls[0][1]["link_check_result"]["original_link"] == bad_link
+    assert probe_calls == [bad_link, good_link]
+    assert ("start", "eval_external") in calls
 
 
 def test_xuanpin_fine_ai_external_link_requires_product_link(authed_client_no_db):

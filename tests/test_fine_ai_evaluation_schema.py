@@ -29,6 +29,39 @@ def test_product_facts_schema_accepts_valid_sample():
     validate_json_schema(sample, PRODUCT_FACTS_SCHEMA)
 
 
+def test_product_facts_schema_uses_vertex_nullable_format():
+    from google.genai import types
+
+    from appcore.fine_ai_evaluation_schemas import (
+        COUNTRY_EVALUATION_SCHEMA,
+        PRODUCT_FACTS_SCHEMA,
+        validate_json_schema,
+    )
+
+    types.Schema.model_validate(PRODUCT_FACTS_SCHEMA)
+    types.Schema.model_validate(COUNTRY_EVALUATION_SCHEMA)
+
+    sample = {
+        "product_id": "123",
+        "product_name": None,
+        "category_detected": None,
+        "sku_facts": [],
+        "price_facts": [],
+        "dimension_facts": [],
+        "material_facts": [],
+        "feature_facts": [],
+        "claim_inventory": [],
+        "claim_consistency_risks": [],
+        "missing_data": [],
+        "assumptions": [],
+        "generated_search_keywords": {
+            "english_keywords": [],
+            "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []},
+        },
+    }
+    validate_json_schema(sample, PRODUCT_FACTS_SCHEMA)
+
+
 def test_country_evaluation_schema_rejects_score_out_of_range():
     from appcore.fine_ai_evaluation_schemas import (
         COUNTRY_EVALUATION_SCHEMA,

@@ -47,8 +47,8 @@ PRODUCT_FACTS_SCHEMA: dict[str, Any] = {
     ],
     "properties": {
         "product_id": {"type": "string"},
-        "product_name": {"type": ["string", "null"]},
-        "category_detected": {"type": ["string", "null"]},
+        "product_name": {"type": "string", "nullable": True},
+        "category_detected": {"type": "string", "nullable": True},
         "sku_facts": _array({"type": "object"}),
         "price_facts": _array({"type": "object"}),
         "dimension_facts": _array({"type": "object"}),
@@ -188,6 +188,8 @@ PRODUCT_EVALUATION_RESULT_SCHEMA: dict[str, Any] = {
 
 def validate_json_schema(data: Any, schema: dict[str, Any], *, path: str = "$") -> None:
     """Small JSON Schema subset validator for runtime guardrails and tests."""
+    if data is None and schema.get("nullable") is True:
+        return
     _validate_type(data, schema.get("type"), path)
     if "enum" in schema and data not in schema["enum"]:
         raise ValueError(f"{path} must be one of {schema['enum']}; got {data!r}")

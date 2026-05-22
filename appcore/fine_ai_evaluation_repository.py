@@ -28,6 +28,8 @@ JSON_COUNTRY_FIELDS = {
     "metadata": "metadata_json",
 }
 
+DATETIME_RUN_FIELDS = {"started_at", "completed_at", "failed_at", "created_at", "updated_at"}
+
 
 class FineAiEvaluationRepository:
     def create_run(self, run: dict[str, Any]) -> dict[str, Any]:
@@ -76,6 +78,8 @@ class FineAiEvaluationRepository:
             column = JSON_RUN_FIELDS.get(key, key)
             if column.endswith("_json"):
                 value = _dump(value)
+            elif key in DATETIME_RUN_FIELDS:
+                value = _mysql_datetime(value)
             set_parts.append(f"{column}=%s")
             args.append(value)
         args.append(str(evaluation_run_id))
@@ -132,6 +136,24 @@ class FineAiEvaluationRepository:
 
 def _dump(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False, default=str)
+
+
+def _mysql_datetime(value: Any) -> Any:
+    if value is None or isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed.replace(microsecond=0)
 
 
 def _load(value: Any, default: Any) -> Any:
