@@ -484,6 +484,19 @@ def test_xuanpin_fine_ai_external_link_requires_current_card_video(authed_client
     assert resp.get_json()["error"]["code"] == "CARD_VIDEO_REQUIRED"
 
 
+def test_xuanpin_fine_ai_external_detail_page_renders_independent_shell(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/fine-ai-evaluation/eval_external")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "AI精细评估独立页" in body
+    assert "fine_ai_evaluation_detail.js" in body
+    assert '"mode": "external"' in body
+    assert '"/xuanpin/api/fine-ai-evaluation/eval_external/status"' in body
+    assert '"/xuanpin/api/fine-ai-evaluation/eval_external"' in body
+    assert '"/xuanpin/api/fine-ai-evaluation/eval_external/countries/{country}/rerun"' in body
+
+
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

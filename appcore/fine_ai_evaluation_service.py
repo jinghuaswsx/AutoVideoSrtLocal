@@ -775,7 +775,7 @@ def _initial_progress(
         debug=_data_preparation_debug(product_snapshot or {}, asset_snapshot or {}, country_codes),
         event=False,
     )
-    return _progress(country_codes, "queued", base_progress=progress)
+    return _progress(country_codes, "product_fact_extraction", base_progress=progress)
 
 
 def _progress(

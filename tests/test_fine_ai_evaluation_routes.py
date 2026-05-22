@@ -71,6 +71,25 @@ def test_fine_ai_evaluation_routes_delegate_to_service(authed_client_no_db, monk
     assert ("start", "eval_test") in calls
 
 
+def test_fine_ai_evaluation_product_detail_page_renders_independent_shell(authed_client_no_db, monkeypatch):
+    from web.routes import medias as routes
+
+    monkeypatch.setattr(routes.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(routes, "_can_access_product", lambda product: True)
+
+    resp = authed_client_no_db.get("/medias/products/123/ai-evaluation/eval_test")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "AI精细评估独立页" in body
+    assert "fine_ai_evaluation_detail.js" in body
+    assert '"mode": "product"' in body
+    assert '"product_id": "123"' in body
+    assert '"/medias/api/products/123/ai-evaluation/eval_test/status"' in body
+    assert '"/medias/api/products/123/ai-evaluation/eval_test"' in body
+    assert '"/medias/api/products/123/ai-evaluation/eval_test/countries/{country}/rerun"' in body
+
+
 def test_fine_ai_evaluation_product_not_found(authed_client_no_db, monkeypatch):
     from web.routes import medias as routes
 

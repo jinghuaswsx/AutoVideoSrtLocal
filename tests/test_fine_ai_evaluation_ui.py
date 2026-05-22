@@ -62,3 +62,16 @@ def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
     assert "step.key === 'data_preparation'" in body
     assert "status: 'running'" in body
     assert "mkiFineAiStartElapsedTicker(context);" in body
+
+
+def test_fine_ai_modal_has_standalone_page_button_and_status_mapping():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiFineAiDetailUrl" in body
+    assert "function mkiFineAiOpenStandalonePage" in body
+    assert "打开独立页" in body
+    assert "mkiFineAiOpenStandalonePage(context)" in body
+    assert "context.detailButton" in body
+    assert "mkiFineAiRefreshDetailButton(context)" in body
+    assert "function mkiFineAiEffectiveStatus" in body
+    assert "completed_steps > 0" in body

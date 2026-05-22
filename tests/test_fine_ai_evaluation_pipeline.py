@@ -97,6 +97,27 @@ def test_status_refreshes_progress_elapsed_seconds():
     assert status["progress"]["elapsed_seconds"] > 0
 
 
+def test_initial_progress_points_to_next_pending_step_after_data_preparation():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123)
+    stored = repository.get_run(run["evaluation_run_id"])
+    progress = stored["progress"]
+    data_step = next(step for step in progress["steps"] if step["key"] == "data_preparation")
+
+    assert data_step["status"] == "completed"
+    assert progress["completed_steps"] == 1
+    assert progress["current_step"] == "product_fact_extraction"
+
+
 def test_pipeline_continues_when_one_country_fails():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
