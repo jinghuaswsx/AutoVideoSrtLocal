@@ -10,6 +10,7 @@ from appcore.voice_ai_rank_cache import (
     cache_rank_result,
     derive_rank_result_from_all_cache,
     ensure_current_rank_cached,
+    force_speed_fallback_rank_state,
     get_cached_rank_result,
     normalize_rank_condition,
     set_active_unranked_candidates,
@@ -167,6 +168,24 @@ def rerun_voice_ai_ranking_for_state(
         usage_log_id=ai_result.get("usage_log_id"),
     )
 
+    return VoiceSelectorResult(
+        payload={
+            "ok": True,
+            **voice_ai_rank_response_fields(state, cached=False),
+        },
+        state_updates=voice_ai_rank_state_updates(state),
+    )
+
+
+def force_voice_speed_fallback_for_state(
+    *,
+    state: dict,
+    body: dict,
+) -> VoiceSelectorResult:
+    rank_key = normalize_rank_condition(
+        body.get("gender") if "gender" in body else state.get("voice_ai_rank_active_key")
+    )
+    force_speed_fallback_rank_state(state, key=rank_key)
     return VoiceSelectorResult(
         payload={
             "ok": True,

@@ -32,6 +32,7 @@ from appcore.voice_ai_rank_cache import (
     cache_rank_result,
     derive_rank_result_from_all_cache,
     ensure_current_rank_cached,
+    force_speed_fallback_rank_state,
     get_cached_rank_result,
     normalize_rank_condition,
     set_active_unranked_candidates,
@@ -1347,6 +1348,29 @@ def rerun_voice_ai_ranking(task_id: str):
         candidate_limit=candidate_limit,
         usage_log_id=usage_log_id,
     )
+    save_project_state(task_id, state, execute_func=db_execute)
+    task_state.update(task_id, **_voice_ai_rank_state_updates(state))
+
+    return _json_response({
+        "ok": True,
+        **_voice_ai_rank_response_fields(state, cached=False),
+    })
+
+
+@bp.route("/api/english-redub/<task_id>/voice-ai-ranking/force-speed-fallback", methods=["POST"])
+@login_required
+@admin_required
+def force_voice_speed_fallback(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+    body = request.get_json(silent=True) or {}
+    rank_key = normalize_rank_condition(
+        body.get("gender") if "gender" in body else state.get("voice_ai_rank_active_key")
+    )
+    force_speed_fallback_rank_state(state, key=rank_key)
+
     save_project_state(task_id, state, execute_func=db_execute)
     task_state.update(task_id, **_voice_ai_rank_state_updates(state))
 

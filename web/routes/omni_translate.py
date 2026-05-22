@@ -42,6 +42,7 @@ from web.services.translate_route_responses import (
 )
 from web.services.translate_voice_selector import (
     VoiceSelectorServiceError,
+    force_voice_speed_fallback_for_state,
     rematch_voice_selection,
     rerun_voice_ai_ranking_for_state,
 )
@@ -1376,6 +1377,23 @@ def rerun_voice_ai_ranking(task_id: str):
         )
     except VoiceSelectorServiceError as exc:
         return _json_response(exc.payload, exc.status_code)
+
+    save_project_state(task_id, state, execute_func=db_execute)
+    task_state.update(task_id, **result.state_updates)
+
+    return _json_response(result.payload)
+
+
+@bp.route("/api/omni-translate/<task_id>/voice-ai-ranking/force-speed-fallback", methods=["POST"])
+@login_required
+@admin_required
+def force_voice_speed_fallback(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+    body = request.get_json(silent=True) or {}
+    result = force_voice_speed_fallback_for_state(state=state, body=body)
 
     save_project_state(task_id, state, execute_func=db_execute)
     task_state.update(task_id, **result.state_updates)
