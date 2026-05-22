@@ -242,9 +242,19 @@ def api_list():
     high_status = (request.args.get("status") or "").strip()
     bucket = (request.args.get("bucket") or "").strip()
     task_type = (request.args.get("task_type") or "").strip()
+    raw_assignee_id = (request.args.get("assignee_id") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or TASK_CENTER_DEFAULT_PAGE_SIZE)))
     raw_task_id = (request.args.get("task_id") or "").strip()
+    assignee_id = None
+    if raw_assignee_id and raw_assignee_id != "all":
+        try:
+            parsed_assignee_id = int(raw_assignee_id)
+        except ValueError:
+            return _json_response({"error": "invalid assignee_id"}, 400)
+        if parsed_assignee_id <= 0:
+            return _json_response({"error": "invalid assignee_id"}, 400)
+        assignee_id = parsed_assignee_id
     task_id = None
     if raw_task_id:
         try:
@@ -281,6 +291,7 @@ def api_list():
             page_size=page_size,
             task_id=task_id,
             task_type=task_type,
+            assignee_id=assignee_id,
         )
     )
 
