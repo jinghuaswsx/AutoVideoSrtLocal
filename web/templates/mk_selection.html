@@ -2595,10 +2595,10 @@ function mkiWarningMessageFromResponse(data) {
 
 const MKI_IMPORT_STEPS = [
   {key: 'prepare', title: '准备素材信息', detail: '等待读取明空卡片字段'},
-  {key: 'product', title: '检查产品与链接', detail: '等待服务端创建或复用产品'},
+  {key: 'productOwner', title: '选择产品负责人', detail: '入库前确认素材管理产品负责人'},
+  {key: 'product', title: '检查产品与链接', detail: '负责人确认后检查产品并创建或复用产品'},
   {key: 'download', title: '下载明空原视频', detail: '等待服务端下载原视频'},
   {key: 'store', title: '写入素材库', detail: '等待写入英文素材库'},
-  {key: 'productOwner', title: '选择产品负责人', detail: '新品入库前确认素材管理产品负责人'},
   {key: 'domains', title: '选择发布域名', detail: '入库完成后选择该产品要发布到哪些域名'},
   {key: 'next', title: '后续任务入口', detail: '发布域名确认后继续创建小语种任务'}
 ];
@@ -3194,10 +3194,10 @@ async function mkiHandleClick(btn) {
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
     mkiImportProgressSetStep('prepare', 'done', '素材字段已读取，准备提交服务端入库');
-    mkiImportProgressSetStep('product', 'pending', '确认产品负责人后检查产品与链接');
+    mkiImportProgressSetStep('productOwner', 'pending', '入库前确认素材管理产品负责人');
+    mkiImportProgressSetStep('product', 'pending', '负责人确认后检查产品与链接');
     mkiImportProgressSetStep('download', 'pending', '产品确认后下载明空原视频');
     mkiImportProgressSetStep('store', 'pending', '视频下载完成后写入素材库');
-    mkiImportProgressSetStep('productOwner', 'pending', '入库前确认素材管理产品负责人');
     mkiImportProgressSetStep('domains', 'pending', '入库完成后选择发布域名');
     mkiImportProgressSetStep('next', 'pending', '发布域名确认后创建小语种任务');
     const productOwnerId = await mkiImportProgressRequestProductOwner(btn);

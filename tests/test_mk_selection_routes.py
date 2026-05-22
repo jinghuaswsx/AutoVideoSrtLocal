@@ -161,6 +161,8 @@ def test_mk_import_progress_uses_product_owner_step_before_domains():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert "{key: 'productOwner', title: '选择产品负责人'" in template
+    assert template.index("{key: 'prepare'") < template.index("{key: 'productOwner'")
+    assert template.index("{key: 'productOwner'") < template.index("{key: 'product', title: '检查产品与链接'")
     assert template.index("{key: 'productOwner'") < template.index("{key: 'domains'")
     assert "product_owner_id" in template
     assert "mkiImportProgressProductOwnerId" in template
