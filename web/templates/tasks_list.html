@@ -174,6 +174,25 @@
 .tc-readiness-copy-line { display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:6px; min-width:0; align-items:baseline; font-size:12px; line-height:1.45; }
 .tc-readiness-copy-label { color:var(--tc-fg); font-weight:700; }
 .tc-readiness-copy-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg-muted); }
+.tc-readiness-check-card { display:grid; grid-template-columns:18px minmax(0, 1fr); gap:8px; padding:10px; margin:6px 0; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); min-width:0; }
+.tc-readiness-check-card.is-ok { border-color:var(--tc-success-fg); background:var(--tc-success-bg); }
+.tc-readiness-check-card.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
+.tc-readiness-check-card.is-wait { border-color:var(--tc-warning-fg); background:var(--tc-warning-bg); }
+.tc-readiness-check-icon { font-weight:800; line-height:1.45; }
+.tc-readiness-check-card.is-ok .tc-readiness-check-icon,
+.tc-readiness-check-card.is-ok .tc-readiness-check-title { color:var(--tc-success-fg); }
+.tc-readiness-check-card.is-bad .tc-readiness-check-icon,
+.tc-readiness-check-card.is-bad .tc-readiness-check-title { color:var(--tc-danger-fg); }
+.tc-readiness-check-card.is-wait .tc-readiness-check-icon,
+.tc-readiness-check-card.is-wait .tc-readiness-check-title { color:var(--tc-warning-fg); }
+.tc-readiness-check-body { min-width:0; }
+.tc-readiness-check-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.tc-readiness-check-title { font-weight:700; overflow-wrap:anywhere; }
+.tc-readiness-check-card .tc-readiness-evidence,
+.tc-readiness-check-card .tc-lang-enable-strip { margin-left:0; }
+.tc-readiness-check-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.tc-readiness-check-actions .tc-action-links,
+.tc-readiness-check-actions .tc-manual-actions { justify-content:flex-start; margin-left:0; }
 .tc-lang-enable-strip { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 2px 20px; }
 .tc-lang-checkbox { display:inline-flex; align-items:center; gap:5px; min-height:26px; padding:3px 9px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg-muted); font-size:12px; line-height:1.2; cursor:pointer; }
 .tc-lang-checkbox:hover { background:var(--tc-bg-muted); }
@@ -1107,6 +1126,23 @@ function tcReadinessCheckOk(check) {
   if (!check) return false;
   return !!(check && check.ok) || (!check.required && check.ok !== false);
 }
+function tcReadinessCheckStateClass(check) {
+  if (tcReadinessCheckOk(check)) return ' is-ok';
+  const reason = String((check && check.reason) || '').toLowerCase();
+  const isWaiting = !!(
+    check && (
+      check.manual_confirmed ||
+      check.waiting ||
+      check.pending ||
+      check.blocked ||
+      (!check.required && check.ok === false)
+    )
+  );
+  if (isWaiting || /(等待|待|确认|处理中|处理|队列|排队|pending|waiting|blocked|queue|processing|in_progress)/i.test(reason)) {
+    return ' is-wait';
+  }
+  return ' is-bad';
+}
 function tcProductLinkComboStateClass(checks) {
   const list = Array.isArray(checks) ? checks : [];
   if (!list.length) return '';
@@ -1115,12 +1151,13 @@ function tcProductLinkComboStateClass(checks) {
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const opts = options || {};
   const ok = tcReadinessCheckOk(check);
-  const icon = ok ? '✓' : '✕';
+  const stateClass = tcReadinessCheckStateClass(check);
+  const icon = ok ? '✓' : (stateClass.indexOf('is-wait') >= 0 ? '!' : '✕');
   const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
   const counts = (check.source_count !== undefined || check.target_count !== undefined)
     ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
     : '';
-  const detailMargin = opts.mode === 'product-link-combo' ? '0' : '20px';
+  const detailMargin = '0';
   const reason = opts.mode !== 'product-link-combo' && check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
   const evidence = tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'});
   const links = !evidence && Array.isArray(check.links) && check.links.length
@@ -1144,15 +1181,15 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   }
   const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
   const actions = tcRenderActionLinks(check.actions || []);
-  return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
-    + '<div style="min-width:0; flex:1 1 260px;">'
-    + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-    + reason + links
-    + evidence
-    + langControls
+  return '<div class="' + 'tc-readiness-check-card' + stateClass + '">'
+    + '<div class="tc-readiness-check-icon">' + icon + '</div>'
+    + '<div class="tc-readiness-check-body">'
+    + '<div class="tc-readiness-check-head">'
+    + '<span class="tc-readiness-check-title">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
     + '</div>'
-    + manualActions
-    + actions
+    + reason + links + evidence + langControls
+    + ((manualActions || actions) ? '<div class="tc-readiness-check-actions">' + manualActions + actions + '</div>' : '')
+    + '</div>'
     + '</div>';
 }
 function tcRenderProductLinkCombinedCard(data, task, checks) {
@@ -1934,14 +1971,22 @@ async function tcLoadReadiness(id, task) {
     const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
     if (Array.isArray(data.checks) && data.checks.length) {
       const linkCombinedChecks = [];
+      const trailingChecks = [];
       const rows = data.checks.map(function(check) {
         if (tcIsProductLinkCombinedCheck(check)) {
           linkCombinedChecks.push(check);
           return '';
         }
+        if (String(check.key || '') === 'language_supported') {
+          trailingChecks.push(check);
+          return '';
+        }
         return tcRenderReadinessCheckRow(id, check, data, task, mediaUrl);
       }).filter(Boolean);
-      wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks);
+      const trailingRows = trailingChecks.map(function(check) {
+        return tcRenderReadinessCheckRow(id, check, data, task, mediaUrl);
+      });
+      wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks) + trailingRows.join('');
       tcLoadProductLinkManager(data, task);
       return;
     }

@@ -338,6 +338,30 @@ def test_task_detail_product_link_combo_hides_duplicate_reason_and_uses_status_c
     assert "'tc-product-link-combo-check' + stateClass" in body
 
 
+def test_task_detail_readiness_moves_ad_language_after_product_link_combo(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "const trailingChecks = [];" in body
+    assert "String(check.key || '') === 'language_supported'" in body
+    assert (
+        "wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks) + trailingRows.join('');"
+        in body
+    )
+
+
+def test_task_detail_readiness_uses_card_tones_for_regular_checks(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-readiness-check-card.is-ok" in body
+    assert ".tc-readiness-check-card.is-bad" in body
+    assert ".tc-readiness-check-card.is-wait" in body
+    assert "function tcReadinessCheckStateClass" in body
+    assert "tcReadinessCheckStateClass(check)" in body
+    assert "'tc-readiness-check-card' + stateClass" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
