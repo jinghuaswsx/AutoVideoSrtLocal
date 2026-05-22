@@ -26,13 +26,17 @@ def test_fine_ai_button_checks_latest_before_starting_new_run():
     assert "async function mkiFineAiOpenLatestOrStart(context)" in body
 
 
-def test_fine_ai_button_allows_external_product_link_without_local_product():
+def test_fine_ai_button_uses_current_card_video_for_external_product_link():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "const canFineAiEvaluate = Boolean(existingProductId || productLinkRaw);" in body
+    assert "const canFineAiEvaluate = Boolean(existingProductId || (productLinkRaw && videoPath));" in body
     assert "${canFineAiEvaluate ? '' : 'disabled'}" in body
-    assert "只要商品链接存在即可进行精细 AI 评估" in body
-    assert "商品链接缺失，无法进行精细 AI 评估" in body
+    assert "商品链接和当前视频存在即可进行精细 AI 评估" in body
+    assert "商品链接或视频缺失，无法进行精细 AI 评估" in body
+    assert "data-mki-fine-ai-video-path" in body
+    assert "data-mki-fine-ai-video-url" in body
+    assert "card_video_path: context.cardVideoPath || ''" in body
+    assert "card_video_object_key" not in body
     assert "externalProductLink" in body
     assert "/xuanpin/api/fine-ai-evaluation" in body
 

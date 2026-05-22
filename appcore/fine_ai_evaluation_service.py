@@ -24,6 +24,7 @@ from appcore.fine_ai_evaluation_schemas import (
 )
 from appcore.fine_ai_evaluation_snapshots import (
     AssetSnapshotService,
+    ExternalCardVideoSnapshotService,
     ProductNotFoundError,
     ProductSnapshotService,
 )
@@ -56,11 +57,15 @@ class FineAiEvaluationService:
         gemini_client=None,
         product_snapshot_service=None,
         asset_snapshot_service=None,
+        external_card_video_snapshot_service=None,
     ):
         self.repository = repository or FineAiEvaluationRepository()
         self.gemini_client = gemini_client or FineAiGeminiClient()
         self.product_snapshot_service = product_snapshot_service or ProductSnapshotService()
         self.asset_snapshot_service = asset_snapshot_service or AssetSnapshotService()
+        self.external_card_video_snapshot_service = (
+            external_card_video_snapshot_service or ExternalCardVideoSnapshotService()
+        )
 
     def create_run(
         self,
@@ -135,17 +140,40 @@ class FineAiEvaluationService:
         force_refresh: bool = True,
         countries: list[str] | None = None,
         locale: str = "zh-CN",
+        card_video_object_key: str = "",
+        card_video_path: str = "",
+        card_video_url: str = "",
+        card_video_name: str = "",
+        card_video_duration_seconds: Any = None,
     ) -> dict[str, Any]:
         product_url = str(product_link or "").strip()
         if not product_url:
             raise ValueError("product_link is required")
         country_codes = normalize_country_codes(countries)
+        card_video = _external_card_video_metadata(
+            object_key=card_video_object_key,
+            path=card_video_path,
+            url=card_video_url,
+            name=card_video_name,
+            duration_seconds=card_video_duration_seconds,
+        )
+        if card_video["object_key"]:
+            asset_snapshot = self.external_card_video_snapshot_service.build_snapshot(
+                card_video_object_key=card_video["object_key"],
+                card_video_path=card_video["path"],
+                card_video_url=card_video["url"],
+                card_video_name=card_video["name"],
+                card_video_duration_seconds=card_video["duration_seconds"],
+            )
+        else:
+            asset_snapshot = _empty_asset_snapshot()
         product_snapshot = _external_product_snapshot(
             product_url=product_url,
             product_name=product_name,
             product_code=product_code,
+            videos=asset_snapshot.get("videos") or [],
         )
-        asset_snapshot = _empty_asset_snapshot()
+        has_card_video = bool(asset_snapshot.get("videos"))
         now = _now_iso()
         evaluation_run_id = f"eval_{uuid.uuid4().hex}"
         progress = _initial_progress(country_codes, product_snapshot=product_snapshot, asset_snapshot=asset_snapshot)
@@ -163,11 +191,12 @@ class FineAiEvaluationService:
                 "model": MODEL,
                 "provider": PROVIDER,
                 "force_refresh": bool(force_refresh),
-                "include_assets": False,
-                "include_videos": False,
+                "include_assets": has_card_video,
+                "include_videos": has_card_video,
                 "locale": locale,
                 "source_type": "external_product_link",
                 "external_product_link": product_url,
+                "external_card_video": card_video,
                 "countries_requested": country_codes,
                 "countries_completed": [],
                 "countries_failed": [],
@@ -561,11 +590,14 @@ class FineAiEvaluationService:
             include_videos=include_videos,
         )
         metadata = dict(run.get("metadata") or {})
-        asset_snapshot = self.asset_snapshot_service.build_snapshot(
-            product_id,
-            include_assets=include_assets,
-            include_videos=include_videos,
-        )
+        if metadata.get("source_type") == "external_product_link":
+            asset_snapshot = metadata.get("asset_snapshot") or _empty_asset_snapshot()
+        else:
+            asset_snapshot = self.asset_snapshot_service.build_snapshot(
+                product_id,
+                include_assets=include_assets,
+                include_videos=include_videos,
+            )
         metadata["asset_snapshot"] = asset_snapshot
         product_facts = run.get("product_facts") or self.gemini_client.generate_product_facts(
             product_snapshot=product_snapshot,
@@ -973,10 +1005,34 @@ def _empty_asset_snapshot() -> dict[str, Any]:
     }
 
 
-def _external_product_snapshot(*, product_url: str, product_name: str = "", product_code: str = "") -> dict[str, Any]:
+def _external_card_video_metadata(
+    *,
+    object_key: str = "",
+    path: str = "",
+    url: str = "",
+    name: str = "",
+    duration_seconds: Any = None,
+) -> dict[str, Any]:
+    return {
+        "object_key": str(object_key or "").strip(),
+        "path": str(path or "").strip(),
+        "url": str(url or "").strip(),
+        "name": str(name or "").strip(),
+        "duration_seconds": duration_seconds,
+    }
+
+
+def _external_product_snapshot(
+    *,
+    product_url: str,
+    product_name: str = "",
+    product_code: str = "",
+    videos: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     clean_url = str(product_url or "").strip()
     clean_name = str(product_name or "").strip()
     clean_code = str(product_code or "").strip()
+    clean_videos = list(videos or [])
     return {
         "product_id": "0",
         "source_type": "external_product_link",
@@ -1004,12 +1060,12 @@ def _external_product_snapshot(*, product_url: str, product_name: str = "", prod
         "return_policy": "",
         "product_images": [],
         "cover_images": [],
-        "videos": [],
+        "videos": clean_videos,
         "existing_ad_copy": [],
         "existing_landing_page_copy": [],
         "product_code": clean_code,
         "sku_count": 0,
-        "asset_count": {"images": 0, "videos": 0},
+        "asset_count": {"images": 0, "videos": len(clean_videos)},
     }
 
 

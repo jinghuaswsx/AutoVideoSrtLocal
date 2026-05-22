@@ -79,6 +79,33 @@ def _fine_ai_payload() -> dict:
     return request.get_json(silent=True) or {}
 
 
+def _fine_ai_external_card_video_kwargs(payload: dict):
+    raw_path = str(payload.get("card_video_path") or payload.get("video_path") or "").strip()
+    if not raw_path:
+        return None, _fine_ai_err("CARD_VIDEO_REQUIRED", "card_video_path is required", 400)
+    try:
+        routes = _medias_routes()
+        media_path = routes._normalize_mk_media_path(raw_path)
+        if not media_path:
+            return None, _fine_ai_err("CARD_VIDEO_REQUIRED", "card_video_path is required", 400)
+        object_key = routes._cache_mk_video(media_path)
+    except ValueError as exc:
+        return None, _fine_ai_err("INVALID_CARD_VIDEO", str(exc), 400)
+    except Exception as exc:
+        return None, _fine_ai_err("CARD_VIDEO_CACHE_FAILED", str(exc), 502)
+    return {
+        "card_video_path": media_path,
+        "card_video_url": str(payload.get("card_video_url") or payload.get("video_url") or "").strip(),
+        "card_video_name": str(payload.get("card_video_name") or payload.get("video_name") or "").strip(),
+        "card_video_duration_seconds": (
+            payload.get("card_video_duration_seconds")
+            if payload.get("card_video_duration_seconds") is not None
+            else payload.get("video_duration_seconds")
+        ),
+        "card_video_object_key": object_key,
+    }, None
+
+
 def _require_fine_ai_admin():
     if not _is_admin():
         return _fine_ai_err("FORBIDDEN", "Admin permission required", 403)
@@ -229,12 +256,16 @@ def api_fine_ai_external_create():
     product_link = str(payload.get("product_link") or payload.get("product_url") or "").strip()
     if not product_link:
         return _fine_ai_err("PRODUCT_LINK_REQUIRED", "product_link is required", 400)
+    card_video_kwargs, card_video_error = _fine_ai_external_card_video_kwargs(payload)
+    if card_video_error:
+        return card_video_error
     try:
         service = get_fine_ai_evaluation_service()
         run = service.create_external_link_run(
             product_link=product_link,
             product_name=str(payload.get("product_name") or "").strip(),
             product_code=str(payload.get("product_code") or "").strip(),
+            **card_video_kwargs,
             countries=payload.get("countries") or None,
             force_refresh=bool(payload.get("force_refresh", True)),
             locale=str(payload.get("locale") or "zh-CN"),

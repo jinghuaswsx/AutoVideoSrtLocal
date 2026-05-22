@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,56 @@ class AssetSnapshotService:
         }
 
 
+class ExternalCardVideoSnapshotService:
+    def build_snapshot(
+        self,
+        *,
+        card_video_object_key: str,
+        card_video_path: str = "",
+        card_video_url: str = "",
+        card_video_name: str = "",
+        card_video_duration_seconds: Any = None,
+    ) -> dict[str, Any]:
+        """Build an asset snapshot from the selected MK video card.
+
+        Docs-anchor:
+        docs/superpowers/specs/2026-05-22-fine-ai-card-video-evaluation-design.md
+        """
+        object_key = str(card_video_object_key or "").strip()
+        if not object_key:
+            return {
+                "cover_images": [],
+                "product_images": [],
+                "videos": [],
+                "asset_paths": [],
+                "warnings": ["当前视频素材未缓存，无法加入精细 AI 评估"],
+            }
+
+        filename = str(card_video_name or "").strip() or Path(object_key).name
+        video_item = {
+            "id": _stable_external_video_id(object_key),
+            "product_id": 0,
+            "object_key": object_key,
+            "filename": filename,
+            "display_name": filename,
+            "duration_seconds": _number_or_none(card_video_duration_seconds),
+            "lang": "",
+        }
+        video = _asset_meta_from_item(video_item)
+        video["source_path"] = str(card_video_path or "").strip()
+        video["source_url"] = str(card_video_url or "").strip()
+        asset_paths: list[str] = []
+        warnings: list[str] = []
+        _append_materialized_path(asset_paths, warnings, object_key, video_item=video_item)
+        return {
+            "cover_images": [],
+            "product_images": [],
+            "videos": [video],
+            "asset_paths": asset_paths,
+            "warnings": warnings,
+        }
+
+
 def _safe_call(fn, *args, default):
     try:
         return fn(*args)
@@ -211,6 +262,11 @@ def _looks_video(item: dict[str, Any] | None) -> bool:
         return False
     key = str(item.get("object_key") or item.get("filename") or "")
     return Path(key.split("?", 1)[0]).suffix.lower() in {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
+
+
+def _stable_external_video_id(object_key: str) -> int:
+    digest = hashlib.sha1(str(object_key or "").encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
 
 
 def _asset_meta_from_item(item: dict[str, Any]) -> dict[str, Any]:
