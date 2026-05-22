@@ -276,6 +276,11 @@
 .mki-fine-ai-log-row strong { color:var(--oc-fg); font-weight:700; }
 .mki-fine-ai-execution-log { border:1px solid var(--oc-border); border-radius:8px; background:#fff; padding:12px 14px; }
 .mki-fine-ai-execution-log h4 { margin:0 0 10px; font-size:14px; }
+.mki-fine-ai-context-panel { display:grid; gap:8px; margin:0 0 14px; padding:12px 14px; border:1px solid var(--oc-border); border-radius:8px; background:#fff; }
+.mki-fine-ai-context-row { display:flex; align-items:center; gap:6px; min-width:0; color:var(--oc-fg); font-size:13px; line-height:1.45; }
+.mki-fine-ai-context-label { flex:0 0 auto; color:var(--oc-fg-muted); font-weight:700; }
+.mki-fine-ai-context-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mki-fine-ai-context-copy-btn:disabled { opacity:.45; cursor:not-allowed; }
 @keyframes mkiFineAiPulse { from { transform:scale(.72); opacity:.9; } to { transform:scale(1.8); opacity:0; } }
 .ect-modal-header .ect-modal-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
 .ect-modal-header .ect-modal-header-actions + .ect-modal-close { margin-left:0; }
@@ -2028,6 +2033,81 @@ function mkiFineAiEndpoint(context, suffix) {
   return mkiFineAiProductEndpoint(context.productId, suffix);
 }
 
+function mkiFineAiContextSource(context, payload) {
+  if (!context) return payload || {};
+  return Object.assign({}, payload || {}, {
+    productCode: context.productCode || '',
+    cardVideoName: context.cardVideoName || '',
+    productLink: context.productLink || context.externalProductLink || '',
+    externalProductLink: context.externalProductLink || '',
+  });
+}
+
+function mkiFineAiContextRows(source) {
+  const payload = source || {};
+  const productSnapshot = payload.product_snapshot || payload.productSnapshot || {};
+  const metadata = payload.metadata || {};
+  const assetSnapshot = metadata.asset_snapshot || {};
+  const externalCardVideo = metadata.external_card_video || {};
+  const videos = Array.isArray(assetSnapshot.videos) && assetSnapshot.videos.length
+    ? assetSnapshot.videos
+    : (Array.isArray(productSnapshot.videos) ? productSnapshot.videos : []);
+  const firstVideo = videos[0] || {};
+  const productCode = String(
+    payload.productCode
+    || payload.product_code
+    || productSnapshot.product_code
+    || ''
+  ).trim();
+  const videoName = String(
+    payload.cardVideoName
+    || payload.card_video_name
+    || externalCardVideo.name
+    || externalCardVideo.filename
+    || firstVideo.filename
+    || firstVideo.display_name
+    || firstVideo.object_key
+    || ''
+  ).trim();
+  const productLink = String(
+    payload.productLink
+    || payload.externalProductLink
+    || payload.product_link
+    || payload.product_url
+    || metadata.external_product_link
+    || productSnapshot.product_url
+    || productSnapshot.landing_page_url
+    || ''
+  ).trim();
+  return [
+    {label: 'Product code', value: productCode},
+    {label: '视频文件名', value: videoName},
+    {label: '商品链接', value: productLink},
+  ];
+}
+
+function mkiFineAiRenderContextCopyPanel(source) {
+  const rows = mkiFineAiContextRows(source);
+  return `<section class="mki-fine-ai-context-panel" aria-label="精细 AI 评估上下文">
+    ${rows.map(row => {
+      const value = String(row.value || '').trim();
+      const display = value || '-';
+      return `<div class="mki-fine-ai-context-row">
+        <span class="mki-fine-ai-context-label">${escapeHtml(row.label)}:</span>
+        <span class="mki-fine-ai-context-value" title="${escapeHtml(display)}">${escapeHtml(display)}</span>
+        <button type="button"
+            class="mk-icon-copy-btn mki-fine-ai-context-copy-btn"
+            data-mki-fine-ai-context-copy="1"
+            data-copy-text="${escapeHtml(value)}"
+            onclick="copyMkText(this.dataset.copyText, this)"
+            title="复制${escapeHtml(row.label)}"
+            aria-label="复制${escapeHtml(row.label)}"
+            ${value ? '' : 'disabled'}>${mkCopyIconSvg()}</button>
+      </div>`;
+    }).join('')}
+  </section>`;
+}
+
 function mkiFineAiEscapeList(items) {
   const values = Array.isArray(items) ? items : [];
   if (!values.length) return '<span class="ect-muted">-</span>';
@@ -2277,9 +2357,10 @@ function mkiFineAiRenderProgress(progress, status = 'running') {
   </div>`;
 }
 
-function mkiFineAiRenderStatus(data) {
+function mkiFineAiRenderStatus(data, context) {
   const payload = data || {};
-  return mkiFineAiRenderProgress(payload.progress || {}, payload.status || 'running');
+  return `${mkiFineAiRenderContextCopyPanel(mkiFineAiContextSource(context, payload))}
+    ${mkiFineAiRenderProgress(payload.progress || {}, payload.status || 'running')}`;
 }
 
 function mkiFineAiRenderCards(frontend) {
@@ -2367,11 +2448,12 @@ function mkiFineAiRenderActions(frontend) {
   </details>`;
 }
 
-function mkiFineAiRenderResult(data) {
+function mkiFineAiRenderResult(data, context) {
   const result = data || {};
   const frontend = result.frontend || {};
   const summary = result.summary || {};
   return `
+    ${mkiFineAiRenderContextCopyPanel(mkiFineAiContextSource(context, result))}
     ${mkiFineAiRenderProgress(result.progress || {}, result.status || '')}
     ${mkiFineAiRenderCards(frontend)}
     ${mkiFineAiRenderCharts(frontend)}
@@ -2464,7 +2546,7 @@ async function mkiFineAiLoadLatest(context, options = {}) {
     const result = resp.data || {};
     context.runId = result.evaluation_run_id || context.runId || '';
     mkiFineAiRefreshDetailButton(context);
-    shell.body.innerHTML = mkiFineAiRenderResult(result);
+    shell.body.innerHTML = mkiFineAiRenderResult(result, context);
     mkiFineAiBindModalEvents(context);
     if (context.runId && ['queued', 'running'].includes(result.status)) {
       await mkiFineAiPollStatus(context);
@@ -2571,7 +2653,8 @@ function mkiFineAiRenderLinkCheckFailure(context, linkCheck, message) {
     };
   });
   progress.events = [{ts: completedAt, level: 'error', step_key: 'product_link_check', message: failureMessage}];
-  return mkiFineAiRenderProgress(progress, 'failed');
+  return `${mkiFineAiRenderContextCopyPanel(context)}
+    ${mkiFineAiRenderProgress(progress, 'failed')}`;
 }
 
 async function mkiFineAiStartRun(context) {
@@ -2584,7 +2667,7 @@ async function mkiFineAiStartRun(context) {
     btn.textContent = '精细评估中';
   }
   context.fineAiStartedAt = new Date().toISOString();
-  context.shell.body.innerHTML = mkiFineAiRenderStatus({status: 'running', progress: mkiFineAiStartingProgress(context)});
+  context.shell.body.innerHTML = mkiFineAiRenderStatus({status: 'running', progress: mkiFineAiStartingProgress(context)}, context);
   mkiFineAiStartElapsedTicker(context);
   try {
     const resp = await mkiFetchJson(mkiFineAiEndpoint(context, ''), {
@@ -2636,14 +2719,14 @@ async function mkiFineAiPollStatus(context) {
     const status = statusResp.data || {};
     context.runId = status.evaluation_run_id || context.runId;
     mkiFineAiRefreshDetailButton(context);
-    context.shell.body.innerHTML = mkiFineAiRenderStatus(status);
+    context.shell.body.innerHTML = mkiFineAiRenderStatus(status, context);
     if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
       const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
       mkiFineAiStopElapsedTicker(context);
       const result = resultResp.data || {};
       context.runId = result.evaluation_run_id || context.runId;
       mkiFineAiRefreshDetailButton(context);
-      context.shell.body.innerHTML = mkiFineAiRenderResult(result);
+      context.shell.body.innerHTML = mkiFineAiRenderResult(result, context);
       mkiFineAiBindModalEvents(context);
       return;
     }

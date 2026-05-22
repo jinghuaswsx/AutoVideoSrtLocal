@@ -92,6 +92,33 @@ def test_fine_ai_modal_has_standalone_page_button_and_status_mapping():
     assert "completed_steps > 0" in body
 
 
+def test_fine_ai_modal_context_copy_panel_shows_product_code_video_and_link():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiFineAiRenderContextCopyPanel" in body
+    assert "function mkiFineAiContextRows" in body
+    assert "data-mki-fine-ai-context-copy" in body
+    assert "mkiFineAiRenderContextCopyPanel(context)" in body
+    assert "mkiFineAiRenderResult(result, context)" in body
+    assert "mki-fine-ai-context-row" in body
+    assert "copyMkText(this.dataset.copyText, this)" in body
+
+
+def test_fine_ai_standalone_context_copy_panel_uses_status_and_result_snapshot():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "function renderContextCopyPanel" in script
+    assert "function contextRows" in script
+    assert "data-fine-ai-context-copy" in script
+    assert "productSnapshot.product_code" in script
+    assert "metadata.external_card_video" in script
+    assert "renderContextCopyPanel(status)" in script
+    assert "renderContextCopyPanel(result)" in script
+    assert ".fine-ai-context-panel" in template
+    assert ".fine-ai-context-copy-btn" in template
+
+
 def test_fine_ai_standalone_failed_step_cards_can_confirm_and_rerun_country():
     script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
     template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")

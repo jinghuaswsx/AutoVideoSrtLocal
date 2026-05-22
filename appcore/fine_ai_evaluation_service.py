@@ -501,6 +501,7 @@ class FineAiEvaluationService:
     def get_status(self, product_id: int | str, evaluation_run_id: str) -> dict[str, Any]:
         run = self._require_run(evaluation_run_id)
         self._assert_product(run, product_id)
+        metadata = run.get("metadata") or {}
         return {
             "evaluation_run_id": run["evaluation_run_id"],
             "product_id": str(run.get("product_id") or ""),
@@ -508,6 +509,8 @@ class FineAiEvaluationService:
             "progress": _fresh_progress_elapsed(
                 run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES)
             ),
+            "product_snapshot": run.get("product_snapshot") or {},
+            "metadata": _status_context_metadata(metadata),
             "started_at": run.get("started_at"),
             "created_at": run.get("created_at"),
             "updated_at": run.get("updated_at"),
@@ -1321,6 +1324,14 @@ def _build_result_payload(run: dict[str, Any], countries: dict[str, dict[str, An
         "frontend": run.get("frontend") or {},
         "metadata": run.get("metadata") or {},
         "progress": run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES),
+    }
+
+
+def _status_context_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "external_product_link": metadata.get("external_product_link") or "",
+        "external_card_video": metadata.get("external_card_video") or {},
+        "asset_snapshot": metadata.get("asset_snapshot") or {},
     }
 
 

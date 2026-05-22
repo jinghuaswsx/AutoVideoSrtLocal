@@ -30,6 +30,99 @@
     return data.data || data;
   }
 
+  function copyIconSvg() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+      <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+    </svg>`;
+  }
+
+  async function copyContextText(value, button) {
+    const text = String(value || '').trim();
+    if (!text) return;
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', 'readonly');
+      area.style.position = 'fixed';
+      area.style.left = '-9999px';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+    if (button) {
+      const oldTitle = button.dataset.oldTitle || button.title || '复制';
+      button.dataset.oldTitle = oldTitle;
+      button.title = '已复制';
+      button.setAttribute('aria-label', '已复制');
+      window.setTimeout(() => {
+        button.title = button.dataset.oldTitle || oldTitle;
+        button.setAttribute('aria-label', button.dataset.oldTitle || oldTitle);
+      }, 900);
+    }
+  }
+
+  function contextRows(payload) {
+    const productSnapshot = (payload || {}).product_snapshot || {};
+    const metadata = (payload || {}).metadata || {};
+    const assetSnapshot = metadata.asset_snapshot || {};
+    const externalCardVideo = metadata.external_card_video || {};
+    const videos = Array.isArray(assetSnapshot.videos) && assetSnapshot.videos.length
+      ? assetSnapshot.videos
+      : (Array.isArray(productSnapshot.videos) ? productSnapshot.videos : []);
+    const firstVideo = videos[0] || {};
+    const productCode = String(
+      (payload || {}).product_code
+      || productSnapshot.product_code
+      || ''
+    ).trim();
+    const videoName = String(
+      (payload || {}).card_video_name
+      || externalCardVideo.name
+      || externalCardVideo.filename
+      || firstVideo.filename
+      || firstVideo.display_name
+      || firstVideo.object_key
+      || ''
+    ).trim();
+    const productLink = String(
+      (payload || {}).product_link
+      || (payload || {}).product_url
+      || metadata.external_product_link
+      || productSnapshot.product_url
+      || productSnapshot.landing_page_url
+      || ''
+    ).trim();
+    return [
+      {label: 'Product code', value: productCode},
+      {label: '视频文件名', value: videoName},
+      {label: '商品链接', value: productLink},
+    ];
+  }
+
+  function renderContextCopyPanel(payload) {
+    return `<section class="fine-ai-context-panel" aria-label="精细 AI 评估上下文">
+      ${contextRows(payload).map(row => {
+        const value = String(row.value || '').trim();
+        const display = value || '-';
+        return `<div class="fine-ai-context-row">
+          <span class="fine-ai-context-label">${escapeHtml(row.label)}:</span>
+          <span class="fine-ai-context-value" title="${escapeHtml(display)}">${escapeHtml(display)}</span>
+          <button type="button"
+              class="fine-ai-context-copy-btn"
+              data-fine-ai-context-copy="1"
+              data-copy-text="${escapeHtml(value)}"
+              title="复制${escapeHtml(row.label)}"
+              aria-label="复制${escapeHtml(row.label)}"
+              ${value ? '' : 'disabled'}>${copyIconSvg()}</button>
+        </div>`;
+      }).join('')}
+    </section>`;
+  }
+
   function defaultProgress() {
     return {
       total_steps: 8,
@@ -475,13 +568,17 @@
   }
 
   function renderStatus(status) {
-    body.innerHTML = renderProgress(status.progress || {}, status.status || 'running');
+    body.innerHTML = `
+      ${renderContextCopyPanel(status)}
+      ${renderProgress(status.progress || {}, status.status || 'running')}
+    `;
     startElapsedTimer();
   }
 
   function renderResult(result) {
     stopElapsedTimer();
     body.innerHTML = `
+      ${renderContextCopyPanel(result)}
       ${renderProgress(result.progress || {}, result.status || '', result)}
       ${renderSummary(result)}
       ${renderCountryResults(result)}
@@ -552,6 +649,16 @@
     stopPoll();
     poll();
   };
+
+  body.addEventListener('click', event => {
+    const btn = event.target.closest('[data-fine-ai-context-copy]');
+    if (!btn) return;
+    event.preventDefault();
+    copyContextText(btn.dataset.copyText || '', btn).catch(() => {
+      btn.title = '复制失败';
+      btn.setAttribute('aria-label', '复制失败');
+    });
+  });
 
   window.addEventListener('beforeunload', () => {
     stopPoll();
