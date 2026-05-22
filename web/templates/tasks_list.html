@@ -185,12 +185,16 @@
 .tc-lang-enable-status.is-success { color:var(--tc-success-fg); }
 .tc-lang-enable-status.is-error { color:var(--tc-danger-fg); }
 .tc-product-link-combo { flex:1 1 100%; min-width:0; display:grid; gap:10px; margin:5px 0; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
+.tc-product-link-combo.is-ok { border-color:var(--tc-success-fg); background:var(--tc-success-bg); }
+.tc-product-link-combo.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
 .tc-product-link-combo-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .tc-product-link-combo-title { display:grid; gap:2px; min-width:0; }
 .tc-product-link-combo-title strong { font-size:13px; color:var(--tc-fg); }
 .tc-product-link-combo-title span { color:var(--tc-fg-muted); font-size:12px; line-height:1.4; }
 .tc-product-link-combo-summary { display:grid; gap:8px; grid-template-columns:repeat(2, minmax(0, 1fr)); }
 .tc-product-link-combo-check { display:grid; grid-template-columns:18px minmax(0, 1fr); gap:7px; padding:8px; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); min-width:0; }
+.tc-product-link-combo-check.is-ok { border-color:var(--tc-success-fg); background:var(--tc-success-bg); }
+.tc-product-link-combo-check.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
 .tc-product-link-combo-icon { font-weight:800; line-height:1.4; }
 .tc-product-link-combo-body { min-width:0; }
 .tc-product-link-combo-body > span { font-weight:700; }
@@ -1098,16 +1102,25 @@ function tcIsProductLinkCombinedCheck(check) {
   const key = String((check && check.key) || '').trim();
   return key === 'shopify_images' || key === 'product_links';
 }
+function tcReadinessCheckOk(check) {
+  if (!check) return false;
+  return !!(check && check.ok) || (!check.required && check.ok !== false);
+}
+function tcProductLinkComboStateClass(checks) {
+  const list = Array.isArray(checks) ? checks : [];
+  if (!list.length) return '';
+  return list.every(tcReadinessCheckOk) ? ' is-ok' : ' is-bad';
+}
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const opts = options || {};
-  const ok = !!check.ok || (!check.required && check.ok !== false);
+  const ok = tcReadinessCheckOk(check);
   const icon = ok ? '✓' : '✕';
   const color = ok ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
   const counts = (check.source_count !== undefined || check.target_count !== undefined)
     ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
     : '';
   const detailMargin = opts.mode === 'product-link-combo' ? '0' : '20px';
-  const reason = check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
+  const reason = opts.mode !== 'product-link-combo' && check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
   const evidence = tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'});
   const links = !evidence && Array.isArray(check.links) && check.links.length
     ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + check.links.map(function(link) {
@@ -1119,7 +1132,8 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     ? tcRenderAdSupportedLangControls(data, task)
     : '';
   if (opts.mode === 'product-link-combo') {
-    return '<div class="tc-product-link-combo-check">'
+    const stateClass = tcReadinessCheckOk(check) ? ' is-ok' : ' is-bad';
+    return '<div class="' + 'tc-product-link-combo-check' + stateClass + '">'
       + '<div class="tc-product-link-combo-icon" style="color:' + color + ';">' + icon + '</div>'
       + '<div class="tc-product-link-combo-body">'
       + '<span style="color:' + color + ';">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
@@ -1141,12 +1155,13 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     + '</div>';
 }
 function tcRenderProductLinkCombinedCard(data, task, checks) {
-  const rows = (Array.isArray(checks) ? checks : []).map(function(check) {
+  const linkCombinedChecks = Array.isArray(checks) ? checks : [];
+  const rows = linkCombinedChecks.map(function(check) {
     return tcRenderReadinessCheckRow(null, check, data, task, '', {mode: 'product-link-combo'});
   }).join('');
   const manager = tcRenderProductLinkManagerShell(data, task);
   if (!rows && !manager) return '';
-  return '<div class="tc-product-link-combo" data-tc-product-link-combo>'
+  return '<div class="tc-product-link-combo' + tcProductLinkComboStateClass(linkCombinedChecks) + '" data-tc-product-link-combo>'
     + '<div class="tc-product-link-combo-head">'
     + '<div class="tc-product-link-combo-title"><strong>商品链接与图片状态</strong><span>链接商品图替换和商品链接探活统一在这里确认、重检和改进。</span></div>'
     + '</div>'

@@ -322,6 +322,20 @@ def test_task_detail_readiness_groups_product_link_checks_into_manager_card(auth
     assert "}).join('') + tcRenderProductLinkManagerShell(data, task)" not in body
 
 
+def test_task_detail_product_link_combo_hides_duplicate_reason_and_uses_status_card_tones(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-product-link-combo.is-ok" in body
+    assert ".tc-product-link-combo.is-bad" in body
+    assert ".tc-product-link-combo-check.is-ok" in body
+    assert ".tc-product-link-combo-check.is-bad" in body
+    assert "function tcReadinessCheckOk" in body
+    assert "opts.mode !== 'product-link-combo' && check.reason" in body
+    assert "tcProductLinkComboStateClass(linkCombinedChecks)" in body
+    assert "'tc-product-link-combo-check' + stateClass" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
