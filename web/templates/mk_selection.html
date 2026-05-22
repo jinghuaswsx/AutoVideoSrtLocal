@@ -2008,13 +2008,25 @@ function mkiFineAiStepStatusLabel(status) {
   return '等待';
 }
 
+function mkiFineAiSecondsSince(startedAt) {
+  if (!startedAt) return 0;
+  const started = new Date(startedAt);
+  if (Number.isNaN(started.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000));
+}
+
 function mkiFineAiElapsedLabel(progress, status) {
-  const seconds = Math.max(0, Number((progress || {}).elapsed_seconds || 0));
+  const payload = progress || {};
+  const finalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
+  const isFinal = finalStatuses.includes(String(status || '').toLowerCase());
+  let seconds = Math.max(0, Number(payload.elapsed_seconds || 0));
+  if (!isFinal && payload.started_at) {
+    seconds = Math.max(seconds, mkiFineAiSecondsSince(payload.started_at));
+  }
   const minutes = Math.floor(seconds / 60);
   const remain = seconds % 60;
   const text = minutes > 0 ? `${minutes} 分 ${remain} 秒` : `${remain} 秒`;
-  const finalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
-  return finalStatuses.includes(String(status || '').toLowerCase()) ? `总耗时 ${text}` : `已请求 ${text}`;
+  return isFinal ? `总耗时 ${text}` : `已请求 ${text}`;
 }
 
 function mkiFineAiFormatTs(ts) {
@@ -2048,11 +2060,16 @@ function mkiFineAiRenderProgressHeader(progress, status) {
   const done = Math.max(0, Math.min(total, Number(p.completed_steps || 0)));
   const pct = Math.round((done / total) * 100);
   const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '').replace('country_', '');
+  const statusValue = status || p.current_step || '';
   return `
     <section class="mki-fine-ai-progress-header" aria-live="polite">
       <div class="mki-fine-ai-progress-top">
-        <div class="mki-fine-ai-progress-title">${escapeHtml(mkiFineAiStatusLabel(status || p.current_step))}</div>
-        <div class="mki-fine-ai-progress-time">${escapeHtml(mkiFineAiElapsedLabel(p, status))}</div>
+        <div class="mki-fine-ai-progress-title">${escapeHtml(mkiFineAiStatusLabel(statusValue))}</div>
+        <div class="mki-fine-ai-progress-time"
+            data-fine-ai-elapsed
+            data-started-at="${escapeHtml(p.started_at || '')}"
+            data-elapsed-seconds="${escapeHtml(String(p.elapsed_seconds || 0))}"
+            data-status="${escapeHtml(statusValue)}">${escapeHtml(mkiFineAiElapsedLabel(p, statusValue))}</div>
       </div>
       <div class="mki-fine-ai-progress-track" aria-label="精细 AI 评估进度 ${pct}%">
         <div class="mki-fine-ai-progress-fill" style="width:${pct}%"></div>
@@ -2063,6 +2080,66 @@ function mkiFineAiRenderProgressHeader(progress, status) {
         <span>${escapeHtml(p.current_step || 'queued')}</span>
       </div>
     </section>`;
+}
+
+function mkiFineAiTickElapsedLabels(root) {
+  const scope = root || document;
+  scope.querySelectorAll('[data-fine-ai-elapsed]').forEach(node => {
+    node.textContent = mkiFineAiElapsedLabel({
+      started_at: node.dataset.startedAt || '',
+      elapsed_seconds: Number(node.dataset.elapsedSeconds || 0),
+    }, node.dataset.status || '');
+  });
+}
+
+function mkiFineAiStartElapsedTicker(context) {
+  if (!context || !context.shell || !context.shell.body) return;
+  mkiFineAiStopElapsedTicker(context);
+  mkiFineAiTickElapsedLabels(context.shell.body);
+  context.fineAiElapsedTimer = window.setInterval(() => {
+    if (!context.shell || !context.shell.body) {
+      mkiFineAiStopElapsedTicker(context);
+      return;
+    }
+    mkiFineAiTickElapsedLabels(context.shell.body);
+  }, 1000);
+}
+
+function mkiFineAiStopElapsedTicker(context) {
+  if (context && context.fineAiElapsedTimer) {
+    window.clearInterval(context.fineAiElapsedTimer);
+    context.fineAiElapsedTimer = null;
+  }
+}
+
+function mkiFineAiStartingProgress(context) {
+  const startedAt = context.fineAiStartedAt || new Date().toISOString();
+  context.fineAiStartedAt = startedAt;
+  const progress = mkiFineAiDefaultProgress();
+  const message = context.externalProductLink
+    ? '正在缓存当前视频素材并创建评估任务'
+    : '正在创建精细 AI 评估任务';
+  progress.started_at = startedAt;
+  progress.current_step = 'data_preparation';
+  progress.elapsed_seconds = mkiFineAiSecondsSince(startedAt);
+  progress.steps = progress.steps.map(step => {
+    if (step.key === 'data_preparation') {
+      return {
+        ...step,
+        status: 'running',
+        message,
+        started_at: startedAt,
+        logs: [{ts: startedAt, level: 'info', message}],
+        debug: [
+          {label: '商品链接', value: context.productLink || '-'},
+          {label: '当前视频', value: context.cardVideoName || context.cardVideoPath || '-'},
+        ],
+      };
+    }
+    return step;
+  });
+  progress.events = [{ts: startedAt, level: 'info', step_key: 'data_preparation', message}];
+  return progress;
 }
 
 function mkiFineAiRenderDebug(debug) {
@@ -2332,7 +2409,9 @@ async function mkiFineAiStartRun(context) {
     btn.disabled = true;
     btn.textContent = '精细评估中';
   }
-  context.shell.body.innerHTML = mkiFineAiRenderStatus({status: 'queued', progress: mkiFineAiDefaultProgress()});
+  context.fineAiStartedAt = new Date().toISOString();
+  context.shell.body.innerHTML = mkiFineAiRenderStatus({status: 'running', progress: mkiFineAiStartingProgress(context)});
+  mkiFineAiStartElapsedTicker(context);
   try {
     const resp = await mkiFetchJson(mkiFineAiEndpoint(context, ''), {
       method: 'POST',
@@ -2357,8 +2436,10 @@ async function mkiFineAiStartRun(context) {
     context.runId = resp.data && resp.data.evaluation_run_id;
     await mkiFineAiPollStatus(context);
   } catch (e) {
+    mkiFineAiStopElapsedTicker(context);
     context.shell.body.innerHTML = `<div class="ect-empty">精细 AI 评估启动失败：${escapeHtml(e.message || e)}</div>`;
   } finally {
+    mkiFineAiStopElapsedTicker(context);
     context.running = false;
     if (btn) {
       btn.disabled = false;
@@ -2375,6 +2456,7 @@ async function mkiFineAiPollStatus(context) {
     context.shell.body.innerHTML = mkiFineAiRenderStatus(status);
     if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
       const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
+      mkiFineAiStopElapsedTicker(context);
       context.shell.body.innerHTML = mkiFineAiRenderResult(resultResp.data || {});
       mkiFineAiBindModalEvents(context);
       return;
