@@ -882,7 +882,7 @@ def test_xuanpin_mk_yesterday_top100_api_reads_archive(
     )
 
     resp = authed_client_no_db.get(
-        "/xuanpin/api/mk-yesterday-top100?page=1&page_size=100&snapshot=2026-05-18"
+        "/xuanpin/api/mk-yesterday-top100?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
     )
 
     assert resp.status_code == 200
@@ -890,6 +890,7 @@ def test_xuanpin_mk_yesterday_top100_api_reads_archive(
     assert captured == {
         "snapshot_date": "2026-05-18",
         "snapshot_at": None,
+        "keyword": "baseball",
         "page": "1",
         "page_size": "100",
     }

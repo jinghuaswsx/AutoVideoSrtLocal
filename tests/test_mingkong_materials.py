@@ -1522,6 +1522,46 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
     )
 
 
+def test_list_yesterday_top100_keyword_uses_shared_material_filter(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return []
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_yesterday_top100(keyword="baseball-cap-organizer-rjc", page=1, page_size=100)
+
+    assert result["total"] == 1
+    count_sql = next(sql for kind, sql, _args in captured if kind == "query_one" and "COUNT(*) AS cnt" in sql)
+    list_sql = next(sql for kind, sql, _args in captured if kind == "query" and "ORDER BY is_new_top100_entry" in sql)
+    count_args = next(args for kind, sql, args in captured if kind == "query_one" and "COUNT(*) AS cnt" in sql)
+    assert "t.product_code LIKE %s" in count_sql
+    assert "t.video_name LIKE %s" in count_sql
+    assert "t.video_path LIKE %s" in count_sql
+    assert "t.product_code LIKE %s" in list_sql
+    assert "%baseball-cap-organizer%" in count_args
+    assert "%baseball-cap-organizer-rjc%" in count_args
+
+
 def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch):
     writes = []
     finishes = []

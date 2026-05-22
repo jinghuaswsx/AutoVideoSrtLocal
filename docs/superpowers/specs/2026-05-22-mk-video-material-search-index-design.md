@@ -13,9 +13,11 @@
 
 当前搜索框文案只提示「搜索产品名」，后端虽已用 `keyword` 模糊匹配一部分字段，但缺少明确规则：运营需要同一个搜索框可以快速搜产品名、`product_code` 和视频素材文件名，同时分页总数、卡片列表和从产品库行点击「素材库」进入的行为不能互相覆盖。
 
+2026-05-22 发布后补充：截图确认用户在「昨天消耗前100」tab 输入 `baseball-cap-organizer` 后仍看到无关 Top100 卡片。根因是第一版只把 `keyword` 接到「视频素材库」的 `/xuanpin/api/mk-material-library`，没有把同一个搜索框接到「昨天消耗前100」的 `/xuanpin/api/mk-yesterday-top100`。本 spec 继续作为锚点，搜索框在两个明空视频卡片 tab 中都必须生效。
+
 ## 目标
 
-1. 「视频素材库」搜索框支持以下输入：
+1. 明空视频卡片搜索框支持以下输入，并在「视频素材库」与「昨天消耗前100」两个 tab 中生效：
    - 产品名：`product_name`、`mk_product_name`。
    - 产品 code：`product_code`，同时支持带/不带 `-rjc` 或 `_rjc` 的输入变体。
    - 视频素材文件名：`video_name`、`video_path` 的文件名或路径片段。
@@ -23,6 +25,7 @@
 3. 搜索分页必须稳定：`total` 和当前页 `items` 使用同一套过滤条件，避免页码显示与实际结果错位。
 4. 搜索速度要保持可接受：优先利用 `snapshot_at` / `snapshot_date` 范围约束和新增索引；不为本期引入独立搜索表或新的定时任务。
 5. 从「产品库」行点击「素材库」仍按该行 `product_code` 精确进入视频素材库；用户手动输入并点击搜索时，应清除该行跳转留下的 `activeMkProductCode` 状态。
+6. 搜索框在桌面宽度加长到上一版约 2 倍，给长 `product_code` 和素材文件名留出可读空间。
 
 ## 非目标
 
@@ -68,14 +71,22 @@ kw_with_rjc = kw_without_rjc + "-rjc" when kw_without_rjc is not empty
 
 响应结构不新增字段。`total`、`page`、`page_size` 和 `items` 必须来自同一组搜索条件。
 
+`GET /xuanpin/api/mk-yesterday-top100` 新增兼容参数：
+
+- `keyword`：同样统一搜索产品名、product code、视频素材文件名。
+
+响应结构不新增字段。`total`、`page`、`page_size` 和 `items` 必须来自同一组搜索条件。
+
 ## 前端行为
 
 `web/templates/mk_selection.html` 调整：
 
 - 搜索框 placeholder 改为「搜索产品名 / product code / 视频文件名」。
 - 手动点击「搜索」或按 Enter 时，如果当前 tab 是 `videos`，先清空 `activeMkProductCode`，再用输入框内容调用 `/xuanpin/api/mk-material-library?keyword=...`。
+- 当前 tab 是 `yesterday-top100` 时，用输入框内容调用 `/xuanpin/api/mk-yesterday-top100?keyword=...`。
 - 从产品库行点击「素材库」时继续设置 `activeMkProductCode`，并把输入框填成该 code；该入口的状态文案继续显示按产品 code 搜索。
 - 「重置」清空输入框和 `activeMkProductCode` 后重新加载视频素材库。
+- 桌面搜索框宽度从 240px 调整到 480px；中窄桌面同步放宽；竖屏布局仍以不挤破工具栏为准。
 
 ## 数据库索引
 
@@ -97,10 +108,12 @@ kw_with_rjc = kw_without_rjc + "-rjc" when kw_without_rjc is not empty
 1. 输入产品中文名或明空产品名能返回匹配视频卡片。
 2. 输入 `product_code`、`product-code-rjc` 或 `product_code_rjc` 变体能返回对应产品视频卡片。
 3. 输入视频素材文件名或 `video_path` basename 能返回对应视频卡片。
-4. 手动搜索不会被上一次产品库「素材库」按钮设置的 `activeMkProductCode` 覆盖。
-5. `COUNT(*)` 和列表查询共享搜索条件，分页总数正确。
-6. migration 幂等，已有索引环境可重复执行。
-7. 不触发 `/xuanpin/api/mk-video-materials` 作为视频素材库主列表。
+4. 在「昨天消耗前100」输入上述任一关键词，也只返回匹配卡片。
+5. 手动搜索不会被上一次产品库「素材库」按钮设置的 `activeMkProductCode` 覆盖。
+6. `COUNT(*)` 和列表查询共享搜索条件，分页总数正确。
+7. 搜索框桌面宽度加长到 480px。
+8. migration 幂等，已有索引环境可重复执行。
+9. 不触发 `/xuanpin/api/mk-video-materials` 作为视频素材库主列表。
 
 ## 验证
 

@@ -266,7 +266,7 @@ def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top100?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 
@@ -297,6 +297,8 @@ def test_mk_selection_video_search_placeholder_lists_supported_fields():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert 'placeholder="搜索产品名 / product code / 视频文件名"' in template
+    assert 'style="width:480px"' in template
+    assert "#searchInput { width:440px !important; }" in template
 
 
 def test_mk_selection_manual_video_search_clears_active_product_code_before_loading():
