@@ -120,6 +120,46 @@ def test_omni_translate_voice_library_accepts_pagination(authed_client_no_db, mo
     }
 
 
+def test_omni_translate_voice_library_persists_interrupted_ai_rank_state(authed_client_no_db, monkeypatch):
+    candidates = [{"voice_id": "v1", "similarity": 0.91}]
+    state = {
+        "target_lang": "en",
+        "steps": {"voice_match": "waiting"},
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_candidate_signature": candidate_signature(candidates),
+        "voice_ai_rank_usage_log_id": 74035,
+    }
+    saved: list[tuple[str, dict]] = []
+
+    monkeypatch.setattr(
+        "web.routes.omni_translate._query_viewable_project",
+        lambda task_id, columns: {
+            "state_json": json.dumps(state, ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.list_voices",
+        lambda **kwargs: {"items": [{"voice_id": "v1", "name": "A"}], "total": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.omni_translate.save_project_state",
+        lambda task_id, next_state, execute_func=None: saved.append((task_id, dict(next_state))),
+    )
+
+    resp = authed_client_no_db.get("/api/omni-translate/task-stale-ai-rank/voice-library")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["voice_ai_rank_status"] == "interrupted"
+    assert payload["voice_ai_rank_usage_log_id"] is None
+    assert payload["voice_ai_rank_recovery"]["start_step"] == "voice_match"
+    assert saved[0][0] == "task-stale-ai-rank"
+    assert saved[0][1]["voice_ai_rank_status"] == "interrupted"
+    assert saved[0][1]["voice_ai_rank_usage_log_id"] is None
+
+
 def test_omni_rematch_uses_speed_aware_voice_match(authed_client_no_db):
     normalized_utterances = [{"text": "hello world", "start_time": 0, "end_time": 1}]
     state = {

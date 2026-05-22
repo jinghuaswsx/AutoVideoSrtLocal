@@ -370,6 +370,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
             voice_ai_rank_provider=voice_ai_rank_provider,
             voice_ai_rank_debug=voice_ai_rank_debug,
             voice_ai_rank_usage_log_id=voice_ai_rank_usage_log_id,
+            voice_ai_rank_recovery=None,
         )
         if candidates and clip:
             try:
@@ -389,6 +390,7 @@ class EnglishRedubRunner(OmniTranslateRunner):
                     task_id,
                     voice_ai_rank_status="failed",
                     voice_ai_rank_usage_log_id=None,
+                    voice_ai_rank_recovery=None,
                     voice_ai_rank_debug={
                         "status": "failed",
                         "provider": "openrouter",

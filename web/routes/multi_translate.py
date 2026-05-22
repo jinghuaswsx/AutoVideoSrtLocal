@@ -904,6 +904,7 @@ def voice_library_for_task(task_id: str):
         return _json_response({"error": str(exc)}, 400)
 
     owner_user_id = row.get("user_id") or current_user.id
+    voice_ai_rank_status_before = state.get("voice_ai_rank_status")
     payload = build_voice_library_payload(
         state=state,
         owner_user_id=owner_user_id,
@@ -912,6 +913,8 @@ def voice_library_for_task(task_id: str):
         page=data.get("page", page),
         page_size=data.get("page_size", page_size),
     )
+    if state.get("voice_ai_rank_status") != voice_ai_rank_status_before:
+        save_project_state(task_id, state, execute_func=db_execute)
     return _json_response(payload)
 
 

@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 
+from appcore.voice_ai_rank_cache import candidate_signature
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     lookup_default_voice_row,
@@ -135,6 +137,80 @@ def test_build_voice_library_payload_includes_voice_ai_rankings():
     assert payload["voice_ai_auto_select_enabled"] is False
     assert payload["voice_ai_rank_debug"]["request"]["raw"]["model"] == "google/gemini-3.5-flash"
     assert payload["candidates"][0]["llm_rank"] == 2
+
+
+def test_build_voice_library_payload_marks_legacy_running_ai_rank_as_interrupted():
+    candidates = [{"voice_id": "v1", "similarity": 0.91}]
+    state = {
+        "target_lang": "es",
+        "steps": {"voice_match": "waiting"},
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_candidate_signature": candidate_signature(candidates),
+        "voice_ai_rank_usage_log_id": 74035,
+    }
+
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=1,
+        items=[{"voice_id": "v1", "name": "A"}],
+        total=1,
+    )
+
+    assert payload["voice_ai_rank_status"] == "interrupted"
+    assert payload["voice_ai_rankings"] == []
+    assert payload["voice_ai_rank_usage_log_id"] is None
+    assert state["voice_ai_rank_status"] == "interrupted"
+    assert payload["voice_ai_rank_recovery"]["start_step"] == "voice_match"
+    assert payload["voice_ai_rank_recovery"]["actions"] == [
+        "rerun_voice_ai_ranking",
+        "force_speed_match",
+        "rerun_voice_match_step",
+    ]
+
+
+def test_build_voice_library_payload_marks_old_running_ai_rank_as_interrupted():
+    candidates = [{"voice_id": "v1", "similarity": 0.91}]
+    state = {
+        "target_lang": "es",
+        "steps": {"voice_match": "waiting"},
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_started_at": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+        "voice_ai_rank_candidate_signature": candidate_signature(candidates),
+    }
+
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=1,
+        items=[{"voice_id": "v1", "name": "A"}],
+        total=1,
+    )
+
+    assert payload["voice_ai_rank_status"] == "interrupted"
+    assert payload["voice_ai_rank_debug"]["status"] == "interrupted"
+
+
+def test_build_voice_library_payload_keeps_fresh_running_ai_rank_pollable():
+    candidates = [{"voice_id": "v1", "similarity": 0.91}]
+    state = {
+        "target_lang": "es",
+        "steps": {"voice_match": "waiting"},
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_started_at": datetime.now(timezone.utc).isoformat(),
+        "voice_ai_rank_candidate_signature": candidate_signature(candidates),
+    }
+
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=1,
+        items=[{"voice_id": "v1", "name": "A"}],
+        total=1,
+    )
+
+    assert payload["voice_ai_rank_status"] == "running"
+    assert payload["voice_ai_rank_recovery"] is None
 
 
 def test_lookup_default_voice_row_uses_appcore_voice_lookup():

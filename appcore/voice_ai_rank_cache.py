@@ -3,12 +3,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 VOICE_AI_RANK_CACHE_KEYS = {"all", "male", "female"}
 VOICE_AI_RANK_NOT_RUN_STATUS = "not_ranked_for_filter"
 VOICE_AI_RANK_DERIVED_STATUS = "derived_from_all"
+VOICE_AI_RANK_INTERRUPTED_STATUS = "interrupted"
+VOICE_AI_RANK_RUNNING_STATUSES = {"running", "queued"}
+DEFAULT_VOICE_AI_RANK_STALE_SECONDS = 10 * 60
+VOICE_AI_RANK_INTERRUPTED_MESSAGE = (
+    "AI音色排名因服务中断未完成，请重新AI排名、强制音色语速匹配排序，"
+    "或从音色选择重新跑。"
+)
 
 
 def normalize_rank_condition(gender: object | None) -> str:
@@ -88,6 +97,7 @@ def apply_cached_rank_result(state: dict, key: object, entry: dict) -> None:
     state["voice_ai_rank_debug"] = deepcopy(entry.get("debug")) if entry.get("debug") is not None else None
     state["voice_ai_rank_usage_log_id"] = entry.get("usage_log_id")
     state["voice_ai_rank_candidate_signature"] = entry.get("candidate_signature") or candidate_signature(candidates)
+    state["voice_ai_rank_recovery"] = None
     if entry.get("candidate_limit") is not None:
         state["voice_ai_rank_candidate_limit"] = entry.get("candidate_limit")
 
@@ -107,6 +117,97 @@ def set_active_unranked_candidates(
     state["voice_ai_rank_debug"] = None
     state["voice_ai_rank_usage_log_id"] = None
     state["voice_ai_rank_candidate_signature"] = candidate_signature(candidates)
+    state["voice_ai_rank_recovery"] = None
+
+
+def configured_voice_ai_rank_stale_seconds() -> int:
+    raw = os.getenv("VOICE_AI_RANK_STALE_SECONDS")
+    if raw:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_VOICE_AI_RANK_STALE_SECONDS
+
+
+def normalize_interrupted_voice_ai_rank_state(
+    state: dict,
+    *,
+    now: datetime | None = None,
+    stale_seconds: int | None = None,
+) -> bool:
+    """Convert abandoned running voice AI rankings into an explicit recovery state.
+
+    This is intentionally read-only with respect to LLMs: it only mutates the
+    supplied task state and never schedules or retries a paid model request.
+    """
+    status = _normalized_status(state.get("voice_ai_rank_status"))
+    if status not in VOICE_AI_RANK_RUNNING_STATUSES:
+        if status != VOICE_AI_RANK_INTERRUPTED_STATUS:
+            state.pop("voice_ai_rank_recovery", None)
+        return False
+
+    now_utc = _as_utc(now or datetime.now(timezone.utc))
+    started_at = _parse_datetime(state.get("voice_ai_rank_started_at"))
+    if started_at is not None:
+        window = int(stale_seconds or configured_voice_ai_rank_stale_seconds())
+        age_seconds = (now_utc - started_at).total_seconds()
+        if age_seconds < window:
+            state.pop("voice_ai_rank_recovery", None)
+            return False
+        reason = "stale_timeout"
+    else:
+        reason = "missing_started_at"
+
+    mark_voice_ai_rank_interrupted(state, reason=reason, now=now_utc)
+    return True
+
+
+def mark_voice_ai_rank_interrupted(
+    state: dict,
+    *,
+    reason: str,
+    now: datetime | None = None,
+) -> None:
+    candidates = deepcopy(list(state.get("voice_match_candidates") or []))
+    signature = state.get("voice_ai_rank_candidate_signature") or candidate_signature(candidates)
+    now_utc = _as_utc(now or datetime.now(timezone.utc))
+    state["voice_ai_rank_status"] = VOICE_AI_RANK_INTERRUPTED_STATUS
+    state["voice_ai_rankings"] = []
+    state["voice_ai_rank_usage_log_id"] = None
+    state["voice_ai_rank_candidate_signature"] = signature
+    state["voice_ai_rank_interrupted_at"] = now_utc.isoformat()
+    state["voice_ai_rank_recovery"] = {
+        "status": VOICE_AI_RANK_INTERRUPTED_STATUS,
+        "message": VOICE_AI_RANK_INTERRUPTED_MESSAGE,
+        "actions": [
+            "rerun_voice_ai_ranking",
+            "force_speed_match",
+            "rerun_voice_match_step",
+        ],
+        "start_step": "voice_match",
+        "reason": reason,
+    }
+    state["voice_ai_rank_debug"] = {
+        "status": VOICE_AI_RANK_INTERRUPTED_STATUS,
+        "provider": state.get("voice_ai_rank_provider") or "",
+        "model": state.get("voice_ai_rank_model") or "",
+        "use_case": "voice_selection.assess",
+        "request": {
+            "visual": {"media": [], "candidates": candidates[:10]},
+            "raw": {
+                "reason": reason,
+                "started_at": state.get("voice_ai_rank_started_at"),
+                "candidate_signature": signature,
+            },
+        },
+        "result": {
+            "visual": {"rankings": []},
+            "raw": {"error": VOICE_AI_RANK_INTERRUPTED_MESSAGE},
+        },
+    }
 
 
 def derive_rank_result_from_all_cache(
@@ -227,6 +328,28 @@ def _stable_number(value: object) -> float | None:
         return round(float(value), 6)
     except (TypeError, ValueError):
         return None
+
+
+def _normalized_status(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return _as_utc(datetime.fromisoformat(raw))
+    except ValueError:
+        return None
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _rank_value(value: object) -> int | None:
