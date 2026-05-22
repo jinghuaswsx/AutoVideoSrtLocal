@@ -468,6 +468,7 @@ def list_task_center_items(
     bucket: str = "",
     task_id: int | None = None,
     task_type: str = "",
+    assignee_id: int | None = None,
     parent_only: bool = False,
 ) -> dict:
     offset = (int(page) - 1) * int(page_size)
@@ -487,6 +488,9 @@ def list_task_center_items(
         where.append("t.parent_task_id IS NOT NULL")
     elif task_type:
         raise ValueError("invalid task_type")
+    if assignee_id:
+        where.append("t.assignee_id=%s")
+        args.append(int(assignee_id))
 
     if task_id:
         where.append("t.id=%s")

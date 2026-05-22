@@ -193,6 +193,20 @@ def test_task_center_overview_has_task_type_filter_before_refresh(authed_client_
     assert "tcTaskTypeFilter').addEventListener('keyup'" in body
 
 
+def test_task_center_overview_has_assignee_filter_after_task_type(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    type_pos = body.index('id="tcTaskTypeFilter"')
+    assignee_pos = body.index('id="tcAssigneeFilter"')
+    refresh_pos = body.index('id="tcRefresh"')
+    assert type_pos < assignee_pos < refresh_pos
+    assert "tcLoadAssigneeFilterUsers" in body
+    assert "/tasks/api/translation-work-users" in body
+    assert "assignee_id: assigneeId" in body
+    assert "tcAssigneeFilter').addEventListener('change'" in body
+
+
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -414,6 +428,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "page_size": 100,
         "task_id": 44,
         "task_type": "",
+        "assignee_id": None,
     }
 
 
@@ -434,6 +449,41 @@ def test_api_list_delegates_task_type_filter(authed_user_client_no_db, monkeypat
 
     assert rsp.status_code == 200
     assert captured["task_type"] == "translate"
+
+
+def test_api_list_delegates_assignee_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&assignee_id=7")
+
+    assert rsp.status_code == 200
+    assert captured["assignee_id"] == 7
+
+
+def test_api_list_rejects_invalid_assignee_filter(authed_client_no_db, monkeypatch):
+    def fake_list_task_center_items(**kwargs):
+        raise AssertionError("invalid assignee_id should be rejected before service call")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&assignee_id=abc")
+
+    assert rsp.status_code == 400
+    assert rsp.get_json()["error"] == "invalid assignee_id"
 
 
 def test_api_list_rejects_invalid_task_type(authed_user_client_no_db, monkeypatch):

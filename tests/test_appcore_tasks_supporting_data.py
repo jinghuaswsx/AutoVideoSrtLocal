@@ -599,6 +599,35 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
     assert captured[1]["args"] == (20, 0)
 
 
+def test_list_task_center_items_filters_by_assignee_id(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        assignee_id=7,
+    ) == {"items": [], "page": 1, "page_size": 20}
+
+    assert "t.assignee_id=%s" in captured["sql"]
+    assert captured["args"] == (7, 20, 0)
+
+
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):
     from appcore import tasks
 

@@ -328,6 +328,9 @@
       <option value="raw">去字幕任务</option>
       <option value="translate">翻译任务</option>
     </select>
+    <select id="tcAssigneeFilter" class="tc-input tc-select" aria-label="负责人筛选">
+      <option value="all" selected>全部负责人</option>
+    </select>
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -399,6 +402,7 @@ let TC_CURRENT_BUCKET = 'all';
 let TC_TASK_PAGE = 1;
 const TC_TASK_PAGE_SIZE = 20;
 let TC_TASK_CACHE = new Map();
+let TC_ASSIGNEE_FILTER_LOAD_PROMISE = null;
 const TC_LANGUAGE_FALLBACKS = {
   DE: '德语',
   FR: '法语',
@@ -1621,6 +1625,31 @@ async function tcFetchJson(url, opts) {
   return rsp.json();
 }
 
+function tcAssigneeFilterOption(user) {
+  return `<option value="${tcAttr(user.id)}">${tcEsc(user.display_name || user.username || ('#' + user.id))}</option>`;
+}
+
+async function tcLoadAssigneeFilterUsers() {
+  const select = document.getElementById('tcAssigneeFilter');
+  if (!select) return [];
+  if (TC_ASSIGNEE_FILTER_LOAD_PROMISE) return TC_ASSIGNEE_FILTER_LOAD_PROMISE;
+  TC_ASSIGNEE_FILTER_LOAD_PROMISE = tcFetchJson('/tasks/api/translation-work-users')
+    .then(data => {
+      const users = data.users || data.translators || [];
+      const currentValue = select.value || 'all';
+      const hasCurrentValue = users.some(user => String(user.id) === String(currentValue));
+      select.innerHTML = `<option value="all">全部负责人</option>${users.map(tcAssigneeFilterOption).join('')}`;
+      select.value = hasCurrentValue ? String(currentValue) : 'all';
+      return users;
+    })
+    .catch(() => {
+      select.innerHTML = '<option value="all">全部负责人</option>';
+      select.value = 'all';
+      return [];
+    });
+  return TC_ASSIGNEE_FILTER_LOAD_PROMISE;
+}
+
 document.querySelectorAll('[data-section-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('[data-section-tab]').forEach(b => b.classList.remove('active'));
@@ -1643,6 +1672,9 @@ document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_P
 document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 document.getElementById('tcTaskTypeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcTaskTypeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+document.getElementById('tcAssigneeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcAssigneeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+tcLoadAssigneeFilterUsers();
 
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
@@ -1667,11 +1699,13 @@ async function tcRender() {
 async function tcRenderTaskList(wrap, tab, bucket) {
   const kw = document.getElementById('tcKeyword').value.trim();
   const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
+  const assigneeId = document.getElementById('tcAssigneeFilter').value || 'all';
   const params = new URLSearchParams({
     tab,
     keyword: kw,
     bucket,
     task_type: taskType,
+    assignee_id: assigneeId,
     page: String(TC_TASK_PAGE),
     page_size: String(TC_TASK_PAGE_SIZE),
   });
