@@ -179,7 +179,8 @@
 .tc-lang-checkbox:hover { background:var(--tc-bg-muted); }
 .tc-lang-checkbox input { width:14px; height:14px; margin:0; }
 .tc-lang-checkbox.is-checked { border-color:var(--tc-accent); background:var(--tc-accent-subtle); color:var(--tc-accent); font-weight:700; }
-.tc-lang-checkbox.is-current { box-shadow:0 0 0 2px var(--tc-accent-subtle); }
+.tc-lang-checkbox.is-current { border-color:var(--tc-danger); outline:2px solid var(--tc-danger); outline-offset:2px; background:color-mix(in oklch, var(--tc-accent-subtle) 62%, var(--tc-accent) 38%); color:var(--tc-accent-hover); font-weight:800; }
+.tc-lang-checkbox.is-current:hover { background:color-mix(in oklch, var(--tc-accent-subtle) 54%, var(--tc-accent) 46%); }
 .tc-lang-checkbox.is-busy { opacity:.68; cursor:wait; }
 .tc-lang-enable-status { flex:1 1 100%; min-height:16px; color:var(--tc-fg-muted); font-size:12px; line-height:1.35; }
 .tc-lang-enable-status.is-success { color:var(--tc-success-fg); }

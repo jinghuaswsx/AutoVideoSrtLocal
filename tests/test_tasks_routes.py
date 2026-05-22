@@ -260,6 +260,8 @@ def test_task_detail_readiness_exposes_inline_ad_language_controls(authed_client
     assert "link-availability/' + encodeURIComponent(lang)" in body
     assert "ad_supported_langs: selected.join(',')" in body
     assert "tcLoadReadiness(TC_DETAIL_TASK_ID, TC_DETAIL_CURRENT_TASK)" in body
+    assert ".tc-lang-checkbox.is-current { border-color:var(--tc-danger); outline:2px solid var(--tc-danger);" in body
+    assert "background:color-mix(in oklch, var(--tc-accent-subtle) 62%, var(--tc-accent) 38%);" in body
 
 
 def test_task_detail_readiness_embeds_product_link_manager(authed_client_no_db):
