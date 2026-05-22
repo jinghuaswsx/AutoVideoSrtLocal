@@ -1212,7 +1212,7 @@ def _review_video_asset(
         str(item.get("filename") or "").strip()
         or _review_object_filename(item.get("object_key"))
     )
-    return {
+    asset = {
         "type": "video",
         "label": label,
         "url": url,
@@ -1222,6 +1222,11 @@ def _review_video_asset(
         "lang": str(item.get("lang") or "").strip().lower(),
         "media_item_id": item.get("id"),
     }
+    item_id = _positive_int(item.get("id"))
+    if item_id and item.get("cover_object_key"):
+        asset["poster_url"] = f"/medias/item-cover/{item_id}"
+    asset["display_shape"] = "portrait_9_16"
+    return asset
 
 
 def _review_item_cover_asset(
@@ -1236,6 +1241,7 @@ def _review_item_cover_asset(
         "type": "image",
         "label": label,
         "url": f"/medias/item-cover/{int(item['id'])}",
+        "display_shape": "portrait_9_16",
         "filename": filename,
         "display_name": filename or "封面",
         "file_size": None,

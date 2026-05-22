@@ -50,6 +50,8 @@
       "type": "video",
       "label": "视频翻译结果",
       "url": "/medias/object?object_key=...",
+      "poster_url": "/medias/item-cover/5",
+      "display_shape": "portrait_9_16",
       "filename": "de.mp4",
       "media_item_id": 5
     }
@@ -67,6 +69,11 @@
   - `video` 渲染为 `<video controls preload="metadata">`。
   - `image` 渲染为缩略图，点击打开原图。
   - `text/status` 渲染为紧凑信息块。
+- `translated_video` 和 `translated_cover` 的媒体证据使用竖版 9:16 卡片：
+  - 盒子固定为 `270px × 480px`，窄屏时按容器收缩但保持 9:16。
+  - 视频初始状态不加载完整视频，优先使用同一目标语种素材封面作为 `poster_url`，中间覆盖播放按钮；点击按钮后再加载并播放视频。
+  - 封面图使用同样 `270px × 480px` 图片框，图片 `object-fit: cover`，不得用宽卡片导致左右大面积留白。
+  - 后端对该类 evidence 返回 `display_shape: "portrait_9_16"`；视频 evidence 有对应封面时返回 `poster_url`。
 - `translated_copywriting` 的 `text` 证据必须保留三段结构：
   - 前端先显示“文案 N”，下面固定展示 `标题`、`文案`、`描述` 三行。
   - 每一行独立单行省略，超出容器宽度时用 `...`，不能因为自然换行挤掉后续字段。
