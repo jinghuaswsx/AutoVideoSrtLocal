@@ -10,6 +10,7 @@ from appcore.fine_ai_evaluation_service import (
     get_service as get_fine_ai_evaluation_service,
 )
 from appcore.tabcut_selection.categories import goods_category_options
+from web.services.fine_ai_product_link_check import resolve_product_link
 
 
 bp = Blueprint("xuanpin", __name__, url_prefix="/xuanpin")
@@ -72,8 +73,11 @@ def _fine_ai_ok(data, status: int = 200):
     return jsonify({"success": True, "data": data, "error": None}), status
 
 
-def _fine_ai_err(code: str, message: str, status: int = 400):
-    return jsonify({"success": False, "data": None, "error": {"code": code, "message": message}}), status
+def _fine_ai_err(code: str, message: str, status: int = 400, *, details: dict | None = None):
+    error = {"code": code, "message": message}
+    if details is not None:
+        error["details"] = details
+    return jsonify({"success": False, "data": None, "error": error}), status
 
 
 def _fine_ai_payload() -> dict:
@@ -105,6 +109,59 @@ def _fine_ai_external_card_video_kwargs(payload: dict):
         ),
         "card_video_object_key": object_key,
     }, None
+
+
+def _fine_ai_mk_product_id(payload: dict) -> int:
+    raw = payload.get("mk_product_id") or payload.get("mk_id") or 0
+    try:
+        return int(str(raw or "").strip())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fine_ai_payload_candidate_links(payload: dict) -> list[str]:
+    raw = payload.get("product_links") or payload.get("candidate_links") or []
+    if not isinstance(raw, list):
+        return []
+    return [str(item or "").strip() for item in raw if str(item or "").strip()]
+
+
+def _fine_ai_mingkong_product_links(mk_product_id: int) -> list[str]:
+    if int(mk_product_id or 0) <= 0:
+        return []
+    try:
+        result = _medias_routes()._build_mk_detail_response(int(mk_product_id))
+    except Exception:
+        return []
+    if not (200 <= int(getattr(result, "status_code", 0) or 0) < 300):
+        return []
+    payload = getattr(result, "payload", None)
+    if not isinstance(payload, dict):
+        return []
+    item = ((payload.get("data") or {}).get("item") or {})
+    if not isinstance(item, dict):
+        return []
+    links = item.get("product_links") or []
+    if not isinstance(links, list):
+        return []
+    return [str(link or "").strip() for link in links if str(link or "").strip()]
+
+
+def _fine_ai_resolve_product_link(payload: dict, product_link: str) -> dict:
+    first_check = resolve_product_link(
+        current_link=product_link,
+        candidate_links=_fine_ai_payload_candidate_links(payload),
+    )
+    if first_check.get("ok"):
+        return first_check
+    mk_links = _fine_ai_mingkong_product_links(_fine_ai_mk_product_id(payload))
+    if not mk_links:
+        return first_check
+    return resolve_product_link(
+        current_link=product_link,
+        candidate_links=mk_links,
+        checked_candidates=first_check.get("candidates") or [],
+    )
 
 
 def _require_fine_ai_admin():
@@ -306,6 +363,17 @@ def api_fine_ai_external_create():
     product_link = str(payload.get("product_link") or payload.get("product_url") or "").strip()
     if not product_link:
         return _fine_ai_err("PRODUCT_LINK_REQUIRED", "product_link is required", 400)
+    if not str(payload.get("card_video_path") or payload.get("video_path") or "").strip():
+        return _fine_ai_err("CARD_VIDEO_REQUIRED", "card_video_path is required", 400)
+    link_check = _fine_ai_resolve_product_link(payload, product_link)
+    if not link_check.get("ok"):
+        return _fine_ai_err(
+            "PRODUCT_LINK_UNAVAILABLE",
+            "product_link is not reachable",
+            422,
+            details=link_check,
+        )
+    product_link = str(link_check.get("selected_link") or product_link).strip()
     card_video_kwargs, card_video_error = _fine_ai_external_card_video_kwargs(payload)
     if card_video_error:
         return card_video_error
@@ -315,6 +383,7 @@ def api_fine_ai_external_create():
             product_link=product_link,
             product_name=str(payload.get("product_name") or "").strip(),
             product_code=str(payload.get("product_code") or "").strip(),
+            link_check_result=link_check,
             **card_video_kwargs,
             countries=payload.get("countries") or None,
             force_refresh=bool(payload.get("force_refresh", True)),
