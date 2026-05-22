@@ -233,6 +233,14 @@ def _run_startup_recovery() -> None:
         mark_interrupted_bulk_translate_tasks()
     except Exception:
         log.warning("bulk_translate startup interruption marking failed", exc_info=True)
+    try:
+        from appcore import tasks as task_center_tasks
+
+        result = task_center_tasks.recover_pending_manual_raw_results()
+        if result.get("completed") or result.get("failed"):
+            log.warning("task center manual raw result recovery: %s", result)
+    except Exception:
+        log.warning("task center manual raw result recovery failed", exc_info=True)
 
 
 def create_app() -> Flask:

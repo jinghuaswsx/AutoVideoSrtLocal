@@ -29,12 +29,7 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
     if not source_path.is_file():
         raise RawSourceBridgeError(f"reviewed media file not found: {object_key}")
 
-    video_object_key = _copy_reviewed_video_to_raw_source(
-        source_path=source_path,
-        user_id=user_id,
-        product_id=product_id,
-        filename=filename,
-    )
+    video_object_key = object_key
     cover_object_key = _resolve_cover_object_key(
         payload=payload,
         source_path=source_path,

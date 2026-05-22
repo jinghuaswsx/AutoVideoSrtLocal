@@ -1218,6 +1218,71 @@ def complete_raw_parent_if_ready(
     return {"completed": True, "raw_source_id": raw_source_id}
 
 
+def recover_pending_manual_raw_results(*, limit: int = 5) -> dict:
+    limit_int = _positive_int(limit) or 5
+    limit_int = max(1, min(limit_int, 50))
+    rows = query_all(
+        """
+        SELECT t.id AS task_id, te.actor_user_id, te.id AS manual_event_id
+        FROM tasks t
+        JOIN (
+            SELECT task_id, MAX(id) AS manual_event_id
+            FROM task_events
+            WHERE event_type='raw_manual_uploaded'
+            GROUP BY task_id
+        ) latest ON latest.task_id=t.id
+        JOIN task_events te ON te.id=latest.manual_event_id
+        LEFT JOIN task_events done
+          ON done.task_id=t.id
+         AND done.id > latest.manual_event_id
+         AND done.event_type IN (
+             'approved',
+             'raw_source_created',
+             'raw_source_updated',
+             'raw_source_ready',
+             'auto_completed'
+         )
+        WHERE t.parent_task_id IS NULL
+          AND t.status=%s
+          AND done.id IS NULL
+        ORDER BY latest.manual_event_id ASC
+        LIMIT %s
+        """,
+        (PARENT_RAW_REVIEW, limit_int),
+    )
+    result = {
+        "scanned": len(rows),
+        "completed": 0,
+        "failed": 0,
+        "task_ids": [],
+        "errors": [],
+    }
+    for row in rows:
+        task_id = _positive_int(row.get("task_id"))
+        actor_user_id = _positive_int(row.get("actor_user_id"))
+        if not task_id or not actor_user_id:
+            result["failed"] += 1
+            result["errors"].append({
+                "task_id": task_id,
+                "error": "invalid pending manual raw result row",
+            })
+            continue
+        try:
+            completed = complete_raw_parent_if_ready(
+                task_id=task_id,
+                actor_user_id=actor_user_id,
+                approved_actor_user_id=actor_user_id,
+            )
+        except Exception as exc:
+            result["failed"] += 1
+            result["errors"].append({"task_id": task_id, "error": str(exc)})
+            continue
+        if completed.get("completed"):
+            result["completed"] += 1
+            result["task_ids"].append(task_id)
+    return result
+
+
 MIN_REASON_LEN = 10
 
 

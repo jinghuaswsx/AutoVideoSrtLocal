@@ -1515,6 +1515,42 @@ def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(mo
     assert ("event", 501, "auto_completed") in sequence
 
 
+def test_recover_pending_manual_raw_results_completes_stalled_manual_upload(monkeypatch):
+    from appcore import tasks
+
+    queried = []
+    completed = []
+
+    def fake_query_all(sql, args=()):
+        queried.append((sql, args))
+        return [{"task_id": 501, "actor_user_id": 11, "manual_event_id": 901}]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    monkeypatch.setattr(
+        tasks,
+        "complete_raw_parent_if_ready",
+        lambda **kwargs: completed.append(kwargs) or {"completed": True, "raw_source_id": 301},
+    )
+
+    result = tasks.recover_pending_manual_raw_results(limit=5)
+
+    assert result == {
+        "scanned": 1,
+        "completed": 1,
+        "failed": 0,
+        "task_ids": [501],
+        "errors": [],
+    }
+    assert queried[0][1] == (tasks.PARENT_RAW_REVIEW, 5)
+    assert completed == [
+        {
+            "task_id": 501,
+            "actor_user_id": 11,
+            "approved_actor_user_id": 11,
+        }
+    ]
+
+
 def test_submit_child_fails_when_target_lang_item_missing(
     monkeypatch, db_user_admin, db_user_translator, db_product
 ):

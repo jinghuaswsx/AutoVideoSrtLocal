@@ -73,14 +73,63 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
     assert created["product_id"] == 7
     assert created["user_id"] == 9
     assert created["display_name"] == "demo.mp4"
-    assert created["video_object_key"] == "9/medias/7/raw_sources/demo.mp4"
+    assert created["video_object_key"] == "mk-import/7/demo.mp4"
     assert created["cover_object_key"] == "9/medias/7/raw_sources/demo.cover.jpg"
-    assert copied["9/medias/7/raw_sources/demo.mp4"] == b"processed-video"
     assert copied["9/medias/7/raw_sources/demo.cover.jpg"] == b"cover"
     assert any(
         "UPDATE media_items SET source_raw_id=%s" in sql and args[:2] == (101, 11)
         for sql, args in executed
     )
+
+
+def test_ensure_raw_source_reuses_reviewed_media_video_without_copy(monkeypatch, tmp_path):
+    from appcore import task_raw_source_bridge as bridge
+
+    source_path = tmp_path / "media_store" / "u1" / "reviewed.mp4"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_bytes(b"reviewed-video")
+
+    monkeypatch.setattr(
+        bridge,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "created_by": 3,
+            "item_id": 11,
+            "item_user_id": 9,
+            "filename": "reviewed.mp4",
+            "object_key": "u1/reviewed.mp4",
+            "cover_object_key": "u1/reviewed.cover.jpg",
+            "duration_seconds": 12.5,
+            "file_size": source_path.stat().st_size,
+            "width": 720,
+            "height": 1280,
+        },
+    )
+    monkeypatch.setattr(bridge, "_find_existing_raw_source", lambda product_id, filename: None)
+    monkeypatch.setattr(bridge.local_media_storage, "exists", lambda object_key: True)
+    monkeypatch.setattr(bridge.local_media_storage, "safe_local_path_for", lambda object_key: source_path)
+    monkeypatch.setattr(
+        bridge,
+        "_copy_reviewed_video_to_raw_source",
+        lambda **kwargs: pytest.fail("reviewed media video should not be copied during approval"),
+    )
+
+    created = {}
+
+    def fake_create_raw_source(product_id, user_id, **kwargs):
+        created.update({"product_id": product_id, "user_id": user_id, **kwargs})
+        return 101
+
+    monkeypatch.setattr(bridge.medias, "create_raw_source", fake_create_raw_source)
+    monkeypatch.setattr(bridge, "execute", lambda sql, args=(): 1)
+
+    result = bridge.ensure_raw_source_for_parent_task(task_id=55, actor_user_id=4)
+
+    assert result == {"raw_source_id": 101, "created": True, "updated": False}
+    assert created["video_object_key"] == "u1/reviewed.mp4"
+    assert created["cover_object_key"] == "u1/reviewed.cover.jpg"
 
 
 def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
@@ -135,7 +184,7 @@ def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
     assert executed
     assert "UPDATE media_raw_sources" in executed[0][0]
     assert executed[0][1][-1] == 202
-    assert "10/medias/8/raw_sources/demo.mp4" in executed[0][1]
+    assert "mk-import/8/demo.mp4" in executed[0][1]
 
 
 def test_ensure_raw_source_requires_bound_media_item(monkeypatch):
