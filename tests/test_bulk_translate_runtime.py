@@ -1398,6 +1398,72 @@ def test_sync_preserves_interrupted_item_until_manual_restart(runtime_env, monke
     assert state["plan"][0]["error"] is None
 
 
+def test_sync_interrupted_detail_image_child_backfills_when_child_completed(
+    runtime_env,
+    monkeypatch,
+):
+    mod, fake_db = runtime_env
+    synced = []
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="detail_images", ref={"source_detail_ids": [11, 12]})
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["ja"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "img-child-1",
+            "sub_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "status": "interrupted",
+            "error": None,
+        }
+    )
+    fake_db.rows[task_id]["status"] = "interrupted"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        mod,
+        "_load_child_snapshot",
+        lambda task_type, child_task_id: {
+            "_project_status": "done",
+            "items": [
+                {"idx": 0, "status": "done", "dst_tos_key": "out/0.png"},
+                {"idx": 1, "status": "done", "dst_tos_key": "out/1.png"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "_sync_child_result",
+        lambda parent_id, item, parent_state, child_state: synced.append(
+            (parent_id, item["child_task_id"])
+        ),
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == ["sync_child_result", "finish_parent"]
+    assert synced == [(task_id, "img-child-1")]
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "done"
+    assert state["plan"][0]["result_synced"] is True
+    assert state["plan"][0]["error"] is None
+
+
 def test_sync_marks_failed_video_child_without_starting_runner(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     resumed = []
@@ -2105,6 +2171,87 @@ def test_force_backfill_item_marks_detail_image_item_done_and_rolls_up_cost(
     assert state["cost_tracking"]["actual"]["image_processed"] == 3
     assert state["audit_events"][-1]["action"] == "force_backfill_item"
     assert state["audit_events"][-1]["detail"]["idx"] == 0
+
+
+def test_force_backfill_item_accepts_interrupted_detail_image_item(
+    runtime_env,
+    monkeypatch,
+):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(
+                0,
+                kind="detail_images",
+                status="interrupted",
+                ref={"source_detail_ids": [11, 12]},
+            )
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["ja"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "img-child-1",
+            "sub_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "status": "interrupted",
+            "error": None,
+            "finished_at": "2026-05-22T10:00:00+00:00",
+        }
+    )
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows[task_id]["status"] = "interrupted"
+    fake_db.rows["img-child-1"] = {
+        "id": "img-child-1",
+        "user_id": 1,
+        "type": "image_translate",
+        "status": "done",
+        "state_json": json.dumps(
+            {
+                "items": [
+                    {"idx": 0, "status": "done", "dst_tos_key": "out/0.png"},
+                    {"idx": 1, "status": "failed", "error": "timeout"},
+                ],
+                "medias_context": {"apply_status": "pending"},
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": None,
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "_force_backfill_detail_image_child",
+        lambda item, child_state, user_id: {
+            "applied_ids": [901],
+            "skipped_failed_indices": [1],
+            "apply_status": "applied_partial",
+        },
+        raising=False,
+    )
+
+    mod.force_backfill_item(task_id, idx=0, user_id=9)
+
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    item = state["plan"][0]
+    assert item["status"] == "done"
+    assert item["result_synced"] is True
+    assert item["forced_backfill"] is True
+    assert item["forced_backfill_applied_count"] == 1
+    assert item["forced_backfill_skipped_failed_count"] == 1
 
 
 def test_materialize_multi_translate_cover_prefers_existing_translated_cover(

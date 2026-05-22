@@ -36,7 +36,7 @@
 
 - 子项类型是 `detail_images`
 - 子项 `child_task_type` 是 `image_translate`
-- 子项当前状态是 `failed`
+- 子项当前状态是 `failed` 或 `interrupted`（例如服务重启后父项未同步，但图片子任务已有成功结果）
 - 对应图片翻译子任务已经结束，不在运行中
 - 对应图片翻译子任务里至少有 1 个成功项可回填
 
@@ -64,6 +64,7 @@
 - `idx` 必须存在且落在父任务 plan 范围内
 - 目标子项必须是 `detail_images`
 - 目标子项必须关联 `image_translate` 子任务
+- 目标子项状态必须是 `failed` 或 `interrupted`
 - 图片翻译子任务必须已结束，不能仍在运行
 - 图片翻译子任务必须至少存在 1 个 `done` item
 
