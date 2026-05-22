@@ -97,6 +97,36 @@ def test_status_refreshes_progress_elapsed_seconds():
     assert status["progress"]["elapsed_seconds"] > 0
 
 
+def test_status_includes_context_snapshot_for_detail_header():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+        external_card_video_snapshot_service=FakeExternalCardVideoSnapshotService(),
+    )
+
+    run = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        product_code="new-idea",
+        card_video_object_key="mk/videos/selected-card.mp4",
+        card_video_path="uploads2/selected-card.mp4",
+        card_video_url="/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
+        card_video_name="selected-card.mp4",
+        card_video_duration_seconds=18.5,
+    )
+
+    status = service.get_status(0, run["evaluation_run_id"])
+
+    assert status["product_snapshot"]["product_code"] == "new-idea"
+    assert status["product_snapshot"]["product_url"] == "https://example.test/products/new-idea"
+    assert status["metadata"]["external_card_video"]["name"] == "selected-card.mp4"
+
+
 def test_initial_progress_points_to_next_pending_step_after_data_preparation():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
