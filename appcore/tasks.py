@@ -470,7 +470,8 @@ def list_task_center_items(
     task_type: str = "",
     parent_only: bool = False,
 ) -> dict:
-    offset = (int(page) - 1) * int(page_size)
+    page_size = max(1, int(page_size))
+    requested_page = max(1, int(page))
     where = ["1=1"]
     args: list = []
 
@@ -516,6 +517,20 @@ def list_task_center_items(
     elif bucket:
         raise ValueError("invalid bucket")
 
+    where_sql = " AND ".join(where)
+    count_sql = (
+        "SELECT COUNT(*) AS total "
+        "FROM tasks t "
+        "JOIN media_products p ON p.id=t.media_product_id "
+        f"WHERE {where_sql}"
+    )
+    count_args = tuple(args)
+    total_row = query_one(count_sql, count_args) or {}
+    total = int(total_row.get("total") or 0)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(requested_page, total_pages)
+    offset = (page - 1) * page_size
+
     assignee_name_expr = _user_display_name_expr("u")
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
@@ -527,11 +542,11 @@ def list_task_center_items(
         "JOIN media_products p ON p.id=t.media_product_id "
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
-        f"WHERE {' AND '.join(where)} "
+        f"WHERE {where_sql} "
         "ORDER BY t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
-    rows = query_all(sql, (*args, int(page_size), offset))
+    rows = query_all(sql, (*count_args, page_size, offset))
     return {
         "items": [
             {
@@ -574,8 +589,10 @@ def list_task_center_items(
             }
             for row in rows
         ],
-        "page": int(page),
-        "page_size": int(page_size),
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
     }
 
 

@@ -70,7 +70,11 @@
 .tc-table tr:hover td { background:var(--tc-bg-subtle); }
 .tc-task-name { font-weight:700; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tc-task-meta { margin-top:3px; color:var(--tc-fg-muted); font-size:12px; }
-.tc-pager { display:flex; align-items:center; justify-content:flex-end; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); }
+.tc-pager { display:flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); flex-wrap:wrap; }
+.tc-pager__summary { display:inline-flex; align-items:center; min-height:32px; font-weight:600; color:var(--tc-fg); }
+.tc-pager__controls { display:inline-flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); flex-wrap:wrap; }
+.tc-pager__jump { display:inline-flex; align-items:center; gap:6px; margin-left:var(--tc-sp-2); }
+.tc-pager__input { width:76px; text-align:center; }
 .tc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
 .tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
@@ -397,7 +401,7 @@ const TC_CAPS = {
 let TC_CURRENT_SECTION = 'overview';
 let TC_CURRENT_BUCKET = 'all';
 let TC_TASK_PAGE = 1;
-const TC_TASK_PAGE_SIZE = 20;
+const TC_TASK_PAGE_SIZE = 50;
 let TC_TASK_CACHE = new Map();
 const TC_LANGUAGE_FALLBACKS = {
   DE: '德语',
@@ -1676,6 +1680,7 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     page_size: String(TC_TASK_PAGE_SIZE),
   });
   const data = await tcFetchJson('/tasks/api/list?' + params.toString());
+  TC_TASK_PAGE = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
   TC_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || 0), it]));
   if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0); return; }
   const rows = data.items.map(it => {
@@ -1694,22 +1699,49 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
 }
 function tcRenderTaskPager(data, itemCount) {
-  const page = Number(data.page || TC_TASK_PAGE || 1);
-  const pageSize = Number(data.page_size || TC_TASK_PAGE_SIZE);
-  const total = Number(data.total || 0);
-  const totalPages = Number(data.total_pages || 0);
+  const page = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
+  const pageSize = Math.max(1, Number(data.page_size || TC_TASK_PAGE_SIZE));
+  const total = Math.max(0, Number(data.total || 0));
+  const explicitPages = Math.max(0, Number(data.total_pages || 0));
+  const totalPages = explicitPages || Math.max(1, total ? Math.ceil(total / pageSize) : page);
   const hasPrev = page > 1;
-  const hasNext = totalPages ? page < totalPages : itemCount >= pageSize;
-  const totalText = total ? ` · 共 ${total} 条` : '';
-  return `<div class="tc-pager">
-    <span>第 ${page}${totalPages ? ' / ' + totalPages : ''} 页${totalText}</span>
-    <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskPage(-1)">上一页</button>
-    <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
+  const hasNext = page < totalPages || (!explicitPages && itemCount >= pageSize);
+  return `<div class="tc-pager" aria-label="任务列表分页">
+    <span class="tc-pager__summary">共 ${total} 条 · 每页 ${pageSize} 条 · 第 ${page} / ${totalPages} 页</span>
+    <div class="tc-pager__controls">
+      <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskGotoPage(1)">第一页</button>
+      <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskPage(-1)">上一页</button>
+      <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
+      <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskGotoPage(${totalPages})">最后一页</button>
+      <form class="tc-pager__jump" onsubmit="return tcTaskJumpPage(event, ${totalPages})">
+        <label for="tcTaskPageJump">去</label>
+        <input id="tcTaskPageJump" class="tc-input tc-pager__input" type="number" min="1" max="${totalPages}" value="${page}" data-task-page-jump aria-label="跳转页码">
+        <span>页</span>
+        <button type="submit" class="tc-btn">跳转</button>
+      </form>
+    </div>
   </div>`;
 }
 function tcTaskPage(delta) {
-  TC_TASK_PAGE = Math.max(1, TC_TASK_PAGE + Number(delta || 0));
+  tcTaskGotoPage(TC_TASK_PAGE + Number(delta || 0));
+}
+function tcTaskGotoPage(page) {
+  TC_TASK_PAGE = tcNormalizeTaskPage(page, 1);
   tcRender();
+}
+function tcNormalizeTaskPage(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return Math.max(1, Math.trunc(parsed));
+  return Math.max(1, Math.trunc(Number(fallback || 1)));
+}
+function tcTaskJumpPage(event, totalPages) {
+  event.preventDefault();
+  const input = event.currentTarget.querySelector('[data-task-page-jump]');
+  const maxPage = Math.max(1, Number(totalPages || 1));
+  const target = Math.min(maxPage, tcNormalizeTaskPage(input ? input.value : 1, 1));
+  TC_TASK_PAGE = target;
+  tcRender();
+  return false;
 }
 function tcTaskDetailUrl(id) {
   const taskId = Number(id || 0);

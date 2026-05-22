@@ -5,6 +5,14 @@ from datetime import datetime
 import pytest
 
 
+def _mock_task_center_count(monkeypatch, tasks, total=0):
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {"total": total},
+    )
+
+
 def test_parent_raw_approval_permission_allows_admin_or_assignee():
     from appcore import tasks
 
@@ -368,6 +376,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks, total=6)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -434,6 +443,8 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
         ],
         "page": 2,
         "page_size": 5,
+        "total": 6,
+        "total_pages": 2,
     }
     assert "FROM tasks t" in captured["sql"]
     assert "JOIN media_products p" in captured["sql"]
@@ -457,11 +468,71 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     )
 
 
+def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch):
+    from appcore import tasks
+
+    captured_count = {}
+    captured_list = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_one(sql, args=()):
+        captured_count["sql"] = sql
+        captured_count["args"] = args
+        return {"total": 12}
+
+    def fake_query_all(sql, args=()):
+        captured_list["sql"] = sql
+        captured_list["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    result = tasks.list_task_center_items(
+        tab="mine",
+        user_id=2,
+        can_process_raw_video=True,
+        keyword="Product",
+        high_status="",
+        bucket="todo",
+        page=99,
+        page_size=5,
+    )
+
+    assert result == {
+        "items": [],
+        "page": 3,
+        "page_size": 5,
+        "total": 12,
+        "total_pages": 3,
+    }
+    assert "COUNT(*) AS total" in captured_count["sql"]
+    assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured_count["sql"]
+    assert "t.status IN (%s, %s)" in captured_count["sql"]
+    assert captured_count["args"] == (
+        2,
+        "%Product%",
+        "%Product%",
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.CHILD_ASSIGNED,
+    )
+    assert captured_list["args"] == (
+        2,
+        "%Product%",
+        "%Product%",
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.CHILD_ASSIGNED,
+        5,
+        10,
+    )
+
+
 def test_list_task_center_items_done_bucket_includes_raw_done_and_product_code_search(monkeypatch):
     from appcore import tasks
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -479,7 +550,7 @@ def test_list_task_center_items_done_bucket_includes_raw_done_and_product_code_s
         bucket="done",
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
 
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
@@ -499,6 +570,7 @@ def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypa
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -517,7 +589,7 @@ def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypa
         page=1,
         page_size=20,
         task_id=442,
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
 
     assert "t.id=%s" in captured["sql"]
     assert captured["args"] == (442, 20, 0)
@@ -528,6 +600,7 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -546,7 +619,7 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
         page=1,
         page_size=20,
         parent_only=True,
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured["sql"]
     assert "t.status IN (%s, %s)" in captured["sql"]
@@ -563,6 +636,7 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
 
     captured = []
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
 
     def fake_query_all(sql, args=()):
         captured.append({"sql": sql, "args": args})
@@ -580,7 +654,7 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
         page=1,
         page_size=20,
         task_type="raw",
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
     assert tasks.list_task_center_items(
         tab="all",
         user_id=1,
@@ -591,7 +665,7 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
         page=1,
         page_size=20,
         task_type="translate",
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured[0]["sql"]
     assert captured[0]["args"] == (20, 0)
@@ -604,6 +678,7 @@ def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypat
 
     captured = {}
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
 
     def fake_query_all(sql, args=()):
         captured["sql"] = sql
@@ -621,7 +696,7 @@ def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypat
         bucket="todo",
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
 
     assert "t.assignee_id=%s" in captured["sql"]
     assert "t.parent_task_id IS NULL AND t.status=%s" not in captured["sql"]

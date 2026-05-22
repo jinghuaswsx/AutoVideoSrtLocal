@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 _MANUAL_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
+TASK_CENTER_DEFAULT_PAGE_SIZE = 50
 MANUAL_RESULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 MANUAL_RESULT_ALLOWED_EXT = (".mp4", ".mov", ".webm", ".mkv")
 
@@ -242,7 +243,7 @@ def api_list():
     bucket = (request.args.get("bucket") or "").strip()
     task_type = (request.args.get("task_type") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
-    page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
+    page_size = min(100, max(1, int(request.args.get("page_size") or TASK_CENTER_DEFAULT_PAGE_SIZE)))
     raw_task_id = (request.args.get("task_id") or "").strip()
     task_id = None
     if raw_task_id:
