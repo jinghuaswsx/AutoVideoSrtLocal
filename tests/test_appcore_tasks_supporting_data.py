@@ -1065,6 +1065,88 @@ def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monke
     assert "人工确认完成" not in checks["translated_cover"]["reason"]
 
 
+def test_get_child_readiness_marks_push_rework_rejected_checks_red(monkeypatch):
+    from appcore import pushes, tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_ASSIGNED,
+            "product_code": "robot-kit-rjc",
+            "ad_supported_langs": "de",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 5,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": "robot-kit-de.mp4",
+            "display_name": "德语视频",
+            "object_key": "1/medias/9/robot-kit-de.mp4",
+            "cover_object_key": "1/medias/9/robot-kit-de-cover.jpg",
+        },
+    )
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
+    monkeypatch.setattr(tasks, "_copywriting_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_shopify_image_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_product_link_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_recent_copywriting_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_recent_detail_image_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_detail_image_preview_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        tasks,
+        "_latest_push_rework_rejection",
+        lambda task_id: {
+            "reason": "视频字幕错位，英文文案格式也不对",
+            "issue_keys": ["has_object", "has_push_texts"],
+            "issue_labels": ["视频", "英文文案格式"],
+            "task_check_keys": ["translated_video", "push_texts"],
+        },
+    )
+
+    payload = tasks.get_child_readiness(44)
+    checks = {check["key"]: check for check in payload["checks"]}
+
+    assert payload["ready"] is False
+    assert payload["missing"] == ["translated_video", "push_texts"]
+    assert checks["translated_video"]["ok"] is False
+    assert checks["translated_video"]["admin_rejected"] is True
+    assert checks["translated_video"]["reason"] == "管理员已拒绝：视频字幕错位，英文文案格式也不对"
+    assert checks["push_texts"]["ok"] is False
+    assert checks["push_texts"]["admin_rejected"] is True
+    assert checks["translated_cover"]["ok"] is True
+
+
 def test_list_task_artifacts_includes_direct_actions(monkeypatch):
     from appcore import tasks
 

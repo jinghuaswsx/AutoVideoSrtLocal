@@ -1087,6 +1087,109 @@ def test_submit_child_marks_done_when_readiness_ready(monkeypatch):
     )
 
 
+def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(monkeypatch):
+    import json
+
+    from appcore import tasks
+
+    sequence = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            if "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE" in sql:
+                self.rows = [{
+                    "id": 44,
+                    "parent_task_id": 10,
+                    "status": tasks.CHILD_DONE,
+                    "media_product_id": 9,
+                }]
+                sequence.append(("select_child", args))
+                return
+            if "UPDATE tasks SET status=%s, last_reason=%s, completed_at=NULL" in sql:
+                self.rowcount = 1
+                sequence.append(("update_child", args))
+                return
+            if "UPDATE tasks SET status=%s, completed_at=NULL" in sql and "parent_task_id IS NULL" in sql:
+                self.rowcount = 1
+                sequence.append(("reopen_parent", args))
+                return
+            if "INSERT INTO task_events" in sql:
+                payload = json.loads(args[3]) if args[3] else {}
+                sequence.append(("event", args[0], args[1], payload))
+                self.rowcount = 1
+                return
+            if "SELECT media_product_id FROM tasks" in sql:
+                self.rows = [{"media_product_id": 9}]
+                sequence.append(("select_product_id", args))
+                return
+            if "SELECT name FROM media_products" in sql:
+                self.rows = [{"name": "硬币收纳盒"}]
+                sequence.append(("select_product_name", args))
+                return
+            raise AssertionError(sql)
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            sequence.append("begin")
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            sequence.append("commit")
+
+        def rollback(self):
+            sequence.append("rollback")
+
+        def close(self):
+            sequence.append("close")
+
+    notifications = []
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(
+        tasks.notifications_svc,
+        "notify_child_rejected",
+        lambda cur, **kwargs: notifications.append(kwargs),
+    )
+
+    result = tasks.reject_child_from_push(
+        task_id=44,
+        actor_user_id=1,
+        issue_keys=["has_object", "has_push_texts"],
+        reason="视频字幕错位，英文文案格式也不对",
+    )
+
+    update_child = next(item for item in sequence if item[0] == "update_child")
+    assert update_child[1][0] == tasks.CHILD_ASSIGNED
+    assert update_child[1][2] == 44
+    assert "管理员已拒绝" in update_child[1][1]
+    assert "视频字幕错位" in update_child[1][1]
+    event = next(item for item in sequence if item[0] == "event" and item[2] == "push_rework_rejected")
+    assert event[3]["issue_keys"] == ["has_object", "has_push_texts"]
+    assert event[3]["task_check_keys"] == ["translated_video", "push_texts"]
+    assert event[3]["issue_labels"] == ["视频", "英文文案格式"]
+    assert ("reopen_parent", (tasks.PARENT_RAW_DONE, 10, tasks.PARENT_ALL_DONE)) in sequence
+    assert notifications == [{"task_id": 44, "product_name": "硬币收纳盒"}]
+    assert result["status"] == tasks.CHILD_ASSIGNED
+    assert result["issue_keys"] == ["has_object", "has_push_texts"]
+
+
 def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(monkeypatch):
     from appcore import tasks
     from appcore import task_raw_source_bridge as bridge

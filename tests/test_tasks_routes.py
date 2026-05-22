@@ -91,7 +91,9 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "blocked: '等待 去字幕原始素材'" in body
     assert "assigned: '待处理'" in body
     assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
-    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
+    assert "function tcTaskStatusLabel(task)" in body
+    assert "管理员已拒绝" in body
+    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcTaskStatusLabel(it))}</span>' in body
     assert "function tcTaskTypeLabel(task)" in body
     assert "const kind = tcTaskTypeLabel(it);" in body
     assert "task && task.parent_task_id ? '小语种翻译' : '去字幕'" in body
@@ -310,8 +312,10 @@ def test_task_detail_readiness_groups_product_link_checks_into_manager_card(auth
     body = rsp.data.decode("utf-8")
 
     assert ".tc-product-link-combo" in body
+    assert ".tc-readiness-evidence--domain-list" in body
     assert "function tcIsProductLinkCombinedCheck" in body
     assert "function tcRenderProductLinkCombinedCard" in body
+    assert "tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'})" in body
     assert "tcIsProductLinkCombinedCheck(check)" in body
     assert "tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks)" in body
     assert "tcRenderProductLinkManagerShell(data, task)" in body

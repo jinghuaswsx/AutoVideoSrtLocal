@@ -166,6 +166,47 @@ def test_compute_readiness_english_lang_supported_without_ad_supported_langs(mon
     assert r["shopify_image_confirmed"] is True
 
 
+def test_compute_readiness_applies_active_push_rework_overrides(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr("appcore.pushes.medias.parse_ad_supported_langs", lambda value: {"de"})
+    monkeypatch.setattr(
+        "appcore.pushes.query_one",
+        lambda sql, args: {"ok": 1} if "media_copywritings" in sql else None,
+    )
+    monkeypatch.setattr("appcore.pushes._has_valid_en_push_texts", lambda product_id: True)
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.is_confirmed_for_push",
+        lambda product, lang: (True, ""),
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.domain_statuses_for_push",
+        lambda product, lang: [],
+    )
+    monkeypatch.setattr(
+        "appcore.tasks.active_push_rework_readiness_keys",
+        lambda task_id: ["has_object", "has_push_texts"] if task_id == 44 else [],
+        raising=False,
+    )
+
+    readiness = pushes.compute_readiness(
+        {
+            "id": 10,
+            "task_id": 44,
+            "product_id": 20,
+            "lang": "de",
+            "object_key": "video.mp4",
+            "cover_object_key": "cover.jpg",
+        },
+        {"id": 20, "ad_supported_langs": "de", "listing_status": "上架"},
+    )
+
+    assert readiness["has_object"] is False
+    assert readiness["has_push_texts"] is False
+    assert readiness["has_cover"] is True
+    assert readiness["has_copywriting"] is True
+    assert pushes.is_ready(readiness) is False
+
+
 def test_compute_status_pushed(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))
