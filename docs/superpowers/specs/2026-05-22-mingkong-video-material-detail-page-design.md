@@ -73,8 +73,9 @@ The route passes this data directly to `web/templates/mk_video_material_detail.h
 - The media section uses two equal columns on desktop:
   - left: cover image;
   - right: video player with controls.
-- The cover and video frames share the same centered portrait media viewport, so the
-  video player does not stretch across the full right-side panel.
+- The cover and video frames share the same centered portrait media viewport, matching
+  the video-card preview size from `mk_selection.html` (`216px` by `384px`) so the
+  detail page does not stretch media across the full right-side panel.
 - On narrow screens the two media panes stack.
 - The card entry opens in a new tab so operators do not lose the scanned list position.
 - On material cards, the filename action column shows `详情` above the filename-copy
