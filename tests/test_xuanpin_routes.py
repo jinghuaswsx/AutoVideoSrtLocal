@@ -366,6 +366,24 @@ def test_xuanpin_mk_cards_include_ai_evaluation_button_and_language_hints(authed
     assert "mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink)" in body
 
 
+def test_xuanpin_mk_small_language_ai_suggestions_are_card_hints(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "mki-xiao-lang-card" in body
+    assert "mki-xiao-lang-card--high" in body
+    assert "mki-xiao-lang-card--medium" in body
+    assert "mki-xiao-lang-card--low" in body
+    assert "function mkiXiaoAiSuggestionTone(row)" in body
+    assert "function mkiXiaoAiSuggestionText(row, tone)" in body
+    assert "AI建议：高评分" in body
+    assert "AI建议：中间档" in body
+    assert "AI建议：低分不可做" in body
+    assert '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' in body
+    assert '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>' in body
+
+
 def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
