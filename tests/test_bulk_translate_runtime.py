@@ -2250,6 +2250,57 @@ def test_sync_child_result_passes_task_center_child_id_to_video_backfill(runtime
     assert captured["source_raw_id"] == 301
 
 
+def test_sync_child_result_infers_task_center_child_id_from_initiator(runtime_env, monkeypatch):
+    mod, _fake_db = runtime_env
+    captured = {}
+    inferred = {}
+
+    import appcore.tasks as tasks_svc
+
+    monkeypatch.setattr(
+        tasks_svc,
+        "infer_single_child_task_id_for_media_item",
+        lambda product_id, lang, assignee_id=None: inferred.update(
+            {"product_id": product_id, "lang": lang, "assignee_id": assignee_id}
+        ) or 61,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_materialize_multi_translate_video",
+        lambda **kwargs: "1/medias/77/de_result.mp4",
+    )
+    monkeypatch.setattr(
+        mod,
+        "_materialize_multi_translate_cover",
+        lambda **kwargs: "1/medias/77/de_cover.png",
+    )
+    monkeypatch.setattr(
+        mod,
+        "sync_video_result",
+        lambda **kwargs: captured.update(kwargs) or 701,
+    )
+    monkeypatch.setattr(
+        mod,
+        "refresh_translated_video_item_covers_for_scope",
+        lambda product_id, lang: 1,
+    )
+
+    mod._sync_child_result(
+        "bt-1",
+        {
+            "kind": "videos",
+            "lang": "de",
+            "child_task_id": "video-child",
+            "ref": {"source_raw_id": 301},
+        },
+        {"product_id": 77, "initiator": {"user_id": 238}},
+        {"_project_status": "done"},
+    )
+
+    assert inferred == {"product_id": 77, "lang": "de", "assignee_id": 238}
+    assert captured["task_center_task_id"] == 61
+
+
 # ---------------------------------------------------------------------------
 # Fail-fast 调度回归（事故：2026-04-27 product 537 6 个 pending 永远 stuck）
 # ---------------------------------------------------------------------------

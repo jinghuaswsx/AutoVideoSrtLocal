@@ -1237,10 +1237,48 @@ def _sync_child_result(
             source_raw_id=source_raw_id,
             video_object_key=video_object_key,
             cover_object_key=cover_object_key,
-            task_center_task_id=_positive_int_or_none(parent_state.get("task_center_task_id")),
+            task_center_task_id=_resolve_task_center_child_id_for_video_backfill(
+                parent_state=parent_state,
+                product_id=product_id,
+                lang=lang,
+            ),
         )
         _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return
+
+
+def _resolve_task_center_child_id_for_video_backfill(
+    *,
+    parent_state: dict,
+    product_id: int,
+    lang: str,
+) -> int | None:
+    explicit_id = _positive_int_or_none(parent_state.get("task_center_task_id"))
+    if explicit_id is not None:
+        return explicit_id
+
+    initiator = parent_state.get("initiator") or {}
+    assignee_id = _positive_int_or_none(initiator.get("user_id"))
+    if not assignee_id:
+        return None
+
+    try:
+        from appcore.tasks import infer_single_child_task_id_for_media_item
+
+        return infer_single_child_task_id_for_media_item(
+            product_id,
+            lang,
+            assignee_id=assignee_id,
+        )
+    except Exception:
+        log.warning(
+            "task center child inference failed for bulk video backfill product_id=%s lang=%s assignee_id=%s",
+            product_id,
+            lang,
+            assignee_id,
+            exc_info=True,
+        )
+        return None
 
 
 def _refresh_video_item_covers_for_scope(*, product_id: int, lang: str) -> None:
