@@ -16,6 +16,12 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import TEST_SERVER_BASE_URL
+
 
 PAGES = [
     ("login", "/login"),
@@ -33,7 +39,7 @@ ARTIFACTS.mkdir(parents=True, exist_ok=True)
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="http://172.16.254.106:8080")
+    parser.add_argument("--base", default=TEST_SERVER_BASE_URL)
     parser.add_argument("--user", default=os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin"))
     parser.add_argument("--pwd", default=os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", ""))
     parser.add_argument("--width", type=int, default=1440)

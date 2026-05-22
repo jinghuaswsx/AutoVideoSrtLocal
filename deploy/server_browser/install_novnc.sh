@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/autovideosrt}"
 SERVICE_NAME="${SERVICE_NAME:-autovideosrt-novnc}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+SERVER_HOST="${AUTOVIDEOSRT_SERVER_HOST:-}"
 
 if [[ ! -d "$APP_DIR" ]]; then
   echo "APP_DIR does not exist: $APP_DIR" >&2
@@ -11,6 +12,14 @@ if [[ ! -d "$APP_DIR" ]]; then
 fi
 
 cd "$APP_DIR"
+
+if [[ -z "$SERVER_HOST" ]]; then
+  SERVER_HOST="$(python3 - <<'PY'
+from server_config import SERVER_HOST
+print(SERVER_HOST)
+PY
+)"
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -43,4 +52,4 @@ curl -fsS -o /dev/null -w "http_code=%{http_code}\n" "http://127.0.0.1:6082/vnc.
 echo
 echo "[novnc] install done"
 echo "Local browser entry (LAN-internal):"
-echo "  http://172.16.254.106:6082/vnc.html?host=172.16.254.106&port=6082&autoconnect=true&resize=remote"
+echo "  http://$SERVER_HOST:6082/vnc.html?host=$SERVER_HOST&port=6082&autoconnect=true&resize=remote"

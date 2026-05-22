@@ -97,7 +97,7 @@ def test_start_run_saves_runtime_config_and_passes_it_to_controller(monkeypatch)
     from link_check_desktop import gui
 
     monkeypatch.setattr(gui.settings, "load_runtime_config", lambda root=None: {
-        "base_url": "http://172.16.254.106",
+        "base_url": "https://autovideosrt.example.test",
         "api_key": "default-key",
     })
 
@@ -166,7 +166,7 @@ def test_run_failure_is_shown_in_window_result(monkeypatch):
     from link_check_desktop import gui
 
     monkeypatch.setattr(gui.settings, "load_runtime_config", lambda root=None: {
-        "base_url": "http://172.16.254.106",
+        "base_url": "https://autovideosrt.example.test",
         "api_key": "default-key",
     })
 
@@ -211,7 +211,7 @@ def test_app_does_not_prompt_for_target_url_on_startup(monkeypatch):
     from link_check_desktop import gui
 
     monkeypatch.setattr(gui.settings, "load_runtime_config", lambda root=None: {
-        "base_url": "http://172.16.254.106",
+        "base_url": "https://autovideosrt.example.test",
         "api_key": "default-key",
     })
 
@@ -228,7 +228,7 @@ def test_toggle_advanced_settings_shows_and_hides_config(monkeypatch):
     from link_check_desktop import gui
 
     monkeypatch.setattr(gui.settings, "load_runtime_config", lambda root=None: {
-        "base_url": "http://172.16.254.106",
+        "base_url": "https://autovideosrt.example.test",
         "api_key": "default-key",
     })
     _stub_widgets(monkeypatch, gui)

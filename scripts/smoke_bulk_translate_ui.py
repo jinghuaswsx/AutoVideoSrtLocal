@@ -4,14 +4,23 @@
     python scripts/smoke_bulk_translate_ui.py
 
 前置:
-    * 测试环境 http://172.16.254.106:8080 已部署本分支
+    * 测试环境 server_config.TEST_SERVER_BASE_URL 已部署本分支
     * testuser.md 的管理员账号有效，密码从 AUTOVIDEOSRT_SMOKE_PASSWORD 读取
 """
 import os
+import sys
+from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
 
-BASE = "http://172.16.254.106:8080"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import TEST_SERVER_BASE_URL
+
+
+BASE = TEST_SERVER_BASE_URL
 USER = os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin")
 PWD = os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", "")
 

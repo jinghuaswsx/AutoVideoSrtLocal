@@ -8,6 +8,8 @@ from __future__ import annotations
 import time
 from playwright.sync_api import sync_playwright
 
+from server_config import PROXY_BYPASS_LIST
+
 
 STEALTH_INIT = r"""
 // Hide webdriver
@@ -61,7 +63,7 @@ def main() -> None:
                 "--window-position=2560,0",
                 "--window-size=1440,2512",
                 "--proxy-server=http://127.0.0.1:7890",
-                "--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>",
+                f"--proxy-bypass-list={PROXY_BYPASS_LIST}",
             ],
         )
         # 所有 new document 都会预执行这段

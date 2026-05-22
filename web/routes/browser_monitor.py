@@ -8,11 +8,10 @@ from flask import Blueprint, render_template
 from flask_login import login_required
 
 from appcore import scheduled_tasks
+from server_config import SERVER_HOST
 from web.auth import permission_required
 
 bp = Blueprint("browser_monitor", __name__, url_prefix="/browser-monitor")
-
-SERVER_HOST = "172.16.254.106"
 
 
 @dataclass(frozen=True)

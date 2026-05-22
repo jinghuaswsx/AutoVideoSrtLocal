@@ -43,6 +43,7 @@ from appcore.video_cover_generation import (
     video_cover_model_options,
     _decode_image_response_payload,
 )
+from server_config import LOCAL_IMAGE_BASE_URL_DEFAULT
 from appcore.video_cover_generation import _fetch_product_image, _product_value
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -1222,7 +1223,7 @@ def _provider_config_values(provider: str) -> tuple[str, str]:
 def _cover_full_request_endpoint(provider: str, base_url: str) -> tuple[str, str]:
     normalized = (provider or "").strip()
     if normalized in {"", "local", "local_image_2"}:
-        api_base = base_url or "http://172.16.254.106:82/v1"
+        api_base = base_url or LOCAL_IMAGE_BASE_URL_DEFAULT
         return f"{api_base.rstrip('/')}/images/edits", "multipart/form-data"
     if normalized == "openrouter":
         api_base = base_url or "https://openrouter.ai/api/v1"

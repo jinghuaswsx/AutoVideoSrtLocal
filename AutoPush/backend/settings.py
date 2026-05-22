@@ -3,18 +3,26 @@ from __future__ import annotations
 
 from functools import lru_cache
 from os import getenv
+from pathlib import Path
+import sys
 
 from dotenv import load_dotenv
 
 
 load_dotenv()
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import SERVER_BASE_URL
+
 
 class Settings:
     def __init__(self) -> None:
         self.autovideo_base_url = getenv(
             "AUTOVIDEO_BASE_URL",
-            "http://172.16.254.106",
+            SERVER_BASE_URL,
         ).rstrip("/")
         self.autovideo_api_key = getenv(
             "AUTOVIDEO_API_KEY",

@@ -1,12 +1,17 @@
 [CmdletBinding()]
 param(
-    [string]$ServerHost = "172.16.254.106",
+    [string]$ServerHost = "",
     [string]$User = "root",
     [string]$KeyPath = "C:\Users\admin\.ssh\CC.pem",
     [int]$CdpPort = 9223
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $ServerHost) {
+    $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+    $ServerHost = (& python -c "import sys; sys.path.insert(0, r'''$repoRoot'''); from server_config import SERVER_HOST; print(SERVER_HOST)").Trim()
+}
 
 if (-not (Test-Path $KeyPath)) {
     throw "SSH key was not found: $KeyPath"
