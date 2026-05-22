@@ -5,6 +5,7 @@ from datetime import datetime
 from io import BytesIO
 import json
 from pathlib import Path
+import requests
 import threading
 import time
 
@@ -1374,6 +1375,30 @@ def test_video_cover_project_create_defaults_to_four_covers(authed_client_no_db,
     payload = resp.get_json()
     assert inserted["state"]["image_count"] == 4
     assert started == [(payload["id"], "video_analysis", 4)]
+
+
+def test_video_cover_project_create_maps_product_fetch_http_error_to_400(authed_client_no_db, monkeypatch):
+    from web.routes import video_cover
+
+    def fail_fetch(product_url):
+        raise requests.HTTPError("403 Client Error: Forbidden for url")
+
+    monkeypatch.setattr(video_cover, "fetch_product_analysis", fail_fetch)
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/projects",
+        data={
+            "product_url": "https://shop.example/products/lamp",
+            "video_file": (BytesIO(b"video"), "lamp.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["ok"] is False
+    assert "商品链接抓取失败" in payload["error"]
+    assert "403 Client Error" in payload["error"]
 
 
 def test_video_cover_project_create_uses_white_card_fallback_when_thumbnail_fails(

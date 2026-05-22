@@ -1,6 +1,36 @@
 from appcore.meta_hot_posts import product_analysis
 
 
+class _FakeResponse:
+    def __init__(self, *, status_code=200, headers=None, payload=None, text=""):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._payload = payload or {}
+        self.text = text
+        self.url = "https://shop.example/products/demo"
+
+    @property
+    def ok(self):
+        return 200 <= self.status_code < 400
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise AssertionError(f"unexpected status {self.status_code}")
+
+
+class _CaptureSession:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def get(self, url, *, headers=None, timeout=None):
+        self.calls.append({"url": url, "headers": headers or {}, "timeout": timeout})
+        return self.response
+
+
 def test_parse_shopify_product_json_extracts_title_image_and_sku_prices():
     payload = {
         "product": {
@@ -24,6 +54,28 @@ def test_parse_shopify_product_json_extracts_title_image_and_sku_prices():
         {"sku": "LAMP-A", "title": "Black", "price": 19.99, "currency": "USD"},
         {"sku": "LAMP-B", "title": "White", "price": 24.5, "currency": "USD"},
     ]
+
+
+def test_fetch_product_analysis_uses_full_browser_headers_for_shopify_json():
+    payload = {
+        "product": {
+            "title": "Demo Lamp",
+            "image": {"src": "//cdn.example/main.jpg"},
+            "variants": [],
+        }
+    }
+    session = _CaptureSession(
+        _FakeResponse(headers={"content-type": "application/json; charset=utf-8"}, payload=payload)
+    )
+
+    result = product_analysis.fetch_product_analysis("https://shop.example/products/demo", session=session)
+
+    assert result.title == "Demo Lamp"
+    assert session.calls[0]["url"] == "https://shop.example/products/demo.json"
+    headers = session.calls[0]["headers"]
+    assert "Chrome/" in headers["User-Agent"]
+    assert "Safari/" in headers["User-Agent"]
+    assert headers["Accept-Language"].startswith("en-US")
 
 
 def test_parse_product_html_extracts_jsonld_product_offers():
