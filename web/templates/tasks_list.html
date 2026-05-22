@@ -520,11 +520,17 @@ function tcStatusLabel(status) {
   };
   return labels[status] || status || '—';
 }
+function tcTaskStatusLabel(task) {
+  if (task && task.status === 'assigned' && String(task.last_reason || '').includes('管理员已拒绝')) {
+    return '管理员已拒绝';
+  }
+  return tcStatusLabel(task && task.status);
+}
 function tcTaskTypeLabel(task) {
   return task && task.parent_task_id ? '小语种翻译' : '去字幕';
 }
 function tcTaskStatusCell(it) {
-  const badge = `<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>`;
+  const badge = `<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcTaskStatusLabel(it))}</span>`;
   const parentId = Number(it && it.parent_task_id || 0);
   if (it && it.status === 'blocked' && parentId) {
     return badge + '<div style="margin-top:6px;">' + tcActiveTaskAction(parentId, '去查看等待的任务', false) + '</div>';
@@ -620,6 +626,7 @@ const TC_EVENT_TEXT = {
   raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待审核', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
   approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
   rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
+  push_rework_rejected: { title: '推送管理打回重做', progress: '管理员已拒绝', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人修正后重新提交完成。' },
   cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
   unblocked: { title: '子任务解锁', progress: '可开始翻译', tone: 'success', summary: '原始视频审核通过后，翻译子任务已解锁。' },
   submitted: { title: '提交翻译验收', progress: '等待管理员验收', tone: 'info', summary: '翻译员已提交产物，等待管理员审核通过或打回。' },
@@ -641,6 +648,7 @@ function tcEventFacts(payload, event) {
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
   add('原始素材 ID', payload.raw_source_id);
+  if (Array.isArray(payload.issue_labels)) add('问题项', payload.issue_labels.join('、'));
   add('处理人', tcEventPayloadUserDisplay(event, payload, 'assignee_id'));
   add('上次字幕任务', payload.previous_subtitle_task_id);
   add('处理阶段', payload.stage);
@@ -1959,12 +1967,12 @@ function tcRenderDetail(task, events, reviewAssets) {
               <h3>${tcEsc(task.product_name)}</h3>
               ${identityRows}
             </div>
-            <div class="tc-detail-status"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcStatusLabel(task.status))}</div>
+            <div class="tc-detail-status"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
             <div class="tc-detail-meta">
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
               负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
             </div>
-            ${task.last_reason ? `<div class="tc-detail-reason">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
+            ${task.last_reason ? `<div class="tc-detail-reason">备注：${tcEsc(task.last_reason)}</div>` : ''}
           </div>
           <div class="tc-detail-sticky-actions">
             <button class="tc-btn" onclick="tcCloseDetail()">关闭</button>

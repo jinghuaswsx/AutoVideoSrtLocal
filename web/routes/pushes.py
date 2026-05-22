@@ -59,6 +59,7 @@ def index():
 
 
 from appcore import medias, push_quality_checks, pushes, system_audit
+from appcore import tasks as tasks_svc
 
 _PAGE_SIZE_DEFAULT = 20
 _AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
@@ -273,6 +274,44 @@ def api_build_payload(item_id: int):
         "preview_cover_url": preview_cover_url,
         "quality_check": _quality_check_for_item(item_id),
     })
+
+
+@bp.route("/api/items/<int:item_id>/reject-to-task", methods=["POST"])
+@login_required
+@admin_required
+def api_reject_to_task(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return _json_response({"error": "item_not_found"}, 404)
+    task_id = item.get("task_id")
+    if not task_id:
+        return _json_response({"error": "task_not_linked"}, 400)
+
+    body = request.get_json(silent=True) or {}
+    issue_keys = body.get("issue_keys") or body.get("issues") or []
+    reason = str(body.get("reason") or "").strip()
+    try:
+        result = tasks_svc.reject_child_from_push(
+            task_id=int(task_id),
+            actor_user_id=int(current_user.id),
+            issue_keys=issue_keys,
+            reason=reason,
+        )
+    except ValueError as exc:
+        return _json_response({"error": "invalid_request", "message": str(exc)}, 400)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": "task_state_error", "message": str(exc)}, 409)
+
+    _audit_push_action(
+        item_id,
+        "push_rework_rejected",
+        detail={
+            "task_id": int(task_id),
+            "issue_keys": result.get("issue_keys") or [],
+            "reason": reason,
+        },
+    )
+    return _json_response(result)
 
 
 @bp.route("/api/items/<int:item_id>/quality-check/retry", methods=["POST"])

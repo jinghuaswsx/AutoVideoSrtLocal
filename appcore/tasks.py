@@ -39,6 +39,7 @@ CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
 CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
+CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -52,6 +53,33 @@ CHILD_ACCEPTANCE_STEP_LABELS = {
     "language_supported": "广告语言配置",
 }
 CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
+PUSH_REWORK_ISSUE_DEFS = {
+    "has_object": {
+        "task_check_key": "translated_video",
+        "label": "视频",
+    },
+    "has_cover": {
+        "task_check_key": "translated_cover",
+        "label": "封面",
+    },
+    "has_copywriting": {
+        "task_check_key": "translated_copywriting",
+        "label": "文案",
+    },
+    "lang_supported": {
+        "task_check_key": "language_supported",
+        "label": "链接",
+    },
+    "has_push_texts": {
+        "task_check_key": "push_texts",
+        "label": "英文文案格式",
+    },
+    "shopify_image_confirmed": {
+        "task_check_key": "shopify_images",
+        "label": "图片/链接确认",
+    },
+}
+PUSH_REWORK_ISSUE_KEYS = tuple(PUSH_REWORK_ISSUE_DEFS)
 CHILD_ACCEPTANCE_MISSING_ALIASES = {
     "localized_media_item": "lang_item_missing",
 }
@@ -1578,6 +1606,93 @@ def _manual_confirmed_child_step_keys(task_id: int) -> set[str]:
     return confirmed
 
 
+def _normalize_push_rework_issue_keys(issue_keys: Iterable[Any]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_key in issue_keys or []:
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        if key not in PUSH_REWORK_ISSUE_DEFS:
+            raise ValueError("unknown issue key")
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+    if not normalized:
+        raise ValueError("issue_keys must be non-empty")
+    return normalized
+
+
+def _push_rework_issue_labels(issue_keys: Iterable[str]) -> list[str]:
+    return [
+        str(PUSH_REWORK_ISSUE_DEFS[key]["label"])
+        for key in issue_keys
+        if key in PUSH_REWORK_ISSUE_DEFS
+    ]
+
+
+def _push_rework_task_check_keys(issue_keys: Iterable[str]) -> list[str]:
+    return [
+        str(PUSH_REWORK_ISSUE_DEFS[key]["task_check_key"])
+        for key in issue_keys
+        if key in PUSH_REWORK_ISSUE_DEFS
+    ]
+
+
+def _latest_push_rework_rejection(task_id: int) -> dict:
+    row = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type=%s "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id), CHILD_PUSH_REWORK_REJECTED_EVENT),
+    )
+    return _parse_event_payload_obj((row or {}).get("payload_json"))
+
+
+def active_push_rework_readiness_keys(task_id: int) -> list[str]:
+    row = query_one(
+        "SELECT status FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row or row.get("status") != CHILD_ASSIGNED:
+        return []
+    payload = _latest_push_rework_rejection(int(task_id))
+    if not payload:
+        return []
+    try:
+        return _normalize_push_rework_issue_keys(payload.get("issue_keys") or [])
+    except ValueError:
+        return []
+
+
+def _apply_child_push_rework_rejections(
+    checks: list[dict],
+    *,
+    rejection: dict | None,
+) -> list[dict]:
+    payload = rejection or {}
+    issue_keys = payload.get("issue_keys") or []
+    task_check_keys = payload.get("task_check_keys") or _push_rework_task_check_keys(issue_keys)
+    rejected_keys = {
+        str(key or "").strip()
+        for key in task_check_keys
+        if str(key or "").strip()
+    }
+    if not rejected_keys:
+        return checks
+    reason = str(payload.get("reason") or "").strip()
+    reason_text = f"管理员已拒绝：{reason}" if reason else "管理员已拒绝"
+    for check in checks:
+        key = str(check.get("key") or "").strip()
+        if key not in rejected_keys:
+            continue
+        check["ok"] = False
+        check["admin_rejected"] = True
+        check["reason"] = reason_text
+    return checks
+
+
 def _manual_output_config_for_child_step(key: str) -> dict | None:
     kind = CHILD_MANUAL_OUTPUT_STEP_KINDS.get(str(key or "").strip())
     if not kind:
@@ -2063,6 +2178,7 @@ def _child_acceptance_payload(
     readiness: dict,
     include_evidence: bool = True,
     manual_confirmed_keys: set[str] | None = None,
+    include_rework_rejections: bool = True,
 ) -> dict:
     product_id = int(row["media_product_id"])
     lang = (row.get("country_code") or "").strip().lower()
@@ -2078,6 +2194,12 @@ def _child_acceptance_payload(
     ) or row.get("ad_supported_langs") or ""
     if manual_confirmed_keys is None:
         manual_confirmed_keys = _manual_confirmed_child_step_keys(int(task_id))
+    task_status = str(row.get("status") or "").strip()
+    rework_rejection = (
+        _latest_push_rework_rejection(int(task_id))
+        if include_rework_rejections and task_status in (CHILD_ASSIGNED, CHILD_REVIEW)
+        else {}
+    )
 
     if not item:
         media_search_url = _medias_search_url(
@@ -2095,6 +2217,10 @@ def _child_acceptance_payload(
             product_code=product_code,
             lang=lang,
             item=None,
+        )
+        checks = _apply_child_push_rework_rejections(
+            checks,
+            rejection=rework_rejection,
         )
         missing = _missing_child_acceptance_keys(checks)
         return {
@@ -2264,6 +2390,10 @@ def _child_acceptance_payload(
         lang=lang,
         item=item,
     )
+    checks = _apply_child_push_rework_rejections(
+        checks,
+        rejection=rework_rejection,
+    )
     missing = _missing_child_acceptance_keys(checks)
     return {
         "ready": not missing,
@@ -2289,6 +2419,7 @@ def _child_readiness_payload_for_row(
     task_id: int,
     row: dict,
     include_evidence: bool = True,
+    include_rework_rejections: bool = True,
 ) -> dict:
     from appcore import pushes
 
@@ -2301,10 +2432,21 @@ def _child_readiness_payload_for_row(
             product=None,
             readiness={},
             include_evidence=include_evidence,
+            include_rework_rejections=include_rework_rejections,
         )
 
     product = _find_product(row["media_product_id"])
-    readiness = pushes.compute_readiness(item, product)
+    if include_rework_rejections:
+        readiness = pushes.compute_readiness(item, product)
+    else:
+        try:
+            readiness = pushes.compute_readiness(
+                item,
+                product,
+                include_rework_overrides=False,
+            )
+        except TypeError:
+            readiness = pushes.compute_readiness(item, product)
     return _child_acceptance_payload(
         task_id=int(task_id),
         row=row,
@@ -2312,12 +2454,13 @@ def _child_readiness_payload_for_row(
         product=product,
         readiness=readiness,
         include_evidence=include_evidence,
+        include_rework_rejections=include_rework_rejections,
     )
 
 
 def get_child_readiness(task_id: int) -> dict:
     row = query_one(
-        "SELECT t.media_product_id, t.country_code, p.product_code, p.ad_supported_langs "
+        "SELECT t.media_product_id, t.country_code, t.status, p.product_code, p.ad_supported_langs "
         "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
         "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -2352,6 +2495,7 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
         task_id=int(task_id),
         row=row,
         include_evidence=False,
+        include_rework_rejections=False,
     )
     if not payload["ready"]:
         return {
@@ -2830,6 +2974,112 @@ def reject_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
             raise
     finally:
         conn.close()
+
+
+def reject_child_from_push(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    issue_keys: Iterable[Any],
+    reason: str,
+) -> dict:
+    """管理员从推送管理打回已产出的翻译素材，让负责人继续处理。"""
+    if not reason or len(reason.strip()) < MIN_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_REASON_LEN} characters")
+    reason = reason.strip()
+    normalized_keys = _normalize_push_rework_issue_keys(issue_keys)
+    issue_labels = _push_rework_issue_labels(normalized_keys)
+    task_check_keys = _push_rework_task_check_keys(normalized_keys)
+    label_text = "、".join(issue_labels)
+    last_reason = f"管理员已拒绝：{label_text}。拒绝原因：{reason}"
+    payload = {
+        "source": "push_management",
+        "reason": reason,
+        "issue_keys": normalized_keys,
+        "issue_labels": issue_labels,
+        "task_check_keys": task_check_keys,
+    }
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, parent_task_id, status, media_product_id "
+                    "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("child task not found")
+                if row.get("status") not in (CHILD_DONE, CHILD_REVIEW, CHILD_ASSIGNED):
+                    raise StateError("child not rejectable from push")
+
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=%s, completed_at=NULL, "
+                    "updated_at=NOW() WHERE id=%s AND parent_task_id IS NOT NULL "
+                    "AND status IN (%s,%s,%s)",
+                    (
+                        CHILD_ASSIGNED,
+                        last_reason,
+                        int(task_id),
+                        CHILD_DONE,
+                        CHILD_REVIEW,
+                        CHILD_ASSIGNED,
+                    ),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not rejectable from push")
+                _write_event(
+                    cur,
+                    task_id,
+                    CHILD_PUSH_REWORK_REJECTED_EVENT,
+                    actor_user_id,
+                    payload,
+                )
+
+                parent_id = _positive_int(row.get("parent_task_id"))
+                if parent_id is not None:
+                    cur.execute(
+                        "UPDATE tasks SET status=%s, completed_at=NULL, updated_at=NOW() "
+                        "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
+                        (PARENT_RAW_DONE, int(parent_id), PARENT_ALL_DONE),
+                    )
+                    if cur.rowcount:
+                        _write_event(
+                            cur,
+                            parent_id,
+                            "push_rework_parent_reopened",
+                            actor_user_id,
+                            {"child_task_id": int(task_id), "reason": reason},
+                        )
+
+                product_id = _task_product_id_for_notification(cur, task_id)
+                product_name = (
+                    _product_name_for_notification(cur, product_id)
+                    if product_id is not None else f"任务 #{int(task_id)}"
+                )
+                notifications_svc.notify_child_rejected(
+                    cur,
+                    task_id=task_id,
+                    product_name=product_name,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+    return {
+        "task_id": int(task_id),
+        "status": CHILD_ASSIGNED,
+        "issue_keys": normalized_keys,
+        "issue_labels": issue_labels,
+        "task_check_keys": task_check_keys,
+        "reason": reason,
+    }
 
 
 def cancel_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
