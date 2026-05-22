@@ -30,6 +30,10 @@ from appcore import (
     settings as settings_store,
 )
 from appcore.api_keys import get_all, set_key
+from appcore.elevenlabs_keys import (
+    ACTIVE_KEY_SLOT_EXTRA_KEY,
+    normalize_elevenlabs_key_slot,
+)
 from web.auth import superadmin_required
 from appcore.llm_models import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
@@ -286,25 +290,32 @@ def _provider_rows_by_group() -> list[dict]:
         group_rows = by_group.get(group_code, [])
         if not group_rows:
             continue
+        row_views = []
+        for r in group_rows:
+            extra = dict(r.extra_config) if r.extra_config else {}
+            active_slot = (
+                normalize_elevenlabs_key_slot(extra.get(ACTIVE_KEY_SLOT_EXTRA_KEY))
+                if r.provider_code == "elevenlabs_tts"
+                else ""
+            )
+            row_views.append({
+                "provider_code": r.provider_code,
+                "display_name": r.display_name,
+                "api_key_present": bool(r.api_key),
+                "api_key_mask": _mask_secret(r.api_key),
+                "base_url": r.base_url or "",
+                "model_id": r.model_id or "",
+                "extra_config_json": (
+                    json.dumps(r.extra_config, ensure_ascii=False, indent=2)
+                    if r.extra_config else ""
+                ),
+                "enabled": bool(r.enabled),
+                "active_key_slot": active_slot,
+            })
         view.append({
             "code": group_code,
             "label": group_label,
-            "rows": [
-                {
-                    "provider_code": r.provider_code,
-                    "display_name": r.display_name,
-                    "api_key_present": bool(r.api_key),
-                    "api_key_mask": _mask_secret(r.api_key),
-                    "base_url": r.base_url or "",
-                    "model_id": r.model_id or "",
-                    "extra_config_json": (
-                        json.dumps(r.extra_config, ensure_ascii=False, indent=2)
-                        if r.extra_config else ""
-                    ),
-                    "enabled": bool(r.enabled),
-                }
-                for r in group_rows
-            ],
+            "rows": row_views,
         })
     return view
 
@@ -509,6 +520,16 @@ def _handle_providers_post() -> None:
                     )
                     continue
                 fields["extra_config"] = parsed
+        if provider_code == "elevenlabs_tts":
+            raw_active_slot = request.form.get(f"{prefix}active_key_slot")
+            if raw_active_slot is not None:
+                if isinstance(fields.get("extra_config"), dict):
+                    extra = dict(fields["extra_config"])  # type: ignore[arg-type]
+                else:
+                    current_cfg = llm_provider_configs.get_provider_config(provider_code)
+                    extra = dict(current_cfg.extra_config) if current_cfg and current_cfg.extra_config else {}
+                extra[ACTIVE_KEY_SLOT_EXTRA_KEY] = normalize_elevenlabs_key_slot(raw_active_slot)
+                fields["extra_config"] = extra
         if not fields:
             continue
         llm_provider_configs.save_provider_config(

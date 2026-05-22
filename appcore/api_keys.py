@@ -148,6 +148,9 @@ def resolve_key(user_id: int | None, service: str, env_var: str | None = None) -
 
     provider_code = _provider_code_for_service(service)
     if provider_code is not None:
+        if provider_code == "elevenlabs_tts":
+            from appcore.elevenlabs_keys import get_elevenlabs_api_key
+            return get_elevenlabs_api_key()
         from appcore.llm_provider_configs import get_provider_config
         cfg = get_provider_config(provider_code)
         return cfg.api_key if cfg else None

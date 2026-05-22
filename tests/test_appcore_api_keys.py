@@ -122,6 +122,17 @@ def test_resolve_key_reads_provider_configs_for_openrouter(fake_stores):
     assert resolve_key(None, "openrouter") == "db-openrouter"
 
 
+def test_resolve_key_reads_active_elevenlabs_backup_slot(fake_stores):
+    fake_stores.seed_provider(
+        "elevenlabs_tts",
+        api_key="primary-key",
+        extra_config=json.dumps({"active_key_slot": "backup"}),
+    )
+    fake_stores.seed_provider("elevenlabs_tts_backup", api_key="backup-key")
+
+    assert resolve_key(2, "elevenlabs") == "backup-key"
+
+
 def test_resolve_key_for_supplier_does_not_fall_back_to_env(fake_stores, monkeypatch):
     """核心安全属性：env 里再怎么写也不能参与供应商 key 解析。"""
     monkeypatch.setenv("OPENROUTER_API_KEY", "env-leak")

@@ -55,6 +55,7 @@ _KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
     "apimart_image":         ("APIMART / GPT Image 2",              GROUP_IMAGE),
     "video_cover_local_image": ("文案封面生成 · 本地 Image 2",      GROUP_IMAGE),
     "elevenlabs_tts":        ("ElevenLabs 配音",                    GROUP_TTS),
+    "elevenlabs_tts_backup": ("ElevenLabs 配音（备用 Key）",          GROUP_TTS),
     # subtitle_removal：goodline.simplemokey.com 第三方接口的备用通道。
     # 线上字幕移除一直走火山 VOD（appcore/subtitle_removal_runtime_vod.py，
     # 凭据是 .env 的 VOD_ACCESS_KEY / VOD_SECRET_KEY），由 .env 的

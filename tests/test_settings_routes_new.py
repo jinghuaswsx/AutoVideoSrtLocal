@@ -412,6 +412,30 @@ def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_
     assert 'name="provider_gemini_cloud_text_extra_config"' in body
 
 
+def test_settings_provider_rows_show_elevenlabs_active_slot_select(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([{
+                   "provider_code": "elevenlabs_tts",
+                   "display_name": "ElevenLabs 配音",
+                   "api_key_present": True,
+                   "api_key_mask": "已配置（末四位 1111）",
+                   "base_url": "https://api.elevenlabs.io/v1",
+                   "model_id": "",
+                   "extra_config_json": '{"active_key_slot": "backup"}',
+                   "active_key_slot": "backup",
+                   "enabled": True,
+               }])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert 'name="provider_elevenlabs_tts_active_key_slot"' in body
+    assert 'option value="backup" selected' in body
+
+
 # ---------------------------------------------------------------------------
 # Push / 其他 Tab
 # ---------------------------------------------------------------------------
@@ -749,6 +773,26 @@ def test_settings_post_providers_parses_json_extra_config(admin_no_db_client):
     cloud_call = next(c for c in m_save.call_args_list if c.args[0] == "gemini_cloud_text")
     fields = cloud_call.args[1]
     assert fields["extra_config"] == {"project": "demo-gcp", "location": "us-central1"}
+
+
+def test_settings_post_providers_saves_elevenlabs_active_key_slot(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "provider_elevenlabs_tts_active_key_slot": "backup",
+            "provider_elevenlabs_tts_extra_config": '{"note": "keep"}',
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+        })
+
+    assert resp.status_code in (302, 303)
+    save_call = next(c for c in m_save.call_args_list if c.args[0] == "elevenlabs_tts")
+    fields = save_call.args[1]
+    assert fields["extra_config"] == {"note": "keep", "active_key_slot": "backup"}
 
 
 def test_settings_post_providers_skips_invalid_json_extra_config(admin_no_db_client):

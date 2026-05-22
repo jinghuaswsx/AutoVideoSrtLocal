@@ -23,10 +23,8 @@ from typing import List
 
 import requests
 
-from appcore.llm_provider_configs import (
-    ProviderConfigError,
-    require_provider_api_key,
-)
+from appcore.elevenlabs_keys import require_elevenlabs_api_key
+from appcore.llm_provider_configs import ProviderConfigError
 
 from .base import ASRCapabilities, BaseASRAdapter, Utterance
 
@@ -43,7 +41,7 @@ _MAX_UNPUNCTUATED_SEGMENT_SEC = 6.0
 
 def _resolve_elevenlabs_api_key() -> str:
     try:
-        return require_provider_api_key("elevenlabs_tts")
+        return require_elevenlabs_api_key()
     except ProviderConfigError as exc:
         raise RuntimeError(str(exc)) from exc
 

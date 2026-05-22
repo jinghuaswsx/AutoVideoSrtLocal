@@ -17,9 +17,9 @@ try:
 except ImportError:  # pragma: no cover - older SDK fallback
     VoiceSettings = None
 from elevenlabs.client import ElevenLabs
+from appcore.elevenlabs_keys import require_elevenlabs_api_key
 from appcore.llm_provider_configs import (
     ProviderConfigError,
-    require_provider_api_key,
 )
 from pipeline.voice_library import get_voice_library
 
@@ -150,7 +150,7 @@ _client_lock = threading.Lock()
 
 def _resolve_elevenlabs_api_key() -> str:
     try:
-        return require_provider_api_key("elevenlabs_tts")
+        return require_elevenlabs_api_key()
     except ProviderConfigError as exc:
         raise RuntimeError(str(exc)) from exc
 
