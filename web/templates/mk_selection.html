@@ -305,11 +305,11 @@
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
 .mki-progress-backdrop {
   position: fixed; inset: 0; z-index: 2100; display: flex; align-items: center; justify-content: center;
-  padding: 20px; background: rgba(15, 23, 42, .46);
+  padding: 10vh 10vw; background: rgba(15, 23, 42, .46);
 }
 .mki-progress-backdrop[hidden] { display: none; }
 .mki-progress-modal {
-  width: min(840px, 94vw); max-height: 90vh; overflow: auto; background: #fff; color: var(--oc-fg);
+  width: 100%; max-height: 100%; overflow: auto; background: #fff; color: var(--oc-fg);
   border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
 }
 .mki-progress-head {
@@ -327,6 +327,55 @@
 .mki-progress-meta {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;
 }
+.mki-progress-fine-ai {
+  margin-bottom: 14px; border: 1px solid var(--oc-border); border-radius: var(--oc-r-md);
+  background: #fff; overflow: hidden;
+}
+.mki-progress-fine-ai-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; background: var(--oc-bg-subtle); border-bottom: 1px solid var(--oc-border);
+}
+.mki-progress-fine-ai-title { margin: 0; font-size: 14px; line-height: 1.35; font-weight: 800; }
+.mki-progress-fine-ai-subtitle { margin: 4px 0 0; font-size: 12px; color: var(--oc-fg-muted); line-height: 1.45; }
+.mki-progress-fine-ai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mki-progress-fine-ai-scroll { overflow-x: auto; }
+.mki-progress-fine-ai-table {
+  width: 100%; min-width: 980px; border-collapse: collapse; table-layout: fixed; font-size: 12px;
+}
+.mki-progress-fine-ai-table th,
+.mki-progress-fine-ai-table td {
+  border-top: 1px solid var(--oc-border); border-right: 1px solid var(--oc-border);
+  padding: 10px 12px; vertical-align: top; text-align: left; line-height: 1.45;
+}
+.mki-progress-fine-ai-table tr:first-child th,
+.mki-progress-fine-ai-table tr:first-child td { border-top: 0; }
+.mki-progress-fine-ai-table th:first-child {
+  width: 96px; position: sticky; left: 0; z-index: 1; background: var(--oc-bg-subtle);
+  color: var(--oc-fg-muted); font-weight: 700;
+}
+.mki-progress-fine-ai-country { display: grid; gap: 3px; }
+.mki-progress-fine-ai-country strong { font-size: 13px; color: var(--oc-fg); }
+.mki-progress-fine-ai-country span { color: var(--oc-fg-muted); font-size: 11px; }
+.mki-progress-fine-ai-score { display: grid; gap: 5px; }
+.mki-progress-fine-ai-score strong { font-size: 16px; }
+.mki-progress-fine-ai-score-track { height: 4px; border-radius: 999px; background: var(--oc-bg-muted); overflow: hidden; }
+.mki-progress-fine-ai-score-fill { height: 100%; border-radius: inherit; background: var(--oc-accent); }
+.mki-progress-fine-ai-pill {
+  display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 999px;
+  font-weight: 800; border: 1px solid transparent;
+}
+.mki-progress-fine-ai-pill.is-go { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-progress-fine-ai-pill.is-test { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
+.mki-progress-fine-ai-pill.is-hold,
+.mki-progress-fine-ai-pill.is-failed { background: oklch(96% .04 25); color: oklch(42% .14 25); }
+.mki-progress-fine-ai-pill.is-empty { background: var(--oc-bg-muted); color: var(--oc-fg-muted); border-color: var(--oc-border); }
+.mki-progress-fine-ai-list { margin: 0; padding-left: 16px; }
+.mki-progress-fine-ai-list li { margin: 2px 0; }
+.mki-progress-fine-ai-empty {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px; background: var(--oc-warning-bg); color: var(--oc-warning-fg);
+}
+.mki-progress-fine-ai-empty strong { color: var(--oc-fg); }
 .mki-progress-meta-item {
   min-width: 0; padding: 10px 12px; border: 1px solid var(--oc-border); border-radius: var(--oc-r);
   background: var(--oc-bg-muted);
@@ -499,6 +548,7 @@
 .mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
 @keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
+  .mki-progress-backdrop { padding: 12px; }
   .mki-progress-meta { grid-template-columns: 1fr; }
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
@@ -654,6 +704,7 @@ let selectedMkRange = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 100;
+const MKI_FINE_AI_RESULT_CACHE = new Map();
 
 function fmtMoney(v) {
   if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
@@ -1274,6 +1325,12 @@ function renderMkVideoMaterialCard(r) {
   const canFineAiEvaluate = Boolean(existingProductId || (productLinkRaw && videoPath));
   const hasLocalProduct = Boolean(r.has_local_product_in_library || (productStatus && productStatus.has_local_match) || existingProductId);
   const hasAiEvaluationResult = Boolean(mkiAiEvaluationResultFromStatus(productStatus));
+  const fineAiResult = mkiFineAiCacheResult(mkiFineAiEvaluationFromStatus(productStatus));
+  const hasFineAiEvaluationResult = mkiFineAiHasUsableResult(fineAiResult);
+  const fineAiRunId = mkiFineAiResultKey(fineAiResult);
+  const materialImportTitle = isMaterialImported
+    ? '已入库'
+    : (hasFineAiEvaluationResult ? '加入素材库' : mkiFineAiImportGateMessage());
   const aiButtonLabel = mkiAiButtonLabel(r);
   const aiButtonTitle = existingProductId
     ? (hasAiEvaluationResult ? '查看 AI 评估结果，必要时可重新评估' : '打开 AI 评估请求与结果')
@@ -1331,6 +1388,7 @@ function renderMkVideoMaterialCard(r) {
       <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
     </div>
     <button class="mki-btn mki-btn--add ${isMaterialImported ? 'mki-btn--disabled' : ''}"
+        title="${escapeHtml(materialImportTitle)}"
         data-mki-filename="${escapeHtml(r.video_name || '')}"
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
@@ -1346,6 +1404,9 @@ function renderMkVideoMaterialCard(r) {
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         data-mki-local-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-has-local-product="${hasLocalProduct ? '1' : ''}"
+        data-mki-material-imported="${isMaterialImported ? '1' : ''}"
+        data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
+        data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         ${isMaterialImported ? 'disabled' : ''}
         onclick="mkiHandleClick(this)">
       ${isMaterialImported ? '已入库' : '加入素材库'}
@@ -1368,6 +1429,8 @@ function renderMkVideoMaterialCard(r) {
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         data-mki-local-product-id="${escapeHtml(localProductId || '')}"
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
+        data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
+        data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         onclick="mkiXiaoCreateFromImportedMaterial(this)">
       创建小语种翻译任务
     </button>
@@ -1396,6 +1459,8 @@ function renderMkVideoMaterialCard(r) {
         data-mki-fine-ai-video-name="${escapeHtml(r.video_name || '')}"
         data-mki-fine-ai-video-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-fine-ai-external-link="${existingProductId ? '' : escapeHtml(productLinkRaw)}"
+        data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
+        data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         onclick="mkiFineAiEvaluateFromCard(this)">
       精细AI评估
     </button>
@@ -1486,6 +1551,8 @@ async function openDetail(mkId, mkName) {
       const detailFineAiTitle = canDetailFineAiEvaluate
         ? '商品链接和当前视频存在即可进行精细 AI 评估'
         : '商品链接或视频缺失，无法进行精细 AI 评估';
+      const detailHasFineAiEvaluationResult = false;
+      const detailFineAiRunId = '';
       html += `<div class="mk-video-card">
         <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
         <div class="mk-video-summary-row">
@@ -1506,6 +1573,7 @@ async function openDetail(mkId, mkName) {
           <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
         </div>
         <button class="mki-btn mki-btn--add"
+            title="${escapeHtml(mkiFineAiImportGateMessage())}"
             data-mki-filename="${escapeHtml(v.name || '')}"
             data-mki-mp4-url="${safeVideoUrl}"
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
@@ -1521,6 +1589,9 @@ async function openDetail(mkId, mkName) {
             data-mki-mk-id="${escapeHtml(item.id || '')}"
             data-mki-local-product-id=""
             data-mki-has-local-product=""
+            data-mki-material-imported=""
+            data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
+            data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
             onclick="mkiHandleClick(this)">
           加入素材库
         </button>
@@ -1542,6 +1613,8 @@ async function openDetail(mkId, mkName) {
             data-mki-mk-id="${escapeHtml(item.id || '')}"
             data-mki-local-product-id=""
             data-mki-local-item-id=""
+            data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
+            data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
             onclick="mkiXiaoCreateFromImportedMaterial(this)">
           创建小语种翻译任务
         </button>
@@ -1569,6 +1642,8 @@ async function openDetail(mkId, mkName) {
             data-mki-fine-ai-video-name="${escapeHtml(v.name || '')}"
             data-mki-fine-ai-video-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-fine-ai-external-link="${escapeHtml(detailProductLinkRaw)}"
+            data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
+            data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
             onclick="mkiFineAiEvaluateFromCard(this)">
           精细AI评估
         </button>
@@ -1792,6 +1867,321 @@ function mkiAiCountryIndex(raw) {
     if (code && !index[code]) index[code] = row;
   });
   return index;
+}
+
+function mkiFineAiNormalizeResult(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try { return mkiFineAiNormalizeResult(JSON.parse(raw)); } catch (_) { return null; }
+  }
+  if (raw && typeof raw === 'object' && raw.data && typeof raw.data === 'object') {
+    return mkiFineAiNormalizeResult(raw.data);
+  }
+  if (raw && typeof raw === 'object' && raw.result && typeof raw.result === 'object') {
+    return mkiFineAiNormalizeResult(raw.result);
+  }
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function mkiFineAiEvaluationFromStatus(status) {
+  return mkiFineAiNormalizeResult(status && status.fine_ai_evaluation);
+}
+
+function mkiFineAiResultKey(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  return String(normalized && (normalized.evaluation_run_id || normalized.run_id || '') || '').trim();
+}
+
+function mkiFineAiCountryCount(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  const countries = normalized && normalized.countries;
+  if (!countries) return 0;
+  if (Array.isArray(countries)) return countries.filter(Boolean).length;
+  if (typeof countries === 'object') return Object.keys(countries).length;
+  return 0;
+}
+
+function mkiFineAiCacheResult(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  const runId = mkiFineAiResultKey(normalized);
+  if (normalized && runId) MKI_FINE_AI_RESULT_CACHE.set(runId, normalized);
+  return normalized;
+}
+
+function mkiFineAiHasUsableResult(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  if (!normalized) return false;
+  if (normalized.has_result === true) return true;
+  const status = String(normalized.status || '').toLowerCase();
+  return (status === 'completed' || status === 'partially_completed') && mkiFineAiCountryCount(normalized) > 0;
+}
+
+function mkiFineAiStoreResultOnElement(el, result) {
+  if (!el) return;
+  const normalized = mkiFineAiCacheResult(result);
+  const runId = mkiFineAiResultKey(normalized);
+  const hasResult = mkiFineAiHasUsableResult(normalized);
+  el.dataset.mkiFineAiHasResult = hasResult ? '1' : '';
+  el.dataset.mkiFineAiRunId = runId;
+}
+
+function mkiFineAiResultFromElement(el) {
+  if (!el) return null;
+  const runId = String(el.dataset.mkiFineAiRunId || '').trim();
+  if (runId && MKI_FINE_AI_RESULT_CACHE.has(runId)) {
+    return MKI_FINE_AI_RESULT_CACHE.get(runId);
+  }
+  return null;
+}
+
+function mkiFineAiResultFromButton(btn) {
+  const direct = mkiFineAiResultFromElement(btn);
+  if (direct) return direct;
+  const card = btn && (btn.closest('.mk-video-card') || btn.closest('.mki-detail-video-card'));
+  if (!card) return null;
+  const carrier = card.querySelector('[data-mki-fine-ai-run-id]');
+  return mkiFineAiResultFromElement(carrier);
+}
+
+function mkiFineAiImportGateMessage() {
+  return '建议先完成 AI 精细评估后再加入素材库';
+}
+
+function mkiFineAiCanImportMaterial(btn) {
+  return mkiFineAiHasUsableResult(mkiFineAiResultFromButton(btn)) || (btn && btn.dataset.mkiFineAiHasResult === '1');
+}
+
+function mkiFineAiUpdateMaterialImportGate(card) {
+  if (!card) return;
+  const addBtn = card.querySelector('.mki-btn--add');
+  if (!addBtn) return;
+  const imported = addBtn.dataset.mkiMaterialImported === '1';
+  if (imported) {
+    addBtn.disabled = true;
+    addBtn.classList.add('mki-btn--disabled');
+    return;
+  }
+  addBtn.disabled = false;
+  addBtn.classList.remove('mki-btn--disabled');
+  addBtn.title = mkiFineAiCanImportMaterial(addBtn) ? '加入素材库' : mkiFineAiImportGateMessage();
+}
+
+function mkiFineAiApplyCardResult(context, result) {
+  const normalized = mkiFineAiCacheResult(result);
+  const source = context && context.button;
+  const card = source && (source.closest('.mk-video-card') || source.closest('.mki-detail-video-card'));
+  if (!card || !normalized) return;
+  card.querySelectorAll('.mki-btn--add, .mki-btn--xiao, .mki-fine-ai-btn').forEach(btn => {
+    mkiFineAiStoreResultOnElement(btn, normalized);
+  });
+  mkiFineAiUpdateMaterialImportGate(card);
+  if (mkiImportProgressButton && card.contains(mkiImportProgressButton)) {
+    mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
+  }
+}
+
+function mkiFineAiCountryLookupCodes(code) {
+  const value = String(code || '').trim().toUpperCase();
+  if (value === 'JA') return ['JA', 'JP'];
+  if (value === 'JP') return ['JP', 'JA'];
+  return value ? [value] : [];
+}
+
+function mkiFineAiCountryIndex(detail) {
+  const result = mkiFineAiNormalizeResult(detail);
+  const countries = result && result.countries;
+  const rows = [];
+  if (Array.isArray(countries)) {
+    rows.push(...countries.filter(row => row && typeof row === 'object'));
+  } else if (countries && typeof countries === 'object') {
+    Object.entries(countries).forEach(([code, row]) => {
+      if (row && typeof row === 'object') rows.push(Object.assign({country_code: code}, row));
+    });
+  }
+  const index = {};
+  rows.forEach(row => {
+    const code = String(row.country_code || row.lang || row.code || '').trim().toUpperCase();
+    mkiFineAiCountryLookupCodes(code).forEach(alias => {
+      if (alias && !index[alias]) index[alias] = row;
+    });
+  });
+  return index;
+}
+
+function mkiFineAiCountryNameForImport(code, row) {
+  const value = String(code || '').trim().toUpperCase();
+  const fallback = {
+    DE: '德国',
+    FR: '法国',
+    IT: '意大利',
+    ES: '西班牙',
+    JP: '日本',
+    JA: '日本'
+  }[value] || value;
+  return String((row && (row.country_name_zh || row.country_name || row.country)) || fallback || value);
+}
+
+function mkiFineAiScoreForImport(row) {
+  if (!row) return null;
+  const score = Number((row.scores || {}).overall_score ?? row.overall_score ?? row.score);
+  return Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : null;
+}
+
+function mkiFineAiDecisionForImport(row) {
+  if (!row) return '';
+  const status = String(row.status || '').toLowerCase();
+  if (status === 'failed') return 'FAILED';
+  return String((row.decision || {}).final_decision || row.final_decision || row.decision || '').trim().toUpperCase();
+}
+
+function mkiFineAiDecisionLabelForImport(row) {
+  const decision = mkiFineAiDecisionForImport(row);
+  if (decision === 'GO') return '建议做';
+  if (decision === 'TEST') return '建议先测试';
+  if (decision === 'HOLD') return '暂不做';
+  if (decision === 'FAILED') return '需重跑';
+  return '暂无';
+}
+
+function mkiFineAiDecisionClassForImport(row) {
+  const decision = mkiFineAiDecisionForImport(row);
+  if (decision === 'GO') return 'go';
+  if (decision === 'TEST') return 'test';
+  if (decision === 'HOLD') return 'hold';
+  if (decision === 'FAILED') return 'failed';
+  return 'empty';
+}
+
+function mkiFineAiFirstText(values) {
+  const list = Array.isArray(values) ? values : [values];
+  for (const value of list) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function mkiFineAiSummaryForImport(row) {
+  if (!row) return '暂无精细评估结果';
+  const decision = row.decision || {};
+  const recommendations = row.recommendations || {};
+  return mkiFineAiFirstText([
+    decision.summary,
+    row.summary,
+    decision.reason,
+    (decision.why || [])[0],
+    (recommendations.ad_test_angles || [])[0],
+    (recommendations.landing_page_actions || [])[0],
+    row.error_message,
+  ]) || '暂无详细说明';
+}
+
+function mkiFineAiAdviceItemsForImport(row) {
+  if (!row) return ['建议先完成该国家精细评估后再决定投放。'];
+  const decision = row.decision || {};
+  const recommendations = row.recommendations || {};
+  const risks = row.risks || {};
+  const items = [
+    ...(Array.isArray(decision.why) ? decision.why : []),
+    ...(Array.isArray(recommendations.ad_test_angles) ? recommendations.ad_test_angles : []),
+    ...(Array.isArray(recommendations.landing_page_actions) ? recommendations.landing_page_actions : []),
+    ...(Array.isArray(risks.localization_risks) ? risks.localization_risks : []),
+    ...(Array.isArray(row.missing_data) ? row.missing_data.map(item => '待补充：' + item) : []),
+    row.error_message ? '评估失败：' + row.error_message : '',
+  ].map(item => String(item || '').trim()).filter(Boolean);
+  return items.length ? items.slice(0, 3) : [mkiFineAiSummaryForImport(row)];
+}
+
+function mkiFineAiProgressTableRows(result) {
+  const index = mkiFineAiCountryIndex(result);
+  return ['DE', 'FR', 'IT', 'ES', 'JP'].map(code => {
+    const row = index[code] || null;
+    return {code, row};
+  });
+}
+
+function mkiImportProgressFineAiTable(result) {
+  const rows = mkiFineAiProgressTableRows(result);
+  const countryCells = rows.map(({code, row}) => `
+    <td><div class="mki-progress-fine-ai-country">
+      <strong>${escapeHtml(mkiFineAiCountryNameForImport(code, row))}</strong>
+      <span>${escapeHtml(code)}</span>
+    </div></td>
+  `).join('');
+  const scoreCells = rows.map(({row}) => {
+    const score = mkiFineAiScoreForImport(row);
+    return `<td><div class="mki-progress-fine-ai-score">
+      <strong>${score === null ? '-' : escapeHtml(score)}</strong>
+      <div class="mki-progress-fine-ai-score-track"><div class="mki-progress-fine-ai-score-fill" style="width:${score === null ? 0 : score}%"></div></div>
+    </div></td>`;
+  }).join('');
+  const decisionCells = rows.map(({row}) => {
+    const cls = mkiFineAiDecisionClassForImport(row);
+    return `<td><span class="mki-progress-fine-ai-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span></td>`;
+  }).join('');
+  const summaryCells = rows.map(({row}) => `<td>${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
+  const adviceCells = rows.map(({row}) => `
+    <td><ul class="mki-progress-fine-ai-list">${mkiFineAiAdviceItemsForImport(row).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></td>
+  `).join('');
+  return `<div class="mki-progress-fine-ai-scroll">
+    <table class="mki-progress-fine-ai-table">
+      <tbody>
+        <tr><th>国家</th>${countryCells}</tr>
+        <tr><th>AI 评分</th>${scoreCells}</tr>
+        <tr><th>评估结果</th>${decisionCells}</tr>
+        <tr><th>详细说明</th>${summaryCells}</tr>
+        <tr><th>风险与建议</th>${adviceCells}</tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function mkiImportProgressOpenFineAi() {
+  const card = mkiImportProgressButton && (mkiImportProgressButton.closest('.mk-video-card') || mkiImportProgressButton.closest('.mki-detail-video-card'));
+  const fineAiBtn = card && card.querySelector('.mki-fine-ai-btn');
+  if (!fineAiBtn || fineAiBtn.disabled) {
+    mkiToast('warning', '当前卡片缺少商品链接或视频，无法发起 AI 精细评估');
+    return;
+  }
+  mkiFineAiEvaluateFromCard(fineAiBtn);
+  setTimeout(() => {
+    document.querySelectorAll('.ect-modal-overlay').forEach(node => {
+      node.style.zIndex = '2300';
+    });
+  }, 0);
+}
+
+function mkiImportProgressRenderFineAiPanel(btn) {
+  const panel = document.getElementById('mkiImportProgressFineAi');
+  if (!panel) return;
+  const result = mkiFineAiResultFromButton(btn);
+  const hasResult = mkiFineAiHasUsableResult(result);
+  if (!hasResult) {
+    panel.innerHTML = `
+      <div class="mki-progress-fine-ai-empty">
+        <div>
+          <strong>建议先完成 AI 精细评估</strong>
+          <div>还没有可用的 5 国精细评估结果。可以继续加入素材库，但建议先查看 DE/FR/IT/ES/JP 的投放建议。</div>
+        </div>
+        <button type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressOpenFineAi()">AI 精细评估</button>
+      </div>`;
+    return;
+  }
+  const summary = (mkiFineAiNormalizeResult(result) || {}).summary || {};
+  const overall = summary.overall_recommendation || (mkiFineAiNormalizeResult(result) || {}).status || '';
+  const avg = summary.average_score || '';
+  panel.innerHTML = `
+    <div class="mki-progress-fine-ai-head">
+      <div>
+        <h4 class="mki-progress-fine-ai-title">AI 精细评估建议</h4>
+        <p class="mki-progress-fine-ai-subtitle">综合建议：${escapeHtml(overall || '-')} ${avg ? '· 平均分 ' + escapeHtml(avg) : ''}</p>
+      </div>
+      <div class="mki-progress-fine-ai-actions">
+        <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenFineAi()">查看/重跑精细评估</button>
+      </div>
+    </div>
+    ${mkiImportProgressFineAiTable(result)}
+  `;
 }
 
 function mkiAiSuggestionTitle(row) {
@@ -2568,6 +2958,7 @@ async function mkiFineAiLoadLatest(context, options = {}) {
     const resp = await mkiFetchJson(mkiFineAiEndpoint(context, '/latest'));
     const result = resp.data || {};
     context.runId = result.evaluation_run_id || context.runId || '';
+    mkiFineAiApplyCardResult(context, result);
     mkiFineAiRefreshDetailButton(context);
     shell.body.innerHTML = mkiFineAiRenderResult(result, context);
     mkiFineAiBindModalEvents(context);
@@ -2748,6 +3139,7 @@ async function mkiFineAiPollStatus(context) {
       mkiFineAiStopElapsedTicker(context);
       const result = resultResp.data || {};
       context.runId = result.evaluation_run_id || context.runId;
+      mkiFineAiApplyCardResult(context, result);
       mkiFineAiRefreshDetailButton(context);
       context.shell.body.innerHTML = mkiFineAiRenderResult(result, context);
       mkiFineAiBindModalEvents(context);
@@ -2855,6 +3247,7 @@ function mkiMarkImportedButton(btn) {
   btn.textContent = '已入库';
   btn.disabled = true;
   btn.classList.add('mki-btn--disabled');
+  btn.dataset.mkiMaterialImported = '1';
   try {
     mkiEnsureImportedStatusIcon(btn.closest('.mk-video-card'));
   } catch (e) {
@@ -3147,6 +3540,7 @@ function mkiImportProgressOpen(meta) {
   `).join('');
   document.getElementById('mkiImportProgressFile').textContent = meta.filename || '--';
   document.getElementById('mkiImportProgressProduct').textContent = meta.product_name || meta.product_code || '--';
+  mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   document.getElementById('mkiImportProgressError').hidden = true;
   document.getElementById('mkiImportProgressError').textContent = '';
   document.getElementById('mkiImportProgressResult').hidden = true;
@@ -3780,6 +4174,40 @@ function mkiXiaoAiScoreText(row) {
   return Number.isInteger(score) ? String(score) : score.toFixed(1);
 }
 
+function mkiXiaoFineAiSuggestionTone(row) {
+  if (!row) return '';
+  const decision = mkiFineAiDecisionForImport(row);
+  if (decision === 'GO') return 'high';
+  if (decision === 'TEST') return 'medium';
+  if (decision === 'HOLD' || decision === 'FAILED') return 'low';
+  const score = mkiFineAiScoreForImport(row);
+  if (score === null) return '';
+  if (score >= 75) return 'high';
+  if (score >= 55) return 'medium';
+  return 'low';
+}
+
+function mkiXiaoFineAiScoreText(row) {
+  const score = mkiFineAiScoreForImport(row);
+  return score === null ? '' : String(score);
+}
+
+function mkiXiaoFineAiSuggestionText(row, tone) {
+  if (!row) return 'AI建议：暂无';
+  const score = mkiXiaoFineAiScoreText(row);
+  const suffix = score ? ' ' + score : '';
+  if (mkiFineAiDecisionForImport(row) === 'FAILED') return 'AI建议：需重跑';
+  if (tone === 'high') return 'AI建议：建议做' + suffix;
+  if (tone === 'medium') return 'AI建议：先测试' + suffix;
+  if (tone === 'low') return 'AI建议：暂不做' + suffix;
+  return 'AI建议：暂无';
+}
+
+function mkiXiaoFineAiSuggestionTitle(row) {
+  if (!row) return '当前还没有 AI 精细评估结果';
+  return `${mkiFineAiCountryNameForImport(row.country_code || row.lang || '', row)}：${mkiFineAiDecisionLabelForImport(row)}。${mkiFineAiSummaryForImport(row)}`;
+}
+
 function mkiXiaoAiSuggestionText(row, tone) {
   if (!row) return 'AI建议：暂无';
   const score = mkiXiaoAiScoreText(row);
@@ -3797,7 +4225,9 @@ function mkiXiaoSetSuggestionCardTone(card, tone) {
 }
 
 function mkiXiaoApplyAiSuggestions(detail, state = '') {
-  const countryIndex = mkiAiCountryIndex(detail);
+  const fineCountryIndex = mkiFineAiCountryIndex(detail);
+  const useFineAi = Object.keys(fineCountryIndex).length > 0;
+  const countryIndex = useFineAi ? fineCountryIndex : mkiAiCountryIndex(detail);
   document.querySelectorAll('#mkiXiaoLangs .mki-xiao-lang-card').forEach(card => {
     const code = String(card.dataset.mkiAiLangCard || '').toUpperCase();
     const box = card.querySelector('.mki-xiao-lang-pill-box');
@@ -3806,9 +4236,9 @@ function mkiXiaoApplyAiSuggestions(detail, state = '') {
     const row = countryIndex[code];
     mkiXiaoSetSuggestionCardTone(card, '');
     if (row) {
-      const tone = mkiXiaoAiSuggestionTone(row);
-      const title = mkiAiSuggestionTitle(row);
-      small.textContent = mkiXiaoAiSuggestionText(row, tone);
+      const tone = useFineAi ? mkiXiaoFineAiSuggestionTone(row) : mkiXiaoAiSuggestionTone(row);
+      const title = useFineAi ? mkiXiaoFineAiSuggestionTitle(row) : mkiAiSuggestionTitle(row);
+      small.textContent = useFineAi ? mkiXiaoFineAiSuggestionText(row, tone) : mkiXiaoAiSuggestionText(row, tone);
       mkiXiaoSetSuggestionCardTone(card, tone);
       card.title = title;
       if (box) box.title = title;
@@ -3990,7 +4420,9 @@ async function mkiXiaoOpenModal(options = {}) {
       + '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>'
       + '</span></label>';
   }).join('');
-  if (mkiXiaoAiProductId) {
+  if (options.fineAiResult) {
+    mkiXiaoApplyAiSuggestions(options.fineAiResult);
+  } else if (mkiXiaoAiProductId) {
     mkiXiaoLoadAiSuggestions(mkiXiaoAiProductId);
   } else {
     mkiXiaoApplyAiSuggestions(null);
@@ -4048,7 +4480,8 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
   var selection = await mkiXiaoOpenModal({
     title: '创建小语种翻译任务',
     endpoint: endpoint,
-    productId: productId
+    productId: productId,
+    fineAiResult: mkiFineAiResultFromButton(btn)
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -4093,7 +4526,8 @@ async function mkiXiaoHandleClick(btn) {
   var selection = await mkiXiaoOpenModal({
     title: '创建小语种翻译任务',
     endpoint: endpoint,
-    productId: Number(btn.dataset.mkiLocalProductId || btn.dataset.mkiAiProductId || 0)
+    productId: Number(btn.dataset.mkiLocalProductId || btn.dataset.mkiAiProductId || 0),
+    fineAiResult: mkiFineAiResultFromButton(btn)
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -4174,6 +4608,7 @@ async function mkiXiaoHandleClick(btn) {
           <strong id="mkiImportProgressProduct" class="mki-progress-meta-value">--</strong>
         </div>
       </div>
+      <section id="mkiImportProgressFineAi" class="mki-progress-fine-ai" aria-label="AI 精细评估建议"></section>
       <ol id="mkiImportProgressSteps" class="mki-progress-steps"></ol>
       <div id="mkiImportProgressError" class="mki-progress-error" hidden></div>
       <div id="mkiImportProgressResult" class="mki-progress-result" hidden>

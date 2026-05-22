@@ -1248,6 +1248,8 @@ def test_enrich_cached_ad_statuses_attaches_product_ai_evaluation_result(monkeyp
                     "ai_evaluation_detail": '{"countries":[{"lang":"DE","is_suitable":true}]}',
                 }
             ]
+        if "FROM ai_evaluation_runs" in sql or "FROM ai_country_evaluations" in sql:
+            return []
         if "FROM media_items" in sql:
             return []
         raise AssertionError(sql)
@@ -1267,6 +1269,94 @@ def test_enrich_cached_ad_statuses_attaches_product_ai_evaluation_result(monkeyp
     assert status["media_product_id"] == 7
     assert status["ai_evaluation_result"] == "\u9002\u5408\u63a8\u5e7f"
     assert status["ai_evaluation_detail"] == '{"countries":[{"lang":"DE","is_suitable":true}]}'
+
+
+def test_enrich_cached_ad_statuses_attaches_latest_fine_ai_evaluation_result(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM mingkong_material_ad_status_cache" in sql:
+            if args and args[0] == "product":
+                return [
+                    {
+                        "status_scope": "product",
+                        "lookup_hash": mm.status_lookup_hash("cool-widget-rjc"),
+                        "lookup_key": "cool-widget-rjc",
+                        "product_code": "cool-widget-rjc",
+                        "media_product_id": 7,
+                        "media_item_id": None,
+                        "has_local_match": 1,
+                        "has_running_ad": 0,
+                        "ad_spend_usd": 0,
+                        "latest_activity_at": None,
+                        "summary_json": "{}",
+                        "refreshed_at": datetime(2026, 5, 18, 12, 0, 0),
+                    }
+                ]
+            return []
+        if "FROM media_products" in sql and "ai_evaluation_result" in sql:
+            return []
+        if "FROM ai_evaluation_runs" in sql:
+            assert args == (7,)
+            return [
+                {
+                    "id": 9,
+                    "evaluation_run_id": "eval_latest",
+                    "product_id": 7,
+                    "status": "completed",
+                    "summary_json": '{"overall_recommendation":"GO"}',
+                    "frontend_json": '{"decision_groups":{"go":["DE"]}}',
+                    "progress_json": "{}",
+                    "created_at": datetime(2026, 5, 22, 10, 0, 0),
+                    "updated_at": datetime(2026, 5, 22, 10, 2, 0),
+                    "completed_at": datetime(2026, 5, 22, 10, 2, 0),
+                },
+                {
+                    "id": 8,
+                    "evaluation_run_id": "eval_old",
+                    "product_id": 7,
+                    "status": "completed",
+                    "summary_json": '{"overall_recommendation":"HOLD"}',
+                    "frontend_json": "{}",
+                    "progress_json": "{}",
+                    "created_at": datetime(2026, 5, 21, 10, 0, 0),
+                    "updated_at": datetime(2026, 5, 21, 10, 2, 0),
+                    "completed_at": datetime(2026, 5, 21, 10, 2, 0),
+                },
+            ]
+        if "FROM ai_country_evaluations" in sql:
+            assert args == ("eval_latest",)
+            return [
+                {
+                    "evaluation_run_id": "eval_latest",
+                    "country_code": "DE",
+                    "country_name": "Germany",
+                    "status": "completed",
+                    "scores_json": '{"overall_score":82}',
+                    "decision_json": '{"final_decision":"GO"}',
+                    "full_result_json": '{"status":"completed","country_code":"DE","country_name_zh":"德国","scores":{"overall_score":82},"decision":{"final_decision":"GO"}}',
+                    "error_message": "",
+                }
+            ]
+        if "FROM media_items" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    enriched = mm._enrich_cached_ad_statuses([
+        {
+            "product_code": "cool-widget",
+            "video_path": "/medias/uploads2/winner.mp4",
+        }
+    ])
+
+    fine_ai = enriched[0]["product_ad_status"]["fine_ai_evaluation"]
+    assert fine_ai["has_result"] is True
+    assert fine_ai["evaluation_run_id"] == "eval_latest"
+    assert fine_ai["status"] == "completed"
+    assert fine_ai["summary"]["overall_recommendation"] == "GO"
+    assert fine_ai["frontend"]["decision_groups"]["go"] == ["DE"]
+    assert fine_ai["countries"]["DE"]["decision"]["final_decision"] == "GO"
+    assert fine_ai["countries"]["DE"]["scores"]["overall_score"] == 82
 
 
 def test_material_library_marks_video_in_library_only_within_matched_product(monkeypatch):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -25,6 +26,7 @@ _COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 _SECONDS_PER_DAY = 24 * 60 * 60
 _AD_STATUS_SCOPE_PRODUCT = "product"
 _AD_STATUS_SCOPE_MATERIAL = "material"
+logger = logging.getLogger(__name__)
 
 
 def guard_against_windows_local_mysql() -> None:
@@ -372,6 +374,7 @@ def _empty_ad_status(scope: str, lookup_key: str) -> dict[str, Any]:
         "latest_activity_at": None,
         "ai_evaluation_result": "",
         "ai_evaluation_detail": "",
+        "fine_ai_evaluation": None,
         "summary": {},
         "refreshed_at": None,
     }
@@ -392,6 +395,7 @@ def _serialize_ad_status_row(row: dict[str, Any] | None, *, scope: str, lookup_k
         "latest_activity_at": _iso_datetime(row.get("latest_activity_at")),
         "ai_evaluation_result": str(row.get("ai_evaluation_result") or ""),
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
+        "fine_ai_evaluation": row.get("fine_ai_evaluation") or None,
         "summary": _json_loads(row.get("summary_json"), {}) or {},
         "refreshed_at": _iso_datetime(row.get("refreshed_at")),
     }
@@ -445,6 +449,113 @@ def _ai_evaluation_status_by_product_ids(product_ids: set[int]) -> dict[int, dic
     return out
 
 
+def _fine_ai_country_payload(row: dict[str, Any]) -> dict[str, Any]:
+    full_result = _json_loads(row.get("full_result_json"), {}) or {}
+    if not isinstance(full_result, dict):
+        full_result = {}
+    decision = full_result.get("decision") or _json_loads(row.get("decision_json"), {}) or {}
+    scores = full_result.get("scores") or _json_loads(row.get("scores_json"), {}) or {}
+    code = str(full_result.get("country_code") or row.get("country_code") or "").upper()
+    status = str(full_result.get("status") or row.get("status") or "").strip()
+    payload = dict(full_result)
+    payload.update(
+        {
+            "country_code": code,
+            "country_name": full_result.get("country_name") or row.get("country_name") or "",
+            "country_name_zh": full_result.get("country_name_zh") or full_result.get("country_name") or row.get("country_name") or "",
+            "status": status,
+            "scores": scores if isinstance(scores, dict) else {},
+            "decision": decision if isinstance(decision, dict) else {},
+            "error_message": row.get("error_message") or full_result.get("error_message") or "",
+        }
+    )
+    return payload
+
+
+def _fine_ai_has_result(status: str, countries: dict[str, dict[str, Any]]) -> bool:
+    value = str(status or "").lower()
+    if value not in {"completed", "partially_completed"}:
+        return False
+    return bool(countries)
+
+
+def _fine_ai_status_by_product_ids(product_ids: set[int]) -> dict[int, dict[str, Any]]:
+    ids = [int(pid) for pid in sorted(product_ids) if int(pid) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    try:
+        rows = query(
+            f"""
+            SELECT id, evaluation_run_id, product_id, status,
+                   summary_json, frontend_json, progress_json,
+                   created_at, updated_at, completed_at, failed_at
+            FROM ai_evaluation_runs
+            WHERE product_id IN ({placeholders})
+            ORDER BY product_id ASC, created_at DESC, id DESC
+            """,
+            tuple(ids),
+        )
+    except Exception:
+        logger.exception("failed to load fine AI evaluation runs for mingkong cards")
+        return {}
+
+    latest_by_product: dict[int, dict[str, Any]] = {}
+    run_ids: list[str] = []
+    for row in rows or []:
+        product_id = _as_int(row.get("product_id"))
+        run_id = str(row.get("evaluation_run_id") or "").strip()
+        if product_id <= 0 or not run_id or product_id in latest_by_product:
+            continue
+        latest_by_product[product_id] = row
+        run_ids.append(run_id)
+
+    countries_by_run: dict[str, dict[str, dict[str, Any]]] = {run_id: {} for run_id in run_ids}
+    if run_ids:
+        country_placeholders = ",".join(["%s"] * len(run_ids))
+        try:
+            country_rows = query(
+                f"""
+                SELECT evaluation_run_id, country_code, country_name, status,
+                       scores_json, decision_json, full_result_json, error_message
+                FROM ai_country_evaluations
+                WHERE evaluation_run_id IN ({country_placeholders})
+                ORDER BY id ASC
+                """,
+                tuple(run_ids),
+            )
+        except Exception:
+            logger.exception("failed to load fine AI country evaluations for mingkong cards")
+            country_rows = []
+        for row in country_rows or []:
+            run_id = str(row.get("evaluation_run_id") or "").strip()
+            country = _fine_ai_country_payload(row)
+            code = str(country.get("country_code") or row.get("country_code") or "").upper()
+            if run_id and code:
+                countries_by_run.setdefault(run_id, {})[code] = country
+
+    out: dict[int, dict[str, Any]] = {}
+    for product_id, row in latest_by_product.items():
+        run_id = str(row.get("evaluation_run_id") or "").strip()
+        status = str(row.get("status") or "").strip()
+        countries = countries_by_run.get(run_id) or {}
+        out[product_id] = {
+            "evaluation_run_id": run_id,
+            "product_id": product_id,
+            "status": status,
+            "has_result": _fine_ai_has_result(status, countries),
+            "summary": _json_loads(row.get("summary_json"), {}) or {},
+            "frontend": _json_loads(row.get("frontend_json"), {}) or {},
+            "progress": _json_loads(row.get("progress_json"), {}) or {},
+            "countries": countries,
+            "created_at": _iso_datetime(row.get("created_at")),
+            "updated_at": _iso_datetime(row.get("updated_at")),
+            "completed_at": _iso_datetime(row.get("completed_at")),
+            "failed_at": _iso_datetime(row.get("failed_at")),
+        }
+    return out
+
+
 def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     product_hashes: set[str] = set()
     material_hashes: set[str] = set()
@@ -489,11 +600,13 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         if _as_int(product_status.get("media_product_id")) > 0
     }
     ai_status_by_product_id = _ai_evaluation_status_by_product_ids(product_ids)
+    fine_ai_status_by_product_id = _fine_ai_status_by_product_ids(product_ids)
 
     for item, media_code, material_key, _product_hash, _material_hash, product_status, material_status in preliminary:
         product_id = _as_int(product_status.get("media_product_id"))
         if product_id in ai_status_by_product_id:
             product_status.update(ai_status_by_product_id[product_id])
+        product_status["fine_ai_evaluation"] = fine_ai_status_by_product_id.get(product_id)
         if not material_status["has_local_match"]:
             legacy_status = _legacy_material_status_for_item(
                 item,

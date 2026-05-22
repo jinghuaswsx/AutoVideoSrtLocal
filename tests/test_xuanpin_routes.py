@@ -247,6 +247,22 @@ def test_xuanpin_mk_video_cards_use_backend_material_status_for_import_button(au
     assert "${isMaterialImported ? 'disabled' : ''}" in body
 
 
+def test_xuanpin_mk_material_import_modal_shows_fine_ai_soft_advice(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "mkiFineAiEvaluationFromStatus(productStatus)" in body
+    assert "const hasFineAiEvaluationResult = mkiFineAiHasUsableResult(fineAiResult);" in body
+    assert "data-mki-fine-ai-has-result" in body
+    assert "function mkiImportProgressRenderFineAiPanel(btn)" in body
+    assert "mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);" in body
+    assert "mki-progress-fine-ai-table" in body
+    assert "mkiImportProgressOpenFineAi()" in body
+    assert "建议先完成 AI 精细评估" in body
+    assert "if (!mkiFineAiCanImportMaterial(btn))" not in body
+
+
 def test_xuanpin_mk_video_cards_show_product_icon_for_product_library_status(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
@@ -400,6 +416,22 @@ def test_xuanpin_mk_small_language_ai_suggestions_are_card_hints(authed_client_n
     assert "AI建议：低分不可做" in body
     assert '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' in body
     assert '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>' in body
+
+
+def test_xuanpin_mk_small_language_uses_fine_ai_country_decisions(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "const MKI_FINE_AI_RESULT_CACHE = new Map();" in body
+    assert "function mkiFineAiCountryIndex(detail)" in body
+    assert "function mkiXiaoFineAiSuggestionTone(row)" in body
+    assert "function mkiXiaoFineAiSuggestionText(row, tone)" in body
+    assert "GO" in body
+    assert "TEST" in body
+    assert "HOLD" in body
+    assert "fineAiResult: mkiFineAiResultFromButton(btn)" in body
+    assert "mkiXiaoApplyAiSuggestions(options.fineAiResult)" in body
 
 
 def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authed_client_no_db):
