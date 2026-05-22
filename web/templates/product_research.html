@@ -129,7 +129,7 @@
   <section class="pr-hero">
     <div>
       <h1>AI产品调研</h1>
-      <p>输入产品链接、主图和短视频，AI 对 8 个国家做完整市场评估</p>
+      <p>输入产品链接、主图和短视频，AI 联网搜索 8 国市场实时数据做完整评估</p>
     </div>
     <div class="pr-actions">
       <button type="button" class="pr-btn pr-btn--primary" id="prStartBtn" onclick="startResearch()">开始 AI 调研</button>
@@ -144,49 +144,15 @@
       <div class="pr-field pr-form-grid--full">
         <label>产品链接 <span style="color:#dc2626">*</span></label>
         <input type="url" id="prProductUrl" placeholder="https://example.com/products/xxx" required>
+        <div class="pr-field-hint">产品在电商平台或独立站的实际链接，AI 会抓取并搜索相关信息</div>
       </div>
       <div class="pr-field">
-        <label>当前售价</label>
-        <input type="number" id="prPriceAmount" placeholder="19.99" step="0.01">
+        <label>产品名称（中文）</label>
+        <input type="text" id="prProductName" placeholder="输入中文产品名称">
       </div>
       <div class="pr-field">
-        <label>币种</label>
-        <select id="prPriceCurrency">
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-          <option value="GBP">GBP</option>
-          <option value="CNY">CNY</option>
-          <option value="JPY">JPY</option>
-        </select>
-      </div>
-      <div class="pr-field">
-        <label>产品成本</label>
-        <input type="number" id="prCostAmount" placeholder="可选" step="0.01">
-      </div>
-      <div class="pr-field">
-        <label>成本币种</label>
-        <select id="prCostCurrency"><option value="USD">USD</option><option value="CNY">CNY</option></select>
-      </div>
-      <div class="pr-field">
-        <label>包裹重量 (g)</label>
-        <input type="number" id="prWeight" placeholder="可选" step="0.1">
-      </div>
-      <div class="pr-field" style="display:flex; gap:8px">
-        <div style="flex:1"><label>长 (cm)</label><input type="number" id="prLength" placeholder="可选" step="0.1"></div>
-        <div style="flex:1"><label>宽 (cm)</label><input type="number" id="prWidth" placeholder="可选" step="0.1"></div>
-        <div style="flex:1"><label>高 (cm)</label><input type="number" id="prHeight" placeholder="可选" step="0.1"></div>
-      </div>
-      <div class="pr-field">
-        <label>目标毛利 (%)</label>
-        <input type="number" id="prTargetMargin" placeholder="可选" step="0.1">
-      </div>
-      <div class="pr-field">
-        <label>目标 ROAS</label>
-        <input type="number" id="prTargetRoas" placeholder="可选" step="0.1">
-      </div>
-      <div class="pr-field">
-        <label>目标 CPA</label>
-        <input type="number" id="prTargetCpa" placeholder="可选" step="0.01">
+        <label>产品名称（英文）</label>
+        <input type="text" id="prProductNameEn" placeholder="输入英文产品名称">
       </div>
       <div class="pr-field pr-field--file">
         <label>主图 <span style="color:#dc2626">*</span></label>
@@ -202,7 +168,7 @@
       </div>
       <div class="pr-field pr-form-grid--full">
         <label>备注</label>
-        <textarea id="prNotes" placeholder="可选，补充说明"></textarea>
+        <textarea id="prNotes" placeholder="可选，补充说明产品的特殊卖点、目标受众等信息"></textarea>
       </div>
     </div>
   </div>

@@ -25,43 +25,16 @@
   // ── Build input payload ──────────────────────────────
   function buildInputPayload() {
     const productUrl = document.getElementById("prProductUrl").value.trim();
-    const priceAmount = document.getElementById("prPriceAmount").value.trim();
-    const priceCurrency = document.getElementById("prPriceCurrency").value;
-    const costAmount = document.getElementById("prCostAmount").value.trim();
-    const costCurrency = document.getElementById("prCostCurrency").value;
-    const weight = document.getElementById("prWeight").value.trim();
-    const length = document.getElementById("prLength").value.trim();
-    const width = document.getElementById("prWidth").value.trim();
-    const height = document.getElementById("prHeight").value.trim();
-    const targetMargin = document.getElementById("prTargetMargin").value.trim();
-    const targetRoas = document.getElementById("prTargetRoas").value.trim();
-    const targetCpa = document.getElementById("prTargetCpa").value.trim();
+    const productName = document.getElementById("prProductName").value.trim();
+    const productNameEn = document.getElementById("prProductNameEn").value.trim();
     const notes = document.getElementById("prNotes").value.trim();
 
     return {
       product_url: productUrl,
+      product_name: productName,
+      product_name_en: productNameEn,
       main_image: uploadedAssets.main_image ? {} : {},
       short_video: uploadedAssets.short_video ? {} : {},
-      current_price: priceAmount ? { amount: parseFloat(priceAmount), currency: priceCurrency } : null,
-      product_cost: costAmount ? { amount: parseFloat(costAmount), currency: costCurrency } : null,
-      package: {
-        weight: weight ? parseFloat(weight) : null,
-        weight_unit: "g",
-        length: length ? parseFloat(length) : null,
-        width: width ? parseFloat(width) : null,
-        height: height ? parseFloat(height) : null,
-        dimension_unit: "cm",
-      },
-      shipping_inputs: {
-        origin_country: "",
-        shipping_cost_by_country: { DE: null, FR: null, IT: null, ES: null, NL: null, PT: null, SE: null, JP: null },
-        delivery_days_by_country: { DE: null, FR: null, IT: null, ES: null, NL: null, PT: null, SE: null, JP: null },
-      },
-      business_targets: {
-        target_margin: targetMargin ? parseFloat(targetMargin) : null,
-        target_roas: targetRoas ? parseFloat(targetRoas) : null,
-        target_cpa: targetCpa ? parseFloat(targetCpa) : null,
-      },
       notes: notes,
     };
   }
@@ -254,7 +227,7 @@
     // Country Table
     var overview = (frontend.tables || {}).country_overview || [];
     html += "<div class=\"pr-table-wrap\"><table class=\"pr-table\"><thead><tr>";
-    html += "<th>国家</th><th>总分</th><th>决策</th><th>置信度</th><th>推荐售价</th><th>运费策略</th><th>主要风险</th><th>操作</th>";
+    html += "<th>国家</th><th>总分</th><th>决策</th><th>置信度</th><th>视频适配</th><th>主要风险</th><th>操作</th>";
     html += "</tr></thead><tbody>";
     for (var j = 0; j < overview.length; j++) {
       var row = overview[j];
@@ -265,8 +238,7 @@
       html += "<td>" + (row.overall_score || 0) + "</td>";
       html += "<td><span class=\"pr-tag " + tagClass + "\">" + escapeHtml(dec) + "</span></td>";
       html += "<td>" + escapeHtml(row.confidence || "low") + "</td>";
-      html += "<td>" + (row.recommended_price != null ? row.recommended_price + " " + (row.currency || "") : "-") + "</td>";
-      html += "<td>" + escapeHtml(row.shipping_strategy || "-") + "</td>";
+      html += "<td>" + escapeHtml(row.video_decision || "-") + "</td>";
       html += "<td style=\"max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">" + escapeHtml(row.top_risk || "-") + "</td>";
       html += "<td><button class=\"pr-btn pr-btn--ghost\" style=\"padding:2px 8px;font-size:11px\" onclick=\"window._rerunCountry('" + row.country_code + "')\">重跑</button></td>";
       html += "</tr>";
@@ -315,19 +287,6 @@
     }
     html += "</div>";
 
-    // Pricing comparison chart
-    var priceData = charts.pricing_comparison || [];
-    html += "<div class=\"pr-chart-card\"><h4>定价对比</h4>";
-    html += "<div class=\"pr-table-wrap\"><table class=\"pr-table\"><thead><tr><th>国家</th><th>当前本地价</th><th>推荐售价</th><th>竞品中位数</th></tr></thead><tbody>";
-    for (var j = 0; j < priceData.length; j++) {
-      var p = priceData[j];
-      html += "<tr><td>" + escapeHtml(p.country_code) + "</td>";
-      html += "<td>" + (p.current_price_local != null ? p.current_price_local : "-") + "</td>";
-      html += "<td><strong>" + (p.recommended_price != null ? p.recommended_price : "-") + "</strong></td>";
-      html += "<td>" + (p.competitor_median != null ? p.competitor_median : "-") + " " + (p.currency || "") + "</td></tr>";
-    }
-    html += "</tbody></table></div></div>";
-
     html += "</div>";
     return html;
   }
@@ -364,7 +323,6 @@
     var marketFit = cdata.market_fit || {};
     var competitor = cdata.competitor_pricing || {};
     var pricing = cdata.pricing_strategy || {};
-    var shipping = cdata.shipping_strategy || {};
     var videoFit = cdata.short_video_fit || {};
     var imageFit = cdata.main_image_fit || {};
     var landing = cdata.landing_page_localization || {};
@@ -406,16 +364,12 @@
     }
     html += "</div>";
 
-    // Pricing strategy
-    html += "<div class=\"pr-detail-section\"><h4>定价策略</h4>";
-    html += "<p><strong>推荐售价：</strong>" + ((pricing.recommended_price || {}).amount != null ? pricing.recommended_price.amount + " " + (pricing.recommended_price.currency || "") : "-") + "</p>";
-    html += "<p><strong>价格尾数：</strong>" + escapeHtml(pricing.recommended_price_ending || "-") + "</p>";
-    html += "<p><strong>置信度：</strong>" + escapeHtml(pricing.pricing_confidence || "low") + "</p></div>";
-
-    // Shipping
-    html += "<div class=\"pr-detail-section\"><h4>运费策略</h4>";
-    html += "<p><strong>推荐模式：</strong>" + escapeHtml(shipping.recommended_model || "unknown") + "</p>";
-    html += "<p>" + escapeHtml(shipping.reason || "") + "</p></div>";
+    // Pricing strategy (only show if recommendation exists)
+    if (pricing.recommended_price && (pricing.recommended_price.amount != null)) {
+      html += "<div class=\"pr-detail-section\"><h4>定价参考</h4>";
+      html += "<p><strong>推荐售价：</strong>" + pricing.recommended_price.amount + " " + (pricing.recommended_price.currency || "") + "</p>";
+      html += "<p><strong>置信度：</strong>" + escapeHtml(pricing.pricing_confidence || "low") + "</p></div>";
+    }
 
     // Video fit
     html += "<div class=\"pr-detail-section\"><h4>短视频适配</h4>";

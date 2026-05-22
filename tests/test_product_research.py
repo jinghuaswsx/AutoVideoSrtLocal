@@ -48,7 +48,7 @@ def test_decision_from_score():
 
 def test_validate_scores_in_range():
     from appcore.product_research_schemas import validate_scores
-    assert validate_scores({"overall_score": 50, "pricing_score": 80}) == []
+    assert validate_scores({"overall_score": 50, "demand_score": 80}) == []
     errors = validate_scores({"overall_score": 150})
     assert len(errors) > 0
     errors = validate_scores({"overall_score": -1})
@@ -290,8 +290,6 @@ def _valid_country_result(code="DE"):
             "product_market_fit_score": 70,
             "demand_score": 65,
             "competition_score": 60,
-            "pricing_score": 55,
-            "shipping_strategy_score": 60,
             "video_selling_fit_score": 50,
             "main_image_fit_score": 65,
             "landing_page_localization_score": 55,
@@ -354,17 +352,22 @@ class _FakeFxProvider:
         return Decimal(str(amount)) * rate
 
 
-def test_pipeline_creates_13_step_cards():
+def test_pipeline_creates_12_step_cards():
     from appcore.product_research_config import PIPELINE_STEPS
-    assert len(PIPELINE_STEPS) == 13
+    assert len(PIPELINE_STEPS) == 12
     card_ids = [s["card_id"] for s in PIPELINE_STEPS]
     assert "input_validation" in card_ids
     assert "product_facts" in card_ids
     assert "media_understanding" in card_ids
     for code in ["DE", "FR", "IT", "ES", "NL", "PT", "SE", "JP"]:
         assert f"country_{code}" in card_ids
-    assert "pricing_strategy" in card_ids
     assert "final_conclusion" in card_ids
+
+
+def test_pipeline_no_pricing_strategy_step():
+    from appcore.product_research_config import PIPELINE_STEPS
+    card_ids = [s["card_id"] for s in PIPELINE_STEPS]
+    assert "pricing_strategy" not in card_ids
 
 
 @pytest.mark.skip(reason="Requires DB connection; run manually with real DB")
@@ -407,7 +410,7 @@ def test_frontend_payload_has_expected_structure():
 
     assert len(frontend["charts"]["country_score_bar"]) == 2
     assert len(frontend["charts"]["score_radar"]) == 2
-    assert len(frontend["charts"]["pricing_comparison"]) == 2
+    assert "pricing_comparison" not in frontend["charts"]
 
     assert len(frontend["tables"]["country_overview"]) == 2
     assert len(frontend["badges"]) == 2
@@ -415,6 +418,7 @@ def test_frontend_payload_has_expected_structure():
     overview = frontend["tables"]["country_overview"][0]
     assert overview["country_code"] == "DE"
     assert overview["overall_score"] == 72
+    assert "video_decision" in overview
 
 
 # ── Flaky Country Tests ───────────────────────────────
@@ -477,16 +481,35 @@ def test_validate_input_passes_with_all_required():
     assert len(errors) == 0
 
 
-# ── Pricing Aggregation ───────────────────────────────
+# ── Summary Aggregation ───────────────────────────────
 
-def test_pricing_aggregation_handles_empty_countries():
-    from appcore.product_research_service import _aggregate_pricing
-    result = _aggregate_pricing({}, {})
-    assert result["per_country"] == []
+def test_build_summary_handles_empty_countries():
+    from appcore.product_research_service import _build_summary
+    result = _build_summary({})
+    assert result["ranking"] == []
+    assert result["average_score"] == 0
+    assert result["go_count"] == 0
+    assert result["test_count"] == 0
+    assert result["hold_count"] == 0
 
 
-def test_pricing_aggregation_handles_missing_price():
-    from appcore.product_research_service import _aggregate_pricing
-    result = _aggregate_pricing({"DE": _valid_country_result("DE")}, {})
-    assert len(result["per_country"]) == 1
-    assert result["per_country"][0]["country_code"] == "DE"
+def test_build_summary_counts_go_test_hold():
+    from appcore.product_research_service import _build_summary
+    countries = {
+        "DE": _valid_country_result("DE"),
+        "FR": _valid_country_result("FR"),
+    }
+    result = _build_summary(countries)
+    assert result["test_count"] == 2
+    assert result["go_count"] == 0
+
+
+def test_build_summary_ranking_sorted_by_score():
+    from appcore.product_research_service import _build_summary
+    de = _valid_country_result("DE")
+    de["scores"]["overall_score"] = 72
+    fr = _valid_country_result("FR")
+    fr["scores"]["overall_score"] = 68
+    result = _build_summary({"DE": de, "FR": fr})
+    assert result["ranking"][0]["country_code"] == "DE"
+    assert result["best_country"] == "DE"

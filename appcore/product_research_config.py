@@ -86,13 +86,14 @@ DEFAULT_COUNTRY_CODES: tuple[str, ...] = tuple(c["country_code"] for c in COUNTR
 _COUNTRY_BY_CODE: dict[str, dict[str, Any]] = {c["country_code"]: c for c in COUNTRIES}
 
 SCORE_WEIGHTS: dict[str, float] = {
-    "product_market_fit_score": 0.25,
+    "product_market_fit_score": 0.30,
     "video_selling_fit_score": 0.25,
-    "pricing_score": 0.20,
-    "shipping_strategy_score": 0.10,
+    "demand_score": 0.10,
+    "competition_score": 0.10,
+    "main_image_fit_score": 0.10,
     "landing_page_localization_score": 0.10,
-    "operational_fit_score": 0.05,
-    "risk_score": 0.05,
+    "operational_fit_score": 0.03,
+    "risk_score": 0.02,
 }
 
 DECISION_THRESHOLDS: dict[str, int] = {
@@ -102,17 +103,16 @@ DECISION_THRESHOLDS: dict[str, int] = {
 
 PIPELINE_STEPS: tuple[dict[str, str], ...] = (
     {"card_id": "input_validation", "title": "输入校验", "subtitle": "校验必填字段与数据完整性"},
-    {"card_id": "product_facts", "title": "产品事实抽取", "subtitle": "AI 抽取产品属性、卖点、关键词"},
+    {"card_id": "product_facts", "title": "产品事实抽取", "subtitle": "AI 联网搜索抽取产品属性、卖点、关键词"},
     {"card_id": "media_understanding", "title": "主图与短视频分析", "subtitle": "AI 分析视觉素材与带货适配度"},
-    {"card_id": "country_DE", "title": "德国市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_FR", "title": "法国市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_IT", "title": "意大利市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_ES", "title": "西班牙市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_NL", "title": "荷兰市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_PT", "title": "葡萄牙市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_SE", "title": "瑞典市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "country_JP", "title": "日本市场调研", "subtitle": "竞品价格、市场适配、短视频带货适配、定价策略"},
-    {"card_id": "pricing_strategy", "title": "定价与运费策略", "subtitle": "8 国定价聚合与运费策略推荐"},
+    {"card_id": "country_DE", "title": "德国市场调研", "subtitle": "联网搜索德国市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_FR", "title": "法国市场调研", "subtitle": "联网搜索法国市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_IT", "title": "意大利市场调研", "subtitle": "联网搜索意大利市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_ES", "title": "西班牙市场调研", "subtitle": "联网搜索西班牙市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_NL", "title": "荷兰市场调研", "subtitle": "联网搜索荷兰市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_PT", "title": "葡萄牙市场调研", "subtitle": "联网搜索葡萄牙市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_SE", "title": "瑞典市场调研", "subtitle": "联网搜索瑞典市场：需求、竞品、短视频适配、本地化"},
+    {"card_id": "country_JP", "title": "日本市场调研", "subtitle": "联网搜索日本市场：需求、竞品、短视频适配、本地化"},
     {"card_id": "final_conclusion", "title": "最终结论", "subtitle": "8 国排名、GO/TEST/HOLD、下一步动作"},
 )
 

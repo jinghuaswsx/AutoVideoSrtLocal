@@ -10,8 +10,6 @@ SCORE_KEYS: tuple[str, ...] = (
     "product_market_fit_score",
     "demand_score",
     "competition_score",
-    "pricing_score",
-    "shipping_strategy_score",
     "video_selling_fit_score",
     "main_image_fit_score",
     "landing_page_localization_score",

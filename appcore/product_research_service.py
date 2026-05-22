@@ -9,7 +9,6 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 from appcore import runner_lifecycle
@@ -22,7 +21,6 @@ from appcore.product_research_config import (
     get_country_config,
     normalize_country_codes,
 )
-from appcore.product_research_exchange_rate import get_exchange_rate_provider
 from appcore.product_research_gemini_client import MODEL, PROVIDER, ProductResearchGeminiClient
 from appcore.product_research_schemas import (
     COUNTRY_EVALUATION_SCHEMA,
@@ -60,7 +58,7 @@ class ProductResearchService:
         research_run_id = f"research_{uuid.uuid4().hex}"
         now = _now_iso()
         input_snapshot = _sanitize_input(input_data)
-        country_codes = normalize_country_codes(list(input_snapshot.get("shipping_inputs", {}).get("shipping_cost_by_country", {}).keys() or DEFAULT_COUNTRY_CODES))
+        country_codes = normalize_country_codes(list(DEFAULT_COUNTRY_CODES))
 
         run = {
             "research_run_id": research_run_id,
@@ -69,7 +67,6 @@ class ProductResearchService:
             "pipeline_cards_json": json.dumps(_initial_cards(), ensure_ascii=False),
             "product_facts_json": None,
             "media_understanding_json": None,
-            "pricing_strategy_json": None,
             "summary_json": None,
             "frontend_json": None,
             "metadata_json": json.dumps({
@@ -182,7 +179,6 @@ class ProductResearchService:
             "product_facts": _load_json(run.get("product_facts_json"), {}),
             "media_understanding": _load_json(run.get("media_understanding_json"), {}),
             "countries": countries,
-            "pricing_strategy": _load_json(run.get("pricing_strategy_json"), {}),
             "summary": _load_json(run.get("summary_json"), {}),
             "frontend": _load_json(run.get("frontend_json"), {}),
             "metadata": metadata,
@@ -315,9 +311,7 @@ class ProductResearchService:
                 self._upsert_country(research_run_id, code, country, "failed", failed_result, error_message=str(exc)[:500])
             self._update(run_id=research_run_id, cards=cards)
 
-        # Step 12: pricing_strategy_aggregation
-        cards = _set_card(cards, "pricing_strategy", "running", "正在聚合 8 国定价策略")
-        self._update(run_id=research_run_id, cards=cards)
+        # Load all country results for final aggregation
         country_rows = query(
             "SELECT * FROM product_research_country_results WHERE research_run_id = %s",
             (research_run_id,),
@@ -326,11 +320,7 @@ class ProductResearchService:
         for row in country_rows:
             all_countries[row["country_code"]] = _load_json(row.get("full_result_json"), {})
 
-        pricing_strategy = _aggregate_pricing(all_countries, input_snapshot)
-        cards = _set_card(cards, "pricing_strategy", "completed", "定价策略聚合完成", result=pricing_strategy)
-        self._update(run_id=research_run_id, pricing_strategy=pricing_strategy, cards=cards)
-
-        # Step 13: final_conclusion
+        # Step 12: final_conclusion
         cards = _set_card(cards, "final_conclusion", "running", "正在汇总最终结论")
         self._update(run_id=research_run_id, cards=cards)
         summary = _build_summary(all_countries)
@@ -368,7 +358,7 @@ class ProductResearchService:
         return run
 
     def _update(self, *, run_id: str, status: str | None = None, cards: list | None = None,
-                product_facts=None, media_understanding=None, pricing_strategy=None,
+                product_facts=None, media_understanding=None,
                 summary=None, frontend=None, metadata=None,
                 started_at=None, completed_at=None, failed_at=None, error=None):
         now = _now_iso()
@@ -382,8 +372,6 @@ class ProductResearchService:
             parts.append("product_facts_json = %s"); params.append(json.dumps(product_facts, ensure_ascii=False))
         if media_understanding is not None:
             parts.append("media_understanding_json = %s"); params.append(json.dumps(media_understanding, ensure_ascii=False))
-        if pricing_strategy is not None:
-            parts.append("pricing_strategy_json = %s"); params.append(json.dumps(pricing_strategy, ensure_ascii=False))
         if summary is not None:
             parts.append("summary_json = %s"); params.append(json.dumps(summary, ensure_ascii=False))
         if frontend is not None:
@@ -581,13 +569,10 @@ def _validate_input(input_snapshot: dict[str, Any]) -> tuple[bool, list[str]]:
 def _sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "product_url": str(data.get("product_url") or "").strip(),
+        "product_name": str(data.get("product_name") or "").strip(),
+        "product_name_en": str(data.get("product_name_en") or "").strip(),
         "main_image": data.get("main_image") or {},
         "short_video": data.get("short_video") or {},
-        "current_price": data.get("current_price") or {},
-        "product_cost": data.get("product_cost") or {},
-        "package": data.get("package") or {},
-        "shipping_inputs": data.get("shipping_inputs") or {},
-        "business_targets": data.get("business_targets") or {},
         "notes": str(data.get("notes") or "").strip(),
     }
 
@@ -665,45 +650,6 @@ def _failed_country_result(country: dict, message: str) -> dict:
 
 # ── Aggregation ──────────────────────────────────────────
 
-def _aggregate_pricing(countries: dict[str, dict], input_snapshot: dict) -> dict:
-    fx = get_exchange_rate_provider()
-    current_price = input_snapshot.get("current_price") or {}
-    current_amount = current_price.get("amount")
-    current_currency = str(current_price.get("currency") or "USD").upper()
-
-    per_country: list[dict] = []
-    for code, cdata in countries.items():
-        country = get_country_config(code)
-        pricing = cdata.get("pricing_strategy") or {}
-        competitor = cdata.get("competitor_pricing") or {}
-        price_band = competitor.get("price_band") or {}
-        target_currency = country["currency"]
-
-        current_local = None
-        if current_amount is not None:
-            current_local = fx.convert(Decimal(str(current_amount)), current_currency, target_currency)
-            if current_local is not None:
-                current_local = float(current_local)
-
-        per_country.append({
-            "country_code": code,
-            "country_name_zh": country["country_name_zh"],
-            "currency": target_currency,
-            "current_price_local": current_local,
-            "recommended_price": pricing.get("recommended_price", {}).get("amount"),
-            "competitor_min": price_band.get("min"),
-            "competitor_median": price_band.get("median"),
-            "competitor_max": price_band.get("max"),
-            "pricing_confidence": pricing.get("pricing_confidence", "low"),
-        })
-
-    return {
-        "per_country": per_country,
-        "input_currency": current_currency,
-        "input_amount": current_amount,
-    }
-
-
 def _build_summary(countries: dict[str, dict]) -> dict:
     entries: list[dict] = []
     go_count = 0
@@ -767,13 +713,9 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
     # Charts
     bar_chart = []
     radar_chart = []
-    pricing_chart = []
     for code, cdata in countries.items():
         scores = cdata.get("scores") or {}
         decision = cdata.get("decision") or {}
-        pricing = cdata.get("pricing_strategy") or {}
-        competitor = cdata.get("competitor_pricing") or {}
-        price_band = competitor.get("price_band") or {}
 
         bar_chart.append({
             "country_code": code,
@@ -785,18 +727,9 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
             "country_code": code,
             "product_market_fit_score": scores.get("product_market_fit_score", 0),
             "video_selling_fit_score": scores.get("video_selling_fit_score", 0),
-            "pricing_score": scores.get("pricing_score", 0),
-            "shipping_strategy_score": scores.get("shipping_strategy_score", 0),
+            "demand_score": scores.get("demand_score", 0),
+            "competition_score": scores.get("competition_score", 0),
             "landing_page_localization_score": scores.get("landing_page_localization_score", 0),
-        })
-        pricing_chart.append({
-            "country_code": code,
-            "current_price_local": (pricing.get("current_price_local") or {}).get("amount"),
-            "recommended_price": (pricing.get("recommended_price") or {}).get("amount"),
-            "competitor_min": price_band.get("min"),
-            "competitor_median": price_band.get("median"),
-            "competitor_max": price_band.get("max"),
-            "currency": cdata.get("currency", "EUR"),
         })
 
     # Table
@@ -804,8 +737,7 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
     for code, cdata in countries.items():
         scores = cdata.get("scores") or {}
         decision = cdata.get("decision") or {}
-        pricing = cdata.get("pricing_strategy") or {}
-        shipping = cdata.get("shipping_strategy") or {}
+        video_fit = cdata.get("short_video_fit") or {}
         recommendations = cdata.get("recommendations") or {}
         risks = cdata.get("risks") or {}
         all_risks = (risks.get("claim_risks") or []) + (risks.get("compliance_risks") or []) + (risks.get("operational_risks") or [])
@@ -816,12 +748,10 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
             "overall_score": scores.get("overall_score", 0),
             "decision": decision.get("final_decision", "HOLD"),
             "confidence": decision.get("confidence", "low"),
-            "recommended_price": (pricing.get("recommended_price") or {}).get("amount"),
-            "currency": cdata.get("currency", "EUR"),
-            "shipping_strategy": shipping.get("recommended_model", "unknown"),
+            "video_decision": video_fit.get("final_video_decision", "-"),
             "recommended_positioning": recommendations.get("recommended_positioning", ""),
             "top_risk": all_risks[0] if all_risks else "",
-            "top_action": (recommendations.get("pricing_actions") or recommendations.get("creative_actions") or [""])[0],
+            "top_action": (recommendations.get("creative_actions") or [""])[0],
         })
 
     # Badges & action items
@@ -834,8 +764,6 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
         badges.append({"country_code": code, "label": fd, "severity": sev})
 
         recommendations = cdata.get("recommendations") or {}
-        for action in recommendations.get("pricing_actions") or []:
-            action_items.append({"priority": "high", "country_code": code, "type": "pricing", "title": action[:80], "description": action})
         for action in recommendations.get("creative_actions") or []:
             action_items.append({"priority": "medium", "country_code": code, "type": "creative", "title": action[:80], "description": action})
         for action in recommendations.get("landing_page_actions") or []:
@@ -846,7 +774,6 @@ def _build_frontend(summary: dict, countries: dict[str, dict]) -> dict:
         "charts": {
             "country_score_bar": bar_chart,
             "score_radar": radar_chart,
-            "pricing_comparison": pricing_chart,
         },
         "tables": {"country_overview": overview},
         "badges": badges,
