@@ -130,6 +130,31 @@ def mk_selection_page():
     return render_template("mk_selection.html")
 
 
+@bp.route("/fine-ai-evaluation/<evaluation_run_id>", methods=["GET"])
+@login_required
+def fine_ai_evaluation_detail_page(evaluation_run_id: str):
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    return render_template(
+        "fine_ai_evaluation_detail.html",
+        page_config={
+            "mode": "external",
+            "product_id": "0",
+            "evaluation_run_id": str(evaluation_run_id or ""),
+            "status_url": url_for("xuanpin.api_fine_ai_external_status", evaluation_run_id=evaluation_run_id),
+            "result_url": url_for("xuanpin.api_fine_ai_external_result", evaluation_run_id=evaluation_run_id),
+            "rerun_url_template": url_for(
+                "xuanpin.api_fine_ai_external_country_rerun",
+                evaluation_run_id=evaluation_run_id,
+                country_code="{country}",
+            ).replace("%7Bcountry%7D", "{country}"),
+            "return_url": url_for("xuanpin.mk_selection_page") + "#videos",
+            "title": "AI精细评估独立页",
+        },
+    )
+
+
 @bp.route("/tabcut", methods=["GET"])
 @login_required
 def tabcut_selection_page():

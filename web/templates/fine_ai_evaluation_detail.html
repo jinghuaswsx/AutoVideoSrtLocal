@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% block title %}AI精细评估独立页 - AutoVideoSrt{% endblock %}
+{% block page_title %}AI精细评估独立页{% endblock %}
+{% block content %}
+<style>
+.fine-ai-page { max-width: 1480px; margin: 0 auto; }
+.fine-ai-hero { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; padding:16px 18px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); }
+.fine-ai-hero h1 { margin:0 0 6px; font-size:22px; line-height:1.25; }
+.fine-ai-hero p { margin:0; color:#64748b; font-size:14px; }
+.fine-ai-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.fine-ai-btn { min-height:34px; padding:0 12px; border:1px solid #0ea5e9; border-radius:6px; background:#fff; color:#0284c7; font-weight:700; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+.fine-ai-btn--primary { background:#0284c7; color:#fff; }
+.fine-ai-btn:disabled { opacity:.55; cursor:not-allowed; }
+.fine-ai-shell { display:grid; gap:14px; }
+.mki-fine-ai-progress-header { border:1px solid #d8e5ee; border-radius:8px; background:#f8fbfd; padding:14px 16px; }
+.mki-fine-ai-progress-top { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:12px; }
+.mki-fine-ai-progress-title { font-size:20px; font-weight:800; display:flex; align-items:center; gap:8px; }
+.mki-fine-ai-progress-title::before { content:""; width:12px; height:12px; border-radius:999px; background:#0ea5e9; box-shadow:0 0 0 7px rgba(14,165,233,.15); }
+.mki-fine-ai-progress-time { display:inline-flex; align-items:center; min-height:32px; padding:0 14px; border-radius:999px; background:#cffafe; color:#0369a1; font-weight:800; }
+.mki-fine-ai-progress-track { height:10px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+.mki-fine-ai-progress-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,#0284c7,#22c55e); transition:width .2s ease; }
+.mki-fine-ai-progress-meta { display:flex; justify-content:space-between; gap:10px; margin-top:10px; color:#64748b; font-size:13px; }
+.mki-fine-ai-step-list { display:grid; gap:10px; }
+.mki-fine-ai-step-card { border:1px solid #e2e8f0; border-left-width:5px; border-radius:8px; padding:13px 14px; background:#fff; }
+.mki-fine-ai-step-card.is-pending { border-left-color:#cbd5e1; background:#fbfdff; }
+.mki-fine-ai-step-card.is-running { border-color:#93c5fd; border-left-color:#0284c7; background:#eff6ff; box-shadow:0 0 0 3px rgba(14,165,233,.10); }
+.mki-fine-ai-step-card.is-completed { border-left-color:#16a34a; background:#f0fdf4; }
+.mki-fine-ai-step-card.is-failed { border-left-color:#dc2626; background:#fef2f2; }
+.mki-fine-ai-step-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; font-size:16px; }
+.mki-fine-ai-step-dot { position:relative; width:10px; height:10px; border-radius:999px; background:#94a3b8; flex:0 0 auto; }
+.mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot { background:#0284c7; }
+.mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border:2px solid rgba(14,165,233,.35); border-radius:inherit; animation:fineAiPulse 1.05s ease-out infinite; }
+.mki-fine-ai-status-pill { border-radius:999px; padding:4px 10px; font-size:12px; font-weight:800; background:#e2e8f0; color:#475569; }
+.mki-fine-ai-status-pill.is-running { background:#cffafe; color:#0369a1; }
+.mki-fine-ai-status-pill.is-completed { background:#dcfce7; color:#166534; }
+.mki-fine-ai-status-pill.is-failed { background:#fee2e2; color:#991b1b; }
+.mki-fine-ai-step-desc { margin:8px 0 0; color:#475569; font-size:14px; }
+.mki-fine-ai-debug-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; margin-top:10px; }
+.mki-fine-ai-debug-item { min-width:0; border:1px solid #dbe7ef; border-radius:6px; padding:8px; background:rgba(255,255,255,.7); }
+.mki-fine-ai-debug-item span { display:block; color:#64748b; font-size:12px; margin-bottom:3px; }
+.mki-fine-ai-debug-item strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.mki-fine-ai-log-list { display:grid; gap:6px; margin-top:10px; }
+.mki-fine-ai-log-row { display:grid; grid-template-columns:72px 64px 1fr; gap:10px; align-items:start; font-size:13px; color:#475569; }
+.mki-fine-ai-execution-log, .fine-ai-result-section { border:1px solid #e2e8f0; border-radius:8px; padding:14px; background:#fff; }
+.mki-fine-ai-execution-log h4, .fine-ai-result-section h4 { margin:0 0 10px; font-size:16px; }
+.ect-muted { color:#64748b; }
+.ect-suggestions { margin:8px 0 0 18px; }
+.ect-summary-tag { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:999px; background:#e0f2fe; color:#075985; font-weight:800; font-size:12px; }
+.ect-tag-success { background:#dcfce7; color:#166534; }
+.ect-tag-warning { background:#fef3c7; color:#92400e; }
+.ect-tag-danger { background:#fee2e2; color:#991b1b; }
+.ect-tag-info { background:#e0f2fe; color:#075985; }
+.fine-ai-country-list { display:grid; gap:10px; }
+.fine-ai-country-card { border:1px solid #e2e8f0; border-radius:8px; background:#fff; padding:14px; }
+.fine-ai-country-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.fine-ai-country-head h4 { margin:0; font-size:16px; }
+.fine-ai-loading { border:1px solid #dbe7ef; border-radius:8px; background:#fff; padding:24px; color:#64748b; text-align:center; }
+@keyframes fineAiPulse { from { transform:scale(.72); opacity:.9; } to { transform:scale(1.8); opacity:0; } }
+@media (max-width: 720px) {
+  .fine-ai-hero { flex-direction:column; }
+  .fine-ai-actions { justify-content:flex-start; }
+  .mki-fine-ai-progress-meta, .mki-fine-ai-step-head { flex-direction:column; align-items:flex-start; }
+}
+</style>
+
+<div class="fine-ai-page">
+  <section class="fine-ai-hero">
+    <div>
+      <h1>AI精细评估独立页</h1>
+      <p>独立跟踪单次评估 run 的国家进度、执行明细、调试日志和最终结论。</p>
+    </div>
+    <div class="fine-ai-actions">
+      <a class="fine-ai-btn" href="{{ page_config.return_url }}">返回来源</a>
+      <button type="button" class="fine-ai-btn fine-ai-btn--primary" id="fineAiRefreshBtn">刷新</button>
+    </div>
+  </section>
+  <div id="fineAiPageBody" class="fine-ai-shell">
+    <div class="fine-ai-loading">正在加载 AI 精细评估进度...</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.FINE_AI_EVALUATION_PAGE = {
+  "mode": {{ page_config.mode|tojson }},
+  "product_id": {{ page_config.product_id|tojson }},
+  "evaluation_run_id": {{ page_config.evaluation_run_id|tojson }},
+  "status_url": {{ page_config.status_url|tojson }},
+  "result_url": {{ page_config.result_url|tojson }},
+  "rerun_url_template": {{ page_config.rerun_url_template|tojson }},
+  "return_url": {{ page_config.return_url|tojson }},
+  "title": {{ page_config.title|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/fine_ai_evaluation_detail.js') }}"></script>
+{% endblock %}

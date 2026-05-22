@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import jsonify, render_template, request, url_for
 from flask_login import login_required
 
 from appcore import medias
@@ -36,6 +36,40 @@ def _require_product_or_error(pid: int):
 
 def _payload() -> dict:
     return request.get_json(silent=True) or {}
+
+
+@bp.route("/products/<int:pid>/ai-evaluation/<evaluation_run_id>", methods=["GET"])
+@login_required
+def product_fine_ai_evaluation_detail_page(pid: int, evaluation_run_id: str):
+    _product, error = _require_product_or_error(pid)
+    if error:
+        return error
+    return render_template(
+        "fine_ai_evaluation_detail.html",
+        page_config={
+            "mode": "product",
+            "product_id": str(pid),
+            "evaluation_run_id": str(evaluation_run_id or ""),
+            "status_url": url_for(
+                "medias.api_product_fine_ai_evaluation_status",
+                pid=pid,
+                evaluation_run_id=evaluation_run_id,
+            ),
+            "result_url": url_for(
+                "medias.api_product_fine_ai_evaluation_result",
+                pid=pid,
+                evaluation_run_id=evaluation_run_id,
+            ),
+            "rerun_url_template": url_for(
+                "medias.api_product_fine_ai_evaluation_country_rerun",
+                pid=pid,
+                evaluation_run_id=evaluation_run_id,
+                country_code="{country}",
+            ).replace("%7Bcountry%7D", "{country}"),
+            "return_url": url_for("medias.index"),
+            "title": "AI精细评估独立页",
+        },
+    )
 
 
 @bp.route("/api/products/<int:pid>/ai-evaluation", methods=["POST"])

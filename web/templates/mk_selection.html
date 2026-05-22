@@ -1999,6 +1999,16 @@ function mkiFineAiStatusLabel(status) {
   return status || '未知状态';
 }
 
+function mkiFineAiEffectiveStatus(progress, status) {
+  const raw = String(status || '').toLowerCase();
+  const currentStep = String((progress || {}).current_step || '').toLowerCase();
+  const completed_steps = Number((progress || {}).completed_steps || 0);
+  if ((raw === 'queued' || raw === 'pending') && (completed_steps > 0 || (currentStep && currentStep !== 'queued'))) {
+    return 'running';
+  }
+  return raw || currentStep || 'queued';
+}
+
 function mkiFineAiStepStatusLabel(status) {
   const value = String(status || 'pending').toLowerCase();
   if (value === 'running') return '执行中';
@@ -2060,7 +2070,7 @@ function mkiFineAiRenderProgressHeader(progress, status) {
   const done = Math.max(0, Math.min(total, Number(p.completed_steps || 0)));
   const pct = Math.round((done / total) * 100);
   const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '').replace('country_', '');
-  const statusValue = status || p.current_step || '';
+  const statusValue = mkiFineAiEffectiveStatus(p, status || p.current_step || '');
   return `
     <section class="mki-fine-ai-progress-header" aria-live="polite">
       <div class="mki-fine-ai-progress-top">
@@ -2318,6 +2328,36 @@ function mkiFineAiRenderResult(data) {
   `;
 }
 
+function mkiFineAiDetailUrl(context) {
+  if (!context || !context.runId) return '';
+  const runId = encodeURIComponent(context.runId);
+  if (context.externalProductLink && !context.productId) {
+    return `/xuanpin/fine-ai-evaluation/${runId}`;
+  }
+  if (context.productId) {
+    return `/medias/products/${encodeURIComponent(context.productId)}/ai-evaluation/${runId}`;
+  }
+  return '';
+}
+
+function mkiFineAiRefreshDetailButton(context) {
+  const btn = context && context.detailButton;
+  if (!btn) return;
+  const url = mkiFineAiDetailUrl(context);
+  btn.disabled = !url;
+  btn.dataset.fineAiDetailUrl = url;
+  btn.title = url ? '在独立页面打开本次 AI 精细评估' : '创建评估任务后可打开独立页面';
+}
+
+function mkiFineAiOpenStandalonePage(context) {
+  const url = mkiFineAiDetailUrl(context);
+  if (!url) {
+    mkiToast('warning', '评估任务创建后才能打开独立页');
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function mkiFineAiAttachHeaderButtons(shell, context) {
   const header = shell && shell.modal && shell.modal.querySelector('.ect-modal-header');
   if (!header) return;
@@ -2328,6 +2368,14 @@ function mkiFineAiAttachHeaderButtons(shell, context) {
     const closeButton = header.querySelector('.ect-modal-close');
     header.insertBefore(actions, closeButton || null);
   }
+  const detailBtn = document.createElement('button');
+  detailBtn.type = 'button';
+  detailBtn.className = 'mki-ai-reevaluate-btn';
+  detailBtn.textContent = '打开独立页';
+  detailBtn.onclick = () => mkiFineAiOpenStandalonePage(context);
+  actions.appendChild(detailBtn);
+  context.detailButton = detailBtn;
+  mkiFineAiRefreshDetailButton(context);
   const latestBtn = document.createElement('button');
   if (!context.externalProductLink) {
     latestBtn.type = 'button';
@@ -2342,7 +2390,7 @@ function mkiFineAiAttachHeaderButtons(shell, context) {
   rerunBtn.textContent = '重新评估';
   rerunBtn.onclick = () => mkiFineAiStartRun(context);
   actions.appendChild(rerunBtn);
-  context.headerButtons = context.externalProductLink ? [rerunBtn] : [latestBtn, rerunBtn];
+  context.headerButtons = context.externalProductLink ? [detailBtn, rerunBtn] : [detailBtn, latestBtn, rerunBtn];
 }
 
 async function mkiFineAiLoadLatest(context, options = {}) {
@@ -2355,6 +2403,7 @@ async function mkiFineAiLoadLatest(context, options = {}) {
     const resp = await mkiFetchJson(mkiFineAiEndpoint(context, '/latest'));
     const result = resp.data || {};
     context.runId = result.evaluation_run_id || context.runId || '';
+    mkiFineAiRefreshDetailButton(context);
     shell.body.innerHTML = mkiFineAiRenderResult(result);
     mkiFineAiBindModalEvents(context);
     if (context.runId && ['queued', 'running'].includes(result.status)) {
@@ -2434,6 +2483,7 @@ async function mkiFineAiStartRun(context) {
       }),
     });
     context.runId = resp.data && resp.data.evaluation_run_id;
+    mkiFineAiRefreshDetailButton(context);
     await mkiFineAiPollStatus(context);
   } catch (e) {
     mkiFineAiStopElapsedTicker(context);
@@ -2453,11 +2503,16 @@ async function mkiFineAiPollStatus(context) {
   for (let i = 0; i < 900; i += 1) {
     const statusResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}/status`));
     const status = statusResp.data || {};
+    context.runId = status.evaluation_run_id || context.runId;
+    mkiFineAiRefreshDetailButton(context);
     context.shell.body.innerHTML = mkiFineAiRenderStatus(status);
     if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
       const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
       mkiFineAiStopElapsedTicker(context);
-      context.shell.body.innerHTML = mkiFineAiRenderResult(resultResp.data || {});
+      const result = resultResp.data || {};
+      context.runId = result.evaluation_run_id || context.runId;
+      mkiFineAiRefreshDetailButton(context);
+      context.shell.body.innerHTML = mkiFineAiRenderResult(result);
       mkiFineAiBindModalEvents(context);
       return;
     }
