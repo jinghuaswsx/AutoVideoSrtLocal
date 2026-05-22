@@ -9,7 +9,7 @@ from appcore import medias, task_state
 from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, get_conn, query_one
 from appcore.image_translate_runtime import apply_translated_detail_images_from_task
-from appcore.material_filename_rules import build_suggested_material_filename
+from appcore.material_filename_rules import build_translated_material_filename
 
 
 _MATERIAL_DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
@@ -69,7 +69,7 @@ def _translated_video_filename(*, product_id: int, lang: str, raw_source: dict, 
     product_name = str(product.get("name") or "").strip()
     if not product_name:
         return _object_basename(fallback_object_key) or _source_material_filename(raw_source)
-    return build_suggested_material_filename(
+    return build_translated_material_filename(
         _source_material_filename(raw_source),
         product_name,
         lang,

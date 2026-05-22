@@ -88,7 +88,7 @@
     const lang = String(fallbackLang || 'en').trim().toLowerCase() || 'en';
     if (lang !== 'en') return lang;
     const fn = String(filename || '');
-    if (!fn.includes('补充素材')) return lang;
+    if (!fn.includes('补充素材') && !fn.includes('小语种翻译素材')) return lang;
     const detected = (LANGUAGES || []).find((item) => {
       if (!item || item.code === 'en' || !item.name_zh) return false;
       return fn.includes(item.name_zh);
@@ -145,6 +145,7 @@
   // 编辑页小语种素材沿用严格命名规范。
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材[A-G可选]({语种中文名})-指派-蔡靖华.mp4
   // 也兼容：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-顾倩multi补拍A-蔡靖华.mp4
+  // 翻译结果：YYYY.MM.DD-{商品名中文}-原素材-小语种翻译素材({语种中文名})-20260401陈兆阳-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 蔡靖华（半角括号；补充素材后可选 A-G 字母；蔡靖华前的指派字段不含空格即可）
   function validateMaterialFilename(filename, productName, langCode) {
     if (langCode === 'en') return validateSimpleMaterialFilename(filename, productName);
@@ -153,7 +154,9 @@
     const noSpaceErrors = validateFilenameNoSpaces(fn);
     if (noSpaceErrors.length) return noSpaceErrors;
     const LOCALIZED_ASSIGNMENT_TAIL_RE = /^(.*\))-(\S+)-蔡靖华\.mp4$/;
+    const LOCALIZED_TRANSLATED_TAIL_RE = /^(.*\))-(\d{8}\S*)-蔡靖华\.mp4$/;
     const LOCALIZED_SUPPLEMENT_MARKER = '-原素材-补充素材';
+    const LOCALIZED_TRANSLATED_MARKER = '-原素材-小语种翻译素材';
     const errs = [];
 
     const lang = (LANGUAGES || []).find(l => l.code === langCode);
@@ -164,6 +167,66 @@
     }
     if (!productName) {
       errs.push('当前产品尚未加载，请重试');
+      return errs;
+    }
+
+    if (fn.includes(LOCALIZED_TRANSLATED_MARKER)) {
+      const translatedTailMatch = fn.match(LOCALIZED_TRANSLATED_TAIL_RE);
+      if (!translatedTailMatch) {
+        errs.push('结尾必须是 "-YYYYMMDD原负责人-蔡靖华.mp4"');
+        return errs;
+      }
+      const sourceToken = translatedTailMatch[2];
+      const sourceDate = sourceToken.slice(0, 8);
+      const sourceDateMatch = /^(\d{4})(\d{2})(\d{2})$/.exec(sourceDate);
+      if (!sourceDateMatch || sourceToken.length <= 8) {
+        errs.push('来源字段必须是 "YYYYMMDD原负责人"');
+      } else {
+        const sy = +sourceDateMatch[1], smo = +sourceDateMatch[2], sd = +sourceDateMatch[3];
+        const sourceDateObj = new Date(sy, smo - 1, sd);
+        if (sourceDateObj.getFullYear() !== sy || sourceDateObj.getMonth() !== smo - 1 || sourceDateObj.getDate() !== sd) {
+          errs.push('来源字段必须是 "YYYYMMDD原负责人"');
+        }
+      }
+      const headMid = translatedTailMatch[1];
+      if (headMid.length < 11 || headMid[10] !== '-') {
+        errs.push('开头必须是 "YYYY.MM.DD-" 格式');
+        return errs;
+      }
+      const dateStr = headMid.slice(0, 10);
+      const dateMatch = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateStr);
+      if (!dateMatch) {
+        errs.push(`日期段 "${dateStr}" 格式必须是 YYYY.MM.DD`);
+        return errs;
+      }
+      const y = +dateMatch[1], mo = +dateMatch[2], d = +dateMatch[3];
+      const dObj = new Date(y, mo - 1, d);
+      if (dObj.getFullYear() !== y || dObj.getMonth() !== mo - 1 || dObj.getDate() !== d) {
+        errs.push(`日期 "${dateStr}" 不是合法日期`);
+      }
+      const rest = headMid.slice(11);
+      if (!rest.endsWith(')')) {
+        errs.push('在来源字段之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）');
+        return errs;
+      }
+      const midStart = rest.lastIndexOf(LOCALIZED_TRANSLATED_MARKER);
+      if (midStart < 0) {
+        errs.push(`中间必须包含 "${LOCALIZED_TRANSLATED_MARKER}(语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）`);
+        return errs;
+      }
+      const productPart = rest.slice(0, midStart);
+      const langPart = rest.slice(midStart + LOCALIZED_TRANSLATED_MARKER.length);
+      if (!(langPart.startsWith('(') && langPart.endsWith(')'))) {
+        errs.push('小语种翻译素材 后必须直接接半角括号 "(语种中文名)"');
+        return errs;
+      }
+      const translatedLangPart = langPart.slice(1, -1);
+      if (productPart !== productName) {
+        errs.push(`商品名不符：文件名写的是 "${productPart}"，应为 "${productName}"（注意前后不能有空格）`);
+      }
+      if (translatedLangPart !== langZh) {
+        errs.push(`语种中文名不符：文件名写的是 "${translatedLangPart}"，应为 "${langZh}"`);
+      }
       return errs;
     }
 

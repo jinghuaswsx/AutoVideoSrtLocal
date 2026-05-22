@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date as real_date
+
 import pytest
 
 
@@ -400,14 +402,21 @@ def test_sync_video_result_binds_existing_item_to_task_center_task(monkeypatch):
 
 def test_sync_video_result_uses_material_filename_rule_for_translated_video(monkeypatch):
     from appcore import bulk_translate_backfill as mod
+    import appcore.material_filename_rules as rules
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 5, 22)
 
     lock_conn = _FakeLockConn([{"ok": 1}, {"released": 1}])
     monkeypatch.setattr(mod, "get_conn", lambda: lock_conn, raising=False)
     monkeypatch.setattr(mod, "query_one", lambda sql, args=None: None, raising=False)
+    monkeypatch.setattr(rules, "date", FixedDate)
 
-    source_filename = "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-张晴-去字幕.mp4"
+    source_filename = "2026.04.01-煮蛋器-原素材-指派-陈兆阳.mp4"
     source_key = f"1/medias/6/raw_sources/a1b2c3d4e5f6_{source_filename}"
-    expected = "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4"
+    expected = "2026.05.22-煮蛋器-原素材-小语种翻译素材(意大利语)-20260401陈兆阳-蔡靖华.mp4"
 
     monkeypatch.setattr(
         mod.medias,
@@ -424,7 +433,7 @@ def test_sync_video_result_uses_material_filename_rule_for_translated_video(monk
     monkeypatch.setattr(
         mod.medias,
         "get_product",
-        lambda product_id: {"id": product_id, "name": "可堆叠棒球帽收纳盒"},
+        lambda product_id: {"id": product_id, "name": "煮蛋器"},
     )
     monkeypatch.setattr(
         mod.medias,

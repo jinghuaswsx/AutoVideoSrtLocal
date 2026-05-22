@@ -208,6 +208,29 @@ def test_medias_js_material_filename_validation_allows_any_no_space_assignment_t
     assert "-顾倩multi补拍A-蔡靖华.mp4" in script
 
 
+def test_medias_js_material_filename_validation_accepts_translated_material_pattern():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "const LOCALIZED_TRANSLATED_MARKER = '-原素材-小语种翻译素材';" in script
+    assert "20260401陈兆阳-蔡靖华.mp4" in script
+
+
+def test_medias_js_material_filename_validation_checks_spaces_before_localized_patterns():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    validate_block = script[
+        script.index("function validateMaterialFilename"):
+        script.index("function assertMaterialFilenameOrAlert")
+    ]
+
+    no_space_pos = validate_block.index("const noSpaceErrors = validateFilenameNoSpaces(fn);")
+    translated_pos = validate_block.index("if (fn.includes(LOCALIZED_TRANSLATED_MARKER))")
+    supplement_pos = validate_block.index("const assignmentTailMatch = fn.match(LOCALIZED_ASSIGNMENT_TAIL_RE);")
+    assert no_space_pos < translated_pos
+    assert no_space_pos < supplement_pos
+
+
 def test_medias_search_input_runs_live_search():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")

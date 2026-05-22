@@ -10,10 +10,15 @@ from typing import Any
 
 
 _DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
+_COMPACT_DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
 _LOCALIZED_MARKER = "补充素材"
+_LOCALIZED_TRANSLATED_MARKER = "小语种翻译素材"
 _LOCALIZED_ASSIGNMENT_TAIL_RE = re.compile(r"^(.*\))-(\S+)-蔡靖华\.mp4$")
+_LOCALIZED_TRANSLATED_TAIL_RE = re.compile(r"^(.*\))-(\d{8}\S*)-蔡靖华\.mp4$")
 _LOCALIZED_MID_MARKER = "-原素材-补充素材"
+_LOCALIZED_TRANSLATED_MID_MARKER = "-原素材-小语种翻译素材"
 _LOCALIZED_SLOT_LANG_RE = re.compile(r"^[A-Ga-g]?\(")
+_SOURCE_ASSIGNEE_RE = re.compile(r"-指派-([^-.\s]+)")
 FILENAME_SPACE_ERROR = "文件名不能包含空格"
 
 
@@ -101,7 +106,7 @@ def resolve_material_filename_lang(
         return requested
 
     filename = _basename(filename)
-    if _LOCALIZED_MARKER not in filename:
+    if _LOCALIZED_MARKER not in filename and _LOCALIZED_TRANSLATED_MARKER not in filename:
         return requested
 
     lang_map = _normalize_languages(languages)
@@ -130,6 +135,25 @@ def build_suggested_material_filename(
 
     lang_zh = lang_map.get(lang) or lang
     return f"{date_part}-{product_name}-原素材-补充素材({lang_zh})-指派-蔡靖华.mp4"
+
+
+def build_translated_material_filename(
+    filename: str,
+    product_name: str,
+    lang_code: str,
+    languages: Mapping[str, str] | Sequence[Mapping[str, Any]] | None = None,
+) -> str:
+    filename = _basename(filename)
+    product_name = (product_name or "").strip() or "{产品名}"
+    lang = (lang_code or "en").strip().lower() or "en"
+    if lang == "en":
+        return build_suggested_material_filename(filename, product_name, lang, languages)
+
+    lang_map = _normalize_languages(languages)
+    lang_zh = lang_map.get(lang) or lang
+    today_part = date.today().strftime("%Y.%m.%d")
+    source_token = _source_assignment_token(filename)
+    return f"{today_part}-{product_name}-原素材-小语种翻译素材({lang_zh})-{source_token}-蔡靖华.mp4"
 
 
 def build_initial_suggested_material_filename(filename: str, product_name: str) -> str:
@@ -177,6 +201,9 @@ def _validate_localized_filename(
     if not product_name:
         return ["当前产品尚未加载，请重试"]
 
+    if _LOCALIZED_TRANSLATED_MID_MARKER in filename:
+        return _validate_translated_localized_filename(filename, product_name, lang_zh)
+
     head_mid = _strip_localized_tail(filename)
     if head_mid is None:
         return ['结尾必须是 "-{不含空格的指派字段}-蔡靖华.mp4"']
@@ -210,6 +237,50 @@ def _validate_localized_filename(
     return errors
 
 
+def _validate_translated_localized_filename(
+    filename: str,
+    product_name: str,
+    lang_zh: str,
+) -> list[str]:
+    errors: list[str] = []
+    match = _LOCALIZED_TRANSLATED_TAIL_RE.match(filename)
+    if not match:
+        return ['结尾必须是 "-YYYYMMDD原负责人-蔡靖华.mp4"']
+
+    head_mid = match.group(1)
+    source_token = match.group(2)
+    source_date = source_token[:8]
+    if not _valid_compact_date_prefix(source_date) or len(source_token) <= 8:
+        errors.append('来源字段必须是 "YYYYMMDD原负责人"')
+
+    if len(head_mid) < 11 or head_mid[10] != "-":
+        return ['开头必须是 "YYYY.MM.DD-" 格式']
+
+    date_str = head_mid[:10]
+    if not _valid_date_prefix(date_str):
+        return [f'日期段 "{date_str}" 格式必须是 YYYY.MM.DD']
+
+    rest = head_mid[11:]
+    if not rest.endswith(")"):
+        return ['在来源字段之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）']
+
+    mid_start = rest.rfind(_LOCALIZED_TRANSLATED_MID_MARKER)
+    if mid_start < 0:
+        return [f'中间必须包含 "{_LOCALIZED_TRANSLATED_MID_MARKER}(语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）']
+
+    product_part = rest[:mid_start]
+    lang_part = rest[mid_start + len(_LOCALIZED_TRANSLATED_MID_MARKER) :]
+    if not (lang_part.startswith("(") and lang_part.endswith(")")):
+        return ['小语种翻译素材 后必须直接接半角括号 "(语种中文名)"']
+
+    lang_name = lang_part[1:-1]
+    if product_part != product_name:
+        errors.append(f'商品名不符：文件名写的是 "{product_part}"，应为 "{product_name}"（注意前后不能有空格）')
+    if lang_name != lang_zh:
+        errors.append(f'语种中文名不符：文件名写的是 "{lang_name}"，应为 "{lang_zh}"')
+    return errors
+
+
 def _strip_localized_tail(filename: str) -> str | None:
     match = _LOCALIZED_ASSIGNMENT_TAIL_RE.match(filename)
     if match:
@@ -227,6 +298,26 @@ def _valid_date_prefix(value: str) -> str | None:
     except ValueError:
         return None
     return parsed.strftime("%Y.%m.%d")
+
+
+def _valid_compact_date_prefix(value: str) -> str | None:
+    match = _COMPACT_DATE_RE.match(value or "")
+    if not match:
+        return None
+    year, month, day = (int(part) for part in match.groups())
+    try:
+        parsed = date(year, month, day)
+    except ValueError:
+        return None
+    return parsed.strftime("%Y%m%d")
+
+
+def _source_assignment_token(filename: str) -> str:
+    source_date = _valid_date_prefix(filename[:10]) or date.today().strftime("%Y.%m.%d")
+    compact_date = source_date.replace(".", "")
+    match = _SOURCE_ASSIGNEE_RE.search(filename)
+    assignee = re.sub(r"\s+", "", (match.group(1) if match else "未知").strip()) or "未知"
+    return f"{compact_date}{assignee}"
 
 
 def _normalize_languages(

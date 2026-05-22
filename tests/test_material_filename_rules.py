@@ -1,4 +1,5 @@
 from appcore.material_filename_rules import (
+    build_translated_material_filename,
     validate_initial_material_filename,
     validate_material_filename,
 )
@@ -74,6 +75,37 @@ def test_edit_localized_material_filename_accepts_any_no_space_assignment_tail()
     assert result.effective_lang == "fr"
 
 
+def test_translated_material_filename_uses_current_date_and_source_assignment(monkeypatch):
+    from datetime import date as real_date
+    import appcore.material_filename_rules as rules
+
+    class FixedDate(real_date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 5, 22)
+
+    monkeypatch.setattr(rules, "date", FixedDate)
+
+    assert build_translated_material_filename(
+        "2026.04.01-煮蛋器-原素材-指派-陈兆阳.mp4",
+        "煮蛋器",
+        "fr",
+        {"en": "英语", "fr": "法语"},
+    ) == "2026.05.22-煮蛋器-原素材-小语种翻译素材(法语)-20260401陈兆阳-蔡靖华.mp4"
+
+
+def test_edit_localized_material_filename_accepts_new_translated_material_pattern():
+    result = validate_material_filename(
+        "2026.05.22-煮蛋器-原素材-小语种翻译素材(法语)-20260401陈兆阳-蔡靖华.mp4",
+        "煮蛋器",
+        "en",
+        {"en": "英语", "fr": "法语"},
+    )
+
+    assert result.ok
+    assert result.effective_lang == "fr"
+
+
 def test_initial_material_filename_requires_only_date_product_tail_and_mp4():
     assert validate_initial_material_filename(
         "2024.01.06-逝后指南-混剪-李文龙.mp4",
@@ -107,6 +139,15 @@ def test_material_filename_rejects_spaces_anywhere():
 
     result = validate_material_filename(
         "2026.04.17-窗帘挂钩-原素材-补充素材 B(法语)-指派-蔡靖华.mp4",
+        "窗帘挂钩",
+        "fr",
+        languages,
+    )
+    assert not result.ok
+    assert result.errors == ("文件名不能包含空格",)
+
+    result = validate_material_filename(
+        "2026.05.22-窗帘挂钩-原素材-小语种翻译素材(法语)-20260417 张三-蔡靖华.mp4",
         "窗帘挂钩",
         "fr",
         languages,
