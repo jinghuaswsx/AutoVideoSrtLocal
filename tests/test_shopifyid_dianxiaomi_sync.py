@@ -137,6 +137,99 @@ def test_build_remote_handle_map_reports_conflicts():
     ]
 
 
+def test_plan_domain_shopify_id_updates_resolves_same_handle_per_domain():
+    mod = _load_module()
+    calls = []
+
+    def fake_fetch(domain: str, product_code: str) -> str:
+        calls.append((domain, product_code))
+        return {
+            ("newjoyloo.com", "tool-free-robotics-building-set-rjc"): "8589437075629",
+            ("omurio.com", "tool-free-robotics-building-set-rjc"): "9174825337044",
+        }.get((domain, product_code), "")
+
+    plan = mod.plan_domain_shopify_id_updates(
+        remote_rows=[
+            {
+                "handle": "tool-free-robotics-building-set-rjc",
+                "shopifyid": "8589437075629",
+                "shop_id": "newjoyloo",
+            },
+            {
+                "handle": "tool-free-robotics-building-set-rjc",
+                "shopifyid": "9174825337044",
+                "shop_id": "omurio",
+            },
+        ],
+        local_products=[
+            {
+                "id": 598,
+                "product_code": "tool-free-robotics-building-set-rjc",
+                "shopifyid": None,
+            }
+        ],
+        domains=["newjoyloo.com", "omurio.com"],
+        fetch_shopify_product_id=fake_fetch,
+        default_domain="newjoyloo.com",
+    )
+
+    assert calls == [
+        ("newjoyloo.com", "tool-free-robotics-building-set-rjc"),
+        ("omurio.com", "tool-free-robotics-building-set-rjc"),
+    ]
+    assert plan["domain_updates"] == [
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "domain": "newjoyloo.com",
+            "shopify_product_id": "8589437075629",
+        },
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "domain": "omurio.com",
+            "shopify_product_id": "9174825337044",
+        },
+    ]
+    assert plan["legacy_updates"] == [
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "shopifyid": "8589437075629",
+        }
+    ]
+    assert plan["unmatched_local"] == []
+    assert plan["domain_failures"] == []
+
+
+def test_build_remote_batch_upsert_shopify_ids_sql_writes_product_domain_cache():
+    mod = _load_module()
+
+    sql = mod.build_remote_batch_upsert_shopify_ids_sql(
+        [
+            {
+                "id": 598,
+                "domain": "newjoyloo.com",
+                "shopify_product_id": "8589437075629",
+            },
+            {
+                "id": 598,
+                "domain": "omurio.com",
+                "shopify_product_id": "9174825337044",
+            },
+        ]
+    )
+
+    assert sql == (
+        "START TRANSACTION;\n"
+        "INSERT INTO media_product_shopify_ids (product_id, domain, shopify_product_id) VALUES "
+        "(598, 'newjoyloo.com', '8589437075629'), "
+        "(598, 'omurio.com', '9174825337044') "
+        "ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id), updated_at=NOW();\n"
+        "COMMIT;\n"
+    )
+
+
 def test_parse_remote_products_tsv_normalizes_blank_shopifyid():
     mod = _load_module()
 
@@ -334,6 +427,85 @@ def test_run_sync_applies_updates_and_writes_report(tmp_path):
     assert payload["unmatched_remote"] == [
         {"product_code": "demo-only", "shopifyid": "777", "status": "unmatched_remote"}
     ]
+
+
+def test_run_sync_per_domain_does_not_block_on_same_handle_remote_conflict(tmp_path):
+    mod = _load_module()
+    legacy_updates = []
+    domain_updates = []
+
+    def fake_fetch_page(page_no):
+        assert page_no == 1
+        return {
+            "data": {
+                "page": {
+                    "totalSize": 2,
+                    "totalPage": 1,
+                    "pageSize": 100,
+                    "pageNo": 1,
+                    "list": [
+                        {
+                            "handle": "tool-free-robotics-building-set-rjc",
+                            "shopifyProductId": "8589437075629",
+                            "title": "A",
+                            "shopId": "1",
+                        },
+                        {
+                            "handle": "tool-free-robotics-building-set-rjc",
+                            "shopifyProductId": "9174825337044",
+                            "title": "A",
+                            "shopId": "2",
+                        },
+                    ],
+                }
+            }
+        }
+
+    report = mod.run_sync(
+        fetch_page=fake_fetch_page,
+        local_products=[
+            {
+                "id": 598,
+                "product_code": "tool-free-robotics-building-set-rjc",
+                "shopifyid": None,
+            }
+        ],
+        apply_updates=lambda updates: legacy_updates.extend(updates),
+        apply_domain_updates=lambda updates: domain_updates.extend(updates),
+        domains=["newjoyloo.com", "omurio.com"],
+        fetch_shopify_product_id=lambda domain, product_code: {
+            ("newjoyloo.com", "tool-free-robotics-building-set-rjc"): "8589437075629",
+            ("omurio.com", "tool-free-robotics-building-set-rjc"): "9174825337044",
+        }.get((domain, product_code), ""),
+        output_dir=tmp_path,
+        now_text="20260522-143000",
+    )
+
+    assert legacy_updates == [
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "shopifyid": "8589437075629",
+        }
+    ]
+    assert domain_updates == [
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "domain": "newjoyloo.com",
+            "shopify_product_id": "8589437075629",
+        },
+        {
+            "id": 598,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "domain": "omurio.com",
+            "shopify_product_id": "9174825337044",
+        },
+    ]
+    assert report["summary"]["matched"] == 1
+    assert report["summary"]["remote_conflict"] == 1
+    assert report["summary"]["domain_updated"] == 2
+    assert report["domain_failures"] == []
 
 
 def test_scheduled_task_table_sql_contains_run_tracking_fields():

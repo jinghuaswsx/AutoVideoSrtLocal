@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +33,8 @@ SSH_HOST = SERVER_HOST
 SSH_USER = "root"
 SSH_KEY_PATH = Path(r"C:\Users\admin\.ssh\CC.pem")
 REMOTE_MEDIA_TABLE = "media_products"
+REMOTE_SHOPIFY_IDS_TABLE = "media_product_shopify_ids"
+REMOTE_LINK_DOMAINS_TABLE = "media_link_domains"
 CDP_PORT = 9225
 CDP_URL = f"http://127.0.0.1:{CDP_PORT}"
 SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9225"
@@ -45,6 +47,13 @@ TASK_CODE = "shopifyid"
 TASK_NAME = "Shopify ID 获取"
 IGNORED_PRODUCT_SYNC_FAILURE_STORES = {"SmartGearX"}
 PRODUCT_SYNC_TIMEOUT_SECONDS = 600
+DEFAULT_SHOPIFY_DOMAINS = ("newjoyloo.com", "omurio.com")
+DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"
+SHOPIFY_STOREFRONT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 REMOTE_ENVS = {
     "prod": {
         "db_name": "auto_video",
@@ -118,6 +127,58 @@ def ensure_dianxiaomi_success(payload: dict[str, Any]) -> None:
         raise RuntimeError(f"店小秘接口返回异常：code={payload.get('code')} msg={payload.get('msg')}")
 
 
+def normalize_domain(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if "://" in text:
+        text = text.split("://", 1)[1]
+    text = text.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].strip().rstrip(".")
+    if text.startswith("www."):
+        text = text[4:]
+    if not re.match(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", text):
+        return ""
+    return text
+
+
+def build_shopify_product_js_url(domain: str, product_code: str) -> str:
+    normalized_domain = normalize_domain(domain)
+    code = str(product_code or "").strip()
+    if not normalized_domain or not code:
+        return ""
+    return f"https://{normalized_domain}/products/{code}.js"
+
+
+def shopify_storefront_headers(domain: str, product_code: str) -> dict[str, str]:
+    normalized_domain = normalize_domain(domain)
+    code = str(product_code or "").strip()
+    headers = {
+        "User-Agent": SHOPIFY_STOREFRONT_USER_AGENT,
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    if normalized_domain and code:
+        headers["Referer"] = f"https://{normalized_domain}/products/{code}"
+    return headers
+
+
+def fetch_shopify_public_product_id(domain: str, product_code: str, *, timeout_s: int = 20) -> str:
+    url = build_shopify_product_js_url(domain, product_code)
+    if not url:
+        return ""
+    request = Request(
+        url,
+        headers=shopify_storefront_headers(domain, product_code),
+    )
+    with urlopen(request, timeout=timeout_s) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    product = payload.get("product") if isinstance(payload, dict) and isinstance(payload.get("product"), dict) else payload
+    if not isinstance(product, dict):
+        return ""
+    product_id = str(product.get("id") or "").strip()
+    return product_id if product_id.isdigit() else ""
+
+
 def build_remote_handle_map(rows: list[dict[str, str]]) -> tuple[dict[str, str], list[dict[str, object]]]:
     grouped: dict[str, set[str]] = defaultdict(set)
     for row in rows:
@@ -167,6 +228,29 @@ def build_remote_select_products_sql() -> str:
     )
 
 
+def build_remote_select_enabled_domains_sql() -> str:
+    return (
+        f"SELECT domain FROM {REMOTE_LINK_DOMAINS_TABLE} "
+        "WHERE enabled=1 "
+        "ORDER BY sort_order ASC, id ASC;\n"
+    )
+
+
+def build_remote_shopify_ids_table_sql() -> str:
+    return (
+        f"CREATE TABLE IF NOT EXISTS {REMOTE_SHOPIFY_IDS_TABLE} ("
+        "id INT AUTO_INCREMENT PRIMARY KEY,"
+        "product_id INT NOT NULL,"
+        "domain VARCHAR(255) NOT NULL,"
+        "shopify_product_id VARCHAR(64) NOT NULL,"
+        "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+        "UNIQUE KEY uq_product_domain_spid (product_id, domain),"
+        "KEY idx_media_product_spid_product (product_id)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Per-domain Shopify product ID cache';\n"
+    )
+
+
 def parse_remote_products_tsv(text: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for raw_line in text.splitlines():
@@ -185,6 +269,18 @@ def parse_remote_products_tsv(text: str) -> list[dict[str, Any]]:
             "shopifyid": shopifyid.strip() or None,
         })
     return rows
+
+
+def parse_remote_domains_tsv(text: str) -> list[str]:
+    domains: list[str] = []
+    seen: set[str] = set()
+    for raw_line in text.splitlines():
+        domain = normalize_domain(raw_line)
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    return domains
 
 
 def build_remote_batch_update_sql(updates: list[dict[str, object]]) -> str:
@@ -206,6 +302,30 @@ def build_remote_batch_update_sql(updates: list[dict[str, object]]) -> str:
         )
     lines.append("COMMIT;")
     return "\n".join(lines) + "\n"
+
+
+def build_remote_batch_upsert_shopify_ids_sql(updates: list[dict[str, object]]) -> str:
+    if not updates:
+        return ""
+    values: list[str] = []
+    for item in updates:
+        product_id = int(item["id"])
+        domain = normalize_domain(item.get("domain"))
+        shopify_product_id = str(item.get("shopify_product_id") or "").strip()
+        if not domain:
+            raise ValueError("domain 必须是有效域名")
+        if not shopify_product_id.isdigit():
+            raise ValueError("shopify_product_id 必须是纯数字字符串")
+        values.append(
+            f"({product_id}, {_sql_quote(domain)}, {_sql_quote(shopify_product_id)})"
+        )
+    return (
+        "START TRANSACTION;\n"
+        f"INSERT INTO {REMOTE_SHOPIFY_IDS_TABLE} (product_id, domain, shopify_product_id) VALUES "
+        + ", ".join(values)
+        + " ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id), updated_at=NOW();\n"
+        "COMMIT;\n"
+    )
 
 
 def plan_backfill_updates(remote_map: dict[str, str], local_products: list[dict[str, Any]]) -> dict[str, list[dict[str, object]]]:
@@ -269,6 +389,124 @@ def plan_backfill_updates(remote_map: dict[str, str], local_products: list[dict[
     }
 
 
+def plan_domain_shopify_id_updates(
+    *,
+    remote_rows: list[dict[str, str]],
+    local_products: list[dict[str, Any]],
+    domains: list[str],
+    fetch_shopify_product_id: Callable[[str, str], str],
+    default_domain: str = DEFAULT_SHOPIFY_DOMAIN,
+) -> dict[str, list[dict[str, object]]]:
+    remote_handles = {
+        str(row.get("handle") or "").strip()
+        for row in remote_rows
+        if str(row.get("handle") or "").strip()
+    }
+    normalized_domains: list[str] = []
+    seen_domains: set[str] = set()
+    for raw_domain in domains or DEFAULT_SHOPIFY_DOMAINS:
+        domain = normalize_domain(raw_domain)
+        if not domain or domain in seen_domains:
+            continue
+        seen_domains.add(domain)
+        normalized_domains.append(domain)
+    if not normalized_domains:
+        normalized_domains = list(DEFAULT_SHOPIFY_DOMAINS)
+    normalized_default_domain = normalize_domain(default_domain) or normalized_domains[0]
+
+    domain_updates: list[dict[str, object]] = []
+    legacy_updates: list[dict[str, object]] = []
+    legacy_unchanged: list[dict[str, object]] = []
+    legacy_conflicts: list[dict[str, object]] = []
+    domain_failures: list[dict[str, object]] = []
+    unmatched_local: list[dict[str, object]] = []
+    local_codes: set[str] = set()
+
+    for product in local_products:
+        code = str(product.get("product_code") or "").strip()
+        if not code:
+            continue
+        local_codes.add(code)
+        product_id = int(product.get("id") or 0)
+        if code not in remote_handles:
+            unmatched_local.append({
+                "id": product.get("id"),
+                "product_code": code,
+                "status": "unmatched_local",
+            })
+            continue
+        default_domain_id = ""
+        for domain in normalized_domains:
+            try:
+                shopify_product_id = str(fetch_shopify_product_id(domain, code) or "").strip()
+            except Exception as exc:
+                domain_failures.append({
+                    "id": product.get("id"),
+                    "product_code": code,
+                    "domain": domain,
+                    "status": "domain_fetch_failed",
+                    "error": str(exc),
+                })
+                continue
+            if not shopify_product_id or not shopify_product_id.isdigit():
+                domain_failures.append({
+                    "id": product.get("id"),
+                    "product_code": code,
+                    "domain": domain,
+                    "status": "shopify_product_id_missing",
+                })
+                continue
+            domain_updates.append({
+                "id": product_id,
+                "product_code": code,
+                "domain": domain,
+                "shopify_product_id": shopify_product_id,
+            })
+            if domain == normalized_default_domain:
+                default_domain_id = shopify_product_id
+
+        existing = product.get("shopifyid")
+        existing_text = None if existing in (None, "") else str(existing).strip()
+        if default_domain_id:
+            if not existing_text:
+                legacy_updates.append({
+                    "id": product_id,
+                    "product_code": code,
+                    "shopifyid": default_domain_id,
+                })
+            elif existing_text == default_domain_id:
+                legacy_unchanged.append({
+                    "id": product_id,
+                    "product_code": code,
+                    "shopifyid": default_domain_id,
+                    "status": "unchanged",
+                })
+            else:
+                legacy_conflicts.append({
+                    "id": product_id,
+                    "product_code": code,
+                    "existing_shopifyid": existing_text,
+                    "incoming_shopifyid": default_domain_id,
+                    "status": "conflict",
+                })
+
+    unmatched_remote = [
+        {"product_code": code, "status": "unmatched_remote"}
+        for code in sorted(remote_handles)
+        if code not in local_codes
+    ]
+
+    return {
+        "domain_updates": domain_updates,
+        "legacy_updates": legacy_updates,
+        "legacy_unchanged": legacy_unchanged,
+        "legacy_conflicts": legacy_conflicts,
+        "domain_failures": domain_failures,
+        "unmatched_local": unmatched_local,
+        "unmatched_remote": unmatched_remote,
+    }
+
+
 def fetch_all_remote_products(fetch_page: Callable[[int], dict[str, Any]]) -> tuple[dict[str, int], list[dict[str, str]]]:
     first_payload = fetch_page(1)
     summary = extract_page_summary(first_payload)
@@ -293,8 +531,67 @@ def run_sync(
     apply_updates: Callable[[list[dict[str, object]]], None],
     output_dir: Path,
     now_text: str | None = None,
+    domains: list[str] | None = None,
+    fetch_shopify_product_id: Callable[[str, str], str] | None = None,
+    apply_domain_updates: Callable[[list[dict[str, object]]], None] | None = None,
+    default_domain: str = DEFAULT_SHOPIFY_DOMAIN,
 ) -> dict[str, Any]:
     page_summary, remote_rows = fetch_all_remote_products(fetch_page)
+    if domains is not None and fetch_shopify_product_id is not None and apply_domain_updates is not None:
+        _remote_map, remote_conflicts = build_remote_handle_map(remote_rows)
+        domain_plan = plan_domain_shopify_id_updates(
+            remote_rows=remote_rows,
+            local_products=local_products,
+            domains=domains,
+            fetch_shopify_product_id=fetch_shopify_product_id,
+            default_domain=default_domain,
+        )
+        if domain_plan["domain_updates"]:
+            apply_domain_updates(domain_plan["domain_updates"])
+        if domain_plan["legacy_updates"]:
+            apply_updates(domain_plan["legacy_updates"])
+        remote_handles = {
+            str(row.get("handle") or "").strip()
+            for row in remote_rows
+            if str(row.get("handle") or "").strip()
+        }
+        local_codes = {
+            str(product.get("product_code") or "").strip()
+            for product in local_products
+            if str(product.get("product_code") or "").strip()
+        }
+        matched_count = len(local_codes & remote_handles)
+        report = {
+            "page_summary": page_summary,
+            "domains": domains,
+            "summary": {
+                "total_size": page_summary["total_size"],
+                "total_page": page_summary["total_page"],
+                "fetched": len(remote_rows),
+                "matched": matched_count,
+                "updated": len(domain_plan["legacy_updates"]),
+                "unchanged": len(domain_plan["legacy_unchanged"]),
+                "conflict": len(domain_plan["legacy_conflicts"]),
+                "unmatched_local": len(domain_plan["unmatched_local"]),
+                "unmatched_remote": len(domain_plan["unmatched_remote"]),
+                "remote_conflict": len(remote_conflicts),
+                "domain_checked": len(domain_plan["domain_updates"]) + len(domain_plan["domain_failures"]),
+                "domain_updated": len(domain_plan["domain_updates"]),
+                "domain_failed": len(domain_plan["domain_failures"]),
+            },
+            "updates": domain_plan["legacy_updates"],
+            "unchanged": domain_plan["legacy_unchanged"],
+            "conflicts": domain_plan["legacy_conflicts"],
+            "unmatched_local": domain_plan["unmatched_local"],
+            "unmatched_remote": domain_plan["unmatched_remote"],
+            "remote_conflicts": remote_conflicts,
+            "domain_updates": domain_plan["domain_updates"],
+            "domain_failures": domain_plan["domain_failures"],
+        }
+        output_file = write_report(output_dir, report, now_text or _now_text())
+        report["output_file"] = str(output_file)
+        return report
+
     remote_map, remote_conflicts = build_remote_handle_map(remote_rows)
     plan = plan_backfill_updates(remote_map, local_products)
 
@@ -842,13 +1139,33 @@ def _ensure_remote_shopifyid_column(db_name: str, *, db_mode: str = "auto") -> N
     _run_mysql(build_remote_add_column_sql(), db_name, db_mode=db_mode)
 
 
+def _ensure_remote_shopify_ids_table(db_name: str, *, db_mode: str = "auto") -> None:
+    _run_mysql(build_remote_shopify_ids_table_sql(), db_name, db_mode=db_mode)
+
+
 def _load_remote_local_products(db_name: str, *, db_mode: str = "auto") -> list[dict[str, Any]]:
     output = _run_mysql(build_remote_select_products_sql(), db_name, db_mode=db_mode)
     return parse_remote_products_tsv(output)
 
 
+def _load_remote_enabled_domains(db_name: str, *, db_mode: str = "auto") -> list[str]:
+    try:
+        output = _run_mysql(build_remote_select_enabled_domains_sql(), db_name, db_mode=db_mode)
+    except Exception:
+        return list(DEFAULT_SHOPIFY_DOMAINS)
+    domains = parse_remote_domains_tsv(output)
+    return domains or list(DEFAULT_SHOPIFY_DOMAINS)
+
+
 def _apply_remote_updates(db_name: str, updates: list[dict[str, object]], *, db_mode: str = "auto") -> None:
     sql = build_remote_batch_update_sql(updates)
+    if not sql:
+        return
+    _run_mysql(sql, db_name, db_mode=db_mode)
+
+
+def _apply_remote_domain_updates(db_name: str, updates: list[dict[str, object]], *, db_mode: str = "auto") -> None:
+    sql = build_remote_batch_upsert_shopify_ids_sql(updates)
     if not sql:
         return
     _run_mysql(sql, db_name, db_mode=db_mode)
@@ -867,6 +1184,9 @@ def _print_report(report: dict[str, Any], *, remote_label: str, db_name: str) ->
     print(f"  抓取商品数: {summary['fetched']}")
     print(f"  命中 product_code: {summary['matched']}")
     print(f"  新回填: {summary['updated']}")
+    if "domain_updated" in summary:
+        print(f"  域名 Shopify ID 写入: {summary['domain_updated']}")
+        print(f"  域名 Shopify ID 失败: {summary['domain_failed']}")
     print(f"  已一致: {summary['unchanged']}")
     print(f"  本地冲突: {summary['conflict']}")
     print(f"  本地未匹配: {summary['unmatched_local']}")
@@ -876,7 +1196,7 @@ def _print_report(report: dict[str, Any], *, remote_label: str, db_name: str) ->
 
 
 def _run_main_impl(argv: list[str] | None = None) -> tuple[int, dict[str, Any], str, str, str]:
-    parser = argparse.ArgumentParser(description="从店小秘 Shopify 在线商品库回填正式/测试库 media_products.shopifyid")
+    parser = argparse.ArgumentParser(description="从店小秘 Shopify 在线商品库自动回填每个域名的 Shopify ID")
     parser.add_argument(
         "--env",
         choices=sorted(REMOTE_ENVS.keys()),
@@ -917,6 +1237,8 @@ def _run_main_impl(argv: list[str] | None = None) -> tuple[int, dict[str, Any], 
     db_mode = resolve_db_mode(args.db_mode)
 
     _ensure_remote_shopifyid_column(db_name, db_mode=db_mode)
+    _ensure_remote_shopify_ids_table(db_name, db_mode=db_mode)
+    enabled_domains = _load_remote_enabled_domains(db_name, db_mode=db_mode)
 
     from playwright.sync_api import sync_playwright
 
@@ -944,6 +1266,10 @@ def _run_main_impl(argv: list[str] | None = None) -> tuple[int, dict[str, Any], 
                 fetch_page=lambda page_no: _fetch_page_via_browser(page, page_no),
                 local_products=_load_remote_local_products(db_name, db_mode=db_mode),
                 apply_updates=lambda updates: _apply_remote_updates(db_name, updates, db_mode=db_mode),
+                domains=enabled_domains,
+                fetch_shopify_product_id=fetch_shopify_public_product_id,
+                apply_domain_updates=lambda updates: _apply_remote_domain_updates(db_name, updates, db_mode=db_mode),
+                default_domain=DEFAULT_SHOPIFY_DOMAIN,
                 output_dir=OUTPUT_DIR,
             )
             if product_sync is not None:

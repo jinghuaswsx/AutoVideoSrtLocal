@@ -19,6 +19,39 @@ from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
+def test_fetch_storefront_product_uses_browser_like_headers(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"id":9174825337044,"handle":"tool-free-robotics-building-set-rjc"}'
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["headers"] = {key.lower(): value for key, value in request.header_items()}
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(run_product_cdp.urllib.request, "urlopen", fake_urlopen)
+
+    product = run_product_cdp.fetch_storefront_product(
+        "tool-free-robotics-building-set-rjc",
+        store_domain="omurio.com",
+    )
+
+    assert product["id"] == 9174825337044
+    assert captured["url"] == "https://omurio.com/products/tool-free-robotics-building-set-rjc.js"
+    assert "chrome/" in captured["headers"]["user-agent"].lower()
+    assert captured["headers"]["accept-language"]
+    assert captured["headers"]["referer"] == "https://omurio.com/products/tool-free-robotics-building-set-rjc"
+
+
 def test_gui_batch_passes_visual_confirmation_callback_to_runner():
     gui_path = Path("tools/shopify_image_localizer/gui.py")
     tree = ast.parse(gui_path.read_text(encoding="utf-8"))

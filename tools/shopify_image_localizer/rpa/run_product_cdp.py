@@ -33,6 +33,11 @@ DETAIL_SIZE_TARGET_OVERRIDE_DOMAIN = "newjoyloo.com"
 DETAIL_SIZE_TARGET_OVERRIDE_MIN_PIXEL = 800
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 VISUAL_MATCH_MIN_SCORE = 0.80
+STOREFRONT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
 
 
@@ -49,6 +54,19 @@ def _storefront_json_url(product_code: str, *, locale: str = "", store_domain: s
     return f"https://{store_domain}{prefix}/products/{product_code}.js"
 
 
+def _storefront_headers(product_code: str, *, locale: str = "", store_domain: str = DEFAULT_STORE_DOMAIN) -> dict[str, str]:
+    normalized_locale = str(locale or "").strip().strip("/")
+    prefix = f"/{normalized_locale}" if normalized_locale else ""
+    return {
+        "User-Agent": STOREFRONT_USER_AGENT,
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": f"https://{store_domain}{prefix}/products/{product_code}",
+    }
+
+
 def fetch_storefront_product(
     product_code: str,
     *,
@@ -59,7 +77,7 @@ def fetch_storefront_product(
     url = _storefront_json_url(product_code, locale=locale, store_domain=store_domain)
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,*/*"},
+        headers=_storefront_headers(product_code, locale=locale, store_domain=store_domain),
     )
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
         payload = json.loads(response.read().decode("utf-8"))
