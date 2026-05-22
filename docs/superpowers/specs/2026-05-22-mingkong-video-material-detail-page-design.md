@@ -75,6 +75,8 @@ The route passes this data directly to `web/templates/mk_video_material_detail.h
   - right: video player with controls.
 - On narrow screens the two media panes stack.
 - The card entry opens in a new tab so operators do not lose the scanned list position.
+- On material cards, the filename action column shows `详情` above the filename-copy
+  icon so the copy icon does not sit on the same baseline as the title text.
 
 ## Verification
 

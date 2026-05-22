@@ -187,7 +187,7 @@
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
 .mk-video-card-title { font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); }
 .mk-video-title-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
-.mk-video-title-actions { display:inline-flex; align-items:center; gap:4px; padding-top:1px; }
+.mk-video-title-actions { display:inline-flex; flex-direction:column; align-items:center; gap:4px; padding-top:1px; }
 .mk-video-detail-link { height:24px; padding:0 8px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-accent); text-decoration:none; font-size:12px; line-height:1; white-space:nowrap; }
 .mk-video-detail-link:hover { background:var(--oc-bg-muted); border-color:var(--oc-accent); }
 .mk-video-product-link-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:center; gap:6px; min-height:24px; }
@@ -1212,7 +1212,7 @@ function renderMkVideoMaterialCard(r) {
     : '';
   const filenameCopyHtml = renderMkFilenameCopyButton(r.video_name || '');
   const titleActionsHtml = (filenameCopyHtml || detailLinkHtml)
-    ? `<span class="mk-video-title-actions">${filenameCopyHtml}${detailLinkHtml}</span>`
+    ? `<span class="mk-video-title-actions">${detailLinkHtml}${filenameCopyHtml}</span>`
     : '';
   const rawProductName = r.mk_product_name || r.product_name || '--';
   const rawProductHandle = r.product_handle || r.product_code || '';

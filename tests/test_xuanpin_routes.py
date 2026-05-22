@@ -138,6 +138,8 @@ def test_xuanpin_mk_video_cards_link_to_material_detail_page(authed_client_no_db
     assert "encodeURIComponent(r.material_key || '')" in body
     assert 'class="mk-video-detail-link"' in body
     assert 'target="_blank" rel="noopener noreferrer"' in body
+    assert ".mk-video-title-actions { display:inline-flex; flex-direction:column;" in body
+    assert "${detailLinkHtml}${filenameCopyHtml}</span>" in body
 
 
 def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
