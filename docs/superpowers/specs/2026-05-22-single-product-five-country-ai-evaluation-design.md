@@ -8,7 +8,7 @@
 - 选品卡片上的精细评估是入库前决策工具：未入库素材只要有明文商品链接即可触发，不要求先创建 `media_products`。
 - 每次点击创建一个 `evaluation_run`。本地素材库商品 run 归属真实 `product_id`；外部链接 run 使用 `product_id=0`，真实商品链接写入 `product_snapshot.product_url` 和 `metadata.external_product_link`。
 - 每个 run 固定评估 `DE`、`FR`、`IT`、`ES`、`JP` 五个国家。
-- 产品事实整理只执行一次；国家评估按 `DE -> FR -> IT -> ES -> JP` 串行执行。
+- 产品事实整理只执行一次；国家评估按 `DE -> FR -> IT -> ES -> JP` 串行执行；生产服务相邻两个国家大模型请求之间等待 30 秒，并在 progress 中把下一个国家标记为 `waiting`。
 - 每个国家一次完整大模型调用，调用内覆盖市场、竞品、价格、素材、落地页、风险和建议，不拆成多个国家子报告调用。
 - 返回和持久化的主结果均为结构化 JSON，不输出 Markdown 报告，不把 prompt/API key/堆栈返回前端。
 
@@ -17,7 +17,8 @@
 - provider：`gemini_vertex_adc`
 - model：`gemini-3.5-flash`
 - 产品事实：structured JSON，thinking level 记录为 `medium`。
-- 国家评估：structured JSON，启用 Google Search，thinking level 记录为 `high`。
+- 国家评估：structured JSON，暂不启用 Google Search 工具，保留 URL Context，thinking level 记录为 `high`。
+- 国家评估遇到非合法 JSON 时，先用同 provider/model 发起一次无工具、无素材的 JSON 修复请求；修复仍失败时允许重试一次原始国家评估请求，并把原始响应摘要和解析错误写入国家表 `raw_response`/`metadata`，方便定位。
 - 汇总优先代码聚合，避免额外模型调用。
 - 素材存在时作为 media 传入；素材缺失或文件不存在只进入 `missing_data`/`warnings`，不得中断整个 run。
 
@@ -57,7 +58,7 @@ run 表保存产品快照、产品事实、五国 summary、frontend 映射、me
 
 选品中心视频素材卡片在现有 `AI评估` 下方新增 `精细AI评估` 按钮。按钮启用条件为存在本地商品 ID 或卡片商品链接；未入库卡片走外部链接入口。按钮打开同一类弹窗外壳，但渲染精细评估专用 JSON：
 
-- running：显示当前步骤和五国状态，文案体现正在评估哪个国家。
+- running：显示当前步骤和五国状态，文案体现正在评估哪个国家；相邻国家请求间隔期间显示 `waiting` 等待态。
 - completed/partially_completed：渲染总览卡片、五国评分表、国家详情 tab、图表数据、action items。
 - 单国 failed：显示错误摘要，不影响其他国家。
 - 支持整体重新评估和单国重新评估。

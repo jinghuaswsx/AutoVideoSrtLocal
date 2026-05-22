@@ -16,8 +16,10 @@ from typing import Any
 from appcore import llm_client
 from appcore.fine_ai_evaluation_prompts import (
     COUNTRY_EVALUATION_SYSTEM_PROMPT,
+    JSON_REPAIR_SYSTEM_PROMPT,
     PRODUCT_FACT_SYSTEM_PROMPT,
     build_country_evaluation_prompt,
+    build_json_repair_prompt,
     build_product_fact_prompt,
 )
 from appcore.fine_ai_evaluation_schemas import (
@@ -33,6 +35,8 @@ PROVIDER = "gemini_vertex_adc"
 MODEL = "gemini-3.5-flash"
 PRODUCT_FACTS_USE_CASE = "fine_ai_evaluation.product_facts"
 COUNTRY_USE_CASE = "fine_ai_evaluation.country"
+RAW_RESPONSE_PREVIEW_CHARS = 8000
+ORIGINAL_PARSE_RETRY_ATTEMPTS = 2
 
 
 class FineAiGeminiClient:
@@ -81,7 +85,7 @@ class FineAiGeminiClient:
             asset_paths_or_urls=asset_paths,
             use_case_code=COUNTRY_USE_CASE,
             system=COUNTRY_EVALUATION_SYSTEM_PROMPT,
-            google_search=True,
+            google_search=False,
             url_context=True,
             thinking_level="high",
             project_id=f"fine-ai-product-{product_snapshot.get('product_id')}-{country.get('country_code')}",
@@ -158,76 +162,191 @@ class FineAiGeminiClient:
     ) -> dict:
         self.last_call_metadata = {}
         self.last_call_trace = {}
-        request_payload = {
-            "use_case_code": use_case_code,
-            "prompt": prompt,
-            "system": system,
-            "media": media or None,
-            "response_schema": schema,
-            "max_output_tokens": 12288,
-            "provider_override": PROVIDER,
-            "model_override": MODEL,
-            "google_search": google_search,
-            "url_context": url_context,
-            "project_id": project_id,
-            "billing_extra": {
-                "provider": PROVIDER,
-                "model": MODEL,
-                "thinking_level": thinking_level,
-                "google_search": bool(google_search),
-                "url_context": bool(url_context),
-                "tools": tools or [],
-            },
-        }
-        try:
-            result = llm_client.invoke_generate(
-                use_case_code,
-                prompt=prompt,
-                system=system,
-                media=media or None,
-                response_schema=schema,
-                max_output_tokens=12288,
-                provider_override=PROVIDER,
-                model_override=MODEL,
-                google_search=google_search,
-                url_context=url_context,
-                project_id=project_id,
-                billing_extra=request_payload["billing_extra"],
-            )
-        except Exception as exc:
-            self.last_call_trace = _build_call_trace(
-                request_payload=request_payload,
-                result={},
-                parsed_json=None,
-                thinking_level=thinking_level,
-                error=exc,
-            )
-            raise
-        self.last_call_metadata = _response_metadata(result, thinking_level=thinking_level)
-        payload = result.get("json")
-        try:
+        retry_history: list[dict[str, Any]] = []
+        last_error: Exception | None = None
+        for attempt in range(1, ORIGINAL_PARSE_RETRY_ATTEMPTS + 1):
+            attempt_project_id = project_id
+            if attempt > 1 and project_id:
+                attempt_project_id = f"{project_id}-retry-{attempt}"
+            request_payload = {
+                "use_case_code": use_case_code,
+                "prompt": prompt,
+                "system": system,
+                "media": media or None,
+                "response_schema": schema,
+                "max_output_tokens": 12288,
+                "provider_override": PROVIDER,
+                "model_override": MODEL,
+                "google_search": google_search,
+                "url_context": url_context,
+                "project_id": attempt_project_id,
+                "billing_extra": {
+                    "provider": PROVIDER,
+                    "model": MODEL,
+                    "thinking_level": thinking_level,
+                    "google_search": bool(google_search),
+                    "url_context": bool(url_context),
+                    "tools": tools or [],
+                    "structured_retry_attempt": attempt,
+                },
+            }
+            try:
+                result = llm_client.invoke_generate(
+                    use_case_code,
+                    prompt=prompt,
+                    system=system,
+                    media=media or None,
+                    response_schema=schema,
+                    max_output_tokens=12288,
+                    provider_override=PROVIDER,
+                    model_override=MODEL,
+                    google_search=google_search,
+                    url_context=url_context,
+                    project_id=attempt_project_id,
+                    billing_extra=request_payload["billing_extra"],
+                )
+            except Exception as exc:
+                self.last_call_trace = _build_call_trace(
+                    request_payload=request_payload,
+                    result={},
+                    parsed_json=None,
+                    thinking_level=thinking_level,
+                    error=exc,
+                )
+                raise
+            metadata = _response_metadata(result, thinking_level=thinking_level)
+            metadata["structured_retry_attempt"] = attempt
+            if retry_history:
+                metadata["structured_retry_history"] = retry_history[-3:]
+            payload = result.get("json")
             if isinstance(payload, dict):
-                parsed = payload
-            else:
-                raw = result.get("text") or ""
+                self.last_call_metadata = metadata
+                self.last_call_trace = _build_call_trace(
+                    request_payload=request_payload,
+                    result=result,
+                    parsed_json=payload,
+                    thinking_level=thinking_level,
+                )
+                return payload
+            raw = result.get("text") or ""
+            try:
                 parsed = _parse_json_with_repair(raw)
+            except ValueError as exc:
+                metadata["raw_response"] = _raw_response_summary(result, parse_error=str(exc))
+                try:
+                    repaired = self._repair_json_response(
+                        raw_response=raw,
+                        parse_error=str(result.get("json_parse_error") or exc),
+                        schema=schema,
+                        thinking_level=thinking_level,
+                        use_case_code=use_case_code,
+                        project_id=attempt_project_id,
+                        metadata=metadata,
+                    )
+                except ValueError as repair_exc:
+                    last_error = repair_exc
+                    retry_history.append(_retry_history_item(attempt, metadata))
+                    if attempt < ORIGINAL_PARSE_RETRY_ATTEMPTS:
+                        continue
+                    self.last_call_metadata = metadata
+                    self.last_call_trace = _build_call_trace(
+                        request_payload=request_payload,
+                        result=result,
+                        parsed_json=None,
+                        thinking_level=thinking_level,
+                        error=repair_exc,
+                    )
+                    raise
+                self.last_call_metadata = metadata
+                self.last_call_trace = _build_call_trace(
+                    request_payload=request_payload,
+                    result=result,
+                    parsed_json=repaired,
+                    thinking_level=thinking_level,
+                )
+                return repaired
             if not isinstance(parsed, dict):
-                raise ValueError("Gemini structured JSON response is not an object")
-        except Exception as exc:
+                last_error = ValueError("Gemini structured JSON response is not an object")
+                metadata["raw_response"] = _raw_response_summary(result, parse_error=str(last_error))
+                retry_history.append(_retry_history_item(attempt, metadata))
+                if attempt < ORIGINAL_PARSE_RETRY_ATTEMPTS:
+                    continue
+                self.last_call_metadata = metadata
+                self.last_call_trace = _build_call_trace(
+                    request_payload=request_payload,
+                    result=result,
+                    parsed_json=None,
+                    thinking_level=thinking_level,
+                    error=last_error,
+                )
+                raise last_error
+            self.last_call_metadata = metadata
             self.last_call_trace = _build_call_trace(
                 request_payload=request_payload,
                 result=result,
-                parsed_json=None,
+                parsed_json=parsed,
                 thinking_level=thinking_level,
-                error=exc,
             )
-            raise
-        self.last_call_trace = _build_call_trace(
-            request_payload=request_payload,
-            result=result,
-            parsed_json=parsed,
-            thinking_level=thinking_level,
+            return parsed
+        if last_error:
+            raise last_error
+        raise ValueError("Gemini structured JSON response is empty")
+
+    def _repair_json_response(
+        self,
+        *,
+        raw_response: str,
+        parse_error: str,
+        schema: dict,
+        thinking_level: str,
+        use_case_code: str,
+        project_id: str | None,
+        metadata: dict[str, Any],
+    ) -> dict:
+        metadata["json_repair_attempted"] = True
+        repair_result = llm_client.invoke_generate(
+            use_case_code,
+            prompt=build_json_repair_prompt(raw_response=raw_response, parse_error=parse_error),
+            system=JSON_REPAIR_SYSTEM_PROMPT,
+            media=None,
+            response_schema=schema,
+            max_output_tokens=12288,
+            provider_override=PROVIDER,
+            model_override=MODEL,
+            google_search=False,
+            url_context=False,
+            project_id=f"{project_id}-json-repair" if project_id else None,
+            billing_extra={
+                "provider": PROVIDER,
+                "model": MODEL,
+                "thinking_level": thinking_level,
+                "google_search": False,
+                "url_context": False,
+                "tools": [],
+                "json_repair": True,
+            },
         )
+        repair_metadata = _response_metadata(repair_result, thinking_level=thinking_level)
+        metadata["repair_usage"] = repair_metadata.get("usage") or {}
+        metadata["repair_usage_log_id"] = repair_metadata.get("usage_log_id")
+        payload = repair_result.get("json")
+        if isinstance(payload, dict):
+            metadata["json_repair_succeeded"] = True
+            return payload
+        repair_raw = repair_result.get("text") or ""
+        try:
+            parsed = _parse_json_with_repair(repair_raw)
+        except ValueError as exc:
+            metadata["json_repair_succeeded"] = False
+            metadata["json_repair_error"] = str(exc)[:500]
+            metadata["repair_raw_response"] = _raw_response_summary(repair_result, parse_error=str(exc))
+            raise ValueError(f"Gemini JSON repair failed: {exc}") from exc
+        if not isinstance(parsed, dict):
+            metadata["json_repair_succeeded"] = False
+            metadata["json_repair_error"] = "Gemini JSON repair response is not an object"
+            metadata["repair_raw_response"] = _raw_response_summary(repair_result)
+            raise ValueError("Gemini JSON repair response is not an object")
+        metadata["json_repair_succeeded"] = True
         return parsed
 
 
@@ -353,6 +472,25 @@ def _redact_sensitive(value: Any) -> Any:
                 out[key_text] = _redact_sensitive(item)
         return out
     return value
+
+
+def _raw_response_summary(result: dict[str, Any], *, parse_error: str = "") -> dict[str, Any]:
+    raw_text = str(result.get("text") or "")
+    return {
+        "text_preview": raw_text[:RAW_RESPONSE_PREVIEW_CHARS],
+        "text_length": len(raw_text),
+        "json_parse_error": str(result.get("json_parse_error") or parse_error or "")[:500],
+        "usage_log_id": result.get("usage_log_id"),
+    }
+
+
+def _retry_history_item(attempt: int, metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "attempt": attempt,
+        "raw_response": metadata.get("raw_response") or {},
+        "json_repair_error": metadata.get("json_repair_error") or "",
+        "repair_raw_response": metadata.get("repair_raw_response") or {},
+    }
 
 
 def _extract_grounding(raw: Any) -> dict[str, Any]:

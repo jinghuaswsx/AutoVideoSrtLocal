@@ -144,12 +144,17 @@
 
   function statusLabel(status) {
     const value = String(status || '').toLowerCase();
-    if (value === 'running') return '正在请求中';
-    if (value === 'queued' || value === 'pending') return '等待开始';
-    if (value === 'completed') return '评估完成';
-    if (value === 'partially_completed') return '部分完成';
-    if (value === 'failed') return '评估失败';
-    if (value === 'cancelled') return '已取消';
+    const labels = {
+      running: '正在请求中',
+      queued: '等待开始',
+      pending: '等待开始',
+      waiting: '等待中',
+      completed: '评估完成',
+      partially_completed: '部分完成',
+      failed: '评估失败',
+      cancelled: '已取消',
+    };
+    if (labels[value]) return labels[value];
     return status || '未知状态';
   }
 
@@ -165,10 +170,14 @@
 
   function stepStatusLabel(status) {
     const value = String(status || 'pending').toLowerCase();
-    if (value === 'running') return '执行中';
-    if (value === 'completed') return '已完成';
-    if (value === 'failed') return '失败';
-    if (value === 'skipped') return '已跳过';
+    const labels = {
+      running: '执行中',
+      waiting: '等待中',
+      completed: '已完成',
+      failed: '失败',
+      skipped: '已跳过',
+    };
+    if (labels[value]) return labels[value];
     return '等待';
   }
 
@@ -361,7 +370,7 @@
     if (!/^[A-Z]{2}$/.test(normalized)) return;
     const card = body.querySelector(`[data-fine-ai-step="country_${normalized}"]`);
     if (!card) return;
-    card.classList.remove('is-failed', 'is-pending', 'is-completed', 'is-skipped');
+    card.classList.remove('is-failed', 'is-pending', 'is-waiting', 'is-completed', 'is-skipped');
     card.classList.add('is-running');
     const pill = card.querySelector('.mki-fine-ai-status-pill');
     if (pill) {
