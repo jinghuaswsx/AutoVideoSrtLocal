@@ -664,10 +664,10 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "translated_copywriting",
         "push_texts",
         "product_listed",
-        "language_supported",
         "detail_images",
         "shopify_images",
         "product_links",
+        "language_supported",
     ]
     assert payload["country_code"] == "DE"
     assert payload["product_code"] == "robot-kit-rjc"
@@ -685,10 +685,10 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "translated_copywriting",
         "push_texts",
         "product_listed",
-        "language_supported",
         "detail_images",
         "shopify_images",
         "product_links",
+        "language_supported",
     ]
     assert payload["checks"][0]["reason"] == "未找到该语种 media_item"
     checks = {check["key"]: check for check in payload["checks"]}
@@ -844,8 +844,9 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "lang_supported": True,
         "shopify_image_confirmed": True,
     }
-    assert payload["checks"][7]["key"] == "detail_images"
-    assert payload["checks"][9]["key"] == "product_links"
+    assert payload["checks"][6]["key"] == "detail_images"
+    assert payload["checks"][8]["key"] == "product_links"
+    assert payload["checks"][9]["key"] == "language_supported"
     checks = {check["key"]: check for check in payload["checks"]}
     assert checks["localized_media_item"]["actions"][0]["url"].endswith("action=video&item=5")
     assert checks["localized_media_item"]["evidence"] == [
@@ -947,10 +948,10 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "translated_copywriting",
         "push_texts",
         "product_listed",
-        "language_supported",
         "detail_images",
         "shopify_images",
         "product_links",
+        "language_supported",
     ]
 
 

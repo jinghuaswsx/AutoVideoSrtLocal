@@ -46,10 +46,10 @@ CHILD_ACCEPTANCE_STEP_LABELS = {
     "translated_copywriting": "文案翻译结果",
     "push_texts": "推送文案格式",
     "product_listed": "商品在架状态",
-    "language_supported": "广告语言配置",
     "detail_images": "产品详情图翻译",
     "shopify_images": "链接商品图替换",
     "product_links": "商品链接探活",
+    "language_supported": "广告语言配置",
 }
 CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
 CHILD_ACCEPTANCE_MISSING_ALIASES = {
@@ -2199,22 +2199,6 @@ def _child_acceptance_payload(
             ),
         ),
         _acceptance_check(
-            "language_supported",
-            "广告语言配置",
-            _readiness_bool(readiness, "lang_supported"),
-            **_evidence_if(
-                [
-                    _evidence_status(
-                        label="广告语言配置",
-                        meta=f"{str(row['country_code']).upper()} 已配置"
-                        if _readiness_bool(readiness, "lang_supported")
-                        else f"{str(row['country_code']).upper()} 未配置",
-                        ok=_readiness_bool(readiness, "lang_supported"),
-                    )
-                ]
-            ),
-        ),
-        _acceptance_check(
             "detail_images",
             "产品详情图翻译",
             bool(detail_status.get("ok")),
@@ -2239,6 +2223,22 @@ def _child_acceptance_payload(
             reason=link_status.get("reason") or "",
             links=link_status.get("links") or [],
             **_evidence_if(product_link_evidence),
+        ),
+        _acceptance_check(
+            "language_supported",
+            "广告语言配置",
+            _readiness_bool(readiness, "lang_supported"),
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label="广告语言配置",
+                        meta=f"{str(row['country_code']).upper()} 已配置"
+                        if _readiness_bool(readiness, "lang_supported")
+                        else f"{str(row['country_code']).upper()} 未配置",
+                        ok=_readiness_bool(readiness, "lang_supported"),
+                    )
+                ]
+            ),
         ),
     ]
     for check in checks:
