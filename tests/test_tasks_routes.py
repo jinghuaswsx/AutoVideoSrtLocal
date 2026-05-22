@@ -233,6 +233,18 @@ def test_task_detail_header_shows_source_filename_and_product_code_copy_actions(
     assert "tcCopyButton(task.product_code" in body
 
 
+def test_task_detail_readiness_exposes_inline_ad_language_controls(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "tc-lang-enable-strip" in body
+    assert "function tcRenderAdSupportedLangControls" in body
+    assert "function tcToggleAdSupportedLang" in body
+    assert "link-availability/' + encodeURIComponent(lang)" in body
+    assert "ad_supported_langs: selected.join(',')" in body
+    assert "tcLoadReadiness(TC_DETAIL_TASK_ID, TC_DETAIL_CURRENT_TASK)" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

@@ -160,6 +160,16 @@
 .tc-readiness-copy-line { display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:6px; min-width:0; align-items:baseline; font-size:12px; line-height:1.45; }
 .tc-readiness-copy-label { color:var(--tc-fg); font-weight:700; }
 .tc-readiness-copy-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg-muted); }
+.tc-lang-enable-strip { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 2px 20px; }
+.tc-lang-checkbox { display:inline-flex; align-items:center; gap:5px; min-height:26px; padding:3px 9px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg-muted); font-size:12px; line-height:1.2; cursor:pointer; }
+.tc-lang-checkbox:hover { background:var(--tc-bg-muted); }
+.tc-lang-checkbox input { width:14px; height:14px; margin:0; }
+.tc-lang-checkbox.is-checked { border-color:var(--tc-accent); background:var(--tc-accent-subtle); color:var(--tc-accent); font-weight:700; }
+.tc-lang-checkbox.is-current { box-shadow:0 0 0 2px var(--tc-accent-subtle); }
+.tc-lang-checkbox.is-busy { opacity:.68; cursor:wait; }
+.tc-lang-enable-status { flex:1 1 100%; min-height:16px; color:var(--tc-fg-muted); font-size:12px; line-height:1.35; }
+.tc-lang-enable-status.is-success { color:var(--tc-success-fg); }
+.tc-lang-enable-status.is-error { color:var(--tc-danger-fg); }
 .tc-niuma-panel { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
@@ -351,6 +361,8 @@ const TC_LANGUAGE_FALLBACKS = {
 };
 let TC_LANGUAGE_LABELS = {};
 let TC_LANGUAGE_LOAD_PROMISE = null;
+let TC_TARGET_LANGUAGES = [];
+let TC_DETAIL_CURRENT_TASK = null;
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
@@ -508,12 +520,14 @@ function tcLanguageLabel(value) {
   return fallback ? `${fallback} (${code})` : code;
 }
 function tcRegisterLanguageLabels(languages) {
+  TC_TARGET_LANGUAGES = [];
   (languages || []).forEach(function(lang) {
     const code = tcLanguageCode(lang && lang.code);
     if (!code) return;
     const name = String((lang && (lang.name_zh || lang.name)) || '').trim();
     const label = String((lang && lang.label) || '').trim() || (name ? `${name} (${code})` : tcLanguageLabel(code));
     TC_LANGUAGE_LABELS[code] = label;
+    TC_TARGET_LANGUAGES.push({code, name_zh: name, label});
   });
 }
 function tcLoadLanguageLabels() {
@@ -972,6 +986,143 @@ function tcRenderActionLinks(actions) {
     return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   }).join('') + '</div>';
 }
+function tcTargetLanguageEntries() {
+  const fromApi = (TC_TARGET_LANGUAGES || []).filter(function(lang) {
+    return tcLanguageCode(lang && lang.code) !== 'EN';
+  });
+  if (fromApi.length) return fromApi;
+  return Object.keys(TC_LANGUAGE_LABELS).filter(function(code) {
+    return tcLanguageCode(code) !== 'EN';
+  }).map(function(code) {
+    return {code, label: TC_LANGUAGE_LABELS[code] || tcLanguageLabel(code)};
+  });
+}
+function tcParseAdSupportedLangs(raw) {
+  if (Array.isArray(raw)) {
+    return new Set(raw.map(function(value) {
+      return String(value || '').trim().toLowerCase();
+    }).filter(Boolean));
+  }
+  return new Set(String(raw || '').split(',').map(function(value) {
+    return value.trim().toLowerCase();
+  }).filter(Boolean));
+}
+function tcRenderAdSupportedLangControls(data, task) {
+  const productId = Number((data && data.media_product_id) || (task && task.media_product_id) || 0);
+  if (!productId) return '';
+  const selected = tcParseAdSupportedLangs(data && data.ad_supported_langs);
+  const currentLang = tcLanguageCode((data && data.country_code) || (task && task.country_code)).toLowerCase();
+  const langs = tcTargetLanguageEntries();
+  if (!langs.length) return '';
+  return '<div class="tc-lang-enable-strip" data-product-id="' + productId + '">'
+    + langs.map(function(lang) {
+      const code = tcLanguageCode(lang && lang.code);
+      if (!code || code === 'EN') return '';
+      const value = code.toLowerCase();
+      const checked = selected.has(value);
+      const classes = [
+        'tc-lang-checkbox',
+        checked ? 'is-checked' : '',
+        value === currentLang ? 'is-current' : '',
+      ].filter(Boolean).join(' ');
+      return '<label class="' + classes + '" data-lang="' + tcAttr(value) + '">'
+        + '<input type="checkbox" data-tc-ad-lang="1" data-product-id="' + productId + '" data-task-id="' + Number((task && task.id) || TC_DETAIL_TASK_ID || 0) + '" data-lang="' + tcAttr(value) + '" value="' + tcAttr(value) + '"' + (checked ? ' checked' : '') + ' onchange="tcToggleAdSupportedLang(this)">'
+        + '<span>' + tcEsc((lang && lang.label) || tcLanguageLabel(code)) + '</span>'
+        + '</label>';
+    }).join('')
+    + '<div class="tc-lang-enable-status" id="tcAdLangStatus_' + productId + '"></div>'
+    + '</div>';
+}
+function tcSetAdLangBusy(productId, busy) {
+  document.querySelectorAll('[data-tc-ad-lang][data-product-id="' + Number(productId || 0) + '"]').forEach(function(input) {
+    input.disabled = !!busy;
+    const label = input.closest && input.closest('.tc-lang-checkbox');
+    if (label) label.classList.toggle('is-busy', !!busy);
+  });
+}
+function tcSetAdLangStatus(productId, message, tone) {
+  const el = document.getElementById('tcAdLangStatus_' + Number(productId || 0));
+  if (!el) return;
+  el.className = 'tc-lang-enable-status' + (tone ? ' is-' + tone : '');
+  el.textContent = message || '';
+}
+function tcCollectAdSupportedLangs(productId) {
+  return Array.from(document.querySelectorAll('[data-tc-ad-lang][data-product-id="' + Number(productId || 0) + '"]:checked'))
+    .map(function(input) { return String(input.dataset.lang || input.value || '').trim().toLowerCase(); })
+    .filter(Boolean);
+}
+function tcAdLangFailureMessage(lang, data) {
+  const label = tcLanguageLabel(lang);
+  const items = Array.isArray(data && data.items) ? data.items : [];
+  if (!items.length) {
+    return label + ' 当前未启用任何域名，无法启用广告语言。';
+  }
+  const failing = items.filter(function(item) { return !item.ok; });
+  if (!failing.length) return '';
+  return label + ' 链接检测未通过：\n' + failing.map(function(item) {
+    const domain = item.domain || '未命名域名';
+    const reason = item.error || (item.http_status ? 'HTTP ' + item.http_status : '不可用');
+    return '- ' + domain + ': ' + reason;
+  }).join('\n');
+}
+async function tcRunAdLangPrecheck(productId, lang) {
+  return tcFetchJson(
+    '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang),
+    {method: 'POST', body: JSON.stringify({})}
+  );
+}
+async function tcSaveAdSupportedLangs(productId) {
+  const selected = tcCollectAdSupportedLangs(productId);
+  return tcFetchJson('/medias/api/products/' + encodeURIComponent(productId), {
+    method: 'PUT',
+    body: JSON.stringify({ad_supported_langs: selected.join(',')}),
+  });
+}
+async function tcToggleAdSupportedLang(input) {
+  const productId = Number(input && input.dataset ? input.dataset.productId : 0);
+  const lang = String(input && input.dataset ? input.dataset.lang : '').trim().toLowerCase();
+  if (!productId || !lang) return;
+  const nextChecked = !!input.checked;
+  let saved = false;
+  tcSetAdLangBusy(productId, true);
+  tcSetAdLangStatus(productId, nextChecked ? '检测链接可用性...' : '保存中...', '');
+  try {
+    if (nextChecked) {
+      const precheck = await tcRunAdLangPrecheck(productId, lang);
+      const message = tcAdLangFailureMessage(lang, precheck);
+      if (message) {
+        input.checked = false;
+        const label = input.closest && input.closest('.tc-lang-checkbox');
+        if (label) label.classList.remove('is-checked');
+        tcSetAdLangStatus(productId, message.replace(/\n/g, ' '), 'error');
+        alert(message);
+        return;
+      }
+    }
+    await tcSaveAdSupportedLangs(productId);
+    saved = true;
+    if (TC_DETAIL_TASK_ID && TC_DETAIL_CURRENT_TASK) {
+      await tcLoadReadiness(TC_DETAIL_TASK_ID, TC_DETAIL_CURRENT_TASK);
+      tcSetAdLangStatus(productId, '已保存并刷新状态', 'success');
+    }
+  } catch (e) {
+    if (saved) {
+      tcSetAdLangStatus(productId, '已保存，但刷新状态失败：' + ((e && e.message) || 'unknown'), 'error');
+      return;
+    }
+    input.checked = !nextChecked;
+    const label = input.closest && input.closest('.tc-lang-checkbox');
+    if (label) label.classList.toggle('is-checked', input.checked);
+    const payload = e && (e.payload || e);
+    const message = payload && payload.error === 'ad_supported_langs_precheck_failed'
+      ? '保存失败：启用语种未通过链接前置校验'
+      : '保存失败：' + ((e && e.message) || 'unknown');
+    tcSetAdLangStatus(productId, message, 'error');
+    alert(message);
+  } finally {
+    tcSetAdLangBusy(productId, false);
+  }
+}
 function tcRenderReadinessManualActions(taskId, check, fallbackUrl) {
   const stepKey = String((check && check.key) || '').trim();
   if (!stepKey) return '';
@@ -1069,7 +1220,12 @@ async function tcFetchJson(url, opts) {
   const rsp = await fetch(url, options);
   if (!rsp.ok) {
     const body = await rsp.json().catch(() => ({error: rsp.statusText}));
-    throw new Error(body.error || rsp.statusText);
+    const err = new Error(body.error || rsp.statusText);
+    err.status = rsp.status;
+    err.payload = body;
+    err.error = body.error;
+    err.issues = body.issues;
+    throw err;
   }
   return rsp.json();
 }
@@ -1397,6 +1553,9 @@ async function tcLoadReadiness(id, task) {
               return tcEsc(label);
             }).join('<br>') + '</div>'
           : '';
+        const langControls = String(check.key || '') === 'language_supported'
+          ? tcRenderAdSupportedLangControls(data, task)
+          : '';
         const manualActions = tcRenderReadinessManualActions(id, check, mediaUrl);
         const actions = tcRenderActionLinks(check.actions || []);
         return '<div style="display:flex; align-items:flex-start; gap:8px; padding:5px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
@@ -1404,6 +1563,7 @@ async function tcLoadReadiness(id, task) {
           + '<span style="color:' + color + ';"><strong>' + icon + '</strong> ' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
           + reason + links
           + evidence
+          + langControls
           + '</div>'
           + manualActions
           + actions
@@ -1445,7 +1605,8 @@ async function tcLoadDetail(id, options) {
   }
   try {
     const task = await tcFetchDetailTask(id, opts.forceRefresh);
-    if (!task) { body.innerHTML = '<div class="tc-detail-loading"><span>任务未找到（可能不在当前可见范围）</span><button class="tc-btn" onclick="tcCloseDetail()">关闭</button></div>'; return; }
+    if (!task) { TC_DETAIL_CURRENT_TASK = null; body.innerHTML = '<div class="tc-detail-loading"><span>任务未找到（可能不在当前可见范围）</span><button class="tc-btn" onclick="tcCloseDetail()">关闭</button></div>'; return; }
+    TC_DETAIL_CURRENT_TASK = task;
     const [eventsResp, reviewAssetsResp] = await Promise.all([
       tcFetchJson('/tasks/api/' + id + '/events'),
       tcFetchJson('/tasks/api/' + id + '/review-assets'),
@@ -1473,7 +1634,7 @@ async function tcRefreshDetail(id, btn) {
     tcSetDetailRefreshBusy(btn, false);
   }
 }
-function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; }
+function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; TC_DETAIL_CURRENT_TASK = null; }
 
 function tcRenderDetailIdentityRows(task, isParent) {
   if (isParent) return '';

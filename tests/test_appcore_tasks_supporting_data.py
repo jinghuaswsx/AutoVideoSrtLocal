@@ -647,6 +647,7 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
             "media_product_id": 9,
             "country_code": "DE",
             "product_code": "robot-kit-rjc",
+            "ad_supported_langs": "fr",
         }
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
@@ -670,6 +671,8 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
     ]
     assert payload["country_code"] == "DE"
     assert payload["product_code"] == "robot-kit-rjc"
+    assert payload["media_product_id"] == 9
+    assert payload["ad_supported_langs"] == "fr"
     assert payload["media_search_url"] == (
         "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
     )
@@ -712,6 +715,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "media_product_id": 9,
             "country_code": "DE",
             "product_code": "robot-kit-rjc",
+            "ad_supported_langs": "de,fr",
         },
     )
     monkeypatch.setattr(
@@ -728,7 +732,11 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "file_size": 10485760,
         },
     )
-    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(
+        tasks,
+        "_find_product",
+        lambda product_id: {"id": product_id, "ad_supported_langs": "de,fr"},
+    )
     monkeypatch.setattr(
         tasks,
         "_copywriting_evidence",
@@ -821,6 +829,8 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     assert payload["missing"] == ["detail_images", "product_links"]
     assert payload["country_code"] == "DE"
     assert payload["product_code"] == "robot-kit-rjc"
+    assert payload["media_product_id"] == 9
+    assert payload["ad_supported_langs"] == "de,fr"
     assert payload["media_item_id"] == 5
     assert payload["media_search_url"] == (
         "/medias/?q=robot-kit-rjc&from_task=44&product=9&lang=de&action=translate"
