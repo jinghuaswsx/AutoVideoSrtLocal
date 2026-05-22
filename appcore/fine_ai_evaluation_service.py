@@ -87,7 +87,7 @@ class FineAiEvaluationService:
         )
         now = _now_iso()
         evaluation_run_id = f"eval_{uuid.uuid4().hex}"
-        progress = _initial_progress(country_codes)
+        progress = _initial_progress(country_codes, product_snapshot=product_snapshot, asset_snapshot=asset_snapshot)
         run = {
             "evaluation_run_id": evaluation_run_id,
             "product_id": str(product_id),
@@ -148,7 +148,7 @@ class FineAiEvaluationService:
         asset_snapshot = _empty_asset_snapshot()
         now = _now_iso()
         evaluation_run_id = f"eval_{uuid.uuid4().hex}"
-        progress = _initial_progress(country_codes)
+        progress = _initial_progress(country_codes, product_snapshot=product_snapshot, asset_snapshot=asset_snapshot)
         run = {
             "evaluation_run_id": evaluation_run_id,
             "product_id": "0",
@@ -211,13 +211,29 @@ class FineAiEvaluationService:
         failed_codes: list[str] = []
         completed_codes: list[str] = []
         run_errors: list[dict[str, str]] = list(metadata.get("run_errors") or [])
+        progress = _ensure_progress(
+            run.get("progress"),
+            country_codes,
+            product_snapshot=product_snapshot,
+            asset_snapshot=asset_snapshot,
+        )
 
         try:
+            progress = _mark_progress_step(
+                progress,
+                "product_fact_extraction",
+                "running",
+                "开始请求大模型整理商品事实",
+                debug=_llm_debug(metadata, {
+                    "Product URL": product_snapshot.get("product_url") or product_snapshot.get("landing_page_url") or "",
+                    "Country Count": len(country_codes),
+                }),
+            )
             self.repository.update_run(
                 evaluation_run_id,
                 status="running",
                 started_at=_now_iso(),
-                progress=_progress(country_codes, "product_fact_extraction", completed_steps=0),
+                progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
             )
             product_facts = self.gemini_client.generate_product_facts(
                 product_snapshot=product_snapshot,
@@ -225,29 +241,64 @@ class FineAiEvaluationService:
             )
             validate_json_schema(product_facts, PRODUCT_FACTS_SCHEMA)
             metadata = self._merge_call_metadata(metadata, "product_facts")
+            progress = _mark_progress_step(
+                progress,
+                "product_fact_extraction",
+                "completed",
+                "商品事实整理完成",
+                debug=[
+                    *_llm_debug(metadata, {
+                        "Category": product_facts.get("category_detected") or "-",
+                        "Missing Data": len(product_facts.get("missing_data") or []),
+                    }),
+                    *_usage_debug(self._call_metadata()),
+                ],
+            )
             self.repository.update_run(
                 evaluation_run_id,
                 product_facts=product_facts,
                 metadata=metadata,
-                progress=_progress(country_codes, "product_fact_extraction", completed_steps=1),
+                progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
             )
         except Exception as exc:
             log.exception("fine AI product fact extraction failed: run=%s", evaluation_run_id)
             run_errors.append({"stage": "product_fact_extraction", "message": str(exc)[:500]})
             metadata["run_errors"] = run_errors
+            progress = _mark_progress_step(
+                progress,
+                "product_fact_extraction",
+                "failed",
+                f"商品事实整理失败：{str(exc)[:160]}",
+                level="error",
+                debug=_llm_debug(metadata, {"Error": str(exc)[:500]}),
+            )
             self.repository.update_run(
                 evaluation_run_id,
                 status="failed",
                 metadata=metadata,
                 failed_at=_now_iso(),
                 error_message=str(exc)[:500],
-                progress=_progress(country_codes, "failed", completed_steps=0),
+                progress=_progress(country_codes, "failed", base_progress=progress),
             )
             return self.get_result(product_id, evaluation_run_id)
 
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
-        for index, code in enumerate(country_codes, start=1):
+        for code in country_codes:
             country = get_country_config(code)
+            step_key = _country_step_key(code)
+            progress = _mark_progress_step(
+                progress,
+                step_key,
+                "running",
+                f"{code} 开始请求大模型评估",
+                debug=_llm_debug(metadata, {
+                    "Country": code,
+                    "Language": country.get("language") or "",
+                    "Currency": country.get("currency") or "",
+                    "Images": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or []),
+                    "Videos": len(asset_snapshot.get("videos") or []),
+                }),
+            )
             self.repository.update_run(
                 evaluation_run_id,
                 status="running",
@@ -255,9 +306,10 @@ class FineAiEvaluationService:
                     country_codes,
                     f"country_evaluation_{code}",
                     running_country=code,
-                    completed_steps=index,
+                    completed_steps=_completed_step_count(progress),
                     completed_countries=completed_codes,
                     failed_countries=failed_codes,
+                    base_progress=progress,
                 ),
             )
             try:
@@ -272,6 +324,17 @@ class FineAiEvaluationService:
                 validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
                 completed_codes.append(code)
                 countries[code] = result
+                call_metadata = self._call_metadata()
+                progress = _mark_progress_step(
+                    progress,
+                    step_key,
+                    "completed",
+                    f"{code} 评估完成：{(result.get('decision') or {}).get('final_decision') or '-'} / {((result.get('scores') or {}).get('overall_score'))}",
+                    debug=[
+                        *_country_result_debug(result),
+                        *_usage_debug(call_metadata),
+                    ],
+                )
                 self.repository.upsert_country(
                     evaluation_run_id,
                     code,
@@ -279,7 +342,7 @@ class FineAiEvaluationService:
                         "product_id": product_id,
                         "status": "completed",
                         "full_result": result,
-                        "metadata": self._call_metadata(),
+                        "metadata": call_metadata,
                         "raw_response": {},
                     },
                 )
@@ -288,6 +351,19 @@ class FineAiEvaluationService:
                 failed_codes.append(code)
                 failed = _failed_country_result(country, str(exc))
                 countries[code] = failed
+                call_metadata = self._call_metadata()
+                progress = _mark_progress_step(
+                    progress,
+                    step_key,
+                    "failed",
+                    f"{code} 评估失败：{str(exc)[:160]}",
+                    level="error",
+                    debug=[
+                        {"label": "Country", "value": code},
+                        {"label": "Error", "value": str(exc)[:500]},
+                        *_usage_debug(call_metadata),
+                    ],
+                )
                 self.repository.upsert_country(
                     evaluation_run_id,
                     code,
@@ -295,13 +371,47 @@ class FineAiEvaluationService:
                         "product_id": product_id,
                         "status": "failed",
                         "full_result": failed,
-                        "metadata": self._call_metadata(),
+                        "metadata": call_metadata,
                         "raw_response": {},
                         "error_message": str(exc)[:500],
                     },
                 )
+            self.repository.update_run(
+                evaluation_run_id,
+                status="running",
+                progress=_progress(
+                    country_codes,
+                    f"country_evaluation_{code}",
+                    completed_steps=_completed_step_count(progress),
+                    completed_countries=completed_codes,
+                    failed_countries=failed_codes,
+                    base_progress=progress,
+                ),
+            )
 
         countries = _unwrap_country_results(self.repository.list_countries(evaluation_run_id)) or countries
+        progress = _mark_progress_step(
+            progress,
+            "summary",
+            "running",
+            "开始汇总五国评估结果",
+            debug=[
+                {"label": "Completed Countries", "value": ", ".join(completed_codes) or "-"},
+                {"label": "Failed Countries", "value": ", ".join(failed_codes) or "-"},
+            ],
+        )
+        self.repository.update_run(
+            evaluation_run_id,
+            status="running",
+            progress=_progress(
+                country_codes,
+                "summary",
+                completed_steps=_completed_step_count(progress),
+                completed_countries=completed_codes,
+                failed_countries=failed_codes,
+                base_progress=progress,
+            ),
+        )
         summary = build_summary(countries)
         frontend = build_frontend(summary, countries)
         metadata.update({
@@ -316,6 +426,19 @@ class FineAiEvaluationService:
         final_status = "completed" if not failed_codes else "partially_completed"
         if not completed_codes and failed_codes:
             final_status = "failed"
+        progress = _mark_progress_step(
+            progress,
+            "summary",
+            "completed" if final_status in {"completed", "partially_completed"} else "failed",
+            f"汇总完成：{final_status}",
+            level="info" if final_status in {"completed", "partially_completed"} else "error",
+            debug=[
+                {"label": "Run Status", "value": final_status},
+                {"label": "Overall Recommendation", "value": summary.get("overall_recommendation") or "-"},
+                {"label": "Completed Countries", "value": len(completed_codes)},
+                {"label": "Failed Countries", "value": len(failed_codes)},
+            ],
+        )
         self.repository.update_run(
             evaluation_run_id,
             status=final_status,
@@ -326,10 +449,11 @@ class FineAiEvaluationService:
             failed_at=_now_iso() if final_status == "failed" else None,
             progress=_progress(
                 country_codes,
-                "summary_completed",
-                completed_steps=7,
+                "summary",
+                completed_steps=_completed_step_count(progress),
                 completed_countries=completed_codes,
                 failed_countries=failed_codes,
+                base_progress=progress,
             ),
         )
         return self.get_result(product_id, evaluation_run_id)
@@ -375,10 +499,33 @@ class FineAiEvaluationService:
         run = self._require_run(evaluation_run_id)
         self._assert_product(run, product_id)
         code = normalize_country_codes([country_code])[0]
+        metadata = run.get("metadata") or {}
+        completed_codes = [item for item in metadata.get("countries_completed") or [] if item != code]
+        failed_codes = [item for item in metadata.get("countries_failed") or [] if item != code]
+        progress = _ensure_progress(
+            run.get("progress"),
+            run.get("countries") or DEFAULT_COUNTRY_CODES,
+            product_snapshot=run.get("product_snapshot") or {},
+            asset_snapshot=metadata.get("asset_snapshot") or {},
+        )
+        progress = _mark_progress_step(
+            progress,
+            _country_step_key(code),
+            "running",
+            f"{code} 手动重跑开始",
+            debug=[{"label": "Country", "value": code}],
+        )
         self.repository.update_run(
             evaluation_run_id,
             status="running",
-            progress=_progress(run.get("countries") or DEFAULT_COUNTRY_CODES, f"country_evaluation_{code}", running_country=code),
+            progress=_progress(
+                run.get("countries") or DEFAULT_COUNTRY_CODES,
+                f"country_evaluation_{code}",
+                running_country=code,
+                completed_countries=completed_codes,
+                failed_countries=failed_codes,
+                base_progress=progress,
+            ),
         )
         runner_lifecycle.start_tracked_thread(
             project_type="fine_ai_evaluation",
@@ -425,6 +572,24 @@ class FineAiEvaluationService:
             countries=country_configs(run.get("countries") or DEFAULT_COUNTRY_CODES),
         )
         country = get_country_config(country_code)
+        run_country_codes = normalize_country_codes(run.get("countries") or DEFAULT_COUNTRY_CODES)
+        progress = _ensure_progress(
+            run.get("progress"),
+            run_country_codes,
+            product_snapshot=product_snapshot,
+            asset_snapshot=asset_snapshot,
+        )
+        progress = _mark_progress_step(
+            progress,
+            _country_step_key(country_code),
+            "running",
+            f"{country_code} 手动重跑正在请求大模型",
+            debug=_llm_debug(metadata, {
+                "Country": country_code,
+                "Language": country.get("language") or "",
+                "Currency": country.get("currency") or "",
+            }),
+        )
         try:
             result = self.gemini_client.generate_country_evaluation(
                 product_snapshot=product_snapshot,
@@ -434,6 +599,17 @@ class FineAiEvaluationService:
                 asset_paths=list(asset_snapshot.get("asset_paths") or []),
             )
             result = _normalize_country_result(result, country, asset_snapshot)
+            call_metadata = self._call_metadata()
+            progress = _mark_progress_step(
+                progress,
+                _country_step_key(country_code),
+                "completed",
+                f"{country_code} 手动重跑完成",
+                debug=[
+                    *_country_result_debug(result),
+                    *_usage_debug(call_metadata),
+                ],
+            )
             self.repository.upsert_country(
                 evaluation_run_id,
                 country_code,
@@ -441,12 +617,25 @@ class FineAiEvaluationService:
                     "product_id": str(product_id),
                     "status": "completed",
                     "full_result": result,
-                    "metadata": self._call_metadata(),
+                    "metadata": call_metadata,
                     "raw_response": {},
                 },
             )
         except Exception as exc:
             failed = _failed_country_result(country, str(exc))
+            call_metadata = self._call_metadata()
+            progress = _mark_progress_step(
+                progress,
+                _country_step_key(country_code),
+                "failed",
+                f"{country_code} 手动重跑失败：{str(exc)[:160]}",
+                level="error",
+                debug=[
+                    {"label": "Country", "value": country_code},
+                    {"label": "Error", "value": str(exc)[:500]},
+                    *_usage_debug(call_metadata),
+                ],
+            )
             self.repository.upsert_country(
                 evaluation_run_id,
                 country_code,
@@ -454,7 +643,7 @@ class FineAiEvaluationService:
                     "product_id": str(product_id),
                     "status": "failed",
                     "full_result": failed,
-                    "metadata": self._call_metadata(),
+                    "metadata": call_metadata,
                     "raw_response": {},
                     "error_message": str(exc)[:500],
                 },
@@ -468,6 +657,16 @@ class FineAiEvaluationService:
             "countries_completed": completed_codes,
             "countries_failed": failed_codes,
         })
+        progress = _mark_progress_step(
+            progress,
+            "summary",
+            "completed",
+            "单国家重跑后汇总完成",
+            debug=[
+                {"label": "Completed Countries", "value": len(completed_codes)},
+                {"label": "Failed Countries", "value": len(failed_codes)},
+            ],
+        )
         self.repository.update_run(
             evaluation_run_id,
             status="completed" if not failed_codes else "partially_completed",
@@ -475,11 +674,12 @@ class FineAiEvaluationService:
             frontend=frontend,
             metadata=metadata,
             progress=_progress(
-                run.get("countries") or DEFAULT_COUNTRY_CODES,
-                "summary_completed",
-                completed_steps=7,
+                run_country_codes,
+                "summary",
+                completed_steps=_completed_step_count(progress),
                 completed_countries=completed_codes,
                 failed_countries=failed_codes,
+                base_progress=progress,
             ),
         )
 
@@ -522,8 +722,26 @@ def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _initial_progress(country_codes: list[str] | tuple[str, ...]) -> dict[str, Any]:
-    return _progress(country_codes, "queued")
+def _initial_progress(
+    country_codes: list[str] | tuple[str, ...],
+    *,
+    product_snapshot: dict[str, Any] | None = None,
+    asset_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    progress = {
+        "started_at": _now_iso(),
+        "steps": _progress_steps(country_codes),
+        "events": [],
+    }
+    progress = _mark_progress_step(
+        progress,
+        "data_preparation",
+        "completed",
+        "数据准备完成，等待商品事实整理",
+        debug=_data_preparation_debug(product_snapshot or {}, asset_snapshot or {}, country_codes),
+        event=False,
+    )
+    return _progress(country_codes, "queued", base_progress=progress)
 
 
 def _progress(
@@ -534,6 +752,7 @@ def _progress(
     completed_steps: int = 0,
     completed_countries: list[str] | None = None,
     failed_countries: list[str] | None = None,
+    base_progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     completed = set(completed_countries or [])
     failed = set(failed_countries or [])
@@ -547,13 +766,192 @@ def _progress(
             statuses[code] = "running"
         else:
             statuses[code] = "pending"
-    return {
-        "total_steps": 7,
-        "completed_steps": int(completed_steps),
+    progress = dict(base_progress or {})
+    if "steps" not in progress:
+        progress["steps"] = _progress_steps(country_codes)
+    if "events" not in progress:
+        progress["events"] = []
+    completed_from_steps = _completed_step_count(progress)
+    started_at = progress.get("started_at") or _now_iso()
+    progress.update({
+        "total_steps": len(progress.get("steps") or []),
+        "completed_steps": int(completed_steps or completed_from_steps),
         "current_step": current_step,
         "current_country": running_country or "",
         "countries": statuses,
+        "started_at": started_at,
+        "elapsed_seconds": _elapsed_seconds(started_at),
+    })
+    return progress
+
+
+def _ensure_progress(
+    progress: dict[str, Any] | None,
+    country_codes: list[str] | tuple[str, ...],
+    *,
+    product_snapshot: dict[str, Any],
+    asset_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(progress, dict) or not progress.get("steps"):
+        return _initial_progress(country_codes, product_snapshot=product_snapshot, asset_snapshot=asset_snapshot)
+    out = dict(progress)
+    out.setdefault("steps", _progress_steps(country_codes))
+    out.setdefault("events", [])
+    out.setdefault("started_at", _now_iso())
+    return out
+
+
+def _progress_steps(country_codes: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+    steps = [
+        _step("data_preparation", "数据准备", "准备商品链接、商品快照、素材数量和目标国家"),
+        _step("product_fact_extraction", "商品事实整理", "抽取跨国家共享的商品事实"),
+    ]
+    for code in country_codes:
+        country = get_country_config(code)
+        steps.append(_step(_country_step_key(code), f"{code} {country['country_name_zh']}", "单国家市场、素材、落地页与风险评估"))
+    steps.append(_step("summary", "汇总结果", "聚合五国结论和下一步动作"))
+    return steps
+
+
+def _step(key: str, title: str, description: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "title": title,
+        "description": description,
+        "status": "pending",
+        "message": "等待执行",
+        "started_at": None,
+        "completed_at": None,
+        "logs": [],
+        "debug": [],
     }
+
+
+def _country_step_key(code: str) -> str:
+    return f"country_{code}"
+
+
+def _mark_progress_step(
+    progress: dict[str, Any],
+    step_key: str,
+    status: str,
+    message: str,
+    *,
+    level: str = "info",
+    debug: list[dict[str, Any]] | None = None,
+    event: bool = True,
+) -> dict[str, Any]:
+    now = _now_iso()
+    out = dict(progress or {})
+    steps = [dict(step) for step in out.get("steps") or []]
+    found = False
+    for step in steps:
+        if step.get("key") != step_key:
+            continue
+        found = True
+        previous_status = step.get("status")
+        step["status"] = status
+        step["message"] = message
+        if status == "running" and not step.get("started_at"):
+            step["started_at"] = now
+        if status in {"completed", "failed", "skipped"}:
+            if not step.get("started_at"):
+                step["started_at"] = now
+            step["completed_at"] = now
+        if debug is not None:
+            step["debug"] = _compact_debug(debug)
+        logs = list(step.get("logs") or [])
+        if previous_status != status or message:
+            logs.append({"ts": now, "level": level, "message": message})
+        step["logs"] = logs[-20:]
+        break
+    if not found:
+        step = _step(step_key, step_key, "")
+        steps.append(step)
+        return _mark_progress_step({**out, "steps": steps}, step_key, status, message, level=level, debug=debug, event=event)
+    out["steps"] = steps
+    if event:
+        events = list(out.get("events") or [])
+        events.append({"ts": now, "level": level, "step_key": step_key, "message": message})
+        out["events"] = events[-120:]
+    out["elapsed_seconds"] = _elapsed_seconds(out.get("started_at"))
+    return out
+
+
+def _completed_step_count(progress: dict[str, Any]) -> int:
+    return sum(1 for step in progress.get("steps") or [] if step.get("status") in {"completed", "failed", "skipped"})
+
+
+def _elapsed_seconds(started_at: str | None) -> int:
+    if not started_at:
+        return 0
+    try:
+        started = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    return max(0, int((datetime.now(UTC) - started).total_seconds()))
+
+
+def _compact_debug(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        value = item.get("value")
+        if not label:
+            continue
+        if isinstance(value, (dict, list)):
+            value_text = str(value)[:240]
+        else:
+            value_text = str(value if value is not None else "")[:240]
+        out.append({"label": label, "value": value_text})
+    return out
+
+
+def _data_preparation_debug(
+    product_snapshot: dict[str, Any],
+    asset_snapshot: dict[str, Any],
+    country_codes: list[str] | tuple[str, ...],
+) -> list[dict[str, Any]]:
+    return [
+        {"label": "Product URL", "value": product_snapshot.get("product_url") or product_snapshot.get("landing_page_url") or "-"},
+        {"label": "Product Name", "value": product_snapshot.get("product_name") or "-"},
+        {"label": "Images", "value": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or [])},
+        {"label": "Videos", "value": len(asset_snapshot.get("videos") or [])},
+        {"label": "Countries", "value": " -> ".join(country_codes)},
+    ]
+
+
+def _llm_debug(metadata: dict[str, Any], extra: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    debug = [
+        {"label": "Provider", "value": metadata.get("provider") or PROVIDER},
+        {"label": "Model", "value": metadata.get("model") or MODEL},
+    ]
+    for label, value in (extra or {}).items():
+        debug.append({"label": label, "value": value})
+    return debug
+
+
+def _usage_debug(call_metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    usage = call_metadata.get("usage") or {}
+    return [
+        {"label": "Input Tokens", "value": usage.get("input_tokens") or usage.get("prompt_tokens") or "-"},
+        {"label": "Output Tokens", "value": usage.get("output_tokens") or usage.get("completion_tokens") or "-"},
+    ]
+
+
+def _country_result_debug(result: dict[str, Any]) -> list[dict[str, Any]]:
+    scores = result.get("scores") or {}
+    decision = result.get("decision") or {}
+    return [
+        {"label": "Country", "value": result.get("country_code") or "-"},
+        {"label": "Score", "value": scores.get("overall_score")},
+        {"label": "Decision", "value": decision.get("final_decision") or "-"},
+        {"label": "Confidence", "value": decision.get("confidence") or "-"},
+        {"label": "Missing Data", "value": len(result.get("missing_data") or [])},
+        {"label": "Sources", "value": len(result.get("sources") or [])},
+    ]
 
 
 def _with_asset_counts(product_snapshot: dict[str, Any], asset_snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -783,6 +1181,7 @@ def _build_result_payload(run: dict[str, Any], countries: dict[str, dict[str, An
         "countries": countries or {},
         "frontend": run.get("frontend") or {},
         "metadata": run.get("metadata") or {},
+        "progress": run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES),
     }
 
 
