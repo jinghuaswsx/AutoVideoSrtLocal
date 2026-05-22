@@ -263,6 +263,86 @@ def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authe
     assert "if (context.hasExistingResult) {" in body
 
 
+def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_no_db, monkeypatch):
+    calls = []
+
+    class FakeService:
+        def create_external_link_run(self, **kwargs):
+            calls.append(("create_external", kwargs))
+            return {
+                "evaluation_run_id": "eval_external",
+                "product_id": "0",
+                "status": "queued",
+                "countries": ["DE", "FR", "IT", "ES", "JP"],
+                "created_at": "2026-05-22T00:00:00Z",
+            }
+
+        def start_run_async(self, evaluation_run_id):
+            calls.append(("start", evaluation_run_id))
+            return True
+
+        def get_status(self, product_id, evaluation_run_id):
+            calls.append(("status", product_id, evaluation_run_id))
+            return {"evaluation_run_id": evaluation_run_id, "product_id": str(product_id), "status": "running"}
+
+        def get_result(self, product_id, evaluation_run_id):
+            calls.append(("result", product_id, evaluation_run_id))
+            return {"evaluation_run_id": evaluation_run_id, "product_id": str(product_id), "status": "completed"}
+
+        def rerun_country(self, product_id, evaluation_run_id, country_code, **kwargs):
+            calls.append(("rerun", product_id, evaluation_run_id, country_code, kwargs))
+            return {
+                "evaluation_run_id": evaluation_run_id,
+                "product_id": str(product_id),
+                "country_code": country_code,
+                "status": "running",
+            }
+
+    monkeypatch.setattr("web.routes.xuanpin.get_fine_ai_evaluation_service", lambda: FakeService())
+
+    post = authed_client_no_db.post(
+        "/xuanpin/api/fine-ai-evaluation",
+        json={
+            "product_link": "https://example.test/products/new-idea",
+            "product_name": "New Idea",
+            "product_code": "new-idea",
+            "countries": ["DE", "FR", "IT", "ES", "JP"],
+        },
+    )
+    status = authed_client_no_db.get("/xuanpin/api/fine-ai-evaluation/eval_external/status")
+    result = authed_client_no_db.get("/xuanpin/api/fine-ai-evaluation/eval_external")
+    rerun = authed_client_no_db.post(
+        "/xuanpin/api/fine-ai-evaluation/eval_external/countries/DE/rerun",
+        json={"force_refresh": True},
+    )
+
+    assert post.status_code == 202
+    assert status.status_code == 200
+    assert result.status_code == 200
+    assert rerun.status_code == 202
+    assert post.get_json()["data"]["product_id"] == "0"
+    assert calls[0] == (
+        "create_external",
+        {
+            "product_link": "https://example.test/products/new-idea",
+            "product_name": "New Idea",
+            "product_code": "new-idea",
+            "countries": ["DE", "FR", "IT", "ES", "JP"],
+            "force_refresh": True,
+            "locale": "zh-CN",
+        },
+    )
+    assert ("start", "eval_external") in calls
+    assert ("status", 0, "eval_external") in calls
+
+
+def test_xuanpin_fine_ai_external_link_requires_product_link(authed_client_no_db):
+    resp = authed_client_no_db.post("/xuanpin/api/fine-ai-evaluation", json={"product_link": ""})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "PRODUCT_LINK_REQUIRED"
+
+
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

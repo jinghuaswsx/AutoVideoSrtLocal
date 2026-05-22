@@ -1158,12 +1158,16 @@ function renderMkVideoMaterialCard(r) {
   const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
   const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
+  const canFineAiEvaluate = Boolean(existingProductId || productLinkRaw);
   const hasLocalProduct = Boolean(r.has_local_product_in_library || (productStatus && productStatus.has_local_match) || existingProductId);
   const hasAiEvaluationResult = Boolean(mkiAiEvaluationResultFromStatus(productStatus));
   const aiButtonLabel = mkiAiButtonLabel(r);
   const aiButtonTitle = existingProductId
     ? (hasAiEvaluationResult ? '查看 AI 评估结果，必要时可重新评估' : '打开 AI 评估请求与结果')
     : '先加入素材库后才能进行 AI 评估';
+  const fineAiButtonTitle = existingProductId
+    ? '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估'
+    : (productLinkRaw ? '只要商品链接存在即可进行精细 AI 评估' : '商品链接缺失，无法进行精细 AI 评估');
   const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
@@ -1263,12 +1267,14 @@ function renderMkVideoMaterialCard(r) {
       ${aiButtonLabel}
     </button>
     <button class="mki-btn mki-fine-ai-btn"
-        ${existingProductId ? '' : 'disabled'}
-        title="${existingProductId ? '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估' : '先加入素材库后才能进行精细 AI 评估'}"
+        ${canFineAiEvaluate ? '' : 'disabled'}
+        title="${fineAiButtonTitle}"
         data-mki-fine-ai-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        data-mki-product-code="${productHandle}"
+        data-mki-fine-ai-external-link="${existingProductId ? '' : escapeHtml(productLinkRaw)}"
         onclick="mkiFineAiEvaluateFromCard(this)">
       精细AI评估
     </button>
@@ -1354,6 +1360,10 @@ async function openDetail(mkId, mkName) {
       const uploadDate = escapeHtml(v.upload_time ? String(v.upload_time).split('T')[0] : '--');
       const author = escapeHtml(v.author || '--');
       const spendText = escapeHtml(fmtMkSpendText(v.spends, spends));
+      const detailProductLinkRaw = String((item.product_links && item.product_links[0]) || '').trim();
+      const detailFineAiTitle = detailProductLinkRaw
+        ? '只要商品链接存在即可进行精细 AI 评估'
+        : '商品链接缺失，无法进行精细 AI 评估';
       html += `<div class="mk-video-card">
         <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
         <div class="mk-video-summary-row">
@@ -1424,12 +1434,14 @@ async function openDetail(mkId, mkName) {
           AI评估
         </button>
         <button class="mki-btn mki-fine-ai-btn"
-            disabled
-            title="先加入素材库后才能进行精细 AI 评估"
+            ${detailProductLinkRaw ? '' : 'disabled'}
+            title="${detailFineAiTitle}"
             data-mki-fine-ai-product-id=""
             data-mki-local-item-id=""
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
-            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            data-mki-product-link="${escapeHtml(detailProductLinkRaw)}"
+            data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-fine-ai-external-link="${escapeHtml(detailProductLinkRaw)}"
             onclick="mkiFineAiEvaluateFromCard(this)">
           精细AI评估
         </button>
@@ -1900,6 +1912,17 @@ function mkiFineAiProductEndpoint(productId, suffix) {
   return `/medias/api/products/${encodeURIComponent(productId)}/ai-evaluation${suffix || ''}`;
 }
 
+function mkiFineAiExternalEndpoint(suffix) {
+  return `/xuanpin/api/fine-ai-evaluation${suffix || ''}`;
+}
+
+function mkiFineAiEndpoint(context, suffix) {
+  if (context && context.externalProductLink && !context.productId) {
+    return mkiFineAiExternalEndpoint(suffix);
+  }
+  return mkiFineAiProductEndpoint(context.productId, suffix);
+}
+
 function mkiFineAiEscapeList(items) {
   const values = Array.isArray(items) ? items : [];
   if (!values.length) return '<span class="ect-muted">-</span>';
@@ -2059,27 +2082,30 @@ function mkiFineAiAttachHeaderButtons(shell, context) {
     header.insertBefore(actions, closeButton || null);
   }
   const latestBtn = document.createElement('button');
-  latestBtn.type = 'button';
-  latestBtn.className = 'mki-ai-reevaluate-btn';
-  latestBtn.textContent = '查看最近';
-  latestBtn.onclick = () => mkiFineAiLoadLatest(context);
-  actions.appendChild(latestBtn);
+  if (!context.externalProductLink) {
+    latestBtn.type = 'button';
+    latestBtn.className = 'mki-ai-reevaluate-btn';
+    latestBtn.textContent = '查看最近';
+    latestBtn.onclick = () => mkiFineAiLoadLatest(context);
+    actions.appendChild(latestBtn);
+  }
   const rerunBtn = document.createElement('button');
   rerunBtn.type = 'button';
   rerunBtn.className = 'mki-ai-reevaluate-btn';
   rerunBtn.textContent = '重新评估';
   rerunBtn.onclick = () => mkiFineAiStartRun(context);
   actions.appendChild(rerunBtn);
-  context.headerButtons = [latestBtn, rerunBtn];
+  context.headerButtons = context.externalProductLink ? [rerunBtn] : [latestBtn, rerunBtn];
 }
 
 async function mkiFineAiLoadLatest(context, options = {}) {
   const shell = context.shell;
+  if (context.externalProductLink) return false;
   if (!options.silent) {
     shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估...</div>';
   }
   try {
-    const resp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, '/latest'));
+    const resp = await mkiFetchJson(mkiFineAiEndpoint(context, '/latest'));
     const result = resp.data || {};
     context.runId = result.evaluation_run_id || context.runId || '';
     shell.body.innerHTML = mkiFineAiRenderResult(result);
@@ -2098,6 +2124,10 @@ async function mkiFineAiLoadLatest(context, options = {}) {
 
 async function mkiFineAiOpenLatestOrStart(context) {
   if (context.loadingLatest || context.running) return;
+  if (context.externalProductLink) {
+    await mkiFineAiStartRun(context);
+    return;
+  }
   context.loadingLatest = true;
   const btn = context.button;
   const original = btn ? btn.textContent : '';
@@ -2134,7 +2164,7 @@ async function mkiFineAiStartRun(context) {
   }
   context.shell.body.innerHTML = '<div class="ect-empty">已创建评估任务，正在等待产品事实整理...</div>';
   try {
-    const resp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, ''), {
+    const resp = await mkiFetchJson(mkiFineAiEndpoint(context, ''), {
       method: 'POST',
       headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify({
@@ -2144,6 +2174,10 @@ async function mkiFineAiStartRun(context) {
         include_videos: true,
         locale: 'zh-CN',
         ...(context.productLink ? {product_link: context.productLink} : {}),
+        ...(context.externalProductLink ? {
+          product_name: context.productName || '',
+          product_code: context.productCode || '',
+        } : {}),
       }),
     });
     context.runId = resp.data && resp.data.evaluation_run_id;
@@ -2162,11 +2196,11 @@ async function mkiFineAiStartRun(context) {
 async function mkiFineAiPollStatus(context) {
   if (!context.runId) return;
   for (let i = 0; i < 900; i += 1) {
-    const statusResp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(context.runId)}/status`));
+    const statusResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}/status`));
     const status = statusResp.data || {};
     context.shell.body.innerHTML = mkiFineAiRenderStatus(status);
     if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
-      const resultResp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(context.runId)}`));
+      const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
       context.shell.body.innerHTML = mkiFineAiRenderResult(resultResp.data || {});
       mkiFineAiBindModalEvents(context);
       return;
@@ -2193,7 +2227,7 @@ function mkiFineAiBindModalEvents(context) {
       btn.disabled = true;
       btn.textContent = '重跑中';
       try {
-        await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(runId)}/countries/${encodeURIComponent(code)}/rerun`), {
+        await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(runId)}/countries/${encodeURIComponent(code)}/rerun`), {
           method: 'POST',
           headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
           body: JSON.stringify({force_refresh: true, include_assets: true, include_videos: true}),
@@ -2213,8 +2247,9 @@ function mkiFineAiBindModalEvents(context) {
 async function mkiFineAiEvaluateFromCard(btn) {
   const productId = Number(btn?.dataset.mkiFineAiProductId || btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
   const productLink = String(btn?.dataset.mkiProductLink || '').trim();
-  if (!productId) {
-    mkiToast('warning', '先加入素材库后才能进行精细 AI 评估');
+  const externalProductLink = productId ? '' : String(btn?.dataset.mkiFineAiExternalLink || productLink).trim();
+  if (!productId && !externalProductLink) {
+    mkiToast('warning', '商品链接缺失，无法进行精细 AI 评估');
     return;
   }
   if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
@@ -2223,7 +2258,17 @@ async function mkiFineAiEvaluateFromCard(btn) {
   }
   const title = btn?.dataset.mkiProductName ? `精细AI评估 - ${btn.dataset.mkiProductName}` : '精细AI评估';
   const shell = window.EvalCountryTable.openModal('', {title});
-  const context = {button: btn, shell, productId, productLink, running: false, runId: ''};
+  const context = {
+    button: btn,
+    shell,
+    productId,
+    productLink: productLink || externalProductLink,
+    externalProductLink,
+    productName: String(btn?.dataset.mkiProductName || '').trim(),
+    productCode: String(btn?.dataset.mkiProductCode || '').trim(),
+    running: false,
+    runId: '',
+  };
   mkiFineAiAttachHeaderButtons(shell, context);
   await mkiFineAiOpenLatestOrStart(context);
 }

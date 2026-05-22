@@ -126,6 +126,69 @@ class FineAiEvaluationService:
             "created_at": now,
         }
 
+    def create_external_link_run(
+        self,
+        *,
+        product_link: str,
+        product_name: str = "",
+        product_code: str = "",
+        force_refresh: bool = True,
+        countries: list[str] | None = None,
+        locale: str = "zh-CN",
+    ) -> dict[str, Any]:
+        product_url = str(product_link or "").strip()
+        if not product_url:
+            raise ValueError("product_link is required")
+        country_codes = normalize_country_codes(countries)
+        product_snapshot = _external_product_snapshot(
+            product_url=product_url,
+            product_name=product_name,
+            product_code=product_code,
+        )
+        asset_snapshot = _empty_asset_snapshot()
+        now = _now_iso()
+        evaluation_run_id = f"eval_{uuid.uuid4().hex}"
+        progress = _initial_progress(country_codes)
+        run = {
+            "evaluation_run_id": evaluation_run_id,
+            "product_id": "0",
+            "status": "queued",
+            "countries": country_codes,
+            "product_snapshot": _with_asset_counts(product_snapshot, asset_snapshot),
+            "product_facts": {},
+            "summary": {},
+            "frontend": {},
+            "metadata": {
+                "schema_version": "1.0",
+                "model": MODEL,
+                "provider": PROVIDER,
+                "force_refresh": bool(force_refresh),
+                "include_assets": False,
+                "include_videos": False,
+                "locale": locale,
+                "source_type": "external_product_link",
+                "external_product_link": product_url,
+                "countries_requested": country_codes,
+                "countries_completed": [],
+                "countries_failed": [],
+                "run_errors": [],
+                "token_usage": {},
+                "asset_snapshot": asset_snapshot,
+                "data_quality": _data_quality(product_snapshot, asset_snapshot),
+            },
+            "progress": progress,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.repository.create_run(run)
+        return {
+            "evaluation_run_id": evaluation_run_id,
+            "product_id": "0",
+            "status": "queued",
+            "countries": country_codes,
+            "created_at": now,
+        }
+
     def start_run_async(self, evaluation_run_id: str) -> bool:
         return runner_lifecycle.start_tracked_thread(
             project_type="fine_ai_evaluation",
@@ -500,6 +563,56 @@ def _with_asset_counts(product_snapshot: dict[str, Any], asset_snapshot: dict[st
         "videos": len(asset_snapshot.get("videos") or []),
     }
     return out
+
+
+def _empty_asset_snapshot() -> dict[str, Any]:
+    return {
+        "cover_images": [],
+        "product_images": [],
+        "videos": [],
+        "asset_paths": [],
+        "warnings": [],
+    }
+
+
+def _external_product_snapshot(*, product_url: str, product_name: str = "", product_code: str = "") -> dict[str, Any]:
+    clean_url = str(product_url or "").strip()
+    clean_name = str(product_name or "").strip()
+    clean_code = str(product_code or "").strip()
+    return {
+        "product_id": "0",
+        "source_type": "external_product_link",
+        "product_name": clean_name,
+        "brand": "",
+        "category": "",
+        "product_url": clean_url,
+        "landing_page_url": clean_url,
+        "description": "",
+        "sku_options": [],
+        "price": None,
+        "currency": "",
+        "compare_at_price": None,
+        "inventory_status": "",
+        "dimensions": {"length_cm": None, "width_cm": None, "height_cm": None},
+        "weight": None,
+        "materials": [],
+        "claims": [],
+        "selling_points": [],
+        "usage_scenarios": [],
+        "target_customers": [],
+        "cost": None,
+        "shipping_cost_by_country": {},
+        "delivery_days_by_country": {},
+        "return_policy": "",
+        "product_images": [],
+        "cover_images": [],
+        "videos": [],
+        "existing_ad_copy": [],
+        "existing_landing_page_copy": [],
+        "product_code": clean_code,
+        "sku_count": 0,
+        "asset_count": {"images": 0, "videos": 0},
+    }
 
 
 def _data_quality(product_snapshot: dict[str, Any], asset_snapshot: dict[str, Any]) -> dict[str, bool]:
