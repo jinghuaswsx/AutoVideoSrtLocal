@@ -476,6 +476,18 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
             calls.append(("result", product_id, evaluation_run_id))
             return {"evaluation_run_id": evaluation_run_id, "product_id": str(product_id), "status": "completed"}
 
+        def get_latest_external_link_result(self, product_link, **kwargs):
+            calls.append(("latest_external", product_link, kwargs))
+            return {
+                "evaluation_run_id": "eval_external",
+                "product_id": "0",
+                "status": "completed",
+                "metadata": {
+                    "external_product_link": product_link,
+                    "external_card_video": {"path": kwargs.get("card_video_path")},
+                },
+            }
+
         def rerun_country(self, product_id, evaluation_run_id, country_code, **kwargs):
             calls.append(("rerun", product_id, evaluation_run_id, country_code, kwargs))
             return {
@@ -511,6 +523,13 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
     )
     status = authed_client_no_db.get("/xuanpin/api/fine-ai-evaluation/eval_external/status")
     result = authed_client_no_db.get("/xuanpin/api/fine-ai-evaluation/eval_external")
+    latest = authed_client_no_db.get(
+        "/xuanpin/api/fine-ai-evaluation/latest",
+        query_string={
+            "product_link": "https://example.test/products/new-idea",
+            "card_video_path": "uploads2/selected-card.mp4",
+        },
+    )
     rerun = authed_client_no_db.post(
         "/xuanpin/api/fine-ai-evaluation/eval_external/countries/DE/rerun",
         json={"force_refresh": True},
@@ -519,8 +538,10 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
     assert post.status_code == 202
     assert status.status_code == 200
     assert result.status_code == 200
+    assert latest.status_code == 200
     assert rerun.status_code == 202
     assert post.get_json()["data"]["product_id"] == "0"
+    assert latest.get_json()["data"]["evaluation_run_id"] == "eval_external"
     assert calls[0][0] == "create_external"
     create_kwargs = calls[0][1]
     assert create_kwargs["product_link"] == "https://example.test/products/new-idea"
@@ -538,6 +559,16 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
     assert create_kwargs["locale"] == "zh-CN"
     assert ("start", "eval_external") in calls
     assert ("status", 0, "eval_external") in calls
+    assert (
+        "latest_external",
+        "https://example.test/products/new-idea",
+        {
+            "card_video_object_key": "",
+            "card_video_path": "uploads2/selected-card.mp4",
+            "card_video_url": "",
+            "card_video_name": "",
+        },
+    ) in calls
 
 
 def test_xuanpin_fine_ai_external_link_replaces_unavailable_link_from_mingkong_candidates(

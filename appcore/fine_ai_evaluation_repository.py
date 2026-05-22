@@ -69,6 +69,48 @@ class FineAiEvaluationRepository:
         )
         return _load_run(row) if row else None
 
+    def get_latest_external_link_run(
+        self,
+        product_link: str,
+        *,
+        card_video_object_key: str = "",
+        card_video_path: str = "",
+        card_video_url: str = "",
+        card_video_name: str = "",
+    ) -> dict[str, Any] | None:
+        link = str(product_link or "").strip()
+        if not link:
+            return None
+        where = [
+            "product_id=0",
+            "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_type'))='external_product_link'",
+            "("
+            "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.external_product_link'))=%s OR "
+            "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.link_check.original_link'))=%s OR "
+            "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.link_check.selected_link'))=%s"
+            ")",
+        ]
+        args: list[Any] = [link, link, link]
+        video_filters = [
+            ("card_video_object_key", card_video_object_key, "$.external_card_video.object_key"),
+            ("card_video_path", card_video_path, "$.external_card_video.path"),
+            ("card_video_url", card_video_url, "$.external_card_video.url"),
+            ("card_video_name", card_video_name, "$.external_card_video.name"),
+        ]
+        for _, value, json_path in video_filters:
+            text = str(value or "").strip()
+            if not text:
+                continue
+            where.append(f"JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '{json_path}'))=%s")
+            args.append(text)
+        row = query_one(
+            "SELECT * FROM ai_evaluation_runs WHERE "
+            + " AND ".join(where)
+            + " ORDER BY created_at DESC, id DESC LIMIT 1",
+            tuple(args),
+        )
+        return _load_run(row) if row else None
+
     def update_run(self, evaluation_run_id: str, **fields) -> dict[str, Any]:
         if not fields:
             return self.get_run(evaluation_run_id) or {}

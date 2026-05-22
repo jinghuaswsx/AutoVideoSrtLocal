@@ -26,6 +26,26 @@ def test_fine_ai_button_checks_latest_before_starting_new_run():
     assert "async function mkiFineAiOpenLatestOrStart(context)" in body
 
 
+def test_fine_ai_external_button_checks_archive_before_starting_new_run():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    start = body.index("async function mkiFineAiOpenLatestOrStart(context)")
+    end = body.index("function mkiFineAiApplyResolvedProductLink", start)
+    open_latest = body[start:end]
+    load_start = body.index("async function mkiFineAiLoadLatest(context")
+    load_end = body.index("async function mkiFineAiOpenLatestOrStart(context)", load_start)
+    load_latest = body[load_start:load_end]
+
+    assert "context.externalProductLink" not in open_latest.split("context.loadingLatest = true;", 1)[0]
+    assert "await mkiFineAiStartRun(context);" not in open_latest.split("const loaded = await mkiFineAiLoadLatest", 1)[0]
+    assert "params.set('product_link', context.externalProductLink || context.productLink || '')" in body
+    assert "params.set('card_video_path', context.cardVideoPath)" in body
+    assert "mkiFineAiLatestEndpoint(context)" in load_latest
+    assert "error.status = resp.status" in body
+    assert "context.fineAiLatestError.status !== 404" in open_latest
+    assert "未自动创建新任务" in open_latest
+
+
 def test_fine_ai_button_uses_current_card_video_for_external_product_link():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

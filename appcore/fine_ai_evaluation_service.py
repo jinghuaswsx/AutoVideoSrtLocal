@@ -531,6 +531,30 @@ class FineAiEvaluationService:
         countries = _unwrap_country_results(self.repository.list_countries(run["evaluation_run_id"]))
         return _build_result_payload(run, countries)
 
+    def get_latest_external_link_result(
+        self,
+        product_link: str,
+        *,
+        card_video_object_key: str = "",
+        card_video_path: str = "",
+        card_video_url: str = "",
+        card_video_name: str = "",
+    ) -> dict[str, Any]:
+        link = str(product_link or "").strip()
+        if not link:
+            raise ValueError("product_link is required")
+        run = self.repository.get_latest_external_link_run(
+            link,
+            card_video_object_key=str(card_video_object_key or "").strip(),
+            card_video_path=str(card_video_path or "").strip(),
+            card_video_url=str(card_video_url or "").strip(),
+            card_video_name=str(card_video_name or "").strip(),
+        )
+        if not run:
+            raise FineAiEvaluationNotFound("Evaluation run not found")
+        countries = _unwrap_country_results(self.repository.list_countries(run["evaluation_run_id"]))
+        return _build_result_payload(run, countries)
+
     def rerun_country(
         self,
         product_id: int | str,

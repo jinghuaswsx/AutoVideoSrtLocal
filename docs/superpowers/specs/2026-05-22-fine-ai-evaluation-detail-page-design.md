@@ -19,13 +19,17 @@
 ## 数据流
 
 1. 视频卡片点击 `精细AI评估`。
-2. Modal 立即显示启动进度，并保留“打开独立页”按钮。
-3. 后端创建 run 并返回 `evaluation_run_id`。
-4. Modal 和独立页都使用同一套 API：
+2. Modal 先查询存档结果：
+   - 已入库产品：`GET /medias/api/products/<product_id>/ai-evaluation/latest`
+   - 外部商品链接卡片：`GET /xuanpin/api/fine-ai-evaluation/latest?product_link=...&card_video_path=...`
+3. 如果已有结果，Modal 直接展示历史 run；不自动创建新任务。
+4. 如果没有结果，才创建新 run 并显示启动进度，同时保留“打开独立页”按钮。
+5. 用户需要重跑时，必须在 Modal 或独立页内点击“重新评估”或国家重跑按钮。
+6. Modal 和独立页都使用同一套 API：
    - status：`GET .../<run_id>/status`
    - result：`GET .../<run_id>`
    - rerun：`POST .../<run_id>/countries/<country>/rerun`
-5. 独立页不重新创建任务，只读取和操作已有 run。
+7. 独立页不重新创建任务，只读取和操作已有 run。
 
 ## 状态规则
 

@@ -127,6 +127,44 @@ def test_status_includes_context_snapshot_for_detail_header():
     assert status["metadata"]["external_card_video"]["name"] == "selected-card.mp4"
 
 
+def test_latest_external_link_result_uses_product_link_and_current_card_video_archive():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+        external_card_video_snapshot_service=FakeExternalCardVideoSnapshotService(),
+    )
+
+    other = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        card_video_object_key="mk/videos/other-card.mp4",
+        card_video_path="uploads2/other-card.mp4",
+        card_video_name="other-card.mp4",
+    )
+    wanted = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        card_video_object_key="mk/videos/selected-card.mp4",
+        card_video_path="uploads2/selected-card.mp4",
+        card_video_name="selected-card.mp4",
+    )
+    repository.rows[other["evaluation_run_id"]]["status"] = "completed"
+    repository.rows[wanted["evaluation_run_id"]]["status"] = "completed"
+
+    latest = service.get_latest_external_link_result(
+        "https://example.test/products/new-idea",
+        card_video_path="uploads2/selected-card.mp4",
+    )
+
+    assert latest["evaluation_run_id"] == wanted["evaluation_run_id"]
+    assert latest["metadata"]["external_card_video"]["path"] == "uploads2/selected-card.mp4"
+
+
 def test_initial_progress_points_to_next_pending_step_after_data_preparation():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
@@ -454,6 +492,35 @@ class InMemoryEvaluationRepository:
 
     def get_latest_run(self, product_id):
         rows = [row for row in self.rows.values() if str(row["product_id"]) == str(product_id)]
+        return dict(rows[-1]) if rows else None
+
+    def get_latest_external_link_run(self, product_link, **kwargs):
+        product_link = str(product_link or "").strip()
+        rows = []
+        for row in self.rows.values():
+            metadata = row.get("metadata") or {}
+            if str(row.get("product_id") or "") != "0":
+                continue
+            if metadata.get("source_type") != "external_product_link":
+                continue
+            link_check = metadata.get("link_check") or {}
+            links = {
+                str(metadata.get("external_product_link") or "").strip(),
+                str(link_check.get("original_link") or "").strip(),
+                str(link_check.get("selected_link") or "").strip(),
+            }
+            if product_link not in links:
+                continue
+            card_video = metadata.get("external_card_video") or {}
+            if kwargs.get("card_video_object_key") and card_video.get("object_key") != kwargs["card_video_object_key"]:
+                continue
+            if kwargs.get("card_video_path") and card_video.get("path") != kwargs["card_video_path"]:
+                continue
+            if kwargs.get("card_video_url") and card_video.get("url") != kwargs["card_video_url"]:
+                continue
+            if kwargs.get("card_video_name") and card_video.get("name") != kwargs["card_video_name"]:
+                continue
+            rows.append(row)
         return dict(rows[-1]) if rows else None
 
     def update_run(self, evaluation_run_id, **fields):
