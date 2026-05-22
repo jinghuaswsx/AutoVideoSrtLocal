@@ -1834,6 +1834,10 @@ function tcActiveTaskAction(id, label, primary) {
 function tcDisabledTaskAction(label) {
   return `<button class="tc-btn" disabled title="${tcEsc(label)}">${tcEsc(label)}</button>`;
 }
+function tcCanHandleRawTask(it) {
+  const assigneeId = Number(it && it.assignee_id || 0);
+  return !!(TC_IS_ADMIN || TC_CAPS.can_process_raw_video || (assigneeId && assigneeId === Number(TC_CURRENT_USER_ID || 0)));
+}
 function tcTaskRowAction(it) {
   const id = Number(it.id || 0);
   const status = it.status;
@@ -1844,7 +1848,7 @@ function tcTaskRowAction(it) {
       return tcActiveTaskAction(id, '查看', false);
     }
     if (status === 'raw_in_progress') {
-      return (TC_CAPS.can_process_raw_video || TC_IS_ADMIN) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中');
+      return tcCanHandleRawTask(it) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中');
     }
     if (status === 'raw_review') {
       return (TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0))

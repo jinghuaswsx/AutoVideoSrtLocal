@@ -402,3 +402,99 @@ def test_watch_niuma_records_attach_failure(monkeypatch):
     assert result == "failed"
     assert events[0][1] == "raw_niuma_failed"
     assert events[0][3]["stage"] == "attach"
+
+
+def test_reconcile_inflight_niuma_attaches_done_task_when_watcher_missed(monkeypatch):
+    from datetime import datetime
+    from appcore import task_raw_video_processing as processing
+
+    attached = []
+    monkeypatch.setattr(
+        processing,
+        "_load_inflight_niuma_submissions",
+        lambda parent_task_id=None, limit=50: [
+            {
+                "parent_task_id": 5,
+                "actor_user_id": 9,
+                "subtitle_task_id": "tcraw-5",
+                "submitted_at": datetime(2026, 5, 22, 14, 0, 0),
+            }
+        ],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        processing.task_state,
+        "get",
+        lambda task_id: {"status": "done", "result_video_path": "/tmp/result.cleaned.mp4"},
+    )
+    monkeypatch.setattr(processing, "_event_exists", lambda *args, **kwargs: False, raising=False)
+    monkeypatch.setattr(
+        processing,
+        "attach_niuma_result_to_parent_task",
+        lambda **kwargs: attached.append(kwargs),
+    )
+
+    summary = processing.reconcile_inflight_niuma_processing()
+
+    assert summary["scanned"] == 1
+    assert summary["attached"] == 1
+    assert attached == [
+        {
+            "parent_task_id": 5,
+            "subtitle_task_id": "tcraw-5",
+            "actor_user_id": 9,
+            "result_video_path": "/tmp/result.cleaned.mp4",
+        }
+    ]
+
+
+def test_reconcile_inflight_niuma_records_timeout_once(monkeypatch):
+    from datetime import datetime
+    from appcore import task_raw_video_processing as processing
+
+    events = []
+    monkeypatch.setattr(
+        processing,
+        "_load_inflight_niuma_submissions",
+        lambda parent_task_id=None, limit=50: [
+            {
+                "parent_task_id": 5,
+                "actor_user_id": 9,
+                "subtitle_task_id": "tcraw-5",
+                "submitted_at": datetime(2026, 5, 22, 14, 0, 0),
+            }
+        ],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        processing.task_state,
+        "get",
+        lambda task_id: {"status": "running", "provider_status": "processing"},
+    )
+    monkeypatch.setattr(processing, "_event_exists", lambda *args, **kwargs: False, raising=False)
+    monkeypatch.setattr(
+        processing,
+        "_write_event",
+        lambda task_id, event_type, actor_user_id, payload=None: events.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+
+    summary = processing.reconcile_inflight_niuma_processing(
+        now_fn=lambda: datetime(2026, 5, 22, 14, 20, 1)
+    )
+
+    assert summary["scanned"] == 1
+    assert summary["timed_out"] == 1
+    assert events == [
+        (
+            5,
+            "raw_niuma_timeout",
+            9,
+            {
+                "subtitle_task_id": "tcraw-5",
+                "timeout_seconds": processing.WATCH_TIMEOUT_SECONDS,
+                "stage": "reconcile",
+            },
+        )
+    ]

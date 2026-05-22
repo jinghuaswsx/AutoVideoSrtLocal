@@ -656,7 +656,9 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["cdp_environment_watchdog"]["source_ref"] == "autovideosrt-cdp-environment-watchdog.timer"
     assert definitions["cdp_environment_watchdog"]["log_table"] == "scheduled_task_runs"
     assert definitions["product_cover_backfill_tick"]["schedule"] == "每 10 分钟"
-    assert definitions["task_center_raw_niuma_watch"]["source_type"] == "in_process"
+    assert definitions["task_center_raw_niuma_watch"]["source_type"] == "apscheduler"
+    assert definitions["task_center_raw_niuma_watch"]["schedule"] == "每 1 分钟"
+    assert definitions["task_center_raw_niuma_watch"]["runner"] == "appcore.task_center_raw_niuma_scheduler.tick_once"
     assert definitions["task_center_raw_niuma_watch"]["log_table"] == "task_events"
     assert definitions["tts_convergence_stats"]["source_type"] == "cron"
 
