@@ -143,14 +143,27 @@
 .tc-review-image { display:block; width:100%; max-height:260px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
 .tc-review-asset-meta { margin-top:6px; font-size:12px; color:var(--tc-fg-muted); overflow-wrap:anywhere; }
 .tc-readiness-evidence { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:8px 0 2px 20px; }
+.tc-readiness-evidence--portrait { display:block; }
 .tc-readiness-evidence--image-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; align-items:start; }
 .tc-readiness-evidence-item { min-width:0; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg); padding:8px; color:var(--tc-fg); }
+.tc-readiness-evidence-item--portrait { width:288px; max-width:100%; }
 .tc-readiness-evidence--image-grid .tc-readiness-evidence-item { padding:5px; }
 .tc-readiness-evidence-item.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
 .tc-readiness-link { display:inline-flex; max-width:100%; color:var(--tc-accent); font-weight:700; overflow-wrap:anywhere; }
 .tc-readiness-video { display:block; width:100%; max-height:300px; background:oklch(18% 0.015 230); border-radius:var(--tc-r); }
+.tc-readiness-portrait-card { width:270px; height:480px; max-width:100%; position:relative; overflow:hidden; border-radius:var(--tc-r); background:oklch(18% 0.015 230); }
+.tc-readiness-video-shell .tc-readiness-video { position:absolute; inset:0; width:100%; height:100%; max-height:none; object-fit:contain; opacity:0; pointer-events:none; }
+.tc-readiness-video-shell.is-playing .tc-readiness-video { opacity:1; pointer-events:auto; }
+.tc-readiness-video-poster { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; background:var(--tc-bg-muted); }
+.tc-readiness-video-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--tc-fg-muted); font-size:12px; background:oklch(18% 0.015 230); }
+.tc-readiness-video-play { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:58px; height:58px; border:1px solid oklch(99% 0.004 230 / .85); border-radius:999px; background:oklch(99% 0.004 230 / .86); box-shadow:0 8px 20px oklch(22% 0.020 235 / .24); cursor:pointer; }
+.tc-readiness-video-play::before { content:""; position:absolute; left:23px; top:17px; border-left:18px solid var(--tc-accent); border-top:12px solid transparent; border-bottom:12px solid transparent; }
+.tc-readiness-video-shell.is-playing .tc-readiness-video-poster,
+.tc-readiness-video-shell.is-playing .tc-readiness-video-placeholder,
+.tc-readiness-video-shell.is-playing .tc-readiness-video-play { display:none; }
 .tc-readiness-image-link { display:block; }
 .tc-readiness-image { display:block; width:100%; max-height:220px; object-fit:contain; background:var(--tc-bg-muted); border-radius:var(--tc-r); }
+.tc-readiness-image--portrait { width:100%; height:100%; max-height:none; object-fit:cover; }
 .tc-readiness-evidence--image-grid .tc-readiness-image { height:150px; max-height:none; }
 .tc-readiness-meta { margin-top:5px; color:var(--tc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .tc-readiness-meta--image { margin-top:3px; font-size:11px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -249,6 +262,7 @@
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
   .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
+  .tc-readiness-portrait-card { width:min(270px, 100%); height:auto; aspect-ratio:9 / 16; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
   .tc-table { font-size: 12px; }
   .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
@@ -728,6 +742,14 @@ function tcReadinessEvidenceClass(item) {
   if (item && item.ok === false) return ' is-bad';
   return '';
 }
+function tcIsPortraitEvidence(item) {
+  return String((item && item.display_shape) || '').trim() === 'portrait_9_16';
+}
+function tcReadinessEvidenceItemClass(item) {
+  return 'tc-readiness-evidence-item'
+    + (tcIsPortraitEvidence(item) ? ' tc-readiness-evidence-item--portrait' : '')
+    + tcReadinessEvidenceClass(item);
+}
 function tcReadinessEvidenceMeta(item) {
   const parts = [];
   if (item && item.meta) parts.push(item.meta);
@@ -741,6 +763,7 @@ function tcReadinessEvidenceMeta(item) {
 }
 function tcReadinessEvidenceGridClass(items) {
   const list = Array.isArray(items) ? items : [];
+  if (list.some(tcIsPortraitEvidence)) return ' tc-readiness-evidence--portrait';
   if (list.length < 3) return '';
   const allImages = list.every(function(item) {
     return String((item && item.type) || '').trim() === 'image';
@@ -768,21 +791,58 @@ function tcRenderReadinessTextLines(item) {
       + '</div>';
   }).join('') + '</div>';
 }
+function tcActivateReadinessVideo(btn) {
+  const shell = btn && btn.closest ? btn.closest('[data-readiness-video]') : null;
+  if (!shell) return;
+  const video = shell.querySelector('video[data-video-src]');
+  if (!video) return;
+  const src = String(video.getAttribute('data-video-src') || '').trim();
+  if (src && !video.getAttribute('src')) video.setAttribute('src', src);
+  shell.classList.add('is-playing');
+  if (video.focus) video.focus({preventScroll:true});
+  const playResult = video.play && video.play();
+  if (playResult && playResult.catch) playResult.catch(function() {});
+}
 function tcRenderReadinessEvidenceItem(item) {
   const type = String((item && item.type) || '').trim();
   const url = String((item && item.url) || '').trim();
   const label = tcEsc((item && item.label) || '产物');
   const rawMeta = tcReadinessEvidenceMeta(item || {});
   const meta = tcEsc(rawMeta);
-  const className = 'tc-readiness-evidence-item' + tcReadinessEvidenceClass(item);
+  const className = tcReadinessEvidenceItemClass(item);
   const metaHtml = meta ? '<div class="tc-readiness-meta">' + meta + '</div>' : '';
   if (type === 'video' && url) {
+    if (tcIsPortraitEvidence(item)) {
+      const posterUrl = tcSafeHref((item && item.poster_url) || '');
+      const posterAttr = posterUrl ? ' poster="' + tcAttr(posterUrl) + '"' : '';
+      const poster = posterUrl
+        ? '<img class="tc-readiness-video-poster" src="' + tcAttr(posterUrl) + '" alt="' + tcAttr((item && item.label) || '视频封面') + '">'
+        : '<div class="tc-readiness-video-placeholder">暂无封面</div>';
+      return '<div class="' + className + '">'
+        + '<div class="tc-readiness-portrait-card tc-readiness-video-shell" data-readiness-video>'
+        + poster
+        + '<video class="tc-readiness-video tc-readiness-video--portrait" controls preload="metadata" playsinline data-video-src="' + tcAttr(url) + '"' + posterAttr + '></video>'
+        + '<button type="button" class="tc-readiness-video-play" onclick="tcActivateReadinessVideo(this)" aria-label="' + tcAttr('播放' + ((item && item.label) || '视频')) + '"></button>'
+        + '</div>'
+        + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
+        + '</div>';
+    }
     return '<div class="' + className + '">'
       + '<video class="tc-readiness-video" controls preload="metadata" src="' + tcAttr(url) + '"></video>'
       + '<div class="tc-readiness-meta"><strong>' + label + '</strong>' + (meta ? '<br>' + meta : '') + '</div>'
       + '</div>';
   }
   if (type === 'image' && url) {
+    if (tcIsPortraitEvidence(item)) {
+      return '<div class="' + className + '">'
+        + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+        + '<span class="tc-readiness-portrait-card">'
+        + '<img class="tc-readiness-image tc-readiness-image--portrait" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
+        + '</span>'
+        + '</a>'
+        + tcRenderReadinessImageMeta(label, rawMeta)
+        + '</div>';
+    }
     return '<div class="' + className + '">'
       + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
       + '<img class="tc-readiness-image" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'

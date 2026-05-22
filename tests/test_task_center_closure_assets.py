@@ -121,3 +121,16 @@ def test_task_center_readiness_images_use_compact_grid():
     assert "tc-readiness-meta--image" in source
     assert "tcReadinessEvidenceGridClass(items)" in source
     assert "tcRenderReadinessImageMeta(label, rawMeta)" in source
+
+
+def test_task_center_translation_media_evidence_uses_portrait_cards():
+    source = (ROOT / "web" / "templates" / "tasks_list.html").read_text(encoding="utf-8")
+
+    assert "function tcIsPortraitEvidence" in source
+    assert "function tcActivateReadinessVideo" in source
+    assert ".tc-readiness-portrait-card { width:270px; height:480px;" in source
+    assert ".tc-readiness-video-play" in source
+    assert "data-video-src=\"' + tcAttr(url) + '\"" in source
+    assert "poster_url" in source
+    assert "<button type=\"button\" class=\"tc-readiness-video-play\"" in source
+    assert "tc-readiness-image--portrait" in source
