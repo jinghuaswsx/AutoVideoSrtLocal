@@ -170,6 +170,25 @@
 .tc-lang-enable-status { flex:1 1 100%; min-height:16px; color:var(--tc-fg-muted); font-size:12px; line-height:1.35; }
 .tc-lang-enable-status.is-success { color:var(--tc-success-fg); }
 .tc-lang-enable-status.is-error { color:var(--tc-danger-fg); }
+.tc-product-link-manager { margin:10px 0 2px 20px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
+.tc-pl-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.tc-pl-title { display:grid; gap:2px; min-width:0; }
+.tc-pl-title strong { font-size:13px; color:var(--tc-fg); }
+.tc-pl-title span { font-size:12px; color:var(--tc-fg-muted); line-height:1.4; }
+.tc-pl-status { min-height:16px; margin-bottom:8px; color:var(--tc-fg-muted); font-size:12px; }
+.tc-pl-status.is-success { color:var(--tc-success-fg); }
+.tc-pl-status.is-error { color:var(--tc-danger-fg); }
+.tc-pl-list { display:grid; gap:8px; }
+.tc-pl-row { display:grid; gap:6px; padding:9px; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg-subtle); min-width:0; }
+.tc-pl-row-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+.tc-pl-badge { display:inline-flex; align-items:center; min-height:20px; padding:2px 7px; border-radius:999px; background:var(--tc-bg-muted); color:var(--tc-fg-muted); font-size:11px; font-weight:700; line-height:1.2; }
+.tc-pl-badge--success { background:var(--tc-success-bg); color:var(--tc-success-fg); }
+.tc-pl-badge--danger { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
+.tc-pl-badge--warning { background:var(--tc-warning-bg); color:var(--tc-warning-fg); }
+.tc-pl-url { display:flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap; }
+.tc-pl-url a { max-width:100%; overflow-wrap:anywhere; color:var(--tc-accent); font-weight:700; text-decoration:none; }
+.tc-pl-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.tc-pl-meta { color:var(--tc-fg-muted); font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
 .tc-niuma-panel { margin-top:10px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg-subtle); }
 .tc-niuma-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
 .tc-niuma-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; font-weight:700; color:var(--tc-fg-muted); }
@@ -363,6 +382,15 @@ let TC_LANGUAGE_LABELS = {};
 let TC_LANGUAGE_LOAD_PROMISE = null;
 let TC_TARGET_LANGUAGES = [];
 let TC_DETAIL_CURRENT_TASK = null;
+let TC_PRODUCT_LINK_MANAGER_DATA = { productId: 0, lang: '', items: [], product: null };
+const TC_SHOPIFY_IMAGE_REPLACE_LABELS = {
+  none: '未替换',
+  pending: '已排队',
+  running: '替换中',
+  auto_done: '自动替换完成',
+  failed: '替换失败',
+  confirmed: '已确认',
+};
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
@@ -986,6 +1014,211 @@ function tcRenderActionLinks(actions) {
     return '<a class="tc-btn tc-action-link' + primaryClass + '" href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
   }).join('') + '</div>';
 }
+function tcProductLinkBadge(label, tone) {
+  const kind = tone ? ' tc-pl-badge--' + tone : '';
+  return '<span class="tc-pl-badge' + kind + '">' + tcEsc(label || '—') + '</span>';
+}
+function tcNormalizeDomainValue(domain) {
+  return String(domain || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase();
+}
+function tcProductLinkStatusKey(lang, domain) {
+  const code = String(lang || '').trim().toLowerCase();
+  const normalizedDomain = tcNormalizeDomainValue(domain);
+  return normalizedDomain ? normalizedDomain + ':' + code : code;
+}
+function tcDefaultLinkDomain(product) {
+  return tcNormalizeDomainValue((product && product.default_link_domain) || 'newjoyloo.com');
+}
+function tcShopifyImageStatusFor(product, lang, domain) {
+  const statusMap = product && product.shopify_image_status && typeof product.shopify_image_status === 'object'
+    ? product.shopify_image_status
+    : {};
+  const normalizedDomain = tcNormalizeDomainValue(domain);
+  const key = tcProductLinkStatusKey(lang, normalizedDomain);
+  const defaultDomain = tcDefaultLinkDomain(product);
+  const raw = statusMap[key] || (normalizedDomain === defaultDomain ? statusMap[lang] : {}) || {};
+  return {
+    replace_status: raw.replace_status || 'none',
+    link_status: raw.link_status || 'unknown',
+    updated_at: raw.updated_at || '',
+    domain: raw.domain || normalizedDomain,
+  };
+}
+function tcShopifyImageStatusTone(status) {
+  if (!status) return '';
+  if (status.replace_status === 'confirmed' && status.link_status === 'normal') return 'success';
+  if (status.replace_status === 'failed' || status.link_status === 'unavailable') return 'danger';
+  if (status.replace_status === 'pending' || status.replace_status === 'running' || status.link_status === 'needs_review') return 'warning';
+  return '';
+}
+function tcProductLinkHttpBadge(item) {
+  if (!item) return tcProductLinkBadge('未检测', '');
+  if (item.error === 'manual_confirmed') return tcProductLinkBadge('人工确认', 'success');
+  if (item.error === 'manual_abnormal') return tcProductLinkBadge('人工标记', 'danger');
+  if (item.http_status == null) return tcProductLinkBadge(item.checked_at ? '检测失败' : '未检测', item.checked_at ? 'danger' : '');
+  const status = Number(item.http_status);
+  const tone = status >= 200 && status < 400 ? 'success' : 'danger';
+  return tcProductLinkBadge('HTTP ' + status, tone);
+}
+function tcProductLinkOkBadge(item) {
+  if (!item || !item.checked_at) return tcProductLinkBadge('未检测', '');
+  if (item.ok && item.error === 'manual_confirmed') return tcProductLinkBadge('人工确认正常', 'success');
+  if (item.ok) return tcProductLinkBadge('链接正常', 'success');
+  if (item.error === 'manual_abnormal') return tcProductLinkBadge('人工标记异常', 'danger');
+  if (item.error === 'timeout') return tcProductLinkBadge('请求超时', 'warning');
+  if (item.http_status === 404) return tcProductLinkBadge('链接失联 404', 'danger');
+  if (item.http_status === 403) return tcProductLinkBadge('访问被拒 403', 'danger');
+  return tcProductLinkBadge(item.error || '链接异常', 'danger');
+}
+function tcRenderProductLinkManagerShell(data, task) {
+  const productId = Number((data && data.media_product_id) || (task && task.media_product_id) || 0);
+  const lang = tcLanguageCode((data && data.country_code) || (task && task.country_code)).toLowerCase();
+  if (!productId || !lang) return '';
+  return '<div class="tc-product-link-manager" data-tc-product-link-manager data-product-id="' + productId + '" data-lang="' + tcAttr(lang) + '">'
+    + '<div class="tc-pl-head">'
+    + '<div class="tc-pl-title"><strong>商品链接管理</strong><span>这里直接管理该任务语种的启用域名、链接探活和 Shopify 商品图替换状态。</span></div>'
+    + '<div class="tc-pl-actions"><button type="button" class="tc-btn tc-action-link tc-action-link--primary" data-tc-pl-action="recheck-all" onclick="tcProductLinkAction(\'recheck-all\', ' + productId + ', \'' + tcAttr(tcInlineArg(lang)) + '\', \'\', this)">全部重新检查</button></div>'
+    + '</div>'
+    + '<div class="tc-pl-status" data-tc-pl-status>加载链接状态...</div>'
+    + '<div class="tc-pl-list" data-tc-pl-list></div>'
+    + '</div>';
+}
+function tcRenderProductLinkShopifyRow(product, lang, item) {
+  if (!lang || lang === 'en') return '';
+  const status = tcShopifyImageStatusFor(product, lang, item && item.domain);
+  const replaceLabel = TC_SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status || '未知';
+  const badge = tcProductLinkBadge('Shopify ' + replaceLabel, tcShopifyImageStatusTone(status));
+  const updated = status.updated_at ? '<span class="tc-pl-meta">更新 ' + tcEsc(tcFormatTime(status.updated_at)) + '</span>' : '';
+  return '<div class="tc-pl-row-head">' + tcProductLinkBadge('Shopify', '') + badge + updated + '</div>';
+}
+function tcRenderProductLinkRow(productId, lang, product, item) {
+  const domain = String((item && item.domain) || '').trim();
+  const domainArg = tcAttr(tcInlineArg(domain));
+  const langArg = tcAttr(tcInlineArg(lang));
+  const url = String((item && item.link_url) || '').trim();
+  const href = tcSafeHref(url);
+  const checkedAt = item && item.checked_at ? tcFormatTime(item.checked_at) : '尚未探测';
+  const stale = item && item.stale ? tcProductLinkBadge('域名已停用', 'warning') : '';
+  const copyBtn = url
+    ? '<button type="button" class="tc-btn tc-action-link" onclick="tcCopyText(\'' + tcAttr(tcInlineArg(url)) + '\', this)">复制</button>'
+    : '';
+  const openLink = href
+    ? '<a href="' + tcAttr(href) + '" target="_blank" rel="noopener noreferrer">' + tcEsc(url) + '</a>'
+    : '<span class="tc-pl-meta">没有可打开的链接</span>';
+  const shopifyActions = lang === 'en'
+    ? ''
+    : '<button type="button" class="tc-btn tc-action-link tc-action-link--primary" data-tc-pl-action="shopify-confirm" onclick="tcProductLinkAction(\'shopify-confirm\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">确认图片正常</button>'
+      + '<button type="button" class="tc-btn tc-action-link" data-tc-pl-action="shopify-requeue" onclick="tcProductLinkAction(\'shopify-requeue\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">重新排队换图</button>';
+  return '<div class="tc-pl-row" data-domain="' + tcAttr(domain) + '">'
+    + '<div class="tc-pl-row-head">'
+    + tcProductLinkBadge(domain || '未知域名', '')
+    + tcProductLinkOkBadge(item)
+    + tcProductLinkHttpBadge(item)
+    + stale
+    + '<span class="tc-pl-meta">探测于 ' + tcEsc(checkedAt) + '</span>'
+    + '</div>'
+    + '<div class="tc-pl-url">' + openLink + copyBtn + '</div>'
+    + tcRenderProductLinkShopifyRow(product, lang, item)
+    + '<div class="tc-pl-actions">'
+    + '<button type="button" class="tc-btn tc-action-link" data-tc-pl-action="recheck-one" onclick="tcProductLinkAction(\'recheck-one\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">重新检查链接可用性</button>'
+    + '<button type="button" class="tc-btn tc-action-link tc-action-link--primary" data-tc-pl-action="confirm-link" onclick="tcProductLinkAction(\'confirm-link\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">确认链接正常</button>'
+    + '<button type="button" class="tc-btn tc-action-link" data-tc-pl-action="mark-link-abnormal" onclick="tcProductLinkAction(\'mark-link-abnormal\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">标记链接异常</button>'
+    + shopifyActions
+    + '</div>'
+    + '</div>';
+}
+function tcSetProductLinkManagerStatus(message, tone) {
+  const el = document.querySelector('[data-tc-pl-status]');
+  if (!el) return;
+  el.className = 'tc-pl-status' + (tone ? ' is-' + tone : '');
+  el.textContent = message || '';
+}
+function tcRenderProductLinkManager(productId, lang, product, items) {
+  const list = document.querySelector('[data-tc-pl-list]');
+  if (!list) return;
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) {
+    list.innerHTML = '<div class="tc-pl-row"><div class="tc-pl-meta">该产品当前没有启用任何域名，请先在素材管理的产品链接管理里启用域名。</div></div>';
+    return;
+  }
+  list.innerHTML = rows.map(function(item) {
+    return tcRenderProductLinkRow(productId, lang, product || {}, item || {});
+  }).join('');
+}
+async function tcLoadProductLinkManager(data, task) {
+  const manager = document.querySelector('[data-tc-product-link-manager]');
+  if (!manager) return;
+  const productId = Number((data && data.media_product_id) || (task && task.media_product_id) || manager.dataset.productId || 0);
+  const lang = tcLanguageCode((data && data.country_code) || (task && task.country_code) || manager.dataset.lang).toLowerCase();
+  if (!productId || !lang) return;
+  tcSetProductLinkManagerStatus('加载链接状态...', '');
+  try {
+    const availability = await tcFetchJson('/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang));
+    const productResp = await tcFetchJson('/medias/api/products/' + encodeURIComponent(productId)).catch(function() { return {}; });
+    const product = productResp && productResp.product ? productResp.product : {};
+    const items = Array.isArray(availability && availability.items) ? availability.items : [];
+    TC_PRODUCT_LINK_MANAGER_DATA = { productId, lang, items, product };
+    tcRenderProductLinkManager(productId, lang, product, items);
+    tcSetProductLinkManagerStatus(items.length ? '已同步最新链接状态' : '暂无启用域名', items.length ? 'success' : '');
+  } catch (e) {
+    tcSetProductLinkManagerStatus('商品链接管理加载失败：' + ((e && e.message) || 'unknown'), 'error');
+  }
+}
+async function tcProductLinkAction(action, productId, lang, domain, btn) {
+  productId = Number(productId || 0);
+  lang = String(lang || '').trim().toLowerCase();
+  domain = String(domain || '').trim();
+  if (!productId || !lang) return;
+  if (action === 'shopify-requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) return;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '处理中...';
+  }
+  try {
+    let url = '';
+    let body = {};
+    if (action === 'recheck-all') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang);
+      body = {};
+    } else if (action === 'recheck-one') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang);
+      body = { domain };
+    } else if (action === 'confirm-link') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang);
+      body = { domain, manual_confirm: true };
+    } else if (action === 'mark-link-abnormal') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang);
+      body = { domain, manual_abnormal: true };
+    } else if (action === 'shopify-confirm') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/shopify-image/' + encodeURIComponent(lang) + '/confirm';
+      body = domain ? { domain } : {};
+    } else if (action === 'shopify-requeue') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/shopify-image/' + encodeURIComponent(lang) + '/requeue';
+      body = domain ? { domain } : {};
+    } else {
+      return;
+    }
+    await tcFetchJson(url, { method: 'POST', body: JSON.stringify(body) });
+    if (TC_DETAIL_TASK_ID && TC_DETAIL_CURRENT_TASK) {
+      await tcLoadReadiness(TC_DETAIL_TASK_ID, TC_DETAIL_CURRENT_TASK);
+    } else {
+      await tcLoadProductLinkManager({ media_product_id: productId, country_code: lang }, null);
+    }
+  } catch (e) {
+    alert('商品链接管理操作失败：' + ((e && e.message) || 'unknown'));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || '操作';
+    }
+  }
+}
 function tcTargetLanguageEntries() {
   const fromApi = (TC_TARGET_LANGUAGES || []).filter(function(lang) {
     return tcLanguageCode(lang && lang.code) !== 'EN';
@@ -1572,7 +1805,8 @@ async function tcLoadReadiness(id, task) {
           + manualActions
           + actions
           + '</div>';
-      }).join('');
+      }).join('') + tcRenderProductLinkManagerShell(data, task);
+      tcLoadProductLinkManager(data, task);
       return;
     }
     const labels = {
