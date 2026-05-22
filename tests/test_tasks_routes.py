@@ -116,6 +116,23 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "<td>${tcEsc(it.status)}</td>" not in body
 
 
+def test_task_center_raw_processing_action_allows_assignee_without_legacy_capability(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcCanHandleRawTask(it)" in body
+    assert "const assigneeId = Number(it && it.assignee_id || 0);" in body
+    assert "assigneeId === Number(TC_CURRENT_USER_ID || 0)" in body
+
+    start = body.index("if (status === 'raw_in_progress')")
+    end = body.index("if (status === 'raw_review')", start)
+    block = body[start:end]
+    assert "tcCanHandleRawTask(it)" in block
+    assert "tcActiveTaskAction(id, '处理去字幕原始视频', true)" in block
+    assert "tcDisabledTaskAction('去字幕原始视频素材处理中')" in block
+
+
 def test_task_center_raw_review_self_actions_render_in_step(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from config import OUTPUT_DIR
 from appcore import local_media_storage, subtitle_removal_source_storage, task_state
-from appcore.db import execute, query_one
+from appcore.db import execute, query_all, query_one
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 
 
@@ -25,6 +25,10 @@ RAW_NIUMA_LIFECYCLE_EVENT_TYPES = (
     "raw_niuma_failed",
     "raw_niuma_timeout",
 )
+NIUMA_DONE_STATUSES = {"done"}
+NIUMA_DONE_PROVIDER_STATUSES = {"done", "success"}
+NIUMA_FAILED_STATUSES = {"error", "failed", "fail"}
+NIUMA_FAILED_PROVIDER_STATUSES = {"error", "failed", "fail", "cancelled", "canceled"}
 
 
 class RawVideoProcessingError(RuntimeError):
@@ -237,6 +241,109 @@ def watch_niuma_processing(
     return "timeout"
 
 
+def reconcile_inflight_niuma_processing(
+    *,
+    parent_task_id: int | None = None,
+    limit: int = 50,
+    now_fn=None,
+) -> dict:
+    """Heal task-center raw jobs if the in-process watcher was lost.
+
+    The subtitle-removal task is persisted independently in ``projects``.  If a
+    web worker restarts after submission, the per-task watcher thread can be
+    gone while the subtitle-removal runtime still eventually writes ``done``.
+    This reconciliation step connects those persisted results back to the
+    task-center parent task.
+    """
+    now = now_fn() if now_fn else datetime.now()
+    summary = {
+        "scanned": 0,
+        "attached": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "pending": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    for row in _load_inflight_niuma_submissions(
+        parent_task_id=parent_task_id,
+        limit=limit,
+    ):
+        summary["scanned"] += 1
+        parent_id = int(row.get("parent_task_id") or 0)
+        actor_user_id = int(row.get("actor_user_id") or 0)
+        subtitle_task_id = str(row.get("subtitle_task_id") or "").strip()
+        if parent_id <= 0 or actor_user_id <= 0 or not subtitle_task_id:
+            summary["skipped"] += 1
+            continue
+
+        task = task_state.get(subtitle_task_id) or {}
+        status = str(task.get("status") or "").strip().lower()
+        provider_status = str(task.get("provider_status") or "").strip().lower()
+        if status in NIUMA_DONE_STATUSES or provider_status in NIUMA_DONE_PROVIDER_STATUSES:
+            try:
+                attach_niuma_result_to_parent_task(
+                    parent_task_id=parent_id,
+                    subtitle_task_id=subtitle_task_id,
+                    actor_user_id=actor_user_id,
+                    result_video_path=task.get("result_video_path") or "",
+                )
+                summary["attached"] += 1
+            except Exception as exc:  # noqa: BLE001
+                summary["errors"] += 1
+                if not _event_exists(parent_id, "raw_niuma_failed", subtitle_task_id):
+                    _write_event(
+                        parent_id,
+                        "raw_niuma_failed",
+                        actor_user_id,
+                        {
+                            "subtitle_task_id": subtitle_task_id,
+                            "stage": "reconcile_attach",
+                            "error": str(exc)[:500],
+                        },
+                    )
+                    summary["failed"] += 1
+            continue
+
+        if status in NIUMA_FAILED_STATUSES or provider_status in NIUMA_FAILED_PROVIDER_STATUSES:
+            if not _event_exists(parent_id, "raw_niuma_failed", subtitle_task_id):
+                _write_event(
+                    parent_id,
+                    "raw_niuma_failed",
+                    actor_user_id,
+                    {
+                        "subtitle_task_id": subtitle_task_id,
+                        "stage": "reconcile",
+                        "error": _task_error(task),
+                    },
+                )
+                summary["failed"] += 1
+            else:
+                summary["skipped"] += 1
+            continue
+
+        elapsed = _elapsed_seconds(row.get("submitted_at"), now)
+        if elapsed is not None and elapsed > WATCH_TIMEOUT_SECONDS:
+            if not _event_exists(parent_id, "raw_niuma_timeout", subtitle_task_id):
+                _write_event(
+                    parent_id,
+                    "raw_niuma_timeout",
+                    actor_user_id,
+                    {
+                        "subtitle_task_id": subtitle_task_id,
+                        "timeout_seconds": WATCH_TIMEOUT_SECONDS,
+                        "stage": "reconcile",
+                    },
+                )
+                summary["timed_out"] += 1
+            else:
+                summary["skipped"] += 1
+            continue
+
+        summary["pending"] += 1
+    return summary
+
+
 def attach_niuma_result_to_parent_task(
     *,
     parent_task_id: int,
@@ -267,6 +374,88 @@ def attach_niuma_result_to_parent_task(
     from appcore import tasks as tasks_svc
 
     tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+
+
+def _load_inflight_niuma_submissions(
+    *,
+    parent_task_id: int | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    where = ["t.parent_task_id IS NULL", "t.status=%s"]
+    args: list = [PARENT_RAW_IN_PROGRESS]
+    if parent_task_id is not None:
+        where.append("t.id=%s")
+        args.append(int(parent_task_id))
+    where_sql = " AND ".join(where)
+    rows = query_all(
+        "SELECT t.id AS parent_task_id, "
+        "       COALESCE(e.actor_user_id, t.assignee_id) AS actor_user_id, "
+        "       e.payload_json, e.created_at AS submitted_at "
+        "FROM tasks t "
+        "JOIN ("
+        "  SELECT task_id, MAX(id) AS event_id "
+        "  FROM task_events "
+        "  WHERE event_type='raw_niuma_submitted' "
+        "  GROUP BY task_id"
+        ") latest ON latest.task_id=t.id "
+        "JOIN task_events e ON e.id=latest.event_id "
+        f"WHERE {where_sql} "
+        "ORDER BY e.id ASC LIMIT %s",
+        (*args, max(1, int(limit))),
+    )
+    result: list[dict] = []
+    for row in rows or []:
+        payload = _parse_payload_json(row.get("payload_json"))
+        subtitle_task_id = payload.get("subtitle_task_id") or payload.get("task_id") or ""
+        result.append(
+            {
+                "parent_task_id": row.get("parent_task_id"),
+                "actor_user_id": row.get("actor_user_id"),
+                "subtitle_task_id": str(subtitle_task_id or "").strip(),
+                "submitted_at": row.get("submitted_at"),
+            }
+        )
+    return result
+
+
+def _event_exists(parent_task_id: int, event_type: str, subtitle_task_id: str) -> bool:
+    rows = query_all(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type=%s "
+        "ORDER BY id DESC LIMIT 20",
+        (int(parent_task_id), str(event_type)),
+    )
+    wanted = str(subtitle_task_id or "").strip()
+    for row in rows or []:
+        payload = _parse_payload_json(row.get("payload_json"))
+        current = str(payload.get("subtitle_task_id") or payload.get("task_id") or "").strip()
+        if current == wanted:
+            return True
+    return False
+
+
+def _task_error(task: dict) -> str:
+    for key in ("error", "provider_emsg", "message"):
+        value = task.get(key)
+        if value:
+            return str(value)[:500]
+    return ""
+
+
+def _elapsed_seconds(started_at, now: datetime) -> float | None:
+    if not started_at:
+        return None
+    if isinstance(started_at, datetime):
+        started = started_at
+    else:
+        text = str(started_at).strip()
+        if not text:
+            return None
+        try:
+            started = datetime.fromisoformat(text.replace(" ", "T"))
+        except ValueError:
+            return None
+    return (now - started).total_seconds()
 
 
 def _load_parent_task_payload(task_id: int) -> dict | None:

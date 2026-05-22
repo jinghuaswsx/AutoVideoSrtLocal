@@ -24,6 +24,8 @@ def get_scheduler() -> BackgroundScheduler:
         scheduled_tasks.add_controlled_job(_scheduler, "cleanup", run_cleanup, "interval", hours=1, id="cleanup")
         from appcore import subtitle_removal_vod_scheduler
         subtitle_removal_vod_scheduler.register(_scheduler)
+        from appcore import task_center_raw_niuma_scheduler
+        task_center_raw_niuma_scheduler.register(_scheduler)
         from appcore import material_evaluation_scheduler
         material_evaluation_scheduler.register(_scheduler)
         from appcore import push_quality_check_scheduler
