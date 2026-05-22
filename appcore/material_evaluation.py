@@ -505,6 +505,28 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
     }
 
 
+def _has_existing_successful_evaluation(product: dict | None) -> bool:
+    if not isinstance(product, dict):
+        return False
+    result = str(product.get("ai_evaluation_result") or "").strip()
+    if not result or result == "评估失败":
+        return False
+    detail = product.get("ai_evaluation_detail")
+    if isinstance(detail, str) and detail.strip():
+        try:
+            detail = json.loads(detail)
+        except json.JSONDecodeError:
+            return False
+    if not isinstance(detail, dict):
+        return False
+    countries = detail.get("countries")
+    if isinstance(countries, list):
+        return bool(countries)
+    if isinstance(countries, dict):
+        return bool(countries)
+    return False
+
+
 def _coerce_score(value: Any) -> float:
     try:
         score = float(value)
@@ -949,32 +971,37 @@ def _evaluate_product_if_ready(
         logger.exception("material evaluation LLM call failed for product_id=%s", product_id)
         error_message = str(exc)[:500] or exc.__class__.__name__
         _record_attempt_finish(attempt_id, success=False, error=str(exc))
-        try:
-            detail = {
-                "schema_version": 1,
-                "use_case": USE_CASE_CODE,
-                "provider": llm_config["provider"],
-                "model": llm_config["model"],
-                "search_enabled": llm_config["search_enabled"],
-                "search_tools": llm_config["search_tools"],
-                "evaluated_at": datetime.now(UTC).isoformat(),
-                "product_id": product_id,
-                "requested_media_item_id": int(media_item_id) if media_item_id else None,
-                "product_url_override": _clean_product_url_override(product_url_override) or None,
-                "product_url": product_url,
-                "cover_object_key": cover_key,
-                "video_item_id": video.get("id"),
-                "video_object_key": video_key,
-                "error": error_message,
-            }
-            medias.update_product(
-                product_id,
-                ai_evaluation_result="评估失败",
-                ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
-            )
-        except Exception:
-            logger.exception("failed to save evaluation failure status for product_id=%s", product_id)
-        return {"status": "failed", "product_id": product_id, "error": error_message}
+        preserve_existing = _has_existing_successful_evaluation(product)
+        if not preserve_existing:
+            try:
+                detail = {
+                    "schema_version": 1,
+                    "use_case": USE_CASE_CODE,
+                    "provider": llm_config["provider"],
+                    "model": llm_config["model"],
+                    "search_enabled": llm_config["search_enabled"],
+                    "search_tools": llm_config["search_tools"],
+                    "evaluated_at": datetime.now(UTC).isoformat(),
+                    "product_id": product_id,
+                    "requested_media_item_id": int(media_item_id) if media_item_id else None,
+                    "product_url_override": _clean_product_url_override(product_url_override) or None,
+                    "product_url": product_url,
+                    "cover_object_key": cover_key,
+                    "video_item_id": video.get("id"),
+                    "video_object_key": video_key,
+                    "error": error_message,
+                }
+                medias.update_product(
+                    product_id,
+                    ai_evaluation_result="评估失败",
+                    ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
+                )
+            except Exception:
+                logger.exception("failed to save evaluation failure status for product_id=%s", product_id)
+        result = {"status": "failed", "product_id": product_id, "error": error_message}
+        if preserve_existing:
+            result["preserved_existing_evaluation"] = True
+        return result
 
 
 def _automatic_attempt_count(product_id: int, cover_key: str, video_key: str) -> int:

@@ -108,6 +108,13 @@ def _extra_int(extra: dict, key: str, default: int) -> int:
         return default
 
 
+def _normalize_error_code(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _openrouter_client(creds: dict) -> OpenAI:
     extra = creds.get("extra") or {}
     return OpenAI(
@@ -360,7 +367,8 @@ class OpenRouterAdapter(LLMAdapter):
                 break
             error = getattr(resp, "error", None)
             code = error.get("code") if isinstance(error, dict) else None
-            if attempt < attempts - 1 and code in _OPENROUTER_RETRYABLE_ERROR_CODES:
+            normalized_code = _normalize_error_code(code)
+            if attempt < attempts - 1 and normalized_code in _OPENROUTER_RETRYABLE_ERROR_CODES:
                 time.sleep(2 ** attempt)
                 continue
             if isinstance(error, dict):
