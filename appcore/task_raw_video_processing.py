@@ -12,7 +12,7 @@ from pathlib import Path
 from config import OUTPUT_DIR
 from appcore import local_media_storage, subtitle_removal_source_storage, task_state
 from appcore.db import execute, query_one
-from pipeline.ffutil import probe_media_info
+from pipeline.ffutil import extract_thumbnail, probe_media_info
 
 
 WATCH_TIMEOUT_SECONDS = 10 * 60
@@ -106,6 +106,9 @@ def start_niuma_processing_for_parent_task(
         str(subtitle_source_path),
         public_key,
     )
+    thumbnail_path = extract_thumbnail(str(subtitle_source_path), task_dir) or ""
+    if thumbnail_path and not Path(thumbnail_path).is_file():
+        thumbnail_path = ""
     source_object_info = subtitle_removal_source_storage.with_public_source_info(
         {"source_object_info": {}},
         public_backend,
@@ -134,6 +137,7 @@ def start_niuma_processing_for_parent_task(
         display_name=Path(filename).stem,
         source_tos_key=public_key,
         source_object_info=source_object_info,
+        thumbnail_path=thumbnail_path,
         subtitle_backend="niuma",
         remove_mode="full",
         selection_box=selection_box,

@@ -517,9 +517,30 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     return _json_response({"task_id": task_id, "status": "queued"}), 202
 
 
+def _ensure_source_thumbnail(task_id: str, task: dict) -> str:
+    thumbnail_path = (task.get("thumbnail_path") or "").strip()
+    if thumbnail_path and os.path.exists(thumbnail_path):
+        return thumbnail_path
+
+    video_path = (task.get("video_path") or "").strip()
+    if not video_path or not os.path.exists(video_path):
+        return ""
+    task_dir = (task.get("task_dir") or "").strip() or os.path.dirname(video_path)
+    try:
+        thumbnail_path = extract_thumbnail(video_path, task_dir) or ""
+    except Exception:
+        log.warning("[subtitle_removal] thumbnail backfill failed task_id=%s", task_id, exc_info=True)
+        return ""
+    if not thumbnail_path or not os.path.exists(thumbnail_path):
+        return ""
+    task["thumbnail_path"] = thumbnail_path
+    store.update(task_id, thumbnail_path=thumbnail_path)
+    return thumbnail_path
+
+
 def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
     task_id = task_id or task.get("id") or ""
-    thumbnail_path = (task.get("thumbnail_path") or "").strip()
+    thumbnail_path = _ensure_source_thumbnail(task_id, task)
     video_path = (task.get("video_path") or "").strip()
     source_tos_key = (task.get("source_tos_key") or "").strip()
     payload = {
@@ -1020,7 +1041,7 @@ def resume_poll(task_id: str):
     if not (task.get("provider_task_id") or "").strip():
         return _json_response({"error": "provider_task_id required"}), 400
     if subtitle_removal_runner.is_running(task_id):
-        return _json_response({"error": "task is already running"}), 409
+        return _json_response({"task_id": task_id, "status": "running"}), 202
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
     return _json_response({"task_id": task_id, "status": "queued"}), 202
 

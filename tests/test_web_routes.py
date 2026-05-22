@@ -349,6 +349,28 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
+def test_subtitle_removal_detail_script_gates_invalid_actions_by_status():
+    scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert "function updateActionAvailability(state)" in scripts
+    assert "var canSubmit = taskStatus === \"ready\" || pendingActionMode === \"resubmit\";" in scripts
+    assert "submitButton.hidden = !canSubmit;" in scripts
+    assert "var canPrepareResubmit = taskStatus === \"done\" || taskStatus === \"error\" || taskStatus === \"interrupted\";" in scripts
+    assert "resubmitButton.hidden = !canPrepareResubmit || pendingActionMode === \"resubmit\";" in scripts
+
+
+def test_subtitle_removal_detail_resubmit_is_staged_before_posting():
+    scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'var pendingActionMode = "submit";' in scripts
+    assert "function enterResubmitMode()" in scripts
+    assert 'pendingActionMode = "resubmit";' in scripts
+    assert "var url = actionUrlForMode();" in scripts
+    assert "resubmitButton.addEventListener(\"click\", function () {" in scripts
+    assert "enterResubmitMode();" in scripts
+    assert "postJson(url, getActionPayload())" in scripts
+
+
 def test_misc_upload_redirects_encode_dynamic_task_ids():
     root = Path(__file__).resolve().parents[1]
     expectations = {

@@ -124,6 +124,49 @@ def test_start_niuma_processing_prepares_subtitle_task_and_watcher(monkeypatch, 
     assert events[0][3]["subtitle_backend"] == "niuma"
 
 
+def test_start_niuma_processing_extracts_first_frame_thumbnail(monkeypatch, tmp_path):
+    from appcore import task_raw_video_processing as processing
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    thumbnail = tmp_path / "tcraw-5-fixed" / "thumbnail.jpg"
+    thumbnail.parent.mkdir()
+    thumbnail.write_bytes(b"jpg")
+    updates = []
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_item_id": 11,
+            "assignee_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+        },
+    )
+    monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: source)
+    monkeypatch.setattr(processing, "_probe_media_info", lambda path: {"width": 720, "height": 1280, "duration": 15, "resolution": "720x1280"})
+    monkeypatch.setattr(processing, "_task_dir", lambda task_id: str(tmp_path / task_id))
+    monkeypatch.setattr(processing, "_new_subtitle_task_id", lambda parent_task_id: "tcraw-5-fixed")
+    monkeypatch.setattr(processing, "extract_thumbnail", lambda video_path, task_dir: str(thumbnail), raising=False)
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "build_public_source_object_key", lambda user_id, task_id, filename: f"public/{task_id}/{filename}")
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "upload_public_source", lambda local_path, object_key: "tos_backup")
+    monkeypatch.setattr(processing.subtitle_removal_source_storage, "with_public_source_info", lambda task, backend, object_key: {"public_source_storage_backend": backend, "public_source_key": object_key})
+    monkeypatch.setattr(processing.task_state, "create_subtitle_removal", lambda *args, **kwargs: None)
+    monkeypatch.setattr(processing.task_state, "update", lambda task_id, **fields: updates.append((task_id, fields)))
+    monkeypatch.setattr(processing, "_write_event", lambda *args, **kwargs: None)
+
+    processing.start_niuma_processing_for_parent_task(
+        task_id=5,
+        actor_user_id=9,
+        start_runner_fn=lambda task_id, user_id=None: True,
+        start_watcher_fn=lambda **kwargs: None,
+    )
+
+    assert updates[0][1]["thumbnail_path"] == str(thumbnail)
+
+
 def test_start_niuma_processing_keeps_subtitle_source_copy_after_parent_media_is_replaced(
     monkeypatch,
     tmp_path,

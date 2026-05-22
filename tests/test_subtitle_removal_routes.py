@@ -632,6 +632,39 @@ def test_subtitle_removal_source_artifact_returns_404_without_thumbnail(authed_c
     assert response.status_code == 404
 
 
+def test_subtitle_removal_state_backfills_missing_thumbnail_from_local_source(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    thumbnail = task_dir / "thumbnail.jpg"
+    thumbnail.write_bytes(b"jpg")
+    task = store.create_subtitle_removal(
+        "sr-thumb-backfill",
+        str(video),
+        str(task_dir),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="running",
+        media_info={"width": 720, "height": 1280, "duration": 10.0, "resolution": "720x1280"},
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.extract_thumbnail",
+        lambda video_path, output_dir: str(thumbnail),
+    )
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-thumb-backfill")
+
+    assert response.status_code == 200
+    assert response.get_json()["thumbnail_url"] == "/api/subtitle-removal/sr-thumb-backfill/artifact/source"
+    assert store.get("sr-thumb-backfill")["thumbnail_path"] == str(thumbnail)
+
+
 def test_subtitle_removal_source_artifact_serves_other_users_task_when_global_visible(tmp_path, authed_client_no_db):
     task_dir = tmp_path / "task"
     task_dir.mkdir()
@@ -1480,7 +1513,7 @@ def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task
     assert started["task_id"] == "sr-resume"
 
 
-def test_subtitle_removal_resume_poll_rejects_duplicate_runner_start(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_resume_poll_is_idempotent_when_runner_already_active(authed_client_no_db, monkeypatch):
     task = store.create_subtitle_removal(
         "sr-resume-busy",
         "uploads/source.mp4",
@@ -1499,7 +1532,8 @@ def test_subtitle_removal_resume_poll_rejects_duplicate_runner_start(authed_clie
 
     response = authed_client_no_db.post("/api/subtitle-removal/sr-resume-busy/resume-poll")
 
-    assert response.status_code == 409
+    assert response.status_code == 202
+    assert response.get_json()["status"] == "running"
     assert started == []
 
 
