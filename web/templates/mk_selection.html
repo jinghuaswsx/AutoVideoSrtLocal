@@ -1196,7 +1196,7 @@ function renderMkVideoMaterialCard(r) {
   const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
   const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
-  const canFineAiEvaluate = Boolean(existingProductId || productLinkRaw);
+  const canFineAiEvaluate = Boolean(existingProductId || (productLinkRaw && videoPath));
   const hasLocalProduct = Boolean(r.has_local_product_in_library || (productStatus && productStatus.has_local_match) || existingProductId);
   const hasAiEvaluationResult = Boolean(mkiAiEvaluationResultFromStatus(productStatus));
   const aiButtonLabel = mkiAiButtonLabel(r);
@@ -1205,7 +1205,7 @@ function renderMkVideoMaterialCard(r) {
     : '先加入素材库后才能进行 AI 评估';
   const fineAiButtonTitle = existingProductId
     ? '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估'
-    : (productLinkRaw ? '只要商品链接存在即可进行精细 AI 评估' : '商品链接缺失，无法进行精细 AI 评估');
+    : ((productLinkRaw && videoPath) ? '商品链接和当前视频存在即可进行精细 AI 评估' : '商品链接或视频缺失，无法进行精细 AI 评估');
   const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
@@ -1312,6 +1312,10 @@ function renderMkVideoMaterialCard(r) {
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-product-code="${productHandle}"
+        data-mki-fine-ai-video-path="${escapeHtml(videoPath)}"
+        data-mki-fine-ai-video-url="${safeVideoUrl}"
+        data-mki-fine-ai-video-name="${escapeHtml(r.video_name || '')}"
+        data-mki-fine-ai-video-duration="${escapeHtml(r.video_duration_seconds || 0)}"
         data-mki-fine-ai-external-link="${existingProductId ? '' : escapeHtml(productLinkRaw)}"
         onclick="mkiFineAiEvaluateFromCard(this)">
       精细AI评估
@@ -1399,9 +1403,10 @@ async function openDetail(mkId, mkName) {
       const author = escapeHtml(v.author || '--');
       const spendText = escapeHtml(fmtMkSpendText(v.spends, spends));
       const detailProductLinkRaw = String((item.product_links && item.product_links[0]) || '').trim();
-      const detailFineAiTitle = detailProductLinkRaw
-        ? '只要商品链接存在即可进行精细 AI 评估'
-        : '商品链接缺失，无法进行精细 AI 评估';
+      const canDetailFineAiEvaluate = Boolean(detailProductLinkRaw && videoPath);
+      const detailFineAiTitle = canDetailFineAiEvaluate
+        ? '商品链接和当前视频存在即可进行精细 AI 评估'
+        : '商品链接或视频缺失，无法进行精细 AI 评估';
       html += `<div class="mk-video-card">
         <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
         <div class="mk-video-summary-row">
@@ -1472,13 +1477,17 @@ async function openDetail(mkId, mkName) {
           AI评估
         </button>
         <button class="mki-btn mki-fine-ai-btn"
-            ${detailProductLinkRaw ? '' : 'disabled'}
+            ${canDetailFineAiEvaluate ? '' : 'disabled'}
             title="${detailFineAiTitle}"
             data-mki-fine-ai-product-id=""
             data-mki-local-item-id=""
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml(detailProductLinkRaw)}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-fine-ai-video-path="${escapeHtml(videoPath)}"
+            data-mki-fine-ai-video-url="${safeVideoUrl}"
+            data-mki-fine-ai-video-name="${escapeHtml(v.name || '')}"
+            data-mki-fine-ai-video-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
             data-mki-fine-ai-external-link="${escapeHtml(detailProductLinkRaw)}"
             onclick="mkiFineAiEvaluateFromCard(this)">
           精细AI评估
@@ -2334,6 +2343,10 @@ async function mkiFineAiStartRun(context) {
         ...(context.externalProductLink ? {
           product_name: context.productName || '',
           product_code: context.productCode || '',
+          card_video_path: context.cardVideoPath || '',
+          card_video_url: context.cardVideoUrl || '',
+          card_video_name: context.cardVideoName || '',
+          card_video_duration_seconds: context.cardVideoDuration || '',
         } : {}),
       }),
     });
@@ -2405,8 +2418,16 @@ async function mkiFineAiEvaluateFromCard(btn) {
   const productId = Number(btn?.dataset.mkiFineAiProductId || btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
   const productLink = String(btn?.dataset.mkiProductLink || '').trim();
   const externalProductLink = productId ? '' : String(btn?.dataset.mkiFineAiExternalLink || productLink).trim();
+  const cardVideoPath = String(btn?.dataset.mkiFineAiVideoPath || btn?.dataset.mkiVideoPath || '').trim();
+  const cardVideoUrl = String(btn?.dataset.mkiFineAiVideoUrl || btn?.dataset.mkiMp4Url || '').trim();
+  const cardVideoName = String(btn?.dataset.mkiFineAiVideoName || btn?.dataset.mkiFilename || '').trim();
+  const cardVideoDuration = String(btn?.dataset.mkiFineAiVideoDuration || btn?.dataset.mkiDuration || '').trim();
   if (!productId && !externalProductLink) {
     mkiToast('warning', '商品链接缺失，无法进行精细 AI 评估');
+    return;
+  }
+  if (!productId && externalProductLink && !cardVideoPath) {
+    mkiToast('warning', '当前视频缺失，无法进行精细 AI 评估');
     return;
   }
   if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
@@ -2423,6 +2444,10 @@ async function mkiFineAiEvaluateFromCard(btn) {
     externalProductLink,
     productName: String(btn?.dataset.mkiProductName || '').trim(),
     productCode: String(btn?.dataset.mkiProductCode || '').trim(),
+    cardVideoPath,
+    cardVideoUrl,
+    cardVideoName,
+    cardVideoDuration,
     running: false,
     runId: '',
   };

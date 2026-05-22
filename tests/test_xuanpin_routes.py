@@ -299,6 +299,11 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
             }
 
     monkeypatch.setattr("web.routes.xuanpin.get_fine_ai_evaluation_service", lambda: FakeService())
+    monkeypatch.setattr("web.routes.medias._normalize_mk_media_path", lambda media_path: media_path.strip())
+    monkeypatch.setattr(
+        "web.routes.medias._cache_mk_video",
+        lambda media_path: f"mk/videos/cached-{media_path.rsplit('/', 1)[-1]}",
+    )
 
     post = authed_client_no_db.post(
         "/xuanpin/api/fine-ai-evaluation",
@@ -306,6 +311,10 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
             "product_link": "https://example.test/products/new-idea",
             "product_name": "New Idea",
             "product_code": "new-idea",
+            "card_video_path": "uploads2/selected-card.mp4",
+            "card_video_url": "/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
+            "card_video_name": "selected-card.mp4",
+            "card_video_duration_seconds": 18.5,
             "countries": ["DE", "FR", "IT", "ES", "JP"],
         },
     )
@@ -327,6 +336,11 @@ def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_
             "product_link": "https://example.test/products/new-idea",
             "product_name": "New Idea",
             "product_code": "new-idea",
+            "card_video_path": "uploads2/selected-card.mp4",
+            "card_video_url": "/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
+            "card_video_name": "selected-card.mp4",
+            "card_video_duration_seconds": 18.5,
+            "card_video_object_key": "mk/videos/cached-selected-card.mp4",
             "countries": ["DE", "FR", "IT", "ES", "JP"],
             "force_refresh": True,
             "locale": "zh-CN",
@@ -341,6 +355,16 @@ def test_xuanpin_fine_ai_external_link_requires_product_link(authed_client_no_db
 
     assert resp.status_code == 400
     assert resp.get_json()["error"]["code"] == "PRODUCT_LINK_REQUIRED"
+
+
+def test_xuanpin_fine_ai_external_link_requires_current_card_video(authed_client_no_db):
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/fine-ai-evaluation",
+        json={"product_link": "https://example.test/products/new-idea"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "CARD_VIDEO_REQUIRED"
 
 
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):

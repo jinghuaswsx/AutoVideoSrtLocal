@@ -153,6 +153,106 @@ def test_external_link_run_uses_product_link_without_local_product_lookup():
     }
 
 
+def test_external_link_run_includes_current_card_video_asset_without_local_product_lookup():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    card_video_assets = FakeExternalCardVideoSnapshotService()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+        external_card_video_snapshot_service=card_video_assets,
+    )
+
+    run = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        product_code="new-idea",
+        countries=["DE"],
+        card_video_object_key="mk/videos/selected-card.mp4",
+        card_video_path="uploads2/selected-card.mp4",
+        card_video_url="/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
+        card_video_name="selected-card.mp4",
+        card_video_duration_seconds=18.5,
+    )
+
+    stored = repository.get_run(run["evaluation_run_id"])
+    assert card_video_assets.calls == [
+        {
+            "card_video_object_key": "mk/videos/selected-card.mp4",
+            "card_video_path": "uploads2/selected-card.mp4",
+            "card_video_url": "/xuanpin/api/mk-video?path=uploads2%2Fselected-card.mp4",
+            "card_video_name": "selected-card.mp4",
+            "card_video_duration_seconds": 18.5,
+        }
+    ]
+    assert stored["metadata"]["include_assets"] is True
+    assert stored["metadata"]["include_videos"] is True
+    assert stored["metadata"]["asset_snapshot"]["videos"][0]["object_key"] == "mk/videos/selected-card.mp4"
+    assert stored["metadata"]["asset_snapshot"]["asset_paths"] == ["G:/tmp/selected-card_15s_llm.mp4"]
+    assert stored["metadata"]["external_card_video"]["object_key"] == "mk/videos/selected-card.mp4"
+    assert stored["product_snapshot"]["videos"][0]["object_key"] == "mk/videos/selected-card.mp4"
+    assert stored["product_snapshot"]["asset_count"]["videos"] == 1
+
+
+def test_external_country_rerun_reuses_current_card_video_asset_snapshot():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    calls = []
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient(calls),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+        external_card_video_snapshot_service=FakeExternalCardVideoSnapshotService(),
+    )
+    run = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        product_code="new-idea",
+        countries=["DE"],
+        card_video_object_key="mk/videos/selected-card.mp4",
+        card_video_path="uploads2/selected-card.mp4",
+        card_video_name="selected-card.mp4",
+    )
+
+    service._rerun_country_sync(0, run["evaluation_run_id"], "DE", include_assets=False, include_videos=False)
+
+    assert ("country:DE", 1) in calls
+    stored = repository.get_run(run["evaluation_run_id"])
+    assert stored["metadata"]["asset_snapshot"]["asset_paths"] == ["G:/tmp/selected-card_15s_llm.mp4"]
+
+
+def test_external_card_video_snapshot_uses_15s_llm_clip_optimizer(tmp_path, monkeypatch):
+    from appcore import material_evaluation
+    from appcore.fine_ai_evaluation_snapshots import ExternalCardVideoSnapshotService
+
+    optimized = tmp_path / "selected-card_15s_llm.mp4"
+    optimized.write_bytes(b"video")
+    calls = []
+
+    def fake_make_eval_clip_15s(product_id, item):
+        calls.append((product_id, dict(item)))
+        return optimized
+
+    monkeypatch.setattr(material_evaluation, "_make_eval_clip_15s", fake_make_eval_clip_15s)
+
+    snapshot = ExternalCardVideoSnapshotService().build_snapshot(
+        card_video_object_key="mk/videos/selected-card.mp4",
+        card_video_path="uploads2/selected-card.mp4",
+        card_video_name="selected-card.mp4",
+        card_video_duration_seconds="18.5",
+    )
+
+    assert calls[0][0] == 0
+    assert calls[0][1]["object_key"] == "mk/videos/selected-card.mp4"
+    assert snapshot["asset_paths"] == [str(optimized)]
+    assert snapshot["videos"][0]["duration_seconds"] == 18.5
+
+
 class InMemoryEvaluationRepository:
     def __init__(self):
         self.rows = {}
@@ -218,6 +318,32 @@ class ExplodingProductSnapshotService:
 class ExplodingAssetSnapshotService:
     def build_snapshot(self, *args, **kwargs):
         raise AssertionError("external link evaluation must not load local media assets")
+
+
+class FakeExternalCardVideoSnapshotService:
+    def __init__(self):
+        self.calls = []
+
+    def build_snapshot(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        return {
+            "cover_images": [],
+            "product_images": [],
+            "videos": [
+                {
+                    "asset_id": "external-card-video",
+                    "asset_type": "video",
+                    "filename": kwargs.get("card_video_name") or "selected-card.mp4",
+                    "object_key": kwargs["card_video_object_key"],
+                    "duration_seconds": kwargs.get("card_video_duration_seconds"),
+                    "source_path": kwargs.get("card_video_path") or "",
+                    "source_url": kwargs.get("card_video_url") or "",
+                    "mime_type": "video/mp4",
+                }
+            ],
+            "asset_paths": ["G:/tmp/selected-card_15s_llm.mp4"],
+            "warnings": [],
+        }
 
 
 class FakeGeminiClient:
