@@ -414,6 +414,15 @@ def test_task_center_copy_buttons_use_direct_clipboard_without_prompt_fallback()
     assert "window.prompt(" not in source
 
 
+def test_task_center_identity_copy_buttons_follow_content():
+    source = Path("web/templates/tasks_list.html").read_text(encoding="utf-8")
+
+    assert ".tc-detail-ident-row { display:flex;" in source
+    assert ".tc-detail-ident-label { flex:0 0 92px;" in source
+    assert ".tc-detail-ident-value { flex:0 1 auto;" in source
+    assert "grid-template-columns:92px minmax(0, 1fr) auto" not in source
+
+
 def test_copywriting_download_window_open_uses_noopener_and_encoded_task_id():
     scripts = Path("web/templates/_copywriting_scripts.html").read_text(encoding="utf-8")
 
