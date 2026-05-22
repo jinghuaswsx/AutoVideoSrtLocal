@@ -2071,6 +2071,11 @@ def _child_acceptance_payload(
         or row.get("product_code")
         or ""
     )
+    ad_supported_langs = (
+        (product or {}).get("ad_supported_langs")
+        if product is not None
+        else row.get("ad_supported_langs")
+    ) or row.get("ad_supported_langs") or ""
     if manual_confirmed_keys is None:
         manual_confirmed_keys = _manual_confirmed_child_step_keys(int(task_id))
 
@@ -2099,6 +2104,8 @@ def _child_acceptance_payload(
             "checks": checks,
             "country_code": row["country_code"],
             "product_code": product_code,
+            "media_product_id": product_id,
+            "ad_supported_langs": ad_supported_langs,
             "media_search_url": media_search_url,
             "manual_confirmed_steps": sorted(manual_confirmed_keys),
         }
@@ -2269,6 +2276,8 @@ def _child_acceptance_payload(
         "checks": checks,
         "country_code": row["country_code"],
         "product_code": product_code,
+        "media_product_id": product_id,
+        "ad_supported_langs": ad_supported_langs,
         "media_item_id": item["id"],
         "media_search_url": media_search_url,
         "manual_confirmed_steps": sorted(manual_confirmed_keys),
@@ -2308,7 +2317,7 @@ def _child_readiness_payload_for_row(
 
 def get_child_readiness(task_id: int) -> dict:
     row = query_one(
-        "SELECT t.media_product_id, t.country_code, p.product_code "
+        "SELECT t.media_product_id, t.country_code, p.product_code, p.ad_supported_langs "
         "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
         "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
         (int(task_id),),
