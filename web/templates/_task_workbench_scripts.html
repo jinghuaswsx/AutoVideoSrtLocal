@@ -611,14 +611,19 @@
     const totalMain = MAIN_STEPS.length;
     const totalProgress = PROGRESS_STEPS.length;
     const doneCount = PROGRESS_STEPS.filter(s => currentTask.steps?.[s] === "done").length;
-    const pct = totalProgress > 0 ? Math.round((doneCount / totalProgress) * 100) : 0;
+    const taskStatus = currentTask.status;
+    const hasBlockingMainStep = MAIN_STEPS.some(s => {
+      const status = currentTask.steps?.[s];
+      return status === "waiting" || status === "running" || isErrorLikeStatus(status);
+    });
+    const completedTask = taskStatus === "done" && !hasBlockingMainStep;
+    const rawPct = totalProgress > 0 ? Math.round((doneCount / totalProgress) * 100) : 0;
+    const pct = completedTask ? 100 : rawPct;
 
     // 4. 当前阶段 + 状态类（驱动 card 颜色/图标/进度条渐变）
     const failedStep = MAIN_STEPS.find(s => isErrorLikeStatus(currentTask.steps?.[s]));
     const waitingStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "waiting");
     const runningStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "running");
-    const taskStatus = currentTask.status;
-
     let cardState = "";
     let badgeText = "等待启动";
     let stepText = "等待启动";

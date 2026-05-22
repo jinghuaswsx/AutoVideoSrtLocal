@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from unittest.mock import patch
 
 import pytest
@@ -428,6 +429,54 @@ def test_non_superadmin_omni_translate_ignores_user_filter(authed_client_no_db):
     assert "p.user_id = %s" in sql
     assert args == (1,)
     assert b'id="creatorFilter"' not in resp.data
+
+
+def test_omni_translate_progress_steps_exclude_optional_av_sync_audit(authed_client_no_db):
+    project = {
+        "id": "omni-progress-task",
+        "user_id": 1,
+        "type": "omni_translate",
+        "display_name": "Progress task",
+        "original_filename": "progress.mp4",
+        "status": "done",
+        "deleted_at": None,
+        "state_json": json.dumps({
+            "target_lang": "de",
+            "source_language": "en",
+            "plugin_config": CFG_DYNAMIC_ALL,
+        }, ensure_ascii=False),
+    }
+
+    with patch("web.routes.omni_translate.db_query_one", return_value=project), \
+         patch("web.routes.omni_translate.recover_project_if_needed"), \
+         patch("appcore.api_keys.get_key", return_value="openrouter"):
+        resp = authed_client_no_db.get("/omni-translate/omni-progress-task")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    main_match = re.search(r"const MAIN_STEPS = (?P<steps>\[[^\n]+]);", html)
+    progress_match = re.search(r"const PROGRESS_STEPS = (?P<steps>\[[^\n]+]);", html)
+    assert main_match
+    assert progress_match
+    main_steps = json.loads(main_match.group("steps"))
+    progress_steps = json.loads(progress_match.group("steps"))
+
+    assert "av_sync_audit" in main_steps
+    assert "av_sync_audit" not in progress_steps
+    assert progress_steps == [step for step in main_steps if step != "av_sync_audit"]
+
+
+def test_status_card_shows_full_progress_when_task_status_done():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "const hasBlockingMainStep =" in script
+    assert 'const completedTask = taskStatus === "done" && !hasBlockingMainStep;' in script
+    assert "const pct = completedTask ? 100 : rawPct;" in script
 
 
 def test_omni_translate_llm_debug_route_serves_registered_prompt_payload(
