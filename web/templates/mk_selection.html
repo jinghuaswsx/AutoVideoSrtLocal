@@ -235,6 +235,44 @@
 .mki-ai-btn:hover:not(:disabled) { background: oklch(48% 0.14 255); }
 .mki-fine-ai-btn { background: oklch(56% 0.14 285); border-color: oklch(50% 0.13 285); color:#fff; }
 .mki-fine-ai-btn:hover:not(:disabled) { background: oklch(46% 0.14 285); }
+.mki-fine-ai-progress-shell { display:grid; gap:14px; margin-bottom:16px; }
+.mki-fine-ai-progress-header { display:grid; gap:12px; padding:18px; border:1px solid var(--oc-border); border-radius:8px; background:oklch(98% 0.006 230); }
+.mki-fine-ai-progress-top { display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
+.mki-fine-ai-progress-title { display:inline-flex; align-items:center; gap:10px; font-size:22px; font-weight:800; color:var(--oc-fg); }
+.mki-fine-ai-progress-title::before { content:""; width:14px; height:14px; border-radius:9999px; background:var(--oc-accent); box-shadow:0 0 0 6px rgba(14,165,233,.14); }
+.mki-fine-ai-progress-time { display:inline-flex; align-items:center; min-height:32px; padding:0 14px; border-radius:9999px; background:oklch(91% 0.08 220); color:oklch(42% 0.14 235); font-size:15px; font-weight:800; }
+.mki-fine-ai-progress-track { height:10px; overflow:hidden; border-radius:9999px; background:oklch(92% 0.012 230); }
+.mki-fine-ai-progress-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg, oklch(56% 0.16 230), oklch(66% 0.12 165)); transition:width 360ms ease; }
+.mki-fine-ai-progress-meta { display:flex; justify-content:space-between; gap:12px; color:var(--oc-fg-muted); font-size:12px; flex-wrap:wrap; }
+.mki-fine-ai-step-list { display:grid; gap:10px; }
+.mki-fine-ai-step-card { border:1px solid var(--oc-border); border-left-width:5px; border-radius:8px; padding:12px 14px; background:#fff; transition:border-color .18s ease, box-shadow .18s ease, background .18s ease; }
+.mki-fine-ai-step-card.is-pending { border-left-color:oklch(76% 0.015 230); background:oklch(99% 0.003 230); }
+.mki-fine-ai-step-card.is-running { border-color:oklch(76% 0.09 230); border-left-color:var(--oc-accent); background:oklch(97% 0.018 230); box-shadow:0 0 0 3px rgba(14,165,233,.10); }
+.mki-fine-ai-step-card.is-completed { border-left-color:oklch(58% 0.12 160); background:oklch(98% 0.018 160); }
+.mki-fine-ai-step-card.is-failed { border-left-color:oklch(55% 0.16 25); background:oklch(98% 0.018 25); }
+.mki-fine-ai-step-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; min-width:0; font-weight:800; color:var(--oc-fg); }
+.mki-fine-ai-step-dot { position:relative; width:10px; height:10px; flex:0 0 auto; border-radius:9999px; background:oklch(70% 0.02 230); }
+.mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot { background:var(--oc-accent); }
+.mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border-radius:inherit; border:2px solid rgba(14,165,233,.30); animation:mkiFineAiPulse 1.05s ease-out infinite; }
+.mki-fine-ai-step-card.is-completed .mki-fine-ai-step-dot { background:oklch(58% 0.12 160); }
+.mki-fine-ai-step-card.is-failed .mki-fine-ai-step-dot { background:oklch(55% 0.16 25); }
+.mki-fine-ai-status-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:9999px; font-size:12px; font-weight:700; }
+.mki-fine-ai-status-pill.is-pending { background:oklch(94% 0.010 230); color:var(--oc-fg-muted); }
+.mki-fine-ai-status-pill.is-running { background:oklch(91% 0.08 220); color:oklch(42% 0.14 235); }
+.mki-fine-ai-status-pill.is-completed { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.mki-fine-ai-status-pill.is-failed { background:oklch(96% 0.04 25); color:oklch(42% 0.14 25); }
+.mki-fine-ai-step-desc { margin:8px 0 0; color:var(--oc-fg-muted); font-size:13px; line-height:1.5; }
+.mki-fine-ai-debug-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
+.mki-fine-ai-debug-item { min-width:0; padding:8px 10px; border:1px solid var(--oc-border); border-radius:6px; background:rgba(255,255,255,.72); }
+.mki-fine-ai-debug-item span { display:block; color:var(--oc-fg-muted); font-size:11px; }
+.mki-fine-ai-debug-item strong { display:block; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); font-size:12px; font-weight:700; }
+.mki-fine-ai-log-list { display:grid; gap:6px; margin-top:10px; }
+.mki-fine-ai-log-row { display:grid; grid-template-columns:72px 52px minmax(0,1fr); gap:8px; align-items:start; color:var(--oc-fg-muted); font-size:12px; line-height:1.45; }
+.mki-fine-ai-log-row strong { color:var(--oc-fg); font-weight:700; }
+.mki-fine-ai-execution-log { border:1px solid var(--oc-border); border-radius:8px; background:#fff; padding:12px 14px; }
+.mki-fine-ai-execution-log h4 { margin:0 0 10px; font-size:14px; }
+@keyframes mkiFineAiPulse { from { transform:scale(.72); opacity:.9; } to { transform:scale(1.8); opacity:0; } }
 .ect-modal-header .ect-modal-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
 .ect-modal-header .ect-modal-header-actions + .ect-modal-close { margin-left:0; }
 .mki-ai-reevaluate-btn {
@@ -1937,32 +1975,151 @@ function mkiFineAiSeverity(decision) {
   return 'ect-tag-info';
 }
 
-function mkiFineAiRenderProgress(progress) {
-  const p = progress || {};
-  const countries = p.countries || {};
-  const order = ['DE', 'FR', 'IT', 'ES', 'JP'];
-  const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '');
+function mkiFineAiStatusLabel(status) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'running') return '正在请求中';
+  if (value === 'queued' || value === 'pending') return '等待开始';
+  if (value === 'completed') return '评估完成';
+  if (value === 'partially_completed') return '部分完成';
+  if (value === 'failed') return '评估失败';
+  if (value === 'cancelled') return '已取消';
+  return status || '未知状态';
+}
+
+function mkiFineAiStepStatusLabel(status) {
+  const value = String(status || 'pending').toLowerCase();
+  if (value === 'running') return '执行中';
+  if (value === 'completed') return '已完成';
+  if (value === 'failed') return '失败';
+  if (value === 'skipped') return '已跳过';
+  return '等待';
+}
+
+function mkiFineAiElapsedLabel(progress, status) {
+  const seconds = Math.max(0, Number((progress || {}).elapsed_seconds || 0));
+  const minutes = Math.floor(seconds / 60);
+  const remain = seconds % 60;
+  const text = minutes > 0 ? `${minutes} 分 ${remain} 秒` : `${remain} 秒`;
+  const finalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
+  return finalStatuses.includes(String(status || '').toLowerCase()) ? `总耗时 ${text}` : `已请求 ${text}`;
+}
+
+function mkiFineAiFormatTs(ts) {
+  if (!ts) return '-';
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return String(ts);
+  return date.toLocaleTimeString('zh-CN', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function mkiFineAiDefaultProgress() {
+  return {
+    total_steps: 8,
+    completed_steps: 0,
+    current_step: 'queued',
+    current_country: '',
+    elapsed_seconds: 0,
+    countries: {DE:'pending', FR:'pending', IT:'pending', ES:'pending', JP:'pending'},
+    steps: [
+      {key:'data_preparation', title:'数据准备', status:'pending', message:'等待后端创建任务', logs:[], debug:[]},
+      {key:'product_fact_extraction', title:'商品事实整理', status:'pending', message:'等待请求大模型', logs:[], debug:[]},
+      ...['DE', 'FR', 'IT', 'ES', 'JP'].map(code => ({key:`country_${code}`, title:`${code} 国家评估`, status:'pending', message:'等待前序国家完成', logs:[], debug:[]})),
+      {key:'summary', title:'汇总结果', status:'pending', message:'等待五国评估完成', logs:[], debug:[]},
+    ],
+    events: [],
+  };
+}
+
+function mkiFineAiRenderProgressHeader(progress, status) {
+  const p = Object.assign(mkiFineAiDefaultProgress(), progress || {});
+  const total = Math.max(1, Number(p.total_steps || 8));
+  const done = Math.max(0, Math.min(total, Number(p.completed_steps || 0)));
+  const pct = Math.round((done / total) * 100);
+  const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '').replace('country_', '');
   return `
-    <div class="ect-summary">
-      <div class="ect-summary-left">
-        <span class="ect-summary-label">评估进度</span>
-        <span class="ect-summary-score">${Number(p.completed_steps || 0)}<span class="ect-summary-score-suffix">/${Number(p.total_steps || 7)}</span></span>
-        <span class="ect-summary-tag ect-tag-info">${escapeHtml(p.current_step || 'queued')}</span>
+    <section class="mki-fine-ai-progress-header" aria-live="polite">
+      <div class="mki-fine-ai-progress-top">
+        <div class="mki-fine-ai-progress-title">${escapeHtml(mkiFineAiStatusLabel(status || p.current_step))}</div>
+        <div class="mki-fine-ai-progress-time">${escapeHtml(mkiFineAiElapsedLabel(p, status))}</div>
       </div>
-      <div class="ect-summary-right">
-        <span class="ect-evaluated-at">${current ? `正在评估 ${escapeHtml(current)}` : '等待开始'}</span>
+      <div class="mki-fine-ai-progress-track" aria-label="精细 AI 评估进度 ${pct}%">
+        <div class="mki-fine-ai-progress-fill" style="width:${pct}%"></div>
       </div>
-    </div>
-    <div class="ect-scroll">
-      <table class="ect-table">
-        <thead><tr><th>国家</th>${order.map(code => `<th>${code}</th>`).join('')}</tr></thead>
-        <tbody><tr><th class="ect-row-label">状态</th>${order.map(code => `<td><span class="ect-summary-tag ${mkiFineAiSeverity(countries[code] === 'completed' ? 'GO' : countries[code] === 'failed' ? 'HOLD' : 'TEST')}">${escapeHtml(countries[code] || 'pending')}</span></td>`).join('')}</tr></tbody>
-      </table>
-    </div>`;
+      <div class="mki-fine-ai-progress-meta">
+        <span>${done}/${total} 步</span>
+        <span>${current ? `当前位置：${escapeHtml(current)}` : '等待后端调度'}</span>
+        <span>${escapeHtml(p.current_step || 'queued')}</span>
+      </div>
+    </section>`;
+}
+
+function mkiFineAiRenderDebug(debug) {
+  const items = Array.isArray(debug) ? debug : [];
+  if (!items.length) return '';
+  return `<div class="mki-fine-ai-debug-grid">${items.slice(0, 12).map(item => `
+    <div class="mki-fine-ai-debug-item">
+      <span>${escapeHtml(item.label || '')}</span>
+      <strong title="${escapeHtml(String(item.value ?? ''))}">${escapeHtml(String(item.value ?? '-'))}</strong>
+    </div>`).join('')}</div>`;
+}
+
+function mkiFineAiRenderStepLogs(logs) {
+  const rows = Array.isArray(logs) ? logs.slice(-4) : [];
+  if (!rows.length) return '';
+  return `<div class="mki-fine-ai-log-list">${rows.map(row => `
+    <div class="mki-fine-ai-log-row">
+      <span>${escapeHtml(mkiFineAiFormatTs(row.ts))}</span>
+      <strong>${escapeHtml(row.level || 'info')}</strong>
+      <span>${escapeHtml(row.message || '')}</span>
+    </div>`).join('')}</div>`;
+}
+
+function mkiFineAiRenderStepCards(progress) {
+  const p = Object.assign(mkiFineAiDefaultProgress(), progress || {});
+  const steps = Array.isArray(p.steps) && p.steps.length ? p.steps : mkiFineAiDefaultProgress().steps;
+  return `<div class="mki-fine-ai-step-list">${steps.map(step => {
+    const status = String(step.status || 'pending').toLowerCase();
+    const cardClass = status === 'running' ? 'mki-fine-ai-step-card is-running' : `mki-fine-ai-step-card is-${escapeHtml(status)}`;
+    return `<section class="${cardClass}" data-fine-ai-step="${escapeHtml(step.key || '')}">
+      <div class="mki-fine-ai-step-head">
+        <div class="mki-fine-ai-step-title">
+          <span class="mki-fine-ai-step-dot"></span>
+          <strong>${escapeHtml(step.title || step.key || '')}</strong>
+        </div>
+        <span class="mki-fine-ai-status-pill is-${escapeHtml(status)}">${escapeHtml(mkiFineAiStepStatusLabel(status))}</span>
+      </div>
+      <p class="mki-fine-ai-step-desc">${escapeHtml(step.message || step.description || '')}</p>
+      ${mkiFineAiRenderDebug(step.debug)}
+      ${mkiFineAiRenderStepLogs(step.logs)}
+    </section>`;
+  }).join('')}</div>`;
+}
+
+function mkiFineAiRenderExecutionLog(progress) {
+  const events = Array.isArray((progress || {}).events) ? progress.events.slice(-18).reverse() : [];
+  if (!events.length) return '';
+  return `<section class="mki-fine-ai-execution-log">
+    <h4>执行明细</h4>
+    <div class="mki-fine-ai-log-list">${events.map(row => `
+      <div class="mki-fine-ai-log-row">
+        <span>${escapeHtml(mkiFineAiFormatTs(row.ts))}</span>
+        <strong>${escapeHtml(row.level || 'info')}</strong>
+        <span>${escapeHtml(row.step_key || '')} · ${escapeHtml(row.message || '')}</span>
+      </div>`).join('')}</div>
+  </section>`;
+}
+
+function mkiFineAiRenderProgress(progress, status = 'running') {
+  const p = Object.assign(mkiFineAiDefaultProgress(), progress || {});
+  return `<div class="mki-fine-ai-progress-shell">
+    ${mkiFineAiRenderProgressHeader(p, status)}
+    ${mkiFineAiRenderStepCards(p)}
+    ${mkiFineAiRenderExecutionLog(p)}
+  </div>`;
 }
 
 function mkiFineAiRenderStatus(data) {
-  return `<div class="ect-empty">精细 AI 评估运行中，五国按 DE → FR → IT → ES → JP 串行调用。</div>${mkiFineAiRenderProgress((data || {}).progress || {})}`;
+  const payload = data || {};
+  return mkiFineAiRenderProgress(payload.progress || {}, payload.status || 'running');
 }
 
 function mkiFineAiRenderCards(frontend) {
@@ -2055,7 +2212,7 @@ function mkiFineAiRenderResult(data) {
   const frontend = result.frontend || {};
   const summary = result.summary || {};
   return `
-    ${result.status === 'running' || result.status === 'queued' ? mkiFineAiRenderProgress(result.progress || {}) : ''}
+    ${mkiFineAiRenderProgress(result.progress || {}, result.status || '')}
     ${mkiFineAiRenderCards(frontend)}
     ${mkiFineAiRenderCharts(frontend)}
     ${mkiFineAiRenderOverview(frontend)}
@@ -2162,7 +2319,7 @@ async function mkiFineAiStartRun(context) {
     btn.disabled = true;
     btn.textContent = '精细评估中';
   }
-  context.shell.body.innerHTML = '<div class="ect-empty">已创建评估任务，正在等待产品事实整理...</div>';
+  context.shell.body.innerHTML = mkiFineAiRenderStatus({status: 'queued', progress: mkiFineAiDefaultProgress()});
   try {
     const resp = await mkiFetchJson(mkiFineAiEndpoint(context, ''), {
       method: 'POST',

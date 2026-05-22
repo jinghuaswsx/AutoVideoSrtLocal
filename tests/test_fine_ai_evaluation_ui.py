@@ -35,3 +35,14 @@ def test_fine_ai_button_allows_external_product_link_without_local_product():
     assert "商品链接缺失，无法进行精细 AI 评估" in body
     assert "externalProductLink" in body
     assert "/xuanpin/api/fine-ai-evaluation" in body
+
+
+def test_fine_ai_modal_renders_backend_progress_cards_and_logs():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "mkiFineAiRenderProgressHeader" in body
+    assert "mkiFineAiRenderStepCards" in body
+    assert "mkiFineAiRenderExecutionLog" in body
+    assert "mki-fine-ai-progress-fill" in body
+    assert "mki-fine-ai-step-card is-running" in body
+    assert "mkiFineAiElapsedLabel" in body

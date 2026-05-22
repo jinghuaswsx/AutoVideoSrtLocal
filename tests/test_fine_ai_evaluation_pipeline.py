@@ -29,6 +29,53 @@ def test_pipeline_extracts_product_facts_once_and_evaluates_five_countries_seria
     assert set(result["countries"]) == {"DE", "FR", "IT", "ES", "JP"}
 
 
+def test_pipeline_persists_visual_progress_steps_and_execution_log():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    service = FineAiEvaluationService(
+        repository=InMemoryEvaluationRepository(),
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123)
+    result = service.run_evaluation(run["evaluation_run_id"])
+    progress = result["progress"]
+
+    step_keys = [step["key"] for step in progress["steps"]]
+    assert step_keys == [
+        "data_preparation",
+        "product_fact_extraction",
+        "country_DE",
+        "country_FR",
+        "country_IT",
+        "country_ES",
+        "country_JP",
+        "summary",
+    ]
+    assert progress["total_steps"] == 8
+    assert progress["completed_steps"] == 8
+    assert progress["current_step"] == "summary"
+    assert progress["elapsed_seconds"] >= 0
+    assert progress["countries"] == {
+        "DE": "completed",
+        "FR": "completed",
+        "IT": "completed",
+        "ES": "completed",
+        "JP": "completed",
+    }
+
+    product_step = next(step for step in progress["steps"] if step["key"] == "product_fact_extraction")
+    de_step = next(step for step in progress["steps"] if step["key"] == "country_DE")
+    assert product_step["status"] == "completed"
+    assert de_step["status"] == "completed"
+    assert any(item["label"] == "Provider" for item in product_step["debug"])
+    assert any(item["label"] == "Country" and item["value"] == "DE" for item in de_step["debug"])
+    assert any(event["step_key"] == "country_DE" for event in progress["events"])
+    assert any(log["level"] == "info" for log in de_step["logs"])
+
+
 def test_pipeline_continues_when_one_country_fails():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
@@ -48,6 +95,11 @@ def test_pipeline_continues_when_one_country_fails():
     assert result["countries"]["DE"]["status"] == "completed"
     assert result["countries"]["IT"]["status"] == "completed"
     assert result["metadata"]["countries_failed"] == ["FR"]
+    progress = result["progress"]
+    fr_step = next(step for step in progress["steps"] if step["key"] == "country_FR")
+    assert fr_step["status"] == "failed"
+    assert any(log["level"] == "error" for log in fr_step["logs"])
+    assert progress["countries"]["JP"] == "completed"
 
 
 def test_pipeline_handles_empty_assets_without_crashing():
@@ -172,9 +224,15 @@ class FakeGeminiClient:
     def __init__(self, calls, fail_country=None):
         self.calls = calls
         self.fail_country = fail_country
+        self.last_call_metadata = {}
 
     def generate_product_facts(self, *, product_snapshot, countries):
         self.calls.append(("product_facts", product_snapshot["product_id"]))
+        self.last_call_metadata = {
+            "provider": "fake-provider",
+            "model": "fake-model",
+            "usage": {"input_tokens": 12, "output_tokens": 34},
+        }
         return {
             "product_id": product_snapshot["product_id"],
             "product_name": product_snapshot["product_name"],
@@ -197,6 +255,11 @@ class FakeGeminiClient:
     def generate_country_evaluation(self, *, product_snapshot, product_facts, country, asset_snapshot, asset_paths):
         code = country["country_code"]
         self.calls.append((f"country:{code}", len(asset_paths)))
+        self.last_call_metadata = {
+            "provider": "fake-provider",
+            "model": "fake-model",
+            "usage": {"input_tokens": 56, "output_tokens": 78},
+        }
         if code == self.fail_country:
             raise RuntimeError("simulated country failure")
         return make_country_result(code, creative_missing=not asset_snapshot["product_images"] and not asset_snapshot["videos"])
