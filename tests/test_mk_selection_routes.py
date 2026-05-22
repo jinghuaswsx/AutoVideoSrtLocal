@@ -47,9 +47,13 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert '<h1 class="title">选品中心</h1>' not in body
     _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
     assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
-    assert 'data-mk-library-tab="products">产品库' in body
-    assert 'data-mk-library-tab="videos">视频素材库' in body
-    assert 'data-mk-library-tab="yesterday-top100">昨天消耗前100' in body
+    video_tab = 'class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab(\'videos\')" data-mk-library-tab="videos">视频素材库'
+    yesterday_tab = 'data-mk-library-tab="yesterday-top100">昨天消耗前100'
+    products_tab = 'data-mk-library-tab="products">产品库'
+    assert video_tab in body
+    assert yesterday_tab in body
+    assert products_tab in body
+    assert body.index(video_tab) < body.index(yesterday_tab) < body.index(products_tab)
     assert 'id="snapshotSelect"' in body
     assert 'id="snapshotRangeSelect"' in body
     assert "loadMkSelectionSnapshots" in body
@@ -222,8 +226,10 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert ".mk-library-tabs { display:flex;" in template
     assert "width:max-content" in template
     assert "function normalizeMkLibraryTab(tab)" in template
+    assert "return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'videos';" in template
     assert "function initMkLibraryTabFromHash()" in template
     assert "location.hash = currentMkLibraryTab;" in template
+    assert "let currentMkLibraryTab = 'videos';" in template
     assert "loadMkLocalMaterialLibrary" in template
     assert "loadMkYesterdayTop100" in template
     assert "mkSnapshotQueryParam()" in template

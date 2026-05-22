@@ -491,9 +491,9 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   {% set active = "mk" %}
   {% include "_xuanpin_tabs.html" %}
   <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
-    <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
-    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
+    <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
     <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top100')" data-mk-library-tab="yesterday-top100">昨天消耗前100</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
@@ -513,7 +513,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
     </div>
   </div>
 
-  <section id="mkProductsPanel" class="mk-library-panel">
+  <section id="mkProductsPanel" class="mk-library-panel" hidden>
     <div class="mk-products-table-shell">
       <table class="oc-table mk-products-table" id="mainTable">
         <colgroup>
@@ -557,9 +557,9 @@ strong.mk-video-product-name { color:var(--oc-fg); }
     <div class="oc-pager" id="pager"></div>
   </section>
 
-  <section id="mkVideosPanel" class="mk-library-panel" hidden>
+  <section id="mkVideosPanel" class="mk-library-panel">
     <div class="mk-video-library-head">
-      <span id="mkVideoLibraryStatus">切换到视频素材库后加载本地素材快照</span>
+      <span id="mkVideoLibraryStatus">准备加载本地视频素材快照</span>
     </div>
     <div class="oc-pager" id="mkVideoPagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
@@ -594,7 +594,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
 <script>
 const MK_PROXY = "/xuanpin/api/mk-detail";
 let currentPage = 1;
-let currentMkLibraryTab = 'products';
+let currentMkLibraryTab = 'videos';
 let mkProductsLoaded = false;
 let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
@@ -980,7 +980,7 @@ function onMkRangeChange() {
 }
 
 function normalizeMkLibraryTab(tab) {
-  return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'products';
+  return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'videos';
 }
 
 function applyMkLibraryTabState() {
