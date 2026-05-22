@@ -222,6 +222,66 @@ def test_external_link_run_uses_product_link_without_local_product_lookup():
     }
 
 
+def test_external_link_run_records_product_link_check_progress():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+    )
+
+    bad_link = "https://shop.example/products/bad"
+    good_link = "https://shop.example/products/good"
+    run = service.create_external_link_run(
+        product_link=bad_link,
+        product_name="New Idea",
+        product_code="new-idea",
+        countries=["DE"],
+        link_check_result={
+            "ok": True,
+            "status": "replaced",
+            "original_link": bad_link,
+            "selected_link": good_link,
+            "message": "replacement selected",
+            "candidates": [
+                {
+                    "url": bad_link,
+                    "ok": False,
+                    "http_status": 404,
+                    "error": "http 404",
+                    "elapsed_ms": 4,
+                    "used": False,
+                    "source": "current",
+                },
+                {
+                    "url": good_link,
+                    "ok": True,
+                    "http_status": 200,
+                    "error": None,
+                    "elapsed_ms": 5,
+                    "used": True,
+                    "source": "mingkong",
+                },
+            ],
+        },
+    )
+
+    stored = repository.get_run(run["evaluation_run_id"])
+    step_keys = [step["key"] for step in stored["progress"]["steps"]]
+    link_step = stored["progress"]["steps"][0]
+
+    assert run["link_check"]["selected_link"] == good_link
+    assert stored["product_snapshot"]["product_url"] == good_link
+    assert stored["metadata"]["external_product_link"] == good_link
+    assert stored["metadata"]["link_check"]["selected_link"] == good_link
+    assert step_keys[:2] == ["product_link_check", "data_preparation"]
+    assert link_step["status"] == "completed"
+    assert any(item["value"] == good_link for item in link_step["debug"])
+
+
 def test_external_link_run_includes_current_card_video_asset_without_local_product_lookup():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 

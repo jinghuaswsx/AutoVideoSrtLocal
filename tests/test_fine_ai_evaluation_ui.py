@@ -58,10 +58,25 @@ def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
     assert "data-fine-ai-elapsed" in body
     assert "function mkiFineAiStartElapsedTicker" in body
     assert "function mkiFineAiStartingProgress" in body
-    assert "正在缓存当前视频素材并创建评估任务" in body
-    assert "step.key === 'data_preparation'" in body
+    assert "正在检测商品链接可访问性" in body
+    assert "const firstStepKey = context.externalProductLink ? 'product_link_check' : 'data_preparation';" in body
+    assert "step.key === firstStepKey" in body
     assert "status: 'running'" in body
     assert "mkiFineAiStartElapsedTicker(context);" in body
+
+
+def test_fine_ai_external_link_check_is_first_step_and_updates_card_link():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "product_link_check" in body
+    assert "mkiFineAiApplyResolvedProductLink" in body
+    assert "mkiFineAiApplyResolvedProductLink(context, resp.data && resp.data.link_check)" in body
+    assert "mkiFineAiRenderLinkCheckFailure" in body
+    assert "error.details = err.details" in body
+    assert "mk_product_id: context.mkProductId || ''" in body
+    assert "data-mki-mk-id" in body
+    assert "progress.current_step = firstStepKey" in body
+    assert "data-fine-ai-step" in body
 
 
 def test_fine_ai_modal_has_standalone_page_button_and_status_mapping():

@@ -137,6 +137,7 @@ class FineAiEvaluationService:
         product_link: str,
         product_name: str = "",
         product_code: str = "",
+        link_check_result: dict[str, Any] | None = None,
         force_refresh: bool = True,
         countries: list[str] | None = None,
         locale: str = "zh-CN",
@@ -149,6 +150,9 @@ class FineAiEvaluationService:
         product_url = str(product_link or "").strip()
         if not product_url:
             raise ValueError("product_link is required")
+        link_check = _sanitize_link_check_result(link_check_result)
+        if link_check.get("ok") and link_check.get("selected_link"):
+            product_url = str(link_check["selected_link"]).strip()
         country_codes = normalize_country_codes(countries)
         card_video = _external_card_video_metadata(
             object_key=card_video_object_key,
@@ -176,7 +180,12 @@ class FineAiEvaluationService:
         has_card_video = bool(asset_snapshot.get("videos"))
         now = _now_iso()
         evaluation_run_id = f"eval_{uuid.uuid4().hex}"
-        progress = _initial_progress(country_codes, product_snapshot=product_snapshot, asset_snapshot=asset_snapshot)
+        progress = _initial_progress(
+            country_codes,
+            product_snapshot=product_snapshot,
+            asset_snapshot=asset_snapshot,
+            link_check_result=link_check,
+        )
         run = {
             "evaluation_run_id": evaluation_run_id,
             "product_id": "0",
@@ -197,6 +206,7 @@ class FineAiEvaluationService:
                 "source_type": "external_product_link",
                 "external_product_link": product_url,
                 "external_card_video": card_video,
+                "link_check": link_check,
                 "countries_requested": country_codes,
                 "countries_completed": [],
                 "countries_failed": [],
@@ -216,6 +226,7 @@ class FineAiEvaluationService:
             "status": "queued",
             "countries": country_codes,
             "created_at": now,
+            "link_check": link_check,
         }
 
     def start_run_async(self, evaluation_run_id: str) -> bool:
@@ -761,12 +772,23 @@ def _initial_progress(
     *,
     product_snapshot: dict[str, Any] | None = None,
     asset_snapshot: dict[str, Any] | None = None,
+    link_check_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    has_link_check = bool(link_check_result)
     progress = {
         "started_at": _now_iso(),
-        "steps": _progress_steps(country_codes),
+        "steps": _progress_steps(country_codes, include_link_check=has_link_check),
         "events": [],
     }
+    if has_link_check:
+        progress = _mark_progress_step(
+            progress,
+            "product_link_check",
+            "completed" if link_check_result.get("ok") else "failed",
+            str(link_check_result.get("message") or "商品链接检测完成"),
+            debug=_link_check_debug(link_check_result),
+            event=False,
+        )
     progress = _mark_progress_step(
         progress,
         "data_preparation",
@@ -841,16 +863,69 @@ def _fresh_progress_elapsed(progress: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _progress_steps(country_codes: list[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+def _progress_steps(
+    country_codes: list[str] | tuple[str, ...],
+    *,
+    include_link_check: bool = False,
+) -> list[dict[str, Any]]:
     steps = [
         _step("data_preparation", "数据准备", "准备商品链接、商品快照、素材数量和目标国家"),
         _step("product_fact_extraction", "商品事实整理", "抽取跨国家共享的商品事实"),
     ]
+    if include_link_check:
+        steps.insert(0, _step("product_link_check", "商品链接检测", "检测当前商品链接，必要时从明空候选链接中选择可访问链接"))
     for code in country_codes:
         country = get_country_config(code)
         steps.append(_step(_country_step_key(code), f"{code} {country['country_name_zh']}", "单国家市场、素材、落地页与风险评估"))
     steps.append(_step("summary", "汇总结果", "聚合五国结论和下一步动作"))
     return steps
+
+
+def _sanitize_link_check_result(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    candidates = []
+    for item in value.get("candidates") or []:
+        if not isinstance(item, dict):
+            continue
+        candidates.append({
+            "url": str(item.get("url") or "")[:1024],
+            "source": str(item.get("source") or "")[:80],
+            "ok": bool(item.get("ok")),
+            "http_status": (
+                int(item["http_status"]) if item.get("http_status") is not None else None
+            ),
+            "error": (str(item.get("error") or "")[:240] or None),
+            "elapsed_ms": (
+                int(item["elapsed_ms"]) if item.get("elapsed_ms") is not None else None
+            ),
+            "used": bool(item.get("used")),
+        })
+    return {
+        "ok": bool(value.get("ok")),
+        "status": str(value.get("status") or "")[:80],
+        "original_link": str(value.get("original_link") or "")[:1024],
+        "selected_link": str(value.get("selected_link") or "")[:1024],
+        "candidate_count": int(value.get("candidate_count") or len(candidates)),
+        "candidates": candidates[:12],
+        "checked_at": str(value.get("checked_at") or "")[:80],
+        "message": str(value.get("message") or "")[:240],
+    }
+
+
+def _link_check_debug(link_check: dict[str, Any]) -> list[dict[str, Any]]:
+    failed = [
+        f"{item.get('http_status') or '-'} {item.get('error') or ''}".strip()
+        for item in link_check.get("candidates") or []
+        if not item.get("ok")
+    ]
+    return [
+        {"label": "原始链接", "value": link_check.get("original_link") or "-"},
+        {"label": "最终链接", "value": link_check.get("selected_link") or "-"},
+        {"label": "检测结果", "value": link_check.get("status") or "-"},
+        {"label": "候选数量", "value": link_check.get("candidate_count") or 0},
+        {"label": "失败摘要", "value": " | ".join(failed[:3]) or "-"},
+    ]
 
 
 def _step(key: str, title: str, description: str) -> dict[str, Any]:
