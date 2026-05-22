@@ -133,7 +133,10 @@ def _save_upload_to_temp(work_dir: str):
 
 
 def _extract_product(product_url: str):
-    product = fetch_product_analysis(product_url)
+    try:
+        product = fetch_product_analysis(product_url)
+    except requests.RequestException as exc:
+        raise VideoCoverGenerationError(f"商品链接抓取失败：{exc}") from exc
     title = _product_value(product, "title")
     image_url = _product_value(product, "main_image_url")
     if not title:

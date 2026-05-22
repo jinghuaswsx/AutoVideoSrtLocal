@@ -14,6 +14,17 @@ from appcore.meta_hot_posts.category_route import CATEGORY_MODEL, CATEGORY_PROVI
 from appcore.meta_hot_posts.categories import TIKTOK_SHOP_US_L1_CATEGORIES
 
 
+_PRODUCT_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/html,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 @dataclass
 class ProductAnalysisResult:
     title: str = ""
@@ -277,7 +288,7 @@ def build_shopify_json_candidates(product_url: str) -> list[str]:
 def fetch_product_analysis(product_url: str, *, session: requests.Session | None = None) -> ProductAnalysisResult:
     http = session or requests.Session()
     link_type = detect_product_link_type(product_url)
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/html,*/*"}
+    headers = dict(_PRODUCT_FETCH_HEADERS)
     if link_type == "shopify_product":
         for candidate in build_shopify_json_candidates(product_url):
             try:
