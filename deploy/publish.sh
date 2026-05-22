@@ -9,10 +9,18 @@ cd "$REPO_ROOT"
 
 KEY="${SSH_KEY:-$HOME/.ssh/CC.pem}"
 SERVER_USER="root"
-SERVER_HOST="172.16.254.106"
+SERVER_HOST="${AUTOVIDEOSRT_SERVER_HOST:-}"
 SERVER_PORT="22"
 APP_DIR="/opt/autovideosrt"
 SERVICE="autovideosrt"
+
+if [[ -z "$SERVER_HOST" ]]; then
+  SERVER_HOST="$(python - <<'PY'
+from server_config import SERVER_HOST
+print(SERVER_HOST)
+PY
+)"
+fi
 
 if [[ ! -f "$KEY" ]]; then
   echo "[ERROR] SSH key not found: $KEY" >&2

@@ -25,6 +25,9 @@ from dotenv import load_dotenv
 if os.getenv("AUTOVIDEOSRT_DISABLE_DOTENV") != "1":
     load_dotenv()
 
+# Import after dotenv so server_config can see .env overrides.
+from server_config import SERVER_BASE_URL
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -65,7 +68,7 @@ def _optional_path(name: str) -> str:
 # Flask / 服务端口 / 公网地址
 # ---------------------------------------------------------------------------
 SERVER_ENV = _env("SERVER_ENV", "local").lower() or "local"
-LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", "http://127.0.0.1:5000")
+LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", SERVER_BASE_URL).rstrip("/")
 SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
 
 

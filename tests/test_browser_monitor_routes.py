@@ -1,3 +1,6 @@
+from server_config import SERVER_HOST
+
+
 def test_browser_monitor_page_renders_five_vnc_iframes(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.browser_monitor.scheduled_tasks.latest_run", lambda task_code: None)
 
@@ -12,23 +15,23 @@ def test_browser_monitor_page_renders_five_vnc_iframes(authed_client_no_db, monk
     assert "TABCUT" in html
     assert "采集程序" in html
     assert (
-        'src="http://172.16.254.106:6092/vnc.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6092/vnc.html?host={SERVER_HOST}'
         '&amp;port=6092&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'src="http://172.16.254.106:6093/vnc.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6093/vnc.html?host={SERVER_HOST}'
         '&amp;port=6093&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'src="http://172.16.254.106:6095/vnc.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6095/vnc.html?host={SERVER_HOST}'
         '&amp;port=6095&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'src="http://172.16.254.106:6097/vnc.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6097/vnc.html?host={SERVER_HOST}'
         '&amp;port=6097&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'src="http://172.16.254.106:6094/vnc_lite.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6094/vnc_lite.html?host={SERVER_HOST}'
         '&amp;port=6094&amp;path=websockify&amp;scale=true&amp;autoconnect=true"'
     ) in html
 
@@ -41,11 +44,11 @@ def test_browser_monitor_cards_use_scaled_preview_and_open_operable_vnc(authed_c
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert (
-        'src="http://172.16.254.106:6092/vnc.html?host=172.16.254.106'
+        f'src="http://{SERVER_HOST}:6092/vnc.html?host={SERVER_HOST}'
         '&amp;port=6092&amp;autoconnect=true&amp;resize=scale&amp;view_only=true"'
     ) in html
     assert (
-        'href="http://172.16.254.106:6092/vnc.html?host=172.16.254.106'
+        f'href="http://{SERVER_HOST}:6092/vnc.html?host={SERVER_HOST}'
         '&amp;port=6092&amp;autoconnect=true&amp;resize=remote"'
     ) in html
     assert 'class="browser-monitor-frame-link"' in html

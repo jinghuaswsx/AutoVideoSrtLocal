@@ -1,5 +1,6 @@
 from tools.shopify_image_localizer import api_client, controller
 from tools.shopify_image_localizer.browser import session
+from server_config import SERVER_BASE_URL
 
 
 def test_worker_claim_posts_to_task_center(monkeypatch):
@@ -182,11 +183,11 @@ def test_open_shopify_target_uses_manual_id_without_bootstrap(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("bootstrap should not be called")),
     )
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: saved.append(kwargs))
-    monkeypatch.setattr(controller.session, "open_urls_in_chrome", lambda user_data_dir, urls: opened.append((user_data_dir, urls)))
+    monkeypatch.setattr(controller.ez_cdp, "open_managed_tab", lambda user_data_dir, target_url: opened.append((user_data_dir, target_url)))
 
     result = controller.open_shopify_target(
         target="ez",
-        base_url="http://172.16.254.106",
+        base_url=SERVER_BASE_URL,
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",
@@ -196,8 +197,8 @@ def test_open_shopify_target_uses_manual_id_without_bootstrap(monkeypatch):
 
     assert result["shopify_product_id"] == "855"
     assert result["url"] == session.build_ez_url("855")
-    assert opened == [(r"C:\chrome-shopify-image", [session.build_ez_url("855")])]
-    assert saved[0]["base_url"] == "http://172.16.254.106"
+    assert opened == [(r"C:\chrome-shopify-image", session.build_ez_url("855"))]
+    assert saved[0]["base_url"] == SERVER_BASE_URL
 
 
 def test_open_shopify_target_fetches_id_and_opens_detail_url(monkeypatch):
@@ -206,17 +207,17 @@ def test_open_shopify_target_fetches_id_and_opens_detail_url(monkeypatch):
     monkeypatch.setattr(
         controller.api_client,
         "fetch_bootstrap",
-        lambda base_url, api_key, product_code, lang: {
+        lambda base_url, api_key, product_code, lang, **kwargs: {
             "product": {"shopify_product_id": "999"},
             "language": {"shop_locale": "it"},
         },
     )
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: None)
-    monkeypatch.setattr(controller.session, "open_urls_in_chrome", lambda user_data_dir, urls: opened.append(urls))
+    monkeypatch.setattr(controller.ez_cdp, "open_managed_tab", lambda user_data_dir, target_url: opened.append(target_url))
 
     result = controller.open_shopify_target(
         target="detail",
-        base_url="http://172.16.254.106",
+        base_url=SERVER_BASE_URL,
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",
@@ -225,7 +226,7 @@ def test_open_shopify_target_fetches_id_and_opens_detail_url(monkeypatch):
 
     assert result["shopify_product_id"] == "999"
     assert result["url"] == session.build_translate_url("999", "it")
-    assert opened == [[session.build_translate_url("999", "it")]]
+    assert opened == [session.build_translate_url("999", "it")]
 
 
 def test_open_shopify_target_falls_back_to_storefront_id_when_bootstrap_not_ready(monkeypatch):
@@ -244,11 +245,11 @@ def test_open_shopify_target_falls_back_to_storefront_id_when_bootstrap_not_read
         lambda product_code, store_domain="newjoyloo.com": {"id": 123456789},
     )
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: None)
-    monkeypatch.setattr(controller.session, "open_urls_in_chrome", lambda user_data_dir, urls: opened.append(urls))
+    monkeypatch.setattr(controller.ez_cdp, "open_managed_tab", lambda user_data_dir, target_url: opened.append(target_url))
 
     result = controller.open_shopify_target(
         target="ez",
-        base_url="http://172.16.254.106",
+        base_url=SERVER_BASE_URL,
         api_key="key",
         browser_user_data_dir=r"C:\chrome-shopify-image",
         product_code="demo-rjc",
@@ -256,4 +257,4 @@ def test_open_shopify_target_falls_back_to_storefront_id_when_bootstrap_not_read
     )
 
     assert result["shopify_product_id"] == "123456789"
-    assert opened == [[session.build_ez_url("123456789")]]
+    assert opened == [session.build_ez_url("123456789")]

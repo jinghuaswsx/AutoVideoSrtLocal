@@ -13,7 +13,7 @@
 
 用法：
   python tools/wedev_sync.py
-  python tools/wedev_sync.py --project-url http://172.16.254.106 --wedev-url https://os.wedev.vip
+  python tools/wedev_sync.py --project-url <project-base-url> --wedev-url https://os.wedev.vip
 """
 from __future__ import annotations
 
@@ -28,14 +28,20 @@ from typing import Any
 import requests
 
 
-DEFAULT_PROJECT_URL = "http://172.16.254.106"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import SERVER_BASE_URL
+
+
+DEFAULT_PROJECT_URL = SERVER_BASE_URL
 DEFAULT_WEDEV_URL = "https://os.wedev.vip"
 
 
 def _import_browser_auth():
     """延迟导入 AutoPush 的 browser_auth 模块（共享 cookies 提取逻辑）。"""
-    repo_root = Path(__file__).resolve().parents[1]
-    autopush_backend = repo_root / "AutoPush" / "backend"
+    autopush_backend = REPO_ROOT / "AutoPush" / "backend"
     if str(autopush_backend) not in sys.path:
         sys.path.insert(0, str(autopush_backend))
     import browser_auth  # type: ignore

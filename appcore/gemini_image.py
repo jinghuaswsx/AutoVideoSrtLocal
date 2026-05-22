@@ -40,13 +40,14 @@ from config import (
     OPENROUTER_BASE_URL_DEFAULT,
     USD_TO_CNY,
 )
+from server_config import LOCAL_IMAGE_BASE_URL_DEFAULT
 
 logger = logging.getLogger(__name__)
 
 _SEEDREAM_MIN_PIXELS = 2560 * 1440
 _SEEDREAM_MAX_PIXELS = 10_404_496
 _LOCAL_IMAGE2_PROVIDER_CODE = "video_cover_local_image"
-_LOCAL_IMAGE2_BASE_URL_DEFAULT = "http://172.16.254.106:82/v1"
+_LOCAL_IMAGE2_BASE_URL_DEFAULT = LOCAL_IMAGE_BASE_URL_DEFAULT
 _LOCAL_IMAGE2_DEFAULT_QUALITY = "low"
 
 _APIMART_SIZE_DIMENSIONS: dict[str, dict[str, tuple[int, int]]] = {

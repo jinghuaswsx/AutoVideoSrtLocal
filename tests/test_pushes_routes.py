@@ -1335,6 +1335,20 @@ def test_pushes_quality_media_previews_are_side_by_side_180_by_320():
     assert "height: 100%" in style
 
 
+def test_pushes_modal_previews_localize_media_object_urls_to_current_origin():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "function previewMediaSrc(url)" in script
+    assert "parsed.pathname.startsWith('/medias/obj/')" in script
+    assert "return parsed.pathname + parsed.search + parsed.hash;" in script
+    assert "const coverSrc = previewMediaSrc(previewCoverUrl || v.image_url || null);" in script
+    assert "const videoSrc = previewMediaSrc(v.url);" in script
+    assert "const videoSrc = previewMediaSrc(video && video.url);" in script
+    assert "const posterSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in script
+
+
 # ================================================================
 # mk_id 回填（推送成功 → lookup_mk_id → 写回 media_products）
 # ================================================================
@@ -1483,11 +1497,11 @@ def test_lookup_mk_id_skips_items_with_non_matching_tail(monkeypatch):
 
 def test_build_media_public_url_handles_none_and_format(monkeypatch):
     from appcore import pushes
-    monkeypatch.setattr("config.LOCAL_SERVER_BASE_URL", "http://172.16.254.106")
+    monkeypatch.setattr("config.LOCAL_SERVER_BASE_URL", "https://autovideosrt.example.test")
     assert pushes.build_media_public_url(None) is None
     assert pushes.build_media_public_url("") is None
     assert pushes.build_media_public_url("u/1/m/320/demo.mp4") == \
-        "http://172.16.254.106/medias/obj/u/1/m/320/demo.mp4"
+        "https://autovideosrt.example.test/medias/obj/u/1/m/320/demo.mp4"
 
 
 def test_public_media_object_rejects_traversal_and_non_user_scope():

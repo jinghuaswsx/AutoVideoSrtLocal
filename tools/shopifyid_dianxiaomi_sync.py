@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -15,6 +16,11 @@ from urllib.request import urlopen
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import SERVER_HOST
+
 CHROME_USER_DATA_DIR = Path(r"C:\chrome-shopifyid-diaoxiaomi")
 ONLINE_URL = "https://www.dianxiaomi.com/web/shopifyProduct/online"
 API_URL = "https://www.dianxiaomi.com/api/shopifyProduct/pageList.json"
@@ -23,7 +29,7 @@ CHROME_EXECUTABLES = (
     Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
 )
-SSH_HOST = "172.16.254.106"
+SSH_HOST = SERVER_HOST
 SSH_USER = "root"
 SSH_KEY_PATH = Path(r"C:\Users\admin\.ssh\CC.pem")
 REMOTE_MEDIA_TABLE = "media_products"

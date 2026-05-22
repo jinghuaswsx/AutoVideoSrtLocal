@@ -22,6 +22,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from server_config import PROXY_BYPASS_LIST
 from tools.shopify_image_localizer import locales, settings
 
 
@@ -311,7 +312,7 @@ def _build_base_args(
             args.append(f"--window-size={window_size}")
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
-        args.append("--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>")
+        args.append(f"--proxy-bypass-list={PROXY_BYPASS_LIST}")
     if load_extension:
         ext_dir = _resolve_bundled_extension_dir()
         if ext_dir:

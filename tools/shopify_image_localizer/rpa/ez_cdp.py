@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+from server_config import PROXY_BYPASS_LIST
 from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer.browser import session
 
@@ -359,7 +360,7 @@ def ensure_cdp_chrome(
     if proxy_server:
         args.extend([
             f"--proxy-server={proxy_server}",
-            "--proxy-bypass-list=127.0.0.1;localhost;172.16.254.106;<local>",
+            f"--proxy-bypass-list={PROXY_BYPASS_LIST}",
         ])
     args.extend(_startup_urls(initial_url))
 

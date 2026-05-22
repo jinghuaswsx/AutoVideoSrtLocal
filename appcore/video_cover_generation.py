@@ -26,13 +26,13 @@ from appcore.llm_media_optimizer import (
 from appcore.llm_provider_configs import get_provider_config
 from appcore.meta_hot_posts.product_analysis import fetch_product_analysis
 from pipeline.ffutil import extract_frame_at_timestamp, extract_thumbnail, probe_media_info
+from server_config import LOCAL_IMAGE_BASE_URL_DEFAULT
 
 
 DEFAULT_IMAGE_CHANNEL = "openrouter"
 DEFAULT_IMAGE_MODEL = "openai/gpt-5.4-image-2:low"
 DEFAULT_COVER_EXECUTION_MODE = ""
 LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
-LOCAL_IMAGE_BASE_URL_DEFAULT = "http://172.16.254.106:82/v1"
 OUTPUT_SIZE = (1080, 1920)
 REFERENCE_SIZE = (1080, 1920)
 PRODUCT_IMAGE_SIZE = (400, 400)

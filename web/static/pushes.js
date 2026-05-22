@@ -101,6 +101,20 @@
     }
   }
 
+  function previewMediaSrc(url) {
+    const src = safeMediaSrc(url);
+    if (!src) return '';
+    try {
+      const parsed = new URL(src, window.location.origin);
+      if (parsed.pathname.startsWith('/medias/obj/')) {
+        return parsed.pathname + parsed.search + parsed.hash;
+      }
+      return src;
+    } catch (_) {
+      return src;
+    }
+  }
+
   async function fetchJSON(url, options) {
     const resp = await fetch(url, options);
     if (!resp.ok && resp.status !== 204) {
@@ -629,8 +643,8 @@
         // 展示用封面优先走 previewCoverUrl（/medias/thumb/<id> 等已登录路由，
         // 依赖本地入库 thumbnail，可靠性高）。v.image_url 是发给下游的 /medias/obj URL，
         // 老素材本地未回填时会 404。
-        const coverSrc = safeMediaSrc(previewCoverUrl || v.image_url || null);
-        const videoSrc = safeMediaSrc(v.url);
+        const coverSrc = previewMediaSrc(previewCoverUrl || v.image_url || null);
+        const videoSrc = previewMediaSrc(v.url);
         if (coverSrc) {
           preview.appendChild(el('img', { class: 'pm-thumb', src: coverSrc, alt: `cover-${i}` }));
         }
@@ -907,7 +921,7 @@
 
   function renderQualityCoverPreview(payload, previewCoverUrl) {
     const video = firstPayloadVideo(payload);
-    const coverSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');
+    const coverSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');
     const root = el('div', { class: 'pm-quality-cover-preview pm-quality-media-preview' });
     const frame = el('div', { class: 'pm-quality-media-frame' });
     if (coverSrc) {
@@ -923,8 +937,8 @@
     const video = firstPayloadVideo(payload);
     const root = el('div', { class: 'pm-quality-video-preview pm-quality-media-preview' });
     const frame = el('div', { class: 'pm-quality-media-frame' });
-    const videoSrc = safeMediaSrc(video && video.url);
-    const posterSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');
+    const videoSrc = previewMediaSrc(video && video.url);
+    const posterSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');
     if (videoSrc) {
       frame.appendChild(el('video', {
         class: 'pm-quality-video',

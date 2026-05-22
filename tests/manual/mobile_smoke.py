@@ -13,7 +13,7 @@ Mobile responsive smoke test against the test deployment (:8080).
 打印每页的检查结果表。
 
 用法：
-  python tests/manual/mobile_smoke.py [--base http://172.16.254.106:8080]
+  python tests/manual/mobile_smoke.py [--base <test-server-base-url>]
 """
 from __future__ import annotations
 
@@ -26,6 +26,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from server_config import TEST_SERVER_BASE_URL
 
 
 PAGES = [
@@ -187,7 +193,7 @@ def evaluate(metrics: dict) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="http://172.16.254.106:8080")
+    parser.add_argument("--base", default=TEST_SERVER_BASE_URL)
     parser.add_argument("--user", default=os.environ.get("AUTOVIDEOSRT_SMOKE_USER", "admin"))
     parser.add_argument("--pwd", default=os.environ.get("AUTOVIDEOSRT_SMOKE_PASSWORD", ""))
     parser.add_argument("--device", default="iPhone 15 Pro Max")

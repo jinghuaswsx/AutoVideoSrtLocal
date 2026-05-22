@@ -6,6 +6,8 @@ from pathlib import Path
 
 import dotenv
 
+from server_config import SERVER_BASE_URL
+
 
 AUTOPUSH_DIR = Path(__file__).resolve().parents[1] / "AutoPush"
 if str(AUTOPUSH_DIR) not in sys.path:
@@ -21,4 +23,4 @@ def test_autovideo_base_url_default_points_to_current_local_server(monkeypatch):
     settings = importlib.reload(settings)
     settings.get_settings.cache_clear()
 
-    assert settings.get_settings().autovideo_base_url == "http://172.16.254.106"
+    assert settings.get_settings().autovideo_base_url == SERVER_BASE_URL
