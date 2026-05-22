@@ -480,8 +480,7 @@ def sync_task_with_children_once(
         return {"actions": [], "status": task.get("status")}
 
     for item in plan:
-        if _normalized_status(item.get("status")) == "interrupted":
-            continue
+        item_status = _normalized_status(item.get("status"))
         if current_parent_status == "done" and not _completed_item_needs_result_sync(item):
             continue
         child_task_id = (item.get("child_task_id") or "").strip()
@@ -497,6 +496,12 @@ def sync_task_with_children_once(
             continue
 
         child_project_status = _normalized_status(child_state.get("_project_status"))
+        if item_status == "interrupted" and not _can_sync_interrupted_item_from_child(
+            item,
+            child_task_type,
+            child_project_status,
+        ):
+            continue
 
         if (
             child_task_type == "image_translate"
@@ -572,6 +577,18 @@ def _completed_item_needs_result_sync(item: dict) -> bool:
         _normalized_status(item.get("status")) == "done"
         and not bool(item.get("result_synced"))
         and bool(item.get("child_task_id") or item.get("sub_task_id"))
+    )
+
+
+def _can_sync_interrupted_item_from_child(
+    item: dict,
+    child_task_type: str,
+    child_project_status: str,
+) -> bool:
+    return (
+        (item.get("kind") or "").strip() == "detail_images"
+        and (child_task_type or "").strip() == "image_translate"
+        and child_project_status == "done"
     )
 
 
@@ -730,8 +747,8 @@ def _mark_image_child_retry_running(item: dict) -> None:
 
 
 def _validate_force_backfill_target(item: dict) -> None:
-    if _normalized_status(item.get("status")) != "failed":
-        raise ValueError("only failed items can be force backfilled")
+    if _normalized_status(item.get("status")) not in {"failed", "interrupted"}:
+        raise ValueError("only failed or interrupted items can be force backfilled")
     if (item.get("kind") or "").strip() != "detail_images":
         raise ValueError("force backfill only supports detail image items")
     if (item.get("child_task_type") or "").strip() != "image_translate":
