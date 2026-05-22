@@ -1,0 +1,649 @@
+{% extends "layout.html" %}
+
+{% block title %}创建任务 - {{ state.get('display_name', '') }}{% endblock %}
+{% block page_title %}创建任务{% endblock %}
+
+{% block extra_style %}
+.tcd-project-heading { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:14px; align-items:center; margin-bottom:12px; }
+.tcd-back { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border:1px solid var(--border-main); border-radius:8px; color:var(--text-main); text-decoration:none; font-size:13px; font-weight:700; background:var(--bg-card); }
+.tcd-back:hover { border-color:var(--primary-color); color:var(--primary-color); }
+.tcd-project-title { min-width:0; min-height:42px; display:flex; align-items:center; justify-content:center; margin:0; padding:6px 16px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:var(--text-main); font-size:20px; font-weight:900; line-height:1.25; text-align:center; overflow-wrap:anywhere; }
+.tcd-success-bar { display:none; margin-bottom:16px; padding:16px; border:1.5px solid #16a34a; border-radius:10px; background:rgba(22,163,74,.08); text-align:center; }
+.tcd-success-bar.visible { display:block; }
+.tcd-success-bar h2 { margin:0 0 12px; color:#166534; font-size:17px; }
+.tcd-success-links { display:flex; justify-content:center; flex-wrap:wrap; gap:10px; }
+.tcd-success-link { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border:1px solid #16a34a; border-radius:8px; background:#fff; color:#166534; text-decoration:none; font-size:13px; font-weight:700; }
+.tcd-success-link:hover { background:rgba(22,163,74,.08); }
+.tcd-progress-bar { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:6px; margin-bottom:16px; }
+.tcd-progress-step { min-width:0; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:8px 6px; text-align:center; }
+.tcd-progress-step.running { border-color:#86efac; background:rgba(34,197,94,.10); }
+.tcd-progress-step.done { border-color:#16a34a; background:rgba(22,163,74,.18); }
+.tcd-progress-step.error { border-color:#fca5a5; background:#fef2f2; }
+.tcd-progress-step .step-index { width:20px; height:20px; margin:0 auto 4px; border-radius:999px; display:grid; place-items:center; background:var(--bg-card); border:1px solid var(--border-main); font-size:11px; font-weight:900; color:#64748b; }
+.tcd-progress-step.running .step-index { color:#15803d; border-color:#86efac; }
+.tcd-progress-step.done .step-index { color:#166534; border-color:#16a34a; }
+.tcd-progress-step.error .step-index { color:#b91c1c; border-color:#fca5a5; }
+.tcd-progress-name { font-size:11px; font-weight:700; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tcd-project-grid { display:grid; grid-template-columns:minmax(240px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
+.tcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
+.tcd-input-panel { position:sticky; top:calc(var(--header-h, 56px) + 12px); max-height:calc(100vh - var(--header-h, 56px) - 32px); overflow-y:auto; }
+.tcd-title { margin:0 0 12px; font-size:15px; font-weight:900; color:var(--text-main); }
+.tcd-input-card { display:grid; gap:10px; padding:10px; margin-bottom:12px; border:1px solid rgba(14,165,233,.28); border-radius:8px; background:rgba(14,165,233,.05); }
+.tcd-input-label { font-size:11px; font-weight:900; color:#64748b; }
+.tcd-input-value { font-size:13px; color:var(--text-main); line-height:1.45; overflow-wrap:anywhere; word-break:break-all; }
+.tcd-input-media { display:grid; gap:8px; justify-items:center; }
+.tcd-product-image { width:120px; height:120px; object-fit:cover; border:1px solid var(--border-main); border-radius:8px; background:#fff; }
+.tcd-source-video { width:140px; height:250px; object-fit:contain; border:1px solid var(--border-main); border-radius:8px; background:#000; }
+.tcd-cards { display:grid; gap:12px; }
+.tcd-step-card { border:1.5px solid var(--border-main); border-radius:12px; background:var(--bg-card); padding:14px; min-width:0; transition:border-color .3s, background .3s; }
+.tcd-step-card.running { border-color:#86efac; background:rgba(34,197,94,.10); }
+.tcd-step-card.done { border-color:#16a34a; background:rgba(22,163,74,.18); }
+.tcd-step-card.error { border-color:#fca5a5; background:#fef2f2; }
+.tcd-step-card.waiting { border-color:#fcd34d; background:rgba(217,119,6,.08); }
+.tcd-card-head { display:flex; align-items:center; gap:10px; }
+.tcd-step-icon { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0; background:var(--bg-body); color:#9ca3af; }
+.tcd-step-card.running .tcd-step-icon { color:#15803d; background:rgba(34,197,94,.18); }
+.tcd-step-card.done .tcd-step-icon { color:#166534; background:rgba(22,163,74,.22); }
+.tcd-step-card.error .tcd-step-icon { color:#b91c1c; background:#fee2e2; }
+.tcd-step-card.waiting .tcd-step-icon { color:#b45309; background:rgba(217,119,6,.14); }
+.tcd-step-name { font-size:14px; font-weight:700; color:var(--text-main); flex:1; min-width:0; }
+.tcd-step-timer { font-size:11px; font-weight:900; color:#64748b; white-space:nowrap; padding:2px 8px; border:1px solid var(--border-main); border-radius:999px; }
+.tcd-step-card.running .tcd-step-timer { border-color:#86efac; color:#15803d; }
+.tcd-step-message { margin-top:6px; font-size:12px; color:#64748b; }
+.tcd-card-body { margin-top:12px; padding-top:12px; border-top:1px solid var(--border-main); display:grid; gap:10px; }
+.tcd-card-actions { margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; }
+.tcd-run-btn { padding:5px 14px; border:1.5px solid var(--primary-color); border-radius:999px; background:transparent; color:var(--primary-color); font-size:12px; font-weight:700; cursor:pointer; }
+.tcd-run-btn:hover:not(:disabled) { background:var(--sidebar-hover-bg); box-shadow:0 0 8px rgba(59,130,246,.18); }
+.tcd-run-btn:disabled { opacity:.5; cursor:wait; }
+.tcd-restart-btn { padding:5px 14px; border-radius:999px; border:1px solid #dc2626; background:transparent; color:#dc2626; font-size:12px; font-weight:700; cursor:pointer; }
+.tcd-restart-btn:hover:not(:disabled) { background:#fef2f2; }
+.tcd-restart-btn:disabled { opacity:.5; cursor:wait; }
+.tcd-config-form { display:grid; gap:8px; }
+.tcd-config-row { display:flex; gap:8px; align-items:end; flex-wrap:wrap; }
+.tcd-config-field { display:grid; gap:4px; min-width:0; }
+.tcd-config-field label { font-size:11px; font-weight:900; color:#64748b; }
+.tcd-config-field select, .tcd-config-field input { height:32px; border:1px solid var(--border-main); border-radius:6px; padding:0 8px; font-size:12px; background:var(--bg-card); color:var(--text-main); min-width:120px; }
+.tcd-success-bottom { display:none; margin-top:20px; padding:16px; border:1.5px solid #16a34a; border-radius:10px; background:rgba(22,163,74,.08); text-align:center; }
+.tcd-success-bottom.visible { display:block; }
+.tcd-field-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.tcd-mini-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:8px; }
+.tcd-mini-label { font-size:10px; font-weight:900; color:#64748b; margin-bottom:3px; }
+.tcd-mini-value { font-size:12px; color:var(--text-main); line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.tcd-img-preview { max-width:100%; max-height:200px; border-radius:8px; border:1px solid var(--border-main); object-fit:cover; }
+.tcd-copy-card { border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; padding:10px; display:grid; gap:6px; }
+.tcd-copy-title { font-size:14px; font-weight:900; color:var(--text-main); }
+.tcd-copy-message { font-size:12px; color:var(--text-main); line-height:1.5; }
+.tcd-copy-desc { font-size:11px; color:#64748b; }
+.tcd-json-view { max-height:260px; overflow:auto; font-size:11px; line-height:1.4; white-space:pre-wrap; padding:8px; border:1px solid var(--border-main); border-radius:6px; background:#0f172a; color:#e5e7eb; font-family:monospace; }
+.tcd-spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:tcd-spin .7s linear infinite; vertical-align:middle; margin-right:4px; }
+@keyframes tcd-spin { to { transform:rotate(360deg); } }
+@media (max-width:1080px) {
+  .tcd-project-grid { grid-template-columns:1fr; }
+  .tcd-input-panel { position:static; max-height:none; }
+  .tcd-progress-bar { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width:640px) {
+  .tcd-progress-bar { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+  .tcd-project-heading { grid-template-columns:1fr; }
+}
+{% endblock %}
+
+{% block content %}
+<div class="tcd-project-heading">
+  <a class="tcd-back" href="/task-creator/">← 返回</a>
+  <div class="tcd-project-title">{{ state.get('product_name_cn', '') or state.get('display_name', '') }}</div>
+</div>
+
+<!-- Top success summary -->
+<div class="tcd-success-bar" id="successTop">
+  <h2>项目创建完成</h2>
+  <div class="tcd-success-links">
+    <a class="tcd-success-link" id="topProductLink" href="#" target="_blank">📦 查看产品页</a>
+    <a class="tcd-success-link" id="topTaskLink" href="#" target="_blank">📋 查看任务页</a>
+  </div>
+</div>
+
+<!-- Progress bar -->
+<div class="tcd-progress-bar" id="progressBar">
+  {% for step in step_order %}
+  <div class="tcd-progress-step" id="progressStep-{{ loop.index0 }}">
+    <div class="step-index">{{ loop.index }}</div>
+    <div class="tcd-progress-name">{{ step_labels.get(step, step) }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="tcd-project-grid">
+  <!-- Left panel: Input info -->
+  <div class="tcd-panel tcd-input-panel">
+    <div class="tcd-title">项目信息</div>
+    <div class="tcd-input-card">
+      <div class="tcd-input-label">Shopify 商品链接</div>
+      <div class="tcd-input-value" id="inputShopifyUrl">{{ state.get('shopify_url', '') }}</div>
+    </div>
+    <div class="tcd-input-card">
+      <div class="tcd-input-label">产品中文名</div>
+      <div class="tcd-input-value" id="inputProductNameCn">{{ state.get('product_name_cn', '') }}</div>
+    </div>
+    <div class="tcd-input-media">
+      <div class="tcd-input-label">产品主图</div>
+      <img class="tcd-product-image" id="inputProductImage" src="/task-creator/api/{{ task_id }}/product-image" alt="" onerror="this.style.display='none'" style="background:#e5e7eb;">
+    </div>
+    <div class="tcd-input-media" style="margin-top:12px;">
+      <div class="tcd-input-label">视频文件</div>
+      <video class="tcd-source-video" id="inputVideo" src="/task-creator/api/{{ task_id }}/source-video" muted playsinline controls></video>
+      <div class="tcd-input-value" style="font-size:11px;color:#64748b;">{{ state.get('video_filename', '') }}</div>
+    </div>
+    <div style="margin-top:16px;">
+      <button class="tcd-restart-btn" type="button" id="restartBtn" title="清除所有步骤输出，从头重新执行">强制重新开始</button>
+    </div>
+  </div>
+
+  <!-- Right panel: Step cards -->
+  <div class="tcd-cards" id="stepCards">
+    {% for step in step_order %}
+    {% set idx = loop.index0 %}
+    <div class="tcd-step-card" id="stepCard-{{ idx }}" data-step="{{ step }}">
+      <div class="tcd-card-head">
+        <div class="tcd-step-icon">{{ loop.index }}</div>
+        <div class="tcd-step-name">{{ step_labels.get(step, step) }}</div>
+        <div class="tcd-step-timer" id="stepTimer-{{ idx }}"></div>
+      </div>
+      <div class="tcd-step-message" id="stepMsg-{{ idx }}"></div>
+      <div class="tcd-card-body" id="stepBody-{{ idx }}"></div>
+      <div class="tcd-card-actions" id="stepActions-{{ idx }}">
+        <button class="tcd-run-btn" type="button" data-step="{{ step }}" data-idx="{{ idx }}" id="runBtn-{{ idx }}">▶ 运行</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Bottom success summary -->
+<div class="tcd-success-bottom" id="successBottom">
+  <h2 style="margin:0 0 12px;color:#166534;font-size:17px;">项目创建完成</h2>
+  <div class="tcd-success-links">
+    <a class="tcd-success-link" id="bottomProductLink" href="#" target="_blank">📦 查看产品页</a>
+    <a class="tcd-success-link" id="bottomTaskLink" href="#" target="_blank">📋 查看任务页</a>
+  </div>
+</div>
+
+<div style="display:none;">
+  <span id="dataTaskId">{{ task_id }}</span>
+  <span id="dataStepOrder">{{ step_order | tojson }}</span>
+  <span id="dataStepLabels">{{ step_labels | tojson }}</span>
+  <span id="dataAutoChainLast">{{ auto_chain_last }}</span>
+  <span id="dataStepInfo">{{ step_info | tojson }}</span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var taskId = document.getElementById('dataTaskId').textContent.trim();
+  var STEP_ORDER = JSON.parse(document.getElementById('dataStepOrder').textContent);
+  var STEP_LABELS = JSON.parse(document.getElementById('dataStepLabels').textContent);
+  var AUTO_CHAIN_LAST = document.getElementById('dataAutoChainLast').textContent.trim();
+  var initialStepInfo = JSON.parse(document.getElementById('dataStepInfo').textContent);
+
+  var POLL_INTERVAL_MS = 1500;
+  var pollTimer = null;
+  var runningStep = null;
+
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function stepEl(idx, suffix) { return $('step' + suffix.charAt(0).toUpperCase() + suffix.slice(1) + '-' + idx); }
+
+  function renderStepCard(idx, steps, messages, timing) {
+    var step = STEP_ORDER[idx];
+    var status = steps[step] || 'pending';
+    var card = $('stepCard-' + idx);
+    card.className = 'tcd-step-card ' + (status === 'running' ? 'running' : status === 'done' ? 'done' : status === 'error' ? 'error' : status === 'waiting' ? 'waiting' : '');
+
+    var timer = $('stepTimer-' + idx);
+    var t = timing[step] || {};
+    if (status === 'running' && t.running_seconds != null) {
+      timer.innerHTML = '<span class="tcd-spinner"></span>' + t.running_seconds + 's';
+    } else if (t.elapsed_seconds != null) {
+      timer.textContent = t.elapsed_seconds + 's';
+    } else {
+      timer.textContent = '';
+    }
+
+    var msg = $('stepMsg-' + idx);
+    msg.textContent = messages[step] || '';
+
+    updateProgressBar(idx, status);
+  }
+
+  function updateProgressBar(idx, status) {
+    var el = $('progressStep-' + idx);
+    if (el) {
+      el.className = 'tcd-progress-step ' + (status === 'running' ? 'running' : status === 'done' ? 'done' : status === 'error' ? 'error' : '');
+    }
+  }
+
+  function renderAllSteps(state) {
+    var steps = state.steps || {};
+    var messages = state.step_messages || {};
+    var timing = state.step_timing || {};
+    STEP_ORDER.forEach(function(step, idx) {
+      renderStepCard(idx, steps, messages, timing);
+    });
+    renderStep6Config(state.config || {});
+    renderStep7Config(state.config || {});
+    renderStepOutputs(state);
+    updateRunButtons(state);
+    updateSuccessBar(state);
+  }
+
+  function updateRunButtons(state) {
+    var steps = state.steps || {};
+    var globalStatus = state.status;
+    STEP_ORDER.forEach(function(step, idx) {
+      var btn = $('runBtn-' + idx);
+      if (!btn) return;
+      var stepStatus = steps[step] || 'pending';
+      var isRunning = stepStatus === 'running' || globalStatus === 'running' && (steps[STEP_ORDER[idx]] === 'running' || Object.values(steps).some(function(s) { return s === 'running'; }));
+
+      if (stepStatus === 'running') {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="tcd-spinner"></span>运行中';
+      } else if (stepStatus === 'done' && step === STEP_ORDER[STEP_ORDER.length - 1]) {
+        btn.style.display = 'none';
+      } else if (stepStatus === 'done') {
+        btn.textContent = '↻ 重新运行';
+        btn.disabled = isRunning;
+      } else if (stepStatus === 'error') {
+        btn.textContent = '↻ 重试';
+        btn.disabled = isRunning;
+      } else {
+        btn.textContent = '▶ 运行';
+        btn.disabled = isRunning;
+      }
+    });
+  }
+
+  function updateSuccessBar(state) {
+    var done = state.status === 'done' && state.task_result;
+    var topBar = $('successTop');
+    var bottomBar = $('successBottom');
+    topBar.classList.toggle('visible', !!done);
+    bottomBar.classList.toggle('visible', !!done);
+
+    if (done) {
+      var tr = state.task_result || {};
+      var mr = state.material_result || {};
+      var productId = tr.product_id || mr.product_id || '';
+      var parentTaskId = tr.parent_task_id || '';
+
+      var productUrl = productId ? '/medias/products/' + productId : '#';
+      var taskUrl = parentTaskId ? '/tasks/?task_id=' + parentTaskId : '#';
+
+      ['top', 'bottom'].forEach(function(pos) {
+        var pl = $(pos + 'ProductLink');
+        var tl = $(pos + 'TaskLink');
+        if (pl) pl.href = productUrl;
+        if (tl) tl.href = taskUrl;
+      });
+    }
+  }
+
+  function renderStepOutputs(state) {
+    STEP_ORDER.forEach(function(step, idx) {
+      var body = $('stepBody-' + idx);
+      var steps = state.steps || {};
+      var status = steps[step] || 'pending';
+      if (status !== 'done') {
+        if (status === 'pending') body.innerHTML = '';
+        return;
+      }
+
+      var html = '';
+      if (step === 'shopify_extract') {
+        var sp = state.shopify_product || {};
+        html = '<div class="tcd-field-grid">' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">英文标题</div><div class="tcd-mini-value">' + escHtml(sp.title || '') + '</div></div>' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">Product Code</div><div class="tcd-mini-value">' + escHtml(sp.product_code || '') + '</div></div>' +
+          '</div>';
+        if (sp.main_image_url) {
+          html += '<img class="tcd-img-preview" src="' + escAttr(sp.main_image_url) + '" alt="" style="margin-top:8px;">';
+        }
+      } else if (step === 'video_analysis') {
+        html = '<details><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--primary-color);">查看视频分析结果</summary>' +
+          '<pre class="tcd-json-view">' + escHtml(truncateJson(state.video_analysis, 2000)) + '</pre></details>';
+      } else if (step === 'product_analysis') {
+        html = '<details><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--primary-color);">查看产品分析结果</summary>' +
+          '<pre class="tcd-json-view">' + escHtml(truncateJson(state.product_analysis, 2000)) + '</pre></details>';
+      } else if (step === 'ad_copy') {
+        var sets = state.ad_copy_sets || {};
+        var copies = sets.copies || [];
+        if (copies.length > 0) {
+          html = '<div class="tcd-field-grid">';
+          copies.slice(0, 2).forEach(function(c) {
+            html += '<div class="tcd-copy-card">' +
+              '<div class="tcd-copy-title">' + escHtml((c.english || {}).title || '') + '</div>' +
+              '<div class="tcd-copy-message">' + escHtml((c.english || {}).message || '') + '</div>' +
+              '</div>';
+          });
+          html += '</div>';
+        }
+      } else if (step === 'cover_generation') {
+        var cr = state.cover_result || {};
+        var covers = cr.covers || [];
+        if (covers.length > 0) {
+          html = '<div class="tcd-field-grid">';
+          covers.slice(0, 1).forEach(function(c) {
+            var url = c.url || '';
+            if (url) {
+              html += '<img class="tcd-img-preview" src="' + escAttr(url) + '" alt="封面图">';
+            }
+          });
+          html += '</div>';
+        }
+      } else if (step === 'material_ingest') {
+        var mr = state.material_result || {};
+        html = '<div class="tcd-field-grid">' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">产品 ID</div><div class="tcd-mini-value">' + escHtml(String(mr.product_id || '')) + '</div></div>' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">素材 ID</div><div class="tcd-mini-value">' + escHtml(String(mr.item_id || '')) + '</div></div>' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">文件名</div><div class="tcd-mini-value">' + escHtml(mr.filename || '') + '</div></div>' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">域名</div><div class="tcd-mini-value">' + escHtml(mr.domain || '') + '</div></div>' +
+          '</div>';
+      } else if (step === 'task_creation') {
+        var tr = state.task_result || {};
+        html = '<div class="tcd-field-grid">' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">父任务 ID</div><div class="tcd-mini-value">' + escHtml(String(tr.parent_task_id || '')) + '</div></div>' +
+          '<div class="tcd-mini-card"><div class="tcd-mini-label">目标语种</div><div class="tcd-mini-value">' + escHtml((tr.countries || []).join(', ')) + '</div></div>' +
+          '</div>';
+      }
+
+      body.innerHTML = html;
+    });
+  }
+
+  function renderStep6Config(config) {
+    var body = $('stepBody-5');
+    var actions = $('stepActions-5');
+    if (!body || !actions) return;
+
+    var currentDomain = config.domain || '';
+    var currentFilename = config.filename || '';
+
+    body.innerHTML = '<div class="tcd-config-form">' +
+      '<div class="tcd-config-row">' +
+      '<div class="tcd-config-field"><label>选择域名</label><select id="cfgDomain"><option value="">-- 请选择 --</option></select></div>' +
+      '<div class="tcd-config-field"><label>文件名预览</label><input type="text" id="cfgFilename" readonly value="' + escAttr(currentFilename) + '" style="min-width:280px;"></div>' +
+      '</div>' +
+      '<button class="tcd-run-btn" type="button" id="applyCfg6" style="width:fit-content;margin-top:4px;">保存配置</button>' +
+      '</div>';
+
+    // Load domains
+    fetchDomains().then(function(domains) {
+      var sel = $('cfgDomain');
+      if (!sel) return;
+      domains.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.domain;
+        opt.textContent = d.domain + (d.is_default ? ' (默认)' : '');
+        if (d.domain === currentDomain) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+
+    $('applyCfg6').addEventListener('click', function() {
+      var domain = $('cfgDomain').value;
+      var filename = $('cfgFilename').value;
+      saveConfig({ domain: domain, filename: filename });
+    });
+  }
+
+  function renderStep7Config(config) {
+    var body = $('stepBody-6');
+    var actions = $('stepActions-6');
+    if (!body || !actions) return;
+
+    var currentCountries = config.countries || [];
+    var currentAssignments = config.language_assignments || {};
+    var currentRawProcessor = config.raw_processor_id || '';
+
+    body.innerHTML = '<div class="tcd-config-form" id="step7ConfigForm">' +
+      '<div class="tcd-config-row">' +
+      '<div class="tcd-config-field"><label>语种选择</label><div id="langCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;padding-top:4px;"></div></div>' +
+      '</div>' +
+      '<div class="tcd-config-row">' +
+      '<div class="tcd-config-field"><label>每个语种的翻译负责人</label><div id="langAssignments" style="display:grid;gap:6px;padding-top:4px;"></div></div>' +
+      '</div>' +
+      '<div class="tcd-config-row">' +
+      '<div class="tcd-config-field"><label>去字幕原始视频处理人</label><select id="cfgRawProcessor"><option value="">-- 请选择 --</option></select></div>' +
+      '</div>' +
+      '<button class="tcd-run-btn" type="button" id="applyCfg7" style="width:fit-content;margin-top:4px;">保存配置</button>' +
+      '</div>';
+
+    // Load languages and users
+    Promise.all([fetchLanguages(), fetchTranslators(), fetchRawProcessors()]).then(function(results) {
+      var languages = results[0];
+      var translators = results[1];
+      var rawProcessors = results[2];
+
+      var langCb = $('langCheckboxes');
+      if (langCb) {
+        languages.forEach(function(l) {
+          if (l.code === 'en') return;
+          var label = document.createElement('label');
+          label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = l.code;
+          cb.dataset.langName = l.name_zh || l.code;
+          if (currentCountries.indexOf(l.code) >= 0) cb.checked = true;
+          cb.addEventListener('change', refreshLangAssignments);
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode(l.name_zh || l.code));
+          langCb.appendChild(label);
+        });
+      }
+
+      var la = $('langAssignments');
+      if (la) {
+        refreshLangAssignments();
+      }
+
+      var rp = $('cfgRawProcessor');
+      if (rp) {
+        rawProcessors.forEach(function(u) {
+          var opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.username || u.id;
+          if (String(u.id) === String(currentRawProcessor)) opt.selected = true;
+          rp.appendChild(opt);
+        });
+      }
+    });
+
+    function refreshLangAssignments() {
+      var la = $('langAssignments');
+      if (!la) return;
+      var checkedLangs = [];
+      document.querySelectorAll('#langCheckboxes input:checked').forEach(function(cb) {
+        checkedLangs.push({ code: cb.value, name: cb.dataset.langName || cb.value });
+      });
+      la.innerHTML = checkedLangs.map(function(l) {
+        var opts = '<option value="">-- 选择翻译人 --</option>';
+        translators.forEach(function(t) {
+          var sel = String(currentAssignments[l.code] || '') === String(t.id) ? ' selected' : '';
+          opts += '<option value="' + t.id + '"' + sel + '>' + escHtml(t.username || t.id) + '</option>';
+        });
+        return '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-size:12px;min-width:40px;">' + escHtml(l.name) + '</span>' +
+          '<select class="lang-assign" data-lang="' + escAttr(l.code) + '" style="height:28px;font-size:12px;">' + opts + '</select>' +
+          '</div>';
+      }).join('');
+    }
+
+    $('applyCfg7').addEventListener('click', function() {
+      var checkedCountries = [];
+      document.querySelectorAll('#langCheckboxes input:checked').forEach(function(cb) {
+        checkedCountries.push(cb.value);
+      });
+      var assignments = {};
+      document.querySelectorAll('.lang-assign').forEach(function(sel) {
+        if (sel.value) assignments[sel.dataset.lang] = parseInt(sel.value, 10);
+      });
+      var rawProcessor = $('cfgRawProcessor').value;
+      saveConfig({
+        countries: checkedCountries,
+        language_assignments: assignments,
+        raw_processor_id: rawProcessor ? parseInt(rawProcessor, 10) : null
+      });
+    });
+
+    fetchTranslators().then(function(translators) { window._tcTranslators = translators; });
+    fetchRawProcessors().then(function(rawProcessors) { window._tcRawProcessors = rawProcessors; });
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function escAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function truncateJson(val, maxLen) {
+    var s = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+    maxLen = maxLen || 2000;
+    return s.length > maxLen ? s.substring(0, maxLen) + '\n...(已截断)' : s;
+  }
+
+  async function fetchState() {
+    var response = await fetch('/task-creator/api/' + encodeURIComponent(taskId) + '/state');
+    var payload = await response.json().catch(function() { return {}; });
+    if (!payload.ok) throw new Error(payload.error || '获取状态失败');
+    return payload;
+  }
+
+  async function fetchDomains() {
+    var response = await fetch('/task-creator/api/domains');
+    var payload = await response.json().catch(function() { return {}; });
+    return (payload.ok && payload.domains) ? payload.domains : [];
+  }
+
+  async function fetchLanguages() {
+    var response = await fetch('/task-creator/api/languages');
+    var payload = await response.json().catch(function() { return {}; });
+    return (payload.ok && payload.languages) ? payload.languages : [];
+  }
+
+  async function fetchTranslators() {
+    var response = await fetch('/task-creator/api/users/translators');
+    var payload = await response.json().catch(function() { return {}; });
+    return (payload.ok && payload.translators) ? payload.translators : [];
+  }
+
+  async function fetchRawProcessors() {
+    var response = await fetch('/task-creator/api/users/raw-processors');
+    var payload = await response.json().catch(function() { return {}; });
+    return (payload.ok && payload.raw_processors) ? payload.raw_processors : [];
+  }
+
+  async function saveConfig(data) {
+    try {
+      var response = await fetch('/task-creator/api/' + encodeURIComponent(taskId) + '/config', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+        body: JSON.stringify(data)
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!payload.ok) throw new Error(payload.error || '保存失败');
+      // Refresh state
+      var state = await fetchState();
+      renderAllSteps(state);
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '保存配置失败');
+    }
+  }
+
+  async function runStep(step) {
+    if (runningStep) return;
+    runningStep = step;
+    try {
+      var response = await fetch('/task-creator/api/' + encodeURIComponent(taskId) + '/run/' + encodeURIComponent(step), {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken()}
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!payload.ok) throw new Error(payload.error || '启动失败');
+      startPolling();
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '运行失败');
+      runningStep = null;
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(async function() {
+      try {
+        var state = await fetchState();
+        renderAllSteps(state);
+        var steps = state.steps || {};
+        var hasRunning = Object.values(steps).some(function(s) { return s === 'running'; });
+        if (!hasRunning) {
+          stopPolling();
+          runningStep = null;
+        }
+      } catch (e) {
+        stopPolling();
+        runningStep = null;
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // Initial render
+  renderAllSteps(initialStepInfo);
+
+  // Bind run buttons
+  document.querySelectorAll('.tcd-run-btn[data-step]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      runStep(btn.dataset.step);
+    });
+  });
+
+  // Bind restart button
+  $('restartBtn').addEventListener('click', async function() {
+    if (!window.confirm('确定重新开始吗？所有已完成的步骤输出将被清除。')) return;
+    this.disabled = true;
+    this.textContent = '重启中...';
+    try {
+      var response = await fetch('/task-creator/api/' + encodeURIComponent(taskId) + '/restart', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken()}
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!payload.ok) throw new Error(payload.error || '重启失败');
+      startPolling();
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '重启失败');
+    } finally {
+      this.disabled = false;
+      this.textContent = '强制重新开始';
+    }
+  });
+
+  // Check if already running on load
+  var steps = initialStepInfo.steps || {};
+  if (Object.values(steps).some(function(s) { return s === 'running'; })) {
+    startPolling();
+  }
+})();
+</script>
+{% endblock %}

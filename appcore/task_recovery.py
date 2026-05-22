@@ -22,7 +22,7 @@ PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_tra
 INTERRUPTED_PIPELINE_PROJECT_TYPES = {"multi_translate", "omni_translate", "translate_lab", "av_translate"}
 LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
 RECOVERABLE_PROJECT_TYPES = (
-    {"video_creation", "video_review", "video_cover", "link_check", "image_translate", "subtitle_removal"}
+    {"video_creation", "video_review", "video_cover", "link_check", "image_translate", "subtitle_removal", "task_creator"}
     | PIPELINE_PROJECT_TYPES
     | INTERRUPTED_PIPELINE_PROJECT_TYPES
 )
@@ -171,6 +171,8 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         steps["generate"] = "error"
         changed = True
     elif project_type == "video_cover":
+        changed = _mark_running_steps_as_error(recovered) or changed
+    elif project_type == "task_creator":
         changed = _mark_running_steps_as_error(recovered) or changed
     elif project_type == "video_review" and steps.get("review") == "running":
         steps["review"] = "error"

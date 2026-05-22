@@ -1,0 +1,344 @@
+{% extends "layout.html" %}
+
+{% block title %}创建任务{% endblock %}
+{% block page_title %}创建任务{% endblock %}
+
+{% block extra_style %}
+.tc-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.tc-header h1 { font-size:20px; font-weight:700; margin:0; color:var(--text-main); }
+.tc-grid { display:grid; grid-template-columns:repeat(auto-fill, 180px); gap:16px; align-items:start; }
+.tc-card-wrap { position:relative; width:180px; }
+.tc-card { display:flex; flex-direction:column; width:180px; min-height:0; padding:0; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:inherit; text-decoration:none; overflow:hidden; transition:border-color .15s, box-shadow .15s; }
+.tc-card:hover { border-color:var(--primary-color); box-shadow:0 4px 14px rgba(15,23,42,.10); }
+.tc-card-cover { width:180px; height:270px; background:#fff; overflow:hidden; flex-shrink:0; }
+.tc-card-cover img { width:100%; height:100%; object-fit:cover; display:block; }
+.tc-card-body { display:grid; gap:6px; padding:10px; }
+.tc-card-title { font-size:13px; font-weight:800; color:var(--text-main); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35; min-height:35px; word-break:break-word; }
+.tc-card-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
+.tc-card-meta-row { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; }
+.tc-status { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:999px; font-size:12px; font-weight:700; }
+.tc-status.done { background:rgba(22,163,74,.14); color:#16a34a; }
+.tc-status.running { background:rgba(245,158,11,.14); color:#d97706; }
+.tc-status.error { background:rgba(239,68,68,.14); color:#dc2626; }
+.tc-status.uploaded { background:rgba(14,165,233,.14); color:#0284c7; }
+.card-menu-btn { position:absolute; top:8px; right:8px; width:30px; height:30px; border-radius:999px; border:1px solid rgba(255,255,255,.88); background:rgba(15,23,42,.62); color:#f8fafc; cursor:pointer; font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center; z-index:3; }
+.card-menu-btn:hover { background:rgba(15,23,42,.84); }
+.card-menu { position:absolute; top:42px; right:8px; min-width:112px; display:none; padding:6px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); box-shadow:0 12px 30px rgba(15,23,42,.18); z-index:4; }
+.card-menu.open { display:block; }
+.card-menu button { width:100%; height:30px; border:0; border-radius:6px; background:transparent; color:var(--text-main); text-align:left; padding:0 10px; font-size:13px; cursor:pointer; }
+.card-menu button:hover { background:var(--sidebar-hover-bg); color:var(--primary-color); }
+.card-menu button.danger { color:#dc2626; }
+.card-menu button.danger:hover { background:#fef2f2; color:#b91c1c; }
+.tc-empty { padding:56px 20px; text-align:center; border:1px dashed var(--border-main); border-radius:8px; color:#9ca3af; background:var(--bg-card); }
+.tc-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.42); padding:20px; }
+.tc-modal-backdrop.show { display:flex; }
+.tc-modal { width:min(560px, 100%); border-radius:8px; border:1px solid var(--border-main); background:var(--bg-card); padding:22px; box-shadow:0 18px 48px rgba(15,23,42,.22); }
+.tc-modal h2 { margin:0 0 16px; font-size:17px; color:var(--text-main); }
+.tc-form { display:grid; gap:14px; }
+.tc-field { display:grid; gap:7px; }
+.tc-label { font-size:13px; font-weight:700; color:var(--text-main); }
+.tc-input { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
+.video-dropzone { position:relative; min-height:220px; border:1.5px dashed var(--border-main); border-radius:8px; display:grid; place-items:center; padding:18px; background:rgba(14,165,233,.04); cursor:pointer; overflow:hidden; transition:border-color .15s, background .15s; }
+.video-dropzone:hover, .video-dropzone.dragover { border-color:var(--primary-color); background:rgba(14,165,233,.09); }
+.video-dropzone.has-file { border-style:solid; background:#0f172a; }
+.video-file-input { position:absolute; inset:0; width:1px; height:1px; opacity:0; pointer-events:none; }
+.video-dropzone-text { display:grid; gap:8px; text-align:center; color:#64748b; font-size:13px; line-height:1.5; }
+.video-dropzone-text strong { color:var(--text-main); font-size:15px; }
+.video-preview { width:100%; max-width:140px; aspect-ratio:9/16; border-radius:8px; background:#000; object-fit:cover; box-shadow:0 10px 28px rgba(15,23,42,.22); }
+.video-preview-wrap { display:grid; justify-items:center; gap:10px; width:100%; }
+.video-preview-name { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e5e7eb; font-size:12px; }
+.video-clear { position:absolute; top:10px; right:10px; }
+.preview-hidden { display:none !important; }
+.tc-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
+.tc-error { min-height:20px; color:#dc2626; font-size:13px; }
+.tc-shopify-preview { display:none; margin-top:8px; padding:10px; border:1px solid #86efac; border-radius:8px; background:rgba(34,197,94,.06); }
+.tc-shopify-preview.has-data { display:grid; grid-template-columns:80px 1fr; gap:10px; align-items:start; }
+.tc-shopify-preview img { width:80px; height:80px; object-fit:cover; border-radius:6px; border:1px solid var(--border-main); }
+.tc-shopify-preview-body { display:grid; gap:4px; min-width:0; }
+.tc-shopify-preview-title { font-size:13px; font-weight:800; color:var(--text-main); }
+.tc-shopify-preview-code { font-size:12px; color:#64748b; }
+@media (max-width:720px) {
+  .tc-header { align-items:stretch; flex-direction:column; }
+  .tc-header .btn { width:100%; }
+}
+{% endblock %}
+
+{% block content %}
+<div class="tc-header">
+  <h1>创建任务 <span style="font-size:13px;color:#9ca3af;font-weight:400;">非明空来源素材</span></h1>
+  <button class="btn btn-primary" type="button" id="tcShowCreate">新建项目</button>
+</div>
+
+{% if projects %}
+<div class="tc-grid">
+  {% for p in projects %}
+  <div class="tc-card-wrap">
+    <a class="tc-card" href="/task-creator/{{ p.id }}">
+      {% if p.thumbnail_path %}
+      <div class="tc-card-cover">
+        <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
+      </div>
+      {% else %}
+      <div class="tc-card-cover" style="background:#e5e7eb;display:flex;align-items:center;justify-content:center;">
+        <span style="font-size:32px;color:#9ca3af;">📦</span>
+      </div>
+      {% endif %}
+      <div class="tc-card-body">
+        <div class="tc-card-title" title="{{ p.display_name or p.original_filename or p.id }}">{{ p.display_name or p.original_filename or p.id }}</div>
+        <div class="tc-card-meta">
+          <div class="tc-card-subtitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">创建人：{{ p.creator_name or '未知' }}</div>
+          <div class="tc-card-subtitle">创建时间：{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</div>
+          <div class="tc-card-meta-row">
+            <span class="tc-status {{ p.status }}">
+              {% if p.status == 'done' %}已完成{% elif p.status == 'running' %}处理中{% elif p.status == 'error' %}失败{% elif p.status == 'uploaded' %}待处理{% else %}{{ p.status }}{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </a>
+    <button class="card-menu-btn" type="button" data-task-id="{{ p.id }}" onclick="toggleProjectMenu(event, 'menu-' + this.dataset.taskId)" aria-label="项目操作">⋯</button>
+    <div class="card-menu" id="menu-{{ p.id }}">
+      <button type="button" data-task-id="{{ p.id }}" onclick="openProject(event, this.dataset.taskId)">打开详情</button>
+      <button class="danger" type="button" data-task-id="{{ p.id }}" onclick="deleteProject(event, this.dataset.taskId)">删除项目</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="tc-empty">还没有创建任务项目。点击「新建项目」上传视频 + Shopify 商品链接开始。</div>
+{% endif %}
+
+<div class="tc-modal-backdrop" id="tcCreateBackdrop">
+  <div class="tc-modal">
+    <h2>新建创建任务项目</h2>
+    <form class="tc-form" id="tcCreateForm" enctype="multipart/form-data">
+      <label class="tc-field">
+        <span class="tc-label">Shopify 商品链接</span>
+        <input class="tc-input" type="url" name="shopify_url" id="shopifyUrlInput" required placeholder="https://newjoyloo.com/products/xxx">
+        <button class="btn btn-ghost btn-sm" type="button" id="shopifyPreviewBtn" style="justify-self:start;margin-top:4px;">预览商品信息</button>
+        <div class="tc-shopify-preview" id="shopifyPreview">
+          <img id="shopifyPreviewImg" src="" alt="">
+          <div class="tc-shopify-preview-body">
+            <div class="tc-shopify-preview-title" id="shopifyPreviewTitle"></div>
+            <div class="tc-shopify-preview-code" id="shopifyPreviewCode"></div>
+          </div>
+        </div>
+      </label>
+      <label class="tc-field">
+        <span class="tc-label">产品中文名称</span>
+        <input class="tc-input" type="text" name="product_name_cn" required placeholder="例如：魔术杯">
+      </label>
+      <div class="tc-field">
+        <span class="tc-label">视频文件</span>
+        <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
+          <input id="videoFile" class="video-file-input" type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.mpeg,.mpg,.avi,.webm,.m4v">
+          <div class="video-dropzone-text" id="videoPrompt">
+            <strong>拖入视频</strong>
+            <span>或点击选择文件</span>
+          </div>
+          <div class="video-preview-wrap preview-hidden" id="videoPreviewWrap">
+            <video id="videoPreview" class="video-preview" muted playsinline controls></video>
+            <div class="video-preview-name" id="videoFileName"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm video-clear preview-hidden" type="button" id="previewClear">移除</button>
+        </div>
+      </div>
+      <div class="tc-error" id="tcCreateError"></div>
+      <div class="tc-actions">
+        <button class="btn btn-ghost" type="button" id="tcCancelCreate">取消</button>
+        <button class="btn btn-primary" type="submit" id="tcCreateSubmit">创建项目</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const backdrop = document.getElementById('tcCreateBackdrop');
+  const showBtn = document.getElementById('tcShowCreate');
+  const cancelBtn = document.getElementById('tcCancelCreate');
+  const form = document.getElementById('tcCreateForm');
+  const submit = document.getElementById('tcCreateSubmit');
+  const errorBox = document.getElementById('tcCreateError');
+  const dropzone = document.getElementById('videoDropzone');
+  const fileInput = document.getElementById('videoFile');
+  const prompt = document.getElementById('videoPrompt');
+  const previewWrap = document.getElementById('videoPreviewWrap');
+  const preview = document.getElementById('videoPreview');
+  const fileName = document.getElementById('videoFileName');
+  const clearBtn = document.getElementById('previewClear');
+  const shopifyUrlInput = document.getElementById('shopifyUrlInput');
+  const shopifyPreviewBtn = document.getElementById('shopifyPreviewBtn');
+  const shopifyPreview = document.getElementById('shopifyPreview');
+  let selectedFile = null;
+  let previewUrl = '';
+
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
+  function setInputFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    if (window.DataTransfer) {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files = transfer.files;
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    fileName.textContent = file.name || 'selected-video';
+    dropzone.classList.add('has-file');
+    prompt.classList.add('preview-hidden');
+    previewWrap.classList.remove('preview-hidden');
+    clearBtn.classList.remove('preview-hidden');
+  }
+
+  function clearFile() {
+    selectedFile = null;
+    fileInput.value = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = '';
+    preview.removeAttribute('src');
+    preview.load();
+    fileName.textContent = '';
+    dropzone.classList.remove('has-file', 'dragover');
+    prompt.classList.remove('preview-hidden');
+    previewWrap.classList.add('preview-hidden');
+    clearBtn.classList.add('preview-hidden');
+  }
+
+  function show() { backdrop.classList.add('show'); errorBox.textContent = ''; resetShopifyPreview(); }
+  function hide() { backdrop.classList.remove('show'); form.reset(); clearFile(); resetShopifyPreview(); errorBox.textContent = ''; submit.disabled = false; submit.textContent = '创建项目'; }
+
+  function resetShopifyPreview() {
+    shopifyPreview.classList.remove('has-data');
+    document.getElementById('shopifyPreviewImg').src = '';
+    document.getElementById('shopifyPreviewTitle').textContent = '';
+    document.getElementById('shopifyPreviewCode').textContent = '';
+  }
+
+  function closeProjectMenus(exceptId) {
+    document.querySelectorAll('.card-menu.open').forEach(function(menu) {
+      if (!exceptId || menu.id !== exceptId) menu.classList.remove('open');
+    });
+  }
+
+  window.toggleProjectMenu = function(event, menuId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus(menuId);
+    var menu = document.getElementById(menuId);
+    if (menu) menu.classList.toggle('open');
+  };
+
+  window.openProject = function(event, taskId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus();
+    window.location.href = '/task-creator/' + encodeURIComponent(taskId);
+  };
+
+  window.deleteProject = async function(event, taskId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeProjectMenus();
+    if (!window.confirm('确定删除这个项目吗？此操作不可恢复。')) return;
+    try {
+      var response = await fetch('/task-creator/api/' + encodeURIComponent(taskId), {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': csrfToken()}
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '删除失败');
+      window.location.reload();
+    } catch (error) {
+      window.alert(error && error.message ? error.message : '删除失败');
+    }
+  };
+
+  document.addEventListener('click', function() { closeProjectMenus(); });
+
+  shopifyPreviewBtn.addEventListener('click', async function() {
+    var url = shopifyUrlInput.value.trim();
+    if (!url) { errorBox.textContent = '请先输入 Shopify 商品链接'; return; }
+    shopifyPreviewBtn.disabled = true;
+    shopifyPreviewBtn.textContent = '查询中...';
+    errorBox.textContent = '';
+    resetShopifyPreview();
+    try {
+      var response = await fetch('/task-creator/api/shopify-preview', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+        body: JSON.stringify({url: url})
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '获取失败');
+      shopifyPreview.classList.add('has-data');
+      document.getElementById('shopifyPreviewImg').src = payload.main_image_url || '';
+      document.getElementById('shopifyPreviewTitle').textContent = payload.title || '';
+      document.getElementById('shopifyPreviewCode').textContent = 'Product Code: ' + (payload.product_code || '未识别');
+    } catch (error) {
+      errorBox.textContent = error && error.message ? error.message : '获取失败';
+    } finally {
+      shopifyPreviewBtn.disabled = false;
+      shopifyPreviewBtn.textContent = '预览商品信息';
+    }
+  });
+
+  showBtn.addEventListener('click', show);
+  cancelBtn.addEventListener('click', hide);
+  backdrop.addEventListener('click', function(event) { if (event.target === backdrop) hide(); });
+
+  dropzone.addEventListener('click', function(event) {
+    if (event.target !== clearBtn && !previewWrap.contains(event.target)) fileInput.click();
+  });
+  dropzone.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInput.click(); }
+  });
+  ['dragenter', 'dragover'].forEach(function(name) {
+    dropzone.addEventListener(name, function(event) { event.preventDefault(); dropzone.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function(name) {
+    dropzone.addEventListener(name, function(event) { event.preventDefault(); dropzone.classList.remove('dragover'); });
+  });
+  dropzone.addEventListener('drop', function(event) {
+    var file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+    if (file) setInputFile(file);
+  });
+  fileInput.addEventListener('change', function() { setInputFile(fileInput.files[0]); });
+  clearBtn.addEventListener('click', function(event) { event.stopPropagation(); clearFile(); });
+
+  form.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    if (!selectedFile && !(fileInput.files && fileInput.files[0])) {
+      errorBox.textContent = '请上传视频文件';
+      return;
+    }
+    submit.disabled = true;
+    submit.textContent = '创建中...';
+    errorBox.textContent = '';
+    try {
+      var body = new FormData(form);
+      if (selectedFile) body.set('video_file', selectedFile, selectedFile.name || 'video.mp4');
+      var response = await fetch('/task-creator/api/projects', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrfToken()},
+        body: body
+      });
+      var payload = await response.json().catch(function() { return {}; });
+      if (!response.ok || !payload.ok) throw new Error(payload.error || '创建失败');
+      window.location.href = '/task-creator/' + encodeURIComponent(payload.id);
+    } catch (error) {
+      errorBox.textContent = error && error.message ? error.message : '创建失败';
+      submit.disabled = false;
+      submit.textContent = '创建项目';
+    }
+  });
+})();
+</script>
+{% endblock %}

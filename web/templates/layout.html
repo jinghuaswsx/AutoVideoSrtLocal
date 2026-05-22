@@ -957,9 +957,24 @@
       </a>
       {% endif %}
       {% if has_permission('task_center') %}
-      <a href="/tasks/" {% if task_center_active %}class="active"{% endif %}>
-        <span class="nav-icon">📋</span> 任务中心
-      </a>
+      {% set task_creator_active = request.path.startswith('/task-creator') %}
+      <details class="sidebar-group sidebar-taskcenter-group" {% if task_center_active or task_creator_active %}open{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="/tasks/" {% if task_center_active or task_creator_active %}class="active"{% endif %}>
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">任务中心</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          <a href="/tasks/" {% if task_center_active %}class="active"{% endif %}>
+            <span class="nav-icon">📋</span> 任务中心
+          </a>
+          {% if current_user.is_admin %}
+          <a href="/task-creator/" {% if task_creator_active %}class="active"{% endif %}>
+            <span class="nav-icon">🆕</span> 创建任务
+          </a>
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
