@@ -681,6 +681,7 @@
 }
 .btn-push.btn-rework {
   background: var(--oc-danger);
+  color: #fff;
 }
 .btn-push.btn-rework:hover:not(:disabled) {
   background: var(--oc-danger-hover);
@@ -1177,7 +1178,10 @@
   line-height: 1.55;
 }
 .pm-footer {
-  display: flex; gap: 100px; justify-content: flex-end;
+  display: flex;
+  gap: 100px;
+  justify-content: flex-end;
+  align-items: center;
   padding: var(--oc-sp-3) var(--oc-sp-5);
   border-top: 1px solid var(--oc-border);
   background: var(--oc-bg);

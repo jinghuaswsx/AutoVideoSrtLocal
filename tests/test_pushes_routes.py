@@ -1443,7 +1443,8 @@ def test_pushes_modal_material_push_button_is_larger_than_rework_button():
     assert ".btn-push.btn-modal-material-push" in style
     assert "height: 64px" in style
     assert "padding: 0 28px" in style
-    assert ".btn-push.btn-rework {\n  background: var(--oc-danger);" in style
+    assert ".pm-footer {\n  display: flex;\n  gap: 100px;\n  justify-content: flex-end;\n  align-items: center;" in style
+    assert ".btn-push.btn-rework {\n  background: var(--oc-danger);\n  color: #fff;" in style
 
 
 def test_pushes_quality_media_previews_are_side_by_side_180_by_320():
