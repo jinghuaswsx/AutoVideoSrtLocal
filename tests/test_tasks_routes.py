@@ -260,6 +260,22 @@ def test_task_detail_readiness_exposes_inline_ad_language_controls(authed_client
     assert "tcLoadReadiness(TC_DETAIL_TASK_ID, TC_DETAIL_CURRENT_TASK)" in body
 
 
+def test_task_detail_readiness_embeds_product_link_manager(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcRenderProductLinkManagerShell" in body
+    assert "data-tc-product-link-manager" in body
+    assert "function tcLoadProductLinkManager" in body
+    assert "function tcProductLinkAction" in body
+    assert "data-tc-pl-action=\"confirm-link\"" in body
+    assert "manual_confirm: true" in body
+    assert "manual_abnormal: true" in body
+    assert "'/shopify-image/' + encodeURIComponent(lang) + '/confirm'" in body
+    assert "'/shopify-image/' + encodeURIComponent(lang) + '/requeue'" in body
+    assert "tcLoadProductLinkManager(data, task)" in body
+
+
 def test_task_create_modal_supports_per_language_assignments_and_owner_hint(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
