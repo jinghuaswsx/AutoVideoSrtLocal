@@ -181,7 +181,8 @@ def _utc_now_naive() -> datetime:
 
 def _load_run(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
-    out["product_id"] = str(out.get("product_id") or "")
+    raw_product_id = out.get("product_id")
+    out["product_id"] = "" if raw_product_id is None else str(raw_product_id)
     for public_key, column in JSON_RUN_FIELDS.items():
         out[public_key] = _load(out.get(column), [] if public_key == "countries" else {})
     for key in ("created_at", "updated_at", "completed_at", "failed_at", "started_at"):

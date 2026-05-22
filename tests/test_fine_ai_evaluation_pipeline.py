@@ -145,6 +145,34 @@ def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monke
     ]
 
 
+def test_external_link_zero_product_id_status_is_not_treated_as_missing(monkeypatch):
+    from appcore import fine_ai_evaluation_repository as repo_mod
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    monkeypatch.setattr(
+        repo_mod,
+        "query_one",
+        lambda sql, args=(): {
+            "evaluation_run_id": "eval_external",
+            "product_id": 0,
+            "status": "running",
+            "countries_json": '["DE"]',
+            "progress_json": '{"current_step": "product_fact_extraction"}',
+            "metadata_json": '{"source_type": "external_product_link"}',
+        },
+    )
+
+    service = FineAiEvaluationService(
+        repository=repo_mod.FineAiEvaluationRepository(),
+        gemini_client=FakeGeminiClient([]),
+    )
+
+    status = service.get_status(0, "eval_external")
+
+    assert status["product_id"] == "0"
+    assert status["status"] == "running"
+
+
 def test_pipeline_continues_when_one_country_fails():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
