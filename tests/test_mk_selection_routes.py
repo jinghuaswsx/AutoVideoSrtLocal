@@ -293,6 +293,33 @@ def test_mk_selection_material_archive_tabs_have_top_pagers_and_page100():
     assert "renderMkArchivePager(['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'], 'loadMkYesterdayTop100', page, total);" in template
 
 
+def test_mk_selection_video_search_placeholder_lists_supported_fields():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert 'placeholder="搜索产品名 / product code / 视频文件名"' in template
+
+
+def test_mk_selection_manual_video_search_clears_active_product_code_before_loading():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function runMkSearch(options = {})" in template
+    assert "if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {" in template
+    assert "activeMkProductCode = '';" in template
+    assert "switchMkLibraryTab('videos', {preserveProductCode: true});" in template
+
+
+def test_mk_material_search_index_migration_is_idempotent():
+    sql = Path("db/migrations/2026_05_22_mingkong_material_search_indexes.sql").read_text(encoding="utf-8")
+
+    assert "idx_mk_material_search_at_product_code" in sql
+    assert "idx_mk_material_search_at_video_name" in sql
+    assert "idx_mk_material_search_at_product_name" in sql
+    assert "idx_mk_material_search_at_mk_product_name" in sql
+    assert "idx_mk_material_search_at_video_path" in sql
+    assert "information_schema.STATISTICS" in sql
+    assert "PREPARE stmt FROM @ddl" in sql
+
+
 def test_mk_selection_video_cards_prefer_local_cover_url():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

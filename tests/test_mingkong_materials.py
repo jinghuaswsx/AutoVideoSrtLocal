@@ -987,6 +987,87 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
     )
 
 
+def test_list_material_library_keyword_matches_product_code_rjc_variants(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 22),
+                "snapshot_at": datetime(2026, 5, 22, 5, 0, 0),
+                "snapshot_slot": "0500",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 22),
+                "snapshot_at": datetime(2026, 5, 22, 5, 0, 0),
+                "snapshot_slot": "0500",
+                "summary_json": "{}",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return []
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    mm.list_material_library(keyword="cool-widget-rjc", page=1, page_size=100)
+
+    count_args = next(args for kind, sql, args in captured if kind == "query_one" and "COUNT(*) AS cnt" in sql)
+    assert "%cool-widget%" in count_args
+    assert "%cool-widget-rjc%" in count_args
+
+
+def test_list_material_library_keyword_matches_video_filename_and_uses_same_filter(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 22),
+                "snapshot_at": datetime(2026, 5, 22, 5, 0, 0),
+                "snapshot_slot": "0500",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 22),
+                "snapshot_at": datetime(2026, 5, 22, 5, 0, 0),
+                "snapshot_slot": "0500",
+                "summary_json": "{}",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return []
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    mm.list_material_library(keyword="family-memory-card-game.mp4", page=1, page_size=100)
+
+    count_sql = next(sql for kind, sql, args in captured if kind == "query_one" and "COUNT(*) AS cnt" in sql)
+    list_sql = next(sql for kind, sql, args in captured if kind == "query" and "ORDER BY s.cumulative_90_spend DESC" in sql)
+    assert "s.video_name LIKE %s" in count_sql
+    assert "s.video_path LIKE %s" in count_sql
+    assert "s.video_name LIKE %s" in list_sql
+    assert "s.video_path LIKE %s" in list_sql
+
+
 def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypatch):
     captured = []
 
