@@ -1069,6 +1069,57 @@ def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):
     assert any("mingkong_material_ad_status_cache" in entry[1] for entry in captured if entry[0] == "query")
 
 
+def test_enrich_cached_ad_statuses_attaches_product_ai_evaluation_result(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM mingkong_material_ad_status_cache" in sql:
+            if args and args[0] == "product":
+                return [
+                    {
+                        "status_scope": "product",
+                        "lookup_hash": mm.status_lookup_hash("cool-widget-rjc"),
+                        "lookup_key": "cool-widget-rjc",
+                        "product_code": "cool-widget-rjc",
+                        "media_product_id": 7,
+                        "media_item_id": None,
+                        "has_local_match": 1,
+                        "has_running_ad": 0,
+                        "ad_spend_usd": 0,
+                        "latest_activity_at": None,
+                        "summary_json": "{}",
+                        "refreshed_at": datetime(2026, 5, 18, 12, 0, 0),
+                    }
+                ]
+            return []
+        if "FROM media_products" in sql and "ai_evaluation_result" in sql:
+            assert args == (7,)
+            return [
+                {
+                    "id": 7,
+                    "ai_evaluation_result": "\u9002\u5408\u63a8\u5e7f",
+                    "ai_evaluation_detail": '{"countries":[{"lang":"DE","is_suitable":true}]}',
+                }
+            ]
+        if "FROM media_items" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    items = [
+        {
+            "product_code": "cool-widget",
+            "video_path": "/medias/uploads2/winner.mp4",
+        }
+    ]
+
+    enriched = mm._enrich_cached_ad_statuses(items)
+
+    status = enriched[0]["product_ad_status"]
+    assert status["media_product_id"] == 7
+    assert status["ai_evaluation_result"] == "\u9002\u5408\u63a8\u5e7f"
+    assert status["ai_evaluation_detail"] == '{"countries":[{"lang":"DE","is_suitable":true}]}'
+
+
 def test_material_library_marks_video_in_library_only_within_matched_product(monkeypatch):
     monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
 

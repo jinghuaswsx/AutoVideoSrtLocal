@@ -233,6 +233,15 @@
 .mki-btn--xiao:hover:not(:disabled) { background: oklch(50% 0.14 155); }
 .mki-ai-btn { background: oklch(58% 0.14 255); border-color: oklch(52% 0.13 255); color: #fff; }
 .mki-ai-btn:hover:not(:disabled) { background: oklch(48% 0.14 255); }
+.ect-modal-header .ect-modal-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.ect-modal-header .ect-modal-header-actions + .ect-modal-close { margin-left:0; }
+.mki-ai-reevaluate-btn {
+  height: 28px; padding: 0 12px; border: 1px solid var(--oc-accent);
+  border-radius: var(--oc-r); background: var(--oc-bg); color: var(--oc-accent);
+  font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.mki-ai-reevaluate-btn:hover:not(:disabled) { background: var(--oc-accent-subtle); }
+.mki-ai-reevaluate-btn:disabled { border-color: var(--oc-border); color: var(--oc-fg-muted); background: var(--oc-bg-muted); cursor: not-allowed; }
 .mki-btn:disabled, .mki-btn--disabled {
   background: var(--oc-bg-muted); color: var(--oc-fg-muted);
   cursor: not-allowed; border-color: var(--oc-border);
@@ -1148,6 +1157,11 @@ function renderMkVideoMaterialCard(r) {
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
   const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
   const hasLocalProduct = Boolean(r.has_local_product_in_library || (productStatus && productStatus.has_local_match) || existingProductId);
+  const hasAiEvaluationResult = Boolean(mkiAiEvaluationResultFromStatus(productStatus));
+  const aiButtonLabel = mkiAiButtonLabel(r);
+  const aiButtonTitle = existingProductId
+    ? (hasAiEvaluationResult ? '查看 AI 评估结果，必要时可重新评估' : '打开 AI 评估请求与结果')
+    : '先加入素材库后才能进行 AI 评估';
   const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
@@ -1237,13 +1251,14 @@ function renderMkVideoMaterialCard(r) {
     </button>
     <button class="mki-btn mki-ai-btn"
         ${existingProductId ? '' : 'disabled'}
-        title="${existingProductId ? '打开 AI 评估请求与结果' : '先加入素材库后才能进行 AI 评估'}"
+        title="${aiButtonTitle}"
         data-mki-ai-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
+        data-mki-ai-has-result="${hasAiEvaluationResult ? '1' : ''}"
         data-mki-product-name="${safeProductName}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         onclick="mkiAiEvaluateFromCard(this)">
-      AI评估
+      ${aiButtonLabel}
     </button>
   </div>`;
 }
@@ -1588,6 +1603,15 @@ function mkiAiParseDetail(raw) {
   return raw && typeof raw === 'object' ? raw : null;
 }
 
+function mkiAiEvaluationResultFromStatus(status) {
+  return String((status && status.ai_evaluation_result) || '').trim();
+}
+
+function mkiAiButtonLabel(r) {
+  const productStatus = (r && r.product_ad_status) || {};
+  return mkiAiEvaluationResultFromStatus(productStatus) ? 'AI评估结果' : 'AI评估';
+}
+
 function mkiAiCountryRows(raw) {
   const detail = mkiAiParseDetail(raw);
   const countries = detail && Array.isArray(detail.countries) ? detail.countries : [];
@@ -1675,6 +1699,145 @@ async function mkiAiOpenFullPayload(url) {
   }
 }
 
+function mkiAiRenderDetailHtml(detail) {
+  const parsed = mkiAiParseDetail(detail);
+  if (parsed && Array.isArray(parsed.countries) && parsed.countries.length) {
+    return window.EvalCountryTable.render(parsed);
+  }
+  const fallback = parsed || detail || {};
+  const text = typeof fallback === 'string' ? fallback : JSON.stringify(fallback, null, 2);
+  return `<pre class="ect-modal-json">${escapeHtml(text)}</pre>`;
+}
+
+function mkiAiSetResultPanel(shell, detail) {
+  if (!shell || !shell.resultPanel) return;
+  shell.resultPanel.innerHTML = mkiAiRenderDetailHtml(detail);
+  if (shell.setActiveTab) shell.setActiveTab('result');
+}
+
+function mkiAiSetButtonResultState(btn) {
+  if (!btn) return;
+  btn.dataset.mkiAiHasResult = '1';
+  btn.disabled = false;
+  btn.textContent = 'AI评估结果';
+  btn.title = '查看 AI 评估结果，必要时可重新评估';
+}
+
+function mkiAiSetReevaluateBusy(button, busy) {
+  if (!button) return;
+  button.disabled = !!busy;
+  button.textContent = busy ? '评估中...' : '重新评估';
+}
+
+function mkiAiAttachReevaluateButton(shell, context) {
+  const header = shell && shell.modal && shell.modal.querySelector('.ect-modal-header');
+  if (!header) return null;
+  let actions = header.querySelector('.ect-modal-header-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'ect-modal-header-actions';
+    const closeButton = header.querySelector('.ect-modal-close');
+    header.insertBefore(actions, closeButton || null);
+  }
+  let button = actions.querySelector('[data-mki-ai-reevaluate]');
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mki-ai-reevaluate-btn';
+    button.dataset.mkiAiReevaluate = '1';
+    button.textContent = '重新评估';
+    actions.appendChild(button);
+  }
+  context.reevaluateButton = button;
+  button.onclick = () => mkiAiRunEvaluation(context, { forceTab: true });
+  return button;
+}
+
+async function mkiAiLoadRequestPreview(context) {
+  const shell = context.shell;
+  try {
+    mkiAiRenderRequestPreview(shell.requestPanel, null, '');
+    const preview = await mkiFetchJson(context.previewUrl);
+    mkiAiRenderRequestPreview(shell.requestPanel, preview.payload || null, (preview.payload || {}).full_payload_url);
+  } catch (e) {
+    if (shell.requestPanel) shell.requestPanel.innerHTML = `<div class="ect-empty">请求数据加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiShowExistingResult(context) {
+  const shell = context.shell;
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在加载 AI 评估结果...</div>';
+  if (shell.setActiveTab) shell.setActiveTab('result');
+  try {
+    const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+    const product = fresh.product || null;
+    const detail = product && product.ai_evaluation_detail;
+    if (detail) {
+      mkiAiSetResultPanel(shell, detail);
+      MKI_AI_SUGGESTION_CACHE.set(context.productId, detail);
+      mkiXiaoApplyAiSuggestions(detail);
+      return;
+    }
+    if (shell.resultPanel) {
+      shell.resultPanel.innerHTML = '<div class="ect-empty">暂无评估详情，可点击右上角“重新评估”。</div>';
+    }
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">结果加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiRunEvaluation(context, options = {}) {
+  if (context.running) return;
+  context.running = true;
+  const btn = context.button;
+  const shell = context.shell;
+  const original = btn ? btn.textContent : '';
+  if (options.forceTab && shell.setActiveTab) shell.setActiveTab('result');
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在等待大模型返回结构化结果...</div>';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '请求中...';
+  }
+  mkiAiSetReevaluateBusy(context.reevaluateButton, true);
+  try {
+    const data = await mkiFetchJson(context.runUrl, {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({
+        ...(context.itemId > 0 ? {media_item_id: context.itemId} : {}),
+        ...(context.productLink ? {product_link: context.productLink} : {}),
+      }),
+    });
+    let product = null;
+    try {
+      const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+      product = fresh.product || null;
+    } catch (_) {}
+    const detail = product && product.ai_evaluation_detail
+      || data?.result?.detail
+      || data?.result?.ai_evaluation_detail
+      || data?.detail
+      || data?.result
+      || data;
+    mkiAiSetResultPanel(shell, detail);
+    if (product && product.ai_evaluation_detail) {
+      MKI_AI_SUGGESTION_CACHE.set(context.productId, product.ai_evaluation_detail);
+      mkiXiaoApplyAiSuggestions(product.ai_evaluation_detail);
+    }
+    mkiAiSetButtonResultState(btn);
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">评估失败：${escapeHtml(e.message || e)}</div>`;
+    if (shell.setActiveTab) shell.setActiveTab('result');
+    if (btn) {
+      btn.textContent = original || (context.hasExistingResult ? 'AI评估结果' : 'AI评估');
+      btn.disabled = false;
+    }
+  } finally {
+    context.running = false;
+    mkiAiSetReevaluateBusy(context.reevaluateButton, false);
+  }
+}
+
 async function mkiAiEvaluateFromCard(btn) {
   const productId = Number(btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
   const itemId = Number(btn?.dataset.mkiLocalItemId || 0);
@@ -1690,52 +1853,25 @@ async function mkiAiEvaluateFromCard(btn) {
   const title = btn?.dataset.mkiProductName ? `AI评估 - ${btn.dataset.mkiProductName}` : 'AI评估';
   const shell = window.EvalCountryTable.openModal('', {title, withRequestTab: true});
   if (shell.setActiveTab) shell.setActiveTab('request');
-  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在等待大模型返回结构化结果...</div>';
-  const previewUrl = mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink);
-  const runUrl = mkiAiProductEndpoint(productId, '/evaluate', 0, '');
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '请求中...';
-  try {
-    mkiAiRenderRequestPreview(shell.requestPanel, null, '');
-    const preview = await mkiFetchJson(previewUrl);
-    mkiAiRenderRequestPreview(shell.requestPanel, preview.payload || null, (preview.payload || {}).full_payload_url);
-  } catch (e) {
-    if (shell.requestPanel) shell.requestPanel.innerHTML = `<div class="ect-empty">请求数据加载失败：${escapeHtml(e.message || e)}</div>`;
+  const context = {
+    button: btn,
+    shell,
+    productId,
+    itemId,
+    productLink,
+    hasExistingResult: btn?.dataset.mkiAiHasResult === '1',
+    previewUrl: mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink),
+    runUrl: mkiAiProductEndpoint(productId, '/evaluate', 0, ''),
+    running: false,
+    reevaluateButton: null,
+  };
+  mkiAiAttachReevaluateButton(shell, context);
+  mkiAiLoadRequestPreview(context);
+  if (context.hasExistingResult) {
+    await mkiAiShowExistingResult(context);
+    return;
   }
-  try {
-    const data = await mkiFetchJson(runUrl, {
-      method: 'POST',
-      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
-      body: JSON.stringify({
-        ...(itemId > 0 ? {media_item_id: itemId} : {}),
-        ...(productLink ? {product_link: productLink} : {}),
-      }),
-    });
-    let product = null;
-    try {
-      const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(productId)}`);
-      product = fresh.product || null;
-    } catch (_) {}
-    const detail = product && product.ai_evaluation_detail
-      || data?.result?.detail
-      || data?.result?.ai_evaluation_detail
-      || data?.detail
-      || data?.result
-      || data;
-    if (shell.resultPanel) {
-      shell.resultPanel.innerHTML = window.EvalCountryTable.render(detail);
-    }
-    if (shell.setActiveTab) shell.setActiveTab('result');
-    if (product && product.ai_evaluation_detail) mkiXiaoApplyAiSuggestions(product.ai_evaluation_detail);
-    btn.textContent = '已完成';
-    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1200);
-  } catch (e) {
-    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">评估失败：${escapeHtml(e.message || e)}</div>`;
-    if (shell.setActiveTab) shell.setActiveTab('result');
-    btn.textContent = original;
-    btn.disabled = false;
-  }
+  await mkiAiRunEvaluation(context);
 }
 
 function mkiEnsureImportedStatusIcon(card) {

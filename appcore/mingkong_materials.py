@@ -370,6 +370,8 @@ def _empty_ad_status(scope: str, lookup_key: str) -> dict[str, Any]:
         "has_running_ad": False,
         "ad_spend_usd": 0.0,
         "latest_activity_at": None,
+        "ai_evaluation_result": "",
+        "ai_evaluation_detail": "",
         "summary": {},
         "refreshed_at": None,
     }
@@ -388,6 +390,8 @@ def _serialize_ad_status_row(row: dict[str, Any] | None, *, scope: str, lookup_k
         "has_running_ad": bool(row.get("has_running_ad")),
         "ad_spend_usd": _as_float(row.get("ad_spend_usd")),
         "latest_activity_at": _iso_datetime(row.get("latest_activity_at")),
+        "ai_evaluation_result": str(row.get("ai_evaluation_result") or ""),
+        "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "summary": _json_loads(row.get("summary_json"), {}) or {},
         "refreshed_at": _iso_datetime(row.get("refreshed_at")),
     }
@@ -409,6 +413,35 @@ def _status_cache_by_hash(scope: str, lookup_hashes: set[str]) -> dict[str, dict
         row_hash = str(row.get("lookup_hash") or "")
         if row_scope == scope and row_hash:
             out[row_hash] = row
+    return out
+
+
+def _ai_evaluation_status_by_product_ids(product_ids: set[int]) -> dict[int, dict[str, Any]]:
+    ids = [int(pid) for pid in sorted(product_ids) if int(pid) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    try:
+        rows = query(
+            f"""
+            SELECT id, ai_evaluation_result, ai_evaluation_detail
+            FROM media_products
+            WHERE deleted_at IS NULL AND id IN ({placeholders})
+            """,
+            tuple(ids),
+        )
+    except Exception:
+        logger.exception("failed to load media product AI evaluation statuses")
+        return {}
+    out: dict[int, dict[str, Any]] = {}
+    for row in rows or []:
+        product_id = _as_int(row.get("id"))
+        if product_id <= 0:
+            continue
+        out[product_id] = {
+            "ai_evaluation_result": str(row.get("ai_evaluation_result") or ""),
+            "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
+        }
     return out
 
 
@@ -450,8 +483,17 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         preliminary.append((item, media_code, material_key, product_hash, material_hash, product_status, material_status))
 
     legacy_rows_by_product = _legacy_material_rows_by_product(matched_product_ids)
+    product_ids = {
+        _as_int(product_status.get("media_product_id"))
+        for *_prefix, product_status, _material_status in preliminary
+        if _as_int(product_status.get("media_product_id")) > 0
+    }
+    ai_status_by_product_id = _ai_evaluation_status_by_product_ids(product_ids)
 
     for item, media_code, material_key, _product_hash, _material_hash, product_status, material_status in preliminary:
+        product_id = _as_int(product_status.get("media_product_id"))
+        if product_id in ai_status_by_product_id:
+            product_status.update(ai_status_by_product_id[product_id])
         if not material_status["has_local_match"]:
             legacy_status = _legacy_material_status_for_item(
                 item,

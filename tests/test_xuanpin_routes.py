@@ -247,6 +247,22 @@ def test_xuanpin_mk_cards_include_ai_evaluation_button_and_language_hints(authed
     assert "mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink)" in body
 
 
+def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiAiButtonLabel" in body
+    assert "data-mki-ai-has-result" in body
+    assert "\u0041\u0049\u8bc4\u4f30\u7ed3\u679c" in body
+    assert "function mkiAiShowExistingResult" in body
+    assert "function mkiAiRunEvaluation" in body
+    assert "function mkiAiAttachReevaluateButton" in body
+    assert "data-mki-ai-reevaluate" in body
+    assert "\u91cd\u65b0\u8bc4\u4f30" in body
+    assert "if (context.hasExistingResult) {" in body
+
+
 def test_xuanpin_mk_uses_translation_work_user_api(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
