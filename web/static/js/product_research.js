@@ -492,16 +492,21 @@
     var startBtn = document.getElementById("prStartBtn");
     var cancelBtn = document.getElementById("prCancelBtn");
     var refreshBtn = document.getElementById("prRefreshBtn");
+    var newBtn = document.getElementById("prNewBtn");
     if (state === "running") {
+      if (newBtn) newBtn.style.display = "none";
       startBtn.style.display = "none";
       cancelBtn.style.display = "";
       refreshBtn.style.display = "none";
     } else if (state === "done") {
-      startBtn.style.display = "";
+      if (newBtn) newBtn.style.display = "";
+      startBtn.style.display = "none";
       cancelBtn.style.display = "none";
       refreshBtn.style.display = "";
     } else {
-      startBtn.style.display = "";
+      // idle
+      if (newBtn) newBtn.style.display = "";
+      startBtn.style.display = "none";
       cancelBtn.style.display = "none";
       refreshBtn.style.display = "none";
     }
@@ -520,5 +525,129 @@
   function escapeHtml(str) {
     if (!str) return "";
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // ── Project List ──────────────────────────────────────
+  async function loadProjectList() {
+    var container = document.getElementById("prProjectList");
+    if (!container) return;
+    try {
+      var resp = await fetch(C.createUrl + "?limit=50");
+      if (!resp.ok) throw new Error("List fetch failed");
+      var json = await resp.json();
+      var items = (json.data || {}).items || [];
+      renderProjectList(container, items);
+    } catch (err) {
+      container.innerHTML = "<div style=\"padding:12px;color:var(--text-user-badge);font-size:13px\">加载项目列表失败</div>";
+    }
+  }
+
+  function renderProjectList(container, items) {
+    if (!items.length) {
+      container.innerHTML = "<div style=\"padding:20px;text-align:center;color:var(--text-user-badge);font-size:13px\">暂无调研项目，点击上方按钮开始第一个调研</div>";
+      return;
+    }
+    var html = "<div class=\"pr-table-wrap\"><table class=\"pr-table\"><thead><tr>";
+    html += "<th>项目名称</th><th>状态</th><th>国家数</th><th>进度</th><th>平均分</th><th>GO/TEST/HOLD</th><th>创建时间</th><th>操作</th>";
+    html += "</tr></thead><tbody>";
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var st = item.status || "queued";
+      var isStalled = st === "stalled";
+      var canResume = st === "failed" || st === "partially_completed" || st === "stalled" || st === "running";
+      var isTerminal = st === "completed" || st === "partially_completed" || st === "failed" || st === "cancelled";
+      var pct = item.total_steps ? Math.round((item.completed_steps || 0) / Math.max(1, item.total_steps) * 100) : 0;
+      html += "<tr style=\"cursor:pointer\" onclick=\"window._viewProject('" + item.research_run_id + "')\">";
+      html += "<td><strong>" + escapeHtml(item.display_name) + "</strong></td>";
+      html += "<td><span class=\"pr-tag " + (st === "completed" || st === "partially_completed" ? "pr-tag--success" : st === "running" ? "pr-tag--warning" : "pr-tag--danger") + "\">" + escapeHtml(statusLabel(st) + (isStalled ? " (可续跑)" : "")) + "</span></td>";
+      html += "<td>" + (item.country_count || 0) + "</td>";
+      html += "<td><div class=\"pr-progress-track\" style=\"height:4px;width:80px\"><div class=\"pr-progress-fill\" style=\"width:" + pct + "%\"></div></div><span style=\"font-size:11px\">" + (item.completed_steps || 0) + "/" + (item.total_steps || 0) + "</span></td>";
+      html += "<td>" + (item.average_score != null ? item.average_score + "%" : "-") + "</td>";
+      html += "<td>" + (item.go_count || 0) + "/" + (item.test_count || 0) + "/" + (item.hold_count || 0) + "</td>";
+      html += "<td style=\"font-size:11px\">" + (item.created_at ? item.created_at.substring(0, 10) : "-") + "</td>";
+      html += "<td onclick=\"event.stopPropagation()\">";
+      if (canResume) {
+        html += "<button class=\"pr-btn pr-btn--primary\" style=\"padding:2px 10px;font-size:11px;margin-right:4px\" onclick=\"window._resumeProject('" + item.research_run_id + "')\">续跑</button>";
+      }
+      html += "<button class=\"pr-btn pr-btn--ghost\" style=\"padding:2px 8px;font-size:11px\" onclick=\"window._viewProject('" + item.research_run_id + "')\">查看</button>";
+      html += "</td>";
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+  }
+
+  // ── View Project ──────────────────────────────────────
+  window._viewProject = async function (runId) {
+    currentRunId = runId;
+    document.getElementById("prForm").style.display = "none";
+    document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\"><div class=\"pr-loading-spinner\"></div><p>正在加载调研结果...</p></div>";
+    setButtonsState("done");
+    document.getElementById("prRefreshBtn").style.display = "";
+    document.getElementById("prStartBtn").style.display = "none";
+    document.getElementById("prNewBtn").style.display = "";
+    try {
+      var url = C.resultUrlTemplate.replace("{id}", runId);
+      var resp = await fetch(url);
+      if (!resp.ok) throw new Error("Load failed");
+      var json = await resp.json();
+      researchResult = json.data;
+      renderResult(researchResult);
+    } catch (err) {
+      document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\">加载失败：" + escapeHtml(err.message || err) + "</div>";
+    }
+  };
+
+  // ── Resume Project ────────────────────────────────────
+  window._resumeProject = async function (runId) {
+    if (!confirm("确定续跑此调研？将从上次中断处继续执行。")) return;
+    currentRunId = runId;
+    document.getElementById("prForm").style.display = "none";
+    document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\"><div class=\"pr-loading-spinner\"></div><p>正在续跑调研任务...</p></div>";
+    setButtonsState("running");
+    try {
+      var resp = await fetch(C.resumeUrlTemplate.replace("{id}", runId), { method: "POST" });
+      if (!resp.ok) {
+        var errData = await resp.json().catch(function () { return {}; });
+        document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\">续跑失败：" + escapeHtml((errData.error || {}).message || "Unknown error") + "</div>";
+        setButtonsState("idle");
+        return;
+      }
+      poll();
+    } catch (err) {
+      document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\">续跑请求失败：" + escapeHtml(err.message || err) + "</div>";
+      setButtonsState("idle");
+    }
+  };
+
+  // ── New Project / Show Form ───────────────────────────
+  function showNewForm() {
+    currentRunId = "";
+    researchResult = null;
+    uploadedAssets = {};
+    document.getElementById("prForm").style.display = "";
+    document.getElementById("prBody").innerHTML = "<div class=\"pr-loading\">填写产品信息后点击\"开始 AI 调研\"</div>";
+    document.getElementById("prMainImageName").textContent = "";
+    document.getElementById("prVideoName").textContent = "";
+    document.getElementById("prProductUrl").value = "";
+    document.getElementById("prProductName").value = "";
+    document.getElementById("prProductNameEn").value = "";
+    document.getElementById("prNotes").value = "";
+    // Show start button for form submission, hide new/list buttons
+    document.getElementById("prStartBtn").style.display = "";
+    document.getElementById("prCancelBtn").style.display = "none";
+    document.getElementById("prRefreshBtn").style.display = "none";
+    document.getElementById("prNewBtn").style.display = "none";
+  }
+  window._showNewForm = showNewForm;
+
+  // ── Init ──────────────────────────────────────────────
+  function init() {
+    loadProjectList();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 })();
