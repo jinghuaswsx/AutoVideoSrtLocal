@@ -18,6 +18,23 @@
 .pr-btn--danger { background: var(--bg-btn-danger); color: var(--text-btn-danger); }
 .pr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Toggle switch */
+.pr-toggle-wrap { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-main); }
+.pr-toggle { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+.pr-toggle input { opacity: 0; width: 0; height: 0; }
+.pr-toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 24px; transition: 200ms; }
+.pr-toggle-slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 200ms; }
+.pr-toggle input:checked + .pr-toggle-slider { background: var(--primary-color); }
+.pr-toggle input:checked + .pr-toggle-slider::before { transform: translateX(20px); }
+.pr-toggle-label { user-select: none; }
+
+/* Country checkboxes */
+.pr-country-checkboxes { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.pr-country-checkboxes label { display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; padding: 4px 10px; border: 1px solid var(--border-main); border-radius: 8px; transition: all 120ms; }
+.pr-country-checkboxes label:hover { border-color: var(--primary-color); }
+.pr-country-checkboxes input[type="checkbox"] { width: auto; accent-color: var(--primary-color); }
+.pr-country-checkboxes label:has(input:checked) { border-color: var(--primary-color); background: rgba(59,130,246,0.06); }
+
 /* Form */
 .pr-form { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 14px; padding: 24px; margin-bottom: 24px; }
 .pr-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -132,6 +149,10 @@
       <p>输入产品链接、主图和短视频，AI 联网搜索 8 国市场实时数据做完整评估</p>
     </div>
     <div class="pr-actions">
+      <label class="pr-toggle-wrap" title="开启后 AI 将联网搜索实时市场数据">
+        <span class="pr-toggle"><input type="checkbox" id="prGoogleSearchToggle" checked><span class="pr-toggle-slider"></span></span>
+        <span class="pr-toggle-label">Google 联网搜索</span>
+      </label>
       <button type="button" class="pr-btn pr-btn--primary" id="prStartBtn" onclick="startResearch()">开始 AI 调研</button>
       <button type="button" class="pr-btn pr-btn--ghost" id="prCancelBtn" style="display:none" onclick="cancelResearch()">取消</button>
       <button type="button" class="pr-btn pr-btn--ghost" id="prRefreshBtn" style="display:none" onclick="refreshResult()">刷新</button>
@@ -153,6 +174,24 @@
       <div class="pr-field">
         <label>产品名称（英文）</label>
         <input type="text" id="prProductNameEn" placeholder="输入英文产品名称">
+      </div>
+      <div class="pr-field pr-form-grid--full">
+        <label>调研国家 <span style="color:#dc2626">*</span>（至少选 1 个）</label>
+        <div class="pr-country-checkboxes" id="prCountryCheckboxes">
+          <label><input type="checkbox" value="DE" checked> 德国</label>
+          <label><input type="checkbox" value="FR" checked> 法国</label>
+          <label><input type="checkbox" value="IT" checked> 意大利</label>
+          <label><input type="checkbox" value="ES" checked> 西班牙</label>
+          <label><input type="checkbox" value="NL" checked> 荷兰</label>
+          <label><input type="checkbox" value="PT" checked> 葡萄牙</label>
+          <label><input type="checkbox" value="SE" checked> 瑞典</label>
+          <label><input type="checkbox" value="JP" checked> 日本</label>
+        </div>
+      </div>
+      <div class="pr-field pr-form-grid--full">
+        <label>国家请求间隔（秒）</label>
+        <input type="number" id="prCountryDelay" value="30" min="0" max="120" step="1" style="max-width:120px">
+        <div class="pr-field-hint">每个国家的 AI 请求之间的等待时间，避免 API 限流，默认 30 秒，设为 0 则不等待</div>
       </div>
       <div class="pr-field pr-field--file">
         <label>主图 <span style="color:#dc2626">*</span></label>

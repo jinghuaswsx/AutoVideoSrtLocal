@@ -44,6 +44,7 @@ class ProductResearchGeminiClient:
         *,
         input_snapshot: dict[str, Any],
         countries: list[dict[str, Any]],
+        google_search_enabled: bool = True,
     ) -> dict[str, Any]:
         prompt = build_product_fact_prompt(input_snapshot=input_snapshot, countries=countries)
         result = self._invoke(
@@ -51,7 +52,7 @@ class ProductResearchGeminiClient:
             schema=PRODUCT_FACTS_SCHEMA,
             use_case_code=PRODUCT_FACTS_USE_CASE,
             system=PRODUCT_FACT_SYSTEM_PROMPT,
-            google_search=True,
+            google_search=google_search_enabled,
             url_context=bool(input_snapshot.get("product_url")),
             project_id=f"pr-facts-{_short_id()}",
         )
@@ -64,6 +65,7 @@ class ProductResearchGeminiClient:
         input_snapshot: dict[str, Any],
         product_facts: dict[str, Any],
         media_paths: list[str] | None = None,
+        google_search_enabled: bool = True,
     ) -> dict[str, Any]:
         prompt = build_media_understanding_prompt(
             input_snapshot=input_snapshot,
@@ -75,7 +77,7 @@ class ProductResearchGeminiClient:
             media=media_paths or None,
             use_case_code=MEDIA_UNDERSTANDING_USE_CASE,
             system=MEDIA_UNDERSTANDING_SYSTEM_PROMPT,
-            google_search=True,
+            google_search=google_search_enabled,
             project_id=f"pr-media-{_short_id()}",
         )
         validate_json_schema(result, MEDIA_UNDERSTANDING_SCHEMA)
@@ -88,6 +90,7 @@ class ProductResearchGeminiClient:
         input_snapshot: dict[str, Any],
         product_facts: dict[str, Any],
         media_understanding: dict[str, Any],
+        google_search_enabled: bool = True,
     ) -> dict[str, Any]:
         prompt = build_country_evaluation_prompt(
             country=country,
@@ -100,7 +103,7 @@ class ProductResearchGeminiClient:
             schema=COUNTRY_EVALUATION_SCHEMA,
             use_case_code=COUNTRY_USE_CASE,
             system=COUNTRY_EVALUATION_SYSTEM_PROMPT,
-            google_search=True,
+            google_search=google_search_enabled,
             url_context=True,
             project_id=f"pr-country-{country.get('country_code', '')}-{_short_id()}",
         )

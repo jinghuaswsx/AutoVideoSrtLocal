@@ -28,6 +28,15 @@
     const productName = document.getElementById("prProductName").value.trim();
     const productNameEn = document.getElementById("prProductNameEn").value.trim();
     const notes = document.getElementById("prNotes").value.trim();
+    const googleSearchEnabled = document.getElementById("prGoogleSearchToggle").checked;
+    const delaySeconds = parseInt(document.getElementById("prCountryDelay").value, 10) || 0;
+
+    // Selected countries
+    var selectedCountries = [];
+    var checkboxes = document.querySelectorAll("#prCountryCheckboxes input[type=checkbox]:checked");
+    for (var i = 0; i < checkboxes.length; i++) {
+      selectedCountries.push(checkboxes[i].value);
+    }
 
     return {
       product_url: productUrl,
@@ -36,6 +45,9 @@
       main_image: uploadedAssets.main_image ? {} : {},
       short_video: uploadedAssets.short_video ? {} : {},
       notes: notes,
+      google_search_enabled: googleSearchEnabled,
+      selected_countries: selectedCountries,
+      country_delay_seconds: Math.max(0, Math.min(120, delaySeconds)),
     };
   }
 
@@ -45,6 +57,7 @@
     if (!payload.product_url) errors.push("请填写产品链接");
     if (!uploadedAssets.main_image) errors.push("请选择主图");
     if (!uploadedAssets.short_video) errors.push("请选择短视频");
+    if (!payload.selected_countries || payload.selected_countries.length < 1) errors.push("请至少选择 1 个调研国家");
     return errors;
   }
 

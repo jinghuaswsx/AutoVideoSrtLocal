@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -58,13 +59,13 @@ class ProductResearchService:
         research_run_id = f"research_{uuid.uuid4().hex}"
         now = _now_iso()
         input_snapshot = _sanitize_input(input_data)
-        country_codes = normalize_country_codes(list(DEFAULT_COUNTRY_CODES))
+        country_codes = input_snapshot.get("selected_countries") or list(DEFAULT_COUNTRY_CODES)
 
         run = {
             "research_run_id": research_run_id,
             "status": "queued",
             "input_snapshot_json": json.dumps(input_snapshot, ensure_ascii=False),
-            "pipeline_cards_json": json.dumps(_initial_cards(), ensure_ascii=False),
+            "pipeline_cards_json": json.dumps(_initial_cards(country_codes), ensure_ascii=False),
             "product_facts_json": None,
             "media_understanding_json": None,
             "summary_json": None,
@@ -249,6 +250,7 @@ class ProductResearchService:
             product_facts = self.gemini_client.generate_product_facts(
                 input_snapshot=input_snapshot,
                 countries=country_configs(country_codes),
+                google_search_enabled=input_snapshot.get("google_search_enabled", True),
             )
             cards = _set_card(cards, "product_facts", "completed", f"产品事实抽取完成：{product_facts.get('category_detected', '-')}",
                              result=product_facts, result_summary=f"品类：{product_facts.get('category_detected', '-')}，缺失字段：{len(product_facts.get('missing_data', []))}")
@@ -270,6 +272,7 @@ class ProductResearchService:
                 input_snapshot=input_snapshot,
                 product_facts=product_facts,
                 media_paths=media_paths if media_paths else None,
+                google_search_enabled=input_snapshot.get("google_search_enabled", True),
             )
             cards = _set_card(cards, "media_understanding", "completed", "素材分析完成",
                              result=media_understanding, result_summary="主图和视频分析完成")
@@ -282,7 +285,10 @@ class ProductResearchService:
         # Steps 4-11: country evaluations
         completed_codes: list[str] = []
         failed_codes: list[str] = []
-        for code in country_codes:
+        delay_seconds = input_snapshot.get("country_delay_seconds", 30)
+        for idx, code in enumerate(country_codes):
+            if idx > 0 and delay_seconds > 0:
+                time.sleep(delay_seconds)
             country = get_country_config(code)
             card_id = f"country_{code}"
             cards = _set_card(cards, card_id, "running", f"正在评估 {country['country_name_zh']} 市场")
@@ -294,6 +300,7 @@ class ProductResearchService:
                     input_snapshot=input_snapshot,
                     product_facts=product_facts,
                     media_understanding=media_understanding,
+                    google_search_enabled=input_snapshot.get("google_search_enabled", True),
                 )
                 country_result = _normalize_country_result(country_result, country, input_snapshot)
                 validate_json_schema(country_result, COUNTRY_EVALUATION_SCHEMA)
@@ -461,6 +468,7 @@ class ProductResearchService:
             result = self.gemini_client.generate_country_evaluation(
                 country=country, input_snapshot=input_snapshot,
                 product_facts=product_facts, media_understanding=media_understanding,
+                google_search_enabled=input_snapshot.get("google_search_enabled", True),
             )
             result = _normalize_country_result(result, country, input_snapshot)
             self._upsert_country(research_run_id, country_code, country, "completed", result)
@@ -513,13 +521,32 @@ def _load_json(raw: Any, default: Any = None) -> Any:
     return default
 
 
-def _initial_cards() -> list[dict[str, Any]]:
-    cards = []
+def _initial_cards(country_codes: list[str] | None = None) -> list[dict[str, Any]]:
+    codes = country_codes or list(DEFAULT_COUNTRY_CODES)
+    cards: list[dict[str, Any]] = []
+    # Fixed steps
     for step in PIPELINE_STEPS:
+        if step["card_id"] in ("input_validation", "product_facts", "media_understanding", "final_conclusion"):
+            cards.append({
+                "card_id": step["card_id"],
+                "title": step["title"],
+                "subtitle": step.get("subtitle", ""),
+                "status": "pending",
+                "progress": 0,
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "result_summary": "",
+                "result": {},
+                "result_ref": "",
+            })
+    # Country-specific steps (only selected countries)
+    for code in codes:
+        country = get_country_config(code)
         cards.append({
-            "card_id": step["card_id"],
-            "title": step["title"],
-            "subtitle": step.get("subtitle", ""),
+            "card_id": f"country_{code}",
+            "title": f"{country['country_name_zh']}市场调研",
+            "subtitle": f"联网搜索{country['country_name_zh']}市场：需求、竞品、短视频适配、本地化",
             "status": "pending",
             "progress": 0,
             "started_at": None,
@@ -567,6 +594,15 @@ def _validate_input(input_snapshot: dict[str, Any]) -> tuple[bool, list[str]]:
 
 
 def _sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
+    gs = data.get("google_search_enabled")
+    google_search_enabled = bool(gs) if gs is not None else True
+    raw_countries = data.get("selected_countries") or []
+    selected_countries = normalize_country_codes(list(raw_countries)) if raw_countries else list(DEFAULT_COUNTRY_CODES)
+    delay_raw = data.get("country_delay_seconds")
+    try:
+        country_delay_seconds = max(0, min(120, int(float(str(delay_raw)))))
+    except (TypeError, ValueError):
+        country_delay_seconds = 30
     return {
         "product_url": str(data.get("product_url") or "").strip(),
         "product_name": str(data.get("product_name") or "").strip(),
@@ -574,6 +610,9 @@ def _sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
         "main_image": data.get("main_image") or {},
         "short_video": data.get("short_video") or {},
         "notes": str(data.get("notes") or "").strip(),
+        "google_search_enabled": google_search_enabled,
+        "selected_countries": selected_countries,
+        "country_delay_seconds": country_delay_seconds,
     }
 
 
