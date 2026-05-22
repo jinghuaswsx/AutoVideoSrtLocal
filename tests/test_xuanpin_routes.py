@@ -202,6 +202,8 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "/xuanpin/api/mk-media?path=uploads2/winner.jpg" in body
     assert "/xuanpin/api/mk-video?path=uploads2/winner.mp4" in body
     assert "历史同步消耗" in body
+    assert ".mk-detail-history-table { width:min(100%, 980px);" in body
+    assert ".mk-detail-history-table th.num, .mk-detail-history-table td.num" in body
     assert "2026-05-22 05:00:02" in body
     assert "800" in body
 
