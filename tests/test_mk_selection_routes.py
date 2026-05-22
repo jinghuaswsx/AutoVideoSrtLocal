@@ -191,6 +191,18 @@ def test_mk_import_progress_actions_live_inside_matching_step_cards():
     assert 'data-mki-progress-retry-step="${escapeHtml(stepKey)}"' in template
 
 
+def test_mk_import_progress_logs_product_record_visibility_in_product_step():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiImportProgressAppendStepLog(stepKey, message, kind = '')" in template
+    assert "data-mki-progress-log-list" in template
+    assert "检测到产品记录已存在，素材管理已可见" in template
+    assert "服务端确认复用已有产品" in template
+    assert "服务端已创建新产品" in template
+    assert "mkiImportProgressAppendStepLog('product'," in template
+    assert template.index("检测到产品记录已存在，素材管理已可见") < template.index("fetch('/mk-import/video'")
+
+
 def test_mk_small_language_modal_distinguishes_product_owner_from_translation_owner():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

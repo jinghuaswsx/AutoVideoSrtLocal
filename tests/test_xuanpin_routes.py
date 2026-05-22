@@ -206,6 +206,19 @@ def test_xuanpin_mk_import_progress_keeps_actions_in_step_cards(authed_client_no
     assert body.index('id="mkiImportProgressDomains"') < body.index('id="mkiImportProgressNextActions"')
 
 
+def test_xuanpin_mk_import_progress_logs_product_record_visibility(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiImportProgressAppendStepLog(stepKey, message, kind = '')" in body
+    assert "data-mki-progress-log-list" in body
+    assert "检测到产品记录已存在，素材管理已可见" in body
+    assert "服务端确认复用已有产品" in body
+    assert "服务端已创建新产品" in body
+    assert body.index("检测到产品记录已存在，素材管理已可见") < body.index("fetch('/mk-import/video'")
+
+
 def test_xuanpin_mk_import_progress_waits_for_domain_save_before_next_actions(
     authed_client_no_db,
 ):
