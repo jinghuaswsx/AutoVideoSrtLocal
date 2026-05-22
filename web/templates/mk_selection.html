@@ -336,6 +336,14 @@
 }
 .mki-progress-step-title { font-size: 13px; line-height: 1.35; font-weight: 800; color: var(--oc-fg); }
 .mki-progress-step-detail { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--oc-fg-muted); overflow-wrap: anywhere; }
+.mki-progress-step-log-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.mki-progress-step-log-list[hidden] { display: none; }
+.mki-progress-step-log {
+  padding: 7px 9px; border-radius: var(--oc-r); font-size: 12px; line-height: 1.45;
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted); overflow-wrap: anywhere;
+}
+.mki-progress-step-log.info { background: oklch(97% .02 230); color: var(--oc-accent); }
+.mki-progress-step-log.success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-progress-step-action { margin-top: 10px; }
 .mki-progress-step-action[hidden] { display: none; }
 .mki-progress-step-panel { display: flex; flex-direction: column; gap: 10px; }
@@ -2842,6 +2850,7 @@ function mkiImportProgressOpen(meta) {
       <div class="mki-progress-step-content">
         <div class="mki-progress-step-title">${escapeHtml(step.title)}</div>
         <div class="mki-progress-step-detail" data-mki-progress-detail>${escapeHtml(step.detail)}</div>
+        <div class="mki-progress-step-log-list" data-mki-progress-log-list hidden></div>
         <div class="mki-progress-step-action" data-mki-progress-action="${escapeHtml(step.key)}" hidden>
           ${mkiImportProgressStepActionHtml(step.key)}
         </div>
@@ -2898,6 +2907,17 @@ function mkiImportProgressSetStep(stepKey, status, detail) {
   if (detailEl && detail !== undefined) detailEl.textContent = detail || '';
   const statusEl = stepEl.querySelector('[data-mki-progress-status]');
   if (statusEl) statusEl.textContent = mkiImportProgressStatusText(status);
+}
+
+function mkiImportProgressAppendStepLog(stepKey, message, kind = '') {
+  const stepEl = document.querySelector(`[data-mki-progress-step="${stepKey}"]`);
+  const list = stepEl && stepEl.querySelector('[data-mki-progress-log-list]');
+  if (!list || !message) return;
+  const row = document.createElement('div');
+  row.className = 'mki-progress-step-log' + (kind ? ' ' + kind : '');
+  row.textContent = message;
+  list.appendChild(row);
+  list.hidden = false;
 }
 
 function mkiImportProgressStepForError(errorCode) {
@@ -3157,6 +3177,11 @@ function mkiImportProgressComplete(data, btn) {
     + '，产品 ID：' + productId
     + (warningMessage ? '；' + warningMessage : '');
   mkiImportProgressSetStep('product', warningMessage ? 'warning' : 'done', productDetail);
+  if (data?.is_new_product) {
+    mkiImportProgressAppendStepLog('product', `服务端已创建新产品：产品 #${productId}。`, 'success');
+  } else {
+    mkiImportProgressAppendStepLog('product', `服务端确认复用已有产品：产品 #${productId}。`, 'info');
+  }
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
   if (data?.is_new_product) {
@@ -3314,6 +3339,11 @@ async function mkiHandleClick(btn) {
       return;
     }
     mkiImportProgressProductOwnerId = productOwnerId;
+    if (mkiImportProgressButtonHasLocalProduct(btn)) {
+      const localProductId = Number(btn.dataset.mkiLocalProductId || 0);
+      const productLabel = localProductId > 0 ? `：产品 #${localProductId}` : '';
+      mkiImportProgressAppendStepLog('product', `检测到产品记录已存在，素材管理已可见${productLabel}，本次仅补写视频素材。`, 'info');
+    }
     mkiImportProgressSetStep('product', 'running', '服务端正在查重、创建或复用产品，并检测商品链接');
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     const headers = {'Content-Type': 'application/json'};
