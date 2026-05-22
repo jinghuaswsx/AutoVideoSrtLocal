@@ -199,6 +199,10 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "mk-detail-media-grid" in body
     assert "mk-detail-cover-frame" in body
     assert "mk-detail-video-frame" in body
+    assert "--mkd-media-frame-w: 520px;" in body
+    assert ".mk-detail-cover-frame, .mk-detail-video-frame { width:min(100%, var(--mkd-media-frame-w)); aspect-ratio:9 / 16;" in body
+    assert "margin:0 auto;" in body
+    assert ".mk-detail-video-frame video { width:100%; height:100%; object-fit:contain;" in body
     assert "/xuanpin/api/mk-media?path=uploads2/winner.jpg" in body
     assert "/xuanpin/api/mk-video?path=uploads2/winner.mp4" in body
     assert "历史同步消耗" in body
