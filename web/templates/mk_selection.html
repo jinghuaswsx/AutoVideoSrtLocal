@@ -1817,6 +1817,8 @@ async function mkiFetchJson(url, options = {}) {
       || '请求失败';
     const error = new Error(message);
     if (err && typeof err === 'object' && err.details) error.details = err.details;
+    if (err && typeof err === 'object' && err.code) error.code = err.code;
+    error.status = resp.status;
     throw error;
   }
   return data;
@@ -2446,6 +2448,18 @@ function mkiFineAiEndpoint(context, suffix) {
   return mkiFineAiProductEndpoint(context.productId, suffix);
 }
 
+function mkiFineAiLatestEndpoint(context) {
+  if (context && context.externalProductLink && !context.productId) {
+    const params = new URLSearchParams();
+    params.set('product_link', context.externalProductLink || context.productLink || '');
+    if (context.cardVideoPath) params.set('card_video_path', context.cardVideoPath);
+    if (context.cardVideoUrl) params.set('card_video_url', context.cardVideoUrl);
+    if (context.cardVideoName) params.set('card_video_name', context.cardVideoName);
+    return `${mkiFineAiExternalEndpoint('/latest')}?${params.toString()}`;
+  }
+  return mkiFineAiEndpoint(context, '/latest');
+}
+
 function mkiFineAiContextSource(context, payload) {
   if (!context) return payload || {};
   return Object.assign({}, payload || {}, {
@@ -2932,31 +2946,29 @@ function mkiFineAiAttachHeaderButtons(shell, context) {
   context.detailButton = detailBtn;
   mkiFineAiRefreshDetailButton(context);
   const latestBtn = document.createElement('button');
-  if (!context.externalProductLink) {
-    latestBtn.type = 'button';
-    latestBtn.className = 'mki-ai-reevaluate-btn';
-    latestBtn.textContent = '查看最近';
-    latestBtn.onclick = () => mkiFineAiLoadLatest(context);
-    actions.appendChild(latestBtn);
-  }
+  latestBtn.type = 'button';
+  latestBtn.className = 'mki-ai-reevaluate-btn';
+  latestBtn.textContent = context.externalProductLink ? '查看存档' : '查看最近';
+  latestBtn.onclick = () => mkiFineAiLoadLatest(context);
+  actions.appendChild(latestBtn);
   const rerunBtn = document.createElement('button');
   rerunBtn.type = 'button';
   rerunBtn.className = 'mki-ai-reevaluate-btn';
   rerunBtn.textContent = '重新评估';
   rerunBtn.onclick = () => mkiFineAiStartRun(context);
   actions.appendChild(rerunBtn);
-  context.headerButtons = context.externalProductLink ? [detailBtn, rerunBtn] : [detailBtn, latestBtn, rerunBtn];
+  context.headerButtons = [detailBtn, latestBtn, rerunBtn];
 }
 
 async function mkiFineAiLoadLatest(context, options = {}) {
   const shell = context.shell;
-  if (context.externalProductLink) return false;
   if (!options.silent) {
-    shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估...</div>';
+    shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估存档...</div>';
   }
   try {
-    const resp = await mkiFetchJson(mkiFineAiEndpoint(context, '/latest'));
+    const resp = await mkiFetchJson(mkiFineAiLatestEndpoint(context));
     const result = resp.data || {};
+    context.fineAiLatestError = null;
     context.runId = result.evaluation_run_id || context.runId || '';
     mkiFineAiApplyCardResult(context, result);
     mkiFineAiRefreshDetailButton(context);
@@ -2967,8 +2979,9 @@ async function mkiFineAiLoadLatest(context, options = {}) {
     }
     return true;
   } catch (e) {
+    context.fineAiLatestError = e;
     if (!options.silent) {
-      shell.body.innerHTML = `<div class="ect-empty">暂无最近结果，可点击右上角“重新评估”。${escapeHtml(e.message || '')}</div>`;
+      shell.body.innerHTML = `<div class="ect-empty">暂无精细 AI 评估存档，可点击右上角“重新评估”。${escapeHtml(e.message || '')}</div>`;
     }
     return false;
   }
@@ -2976,10 +2989,6 @@ async function mkiFineAiLoadLatest(context, options = {}) {
 
 async function mkiFineAiOpenLatestOrStart(context) {
   if (context.loadingLatest || context.running) return;
-  if (context.externalProductLink) {
-    await mkiFineAiStartRun(context);
-    return;
-  }
   context.loadingLatest = true;
   const btn = context.button;
   const original = btn ? btn.textContent : '';
@@ -2991,6 +3000,10 @@ async function mkiFineAiOpenLatestOrStart(context) {
   try {
     const loaded = await mkiFineAiLoadLatest(context, {silent: true});
     if (loaded) return;
+    if (context.fineAiLatestError && context.fineAiLatestError.status && context.fineAiLatestError.status !== 404) {
+      context.shell.body.innerHTML = `<div class="ect-empty">检查精细 AI 评估存档失败，未自动创建新任务。请稍后重试或点击右上角“重新评估”。${escapeHtml(context.fineAiLatestError.message || '')}</div>`;
+      return;
+    }
     if (btn) {
       btn.disabled = false;
       btn.textContent = original || '精细AI评估';

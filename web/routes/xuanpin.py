@@ -398,6 +398,31 @@ def api_fine_ai_external_create():
         return _fine_ai_err(exc.code, str(exc), 400)
 
 
+@bp.route("/api/fine-ai-evaluation/latest", methods=["GET"])
+@login_required
+def api_fine_ai_external_latest():
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    product_link = str(request.args.get("product_link") or request.args.get("product_url") or "").strip()
+    if not product_link:
+        return _fine_ai_err("PRODUCT_LINK_REQUIRED", "product_link is required", 400)
+    try:
+        return _fine_ai_ok(
+            get_fine_ai_evaluation_service().get_latest_external_link_result(
+                product_link,
+                card_video_object_key=str(request.args.get("card_video_object_key") or "").strip(),
+                card_video_path=str(request.args.get("card_video_path") or request.args.get("video_path") or "").strip(),
+                card_video_url=str(request.args.get("card_video_url") or "").strip(),
+                card_video_name=str(request.args.get("card_video_name") or "").strip(),
+            )
+        )
+    except FineAiEvaluationNotFound as exc:
+        return _fine_ai_err(exc.code, "Evaluation run not found", 404)
+    except ValueError as exc:
+        return _fine_ai_err("INVALID_REQUEST", str(exc), 400)
+
+
 @bp.route("/api/fine-ai-evaluation/<evaluation_run_id>/status", methods=["GET"])
 @login_required
 def api_fine_ai_external_status(evaluation_run_id: str):
