@@ -169,6 +169,22 @@ def test_mk_import_progress_uses_product_owner_step_before_domains():
     assert "指定翻译员" not in template
 
 
+def test_mk_import_progress_actions_live_inside_matching_step_cards():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiImportProgressStepActionHtml(stepKey)" in template
+    assert 'data-mki-progress-action="${escapeHtml(step.key)}"' in template
+    assert "mki-progress-actions" not in template
+    assert "mkiImportProgressCancelProductOwner" not in template
+    assert 'onclick="mkiImportProgressCancelProductOwner()"' not in template
+    assert 'id="mkiImportProgressProductOwner"' in template
+    assert 'id="mkiImportProgressDomains"' in template
+    assert 'id="mkiImportProgressNextActions"' in template
+    assert template.index('id="mkiImportProgressProductOwner"') < template.index('id="mkiImportProgressDomains"')
+    assert template.index('id="mkiImportProgressDomains"') < template.index('id="mkiImportProgressNextActions"')
+    assert 'data-mki-progress-retry-step="${escapeHtml(stepKey)}"' in template
+
+
 def test_mk_small_language_modal_distinguishes_product_owner_from_translation_owner():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

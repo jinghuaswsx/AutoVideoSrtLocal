@@ -188,6 +188,22 @@ def test_xuanpin_mk_import_progress_includes_product_owner_before_domains(authed
     assert 'id="mkiTranslatorModal"' not in body
 
 
+def test_xuanpin_mk_import_progress_keeps_actions_in_step_cards(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiImportProgressStepActionHtml(stepKey)" in body
+    assert 'data-mki-progress-action="${escapeHtml(step.key)}"' in body
+    assert "mki-progress-actions" not in body
+    assert "mkiImportProgressCancelProductOwner" not in body
+    assert 'id="mkiImportProgressProductOwner"' in body
+    assert 'id="mkiImportProgressDomains"' in body
+    assert 'id="mkiImportProgressNextActions"' in body
+    assert body.index('id="mkiImportProgressProductOwner"') < body.index('id="mkiImportProgressDomains"')
+    assert body.index('id="mkiImportProgressDomains"') < body.index('id="mkiImportProgressNextActions"')
+
+
 def test_xuanpin_mk_import_progress_waits_for_domain_save_before_next_actions(
     authed_client_no_db,
 ):

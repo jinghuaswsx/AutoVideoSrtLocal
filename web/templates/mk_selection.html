@@ -291,12 +291,19 @@
   display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 10px;
   padding: 10px 12px; border: 1px solid var(--oc-border); border-radius: var(--oc-r); background: #fff;
 }
+.mki-progress-step-content { min-width: 0; }
 .mki-progress-step-mark {
   width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--oc-border-strong);
   display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 12px;
 }
 .mki-progress-step-title { font-size: 13px; line-height: 1.35; font-weight: 800; color: var(--oc-fg); }
 .mki-progress-step-detail { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--oc-fg-muted); overflow-wrap: anywhere; }
+.mki-progress-step-action { margin-top: 10px; }
+.mki-progress-step-action[hidden] { display: none; }
+.mki-progress-step-panel { display: flex; flex-direction: column; gap: 10px; }
+.mki-progress-step-panel[hidden] { display: none; }
+.mki-progress-step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.mki-progress-step-actions:empty { display: none; }
 .mki-progress-step-status {
   align-self: center; min-width: 48px; padding: 3px 8px; border-radius: 999px;
   text-align: center; font-size: 12px; line-height: 1.2; background: var(--oc-bg-muted); color: var(--oc-fg-muted);
@@ -353,9 +360,6 @@
 }
 .mki-progress-domain-notice.danger { background: oklch(97% .04 25); color: oklch(42% .14 25); }
 .mki-progress-domain-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.mki-progress-actions {
-  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px;
-}
 .mki-xiao-backdrop {
   position: fixed; inset: 0; z-index: 2200; display: none; align-items: center; justify-content: center;
   padding: 24px; background: rgba(15, 23, 42, .42);
@@ -2389,9 +2393,15 @@ function mkiImportProgressHideNextActions() {
     const el = document.getElementById(id);
     if (el) el.hidden = true;
   });
+  const nextPanel = document.getElementById('mkiImportProgressNextActions');
+  if (nextPanel) nextPanel.hidden = true;
+  mkiImportProgressSetActionVisible('next', false);
 }
 
 function mkiImportProgressShowNextActions() {
+  mkiImportProgressSetActionVisible('next', true);
+  const nextPanel = document.getElementById('mkiImportProgressNextActions');
+  if (nextPanel) nextPanel.hidden = false;
   const continueBtn = document.getElementById('mkiImportProgressContinue');
   const tasksBtn = document.getElementById('mkiImportProgressTasks');
   const mediasBtn = document.getElementById('mkiImportProgressMedias');
@@ -2405,6 +2415,76 @@ function mkiImportProgressShowNextActions() {
   if (mediasBtn) mediasBtn.hidden = false;
 }
 
+function mkiImportProgressSetActionVisible(stepKey, visible) {
+  const actionEl = document.querySelector(`[data-mki-progress-action="${stepKey}"]`);
+  if (actionEl) actionEl.hidden = !visible;
+}
+
+function mkiImportProgressHideRetryActions() {
+  document.querySelectorAll('[data-mki-progress-retry-step]').forEach(btn => {
+    btn.hidden = true;
+  });
+}
+
+function mkiImportProgressShowRetryAction(stepKey) {
+  const key = stepKey || 'product';
+  mkiImportProgressHideRetryActions();
+  const btn = document.querySelector(`[data-mki-progress-retry-step="${key}"]`)
+    || document.querySelector('[data-mki-progress-retry-step="product"]');
+  if (btn) {
+    btn.hidden = false;
+    mkiImportProgressSetActionVisible(btn.dataset.mkiProgressRetryStep || key, true);
+  }
+}
+
+function mkiImportProgressRetryActionHtml(stepKey) {
+  return `<button type="button" class="oc-btn oc-btn--ghost" data-mki-progress-retry-step="${escapeHtml(stepKey)}" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>`;
+}
+
+function mkiImportProgressStepActionHtml(stepKey) {
+  const retryButton = mkiImportProgressRetryActionHtml(stepKey);
+  if (stepKey === 'productOwner') {
+    return `
+      <div id="mkiImportProgressProductOwner" class="mki-progress-step-panel" hidden>
+        <select id="mkiImportProgressProductOwnerSelect" class="oc-input" style="width:100%; height:36px;"></select>
+        <div id="mkiImportProgressProductOwnerNotice" class="mki-progress-domain-notice" hidden></div>
+        <div class="mki-progress-step-actions">
+          <button id="mkiImportProgressProductOwnerRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryProductOwners()" hidden>重新加载产品负责人</button>
+          <button id="mkiImportProgressProductOwnerSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressConfirmProductOwner()">确认产品负责人</button>
+        </div>
+      </div>
+      <div class="mki-progress-step-actions">${retryButton}</div>
+    `;
+  }
+  if (stepKey === 'domains') {
+    return `
+      <div id="mkiImportProgressDomains" class="mki-progress-step-panel" hidden>
+        <div id="mkiImportProgressDomainList" class="mki-progress-domain-list"></div>
+        <div id="mkiImportProgressDomainNotice" class="mki-progress-domain-notice" hidden></div>
+        <div class="mki-progress-step-actions">
+          <button id="mkiImportProgressDomainRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryDomains()" hidden>重新加载域名</button>
+          <button id="mkiImportProgressDomainSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressSaveDomains()">确定发布域名</button>
+        </div>
+      </div>
+      <div class="mki-progress-step-actions">${retryButton}</div>
+    `;
+  }
+  if (stepKey === 'next') {
+    return `
+      <div id="mkiImportProgressNextActions" class="mki-progress-step-panel" hidden>
+        <div class="mki-progress-step-actions">
+          <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>下一步：创建小语种任务</button>
+          <button id="mkiImportProgressTasks" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenTasks()" hidden>去任务中心</button>
+          <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenMedias()" hidden>去素材管理</button>
+          <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressClose()">关闭</button>
+        </div>
+      </div>
+      <div class="mki-progress-step-actions">${retryButton}</div>
+    `;
+  }
+  return `<div class="mki-progress-step-actions">${retryButton}</div>`;
+}
+
 function mkiImportProgressOpen(meta) {
   const modal = document.getElementById('mkiImportProgressModal');
   if (!modal) return;
@@ -2412,9 +2492,12 @@ function mkiImportProgressOpen(meta) {
   stepsEl.innerHTML = MKI_IMPORT_STEPS.map(step => `
     <li class="mki-progress-step pending" data-mki-progress-step="${escapeHtml(step.key)}">
       <span class="mki-progress-step-mark" aria-hidden="true"></span>
-      <div>
+      <div class="mki-progress-step-content">
         <div class="mki-progress-step-title">${escapeHtml(step.title)}</div>
         <div class="mki-progress-step-detail" data-mki-progress-detail>${escapeHtml(step.detail)}</div>
+        <div class="mki-progress-step-action" data-mki-progress-action="${escapeHtml(step.key)}" hidden>
+          ${mkiImportProgressStepActionHtml(step.key)}
+        </div>
       </div>
       <span class="mki-progress-step-status" data-mki-progress-status>待处理</span>
     </li>
@@ -2425,7 +2508,7 @@ function mkiImportProgressOpen(meta) {
   document.getElementById('mkiImportProgressError').textContent = '';
   document.getElementById('mkiImportProgressResult').hidden = true;
   document.getElementById('mkiImportProgressResultText').textContent = '';
-  document.getElementById('mkiImportProgressRetry').hidden = true;
+  mkiImportProgressHideRetryActions();
   mkiImportProgressHideNextActions();
   const continueBtn = document.getElementById('mkiImportProgressContinue');
   continueBtn.dataset.href = '/tasks/';
@@ -2482,17 +2565,18 @@ function mkiImportProgressStepForError(errorCode) {
 
 function mkiImportProgressFail(message) {
   const errorText = message || '未知错误';
-  mkiImportProgressSetStep(mkiImportProgressFailedStep || 'product', 'error', errorText);
+  const failedStep = mkiImportProgressFailedStep || 'product';
+  mkiImportProgressSetStep(failedStep, 'error', errorText);
   mkiImportProgressHideNextActions();
   const domainsPanel = document.getElementById('mkiImportProgressDomains');
   if (domainsPanel) domainsPanel.hidden = true;
+  mkiImportProgressSetActionVisible('domains', false);
   const errorEl = document.getElementById('mkiImportProgressError');
   if (errorEl) {
     errorEl.textContent = '入库失败：' + errorText;
     errorEl.hidden = false;
   }
-  const retryBtn = document.getElementById('mkiImportProgressRetry');
-  if (retryBtn) retryBtn.hidden = false;
+  mkiImportProgressShowRetryAction(failedStep);
 }
 
 function mkiImportProgressSetDomainNotice(message, kind = '') {
@@ -2532,6 +2616,7 @@ async function mkiImportProgressPopulateProductOwners() {
   if (!panel || !select || !confirm) return;
 
   panel.hidden = false;
+  mkiImportProgressSetActionVisible('productOwner', true);
   confirm.disabled = true;
   if (retry) retry.hidden = true;
   mkiImportProgressSetProductOwnerNotice('');
@@ -2564,6 +2649,7 @@ async function mkiImportProgressRequestProductOwner(btn) {
   if (mkiImportProgressButtonHasLocalProduct(btn)) {
     select.innerHTML = '';
     panel.hidden = true;
+    mkiImportProgressSetActionVisible('productOwner', false);
     mkiImportProgressSetStep('productOwner', 'done', '产品已在素材管理，沿用现有产品负责人');
     return null;
   }
@@ -2585,19 +2671,9 @@ function mkiImportProgressConfirmProductOwner() {
   mkiImportProgressSetProductOwnerNotice('产品负责人已确认。');
   const panel = document.getElementById('mkiImportProgressProductOwner');
   if (panel) panel.hidden = true;
+  mkiImportProgressSetActionVisible('productOwner', false);
   if (mkiProductOwnerResolve) {
     mkiProductOwnerResolve(ownerId);
-    mkiProductOwnerResolve = null;
-  }
-}
-
-function mkiImportProgressCancelProductOwner() {
-  const panel = document.getElementById('mkiImportProgressProductOwner');
-  if (panel) panel.hidden = true;
-  const modal = document.getElementById('mkiImportProgressModal');
-  if (modal) modal.hidden = true;
-  if (mkiProductOwnerResolve) {
-    mkiProductOwnerResolve(null);
     mkiProductOwnerResolve = null;
   }
 }
@@ -2661,6 +2737,7 @@ async function mkiImportProgressLoadDomains(productId) {
   const retry = document.getElementById('mkiImportProgressDomainRetry');
   if (!panel || !list || !submit) return;
   panel.hidden = false;
+  mkiImportProgressSetActionVisible('domains', true);
   list.innerHTML = '<div class="mki-progress-domain-notice">正在加载域名...</div>';
   submit.disabled = true;
   if (retry) retry.hidden = true;
@@ -2751,7 +2828,7 @@ function mkiImportProgressComplete(data, btn) {
   if (resultEl) resultEl.hidden = false;
   mkiImportProgressSetMediasHref(btn);
   mkiImportProgressHideNextActions();
-  document.getElementById('mkiImportProgressRetry').hidden = true;
+  mkiImportProgressHideRetryActions();
   mkiImportProgressButton = btn || mkiImportProgressButton;
   mkiImportProgressProductId = numericProductId > 0 ? numericProductId : null;
   mkiImportProgressItemId = numericItemId > 0 ? numericItemId : null;
@@ -2759,6 +2836,9 @@ function mkiImportProgressComplete(data, btn) {
     mkiImportProgressLoadDomains(mkiImportProgressProductId);
   } else {
     const message = '服务端未返回产品 ID，无法配置发布域名';
+    const domainsPanel = document.getElementById('mkiImportProgressDomains');
+    if (domainsPanel) domainsPanel.hidden = false;
+    mkiImportProgressSetActionVisible('domains', true);
     mkiImportProgressSetStep('domains', 'error', message);
     mkiImportProgressSetDomainNotice(message + '，请去素材管理手动确认链接管理。', 'danger');
   }
@@ -3353,42 +3433,6 @@ async function mkiXiaoHandleClick(btn) {
         <div class="mki-progress-result-title">入库完成</div>
         <div id="mkiImportProgressResultText"></div>
         <p>下一步创建小语种任务；原视频处理人指派后会自动提交牛马去字幕，并进入人工审核。</p>
-      </div>
-      <div id="mkiImportProgressProductOwner" class="mki-progress-domains" hidden>
-        <div class="mki-progress-domain-head">
-          <div>
-            <div class="mki-progress-domain-title">选择产品负责人</div>
-            <div class="mki-progress-domain-subtitle">产品负责人用于素材归属；小语种翻译负责人用于当前语言任务，可与产品负责人不同。</div>
-          </div>
-        </div>
-        <select id="mkiImportProgressProductOwnerSelect" class="oc-input" style="width:100%; height:36px;"></select>
-        <div id="mkiImportProgressProductOwnerNotice" class="mki-progress-domain-notice" hidden></div>
-        <div class="mki-progress-domain-actions">
-          <button id="mkiImportProgressProductOwnerRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryProductOwners()" hidden>重新加载产品负责人</button>
-          <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressCancelProductOwner()">取消</button>
-          <button id="mkiImportProgressProductOwnerSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressConfirmProductOwner()">确认产品负责人</button>
-        </div>
-      </div>
-      <div id="mkiImportProgressDomains" class="mki-progress-domains" hidden>
-        <div class="mki-progress-domain-head">
-          <div>
-            <div class="mki-progress-domain-title">选择发布域名</div>
-            <div class="mki-progress-domain-subtitle">保存后会同步到该产品的链接管理，后续推送只按启用域名执行。</div>
-          </div>
-        </div>
-        <div id="mkiImportProgressDomainList" class="mki-progress-domain-list"></div>
-        <div id="mkiImportProgressDomainNotice" class="mki-progress-domain-notice" hidden></div>
-        <div class="mki-progress-domain-actions">
-          <button id="mkiImportProgressDomainRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetryDomains()" hidden>重新加载域名</button>
-          <button id="mkiImportProgressDomainSubmit" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressSaveDomains()">确定发布域名</button>
-        </div>
-      </div>
-      <div class="mki-progress-actions">
-        <button id="mkiImportProgressRetry" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressRetry()" hidden>重新尝试</button>
-        <button id="mkiImportProgressContinue" type="button" class="oc-btn oc-btn--primary" onclick="mkiImportProgressContinueTask()" hidden>下一步：创建小语种任务</button>
-        <button id="mkiImportProgressTasks" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenTasks()" hidden>去任务中心</button>
-        <button id="mkiImportProgressMedias" type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenMedias()" hidden>去素材管理</button>
-        <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressClose()">关闭</button>
       </div>
     </div>
   </div>
