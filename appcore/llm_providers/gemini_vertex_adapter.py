@@ -138,9 +138,9 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None):
+                 max_output_tokens=None, google_search=None, url_context=None):
         media_list = _normalize_media(media)
-        if media_list:
+        if media_list or google_search or url_context:
             return self._generate_with_media(
                 model=model,
                 prompt=prompt,
@@ -151,10 +151,7 @@ class GeminiVertexAdapter(LLMAdapter):
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
                 google_search=google_search,
-            )
-        if google_search:
-            raise NotImplementedError(
-                f"{self.provider_code} text generate() does not support google_search"
+                url_context=url_context,
             )
         messages = []
         if system:
@@ -174,7 +171,7 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
-                             max_output_tokens=None, google_search=None):
+                             max_output_tokens=None, google_search=None, url_context=None):
         # 直接调 gemini_calls helper + SDK；不再 from appcore import gemini，
         # 避免业务模块对 adapter 形成反向依赖（B-1/B-2 收尾的关键约束）。
         creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
@@ -186,6 +183,7 @@ class GeminiVertexAdapter(LLMAdapter):
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
             google_search=google_search,
+            url_context=url_context,
         )
 
         last_err: Exception | None = None
@@ -202,7 +200,7 @@ class GeminiVertexAdapter(LLMAdapter):
                     "output_tokens": output_tokens,
                 }
                 if response_schema is not None:
-                    raw_text = resp.text or ""
+                    raw_text = resp.text
                     parsed = getattr(resp, "parsed", None)
                     if parsed is None:
                         try:
@@ -216,7 +214,7 @@ class GeminiVertexAdapter(LLMAdapter):
                                 "json_parse_error": str(exc),
                             }
                     return {
-                        "text": raw_text,
+                        "text": raw_text or None,
                         "json": parsed,
                         "raw": resp,
                         "usage": usage,

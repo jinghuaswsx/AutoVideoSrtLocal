@@ -387,7 +387,7 @@ class OpenRouterAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None):
+                 max_output_tokens=None, google_search=None, url_context=None):
         media_list = _normalize_media(media)
         schema_via_prompt = bool(response_schema is not None and google_search)
         prompt_for_model = _append_schema_instruction(prompt, response_schema) if schema_via_prompt else prompt
@@ -468,7 +468,7 @@ class DoubaoAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None):
+                 max_output_tokens=None, google_search=None, url_context=None):
         creds = self.resolve_credentials(
             user_id,
             media_kind="video" if media else "text",

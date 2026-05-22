@@ -45,5 +45,6 @@ class LLMAdapter(ABC):
         temperature: float | None = None,
         max_output_tokens: int | None = None,
         google_search: bool | None = None,
+        url_context: bool | None = None,
     ) -> dict:
         raise NotImplementedError(f"{self.provider_code} does not support generate()")
