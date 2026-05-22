@@ -56,29 +56,6 @@ def test_update_lang_status_serializes_json(monkeypatch):
     assert payload["it"]["last_error"] == ""
 
 
-def test_mark_link_normal_only_resets_link_state(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        sit,
-        "update_lang_status",
-        lambda *args, **kwargs: calls.append((args, kwargs)) or {"ok": True},
-    )
-
-    result = sit.mark_link_normal(7, "it", domain="omurio.com")
-
-    assert result == {"ok": True}
-    assert calls == [
-        (
-            (7, "it"),
-            {
-                "domain": "omurio.com",
-                "link_status": sit.LINK_NORMAL,
-                "last_error": "",
-            },
-        )
-    ]
-
-
 def test_evaluate_candidate_requires_material_and_shopify_id(monkeypatch):
     monkeypatch.setattr(
         sit.medias,

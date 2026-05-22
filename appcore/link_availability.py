@@ -218,6 +218,28 @@ def manual_confirm_result(
     )
 
 
+def manual_abnormal_result(
+    *,
+    product_id: int,
+    lang: str,
+    domain: str,
+    link_url: str,
+) -> None:
+    """Mark one product-link domain as manually abnormal/unreachable."""
+    upsert_result(
+        product_id=product_id,
+        lang=lang,
+        domain=domain,
+        link_url=link_url,
+        result={
+            "http_status": None,
+            "ok": False,
+            "error": "manual_abnormal",
+            "elapsed_ms": 0,
+        },
+    )
+
+
 def list_results(product_id: int, lang: str) -> list[dict[str, Any]]:
     pid = int(product_id)
     lang_code = (lang or "").strip().lower()

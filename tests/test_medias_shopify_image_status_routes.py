@@ -159,7 +159,8 @@ def test_product_links_modal_always_renders_shopify_action_buttons():
 
     assert 'data-product-links-action="shopify-confirm"' in row_actions
     assert 'data-product-links-action="shopify-requeue"' in row_actions
-    assert 'data-product-links-action="shopify-unavailable"' in row_actions
+    assert 'data-product-links-action="mark-link-abnormal"' in row_actions
+    assert 'data-product-links-action="shopify-unavailable"' not in row_actions
     assert "标记链接异常" in row_actions
     assert "标记链接不可用" not in row_actions
     assert "status.replace_status !== 'confirmed'" not in row_actions
@@ -184,17 +185,48 @@ def test_product_links_modal_renders_row_actions_in_requested_order_and_style():
     assert positions == sorted(positions)
     assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link"' in row_actions
     assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm"' in row_actions
-    assert 'class="oc-btn ghost sm" data-product-links-action="shopify-unavailable"' in row_actions
+    assert 'class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal"' in row_actions
     assert 'data-domain="${escapeHtml(item.domain)}"' in row_actions
 
 
-def test_manual_link_confirm_refreshes_product_detail_for_shopify_badges():
+def test_mark_link_abnormal_updates_link_availability_without_touching_shopify():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    abnormal_fn = js[
+        js.index("async function edMarkProductLinkAbnormal"):
+        js.index("function edOpenProductLinksModal")
+    ]
+    handle_fn = js[
+        js.index("async function edHandleProductLinksAction"):
+        js.index("async function edRenderActiveLangView")
+    ]
+
+    assert "manual_abnormal: true" in abnormal_fn
+    assert "edSetProductData" not in abnormal_fn
+    assert "edApplyShopifyImageAction('unavailable'" not in handle_fn
+    assert "return edMarkProductLinkAbnormal(domain);" in handle_fn
+
+
+def test_product_links_modal_shopify_row_only_shows_image_status():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    shopify_row = js[
+        js.index("function edProductLinksRenderShopifyRow"):
+        js.index("function edProductLinksRowActions")
+    ]
+
+    assert "shopify 小语种链接图片状态" in shopify_row
+    assert "SHOPIFY_IMAGE_REPLACE_LABELS" in shopify_row
+    assert "SHOPIFY_IMAGE_LINK_LABELS" not in shopify_row
+    assert "status.link_status" not in shopify_row
+    assert "edShopifyImageReplaceBadgeKind(status)" in shopify_row
+
+
+def test_manual_link_confirm_does_not_refresh_shopify_badges():
     js = open("web/static/medias.js", encoding="utf-8").read()
     confirm_fn = js[
         js.index("async function edConfirmProductLinkNormal"):
-        js.index("function edOpenProductLinksModal")
+        js.index("async function edMarkProductLinkAbnormal")
     ]
 
     assert "manual_confirm: true" in confirm_fn
-    assert "const fresh = await fetchJSON('/medias/api/products/' + pid);" in confirm_fn
-    assert "edSetProductData(fresh);" in confirm_fn
+    assert "fetchJSON('/medias/api/products/' + pid)" not in confirm_fn
+    assert "edSetProductData" not in confirm_fn

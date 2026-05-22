@@ -5081,6 +5081,14 @@
     return 'info';
   }
 
+  function edShopifyImageReplaceBadgeKind(status) {
+    if (!status) return 'info';
+    if (status.replace_status === 'failed') return 'danger';
+    if (status.replace_status === 'confirmed' || status.replace_status === 'auto_done') return 'success';
+    if (status.replace_status === 'pending' || status.replace_status === 'running') return 'warning';
+    return 'info';
+  }
+
   function edRenderShopifyImageStatus(lang) {
     // The inline status panel under "产品链接" was retired in favor of the
     // unified "产品链接管理" modal (spec: docs/superpowers/specs/2026-05-09-product-link-management-modal.md).
@@ -5143,9 +5151,7 @@
     if (!pid || !lang || lang === 'en') return;
     let body = domain ? { domain } : null;
     if (action === 'unavailable') {
-      const reason = prompt('请填写链接异常原因', '链接异常，等待负责人处理');
-      if (reason === null) return;
-      body = { ...(body || {}), reason };
+      body = { ...(body || {}), reason: '链接异常，等待负责人处理' };
     }
     if (action === 'requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) {
       return;
@@ -5701,6 +5707,7 @@
   function edProductLinksHttpBadgeLabel(item) {
     if (!item) return '未检测';
     if (item.error === 'manual_confirmed') return '人工确认';
+    if (item.error === 'manual_abnormal') return '人工标记';
     if (item.error === 'timeout') return '超时';
     if (item.http_status == null) return item.checked_at ? '检测失败' : '未检测';
     return `HTTP ${item.http_status}`;
@@ -5710,6 +5717,7 @@
     if (!item || item.checked_at === '') return edLinkCheckBadge('未检测', 'info');
     if (item.ok && item.error === 'manual_confirmed') return edLinkCheckBadge('人工确认正常', 'success');
     if (item.ok) return edLinkCheckBadge('链接正常', 'success');
+    if (item.error === 'manual_abnormal') return edLinkCheckBadge('人工标记异常', 'danger');
     if (item.error === 'timeout') return edLinkCheckBadge('请求超时', 'warning');
     if (item.http_status === 404) return edLinkCheckBadge('链接失联（404）', 'danger');
     if (item.http_status === 403) return edLinkCheckBadge('访问被拒（403）', 'danger');
@@ -5721,15 +5729,12 @@
     if (!lang || lang === 'en') return '';
     const status = edShopifyImageStatusForLang(lang, item.domain);
     const replaceLabel = SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status;
-    const linkLabel = SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status;
-    const replaceBadge = edLinkCheckBadge(replaceLabel, edShopifyImageBadgeKind(status));
-    const linkBadge = edLinkCheckBadge(linkLabel, edShopifyImageBadgeKind(status));
+    const replaceBadge = edLinkCheckBadge(replaceLabel, edShopifyImageReplaceBadgeKind(status));
     const updatedAt = status.updated_at ? `<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>` : '';
     return `
       <div class="oc-product-links-shopify">
-        <span class="oc-product-links-shopify-label">Shopify</span>
+        <span class="oc-product-links-shopify-label">shopify 小语种链接图片状态</span>
         ${replaceBadge}
-        ${linkBadge}
         ${updatedAt}
       </div>`;
   }
@@ -5739,8 +5744,8 @@
     const buttons = [];
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="recheck-one" ${domainAttr}>重新检查链接可用性</button>`);
     buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
+    buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal" ${domainAttr}>标记链接异常</button>`);
     if (lang && lang !== 'en') {
-      buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-unavailable" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记链接异常</button>`);
       buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
     }
@@ -5908,12 +5913,37 @@
         if (!item.checked_at) return acc;
         return !acc || item.checked_at > acc ? item.checked_at : acc;
       }, '');
-      if (state.lang && state.lang !== 'en') {
-        const fresh = await fetchJSON('/medias/api/products/' + pid);
-        edSetProductData(fresh);
-      }
     } catch (err) {
       state.error = '产品链接人工确认失败：' + (err && err.message ? err.message : err);
+    } finally {
+      state.loading = false;
+      edRenderProductLinksModal();
+    }
+  }
+
+  async function edMarkProductLinkAbnormal(domain) {
+    const product = (edState.productData && edState.productData.product) || null;
+    const pid = product && product.id;
+    const state = edState.productLinksModal;
+    if (!pid || !state.lang || !domain) return;
+
+    state.loading = true;
+    state.error = '';
+    edRenderProductLinksModal();
+    try {
+      const url = `/medias/api/products/${pid}/link-availability/${encodeURIComponent(state.lang)}`;
+      const data = await fetchJSON(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, manual_abnormal: true }),
+      });
+      state.items = Array.isArray(data && data.items) ? data.items : state.items;
+      state.lastChecked = state.items.reduce((acc, item) => {
+        if (!item.checked_at) return acc;
+        return !acc || item.checked_at > acc ? item.checked_at : acc;
+      }, '');
+    } catch (err) {
+      state.error = '产品链接人工标记异常失败：' + (err && err.message ? err.message : err);
     } finally {
       state.loading = false;
       edRenderProductLinksModal();
@@ -5946,6 +5976,9 @@
     }
     if (action === 'confirm-link') {
       return edConfirmProductLinkNormal(domain);
+    }
+    if (action === 'mark-link-abnormal') {
+      return edMarkProductLinkAbnormal(domain);
     }
     if (action === 'copy') {
       const item = (edState.productLinksModal.items || []).find((it) => it.domain === domain);

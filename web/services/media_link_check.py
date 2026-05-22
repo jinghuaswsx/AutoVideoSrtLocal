@@ -10,7 +10,7 @@ import uuid
 
 from flask import jsonify
 
-from appcore import link_availability, medias, product_link_domains, shopify_image_tasks
+from appcore import link_availability, medias, product_link_domains
 
 
 @dataclass(frozen=True)
@@ -333,21 +333,25 @@ def build_product_link_availability_run_response(
             _availability_payload(product, lang_code, []), 200
         )
 
-    if body.get("manual_confirm") is True:
+    manual_confirm = body.get("manual_confirm") is True
+    manual_abnormal = body.get("manual_abnormal") is True
+    if manual_confirm or manual_abnormal:
         if not only_domain:
             return MediaLinkCheckResponse({"error": "domain required"}, 400)
         target = targets[0]
-        link_availability.manual_confirm_result(
-            product_id=int(product.get("id") or 0),
-            lang=lang_code,
-            domain=target["domain"],
-            link_url=target["url"],
-        )
-        if lang_code != "en":
-            shopify_image_tasks.mark_link_normal(
-                int(product.get("id") or 0),
-                lang_code,
+        if manual_confirm:
+            link_availability.manual_confirm_result(
+                product_id=int(product.get("id") or 0),
+                lang=lang_code,
                 domain=target["domain"],
+                link_url=target["url"],
+            )
+        else:
+            link_availability.manual_abnormal_result(
+                product_id=int(product.get("id") or 0),
+                lang=lang_code,
+                domain=target["domain"],
+                link_url=target["url"],
             )
         cached = list_fn(int(product.get("id") or 0), lang_code) or []
         cached_by_domain = {item["domain"]: item for item in cached}

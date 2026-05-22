@@ -150,25 +150,6 @@ def confirm_lang(
     )
 
 
-def mark_link_normal(
-    product_id: int,
-    lang: str,
-    *,
-    domain: str | None = None,
-) -> dict[str, Any]:
-    updater = update_lang_status if domain else update_enabled_domain_statuses
-    kwargs: dict[str, Any] = {}
-    if domain:
-        kwargs["domain"] = domain
-    return updater(
-        product_id,
-        lang,
-        **kwargs,
-        link_status=LINK_NORMAL,
-        last_error="",
-    )
-
-
 def mark_link_unavailable(
     product_id: int,
     lang: str,
