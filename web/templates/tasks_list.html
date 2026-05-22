@@ -1171,6 +1171,7 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     ? ' · 源 ' + (check.source_count || 0) + ' / 目标 ' + (check.target_count || 0)
     : '';
   const detailMargin = '0';
+  const hint = check.hint ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.hint) + '</div>' : '';
   const reason = opts.mode !== 'product-link-combo' && check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
   const evidence = tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'});
   const links = !evidence && Array.isArray(check.links) && check.links.length
@@ -1200,7 +1201,7 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     + '<div class="tc-readiness-check-head">'
     + '<span class="tc-readiness-check-title">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
     + '</div>'
-    + reason + links + evidence + langControls
+    + hint + reason + links + evidence + langControls
     + ((manualActions || actions) ? '<div class="tc-readiness-check-actions">' + manualActions + actions + '</div>' : '')
     + '</div>'
     + '</div>';

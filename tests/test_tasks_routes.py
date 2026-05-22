@@ -376,6 +376,8 @@ def test_task_detail_readiness_moves_ad_language_after_product_link_combo(authed
 
     assert "const trailingChecks = [];" in body
     assert "String(check.key || '') === 'language_supported'" in body
+    assert "const hint = check.hint" in body
+    assert "hint + reason + links + evidence + langControls" in body
     assert (
         "wrap.innerHTML = jump + rows.join('') + tcRenderProductLinkCombinedCard(data, task, linkCombinedChecks) + trailingRows.join('');"
         in body

@@ -1056,6 +1056,18 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
         "kind": "external",
     }
+    assert checks["language_supported"]["label"] == "最终素材和链接确认"
+    assert checks["language_supported"]["hint"] == (
+        "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
+    )
+    assert checks["language_supported"]["evidence"] == [
+        {
+            "type": "status",
+            "label": "最终素材和链接确认",
+            "meta": "DE 已完成确认",
+            "ok": True,
+        }
+    ]
     assert list(checks) == [
         "localized_media_item",
         "translated_video",
@@ -1175,6 +1187,83 @@ def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monke
     assert checks["translated_cover"]["ok"] is False
     assert checks["translated_cover"]["manual_confirmed"] is True
     assert "人工确认完成" not in checks["translated_cover"]["reason"]
+
+
+def test_get_child_readiness_labels_unconfirmed_final_material_step(monkeypatch):
+    from appcore import pushes, tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_REVIEW,
+            "product_code": "robot-kit-rjc",
+            "ad_supported_langs": "fr",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 5,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": "robot-kit-de.mp4",
+            "object_key": "1/medias/9/robot-kit-de.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_product",
+        lambda product_id: {"id": product_id, "ad_supported_langs": "fr"},
+    )
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": False,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
+    monkeypatch.setattr(tasks, "_copywriting_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_shopify_image_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_product_link_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_recent_copywriting_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_recent_detail_image_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_detail_image_preview_rows", lambda *args, **kwargs: [])
+
+    payload = tasks.get_child_readiness(44)
+    check = {check["key"]: check for check in payload["checks"]}["language_supported"]
+
+    assert payload["ready"] is False
+    assert "language_supported" in payload["missing"]
+    assert check["label"] == "最终素材和链接确认"
+    assert check["evidence"] == [
+        {
+            "type": "status",
+            "label": "最终素材和链接确认",
+            "meta": "DE 未确认",
+            "ok": False,
+        }
+    ]
 
 
 def test_get_child_readiness_marks_push_rework_rejected_checks_red(monkeypatch):

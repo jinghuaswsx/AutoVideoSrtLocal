@@ -41,6 +41,10 @@ CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
+FINAL_MATERIAL_CONFIRM_LABEL = "最终素材和链接确认"
+FINAL_MATERIAL_CONFIRM_HINT = (
+    "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
+)
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -51,7 +55,7 @@ CHILD_ACCEPTANCE_STEP_LABELS = {
     "detail_images": "产品详情图翻译",
     "shopify_images": "链接商品图替换",
     "product_links": "商品链接探活",
-    "language_supported": "广告语言配置",
+    "language_supported": FINAL_MATERIAL_CONFIRM_LABEL,
 }
 CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
 PUSH_REWORK_ISSUE_DEFS = {
@@ -2417,15 +2421,16 @@ def _child_acceptance_payload(
         ),
         _acceptance_check(
             "language_supported",
-            "广告语言配置",
+            FINAL_MATERIAL_CONFIRM_LABEL,
             _readiness_bool(readiness, "lang_supported"),
+            hint=FINAL_MATERIAL_CONFIRM_HINT,
             **_evidence_if(
                 [
                     _evidence_status(
-                        label="广告语言配置",
-                        meta=f"{str(row['country_code']).upper()} 已配置"
+                        label=FINAL_MATERIAL_CONFIRM_LABEL,
+                        meta=f"{str(row['country_code']).upper()} 已完成确认"
                         if _readiness_bool(readiness, "lang_supported")
-                        else f"{str(row['country_code']).upper()} 未配置",
+                        else f"{str(row['country_code']).upper()} 未确认",
                         ok=_readiness_bool(readiness, "lang_supported"),
                     )
                 ]
