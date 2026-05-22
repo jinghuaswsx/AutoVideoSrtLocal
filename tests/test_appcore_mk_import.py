@@ -75,6 +75,63 @@ def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_pa
     }]
 
 
+def test_import_mk_video_returns_grouped_step_results(monkeypatch, tmp_path):
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: {
+            "id": 587,
+            "user_id": 42,
+            "product_code": "demo-rjc",
+            "product_link": "https://newjoyloo.com/products/demo-rjc",
+        },
+    )
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/demo.mp4",
+            "filename": "demo.mp4",
+            "product_name": "Demo",
+            "product_code": "DEMO",
+            "product_link": "https://newjoyloo.com/products/demo-rjc",
+        },
+        translator_id=None,
+        actor_user_id=1,
+    )
+
+    step_results = result["step_results"]
+    assert [row["key"] for row in step_results["product"]] == [
+        "product_lookup",
+        "product_link_probe",
+    ]
+    assert step_results["product"][0]["status"] == "done"
+    assert "复用已有产品" in step_results["product"][0]["message"]
+    assert step_results["product"][1]["status"] == "warning"
+    assert step_results["product"][1]["logs"] == ["HTTP 404"]
+    assert step_results["download"][0]["key"] == "download_mp4"
+    assert step_results["download"][0]["status"] == "done"
+    assert step_results["store"][0]["key"] == "store_media"
+    assert step_results["store"][1]["key"] == "media_item"
+    assert step_results["store"][1]["message"] == "素材 ID：456"
+
+
 def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
     original_filename = "2026.04.09-物理综合实验DIY-混剪-苏齐齐.mp4"
     captured = {}
@@ -498,6 +555,111 @@ def test_list_imported_filenames_returns_empty_without_db_for_empty_input(monkey
     monkeypatch.setattr(mk_import, "query_all", fail_query_all)
 
     assert mk_import.list_imported_filenames([]) == set()
+
+
+def test_find_existing_product_uses_indexed_code_candidates_before_regex(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=None):
+        calls.append((sql, args))
+        if args == ("abc-def-rjc",):
+            return {"id": 7, "product_code": "abc-def-rjc"}
+        if "REGEXP_REPLACE" in sql:
+            raise AssertionError("regex lookup should not run after indexed hit")
+        return None
+
+    monkeypatch.setattr(mk_import, "query_one", fake_query_one)
+
+    assert mk_import._find_existing_product("abc-def") == {"id": 7, "product_code": "abc-def-rjc"}
+    assert [args for _sql, args in calls] == [("abc-def",), ("abc-def-rjc",)]
+    assert all("product_code=%s" in sql for sql, _args in calls)
+
+
+def test_find_existing_product_keeps_regex_fallback_for_legacy_codes(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=None):
+        calls.append((sql, args))
+        if "REGEXP_REPLACE" in sql:
+            return {"id": 8, "product_code": "legacy-RJC"}
+        return None
+
+    monkeypatch.setattr(mk_import, "query_one", fake_query_one)
+
+    assert mk_import._find_existing_product("legacy") == {"id": 8, "product_code": "legacy-RJC"}
+    assert len(calls) == 3
+    assert "REGEXP_REPLACE" in calls[-1][0]
+
+
+def test_import_mk_video_reuses_metadata_media_product_id_without_code_scan(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: (_ for _ in ()).throw(AssertionError("code lookup should be skipped")),
+    )
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+
+    def fake_query_one(sql, args=None):
+        assert "WHERE id=%s" in sql
+        assert args == (587,)
+        return {
+            "id": 587,
+            "user_id": 42,
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+        }
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "query_one", fake_query_one)
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: captured.update(kwargs) or 456)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/original.mp4",
+            "filename": "old-product-video.mp4",
+            "product_name": "Existing product",
+            "product_code": "tool-free-robotics-building-set",
+            "product_link": "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+            "media_product_id": 587,
+        },
+        translator_id=None,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert result["media_product_id"] == 587
+    assert captured["user_id"] == 42
+
+
+def test_probe_product_link_uses_short_timeouts(monkeypatch):
+    captured = []
+
+    class FakeResponse:
+        status_code = 200
+
+    def fake_head(url, **kwargs):
+        captured.append(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(mk_import.requests, "head", fake_head)
+
+    assert mk_import._probe_product_link("https://example.test/products/demo") == (True, None)
+    assert captured[0]["timeout"] == mk_import._PRODUCT_LINK_HEAD_TIMEOUT_SECONDS
+    assert captured[0]["timeout"] <= 3
 
 
 import pytest
