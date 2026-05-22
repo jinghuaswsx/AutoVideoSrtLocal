@@ -313,6 +313,22 @@ def test_pushes_load_error_escapes_exception_message():
     assert 'tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${e.message}</td></tr>`;' not in script
 
 
+def test_push_modal_can_manually_confirm_product_link_probe_failure():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    modal = script[
+        script.index("function openPushModal"):
+        script.index("// ---------- 历史抽屉 & 重置 ----------")
+    ]
+
+    assert "let manualLinkConfirmed = false;" in modal
+    assert "人工确认链接正常" in modal
+    assert "manual_link_confirmed=1" in modal
+    assert "retryPayloadWithManualLinkConfirmation" in modal
+    assert "manualLinkConfirmed = true;" in modal
+    assert "JSON.stringify({ manual_link_confirmed: manualLinkConfirmed })" in modal
+    assert "pm-link-confirm" in modal
+
+
 def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
     shared = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
     pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")

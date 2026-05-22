@@ -23,6 +23,19 @@ def _json_response(payload, status_code: int = 200):
     return pushes_flask_response(build_pushes_payload_response(payload, status_code))
 
 
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _manual_link_confirmed() -> bool:
+    if request.method == "GET":
+        return _truthy(request.args.get("manual_link_confirmed"))
+    body = request.get_json(silent=True) or {}
+    return _truthy(body.get("manual_link_confirmed"))
+
+
 def _is_admin() -> bool:
     return getattr(current_user, "is_admin", False)
 
@@ -280,13 +293,15 @@ def api_build_payload(item_id: int):
     lang = item.get("lang") or "en"
     product_code = (product.get("product_code") or "").strip().lower()
     ad_url = pushes.build_product_link(lang, product_code)
-    ok, err = pushes.probe_ad_url(ad_url)
-    if not ok:
-        return _json_response({
-            "error": "link_not_adapted",
-            "url": ad_url,
-            "detail": err,
-        }, 400)
+    manual_link_confirmed = _manual_link_confirmed()
+    if not manual_link_confirmed:
+        ok, err = pushes.probe_ad_url(ad_url)
+        if not ok:
+            return _json_response({
+                "error": "link_not_adapted",
+                "url": ad_url,
+                "detail": err,
+            }, 400)
 
     payload = pushes.build_item_payload(item, product)
     mk_id = product.get("mk_id")
@@ -313,6 +328,7 @@ def api_build_payload(item_id: int):
         "product_links_push": product_links_push,
         "preview_cover_url": preview_cover_url,
         "quality_check": _quality_check_for_item(item_id),
+        "manual_link_confirmed": manual_link_confirmed,
     })
 
 
@@ -395,9 +411,11 @@ def api_push(item_id: int):
     lang = item.get("lang") or "en"
     product_code = (product.get("product_code") or "").strip().lower()
     ad_url = pushes.build_product_link(lang, product_code)
-    ok, err = pushes.probe_ad_url(ad_url)
-    if not ok:
-        return _json_response({"error": "link_not_adapted", "url": ad_url, "detail": err}, 400)
+    manual_link_confirmed = _manual_link_confirmed()
+    if not manual_link_confirmed:
+        ok, err = pushes.probe_ad_url(ad_url)
+        if not ok:
+            return _json_response({"error": "link_not_adapted", "url": ad_url, "detail": err}, 400)
 
     try:
         payload = pushes.build_item_payload(item, product)
@@ -425,7 +443,11 @@ def api_push(item_id: int):
             item_id,
             "push_failed",
             status="failed",
-            detail={"error": "downstream_unreachable"},
+            detail={
+                "error": "downstream_unreachable",
+                "manual_link_confirmed": manual_link_confirmed,
+                "product_link_url": ad_url,
+            },
         )
         return _json_response({"error": "downstream_unreachable", "detail": detail}, 502)
 
@@ -440,7 +462,11 @@ def api_push(item_id: int):
         _audit_push_action(
             item_id,
             "push_succeeded",
-            detail={"upstream_status": post_result.get("upstream_status")},
+            detail={
+                "upstream_status": post_result.get("upstream_status"),
+                "manual_link_confirmed": manual_link_confirmed,
+                "product_link_url": ad_url,
+            },
         )
         task_id = item.get("task_id")
         if task_id:
@@ -489,6 +515,7 @@ def api_push(item_id: int):
             "upstream_status": post_result.get("upstream_status"),
             "response_body": post_result.get("response_body") or "",
             "mk_id_match": mk_id_match,
+            "manual_link_confirmed": manual_link_confirmed,
         })
 
     pushes.record_push_failure(
@@ -502,7 +529,11 @@ def api_push(item_id: int):
         item_id,
         "push_failed",
         status="failed",
-        detail={"upstream_status": post_result.get("upstream_status")},
+        detail={
+            "upstream_status": post_result.get("upstream_status"),
+            "manual_link_confirmed": manual_link_confirmed,
+            "product_link_url": ad_url,
+        },
     )
     return _json_response({
         "error": "downstream_error",
