@@ -186,6 +186,10 @@
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
 .mk-line-clamp--3 { -webkit-line-clamp:3; min-height:calc(1.45em * 3); }
 .mk-video-card-title { font-size:14px; font-weight:600; line-height:1.45; color:var(--oc-fg); }
+.mk-video-title-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
+.mk-video-title-actions { display:inline-flex; align-items:center; gap:4px; padding-top:1px; }
+.mk-video-detail-link { height:24px; padding:0 8px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:#fff; color:var(--oc-accent); text-decoration:none; font-size:12px; line-height:1; white-space:nowrap; }
+.mk-video-detail-link:hover { background:var(--oc-bg-muted); border-color:var(--oc-accent); }
 .mk-video-product-link-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:center; gap:6px; min-height:24px; }
 .mk-video-product-link { min-width:0; color:var(--oc-accent); text-decoration:none; font-size:12px; line-height:1.35; }
 .mk-video-product-link:hover { text-decoration:underline; }
@@ -909,6 +913,17 @@ function renderMkProductLinkCopyButton(productLink) {
   return `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(text)}" onclick="copyMkText(this.dataset.copyText, this)" title="复制产品链接" aria-label="复制产品链接">${mkCopyIconSvg()}</button>`;
 }
 
+function renderMkFilenameCopyButton(filename) {
+  const text = String(filename || '').trim();
+  if (!text) return '';
+  return `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(text)}" onclick="copyMkText(this.dataset.copyText, this)" title="复制文件名" aria-label="复制文件名">${mkCopyIconSvg()}</button>`;
+}
+
+function renderMkMaterialDetailHref(r) {
+  if (!r || !r.material_key) return '';
+  return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
+}
+
 function runMkSearch() {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
@@ -1183,6 +1198,14 @@ function renderMkVideoMaterialCard(r) {
   const productLinkHtml = productLinkRaw
     ? `<div class="mk-video-product-link-row">${safeProductUrl ? `<a class="mk-video-product-link mk-line-clamp mk-line-clamp--1" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${productLinkLabel}">${productLinkLabel}</a>` : `<span class="mk-video-product-link mk-line-clamp mk-line-clamp--1" title="${productLinkLabel}">${productLinkLabel}</span>`}${productLinkCopyHtml}</div>`
     : '';
+  const materialDetailHref = renderMkMaterialDetailHref(r);
+  const detailLinkHtml = materialDetailHref
+    ? `<a class="mk-video-detail-link" href="${escapeHtml(materialDetailHref)}" target="_blank" rel="noopener noreferrer">详情</a>`
+    : '';
+  const filenameCopyHtml = renderMkFilenameCopyButton(r.video_name || '');
+  const titleActionsHtml = (filenameCopyHtml || detailLinkHtml)
+    ? `<span class="mk-video-title-actions">${filenameCopyHtml}${detailLinkHtml}</span>`
+    : '';
   const rawProductName = r.mk_product_name || r.product_name || '--';
   const rawProductHandle = r.product_handle || r.product_code || '';
   const safeProductName = escapeHtml(rawProductName);
@@ -1235,7 +1258,10 @@ function renderMkVideoMaterialCard(r) {
         ${productCodeActionsHtml}
       </div>
     </div>
-    <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
+    <div class="mk-video-title-row">
+      <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
+      ${titleActionsHtml}
+    </div>
     ${productLinkHtml}
     <div class="mk-video-summary-row">
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
