@@ -14,6 +14,8 @@
 - 历史包 `3.0`、`3.6` 也出现过同类空 key；`3.19`、`3.20` 当前包内 key 非空。
 - v3.21 源码曾尝试把生产 key 写进 `settings.py` 默认值，但这违反仓库既有「生产 key 不进源码 / 文档」规则，也不能作为长期发布门禁。
 
+2026-05-22 再次复发：用户在 Shopify Image Localizer v5.0 点击「开始替换」后又看到同一弹窗。以后看到这个症状，第一判断仍然是发布包或用户运行目录里的 runtime/default config 缺失、为空、含 BOM、zip 未重建或发布 JSON 指向旧 zip；不要把它当成用户没有填写高级设置的问题。
+
 ## 事实来源
 
 - `tools/shopify_image_localizer/CLAUDE.md`：Shopify Image Localizer 发布与事故规则。

@@ -385,7 +385,7 @@ def test_gui_login_button_tracks_selected_shopify_domain(monkeypatch: pytest.Mon
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert app.login_shopify_button["text"] == "登录店铺"
         assert thread_args[0][1] == (
-            "https://autovideosrt.example.test",
+            gui.settings.DEFAULT_BASE_URL,
             "demo-key",
             r"C:\chrome-shopify-image",
             "omurio.com",
@@ -509,7 +509,7 @@ def test_gui_login_button_uses_domain_dropdown_without_prompt(monkeypatch: pytes
 
         assert app.current_shopify_domain_var.get() == "omurio.com"
         assert thread_args[0][1] == (
-            "https://autovideosrt.example.test",
+            gui.settings.DEFAULT_BASE_URL,
             "demo-key",
             r"C:\chrome-shopify-image",
             "omurio.com",

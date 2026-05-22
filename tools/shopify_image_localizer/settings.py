@@ -170,6 +170,28 @@ def default_config_path(root: str | Path | None = None) -> Path:
     return base / DEFAULT_CONFIG_FILENAME
 
 
+def _default_config_candidate_paths(root: str | Path | None = None) -> list[Path]:
+    primary = default_config_path(root)
+    if root is not None:
+        return [primary]
+
+    candidates = [primary]
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            candidates.append(Path(meipass) / DEFAULT_CONFIG_FILENAME)
+        candidates.append(Path(sys.executable).resolve().parent / "_internal" / DEFAULT_CONFIG_FILENAME)
+
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(path)
+    return unique
+
+
 def _read_config_payload(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -196,12 +218,21 @@ def load_runtime_config(root: str | Path | None = None) -> dict[str, Any]:
         "shopify_domain_store_slugs": {},
     }
     path = config_path(root)
-    default_path = default_config_path(root)
-    if not path.is_file() and not default_path.is_file():
+    default_paths = _default_config_candidate_paths(root)
+    if not path.is_file() and not any(default_path.is_file() for default_path in default_paths):
         return dict(defaults)
 
     payload = _read_config_payload(path)
-    default_payload = _read_config_payload(default_path)
+    default_payload: dict[str, Any] = {}
+    for default_path in default_paths:
+        candidate_payload = _read_config_payload(default_path)
+        if (
+            str(candidate_payload.get("api_key") or "").strip()
+            or str(candidate_payload.get("browser_user_data_dir") or "").strip()
+            or candidate_payload.get("shopify_domain_store_slugs")
+        ):
+            default_payload = candidate_payload
+            break
 
     api_key_from_file = str(payload.get("api_key") or "").strip()
     browser_dir_from_file = str(payload.get("browser_user_data_dir") or "").strip()

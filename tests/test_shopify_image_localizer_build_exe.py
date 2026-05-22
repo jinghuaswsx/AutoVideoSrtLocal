@@ -273,3 +273,24 @@ def test_shopify_build_writes_runtime_and_default_configs(tmp_path, monkeypatch:
     assert runtime_payload["api_key"] == "packaged-openapi-key"
     assert runtime_payload["browser_user_data_dir"] == r"C:\chrome-shopify-image"
     assert default_payload == runtime_payload
+
+
+def test_shopify_build_writes_internal_default_config_fallback(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo_root = tmp_path / "repo"
+    dist_root = tmp_path / "dist"
+    repo_root.mkdir()
+    (dist_root / "_internal").mkdir(parents=True)
+    monkeypatch.setattr(build_exe.settings, "DEFAULT_API_KEY", "packaged-openapi-key")
+
+    build_exe._write_runtime_config(repo_root, dist_root)
+
+    runtime_payload = json.loads(build_exe.settings.config_path(dist_root).read_text(encoding="utf-8"))
+    internal_payload = json.loads(
+        (dist_root / "_internal" / build_exe.settings.DEFAULT_CONFIG_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert internal_payload == runtime_payload

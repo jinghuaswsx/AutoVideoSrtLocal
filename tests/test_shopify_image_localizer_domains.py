@@ -8,8 +8,8 @@ from tools.shopify_image_localizer import controller, settings, version
 from tools.shopify_image_localizer.browser import session
 
 
-def test_shopify_image_localizer_release_version_is_5_0() -> None:
-    assert version.RELEASE_VERSION == "5.0"
+def test_shopify_image_localizer_release_version_is_5_1() -> None:
+    assert version.RELEASE_VERSION == "5.1"
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:
@@ -183,6 +183,38 @@ def test_load_runtime_config_accepts_utf8_bom_config_files(tmp_path) -> None:
 
     assert cfg["api_key"] == "packaged-openapi-key"
     assert cfg["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert cfg["shopify_domain_store_slugs"]["omurio.com"] == "7t1gn3-sv"
+
+
+def test_load_runtime_config_uses_pyinstaller_internal_default_when_root_config_missing(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EXE 根目录配置丢失时，仍应从 PyInstaller _internal 兜底配置恢复。"""
+    exe_dir = tmp_path / "ShopifyImageLocalizer-5.1"
+    internal_dir = exe_dir / "_internal"
+    internal_dir.mkdir(parents=True)
+    (internal_dir / settings.DEFAULT_CONFIG_FILENAME).write_text(
+        json.dumps(
+            {
+                "base_url": "https://autovideosrt.example.test",
+                "api_key": "packaged-openapi-key",
+                "browser_user_data_dir": r"C:\chrome-shopify-image",
+                "shopify_domain": "omurio.com",
+                "shopify_domain_store_slugs": {"omurio.com": "7t1gn3-sv"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(settings.sys, "executable", str(exe_dir / "ShopifyImageLocalizer_5_1.exe"))
+    monkeypatch.setattr(settings.sys, "_MEIPASS", str(internal_dir), raising=False)
+
+    cfg = settings.load_runtime_config()
+
+    assert cfg["api_key"] == "packaged-openapi-key"
+    assert cfg["browser_user_data_dir"] == r"C:\chrome-shopify-image"
+    assert cfg["shopify_domain"] == "omurio.com"
     assert cfg["shopify_domain_store_slugs"]["omurio.com"] == "7t1gn3-sv"
 
 

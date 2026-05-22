@@ -203,6 +203,10 @@ def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
     _validate_runtime_config_file(target_config)
     shutil.copy2(target_config, default_config)
     _validate_runtime_config_file(default_config)
+    internal_default_config = dist_root / "_internal" / settings.DEFAULT_CONFIG_FILENAME
+    if internal_default_config.parent.is_dir():
+        shutil.copy2(default_config, internal_default_config)
+        _validate_runtime_config_file(internal_default_config)
 
 
 def _write_portable_launcher(dist_root: Path, release_version: str) -> Path:
