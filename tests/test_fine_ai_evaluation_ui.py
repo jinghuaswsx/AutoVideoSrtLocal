@@ -104,3 +104,43 @@ def test_fine_ai_standalone_failed_step_cards_can_confirm_and_rerun_country():
     assert "config.rerun_url_template" in script
     assert "mki-fine-ai-step-actions" in template
     assert "mki-fine-ai-step-rerun" in template
+
+
+def test_fine_ai_standalone_failed_country_rerun_is_not_blocked_by_run_status():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+
+    start = script.index("function canRerunStep")
+    end = script.index("function renderStepRerunButton", start)
+    block = script[start:end]
+
+    assert "countryCodeFromStep(step)" in block
+    assert "String(stepStatus || '').toLowerCase() === 'failed'" in block
+    assert "terminalStatuses.includes" not in block
+    assert "runStatus" not in block
+
+
+def test_fine_ai_standalone_summary_groups_country_decisions_and_failed_reruns():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "function renderCountryDecisionSummary" in script
+    assert "fine-ai-decision-summary" in script
+    assert "fine-ai-decision-group is-go" in script
+    assert "fine-ai-decision-group is-test" in script
+    assert "fine-ai-decision-group is-hold" in script
+    assert "建议做" in script
+    assert "先测试 / 需要考虑" in script
+    assert "暂不做 / 需重跑或补数据" in script
+    assert "data-fine-ai-summary-rerun" in script
+    assert "renderSummaryRerunButton" in script
+    assert ".fine-ai-decision-summary" in template
+    assert ".fine-ai-decision-group" in template
+
+
+def test_fine_ai_standalone_result_inlines_country_summary_into_summary_step():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+
+    assert "renderProgress(result.progress || {}, result.status || '', result)" in script
+    assert "resultForSummary" in script
+    assert "step.key || '') === 'summary'" in script
+    assert "renderCountryDecisionSummary(resultForSummary)" in script

@@ -131,17 +131,16 @@
     return match ? match[1].toUpperCase() : '';
   }
 
-  function canRerunStep(step, stepStatus, runStatus) {
+  function canRerunStep(step, stepStatus) {
     return Boolean(
       config.rerun_url_template
       && countryCodeFromStep(step)
       && String(stepStatus || '').toLowerCase() === 'failed'
-      && terminalStatuses.includes(String(runStatus || '').toLowerCase())
     );
   }
 
-  function renderStepRerunButton(step, stepStatus, runStatus) {
-    if (!canRerunStep(step, stepStatus, runStatus)) return '';
+  function renderStepRerunButton(step, stepStatus) {
+    if (!canRerunStep(step, stepStatus)) return '';
     const code = countryCodeFromStep(step);
     return `<button type="button"
         class="fine-ai-btn mki-fine-ai-step-rerun"
@@ -173,7 +172,7 @@
     }
   }
 
-  function renderProgress(progress, status) {
+  function renderProgress(progress, status, resultForSummary = null) {
     const p = {...defaultProgress(), ...(progress || {})};
     const steps = Array.isArray(p.steps) && p.steps.length ? p.steps : defaultProgress().steps;
     const total = Math.max(1, Number(p.total_steps || steps.length || 8));
@@ -202,6 +201,7 @@
       </section>
       <div class="mki-fine-ai-step-list">${steps.map(step => {
         const stepStatus = String(step.status || 'pending').toLowerCase();
+        const showSummaryDecision = String(step.key || '') === 'summary' && resultForSummary;
         const cardClass = stepStatus === 'running' ? 'mki-fine-ai-step-card is-running' : `mki-fine-ai-step-card is-${escapeHtml(stepStatus)}`;
         return `<section class="${cardClass}" data-fine-ai-step="${escapeHtml(step.key || '')}">
           <div class="mki-fine-ai-step-head">
@@ -210,13 +210,14 @@
               <strong>${escapeHtml(step.title || step.key || '')}</strong>
             </div>
             <div class="mki-fine-ai-step-actions">
-              ${renderStepRerunButton(step, stepStatus, displayStatus)}
+              ${renderStepRerunButton(step, stepStatus)}
               <span class="mki-fine-ai-status-pill is-${escapeHtml(stepStatus)}">${escapeHtml(stepStatusLabel(stepStatus))}</span>
             </div>
           </div>
           <p class="mki-fine-ai-step-desc">${escapeHtml(step.message || step.description || '')}</p>
           ${renderDebug(step.debug)}
           ${renderLogs(step.logs)}
+          ${showSummaryDecision ? renderCountryDecisionSummary(resultForSummary) : ''}
         </section>`;
       }).join('')}</div>
       ${renderExecutionLog(p)}
@@ -241,7 +242,7 @@
     const value = String(decision || '').toUpperCase();
     if (value === 'GO' || value === 'SUCCESS') return 'ect-tag-success';
     if (value === 'TEST' || value === 'WARNING') return 'ect-tag-warning';
-    if (value === 'HOLD' || value === 'DANGER') return 'ect-tag-danger';
+    if (value === 'HOLD' || value === 'FAILED' || value === 'DANGER') return 'ect-tag-danger';
     return 'ect-tag-info';
   }
 
@@ -249,6 +250,166 @@
     const values = Array.isArray(items) ? items : [];
     if (!values.length) return '<span class="ect-muted">-</span>';
     return `<ul class="ect-suggestions">${values.slice(0, 10).map(item => `<li>${escapeHtml(String(item || ''))}</li>`).join('')}</ul>`;
+  }
+
+  function countryEntries(result) {
+    return Object.entries((result || {}).countries || {})
+      .filter(([, country]) => country && typeof country === 'object')
+      .map(([code, country]) => [String(country.country_code || code || '').toUpperCase(), country]);
+  }
+
+  function countryFinalDecision(country) {
+    const status = String((country || {}).status || '').toLowerCase();
+    if (status === 'failed') return 'FAILED';
+    return String(((country || {}).decision || {}).final_decision || (country || {}).decision || 'HOLD').toUpperCase();
+  }
+
+  function countryScore(country) {
+    const value = ((country || {}).scores || {}).overall_score;
+    return value === null || value === undefined || value === '' ? '-' : value;
+  }
+
+  function firstText(values) {
+    const rows = Array.isArray(values) ? values : [];
+    for (const value of rows) {
+      const text = String(value || '').trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function countryRisks(country) {
+    const risks = (country || {}).risks || {};
+    return [
+      ...(risks.claim_risks || []),
+      ...(risks.compliance_risks || []),
+      ...(risks.operational_risks || []),
+      ...(risks.trust_risks || []),
+      ...(risks.localization_risks || []),
+    ];
+  }
+
+  function countryReason(country) {
+    const decision = (country || {}).decision || {};
+    const error = (country || {}).error || {};
+    return String(
+      decision.one_sentence_reason
+      || firstText(decision.why)
+      || ((country || {}).recommendations || {}).recommended_positioning
+      || error.message
+      || (country || {}).error_message
+      || '-'
+    );
+  }
+
+  function countryTopRisk(country) {
+    return String(
+      firstText(countryRisks(country))
+      || firstText((country || {}).missing_data)
+      || (((country || {}).error || {}).message)
+      || (country || {}).error_message
+      || '-'
+    );
+  }
+
+  function countryNextAction(country) {
+    const decision = countryFinalDecision(country);
+    const recs = (country || {}).recommendations || {};
+    const action = firstText([
+      ...(recs.creative_actions || []),
+      ...(recs.landing_page_actions || []),
+      ...(recs.ad_test_angles || []),
+      ...(recs.audience_suggestions || []),
+    ]);
+    if (decision === 'FAILED') return '重跑AI评估；如果仍失败，补齐落地页、素材或履约数据后再评估。';
+    if (decision === 'GO') return action || '准备投放素材、落地页和首轮预算，可以进入执行。';
+    if (decision === 'TEST') return action || '先小预算测试，重点观察点击、转化、履约和合规反馈。';
+    return action || countryTopRisk(country) || '暂不投入，先处理阻塞风险或补齐关键信息。';
+  }
+
+  function renderSummaryRerunButton(code, country) {
+    if (
+      !config.rerun_url_template
+      || String((country || {}).status || '').toLowerCase() !== 'failed'
+    ) {
+      return '';
+    }
+    return `<button type="button"
+        class="fine-ai-btn mki-fine-ai-step-rerun"
+        data-fine-ai-rerun="${escapeHtml(code)}"
+        data-fine-ai-summary-rerun="${escapeHtml(code)}"
+        title="${escapeHtml(`重新请求 ${code} 的 AI 评估`)}">重跑AI评估</button>`;
+  }
+
+  function decisionDisplay(decision) {
+    if (decision === 'GO') return 'GO / 建议做';
+    if (decision === 'TEST') return 'TEST / 先测试';
+    if (decision === 'FAILED') return 'FAILED / 需重跑';
+    return 'HOLD / 暂不做';
+  }
+
+  function renderDecisionRow(code, country) {
+    const decision = countryFinalDecision(country);
+    const status = String((country || {}).status || '').toLowerCase();
+    return `<article class="fine-ai-decision-row">
+      <div class="fine-ai-decision-row-head">
+        <strong>${escapeHtml(country.country_name_zh || country.country_name || code)} <span>${escapeHtml(code)}</span></strong>
+        <div class="fine-ai-decision-row-actions">
+          <span class="ect-summary-tag ${severity(decision)}">${escapeHtml(decisionDisplay(decision))}</span>
+          <span class="fine-ai-decision-score">分数 ${escapeHtml(String(countryScore(country)))}</span>
+          ${renderSummaryRerunButton(code, country)}
+        </div>
+      </div>
+      <div class="fine-ai-decision-grid">
+        <div><span>结论依据</span><p>${escapeHtml(countryReason(country))}</p></div>
+        <div><span>主要风险</span><p>${escapeHtml(countryTopRisk(country))}</p></div>
+        <div><span>下一步</span><p>${escapeHtml(countryNextAction(country))}</p></div>
+      </div>
+      ${status === 'failed' ? '<p class="fine-ai-decision-note">该国家本轮没有可用结论，需先重跑后再作为投放判断。</p>' : ''}
+    </article>`;
+  }
+
+  function renderCountryDecisionSummary(result) {
+    const entries = countryEntries(result);
+    if (!entries.length) return '';
+    const groups = [
+      {
+        key: 'go',
+        className: 'fine-ai-decision-group is-go',
+        title: '绿色：建议做',
+        label: '建议做',
+        empty: '暂无明确建议直接做的国家。',
+        match: country => countryFinalDecision(country) === 'GO',
+      },
+      {
+        key: 'test',
+        className: 'fine-ai-decision-group is-test',
+        title: '黄色：先测试 / 需要考虑',
+        label: '先测试 / 需要考虑',
+        empty: '暂无建议进入小预算测试的国家。',
+        match: country => countryFinalDecision(country) === 'TEST',
+      },
+      {
+        key: 'hold',
+        className: 'fine-ai-decision-group is-hold',
+        title: '红色：暂不做 / 需重跑或补数据',
+        label: '暂不做 / 需重跑或补数据',
+        empty: '暂无暂缓或失败国家。',
+        match: country => ['HOLD', 'FAILED'].includes(countryFinalDecision(country)),
+      },
+    ];
+    return `<div class="fine-ai-decision-summary">
+      ${groups.map(group => {
+        const rows = entries.filter(([, country]) => group.match(country));
+        return `<section class="${group.className}">
+          <div class="fine-ai-decision-group-head">
+            <h5>${escapeHtml(group.title)}</h5>
+            <span>${rows.length} 个国家</span>
+          </div>
+          ${rows.length ? rows.map(([code, country]) => renderDecisionRow(code, country)).join('') : `<p class="ect-muted">${escapeHtml(group.empty)}</p>`}
+        </section>`;
+      }).join('')}
+    </div>`;
   }
 
   function renderCountryResults(result) {
@@ -321,7 +482,7 @@
   function renderResult(result) {
     stopElapsedTimer();
     body.innerHTML = `
-      ${renderProgress(result.progress || {}, result.status || '')}
+      ${renderProgress(result.progress || {}, result.status || '', result)}
       ${renderSummary(result)}
       ${renderCountryResults(result)}
     `;

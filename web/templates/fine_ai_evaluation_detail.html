@@ -57,12 +57,34 @@
 .fine-ai-country-card { border:1px solid #e2e8f0; border-radius:8px; background:#fff; padding:14px; }
 .fine-ai-country-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .fine-ai-country-head h4 { margin:0; font-size:16px; }
+.fine-ai-decision-summary { display:grid; gap:12px; margin-top:14px; }
+.fine-ai-decision-group { border:1px solid #e2e8f0; border-left-width:5px; border-radius:8px; padding:12px; background:#fff; }
+.fine-ai-decision-group.is-go { border-left-color:#16a34a; background:#f0fdf4; }
+.fine-ai-decision-group.is-test { border-left-color:#d97706; background:#fffbeb; }
+.fine-ai-decision-group.is-hold { border-left-color:#dc2626; background:#fef2f2; }
+.fine-ai-decision-group-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.fine-ai-decision-group-head h5 { margin:0; font-size:15px; }
+.fine-ai-decision-group-head span { color:#64748b; font-size:12px; font-weight:700; }
+.fine-ai-decision-row { border:1px solid rgba(148,163,184,.35); border-radius:6px; padding:10px; background:rgba(255,255,255,.72); }
+.fine-ai-decision-row + .fine-ai-decision-row { margin-top:8px; }
+.fine-ai-decision-row-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.fine-ai-decision-row-head strong { font-size:15px; }
+.fine-ai-decision-row-head strong span { color:#64748b; font-size:12px; margin-left:4px; }
+.fine-ai-decision-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+.fine-ai-decision-score { color:#334155; font-size:12px; font-weight:800; }
+.fine-ai-decision-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.fine-ai-decision-grid div { border:1px solid rgba(226,232,240,.9); border-radius:6px; padding:8px; background:rgba(255,255,255,.65); min-width:0; }
+.fine-ai-decision-grid span { display:block; color:#64748b; font-size:12px; margin-bottom:4px; }
+.fine-ai-decision-grid p { margin:0; color:#0f172a; font-size:13px; line-height:1.45; }
+.fine-ai-decision-note { margin:8px 0 0; color:#991b1b; font-size:13px; font-weight:700; }
 .fine-ai-loading { border:1px solid #dbe7ef; border-radius:8px; background:#fff; padding:24px; color:#64748b; text-align:center; }
 @keyframes fineAiPulse { from { transform:scale(.72); opacity:.9; } to { transform:scale(1.8); opacity:0; } }
 @media (max-width: 720px) {
   .fine-ai-hero { flex-direction:column; }
   .fine-ai-actions { justify-content:flex-start; }
   .mki-fine-ai-progress-meta, .mki-fine-ai-step-head { flex-direction:column; align-items:flex-start; }
+  .fine-ai-decision-row-head { flex-direction:column; }
+  .fine-ai-decision-grid { grid-template-columns:1fr; }
 }
 </style>
 
