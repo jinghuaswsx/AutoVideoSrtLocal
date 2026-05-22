@@ -8,7 +8,7 @@
 {% include "_pushes_tabs.html" with context %}
 
 <div class="push-toolbar">
-  <div class="filter-group">
+  <div class="filter-group filter-group-status">
     <label for="f-status">状态</label>
     <select id="f-status">
       <option value="">全部</option>
@@ -19,27 +19,27 @@
       <option value="skipped">不推送</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="filter-group filter-group-lang">
     <label for="f-lang">语种</label>
     <select id="f-lang">
       <option value="">全部</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="filter-group filter-group-product">
     <label for="f-product">产品</label>
     <input id="f-product" type="text" placeholder="产品名或 code" />
   </div>
-  <div class="filter-group">
+  <div class="filter-group filter-group-keyword">
     <label for="f-keyword">关键词</label>
     <input id="f-keyword" type="text" placeholder="素材文件名" />
   </div>
-  <div class="filter-group">
+  <div class="filter-group filter-group-owner">
     <label for="f-owner">员工</label>
     <select id="f-owner">
       <option value="">全部员工</option>
     </select>
   </div>
-  <div class="filter-group">
+  <div class="filter-group filter-group-audit">
     <label for="f-audit-result">审核信息</label>
     <select id="f-audit-result">
       <option value="">全部</option>
@@ -69,24 +69,39 @@
   </div>
 </div>
 
-<table class="push-table">
-  <thead>
-    <tr>
-      <th>缩略图</th>
-      <th>产品</th>
-      <th>产品负责人</th>
-      <th>mk_id</th>
-      <th>素材</th>
-      <th>语种</th>
-      <th>就绪</th>
-      <th>审核信息</th>
-      <th>状态</th>
-      <th>创建时间</th>
-      {% if is_admin %}<th>操作</th>{% endif %}
-    </tr>
-  </thead>
-  <tbody id="push-tbody"><tr><td colspan="{{ 11 if is_admin else 10 }}">加载中…</td></tr></tbody>
-</table>
+<div class="push-table-shell">
+  <table class="push-table mobile-no-scroll">
+    <colgroup>
+      <col class="push-col-thumb">
+      <col class="push-col-product">
+      <col class="push-col-owner">
+      <col class="push-col-mk">
+      <col class="push-col-item">
+      <col class="push-col-lang">
+      <col class="push-col-ready">
+      <col class="push-col-audit">
+      <col class="push-col-status">
+      <col class="push-col-time">
+      {% if is_admin %}<col class="push-col-action">{% endif %}
+    </colgroup>
+    <thead>
+      <tr>
+        <th>缩略图</th>
+        <th>产品</th>
+        <th>产品负责人</th>
+        <th>mk_id</th>
+        <th>素材</th>
+        <th>语种</th>
+        <th>就绪</th>
+        <th>审核信息</th>
+        <th>状态</th>
+        <th>创建时间</th>
+        {% if is_admin %}<th>操作</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody id="push-tbody"><tr><td colspan="{{ 11 if is_admin else 10 }}">加载中…</td></tr></tbody>
+  </table>
+</div>
 
 <div class="pagination" id="push-pagination"></div>
 

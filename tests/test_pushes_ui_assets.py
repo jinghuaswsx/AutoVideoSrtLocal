@@ -122,14 +122,16 @@ def test_pushes_payload_and_quality_previews_sanitize_media_src_protocols():
     ]
 
     assert "function safeMediaSrc(url)" in script
-    assert "const coverSrc = safeMediaSrc(previewCoverUrl || v.image_url || null);" in payload_view
-    assert "const videoSrc = safeMediaSrc(v.url);" in payload_view
+    assert "function previewMediaSrc(url)" in script
+    assert "const src = safeMediaSrc(url);" in script
+    assert "const coverSrc = previewMediaSrc(previewCoverUrl || v.image_url || null);" in payload_view
+    assert "const videoSrc = previewMediaSrc(v.url);" in payload_view
     assert "src: coverSrc" in payload_view
     assert "src: videoSrc" in payload_view
     assert "poster: coverSrc" in payload_view
-    assert "const coverSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_cover
-    assert "const videoSrc = safeMediaSrc(video && video.url);" in quality_video
-    assert "const posterSrc = safeMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_video
+    assert "const coverSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_cover
+    assert "const videoSrc = previewMediaSrc(video && video.url);" in quality_video
+    assert "const posterSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in quality_video
     assert "src: videoSrc" in quality_video
     assert "poster: posterSrc" in quality_video
     assert "src: video.url" not in quality_video
@@ -167,6 +169,47 @@ def test_pushes_css_styles_product_link_and_copy_button():
     assert ".pm-copy-btn" in css
     assert ".audit-cell" in css
     assert ".audit-detail-pre" in css
+
+
+def test_pushes_template_has_secondary_screen_table_shell_and_columns():
+    template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
+
+    assert 'class="push-table-shell"' in template
+    assert 'class="push-table mobile-no-scroll"' in template
+    assert 'class="push-col-thumb"' in template
+    assert 'class="push-col-product"' in template
+    assert 'class="push-col-ready"' in template
+    assert 'class="push-col-action"' in template
+
+
+def test_pushes_row_renderer_marks_cells_for_compact_layout():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    current = script[
+        script.index("function renderRow(it)"):
+        script.index("async function load", script.index("function renderRow(it)"))
+    ]
+
+    assert 'class="push-thumb-cell"' in current
+    assert 'class="push-product-cell"' in current
+    assert 'class="push-owner-cell"' in current
+    assert 'class="push-item-cell"' in current
+    assert 'class="push-lang-cell"' in current
+    assert 'class="ready-cell push-ready-cell"' in current
+    assert 'class="push-status-cell"' in current
+    assert 'class="time push-time-cell"' in current
+    assert 'class="push-action-cell"' in current
+
+
+def test_pushes_css_has_secondary_screen_portrait_layout():
+    css = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md" in css
+    assert "@media (min-width: 769px) and (orientation: portrait)" in css
+    assert ".sidebar { transform: translateX(-100%); }" in css
+    assert ".main-wrap { margin-left: 0; max-width: 100vw; }" in css
+    assert "--push-table-min-w: 100%;" in css
+    assert ".push-table-shell { overflow-x: visible; }" in css
+    assert ".ready-row { flex-wrap: wrap;" in css
 
 
 def test_pushes_css_expands_ai_evaluation_detail_modal():

@@ -462,23 +462,23 @@
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     return `<tr data-id="${escapeAttr(it.id)}">
-      <td>${thumb}</td>
-      <td>
+      <td class="push-thumb-cell">${thumb}</td>
+      <td class="push-product-cell">
         <div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>
         <div class="product-code-row">
           <span class="product-code">${escapeHtml(it.product_code || '')}</span>
         </div>
       </td>
-      <td><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
-      <td>
+      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
+      <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
-      <td><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
-      <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
-      <td>${renderStatusBadge(it.status)}</td>
-      <td class="time">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
-      ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}
+      <td class="push-lang-cell"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
+      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
+      <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      ${window.PUSH_IS_ADMIN ? `<td class="push-action-cell">${renderActionCell(it)}</td>` : ''}
     </tr>`;
   }
 
@@ -503,26 +503,26 @@
     const productOwnerName = String(it.product_owner_name || '').trim();
     const mkId = (it.mk_id === null || it.mk_id === undefined || it.mk_id === '') ? '—' : String(it.mk_id);
     return `<tr data-id="${it.id}">
-      <td>${thumb}</td>
-      <td>
+      <td class="push-thumb-cell">${thumb}</td>
+      <td class="push-product-cell">
         ${productNameHtml}
         ${productCodeHtml}
       </td>
-      <td><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
+      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
-      <td>
+      <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
           ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
         </div>
       </td>
-      <td><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
-      <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td class="push-lang-cell"><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
+      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
       <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
-      <td>${renderStatusBadge(it.status)}</td>
-      <td class="time">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
-      ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}
+      <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
+      <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      ${window.PUSH_IS_ADMIN ? `<td class="push-action-cell">${renderActionCell(it)}</td>` : ''}
     </tr>`;
   }
 
