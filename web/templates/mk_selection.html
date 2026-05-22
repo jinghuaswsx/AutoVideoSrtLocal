@@ -424,6 +424,14 @@
 .mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
 .mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+.mki-xiao-lang-card {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 5px; border: 1px solid transparent; border-radius: var(--oc-r-lg);
+  background: var(--oc-bg); transition: background 120ms, border-color 120ms;
+}
+.mki-xiao-lang-card--high { border-color: oklch(83% 0.06 165); background: var(--oc-success-bg); }
+.mki-xiao-lang-card--medium { border-color: oklch(86% 0.08 85); background: var(--oc-warning-bg); }
+.mki-xiao-lang-card--low { border-color: oklch(86% 0.07 25); background: oklch(97% 0.04 25); }
 .mki-xiao-lang-check {
   position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }
@@ -435,14 +443,14 @@
 }
 .mki-xiao-lang-main { font-size: 14px; font-weight: 800; line-height: 1.1; }
 .mki-xiao-ai-suggestion { font-size: 10px; font-weight: 700; line-height: 1.1; color: var(--oc-fg-muted); white-space: nowrap; }
-.mki-xiao-ai-suggestion.good { color: var(--oc-success-fg); }
-.mki-xiao-ai-suggestion.bad { color: var(--oc-danger); }
+.mki-xiao-lang-card--high .mki-xiao-ai-suggestion { color: var(--oc-success-fg); }
+.mki-xiao-lang-card--medium .mki-xiao-ai-suggestion { color: var(--oc-warning-fg); }
+.mki-xiao-lang-card--low .mki-xiao-ai-suggestion { color: var(--oc-danger); }
 .mki-xiao-lang-pill:hover .mki-xiao-lang-pill-box { border-color: var(--oc-accent); color: var(--oc-accent); }
 .mki-xiao-lang-check:checked + span,
 .mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box {
   background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
 }
-.mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box .mki-xiao-ai-suggestion { color: rgba(255,255,255,.88); }
 .mki-xiao-lang-check:focus-visible + .mki-xiao-lang-pill-box {
   outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
 }
@@ -468,6 +476,7 @@
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
   .mki-xiao-dialog { padding: 22px; }
   .mki-xiao-lang-pill-box { min-width: 64px; min-height: 46px; padding: 6px 12px; }
+  .mki-xiao-lang-card { padding: 4px; }
 }
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
@@ -3511,28 +3520,68 @@ function mkiXiaoLangLabel(lang) {
 }
 
 function mkiXiaoAiSuggestionElement(code) {
-  return document.querySelector(`#mkiXiaoLangs [data-mki-ai-lang="${code}"]`);
+  return document.querySelector(`#mkiXiaoLangs [data-mki-ai-lang-card="${code}"]`);
+}
+
+function mkiXiaoAiSuggestionTone(row) {
+  if (!row) return '';
+  const recommendation = String(row.recommendation || '').trim();
+  const score = Number(row.score);
+  if (recommendation === '不做' || row.is_suitable === false) return 'low';
+  if (Number.isFinite(score)) {
+    if (score >= 70) return 'high';
+    if (score >= 50) return 'medium';
+    return 'low';
+  }
+  return recommendation === '做' || row.is_suitable === true ? 'medium' : '';
+}
+
+function mkiXiaoAiScoreText(row) {
+  const score = Number(row && row.score);
+  if (!Number.isFinite(score)) return '';
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
+}
+
+function mkiXiaoAiSuggestionText(row, tone) {
+  if (!row) return 'AI建议：暂无';
+  const score = mkiXiaoAiScoreText(row);
+  const suffix = score ? ' ' + score : '';
+  if (tone === 'high') return 'AI建议：高评分' + suffix;
+  if (tone === 'medium') return 'AI建议：中间档' + suffix;
+  if (tone === 'low') return 'AI建议：低分不可做' + suffix;
+  return 'AI建议：暂无';
+}
+
+function mkiXiaoSetSuggestionCardTone(card, tone) {
+  if (!card) return;
+  card.classList.remove('mki-xiao-lang-card--high', 'mki-xiao-lang-card--medium', 'mki-xiao-lang-card--low');
+  if (tone) card.classList.add('mki-xiao-lang-card--' + tone);
 }
 
 function mkiXiaoApplyAiSuggestions(detail, state = '') {
   const countryIndex = mkiAiCountryIndex(detail);
-  document.querySelectorAll('#mkiXiaoLangs .mki-xiao-lang-pill-box').forEach(box => {
-    const code = String(box.dataset.mkiAiLang || '').toUpperCase();
-    const small = box.querySelector('.mki-xiao-ai-suggestion');
+  document.querySelectorAll('#mkiXiaoLangs .mki-xiao-lang-card').forEach(card => {
+    const code = String(card.dataset.mkiAiLangCard || '').toUpperCase();
+    const box = card.querySelector('.mki-xiao-lang-pill-box');
+    const small = card.querySelector('.mki-xiao-ai-suggestion');
     if (!small) return;
     const row = countryIndex[code];
-    small.classList.remove('good', 'bad');
+    mkiXiaoSetSuggestionCardTone(card, '');
     if (row) {
-      const recommended = row.recommendation === '做' || row.is_suitable === true;
-      small.textContent = 'AI建议：' + (recommended ? '✅' : '❌');
-      small.classList.add(recommended ? 'good' : 'bad');
-      box.title = mkiAiSuggestionTitle(row);
+      const tone = mkiXiaoAiSuggestionTone(row);
+      const title = mkiAiSuggestionTitle(row);
+      small.textContent = mkiXiaoAiSuggestionText(row, tone);
+      mkiXiaoSetSuggestionCardTone(card, tone);
+      card.title = title;
+      if (box) box.title = title;
     } else if (state === 'loading') {
       small.textContent = 'AI建议：加载中';
-      box.title = '正在加载 AI 评估结果';
+      card.title = '正在加载 AI 评估结果';
+      if (box) box.title = '正在加载 AI 评估结果';
     } else {
       small.textContent = 'AI建议：暂无';
-      box.title = '当前还没有 AI 评估结果';
+      card.title = '当前还没有 AI 评估结果';
+      if (box) box.title = '当前还没有 AI 评估结果';
     }
   });
 }
@@ -3695,9 +3744,11 @@ async function mkiXiaoOpenModal(options = {}) {
     var label = mkiXiaoLangLabel(l);
     if (!code) return '';
     return '<label class="mki-xiao-lang-pill">'
+      + '<span class="mki-xiao-lang-card" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="当前还没有 AI 评估结果">'
       + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '">'
       + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="当前还没有 AI 评估结果">'
       + '<span class="mki-xiao-lang-main">' + escapeHtml(label) + '</span>'
+      + '</span>'
       + '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>'
       + '</span></label>';
   }).join('');
