@@ -398,11 +398,7 @@ let TC_DETAIL_CURRENT_TASK = null;
 let TC_PRODUCT_LINK_MANAGER_DATA = { productId: 0, lang: '', items: [], product: null };
 const TC_SHOPIFY_IMAGE_REPLACE_LABELS = {
   none: '未替换',
-  pending: '已排队',
-  running: '替换中',
-  auto_done: '自动替换完成',
-  failed: '替换失败',
-  confirmed: '已确认',
+  confirmed: '图片正常',
 };
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
@@ -1122,12 +1118,15 @@ function tcShopifyImageStatusFor(product, lang, domain) {
     domain: raw.domain || normalizedDomain,
   };
 }
+function tcShopifyImageIsNormal(status) {
+  const replaceStatus = status && status.replace_status;
+  return replaceStatus === 'confirmed' || replaceStatus === 'auto_done';
+}
+function tcShopifyImageReplaceLabel(status) {
+  return tcShopifyImageIsNormal(status) ? TC_SHOPIFY_IMAGE_REPLACE_LABELS.confirmed : TC_SHOPIFY_IMAGE_REPLACE_LABELS.none;
+}
 function tcShopifyImageStatusTone(status) {
-  if (!status) return '';
-  if (status.replace_status === 'confirmed' && status.link_status === 'normal') return 'success';
-  if (status.replace_status === 'failed' || status.link_status === 'unavailable') return 'danger';
-  if (status.replace_status === 'pending' || status.replace_status === 'running' || status.link_status === 'needs_review') return 'warning';
-  return '';
+  return tcShopifyImageIsNormal(status) ? 'success' : '';
 }
 function tcProductLinkHttpBadge(item) {
   if (!item) return tcProductLinkBadge('未检测', '');
@@ -1164,10 +1163,10 @@ function tcRenderProductLinkManagerShell(data, task) {
 function tcRenderProductLinkShopifyRow(product, lang, item) {
   if (!lang || lang === 'en') return '';
   const status = tcShopifyImageStatusFor(product, lang, item && item.domain);
-  const replaceLabel = TC_SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status || '未知';
-  const badge = tcProductLinkBadge('Shopify ' + replaceLabel, tcShopifyImageStatusTone(status));
+  const replaceLabel = tcShopifyImageReplaceLabel(status);
+  const badge = tcProductLinkBadge('shopify 小语种链接图片状态 ' + replaceLabel, tcShopifyImageStatusTone(status));
   const updated = status.updated_at ? '<span class="tc-pl-meta">更新 ' + tcEsc(tcFormatTime(status.updated_at)) + '</span>' : '';
-  return '<div class="tc-pl-row-head">' + tcProductLinkBadge('Shopify', '') + badge + updated + '</div>';
+  return '<div class="tc-pl-row-head">' + badge + updated + '</div>';
 }
 function tcRenderProductLinkRow(productId, lang, product, item) {
   const domain = String((item && item.domain) || '').trim();
@@ -1186,7 +1185,7 @@ function tcRenderProductLinkRow(productId, lang, product, item) {
   const shopifyActions = lang === 'en'
     ? ''
     : '<button type="button" class="tc-btn tc-action-link tc-action-link--primary" data-tc-pl-action="shopify-confirm" onclick="tcProductLinkAction(\'shopify-confirm\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">确认图片正常</button>'
-      + '<button type="button" class="tc-btn tc-action-link" data-tc-pl-action="shopify-requeue" onclick="tcProductLinkAction(\'shopify-requeue\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">重新排队换图</button>';
+      + '<button type="button" class="tc-btn tc-action-link" data-tc-pl-action="shopify-clear" onclick="tcProductLinkAction(\'shopify-clear\', ' + productId + ', \'' + langArg + '\', \'' + domainArg + '\', this)">标记图片未替换</button>';
   return '<div class="tc-pl-row" data-domain="' + tcAttr(domain) + '">'
     + '<div class="tc-pl-row-head">'
     + tcProductLinkBadge(domain || '未知域名', '')
@@ -1247,7 +1246,6 @@ async function tcProductLinkAction(action, productId, lang, domain, btn) {
   lang = String(lang || '').trim().toLowerCase();
   domain = String(domain || '').trim();
   if (!productId || !lang) return;
-  if (action === 'shopify-requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) return;
   const oldText = btn ? btn.textContent : '';
   if (btn) {
     btn.disabled = true;
@@ -1271,8 +1269,8 @@ async function tcProductLinkAction(action, productId, lang, domain, btn) {
     } else if (action === 'shopify-confirm') {
       url = '/medias/api/products/' + encodeURIComponent(productId) + '/shopify-image/' + encodeURIComponent(lang) + '/confirm';
       body = domain ? { domain } : {};
-    } else if (action === 'shopify-requeue') {
-      url = '/medias/api/products/' + encodeURIComponent(productId) + '/shopify-image/' + encodeURIComponent(lang) + '/requeue';
+    } else if (action === 'shopify-clear') {
+      url = '/medias/api/products/' + encodeURIComponent(productId) + '/shopify-image/' + encodeURIComponent(lang) + '/clear';
       body = domain ? { domain } : {};
     } else {
       return;

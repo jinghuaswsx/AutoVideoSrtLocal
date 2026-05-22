@@ -70,8 +70,14 @@ def build_shopify_image_clear_response(
     *,
     product_id: int,
     lang: str,
+    body: dict | None = None,
 ) -> MediaShopifyImageResponse:
-    status = shopify_image_tasks.reset_lang(product_id, lang)
+    body = body if isinstance(body, dict) else {}
+    domain = (body.get("domain") or "").strip()
+    if domain:
+        status = shopify_image_tasks.reset_lang(product_id, lang, domain=domain)
+    else:
+        status = shopify_image_tasks.reset_lang(product_id, lang)
     return MediaShopifyImageResponse({"ok": True, "status": status})
 
 

@@ -138,6 +138,32 @@ def test_requeue_shopify_image_lang_resets_then_creates_task(authed_user_client_
     assert payload["task"]["id"] == 44
 
 
+def test_clear_shopify_image_lang_marks_domain_unreplaced(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_reset(pid, lang, *, domain=None):
+        captured.update({"pid": pid, "lang": lang, "domain": domain})
+        return {
+            "replace_status": "none",
+            "link_status": "unknown",
+            "status_key": "omurio.com:it",
+        }
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: _product())
+    monkeypatch.setattr("web.routes.medias.medias.is_valid_language", lambda code: code == "it")
+    monkeypatch.setattr("web.routes.medias.shopify_image_tasks.reset_lang", fake_reset)
+
+    response = authed_user_client_no_db.post(
+        "/medias/api/products/7/shopify-image/it/clear",
+        json={"domain": "https://omurio.com/"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert captured == {"pid": 7, "lang": "it", "domain": "https://omurio.com/"}
+    assert payload["status"]["replace_status"] == "none"
+
+
 def test_medias_js_wires_shopify_image_actions():
     js = open("web/static/medias.js", encoding="utf-8").read()
 
@@ -146,8 +172,25 @@ def test_medias_js_wires_shopify_image_actions():
     assert "product.product_link_domains" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/confirm" in js
     assert "/shopify-image/${encodeURIComponent(lang)}/unavailable" in js
-    assert "/shopify-image/${encodeURIComponent(lang)}/requeue" in js
+    assert "/shopify-image/${encodeURIComponent(lang)}/clear" in js
+    assert "/shopify-image/${encodeURIComponent(lang)}/requeue" not in js
     assert "标记链接不可用" not in js
+
+
+def test_medias_js_collapses_shopify_image_labels_to_two_states():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    labels = js[
+        js.index("const SHOPIFY_IMAGE_REPLACE_LABELS"):
+        js.index("const SHOPIFY_IMAGE_LINK_LABELS")
+    ]
+
+    assert "图片正常" in labels
+    assert "未替换" in labels
+    assert "已排队" not in labels
+    assert "替换中" not in labels
+    assert "自动替换完成" not in labels
+    assert "替换失败" not in labels
+    assert "人工确认完成" not in labels
 
 
 def test_product_links_modal_always_renders_shopify_action_buttons():
@@ -158,11 +201,14 @@ def test_product_links_modal_always_renders_shopify_action_buttons():
     ]
 
     assert 'data-product-links-action="shopify-confirm"' in row_actions
-    assert 'data-product-links-action="shopify-requeue"' in row_actions
+    assert 'data-product-links-action="shopify-clear"' in row_actions
+    assert 'data-product-links-action="shopify-requeue"' not in row_actions
     assert 'data-product-links-action="mark-link-abnormal"' in row_actions
     assert 'data-product-links-action="shopify-unavailable"' not in row_actions
     assert "标记链接异常" in row_actions
     assert "标记链接不可用" not in row_actions
+    assert "标记图片未替换" in row_actions
+    assert "重新排队换图" not in row_actions
     assert "status.replace_status !== 'confirmed'" not in row_actions
     assert "status.link_status !== 'unavailable'" not in row_actions
 
@@ -179,13 +225,14 @@ def test_product_links_modal_renders_row_actions_in_requested_order_and_style():
         "确认链接正常",
         "标记链接异常",
         "确认图片正常",
-        "重新排队换图",
+        "标记图片未替换",
     ]
     positions = [row_actions.index(label) for label in expected_order]
     assert positions == sorted(positions)
     assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link"' in row_actions
     assert 'class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm"' in row_actions
     assert 'class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal"' in row_actions
+    assert 'class="oc-btn ghost sm" data-product-links-action="shopify-clear"' in row_actions
     assert 'data-domain="${escapeHtml(item.domain)}"' in row_actions
 
 
@@ -214,7 +261,7 @@ def test_product_links_modal_shopify_row_only_shows_image_status():
     ]
 
     assert "shopify 小语种链接图片状态" in shopify_row
-    assert "SHOPIFY_IMAGE_REPLACE_LABELS" in shopify_row
+    assert "edShopifyImageReplaceLabel(status)" in shopify_row
     assert "SHOPIFY_IMAGE_LINK_LABELS" not in shopify_row
     assert "status.link_status" not in shopify_row
     assert "edShopifyImageReplaceBadgeKind(status)" in shopify_row

@@ -272,8 +272,37 @@ def test_task_detail_readiness_embeds_product_link_manager(authed_client_no_db):
     assert "manual_confirm: true" in body
     assert "manual_abnormal: true" in body
     assert "'/shopify-image/' + encodeURIComponent(lang) + '/confirm'" in body
-    assert "'/shopify-image/' + encodeURIComponent(lang) + '/requeue'" in body
+    assert "'/shopify-image/' + encodeURIComponent(lang) + '/clear'" in body
+    assert "'/shopify-image/' + encodeURIComponent(lang) + '/requeue'" not in body
+    assert "data-tc-pl-action=\"shopify-clear\"" in body
+    assert "data-tc-pl-action=\"shopify-requeue\"" not in body
+    assert "标记图片未替换" in body
+    assert "重新排队换图" not in body
     assert "tcLoadProductLinkManager(data, task)" in body
+
+
+def test_task_detail_product_link_manager_collapses_shopify_image_status_to_two_states(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    labels = body[
+        body.index("const TC_SHOPIFY_IMAGE_REPLACE_LABELS"):
+        body.index("function tcEsc")
+    ]
+    shopify_row = body[
+        body.index("function tcRenderProductLinkShopifyRow"):
+        body.index("function tcRenderProductLinkRow")
+    ]
+
+    assert "图片正常" in labels
+    assert "未替换" in labels
+    assert "已排队" not in labels
+    assert "替换中" not in labels
+    assert "自动替换完成" not in labels
+    assert "替换失败" not in labels
+    assert "已确认" not in labels
+    assert "tcShopifyImageReplaceLabel(status)" in shopify_row
+    assert "status.link_status" not in shopify_row
 
 
 def test_task_detail_readiness_groups_product_link_checks_into_manager_card(authed_client_no_db):

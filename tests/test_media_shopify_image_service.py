@@ -102,6 +102,31 @@ def test_shopify_image_unavailable_response_trims_reason(monkeypatch):
     assert captured["status"]["reason"] == "missing localized page"
 
 
+def test_shopify_image_clear_response_passes_optional_domain(monkeypatch):
+    from web.services import media_shopify_image
+
+    captured = {}
+
+    def fake_reset(pid, lang, *, domain=None):
+        captured.update({"pid": pid, "lang": lang, "domain": domain})
+        return {"replace_status": "none", "status_key": "omurio.com:it"}
+
+    monkeypatch.setattr(media_shopify_image.shopify_image_tasks, "reset_lang", fake_reset)
+
+    result = media_shopify_image.build_shopify_image_clear_response(
+        product_id=7,
+        lang="it",
+        body={"domain": "https://omurio.com/"},
+    )
+
+    assert result.status_code == 200
+    assert captured == {"pid": 7, "lang": "it", "domain": "https://omurio.com/"}
+    assert result.payload == {
+        "ok": True,
+        "status": {"replace_status": "none", "status_key": "omurio.com:it"},
+    }
+
+
 def test_shopify_image_requeue_response_maps_blocked_status(monkeypatch):
     from web.services import media_shopify_image
 
