@@ -182,6 +182,8 @@ def test_xuanpin_mk_import_progress_includes_product_owner_before_domains(authed
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "{key: 'productOwner', title: '选择产品负责人'" in body
+    assert body.index("{key: 'prepare'") < body.index("{key: 'productOwner'")
+    assert body.index("{key: 'productOwner'") < body.index("{key: 'product', title: '检查产品与链接'")
     assert body.index("{key: 'productOwner'") < body.index("{key: 'domains'")
     assert "product_owner_id" in body
     assert "mkiImportProgressProductOwnerId" in body
