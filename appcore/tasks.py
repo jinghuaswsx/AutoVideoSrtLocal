@@ -195,19 +195,32 @@ def _positive_int(value: Any) -> int | None:
     return number if number > 0 else None
 
 
-def infer_single_child_task_id_for_media_item(product_id: int, lang: str) -> int | None:
+def infer_single_child_task_id_for_media_item(
+    product_id: int,
+    lang: str,
+    *,
+    assignee_id: int | None = None,
+) -> int | None:
     product_id_int = _positive_int(product_id)
     lang_norm = str(lang or "").strip().lower()
     if not product_id_int or not lang_norm:
         return None
+    args: list[Any] = [product_id_int, lang_norm]
+    assignee_id_int = _positive_int(assignee_id)
+    assignee_filter = ""
+    if assignee_id_int is not None:
+        assignee_filter = "AND assignee_id=%s "
+        args.append(assignee_id_int)
+    args.extend([CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE])
     rows = query_all(
         "SELECT id FROM tasks "
         "WHERE media_product_id=%s "
         "AND LOWER(TRIM(COALESCE(country_code, '')))=%s "
         "AND parent_task_id IS NOT NULL "
+        f"{assignee_filter}"
         "AND status IN (%s,%s,%s) "
         "ORDER BY id DESC",
-        (product_id_int, lang_norm, CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE),
+        tuple(args),
     )
     task_ids = []
     for row in rows or []:

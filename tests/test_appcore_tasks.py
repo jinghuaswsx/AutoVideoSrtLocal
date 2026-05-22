@@ -57,6 +57,32 @@ def test_infer_single_child_task_id_for_media_item_returns_unique_active_child(m
     )
 
 
+def test_infer_single_child_task_id_for_media_item_filters_by_assignee(monkeypatch):
+    captured = {}
+
+    def fake_query_all(sql, args):
+        captured["sql"] = " ".join(str(sql).split())
+        captured["args"] = args
+        return [{"id": 61}]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.infer_single_child_task_id_for_media_item(
+        599,
+        " DE ",
+        assignee_id=238,
+    ) == 61
+    assert "assignee_id=%s" in captured["sql"]
+    assert captured["args"] == (
+        599,
+        "de",
+        238,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_DONE,
+    )
+
+
 def test_infer_single_child_task_id_for_media_item_ignores_ambiguous_matches(monkeypatch):
     monkeypatch.setattr(
         tasks,
