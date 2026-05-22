@@ -19,7 +19,7 @@ def test_serialize_push_item_includes_latest_push_and_cover_url(monkeypatch):
     monkeypatch.setattr(
         openapi_push_items.pushes,
         "compute_status",
-        lambda item, product: "failed",
+        lambda item, product, **kwargs: "failed",
     )
 
     created_at = datetime(2026, 5, 5, 9, 30, 0)
@@ -107,7 +107,7 @@ def test_serialize_push_item_defaults_without_latest_push(monkeypatch):
     monkeypatch.setattr(
         openapi_push_items.pushes,
         "compute_status",
-        lambda item, product: "pending",
+        lambda item, product, **kwargs: "pending",
     )
 
     def fail_query_one(sql: str, args: tuple) -> dict | None:
@@ -172,7 +172,7 @@ def test_serialize_push_item_rows_uses_project_shape_and_query_one(monkeypatch):
     monkeypatch.setattr(
         openapi_push_items.pushes,
         "compute_status",
-        lambda item, product: "pending",
+        lambda item, product, **kwargs: "pending",
     )
 
     def fail_query_one(sql: str, args: tuple) -> dict | None:
@@ -236,7 +236,7 @@ def test_build_push_item_payload_response_combines_payload_and_localized_text(mo
     monkeypatch.setattr(
         openapi_push_items.pushes,
         "compute_status",
-        lambda item, product: "pending",
+        lambda item, product, **kwargs: "pending",
     )
     monkeypatch.setattr(
         openapi_push_items.pushes,

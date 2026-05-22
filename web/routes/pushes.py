@@ -109,7 +109,20 @@ def _quality_check_for_item(item_id: int) -> dict | None:
         return None
 
 
-def _serialize_row(row: dict) -> dict:
+def _compute_readiness_for_list(
+    item_shape: dict,
+    product_shape: dict,
+    context: dict | None,
+) -> dict:
+    try:
+        return pushes.compute_readiness(item_shape, product_shape, context=context)
+    except TypeError as exc:
+        if "context" not in str(exc):
+            raise
+        return pushes.compute_readiness(item_shape, product_shape)
+
+
+def _serialize_row(row: dict, *, context: dict | None = None) -> dict:
     item_shape = dict(row)
     product_shape = {
         "id": row.get("product_id"),
@@ -126,8 +139,13 @@ def _serialize_row(row: dict) -> dict:
         "ai_evaluation_detail": row.get("ai_evaluation_detail"),
         "listing_status": row.get("listing_status"),
     }
-    readiness = pushes.compute_readiness(item_shape, product_shape)
-    status = pushes.compute_status(item_shape, product_shape)
+    readiness = _compute_readiness_for_list(item_shape, product_shape, context)
+    status = pushes.compute_status_from_readiness(
+        item_shape,
+        product_shape,
+        readiness,
+        context=context,
+    )
     item_id = row["id"]
     cover_url = _item_cover_url(item_id, row)
     return {
@@ -159,7 +177,6 @@ def _serialize_row(row: dict) -> dict:
         "cover_url": cover_url,
         "skip_push": bool(row.get("skip_push")),
         "skip_push_at": row["skip_push_at"].isoformat() if row.get("skip_push_at") else None,
-        "quality_check": _quality_check_for_item(item_id),
     }
 
 
@@ -204,7 +221,8 @@ def api_list():
         offset=0,
         limit=None,
     )
-    items = [_serialize_row(r) for r in rows]
+    context = pushes.build_push_list_context(rows)
+    items = [_serialize_row(r, context=context) for r in rows]
     if status_filter:
         valid = [s for s in status_filter if s in _VALID_STATUS_FILTERS]
         if valid:

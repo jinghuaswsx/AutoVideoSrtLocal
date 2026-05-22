@@ -243,6 +243,102 @@ def test_compute_status_not_ready(product_with_item):
     assert pushes.compute_status(item, product) == "not_ready"
 
 
+def test_compute_status_from_readiness_uses_prefetched_failed_log(monkeypatch):
+    def fail_query_one(sql, args=()):
+        raise AssertionError("prefetched failed log ids should avoid per-row query")
+
+    monkeypatch.setattr("appcore.pushes.query_one", fail_query_one)
+
+    readiness = {
+        "is_listed": True,
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "lang_supported": True,
+        "has_push_texts": True,
+        "shopify_image_confirmed": True,
+    }
+    status = pushes.compute_status_from_readiness(
+        {"latest_push_id": 5, "pushed_at": None},
+        {},
+        readiness,
+        context={"failed_latest_push_ids": {5}},
+    )
+
+    assert status == pushes.STATUS_FAILED
+
+
+def test_compute_readiness_uses_push_list_context_without_db(monkeypatch):
+    def fail_query_one(sql, args=()):
+        raise AssertionError("prefetched readiness context should avoid per-row query")
+
+    monkeypatch.setattr("appcore.pushes.query_one", fail_query_one)
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.is_confirmed_for_push",
+        lambda product, lang: (True, ""),
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.domain_statuses_for_push",
+        lambda product, lang: [],
+    )
+
+    readiness = pushes.compute_readiness(
+        {
+            "id": 11,
+            "product_id": 7,
+            "task_id": 99,
+            "lang": "de",
+            "object_key": "videos/demo.mp4",
+            "cover_object_key": "covers/demo.jpg",
+        },
+        {"id": 7, "ad_supported_langs": "de"},
+        context={
+            "copywriting_langs": {(7, "de")},
+            "valid_push_text_product_ids": {7},
+            "rework_readiness_by_task_id": {99: {"has_cover"}},
+        },
+    )
+
+    assert readiness["has_copywriting"] is True
+    assert readiness["has_push_texts"] is True
+    assert readiness["has_cover"] is False
+
+
+def test_build_push_list_context_prefetches_status_inputs(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=()):
+        normalized = " ".join(sql.split())
+        calls.append(normalized)
+        if normalized.startswith("SELECT DISTINCT product_id, lang FROM media_copywritings"):
+            return [{"product_id": 7, "lang": "de"}]
+        if normalized.startswith("SELECT product_id, body FROM media_copywritings"):
+            return [
+                {"product_id": 7, "body": "标题: T\n文案: M\n描述: D"},
+                {"product_id": 8, "body": "invalid"},
+            ]
+        if normalized.startswith("SELECT id, status FROM media_push_logs"):
+            return [{"id": 5, "status": "failed"}, {"id": 6, "status": "success"}]
+        if normalized.startswith("SELECT id, status FROM tasks"):
+            return [{"id": 99, "status": "assigned"}, {"id": 100, "status": "done"}]
+        if normalized.startswith("SELECT task_id, payload_json FROM task_events"):
+            return [{"task_id": 99, "payload_json": '{"issue_keys":["has_cover"]}'}]
+        raise AssertionError(f"unexpected query: {normalized}")
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    context = pushes.build_push_list_context([
+        {"product_id": 7, "lang": "de", "latest_push_id": 5, "task_id": 99},
+        {"product_id": 8, "lang": "fr", "latest_push_id": 6, "task_id": 100},
+    ])
+
+    assert context["copywriting_langs"] == {(7, "de")}
+    assert context["valid_push_text_product_ids"] == {7}
+    assert context["failed_latest_push_ids"] == {5}
+    assert context["rework_readiness_by_task_id"] == {99: {"has_cover"}}
+    assert len(calls) == 5
+
+
 import requests
 
 

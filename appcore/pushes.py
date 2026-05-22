@@ -308,13 +308,219 @@ def _has_valid_en_push_texts(product_id: int) -> bool:
 
 # ---------- 就绪判定 ----------
 
-def _push_rework_readiness_overrides(item: dict) -> set[str]:
+_CONTEXT_MISSING = object()
+
+
+def _context_lookup(context: dict[str, Any] | None, key: str) -> Any:
+    if isinstance(context, dict) and key in context:
+        return context[key]
+    return _CONTEXT_MISSING
+
+
+def _empty_push_list_context() -> dict[str, Any]:
+    return {
+        "copywriting_langs": set(),
+        "valid_push_text_product_ids": set(),
+        "failed_latest_push_ids": set(),
+        "rework_readiness_by_task_id": {},
+    }
+
+
+def _placeholders(values: list[Any] | set[Any] | tuple[Any, ...]) -> str:
+    return ",".join(["%s"] * len(values))
+
+
+def _prefetch_copywriting_langs(product_lang_pairs: set[tuple[int, str]]) -> set[tuple[int, str]]:
+    if not product_lang_pairs:
+        return set()
+    product_ids = sorted({pid for pid, _lang in product_lang_pairs})
+    langs = sorted({lang for _pid, lang in product_lang_pairs if lang})
+    if not product_ids or not langs:
+        return set()
+    rows = query(
+        "SELECT DISTINCT product_id, lang FROM media_copywritings "
+        f"WHERE product_id IN ({_placeholders(product_ids)}) "
+        f"AND lang IN ({_placeholders(langs)})",
+        tuple(product_ids + langs),
+    )
+    found: set[tuple[int, str]] = set()
+    for row in rows:
+        try:
+            pair = (int(row.get("product_id") or 0), str(row.get("lang") or "").strip().lower())
+        except (TypeError, ValueError):
+            continue
+        if pair in product_lang_pairs:
+            found.add(pair)
+    return found
+
+
+def _prefetch_valid_en_push_text_product_ids(product_ids: set[int]) -> set[int]:
+    if not product_ids:
+        return set()
+    ids = sorted(product_ids)
+    rows = query(
+        "SELECT product_id, body FROM media_copywritings "
+        f"WHERE product_id IN ({_placeholders(ids)}) AND lang='en' AND idx=1 "
+        "ORDER BY product_id, (manually_edited_at IS NULL), manually_edited_at DESC, id DESC",
+        tuple(ids),
+    )
+    seen: set[int] = set()
+    valid: set[int] = set()
+    for row in rows:
+        try:
+            product_id = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not product_id or product_id in seen:
+            continue
+        seen.add(product_id)
+        try:
+            parse_copywriting_body(row.get("body") or "")
+        except CopywritingParseError:
+            continue
+        valid.add(product_id)
+    return valid
+
+
+def _prefetch_failed_latest_push_ids(latest_push_ids: set[int]) -> set[int]:
+    if not latest_push_ids:
+        return set()
+    ids = sorted(latest_push_ids)
+    rows = query(
+        f"SELECT id, status FROM media_push_logs WHERE id IN ({_placeholders(ids)})",
+        tuple(ids),
+    )
+    failed: set[int] = set()
+    for row in rows:
+        try:
+            log_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if log_id and row.get("status") == "failed":
+            failed.add(log_id)
+    return failed
+
+
+def _loads_json_obj(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _prefetch_rework_readiness_by_task_id(task_ids: set[int]) -> dict[int, set[str]]:
+    if not task_ids:
+        return {}
+    try:
+        from appcore import tasks as tasks_svc
+        ids = sorted(task_ids)
+        task_rows = query(
+            f"SELECT id, status FROM tasks WHERE id IN ({_placeholders(ids)}) "
+            "AND parent_task_id IS NOT NULL",
+            tuple(ids),
+        )
+        assigned_ids: list[int] = []
+        for row in task_rows:
+            try:
+                task_id = int(row.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if task_id and row.get("status") == tasks_svc.CHILD_ASSIGNED:
+                assigned_ids.append(task_id)
+        if not assigned_ids:
+            return {}
+
+        event_rows = query(
+            f"SELECT task_id, payload_json FROM task_events "
+            f"WHERE task_id IN ({_placeholders(assigned_ids)}) AND event_type=%s "
+            "ORDER BY task_id, id DESC",
+            tuple(assigned_ids + [tasks_svc.CHILD_PUSH_REWORK_REJECTED_EVENT]),
+        )
+        valid_keys = set(getattr(tasks_svc, "PUSH_REWORK_ISSUE_KEYS", ()))
+        result: dict[int, set[str]] = {}
+        for row in event_rows:
+            try:
+                task_id = int(row.get("task_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not task_id or task_id in result:
+                continue
+            payload = _loads_json_obj(row.get("payload_json"))
+            keys: set[str] = set()
+            invalid = False
+            for raw_key in payload.get("issue_keys") or []:
+                key = str(raw_key or "").strip()
+                if key not in valid_keys:
+                    invalid = True
+                    break
+                keys.add(key)
+            if keys and not invalid:
+                result[task_id] = keys
+        return result
+    except Exception:
+        log.debug("prefetch push rework readiness failed", exc_info=True)
+        return {}
+
+
+def build_push_list_context(rows: list[dict] | tuple[dict, ...]) -> dict[str, Any]:
+    context = _empty_push_list_context()
+    product_ids: set[int] = set()
+    product_lang_pairs: set[tuple[int, str]] = set()
+    latest_push_ids: set[int] = set()
+    task_ids: set[int] = set()
+
+    for row in rows or []:
+        try:
+            product_id = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            product_id = 0
+        lang = str(row.get("lang") or "en").strip().lower() or "en"
+        if product_id:
+            product_ids.add(product_id)
+            product_lang_pairs.add((product_id, lang))
+        try:
+            latest_push_id = int(row.get("latest_push_id") or 0)
+        except (TypeError, ValueError):
+            latest_push_id = 0
+        if latest_push_id:
+            latest_push_ids.add(latest_push_id)
+        try:
+            task_id = int(row.get("task_id") or 0)
+        except (TypeError, ValueError):
+            task_id = 0
+        if task_id:
+            task_ids.add(task_id)
+
+    context["copywriting_langs"] = _prefetch_copywriting_langs(product_lang_pairs)
+    context["valid_push_text_product_ids"] = _prefetch_valid_en_push_text_product_ids(product_ids)
+    context["failed_latest_push_ids"] = _prefetch_failed_latest_push_ids(latest_push_ids)
+    context["rework_readiness_by_task_id"] = _prefetch_rework_readiness_by_task_id(task_ids)
+    return context
+
+
+def _push_rework_readiness_overrides(
+    item: dict,
+    *,
+    context: dict[str, Any] | None = None,
+) -> set[str]:
     task_id = (item or {}).get("task_id")
     if not task_id:
         return set()
     try:
+        task_id_int = int(task_id)
+    except (TypeError, ValueError):
+        return set()
+    prefetched = _context_lookup(context, "rework_readiness_by_task_id")
+    if prefetched is not _CONTEXT_MISSING:
+        return set((prefetched or {}).get(task_id_int) or set())
+    try:
         from appcore import tasks as tasks_svc
-        return set(tasks_svc.active_push_rework_readiness_keys(int(task_id)))
+        return set(tasks_svc.active_push_rework_readiness_keys(task_id_int))
     except Exception:
         log.debug(
             "load push rework readiness overrides failed task_id=%s",
@@ -329,6 +535,7 @@ def compute_readiness(
     product: dict,
     *,
     include_rework_overrides: bool = True,
+    context: dict[str, Any] | None = None,
 ) -> dict:
     """返回素材推送就绪布尔项。调用方再据此判定 pushable。
 
@@ -341,19 +548,31 @@ def compute_readiness(
 
     lang = (item or {}).get("lang") or "en"
     pid = (item or {}).get("product_id")
+    try:
+        pid_int = int(pid or 0)
+    except (TypeError, ValueError):
+        pid_int = 0
     has_copywriting = False
-    if pid and lang:
-        row = query_one(
-            "SELECT 1 AS ok FROM media_copywritings "
-            "WHERE product_id=%s AND lang=%s LIMIT 1",
-            (pid, lang),
-        )
-        has_copywriting = bool(row)
+    if pid_int and lang:
+        copywriting_langs = _context_lookup(context, "copywriting_langs")
+        if copywriting_langs is not _CONTEXT_MISSING:
+            has_copywriting = (pid_int, str(lang).strip().lower()) in copywriting_langs
+        else:
+            row = query_one(
+                "SELECT 1 AS ok FROM media_copywritings "
+                "WHERE product_id=%s AND lang=%s LIMIT 1",
+                (pid_int, lang),
+            )
+            has_copywriting = bool(row)
 
     supported = medias.parse_ad_supported_langs((product or {}).get("ad_supported_langs"))
     lang_supported = True if lang == "en" else lang in supported
 
-    has_push_texts = _has_valid_en_push_texts(pid) if pid else False
+    valid_push_text_product_ids = _context_lookup(context, "valid_push_text_product_ids")
+    if valid_push_text_product_ids is not _CONTEXT_MISSING:
+        has_push_texts = pid_int in valid_push_text_product_ids
+    else:
+        has_push_texts = _has_valid_en_push_texts(pid_int) if pid_int else False
     shopify_image_confirmed, shopify_image_reason = shopify_image_tasks.is_confirmed_for_push(
         product,
         lang,
@@ -373,7 +592,7 @@ def compute_readiness(
         "shopify_image_reason": shopify_image_reason,
     }
     if include_rework_overrides:
-        for key in _push_rework_readiness_overrides(item):
+        for key in _push_rework_readiness_overrides(item, context=context):
             if key in result:
                 result[key] = False
     if shopify_image_domain_details:
@@ -398,7 +617,13 @@ STATUS_NOT_READY = "not_ready"    # 任一就绪条件不满足
 STATUS_SKIPPED = "skipped"        # 人工标记不推送（互斥的顶层状态）
 
 
-def compute_status(item: dict, product: dict) -> str:
+def compute_status_from_readiness(
+    item: dict,
+    product: dict,
+    readiness: dict,
+    *,
+    context: dict[str, Any] | None = None,
+) -> str:
     # 「标记不推送」优先级最高：一旦被标记，无论 readiness / pushed_at / 历史推送结果，
     # 都直接显示 skipped。
     if (item or {}).get("skip_push"):
@@ -407,14 +632,33 @@ def compute_status(item: dict, product: dict) -> str:
         return STATUS_PUSHED
     latest_id = (item or {}).get("latest_push_id")
     if latest_id:
-        row = query_one(
-            "SELECT status FROM media_push_logs WHERE id=%s", (latest_id,),
-        )
-        if (row or {}).get("status") == "failed":
-            readiness = compute_readiness(item, product)
+        try:
+            latest_id_int = int(latest_id)
+        except (TypeError, ValueError):
+            latest_id_int = 0
+        failed_latest_push_ids = _context_lookup(context, "failed_latest_push_ids")
+        if failed_latest_push_ids is not _CONTEXT_MISSING:
+            latest_failed = latest_id_int in failed_latest_push_ids
+        else:
+            row = query_one(
+                "SELECT status FROM media_push_logs WHERE id=%s", (latest_id,),
+            )
+            latest_failed = (row or {}).get("status") == "failed"
+        if latest_failed:
             return STATUS_FAILED if is_ready(readiness) else STATUS_NOT_READY
-    readiness = compute_readiness(item, product)
     return STATUS_PENDING if is_ready(readiness) else STATUS_NOT_READY
+
+
+def compute_status(
+    item: dict,
+    product: dict,
+    *,
+    readiness: dict | None = None,
+    context: dict[str, Any] | None = None,
+) -> str:
+    if readiness is None:
+        readiness = compute_readiness(item, product, context=context)
+    return compute_status_from_readiness(item, product, readiness, context=context)
 
 
 # ---------- 链接模板与探活 ----------

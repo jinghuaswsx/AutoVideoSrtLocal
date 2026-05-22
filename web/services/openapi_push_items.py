@@ -26,7 +26,7 @@ def serialize_push_item(
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> dict:
     readiness = pushes.compute_readiness(item, product)
-    status = pushes.compute_status(item, product)
+    status = pushes.compute_status(item, product, readiness=readiness)
     latest_push = None
     latest_id = item.get("latest_push_id")
     if latest_id:

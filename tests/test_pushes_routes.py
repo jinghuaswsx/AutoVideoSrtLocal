@@ -5,6 +5,14 @@ from decimal import Decimal
 from datetime import datetime
 
 
+def _stub_push_list_context(monkeypatch, context=None):
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_push_list_context",
+        lambda rows: {} if context is None else context,
+        raising=False,
+    )
+
+
 def test_pushes_index_requires_login():
     from web.app import create_app
     app = create_app()
@@ -71,6 +79,147 @@ def test_pushes_api_items_passes_audit_result_filter(authed_client_no_db, monkey
     assert captured["kwargs"]["audit_result"] == "不适合推广"
 
 
+def test_pushes_api_items_list_does_not_load_quality_check(authed_client_no_db, monkeypatch):
+    row = {
+        "id": 101,
+        "product_id": 12,
+        "product_name": "Demo Product",
+        "product_code": "demo-product-rjc",
+        "mk_id": 998877,
+        "localized_links_json": {},
+        "task_id": 456,
+        "lang": "de",
+        "filename": "demo.mp4",
+        "display_name": "demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/demo.jpg",
+        "object_key": "videos/demo.mp4",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_push_list_context",
+        lambda rows: {},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product, **kwargs: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status_from_readiness",
+        lambda item, product, readiness, **kwargs: "pending",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_product_page_url",
+        lambda lang, product: "https://example.com/de/products/demo-product-rjc",
+    )
+
+    def fail_quality_lookup(item_id):
+        raise AssertionError("list API must not load per-row quality checks")
+
+    monkeypatch.setattr("web.routes.pushes._quality_check_for_item", fail_quality_lookup)
+
+    resp = authed_client_no_db.get("/pushes/api/items?status=pending&page=1")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["status"] == "pending"
+    assert "quality_check" not in item
+
+
+def test_pushes_api_items_reuses_readiness_for_status(authed_client_no_db, monkeypatch):
+    row = {
+        "id": 102,
+        "product_id": 12,
+        "product_name": "Demo Product",
+        "product_code": "demo-product-rjc",
+        "mk_id": 998877,
+        "localized_links_json": {},
+        "task_id": 456,
+        "lang": "de",
+        "filename": "demo.mp4",
+        "display_name": "demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/demo.jpg",
+        "object_key": "videos/demo.mp4",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+    }
+    calls = {"readiness": 0, "status": 0}
+    context = {"copywriting_langs": {(12, "de")}}
+    readiness = {
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "lang_supported": True,
+        "has_push_texts": True,
+        "shopify_image_confirmed": True,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_push_list_context",
+        lambda rows: context,
+        raising=False,
+    )
+
+    def fake_compute_readiness(item, product, **kwargs):
+        calls["readiness"] += 1
+        assert kwargs.get("context") is context
+        return readiness
+
+    def fake_status_from_readiness(item, product, provided, **kwargs):
+        calls["status"] += 1
+        assert provided is readiness
+        assert kwargs.get("context") is context
+        return "pending"
+
+    def fail_compute_status(item, product):
+        raise AssertionError("route should reuse readiness instead of recomputing status")
+
+    monkeypatch.setattr("web.routes.pushes.pushes.compute_readiness", fake_compute_readiness)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status_from_readiness",
+        fake_status_from_readiness,
+        raising=False,
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.compute_status", fail_compute_status)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_product_page_url",
+        lambda lang, product: "https://example.com/de/products/demo-product-rjc",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?status=pending&page=1")
+
+    assert resp.status_code == 200
+    assert calls == {"readiness": 1, "status": 1}
+
+
 def test_pushes_api_items_includes_language_specific_product_page_url(
     authed_client_no_db, monkeypatch,
 ):
@@ -101,6 +250,7 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: ([row], 1),
     )
+    _stub_push_list_context(monkeypatch)
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
         lambda item, product: {
@@ -159,6 +309,7 @@ def test_pushes_api_items_prefers_item_cover_over_stale_thumbnail(
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: ([row], 1),
     )
+    _stub_push_list_context(monkeypatch)
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
         lambda item, product: {
@@ -213,6 +364,7 @@ def test_pushes_api_items_includes_product_ai_review_fields(
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: ([row], 1),
     )
+    _stub_push_list_context(monkeypatch)
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
         lambda item, product: {
@@ -267,6 +419,7 @@ def test_pushes_api_items_includes_product_owner_name(
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: ([row], 1),
     )
+    _stub_push_list_context(monkeypatch)
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
         lambda item, product: {
@@ -358,6 +511,7 @@ def test_pushes_api_items_passes_shopify_image_confirmation_to_status(
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: ([row], 1),
     )
+    _stub_push_list_context(monkeypatch)
 
     def fake_readiness(item, product):
         return {
@@ -1728,6 +1882,7 @@ def test_status_filter_skipped_returns_only_marked(authed_client_no_db, monkeypa
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: (rows, 2),
     )
+    _stub_push_list_context(monkeypatch)
     # 非 skipped 行的 readiness 计算会查 DB，避开真实 DB
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
@@ -1769,6 +1924,7 @@ def test_pending_filter_excludes_skipped(authed_client_no_db, monkeypatch):
         "web.routes.pushes.pushes.list_items_for_push",
         lambda **kwargs: (rows, 2),
     )
+    _stub_push_list_context(monkeypatch)
     monkeypatch.setattr(
         "web.routes.pushes.pushes.compute_readiness",
         lambda item, product: {
