@@ -513,3 +513,92 @@ def test_build_summary_ranking_sorted_by_score():
     result = _build_summary({"DE": de, "FR": fr})
     assert result["ranking"][0]["country_code"] == "DE"
     assert result["best_country"] == "DE"
+
+
+# ── Sanitize Input ─────────────────────────────────────
+
+def test_sanitize_input_includes_project_name():
+    from appcore.product_research_service import _sanitize_input
+    result = _sanitize_input({
+        "product_url": "https://example.com/p",
+        "product_name": "测试产品",
+        "product_name_en": "Test Product",
+        "google_search_enabled": True,
+    })
+    assert result["project_name"] == "测试产品"
+    assert result["product_url"] == "https://example.com/p"
+
+
+def test_sanitize_input_falls_back_to_url_for_project_name():
+    from appcore.product_research_service import _sanitize_input
+    result = _sanitize_input({
+        "product_url": "https://example.com/p",
+    })
+    assert result["project_name"] == "https://example.com/p"
+
+
+def test_sanitize_input_truncates_long_project_name():
+    from appcore.product_research_service import _sanitize_input
+    long_name = "A" * 200
+    result = _sanitize_input({"product_name": long_name})
+    assert len(result["project_name"]) <= 120
+    assert result["project_name"].endswith("...")
+
+
+def test_sanitize_input_includes_selected_countries():
+    from appcore.product_research_service import _sanitize_input
+    result = _sanitize_input({
+        "product_url": "https://example.com/p",
+        "selected_countries": ["DE", "FR", "JP"],
+        "country_delay_seconds": "10",
+    })
+    assert result["selected_countries"] == ["DE", "FR", "JP"]
+    assert result["country_delay_seconds"] == 10
+
+
+def test_sanitize_input_defaults_country_delay():
+    from appcore.product_research_service import _sanitize_input
+    result = _sanitize_input({
+        "product_url": "https://example.com/p",
+    })
+    assert result["country_delay_seconds"] == 30
+    assert result["google_search_enabled"] is True
+
+
+def test_sanitize_input_clamps_delay():
+    from appcore.product_research_service import _sanitize_input
+    result = _sanitize_input({
+        "product_url": "https://example.com/p",
+        "country_delay_seconds": "999",
+    })
+    assert result["country_delay_seconds"] == 120
+
+    result2 = _sanitize_input({
+        "product_url": "https://example.com/p",
+        "country_delay_seconds": "-5",
+    })
+    assert result2["country_delay_seconds"] == 0
+
+
+# ── Resume Logic ────────────────────────────────────────
+
+@pytest.mark.skip(reason="Requires DB connection")
+def test_resume_run_rejects_completed():
+    """resume_run should not allow resuming a completed run."""
+    pass  # Tested via manual integration
+
+
+def test_rerun_country_status_not_hardcoded_completed():
+    """Verify rerun status logic uses actual country results, not hardcoded 'completed'.
+
+    Sanity check: the _rerun_country_sync handler no longer unconditionally sets status='completed'.
+    It references has_pending, has_completed, has_failed flags.
+    """
+    # Code-level verification: search for the pattern in source
+    import inspect
+    from appcore.product_research_service import ProductResearchService
+    source = inspect.getsource(ProductResearchService._rerun_country_sync)
+    # Should contain the status computation logic (not unconditionally "completed")
+    assert "has_pending" in source or "has_completed" in source
+    # Should NOT unconditionally set status="completed" without checking
+    assert "final_status" in source

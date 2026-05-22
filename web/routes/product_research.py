@@ -37,10 +37,19 @@ def page():
 
 # ── API: Runs ────────────────────────────────────────────
 
-@bp.route("/api/product-research/runs", methods=["POST"])
+@bp.route("/api/product-research/runs", methods=["GET", "POST"])
 @login_required
 @admin_required
-def create_run():
+def handle_runs():
+    if request.method == "GET":
+        try:
+            limit = int(request.args.get("limit", 50))
+            offset = int(request.args.get("offset", 0))
+        except (TypeError, ValueError):
+            return _err("INVALID_PARAMS", "limit/offset must be integers", 400)
+        return _ok(get_service().list_runs(limit=min(limit, 200), offset=max(offset, 0)))
+
+    # POST — create new run
     payload = request.get_json(silent=True) or {}
     try:
         service = get_service()
@@ -67,6 +76,16 @@ def get_status(research_run_id: str):
 def get_result(research_run_id: str):
     try:
         return _ok(get_service().get_result(research_run_id))
+    except ProductResearchNotFound as exc:
+        return _err(exc.code, "Research run not found", 404)
+
+
+@bp.route("/api/product-research/runs/<research_run_id>/resume", methods=["POST"])
+@login_required
+@admin_required
+def resume_run(research_run_id: str):
+    try:
+        return _ok(get_service().resume_run(research_run_id), 202)
     except ProductResearchNotFound as exc:
         return _err(exc.code, "Research run not found", 404)
 

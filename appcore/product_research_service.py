@@ -60,9 +60,11 @@ class ProductResearchService:
         now = _now_iso()
         input_snapshot = _sanitize_input(input_data)
         country_codes = input_snapshot.get("selected_countries") or list(DEFAULT_COUNTRY_CODES)
+        display_name = input_snapshot.get("project_name") or "未命名调研"
 
         run = {
             "research_run_id": research_run_id,
+            "display_name": display_name,
             "status": "queued",
             "input_snapshot_json": json.dumps(input_snapshot, ensure_ascii=False),
             "pipeline_cards_json": json.dumps(_initial_cards(country_codes), ensure_ascii=False),
@@ -86,12 +88,18 @@ class ProductResearchService:
         }
         execute(
             """INSERT INTO product_research_runs
-            (research_run_id, status, input_snapshot_json, pipeline_cards_json, metadata_json, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (research_run_id, "queued", run["input_snapshot_json"], run["pipeline_cards_json"], run["metadata_json"], now, now),
+            (research_run_id, display_name, status, input_snapshot_json, pipeline_cards_json, metadata_json, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (research_run_id, display_name, "queued", run["input_snapshot_json"], run["pipeline_cards_json"], run["metadata_json"], now, now),
         )
+        # Persist uploaded assets
+        for asset_key, asset_type in [("main_image", "image"), ("short_video", "video")]:
+            asset = input_snapshot.get(asset_key) or {}
+            if asset.get("asset_id"):
+                self._insert_asset(research_run_id, asset, asset_type, now)
         return {
             "research_run_id": research_run_id,
+            "display_name": display_name,
             "status": "queued",
             "countries": country_codes,
             "created_at": now,
@@ -123,10 +131,23 @@ class ProductResearchService:
 
         completed = sum(1 for c in cards if c.get("status") in ("completed", "failed", "skipped"))
         current_card = next((c for c in cards if c.get("status") == "running"), None)
+        status = run.get("status") or "queued"
+        resumed_at = _iso(run.get("resumed_at"))
+
+        # Detect stalled run: running but no update in 5 minutes
+        stalled = False
+        if status == "running":
+            updated_at = run.get("updated_at")
+            if updated_at and isinstance(updated_at, datetime):
+                delta = datetime.now(UTC) - updated_at.replace(tzinfo=UTC) if updated_at.tzinfo is None else datetime.now(UTC) - updated_at
+                if delta.total_seconds() > 300:
+                    stalled = True
+                    status = "stalled"
 
         return {
             "research_run_id": research_run_id,
-            "status": run.get("status") or "queued",
+            "display_name": run.get("display_name") or "",
+            "status": status,
             "progress": {
                 "total_steps": len(cards),
                 "completed_steps": completed,
@@ -134,6 +155,8 @@ class ProductResearchService:
                 "step_cards": cards,
                 "countries": countries_status,
             },
+            "stalled": stalled,
+            "resumed_at": resumed_at,
             "created_at": _iso(run.get("created_at")),
             "updated_at": _iso(run.get("updated_at")),
         }
@@ -222,6 +245,113 @@ class ProductResearchService:
         )
         return {"research_run_id": research_run_id, "status": "cancelled"}
 
+    def list_runs(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        count_row = query_one("SELECT COUNT(*) AS total FROM product_research_runs", ())
+        total = count_row["total"] if count_row else 0
+        rows = query(
+            """SELECT r.research_run_id, r.display_name, r.status, r.metadata_json,
+                      r.summary_json, r.pipeline_cards_json, r.error_message,
+                      r.created_at, r.updated_at, r.completed_at, r.resumed_at
+               FROM product_research_runs r
+               ORDER BY r.created_at DESC
+               LIMIT %s OFFSET %s""",
+            (limit, offset),
+        )
+        items = []
+        for row in rows:
+            metadata = _load_json(row.get("metadata_json"), {})
+            summary = _load_json(row.get("summary_json"), {})
+            cards = _load_json(row.get("pipeline_cards_json"), [])
+            completed = sum(1 for c in cards if c.get("status") in ("completed", "failed", "skipped"))
+            items.append({
+                "research_run_id": row["research_run_id"],
+                "display_name": row.get("display_name") or "未命名调研",
+                "status": row["status"],
+                "total_steps": len(cards) or len(metadata.get("countries", [])),
+                "completed_steps": completed,
+                "country_count": len(metadata.get("countries") or []),
+                "average_score": summary.get("average_score"),
+                "go_count": summary.get("go_count"),
+                "test_count": summary.get("test_count"),
+                "hold_count": summary.get("hold_count"),
+                "error_message": row.get("error_message"),
+                "created_at": _iso(row.get("created_at")),
+                "updated_at": _iso(row.get("updated_at")),
+                "completed_at": _iso(row.get("completed_at")),
+                "resumed_at": _iso(row.get("resumed_at")),
+            })
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def resume_run(self, research_run_id: str) -> dict[str, Any]:
+        run = self._require_run(research_run_id)
+        current_status = run.get("status") or "queued"
+        if current_status not in ("running", "failed", "partially_completed", "queued"):
+            return {"research_run_id": research_run_id, "status": current_status, "resumed": False,
+                    "reason": f"Cannot resume run with status '{current_status}'"}
+
+        cards = _load_json(run.get("pipeline_cards_json"), [])
+        metadata = _load_json(run.get("metadata_json"), {})
+        product_facts = _load_json(run.get("product_facts_json"), {})
+        media_understanding = _load_json(run.get("media_understanding_json"), {})
+
+        # Determine what needs to run
+        product_facts_done = any(c["card_id"] == "product_facts" and c["status"] == "completed" for c in cards)
+        media_done = any(c["card_id"] == "media_understanding" and c["status"] == "completed" for c in cards)
+        country_rows = query(
+            "SELECT country_code, status FROM product_research_country_results WHERE research_run_id = %s",
+            (research_run_id,),
+        )
+        pending_countries = [r["country_code"] for r in country_rows if r["status"] not in ("completed", "failed", "skipped")]
+
+        if not pending_countries and not product_facts_done:
+            pending_countries = metadata.get("countries") or []
+
+        # Reset failed/pending cards to pending so pipeline can retry
+        for card in cards:
+            if card["status"] in ("failed",):
+                if card["card_id"] == "product_facts":
+                    product_facts_done = False
+                if card["card_id"] == "media_understanding":
+                    media_done = False
+                if card["card_id"].startswith("country_"):
+                    code = card["card_id"].replace("country_", "")
+                    if code not in [r["country_code"] for r in country_rows if r["status"] == "completed"]:
+                        card["status"] = "pending"
+
+        execute(
+            "UPDATE product_research_runs SET status = 'running', resumed_at = %s, updated_at = %s, pipeline_cards_json = %s WHERE research_run_id = %s",
+            (_now_iso(), _now_iso(), json.dumps(cards, ensure_ascii=False), research_run_id),
+        )
+        started = self.start_run_async(research_run_id)
+        return {
+            "research_run_id": research_run_id,
+            "status": "running",
+            "resumed": True,
+            "started": started,
+            "has_product_facts": bool(product_facts_done),
+            "has_media_understanding": bool(media_done),
+            "pending_countries": pending_countries,
+        }
+
+    def _insert_asset(self, research_run_id: str, asset: dict, asset_type: str, now: str) -> None:
+        try:
+            execute(
+                """INSERT INTO product_research_assets
+                (research_run_id, asset_id, asset_type, asset_url, local_path, mime_type, upload_status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, 'completed', %s)""",
+                (
+                    research_run_id,
+                    str(asset.get("asset_id", "")),
+                    asset_type,
+                    str(asset.get("url", "")),
+                    str(asset.get("local_path", "")),
+                    str(asset.get("mime_type", "")),
+                    now,
+                ),
+            )
+        except Exception:
+            log.warning("Failed to insert asset record for %s/%s", research_run_id, asset_type, exc_info=True)
+
     # ── Pipeline ──────────────────────────────────────────
 
     def run_pipeline(self, research_run_id: str) -> dict[str, Any]:
@@ -233,64 +363,98 @@ class ProductResearchService:
         cards = _load_json(run.get("pipeline_cards_json"), _initial_cards())
         now = _now_iso()
 
-        # Step 1: input_validation
-        cards = _set_card(cards, "input_validation", "running", "正在校验输入数据")
-        valid, validation_errors = _validate_input(input_snapshot)
-        if not valid:
-            cards = _set_card(cards, "input_validation", "failed", f"校验失败：{'; '.join(validation_errors[:3])}", error="; ".join(validation_errors))
-            self._update(run_id=research_run_id, status="failed", cards=cards, error="; ".join(validation_errors))
-            return self.get_result(research_run_id)
-        cards = _set_card(cards, "input_validation", "completed", f"校验通过，准备评估 {len(country_codes)} 个国家")
-        self._update(run_id=research_run_id, status="running", cards=cards, started_at=now)
+        # Check if this is a resume — skip completed steps
+        _existing_facts = _load_json(run.get("product_facts_json"), {})
+        _existing_media = _load_json(run.get("media_understanding_json"), {})
+        product_facts: dict[str, Any] = _existing_facts
+        media_understanding: dict[str, Any] = _existing_media
+
+        # Step 1: input_validation (always runs — idempotent)
+        _iv_card = next((c for c in cards if c["card_id"] == "input_validation"), None)
+        if not _iv_card or _iv_card.get("status") not in ("completed",):
+            cards = _set_card(cards, "input_validation", "running", "正在校验输入数据")
+            valid, validation_errors = _validate_input(input_snapshot)
+            if not valid:
+                cards = _set_card(cards, "input_validation", "failed", f"校验失败：{'; '.join(validation_errors[:3])}", error="; ".join(validation_errors))
+                self._update(run_id=research_run_id, status="failed", cards=cards, error="; ".join(validation_errors))
+                return self.get_result(research_run_id)
+            cards = _set_card(cards, "input_validation", "completed", f"校验通过，准备评估 {len(country_codes)} 个国家")
+            self._update(run_id=research_run_id, status="running", cards=cards, started_at=now)
 
         # Step 2: product_fact_extraction
-        cards = _set_card(cards, "product_facts", "running", "正在调用 AI 抽取产品事实")
-        self._update(run_id=research_run_id, cards=cards)
-        try:
-            product_facts = self.gemini_client.generate_product_facts(
-                input_snapshot=input_snapshot,
-                countries=country_configs(country_codes),
-                google_search_enabled=input_snapshot.get("google_search_enabled", True),
-            )
-            cards = _set_card(cards, "product_facts", "completed", f"产品事实抽取完成：{product_facts.get('category_detected', '-')}",
-                             result=product_facts, result_summary=f"品类：{product_facts.get('category_detected', '-')}，缺失字段：{len(product_facts.get('missing_data', []))}")
-            self._update(run_id=research_run_id, product_facts=product_facts, cards=cards)
-        except Exception as exc:
-            log.exception("product fact extraction failed: %s", research_run_id)
-            run_errors.append({"stage": "product_fact_extraction", "message": str(exc)[:500]})
-            cards = _set_card(cards, "product_facts", "failed", f"产品事实抽取失败：{str(exc)[:160]}", error=str(exc)[:500])
-            self._update(run_id=research_run_id, status="failed", cards=cards, error=str(exc)[:500])
-            return self.get_result(research_run_id)
+        _pf_card = next((c for c in cards if c["card_id"] == "product_facts"), None)
+        if not _pf_card or _pf_card.get("status") not in ("completed",):
+            cards = _set_card(cards, "product_facts", "running", "正在调用 AI 抽取产品事实")
+            self._update(run_id=research_run_id, cards=cards)
+            try:
+                product_facts = self.gemini_client.generate_product_facts(
+                    input_snapshot=input_snapshot,
+                    countries=country_configs(country_codes),
+                    google_search_enabled=input_snapshot.get("google_search_enabled", True),
+                )
+                cards = _set_card(cards, "product_facts", "completed", f"产品事实抽取完成：{product_facts.get('category_detected', '-')}",
+                                 result=product_facts, result_summary=f"品类：{product_facts.get('category_detected', '-')}，缺失字段：{len(product_facts.get('missing_data', []))}")
+                self._update(run_id=research_run_id, product_facts=product_facts, cards=cards)
+            except Exception as exc:
+                log.exception("product fact extraction failed: %s", research_run_id)
+                run_errors.append({"stage": "product_fact_extraction", "message": str(exc)[:500]})
+                cards = _set_card(cards, "product_facts", "failed", f"产品事实抽取失败：{str(exc)[:160]}", error=str(exc)[:500])
+                self._update(run_id=research_run_id, status="failed", cards=cards, error=str(exc)[:500])
+                return self.get_result(research_run_id)
 
         # Step 3: media_understanding
-        cards = _set_card(cards, "media_understanding", "running", "正在调用 AI 分析主图和短视频")
-        self._update(run_id=research_run_id, cards=cards)
-        media_understanding: dict[str, Any] = {}
-        media_paths = _collect_media_paths(input_snapshot)
-        try:
-            media_understanding = self.gemini_client.generate_media_understanding(
-                input_snapshot=input_snapshot,
-                product_facts=product_facts,
-                media_paths=media_paths if media_paths else None,
-                google_search_enabled=input_snapshot.get("google_search_enabled", True),
-            )
-            cards = _set_card(cards, "media_understanding", "completed", "素材分析完成",
-                             result=media_understanding, result_summary="主图和视频分析完成")
-        except Exception as exc:
-            log.exception("media understanding failed: %s", research_run_id)
-            media_understanding = {"status": "failed", "error": str(exc)[:500]}
-            cards = _set_card(cards, "media_understanding", "failed", f"素材分析失败：{str(exc)[:160]}", error=str(exc)[:500])
-        self._update(run_id=research_run_id, media_understanding=media_understanding, cards=cards)
+        _mu_card = next((c for c in cards if c["card_id"] == "media_understanding"), None)
+        if not _mu_card or _mu_card.get("status") not in ("completed",):
+            cards = _set_card(cards, "media_understanding", "running", "正在调用 AI 分析主图和短视频")
+            self._update(run_id=research_run_id, cards=cards)
+            media_paths = _collect_media_paths(input_snapshot)
+            try:
+                media_understanding = self.gemini_client.generate_media_understanding(
+                    input_snapshot=input_snapshot,
+                    product_facts=product_facts,
+                    media_paths=media_paths if media_paths else None,
+                    google_search_enabled=input_snapshot.get("google_search_enabled", True),
+                )
+                cards = _set_card(cards, "media_understanding", "completed", "素材分析完成",
+                                 result=media_understanding, result_summary="主图和视频分析完成")
+            except Exception as exc:
+                log.exception("media understanding failed: %s", research_run_id)
+                media_understanding = {"status": "failed", "error": str(exc)[:500]}
+                cards = _set_card(cards, "media_understanding", "failed", f"素材分析失败：{str(exc)[:160]}", error=str(exc)[:500])
+            self._update(run_id=research_run_id, media_understanding=media_understanding, cards=cards)
 
-        # Steps 4-11: country evaluations
+        # Steps 4-11: country evaluations (skip already completed)
         completed_codes: list[str] = []
         failed_codes: list[str] = []
         delay_seconds = input_snapshot.get("country_delay_seconds", 30)
-        for idx, code in enumerate(country_codes):
-            if idx > 0 and delay_seconds > 0:
+        # Load existing country results for resume
+        existing_country_rows = query(
+            "SELECT country_code, status FROM product_research_country_results WHERE research_run_id = %s",
+            (research_run_id,),
+        )
+        existing_country_status: dict[str, str] = {r["country_code"]: r["status"] for r in existing_country_rows}
+        for code in existing_country_status:
+            if existing_country_status[code] == "completed":
+                completed_codes.append(code)
+            elif existing_country_status[code] == "failed":
+                failed_codes.append(code)
+
+        country_idx = -1
+        for code in country_codes:
+            card_id = f"country_{code}"
+            # Skip already completed/failed countries
+            if code in completed_codes or code in failed_codes:
+                existing_status = existing_country_status.get(code, "pending")
+                if existing_status == "completed":
+                    cards = _set_card(cards, card_id, "completed", f"（已缓存）{get_country_config(code)['country_name_zh']}")
+                elif existing_status == "failed":
+                    cards = _set_card(cards, card_id, "failed", f"（已失败，跳过）{get_country_config(code)['country_name_zh']}")
+                continue
+
+            country_idx += 1
+            if country_idx > 0 and delay_seconds > 0:
                 time.sleep(delay_seconds)
             country = get_country_config(code)
-            card_id = f"country_{code}"
             cards = _set_card(cards, card_id, "running", f"正在评估 {country['country_name_zh']} 市场")
             self._update(run_id=research_run_id, cards=cards)
 
@@ -476,12 +640,36 @@ class ProductResearchService:
             failed = _failed_country_result(country, str(exc))
             self._upsert_country(research_run_id, country_code, country, "failed", failed, str(exc)[:500])
 
-        # Recompute summary
+        # Recompute summary and correct terminal status
         rows = query("SELECT * FROM product_research_country_results WHERE research_run_id = %s", (research_run_id,))
         all_countries = {row["country_code"]: _load_json(row.get("full_result_json"), {}) for row in rows}
         summary = _build_summary(all_countries)
         frontend = _build_frontend(summary, all_countries)
-        self._update(run_id=research_run_id, status="completed", summary=summary, frontend=frontend)
+
+        country_statuses = [row["status"] for row in rows]
+        has_completed = any(s == "completed" for s in country_statuses)
+        has_failed = any(s == "failed" for s in country_statuses)
+        has_pending = any(s in ("pending", "running") for s in country_statuses)
+
+        if has_pending:
+            final_status = "running"
+        elif has_completed and not has_failed:
+            final_status = "completed"
+        elif has_completed and has_failed:
+            final_status = "partially_completed"
+        elif not has_completed and has_failed:
+            final_status = "failed"
+        else:
+            final_status = "completed"
+
+        self._update(
+            run_id=research_run_id,
+            status=final_status,
+            summary=summary,
+            frontend=frontend,
+            completed_at=_now_iso() if final_status in ("completed", "partially_completed") else None,
+            failed_at=_now_iso() if final_status == "failed" else None,
+        )
 
 
 # ── Module-level singleton ───────────────────────────────
@@ -603,7 +791,11 @@ def _sanitize_input(data: dict[str, Any]) -> dict[str, Any]:
         country_delay_seconds = max(0, min(120, int(float(str(delay_raw)))))
     except (TypeError, ValueError):
         country_delay_seconds = 30
+    project_name = str(data.get("product_name") or data.get("product_name_en") or data.get("product_url") or "").strip()
+    if len(project_name) > 120:
+        project_name = project_name[:117] + "..."
     return {
+        "project_name": project_name,
         "product_url": str(data.get("product_url") or "").strip(),
         "product_name": str(data.get("product_name") or "").strip(),
         "product_name_en": str(data.get("product_name_en") or "").strip(),

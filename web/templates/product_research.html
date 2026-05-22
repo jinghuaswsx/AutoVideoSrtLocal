@@ -153,14 +153,18 @@
         <span class="pr-toggle"><input type="checkbox" id="prGoogleSearchToggle" checked><span class="pr-toggle-slider"></span></span>
         <span class="pr-toggle-label">Google 联网搜索</span>
       </label>
-      <button type="button" class="pr-btn pr-btn--primary" id="prStartBtn" onclick="startResearch()">开始 AI 调研</button>
+      <button type="button" class="pr-btn pr-btn--primary" id="prNewBtn" onclick="window._showNewForm()">+ 新建调研</button>
+      <button type="button" class="pr-btn pr-btn--primary" id="prStartBtn" onclick="startResearch()" style="display:none">开始 AI 调研</button>
       <button type="button" class="pr-btn pr-btn--ghost" id="prCancelBtn" style="display:none" onclick="cancelResearch()">取消</button>
       <button type="button" class="pr-btn pr-btn--ghost" id="prRefreshBtn" style="display:none" onclick="refreshResult()">刷新</button>
     </div>
   </section>
 
+  <!-- Project List -->
+  <div id="prProjectList" style="margin-bottom:24px"></div>
+
   <!-- Input Form -->
-  <div class="pr-form" id="prForm">
+  <div class="pr-form" id="prForm" style="display:none">
     <div class="pr-form-grid">
       <div class="pr-field pr-form-grid--full">
         <label>产品链接 <span style="color:#dc2626">*</span></label>
@@ -228,6 +232,7 @@ window.PR_CONFIG = {
   resultUrlTemplate: "/api/product-research/runs/{id}",
   rerunUrlTemplate: "/api/product-research/runs/{id}/countries/{code}/rerun",
   cancelUrlTemplate: "/api/product-research/runs/{id}/cancel",
+  resumeUrlTemplate: "/api/product-research/runs/{id}/resume",
 };
 </script>
 <script src="{{ url_for('static', filename='js/product_research.js') }}"></script>
