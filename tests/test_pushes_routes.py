@@ -1238,6 +1238,101 @@ def test_push_product_links_from_pushes_modal_success(
     assert resp.get_json() == result
 
 
+def test_push_rework_reject_delegates_to_task_service(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 318, "task_id": 44},
+    )
+
+    def fake_reject_child_from_push(**kwargs):
+        captured["service"] = kwargs
+        return {
+            "task_id": kwargs["task_id"],
+            "status": "assigned",
+            "issue_keys": kwargs["issue_keys"],
+        }
+
+    def fake_audit(**kwargs):
+        captured["audit"] = kwargs
+
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.reject_child_from_push",
+        fake_reject_child_from_push,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.system_audit.record_from_request",
+        fake_audit,
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/905/reject-to-task",
+        json={
+            "issue_keys": ["has_object", "has_push_texts"],
+            "reason": "视频不合格，需要重做字幕和英文文案格式",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "assigned"
+    assert captured["service"] == {
+        "task_id": 44,
+        "actor_user_id": 1,
+        "issue_keys": ["has_object", "has_push_texts"],
+        "reason": "视频不合格，需要重做字幕和英文文案格式",
+    }
+    assert captured["audit"]["action"] == "push_rework_rejected"
+    assert captured["audit"]["target_id"] == 905
+    assert captured["audit"]["detail"]["issue_keys"] == ["has_object", "has_push_texts"]
+
+
+def test_push_rework_reject_requires_task_link(
+    authed_client_no_db, monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "product_id": 318, "task_id": None},
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/905/reject-to-task",
+        json={
+            "issue_keys": ["has_object"],
+            "reason": "视频产出不符合要求，需要负责人重新处理",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "task_not_linked"
+
+
+def test_push_rework_reject_requires_admin(
+    authed_user_client_no_db, monkeypatch,
+):
+    called = False
+
+    def fake_get_item(item_id):
+        nonlocal called
+        called = True
+        return {"id": item_id, "product_id": 318, "task_id": 44}
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", fake_get_item)
+
+    resp = authed_user_client_no_db.post(
+        "/pushes/api/items/905/reject-to-task",
+        json={
+            "issue_keys": ["has_object"],
+            "reason": "视频产出不符合要求，需要负责人重新处理",
+        },
+    )
+
+    assert resp.status_code == 403
+    assert called is False
+
+
 def test_pushes_assets_include_product_link_push_tabs():
     import re
     from pathlib import Path
@@ -1313,6 +1408,28 @@ def test_pushes_assets_include_quality_check_panel():
     assert "text-overflow: ellipsis" in style
     assert "width: 80vw" in style
     assert "height: 80vh" in style
+
+
+def test_pushes_assets_include_rework_modal_controls():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    style = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "打回重做" in script
+    assert "reject-to-task" in script
+    assert "REWORK_ISSUES" in script
+    assert "has_object" in script
+    assert "has_cover" in script
+    assert "has_copywriting" in script
+    assert "lang_supported" in script
+    assert "has_push_texts" in script
+    assert "shopify_image_confirmed" in script
+    assert "btnCancel" not in script
+    assert "pm-rework-overlay" in script
+    assert "pm-rework-overlay" in style
+    assert "btn-rework" in style
+    assert "gap: 100px" in style
 
 
 def test_pushes_quality_media_previews_are_side_by_side_180_by_320():

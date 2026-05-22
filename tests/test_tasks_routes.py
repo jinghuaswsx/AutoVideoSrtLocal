@@ -91,7 +91,9 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "blocked: '等待 去字幕原始素材'" in body
     assert "assigned: '待处理'" in body
     assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
-    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcStatusLabel(it.status))}</span>' in body
+    assert "function tcTaskStatusLabel(task)" in body
+    assert "管理员已拒绝" in body
+    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcTaskStatusLabel(it))}</span>' in body
     assert "function tcTaskTypeLabel(task)" in body
     assert "const kind = tcTaskTypeLabel(it);" in body
     assert "task && task.parent_task_id ? '小语种翻译' : '去字幕'" in body

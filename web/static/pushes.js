@@ -14,6 +14,14 @@
     has_push_texts: '英文文案格式正确',
     shopify_image_confirmed: '图片/链接确认',
   };
+  const REWORK_ISSUES = [
+    { key: 'has_object', taskKey: 'translated_video', label: '视频' },
+    { key: 'has_cover', taskKey: 'translated_cover', label: '封面' },
+    { key: 'has_copywriting', taskKey: 'translated_copywriting', label: '文案' },
+    { key: 'lang_supported', taskKey: 'language_supported', label: '链接' },
+    { key: 'has_push_texts', taskKey: 'push_texts', label: '英文文案格式' },
+    { key: 'shopify_image_confirmed', taskKey: 'shopify_images', label: '图片/链接确认' },
+  ];
 
   const PUSH_MODAL_MODES = {
     CONFIRM: 'confirm',
@@ -1008,7 +1016,7 @@
     let body = {};
     try { body = JSON.parse(e.body || '{}'); } catch (_) {}
     const err = body.error || '';
-    const detail = body.detail || body.response_body || e.body || e.message || '';
+    const detail = body.detail || body.message || body.response_body || e.body || e.message || '';
     if (err === 'not_ready') {
       const missing = (body.missing || []).map(k => (READINESS_LABELS[k] || k)).join(' / ');
       return `素材未就绪：缺少 ${missing || '未知项'}`;
@@ -1027,6 +1035,49 @@
       return `下游返回 HTTP ${body.upstream_status}\n${preview}`;
     }
     return detail || e.message;
+  }
+
+  function reworkCheckMap(readinessPayload) {
+    const map = {};
+    (readinessPayload && readinessPayload.checks || []).forEach(check => {
+      const key = String(check && check.key || '');
+      if (key) map[key] = check;
+    });
+    return map;
+  }
+
+  function renderReworkEvidence(evidence) {
+    const rows = Array.isArray(evidence) ? evidence.slice(0, 3) : [];
+    if (!rows.length) return el('div', { class: 'pm-rework-empty' }, '暂无可预览内容');
+    const wrap = el('div', { class: 'pm-rework-evidence' });
+    rows.forEach(row => {
+      const type = String(row && row.type || '');
+      const box = el('div', { class: 'pm-rework-evidence-item' });
+      const label = row && (row.label || row.filename || row.title || row.url) || '产出';
+      box.appendChild(el('div', { class: 'pm-rework-evidence-title' }, String(label)));
+      if (type === 'image' && row.url) {
+        box.appendChild(el('img', { src: previewMediaSrc(row.url), alt: String(label) }));
+      } else if (type === 'video' && row.url) {
+        box.appendChild(el('video', { src: previewMediaSrc(row.url), controls: true, preload: 'metadata' }));
+      } else if (type === 'link' && row.url) {
+        box.appendChild(el('a', {
+          href: safeExternalHref(row.url),
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        }, String(row.url)));
+      } else if (Array.isArray(row.lines) && row.lines.length) {
+        row.lines.slice(0, 3).forEach(line => {
+          box.appendChild(el('div', { class: 'pm-rework-text-line' }, `${line.label || ''} ${line.value || ''}`));
+        });
+      } else {
+        const text = [row.title, row.body, row.description, row.meta]
+          .filter(Boolean)
+          .join(' · ');
+        box.appendChild(el('div', { class: 'pm-rework-text-line' }, text || '已生成产出'));
+      }
+      wrap.appendChild(box);
+    });
+    return wrap;
   }
 
   function openPushModal(itemId) {
@@ -1125,10 +1176,15 @@
     mainPanel.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
+    const btnRework = el('button', {
+      type: 'button',
+      class: 'btn-push btn-rework',
+      disabled: !item.task_id,
+      title: item.task_id ? '' : '这条素材没有关联任务，不能打回重做',
+    }, '打回重做');
     const btnPush = el('button', { type: 'button', class: 'btn-push', disabled: true }, '推送');
-    const btnCancel = el('button', { type: 'button', class: 'btn-mini' }, '关闭');
+    footer.appendChild(btnRework);
     footer.appendChild(btnPush);
-    footer.appendChild(btnCancel);
     mainPanel.appendChild(footer);
 
     let activeMode = PUSH_MODAL_MODES.CONFIRM;
@@ -1274,11 +1330,141 @@
       document.removeEventListener('keydown', onEsc);
       if (anyPushSucceeded) load();
     }
+
+    function renderReworkIssueOption(issue, checkMap) {
+      const check = checkMap[issue.taskKey] || null;
+      const ok = check ? !!check.ok : !!(item.readiness && item.readiness[issue.key]);
+      const reason = check && check.reason ? String(check.reason) : '';
+      const option = el('label', { class: 'pm-rework-option' });
+      const input = el('input', {
+        type: 'checkbox',
+        value: issue.key,
+        checked: !ok,
+      });
+      const content = el('div', { class: 'pm-rework-option-body' });
+      content.appendChild(el('div', { class: 'pm-rework-option-head' }, [
+        el('span', { class: 'pm-rework-label' }, issue.label),
+        el('span', { class: ok ? 'pm-rework-state-ok' : 'pm-rework-state-bad' }, ok ? '当前正常' : '当前有问题'),
+      ]));
+      if (reason) {
+        content.appendChild(el('div', { class: 'pm-rework-reason' }, reason));
+      }
+      content.appendChild(renderReworkEvidence(check && check.evidence));
+      option.appendChild(input);
+      option.appendChild(content);
+      return option;
+    }
+
+    async function openReworkModal() {
+      if (!item.task_id) {
+        showResponse('这条素材没有关联任务，不能打回重做。', true, '打回失败');
+        return;
+      }
+
+      const reworkOverlay = el('div', { class: 'pm-rework-overlay' });
+      const dialog = el('div', { class: 'pm-rework-dialog' });
+      reworkOverlay.appendChild(dialog);
+      overlay.appendChild(reworkOverlay);
+
+      const header = el('div', { class: 'pm-rework-header' }, [
+        el('div', {}, [
+          el('h3', {}, '打回重做'),
+          el('p', {}, '勾选需要负责人继续处理的产出项，并填写打回说明。'),
+        ]),
+        el('button', { type: 'button', class: 'pm-close', 'aria-label': '关闭' }, '×'),
+      ]);
+      const list = el('div', { class: 'pm-rework-list' }, [
+        el('div', { class: 'pm-empty' }, '加载任务输出中…'),
+      ]);
+      const reason = el('textarea', {
+        class: 'pm-rework-textarea',
+        rows: '4',
+        placeholder: '填写打回说明，例如：视频字幕错位，英文文案格式不符合三段要求。',
+      });
+      const status = el('div', { class: 'pm-rework-status', hidden: true });
+      const actions = el('div', { class: 'pm-rework-actions' });
+      const cancel = el('button', { type: 'button', class: 'btn-mini' }, '取消');
+      const submit = el('button', { type: 'button', class: 'btn-push btn-rework' }, '确认打回');
+      actions.appendChild(cancel);
+      actions.appendChild(submit);
+      dialog.appendChild(header);
+      dialog.appendChild(list);
+      dialog.appendChild(el('div', { class: 'pm-rework-note' }, '打回后，这条推送记录会自动变为未就绪；勾选项会在任务详情中显示为管理员已拒绝。'));
+      dialog.appendChild(reason);
+      dialog.appendChild(status);
+      dialog.appendChild(actions);
+
+      const closeRework = () => {
+        if (reworkOverlay.parentNode) reworkOverlay.parentNode.removeChild(reworkOverlay);
+      };
+      header.querySelector('.pm-close').addEventListener('click', closeRework);
+      cancel.addEventListener('click', closeRework);
+      reworkOverlay.addEventListener('click', event => {
+        if (event.target === reworkOverlay) closeRework();
+      });
+
+      let readinessPayload = null;
+      try {
+        readinessPayload = await fetchJSON(`/tasks/api/child/${item.task_id}/readiness`);
+      } catch (err) {
+        clear(list);
+        list.appendChild(el('div', { class: 'pm-error' }, `任务输出加载失败：${describeError(err)}`));
+      }
+      if (readinessPayload) {
+        const checkMap = reworkCheckMap(readinessPayload);
+        clear(list);
+        REWORK_ISSUES.forEach(issue => {
+          list.appendChild(renderReworkIssueOption(issue, checkMap));
+        });
+      }
+
+      submit.addEventListener('click', async () => {
+        const selected = Array.from(list.querySelectorAll('input[type="checkbox"]:checked'))
+          .map(input => input.value);
+        const reasonText = reason.value.trim();
+        status.hidden = false;
+        status.className = 'pm-rework-status';
+        if (!selected.length) {
+          status.textContent = '请至少勾选一个需要打回的产出项。';
+          status.classList.add('pm-rework-status--error');
+          return;
+        }
+        if (reasonText.length < 10) {
+          status.textContent = '打回说明至少 10 个字。';
+          status.classList.add('pm-rework-status--error');
+          return;
+        }
+        submit.disabled = true;
+        cancel.disabled = true;
+        status.textContent = '正在打回…';
+        try {
+          const body = await fetchJSON(`/pushes/api/items/${itemId}/reject-to-task`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ issue_keys: selected, reason: reasonText }),
+          });
+          status.textContent = '已打回任务负责人继续处理。';
+          status.classList.add('pm-rework-status--ok');
+          showResponse(body, false, '打回重做');
+          anyPushSucceeded = true;
+          window.setTimeout(() => {
+            closeRework();
+            close();
+          }, 350);
+        } catch (err) {
+          submit.disabled = false;
+          cancel.disabled = false;
+          status.textContent = describeError(err);
+          status.classList.add('pm-rework-status--error');
+        }
+      });
+    }
+
     function onEsc(e) { if (e.key === 'Escape') close(); }
     document.addEventListener('keydown', onEsc);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
     btnClose.addEventListener('click', close);
-    btnCancel.addEventListener('click', close);
+    btnRework.addEventListener('click', openReworkModal);
 
     (async () => {
       try {
@@ -1335,8 +1521,9 @@
 
     btnPush.addEventListener('click', async () => {
       if (!payloadData) return;
+      const reworkDisabledBeforePush = btnRework.disabled;
       btnPush.disabled = true;
-      btnCancel.disabled = true;
+      btnRework.disabled = true;
       btnPush.textContent = '推送中…';
       try {
         if (isProductLinksMode()) {
@@ -1386,7 +1573,7 @@
             ? '推送链接失败'
             : isLocalizedMode() ? '文案推送失败' : '素材推送失败');
       } finally {
-        btnCancel.disabled = false;
+        btnRework.disabled = reworkDisabledBeforePush;
         syncPushButton();
       }
     });

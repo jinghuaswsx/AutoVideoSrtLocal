@@ -308,7 +308,28 @@ def _has_valid_en_push_texts(product_id: int) -> bool:
 
 # ---------- 就绪判定 ----------
 
-def compute_readiness(item: dict, product: dict) -> dict:
+def _push_rework_readiness_overrides(item: dict) -> set[str]:
+    task_id = (item or {}).get("task_id")
+    if not task_id:
+        return set()
+    try:
+        from appcore import tasks as tasks_svc
+        return set(tasks_svc.active_push_rework_readiness_keys(int(task_id)))
+    except Exception:
+        log.debug(
+            "load push rework readiness overrides failed task_id=%s",
+            task_id,
+            exc_info=True,
+        )
+        return set()
+
+
+def compute_readiness(
+    item: dict,
+    product: dict,
+    *,
+    include_rework_overrides: bool = True,
+) -> dict:
     """返回素材推送就绪布尔项。调用方再据此判定 pushable。
 
     - has_copywriting：按 item.lang 检查本语种是否有任一 copywriting 记录
@@ -351,6 +372,10 @@ def compute_readiness(item: dict, product: dict) -> dict:
         "shopify_image_confirmed": shopify_image_confirmed,
         "shopify_image_reason": shopify_image_reason,
     }
+    if include_rework_overrides:
+        for key in _push_rework_readiness_overrides(item):
+            if key in result:
+                result[key] = False
     if shopify_image_domain_details:
         result["shopify_image_domain_details"] = shopify_image_domain_details
     return result
