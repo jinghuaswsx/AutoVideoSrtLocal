@@ -547,6 +547,11 @@
     return value === "failed" || value === "error";
   }
 
+  function isVoiceAiRankPendingStatus(status) {
+    const value = normalizedVoiceAiRankStatus(status);
+    return value === "running" || value === "queued";
+  }
+
   function voiceAiRankDisplayState() {
     if (voiceAiRankRequestState === "running") {
       return "running";
@@ -623,7 +628,9 @@
     if (!data) return;
     setVoiceMatchCandidates(data.candidates || []);
     voiceAiRankDebug = data.voice_ai_rank_debug || null;
-    voiceAiRankStatus = data.voice_ai_rank_status || "";
+    voiceAiRankStatus = currentVoiceSelectionMode() === "speed_fallback"
+      ? "speed_fallback"
+      : (data.voice_ai_rank_status || "");
     voiceAiAutoSelectEnabled = data.voice_ai_auto_select_enabled !== false;
     voiceAiRankCacheKey = data.voice_ai_rank_cache_key || currentVoiceAiRankGender() || "all";
     updateVoiceAiRankControls();
@@ -805,6 +812,10 @@
 
   function markVoiceMatchReadyFrozen() {
     voiceMatchReadyFrozen = true;
+    cancelVoiceAiRankPolling();
+  }
+
+  function cancelVoiceAiRankPolling() {
     if (pollHandle) {
       clearTimeout(pollHandle);
       pollHandle = null;
@@ -814,7 +825,8 @@
   }
 
   function shouldPollVoiceAiRanking() {
-    return voiceAiRankStatus === "running" || voiceAiRankStatus === "queued";
+    return currentVoiceSelectionMode() !== "speed_fallback"
+      && isVoiceAiRankPendingStatus(voiceAiRankStatus);
   }
 
   function currentVoiceSelectionMode() {
@@ -1334,16 +1346,41 @@
     }
   }
 
-  function forceSpeedMatchSorting() {
+  async function forceSpeedMatchSorting() {
     voiceSelectionMode = "speed_fallback";
+    voiceAiRankStatus = "speed_fallback";
+    voiceAiRankRequestState = "";
+    voiceAiRankRerunning = false;
+    cancelVoiceAiRankPolling();
     updateVoiceAiRankControls();
     render();
     updateLaunchState();
+    try {
+      const resp = await fetch(`${apiBase}/${taskId}/voice-ai-ranking/force-speed-fallback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({ gender: currentVoiceAiRankGender() }),
+      });
+      if (!resp.ok) {
+        console.warn("[voice-selector] force speed fallback persist failed:", await resp.text());
+        return;
+      }
+      const data = await resp.json();
+      applyVoiceAiRankPayload(data);
+      voiceSelectionMode = "speed_fallback";
+      voiceAiRankStatus = "speed_fallback";
+      updateVoiceAiRankControls();
+      render();
+      updateLaunchState();
+    } catch (err) {
+      console.warn("[voice-selector] force speed fallback persist error:", err);
+    }
   }
 
   async function rerunVoiceAiRanking() {
     if (voiceAiRankRerunning) return;
     if (!supportsManualVoiceAiRanking()) return;
+    voiceSelectionMode = "ai_rank";
     voiceAiRankRerunning = true;
     setVoiceAiRankRequestState("running");
     updateVoiceAiRankControls();
@@ -1359,6 +1396,7 @@
         return;
       }
       const data = await resp.json();
+      if (currentVoiceSelectionMode() === "speed_fallback") return;
       if (isVoiceAiRankFailureStatus(data.voice_ai_rank_status)) {
         voiceAiRankStatus = data.voice_ai_rank_status || "failed";
         voiceAiRankDebug = data.voice_ai_rank_debug || voiceAiRankDebug;

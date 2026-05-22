@@ -124,3 +124,35 @@ def test_rerun_voice_ai_ranking_uses_cache_before_llm(monkeypatch, tmp_path):
     assert result.payload["voice_ai_rank_usage_log_id"] == 222
     assert result.payload["candidates"][0]["llm_rank"] == 1
     assert result.state_updates["voice_ai_rank_cache"]["all"]["usage_log_id"] == 222
+
+
+def test_force_voice_speed_fallback_marks_running_ai_rank_stale():
+    from web.services.translate_voice_selector import force_voice_speed_fallback_for_state
+
+    candidates = [
+        {"voice_id": "v1", "similarity": 0.9, "speed_match_score": 0.8},
+        {"voice_id": "v2", "similarity": 0.8, "speed_match_score": 0.95},
+    ]
+    running_signature = candidate_signature(candidates)
+    state = {
+        "target_lang": "es",
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_candidate_signature": running_signature,
+        "voice_ai_rankings": [{"voice_id": "v1", "llm_rank": 1}],
+        "voice_ai_rank_debug": {"status": "running"},
+        "voice_ai_rank_usage_log_id": 123,
+    }
+
+    result = force_voice_speed_fallback_for_state(
+        state=state,
+        body={"gender": None},
+    )
+
+    assert result.payload["voice_ai_rank_status"] == "speed_fallback"
+    assert result.payload["voice_ai_rankings"] == []
+    assert result.payload["candidates"] == candidates
+    assert state["voice_ai_rank_candidate_signature"] != running_signature
+    assert state["voice_ai_rank_candidate_signature"].startswith("speed_fallback:")
+    assert result.state_updates["voice_ai_rank_status"] == "speed_fallback"
+    assert result.state_updates["voice_ai_rank_candidate_signature"] == state["voice_ai_rank_candidate_signature"]

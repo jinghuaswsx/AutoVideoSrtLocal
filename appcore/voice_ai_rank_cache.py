@@ -9,6 +9,7 @@ from typing import Any
 VOICE_AI_RANK_CACHE_KEYS = {"all", "male", "female"}
 VOICE_AI_RANK_NOT_RUN_STATUS = "not_ranked_for_filter"
 VOICE_AI_RANK_DERIVED_STATUS = "derived_from_all"
+VOICE_AI_RANK_SPEED_FALLBACK_STATUS = "speed_fallback"
 
 
 def normalize_rank_condition(gender: object | None) -> str:
@@ -107,6 +108,24 @@ def set_active_unranked_candidates(
     state["voice_ai_rank_debug"] = None
     state["voice_ai_rank_usage_log_id"] = None
     state["voice_ai_rank_candidate_signature"] = candidate_signature(candidates)
+
+
+def force_speed_fallback_rank_state(
+    state: dict,
+    *,
+    key: object,
+) -> None:
+    cache_key = normalize_rank_condition(key)
+    candidates = deepcopy(list(state.get("voice_match_candidates") or []))
+    state["voice_ai_rank_active_key"] = cache_key
+    state["voice_match_candidates"] = candidates
+    state["voice_ai_rankings"] = []
+    state["voice_ai_rank_status"] = VOICE_AI_RANK_SPEED_FALLBACK_STATUS
+    state["voice_ai_rank_debug"] = None
+    state["voice_ai_rank_usage_log_id"] = None
+    state["voice_ai_rank_candidate_signature"] = (
+        f"{VOICE_AI_RANK_SPEED_FALLBACK_STATUS}:{candidate_signature(candidates)}"
+    )
 
 
 def derive_rank_result_from_all_cache(

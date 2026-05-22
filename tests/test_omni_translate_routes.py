@@ -245,6 +245,49 @@ def test_omni_translate_voice_ai_ranking_rerun_uses_saved_candidates(
     assert payload["candidate_limit"] == 3
 
 
+def test_omni_translate_force_speed_fallback_marks_ai_rank_stale(authed_client_no_db):
+    candidates = [
+        {"voice_id": "v1", "similarity": 0.9, "speed_match_score": 0.8},
+        {"voice_id": "v2", "similarity": 0.8, "speed_match_score": 0.95},
+    ]
+    running_signature = candidate_signature(candidates)
+    state = {
+        "target_lang": "es",
+        "voice_match_candidates": candidates,
+        "voice_ai_rank_status": "running",
+        "voice_ai_rank_candidate_signature": running_signature,
+        "voice_ai_rankings": [{"voice_id": "v1", "llm_rank": 1}],
+        "voice_ai_rank_debug": {"status": "running"},
+        "voice_ai_rank_usage_log_id": 123,
+    }
+    saved = {}
+    state_updates = {}
+
+    with patch(
+        "web.routes.omni_translate._query_viewable_project",
+        return_value={"state_json": json.dumps(state), "user_id": 1},
+    ), patch(
+        "web.routes.omni_translate.save_project_state",
+        side_effect=lambda task_id, payload, execute_func=None: saved.update(payload),
+    ), patch(
+        "web.routes.omni_translate.task_state.update",
+        side_effect=lambda task_id, **kwargs: state_updates.update(kwargs),
+    ):
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/task-ai/voice-ai-ranking/force-speed-fallback",
+            json={"gender": None},
+        )
+
+    payload = resp.get_json()
+    assert resp.status_code == 200
+    assert payload["voice_ai_rank_status"] == "speed_fallback"
+    assert payload["voice_ai_rankings"] == []
+    assert payload["candidates"] == candidates
+    assert saved["voice_ai_rank_candidate_signature"].startswith("speed_fallback:")
+    assert saved["voice_ai_rank_candidate_signature"] != running_signature
+    assert state_updates["voice_ai_rank_status"] == "speed_fallback"
+
+
 def test_omni_translate_rematch_derives_gender_rankings_from_all_cache(authed_client_no_db):
     all_candidates = [
         {"voice_id": "voice-a", "similarity": 0.95, "gender": "male", "llm_rank": 1, "llm_reason_summary": "stable"},

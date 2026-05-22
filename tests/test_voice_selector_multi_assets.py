@@ -240,6 +240,23 @@ def test_voice_selector_multi_force_fallback_preserves_ai_badges_but_uses_voice_
     assert "function voiceAiRankBadgeHtml(rec)" in SCRIPT
 
 
+def test_voice_selector_multi_force_fallback_cancels_ai_polling_and_persists_bypass():
+    poll_block = SCRIPT[
+        SCRIPT.index("function shouldPollVoiceAiRanking()"):
+        SCRIPT.index("function currentVoiceSelectionMode()")
+    ]
+    force_block = SCRIPT[
+        SCRIPT.index("function forceSpeedMatchSorting()"):
+        SCRIPT.index("async function rerunVoiceAiRanking")
+    ]
+
+    assert 'currentVoiceSelectionMode() !== "speed_fallback"' in poll_block
+    assert "cancelVoiceAiRankPolling();" in force_block
+    assert 'voiceAiRankStatus = "speed_fallback";' in force_block
+    assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking/force-speed-fallback`, {" in force_block
+    assert '"X-CSRFToken": csrfToken()' in force_block
+
+
 def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
     load_block = SCRIPT[
         SCRIPT.index("async function loadVoicePage"):
