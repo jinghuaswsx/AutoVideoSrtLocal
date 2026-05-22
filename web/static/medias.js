@@ -5059,11 +5059,7 @@
 
   const SHOPIFY_IMAGE_REPLACE_LABELS = {
     none: '未替换',
-    pending: '已排队',
-    running: '替换中',
-    auto_done: '自动替换完成',
-    failed: '替换失败',
-    confirmed: '人工确认完成',
+    confirmed: '图片正常',
   };
 
   const SHOPIFY_IMAGE_LINK_LABELS = {
@@ -5133,7 +5129,7 @@
   const SHOPIFY_IMAGE_ACTION_ENDPOINTS = {
     confirm: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/confirm`,
     unavailable: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/unavailable`,
-    requeue: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/requeue`,
+    clear: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/clear`,
   };
 
   function edShopifyImageBadgeKind(status) {
@@ -5144,12 +5140,17 @@
     return 'info';
   }
 
+  function edShopifyImageIsNormal(status) {
+    const replaceStatus = status && status.replace_status;
+    return replaceStatus === 'confirmed' || replaceStatus === 'auto_done';
+  }
+
+  function edShopifyImageReplaceLabel(status) {
+    return edShopifyImageIsNormal(status) ? SHOPIFY_IMAGE_REPLACE_LABELS.confirmed : SHOPIFY_IMAGE_REPLACE_LABELS.none;
+  }
+
   function edShopifyImageReplaceBadgeKind(status) {
-    if (!status) return 'info';
-    if (status.replace_status === 'failed') return 'danger';
-    if (status.replace_status === 'confirmed' || status.replace_status === 'auto_done') return 'success';
-    if (status.replace_status === 'pending' || status.replace_status === 'running') return 'warning';
-    return 'info';
+    return edShopifyImageIsNormal(status) ? 'success' : 'info';
   }
 
   function edRenderShopifyImageStatus(lang) {
@@ -5168,7 +5169,7 @@
       const summary = status.result_summary || {};
       const parts = [];
       if (status.domain) parts.push(edLinkCheckBadge(status.domain, 'info'));
-      parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status, edShopifyImageBadgeKind(status)));
+      parts.push(edLinkCheckBadge(edShopifyImageReplaceLabel(status), edShopifyImageReplaceBadgeKind(status)));
       parts.push(edLinkCheckBadge(SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status, edShopifyImageBadgeKind(status)));
       if (status.link_url) {
         parts.push(`<span class="oc-link-check-meta mono">${escapeHtml(status.link_url)}</span>`);
@@ -5194,7 +5195,7 @@
       if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
         actions.push(`<button type="button" class="oc-btn primary sm" data-shopify-image-action="confirm" data-lang="${escapeHtml(lang)}"${domainAttr}>确认图片正常</button>`);
       }
-      actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="requeue" data-lang="${escapeHtml(lang)}"${domainAttr}>重新排队换图</button>`);
+      actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="clear" data-lang="${escapeHtml(lang)}"${domainAttr}>标记图片未替换</button>`);
       if (status.link_status !== 'unavailable') {
         actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}"${domainAttr}>标记链接异常</button>`);
       }
@@ -5215,9 +5216,6 @@
     let body = domain ? { domain } : null;
     if (action === 'unavailable') {
       body = { ...(body || {}), reason: '链接异常，等待负责人处理' };
-    }
-    if (action === 'requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) {
-      return;
     }
     const endpoint = SHOPIFY_IMAGE_ACTION_ENDPOINTS[action];
     if (!endpoint) return;
@@ -5791,7 +5789,7 @@
   function edProductLinksRenderShopifyRow(lang, item) {
     if (!lang || lang === 'en') return '';
     const status = edShopifyImageStatusForLang(lang, item.domain);
-    const replaceLabel = SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status;
+    const replaceLabel = edShopifyImageReplaceLabel(status);
     const replaceBadge = edLinkCheckBadge(replaceLabel, edShopifyImageReplaceBadgeKind(status));
     const updatedAt = status.updated_at ? `<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>` : '';
     return `
@@ -5810,7 +5808,7 @@
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal" ${domainAttr}>标记链接异常</button>`);
     if (lang && lang !== 'en') {
       buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
-      buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-requeue" data-lang="${escapeHtml(lang)}" ${domainAttr}>重新排队换图</button>`);
+      buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-clear" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记图片未替换</button>`);
     }
     return `<div class="oc-product-links-row-actions">${buttons.join('')}</div>`;
   }

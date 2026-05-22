@@ -919,10 +919,10 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     assert checks["shopify_images"]["evidence"] == [
         {
             "type": "link",
-            "label": "newjoyloo.com 商品图替换",
+            "label": "newjoyloo.com shopify 小语种链接图片状态",
             "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
             "ok": True,
-            "meta": "已确认",
+            "meta": "图片正常",
         }
     ]
     assert checks["shopify_images"]["actions"][0]["url"].endswith("action=product_links&focus=shopify_images")

@@ -1333,11 +1333,12 @@ def _shopify_image_evidence(readiness: dict, link_status: dict) -> list[dict]:
         reason = str((readiness or {}).get("shopify_image_reason") or "").strip()
         if not reason:
             return []
+        confirmed = bool((readiness or {}).get("shopify_image_confirmed"))
         return [
             _evidence_status(
-                label="商品图替换",
-                meta=reason,
-                ok=bool((readiness or {}).get("shopify_image_confirmed")),
+                label="shopify 小语种链接图片状态",
+                meta="图片正常" if confirmed else "未替换",
+                ok=confirmed,
             )
         ]
 
@@ -1346,10 +1347,13 @@ def _shopify_image_evidence(readiness: dict, link_status: dict) -> list[dict]:
     for detail in details:
         domain = str(detail.get("domain") or "").strip().lower()
         confirmed = bool(detail.get("confirmed"))
-        meta = "已确认" if confirmed else str(detail.get("reason") or "未完成").strip()
+        meta = "图片正常" if confirmed else "未替换"
         link = links_by_domain.get(domain) or {}
         url = str(link.get("url") or "").strip()
-        label = f"{domain} 商品图替换" if domain else "商品图替换"
+        label = (
+            f"{domain} shopify 小语种链接图片状态"
+            if domain else "shopify 小语种链接图片状态"
+        )
         if url:
             evidence.append(_evidence_link(label=label, url=url, meta=meta, ok=confirmed))
         else:
