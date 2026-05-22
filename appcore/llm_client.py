@@ -79,6 +79,14 @@ def _search_tools_payload(provider: str, enabled: bool | None) -> list[dict] | N
     return [{"google_search": {}}]
 
 
+def _url_context_tools_payload(provider: str, enabled: bool | None) -> list[dict] | None:
+    if not enabled:
+        return None
+    if (provider or "").strip().lower() in {"gemini_aistudio", "gemini_vertex", "gemini_vertex_adc"}:
+        return [{"url_context": {}}]
+    return None
+
+
 def _media_network_estimate(media_paths: list[str]) -> dict:
     items: list[dict[str, Any]] = []
     total_bytes = 0
@@ -251,6 +259,7 @@ def invoke_generate(
     provider_override: str | None = None,
     model_override: str | None = None,
     google_search: bool | None = None,
+    url_context: bool | None = None,
     billing_extra: dict | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
@@ -288,6 +297,12 @@ def invoke_generate(
         tools_payload = _search_tools_payload(provider, google_search)
         if tools_payload:
             req_payload["tools"] = tools_payload
+    if url_context is not None:
+        req_payload["url_context"] = bool(url_context)
+        url_tools_payload = _url_context_tools_payload(provider, url_context)
+        if url_tools_payload:
+            req_payload.setdefault("tools", [])
+            req_payload["tools"].extend(url_tools_payload)
 
     try:
         result = adapter.generate(
@@ -297,6 +312,7 @@ def invoke_generate(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             google_search=google_search,
+            url_context=url_context,
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,

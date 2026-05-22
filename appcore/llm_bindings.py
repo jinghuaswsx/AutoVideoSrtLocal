@@ -24,6 +24,8 @@ VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
     "video_score.run",
     "video_csk.analyze",
     "voice_selection.assess",
+    "fine_ai_evaluation.product_facts",
+    "fine_ai_evaluation.country",
 })
 
 

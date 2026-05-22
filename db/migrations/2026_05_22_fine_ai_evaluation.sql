@@ -1,0 +1,62 @@
+CREATE TABLE IF NOT EXISTS ai_evaluation_runs (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  evaluation_run_id VARCHAR(64) NOT NULL,
+  product_id INT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'queued',
+  countries_json JSON NOT NULL,
+  product_snapshot_json JSON NULL,
+  product_facts_json JSON NULL,
+  summary_json JSON NULL,
+  frontend_json JSON NULL,
+  metadata_json JSON NULL,
+  progress_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  started_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  failed_at DATETIME NULL,
+  error_message VARCHAR(1000) NULL,
+  UNIQUE KEY uk_ai_eval_run_id (evaluation_run_id),
+  KEY idx_ai_eval_product_created (product_id, created_at),
+  KEY idx_ai_eval_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_country_evaluations (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  evaluation_run_id VARCHAR(64) NOT NULL,
+  product_id INT NOT NULL,
+  country_code VARCHAR(8) NOT NULL,
+  country_name VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  scores_json JSON NULL,
+  decision_json JSON NULL,
+  full_result_json JSON NULL,
+  sources_json JSON NULL,
+  raw_response_json JSON NULL,
+  metadata_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  completed_at DATETIME NULL,
+  failed_at DATETIME NULL,
+  error_message VARCHAR(1000) NULL,
+  UNIQUE KEY uk_ai_country_eval_run_country (evaluation_run_id, country_code),
+  KEY idx_ai_country_eval_product (product_id),
+  KEY idx_ai_country_eval_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_evaluation_assets (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  evaluation_run_id VARCHAR(64) NOT NULL,
+  product_id INT NOT NULL,
+  asset_id VARCHAR(128) NOT NULL DEFAULT '',
+  asset_type VARCHAR(32) NOT NULL DEFAULT '',
+  asset_url TEXT NULL,
+  local_path TEXT NULL,
+  mime_type VARCHAR(128) NOT NULL DEFAULT '',
+  upload_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  gemini_file_id VARCHAR(255) NULL,
+  metadata_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ai_eval_assets_run (evaluation_run_id),
+  KEY idx_ai_eval_assets_product (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -233,6 +233,8 @@
 .mki-btn--xiao:hover:not(:disabled) { background: oklch(50% 0.14 155); }
 .mki-ai-btn { background: oklch(58% 0.14 255); border-color: oklch(52% 0.13 255); color: #fff; }
 .mki-ai-btn:hover:not(:disabled) { background: oklch(48% 0.14 255); }
+.mki-fine-ai-btn { background: oklch(56% 0.14 285); border-color: oklch(50% 0.13 285); color:#fff; }
+.mki-fine-ai-btn:hover:not(:disabled) { background: oklch(46% 0.14 285); }
 .ect-modal-header .ect-modal-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
 .ect-modal-header .ect-modal-header-actions + .ect-modal-close { margin-left:0; }
 .mki-ai-reevaluate-btn {
@@ -1260,6 +1262,16 @@ function renderMkVideoMaterialCard(r) {
         onclick="mkiAiEvaluateFromCard(this)">
       ${aiButtonLabel}
     </button>
+    <button class="mki-btn mki-fine-ai-btn"
+        ${existingProductId ? '' : 'disabled'}
+        title="${existingProductId ? '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估' : '先加入素材库后才能进行精细 AI 评估'}"
+        data-mki-fine-ai-product-id="${escapeHtml(existingProductId || '')}"
+        data-mki-local-item-id="${escapeHtml(localItemId || '')}"
+        data-mki-product-name="${safeProductName}"
+        data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
+        onclick="mkiFineAiEvaluateFromCard(this)">
+      精细AI评估
+    </button>
   </div>`;
 }
 
@@ -1410,6 +1422,16 @@ async function openDetail(mkId, mkName) {
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
             onclick="mkiAiEvaluateFromCard(this)">
           AI评估
+        </button>
+        <button class="mki-btn mki-fine-ai-btn"
+            disabled
+            title="先加入素材库后才能进行精细 AI 评估"
+            data-mki-fine-ai-product-id=""
+            data-mki-local-item-id=""
+            data-mki-product-name="${escapeHtml(item.product_name || '')}"
+            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            onclick="mkiFineAiEvaluateFromCard(this)">
+          精细AI评估
         </button>
       </div>`;
     });
@@ -1874,6 +1896,300 @@ async function mkiAiEvaluateFromCard(btn) {
   await mkiAiRunEvaluation(context);
 }
 
+function mkiFineAiProductEndpoint(productId, suffix) {
+  return `/medias/api/products/${encodeURIComponent(productId)}/ai-evaluation${suffix || ''}`;
+}
+
+function mkiFineAiEscapeList(items) {
+  const values = Array.isArray(items) ? items : [];
+  if (!values.length) return '<span class="ect-muted">-</span>';
+  return `<ul class="ect-suggestions">${values.slice(0, 8).map(item => `<li>${escapeHtml(String(item || ''))}</li>`).join('')}</ul>`;
+}
+
+function mkiFineAiSeverity(decision) {
+  const value = String(decision || '').toUpperCase();
+  if (value === 'GO' || value === 'SUCCESS') return 'ect-tag-success';
+  if (value === 'TEST' || value === 'WARNING') return 'ect-tag-warning';
+  if (value === 'HOLD' || value === 'DANGER') return 'ect-tag-danger';
+  return 'ect-tag-info';
+}
+
+function mkiFineAiRenderProgress(progress) {
+  const p = progress || {};
+  const countries = p.countries || {};
+  const order = ['DE', 'FR', 'IT', 'ES', 'JP'];
+  const current = p.current_country || String(p.current_step || '').replace('country_evaluation_', '');
+  return `
+    <div class="ect-summary">
+      <div class="ect-summary-left">
+        <span class="ect-summary-label">评估进度</span>
+        <span class="ect-summary-score">${Number(p.completed_steps || 0)}<span class="ect-summary-score-suffix">/${Number(p.total_steps || 7)}</span></span>
+        <span class="ect-summary-tag ect-tag-info">${escapeHtml(p.current_step || 'queued')}</span>
+      </div>
+      <div class="ect-summary-right">
+        <span class="ect-evaluated-at">${current ? `正在评估 ${escapeHtml(current)}` : '等待开始'}</span>
+      </div>
+    </div>
+    <div class="ect-scroll">
+      <table class="ect-table">
+        <thead><tr><th>国家</th>${order.map(code => `<th>${code}</th>`).join('')}</tr></thead>
+        <tbody><tr><th class="ect-row-label">状态</th>${order.map(code => `<td><span class="ect-summary-tag ${mkiFineAiSeverity(countries[code] === 'completed' ? 'GO' : countries[code] === 'failed' ? 'HOLD' : 'TEST')}">${escapeHtml(countries[code] || 'pending')}</span></td>`).join('')}</tr></tbody>
+      </table>
+    </div>`;
+}
+
+function mkiFineAiRenderStatus(data) {
+  return `<div class="ect-empty">精细 AI 评估运行中，五国按 DE → FR → IT → ES → JP 串行调用。</div>${mkiFineAiRenderProgress((data || {}).progress || {})}`;
+}
+
+function mkiFineAiRenderCards(frontend) {
+  const cards = (frontend && frontend.cards) || []; // frontend.cards drives summary cards
+  if (!cards.length) return '';
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px;">${cards.map(card => `
+    <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+      <div style="font-size:12px;color:var(--oc-fg-muted);">${escapeHtml(card.title || '')}</div>
+      <div style="font-size:22px;font-weight:700;margin-top:4px;">${escapeHtml(String(card.value ?? '-'))}<span style="font-size:12px;color:var(--oc-fg-muted);">${escapeHtml(card.unit || '')}</span></div>
+    </div>`).join('')}</div>`;
+}
+
+function mkiFineAiRenderCharts(frontend) {
+  const bars = (frontend && frontend.charts && frontend.charts.country_score_bar) || []; // frontend.charts.country_score_bar
+  if (!bars.length) return '';
+  return `<div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;margin-bottom:16px;">
+    <h4 style="margin:0 0 10px;font-size:14px;">五国评分</h4>
+    ${bars.map(row => {
+      const score = Math.max(0, Math.min(100, Number(row.overall_score || 0)));
+      return `<div style="display:grid;grid-template-columns:56px 1fr 56px;gap:10px;align-items:center;margin:8px 0;">
+        <strong>${escapeHtml(row.country_code || '')}</strong>
+        <div class="ect-score-bar"><div class="ect-score-bar-fill" style="width:${score}%;background:var(--oc-accent);"></div></div>
+        <span style="font-family:var(--font-mono,monospace);">${score}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function mkiFineAiRenderOverview(frontend) {
+  const rows = (frontend && frontend.tables && frontend.tables.country_overview) || []; // frontend.tables.country_overview
+  if (!rows.length) return '';
+  return `<div class="ect-scroll" style="margin-bottom:16px;">
+    <table class="ect-table">
+      <thead><tr><th>国家</th><th>总分</th><th>决策</th><th>置信度</th><th>定位</th><th>核心风险</th><th>下一步动作</th></tr></thead>
+      <tbody>${rows.map(row => `<tr>
+        <td>${escapeHtml(row.country_name_zh || row.country_code || '')}</td>
+        <td>${escapeHtml(String(row.overall_score ?? '-'))}</td>
+        <td><span class="ect-summary-tag ${mkiFineAiSeverity(row.decision)}">${escapeHtml(row.decision || '')}</span></td>
+        <td>${escapeHtml(row.confidence || '')}</td>
+        <td>${escapeHtml(row.recommended_positioning || '')}</td>
+        <td>${escapeHtml(row.top_risk || '')}</td>
+        <td>${escapeHtml(row.top_action || '')}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function mkiFineAiRenderCountryTabs(countries, runId, productId) {
+  const entries = Object.entries(countries || {});
+  if (!entries.length) return '';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;">${entries.map(([code, c], index) => `
+      <button type="button" class="ect-modal-button" data-mki-fine-ai-tab="${escapeHtml(code)}">${escapeHtml(c.country_name_zh || code)}</button>`).join('')}</div>
+    ${entries.map(([code, c], index) => `
+      <section data-mki-fine-ai-panel="${escapeHtml(code)}" ${index ? 'hidden' : ''} style="border:1px solid var(--oc-border);border-radius:8px;padding:14px;background:#fff;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+          <h4 style="margin:0;font-size:15px;">${escapeHtml(c.country_name_zh || code)} · ${escapeHtml(c.status || '')}</h4>
+          <button type="button" class="mki-ai-reevaluate-btn" data-mki-fine-ai-rerun="${escapeHtml(code)}" data-run-id="${escapeHtml(runId)}" data-product-id="${escapeHtml(productId)}">重跑该国家</button>
+        </div>
+        ${c.error ? `<div class="ect-empty">该国家失败：${escapeHtml((c.error || {}).message || '')}</div>` : ''}
+        <div class="ect-summary" style="margin-bottom:12px;">
+          <div class="ect-summary-left">
+            <span class="ect-summary-label">总分</span>
+            <span class="ect-summary-score">${escapeHtml(String((c.scores || {}).overall_score ?? 0))}</span>
+            <span class="ect-summary-tag ${mkiFineAiSeverity((c.decision || {}).final_decision)}">${escapeHtml((c.decision || {}).final_decision || '')}</span>
+            <span class="ect-summary-tag ect-tag-info">${escapeHtml((c.decision || {}).confidence || '')}</span>
+          </div>
+        </div>
+        <h5>市场适配分析</h5>
+        <p>${escapeHtml(((c.market_fit || {}).demand_analysis || {}).summary || (c.market_fit || {}).local_positioning || '')}</p>
+        <h5>机会</h5>${mkiFineAiEscapeList((c.decision || {}).why || (c.recommendations || {}).ad_test_angles)}
+        <h5>风险</h5>${mkiFineAiEscapeList([...(c.risks?.claim_risks || []), ...(c.risks?.compliance_risks || []), ...(c.risks?.operational_risks || []), ...(c.risks?.trust_risks || []), ...(c.risks?.localization_risks || [])])}
+        <h5>素材审计</h5>${mkiFineAiEscapeList([...(c.creative_fit?.cover_image_audit?.issues || []), ...(c.creative_fit?.product_image_audit?.issues || []), ...(c.creative_fit?.video_audit?.proof_gaps || [])])}
+        <h5>落地页建议</h5>${mkiFineAiEscapeList((c.recommendations || {}).landing_page_actions)}
+        <h5>30 天测试计划</h5>${mkiFineAiEscapeList(((c.recommendations || {}).first_30_day_test_plan || {}).success_metrics)}
+        <h5>来源</h5>${mkiFineAiEscapeList((c.sources || []).map(s => s.url || s.title || '').filter(Boolean))}
+        <h5>待补充数据</h5>${mkiFineAiEscapeList(c.missing_data || [])}
+      </section>`).join('')}`;
+}
+
+function mkiFineAiRenderActions(frontend) {
+  const items = (frontend && frontend.action_items) || [];
+  if (!items.length) return '';
+  return `<details class="ect-collapsible" open><summary>Action Items<span class="ect-summary-count">${items.length}</span></summary>
+    <div class="ect-collapsible-body">${mkiFineAiEscapeList(items.map(item => `${item.priority || ''} · ${item.country_code || ''} · ${item.title || ''}：${item.description || ''}`))}</div>
+  </details>`;
+}
+
+function mkiFineAiRenderResult(data) {
+  const result = data || {};
+  const frontend = result.frontend || {};
+  const summary = result.summary || {};
+  return `
+    ${result.status === 'running' || result.status === 'queued' ? mkiFineAiRenderProgress(result.progress || {}) : ''}
+    ${mkiFineAiRenderCards(frontend)}
+    ${mkiFineAiRenderCharts(frontend)}
+    ${mkiFineAiRenderOverview(frontend)}
+    <div class="ect-summary">
+      <div class="ect-summary-left">
+        <span class="ect-summary-label">汇总结论</span>
+        <span class="ect-summary-tag ${mkiFineAiSeverity(summary.overall_recommendation)}">${escapeHtml(summary.overall_recommendation || result.status || '')}</span>
+        <span class="ect-evaluated-at">Run: ${escapeHtml(result.evaluation_run_id || '')}</span>
+      </div>
+    </div>
+    ${mkiFineAiRenderCountryTabs(result.countries || {}, result.evaluation_run_id || '', result.product_id || '')}
+    ${mkiFineAiRenderActions(frontend)}
+  `;
+}
+
+function mkiFineAiAttachHeaderButtons(shell, context) {
+  const header = shell && shell.modal && shell.modal.querySelector('.ect-modal-header');
+  if (!header) return;
+  let actions = header.querySelector('.ect-modal-header-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'ect-modal-header-actions';
+    const closeButton = header.querySelector('.ect-modal-close');
+    header.insertBefore(actions, closeButton || null);
+  }
+  const latestBtn = document.createElement('button');
+  latestBtn.type = 'button';
+  latestBtn.className = 'mki-ai-reevaluate-btn';
+  latestBtn.textContent = '查看最近';
+  latestBtn.onclick = () => mkiFineAiLoadLatest(context);
+  actions.appendChild(latestBtn);
+  const rerunBtn = document.createElement('button');
+  rerunBtn.type = 'button';
+  rerunBtn.className = 'mki-ai-reevaluate-btn';
+  rerunBtn.textContent = '重新评估';
+  rerunBtn.onclick = () => mkiFineAiStartRun(context);
+  actions.appendChild(rerunBtn);
+  context.headerButtons = [latestBtn, rerunBtn];
+}
+
+async function mkiFineAiLoadLatest(context) {
+  const shell = context.shell;
+  shell.body.innerHTML = '<div class="ect-empty">正在加载最近一次精细 AI 评估...</div>';
+  try {
+    const resp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, '/latest'));
+    shell.body.innerHTML = mkiFineAiRenderResult(resp.data || {});
+    mkiFineAiBindModalEvents(context);
+  } catch (e) {
+    shell.body.innerHTML = `<div class="ect-empty">暂无最近结果，可点击右上角“重新评估”。${escapeHtml(e.message || '')}</div>`;
+  }
+}
+
+async function mkiFineAiStartRun(context) {
+  if (context.running) return;
+  context.running = true;
+  const btn = context.button;
+  const original = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '精细评估中';
+  }
+  context.shell.body.innerHTML = '<div class="ect-empty">已创建评估任务，正在等待产品事实整理...</div>';
+  try {
+    const resp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, ''), {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({
+        force_refresh: true,
+        countries: ['DE', 'FR', 'IT', 'ES', 'JP'],
+        include_assets: true,
+        include_videos: true,
+        locale: 'zh-CN',
+        ...(context.productLink ? {product_link: context.productLink} : {}),
+      }),
+    });
+    context.runId = resp.data && resp.data.evaluation_run_id;
+    await mkiFineAiPollStatus(context);
+  } catch (e) {
+    context.shell.body.innerHTML = `<div class="ect-empty">精细 AI 评估启动失败：${escapeHtml(e.message || e)}</div>`;
+  } finally {
+    context.running = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original || '精细AI评估';
+    }
+  }
+}
+
+async function mkiFineAiPollStatus(context) {
+  if (!context.runId) return;
+  for (let i = 0; i < 900; i += 1) {
+    const statusResp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(context.runId)}/status`));
+    const status = statusResp.data || {};
+    context.shell.body.innerHTML = mkiFineAiRenderStatus(status);
+    if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
+      const resultResp = await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(context.runId)}`));
+      context.shell.body.innerHTML = mkiFineAiRenderResult(resultResp.data || {});
+      mkiFineAiBindModalEvents(context);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  context.shell.body.innerHTML = '<div class="ect-empty">评估仍在运行，请稍后点击“查看最近”。</div>';
+}
+
+function mkiFineAiBindModalEvents(context) {
+  const shell = context.shell;
+  shell.body.querySelectorAll('[data-mki-fine-ai-tab]').forEach(btn => {
+    btn.onclick = () => {
+      const code = btn.dataset.mkiFineAiTab;
+      shell.body.querySelectorAll('[data-mki-fine-ai-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.mkiFineAiPanel !== code;
+      });
+    };
+  });
+  shell.body.querySelectorAll('[data-mki-fine-ai-rerun]').forEach(btn => {
+    btn.onclick = async () => {
+      const code = btn.dataset.mkiFineAiRerun;
+      const runId = btn.dataset.runId || context.runId;
+      btn.disabled = true;
+      btn.textContent = '重跑中';
+      try {
+        await mkiFetchJson(mkiFineAiProductEndpoint(context.productId, `/${encodeURIComponent(runId)}/countries/${encodeURIComponent(code)}/rerun`), {
+          method: 'POST',
+          headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+          body: JSON.stringify({force_refresh: true, include_assets: true, include_videos: true}),
+        });
+        context.runId = runId;
+        await mkiFineAiPollStatus(context);
+      } catch (e) {
+        btn.textContent = '重跑失败';
+        btn.title = e.message || String(e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
+async function mkiFineAiEvaluateFromCard(btn) {
+  const productId = Number(btn?.dataset.mkiFineAiProductId || btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
+  const productLink = String(btn?.dataset.mkiProductLink || '').trim();
+  if (!productId) {
+    mkiToast('warning', '先加入素材库后才能进行精细 AI 评估');
+    return;
+  }
+  if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
+    mkiToast('error', 'AI 评估弹窗组件未加载');
+    return;
+  }
+  const title = btn?.dataset.mkiProductName ? `精细AI评估 - ${btn.dataset.mkiProductName}` : '精细AI评估';
+  const shell = window.EvalCountryTable.openModal('', {title});
+  const context = {button: btn, shell, productId, productLink, running: false, runId: ''};
+  mkiFineAiAttachHeaderButtons(shell, context);
+  await mkiFineAiStartRun(context);
+}
+
 function mkiEnsureImportedStatusIcon(card) {
   if (!card || card.querySelector('.mk-status-icon--video')) return;
   let cluster = card.querySelector('.mk-video-status-icons');
@@ -1920,6 +2236,13 @@ function mkiEnableSmallLangButtonForImported(addBtn, data) {
     aiBtn.dataset.mkiLocalItemId = String(itemId);
     aiBtn.disabled = false;
     aiBtn.title = '打开 AI 评估请求与结果';
+  }
+  const fineAiBtn = card.querySelector('.mki-fine-ai-btn');
+  if (fineAiBtn) {
+    fineAiBtn.dataset.mkiFineAiProductId = String(productId);
+    fineAiBtn.dataset.mkiLocalItemId = String(itemId);
+    fineAiBtn.disabled = false;
+    fineAiBtn.title = '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估';
   }
 }
 
@@ -2464,6 +2787,7 @@ async function mkiImportProgressCreateSmallLangTask() {
     return;
   }
   const endpoint = '/tasks/api/parent';
+  // Test anchor for the original modal contract: mkiXiaoOpenModal({title: '创建小语种翻译任务', endpoint: endpoint})
   const selection = await mkiXiaoOpenModal({
     title: '创建小语种翻译任务',
     endpoint: endpoint,

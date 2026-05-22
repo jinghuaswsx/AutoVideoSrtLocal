@@ -1,0 +1,286 @@
+def test_pipeline_extracts_product_facts_once_and_evaluates_five_countries_serially():
+    from appcore.fine_ai_evaluation_country_config import DEFAULT_COUNTRY_CODES
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    calls = []
+    repository = InMemoryEvaluationRepository()
+    client = FakeGeminiClient(calls)
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=client,
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123, countries=list(DEFAULT_COUNTRY_CODES))
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "completed"
+    assert [call[0] for call in calls] == [
+        "product_facts",
+        "country:DE",
+        "country:FR",
+        "country:IT",
+        "country:ES",
+        "country:JP",
+    ]
+    assert "product_catalog" not in repr(repository.rows)
+    assert "```" not in repr(result)
+    assert set(result["countries"]) == {"DE", "FR", "IT", "ES", "JP"}
+
+
+def test_pipeline_continues_when_one_country_fails():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    calls = []
+    service = FineAiEvaluationService(
+        repository=InMemoryEvaluationRepository(),
+        gemini_client=FakeGeminiClient(calls, fail_country="FR"),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123)
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "partially_completed"
+    assert result["countries"]["FR"]["status"] == "failed"
+    assert result["countries"]["DE"]["status"] == "completed"
+    assert result["countries"]["IT"]["status"] == "completed"
+    assert result["metadata"]["countries_failed"] == ["FR"]
+
+
+def test_pipeline_handles_empty_assets_without_crashing():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    service = FineAiEvaluationService(
+        repository=InMemoryEvaluationRepository(),
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(empty=True),
+    )
+
+    run = service.create_run(123)
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "completed"
+    assert result["countries"]["DE"]["creative_fit"]["creative_missing"] is True
+    assert "product_images" in result["countries"]["DE"]["missing_data"]
+
+
+class InMemoryEvaluationRepository:
+    def __init__(self):
+        self.rows = {}
+        self.country_rows = {}
+
+    def create_run(self, run):
+        self.rows[run["evaluation_run_id"]] = dict(run)
+        return dict(run)
+
+    def get_run(self, evaluation_run_id):
+        return dict(self.rows[evaluation_run_id])
+
+    def get_latest_run(self, product_id):
+        rows = [row for row in self.rows.values() if str(row["product_id"]) == str(product_id)]
+        return dict(rows[-1]) if rows else None
+
+    def update_run(self, evaluation_run_id, **fields):
+        self.rows[evaluation_run_id].update(fields)
+        return dict(self.rows[evaluation_run_id])
+
+    def upsert_country(self, evaluation_run_id, country_code, data):
+        self.country_rows[(evaluation_run_id, country_code)] = dict(data)
+
+    def list_countries(self, evaluation_run_id):
+        return {
+            code: dict(data)
+            for (run_id, code), data in self.country_rows.items()
+            if run_id == evaluation_run_id
+        }
+
+
+class FakeProductSnapshotService:
+    def build_snapshot(self, product_id, *, include_assets=True, include_videos=True, product_url_override=None):
+        return {
+            "product_id": str(product_id),
+            "product_name": "Sample Product",
+            "brand": "",
+            "category": "",
+            "product_url": product_url_override or "https://example.test/products/sample",
+            "landing_page_url": product_url_override or "https://example.test/products/sample",
+            "price": None,
+            "currency": "",
+            "sku_count": 0,
+            "asset_count": {"images": 0, "videos": 0},
+        }
+
+
+class FakeAssetSnapshotService:
+    def __init__(self, empty=False):
+        self.empty = empty
+
+    def build_snapshot(self, product_id, *, include_assets=True, include_videos=True):
+        if self.empty:
+            return {"cover_images": [], "product_images": [], "videos": [], "asset_paths": []}
+        return {"cover_images": [], "product_images": ["image"], "videos": ["video"], "asset_paths": []}
+
+
+class FakeGeminiClient:
+    def __init__(self, calls, fail_country=None):
+        self.calls = calls
+        self.fail_country = fail_country
+
+    def generate_product_facts(self, *, product_snapshot, countries):
+        self.calls.append(("product_facts", product_snapshot["product_id"]))
+        return {
+            "product_id": product_snapshot["product_id"],
+            "product_name": product_snapshot["product_name"],
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {
+                "english_keywords": [],
+                "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []},
+            },
+        }
+
+    def generate_country_evaluation(self, *, product_snapshot, product_facts, country, asset_snapshot, asset_paths):
+        code = country["country_code"]
+        self.calls.append((f"country:{code}", len(asset_paths)))
+        if code == self.fail_country:
+            raise RuntimeError("simulated country failure")
+        return make_country_result(code, creative_missing=not asset_snapshot["product_images"] and not asset_snapshot["videos"])
+
+
+def make_country_result(code, *, creative_missing=False):
+    name_map = {
+        "DE": ("Germany", "德国", "German", "EUR"),
+        "FR": ("France", "法国", "French", "EUR"),
+        "IT": ("Italy", "意大利", "Italian", "EUR"),
+        "ES": ("Spain", "西班牙", "Spanish", "EUR"),
+        "JP": ("Japan", "日本", "Japanese", "JPY"),
+    }
+    country_name, country_name_zh, language, currency = name_map[code]
+    missing = ["product_images", "videos"] if creative_missing else []
+    return {
+        "country_code": code,
+        "country_name": country_name,
+        "country_name_zh": country_name_zh,
+        "language": language,
+        "currency": currency,
+        "status": "completed",
+        "scores": {
+            "overall_score": 70,
+            "product_market_fit_score": 70,
+            "demand_score": 70,
+            "competition_score": 70,
+            "pricing_score": 70,
+            "creative_fit_score": 0 if creative_missing else 70,
+            "landing_page_fit_score": 70,
+            "operational_fit_score": 70,
+            "compliance_risk_score": 70,
+        },
+        "decision": {
+            "final_decision": "TEST",
+            "confidence": "medium",
+            "one_sentence_reason": "Structured test result.",
+            "why": [],
+            "blocking_issues": [],
+        },
+        "market_fit": {
+            "local_positioning": "",
+            "target_segments": [],
+            "use_cases": [],
+            "demand_analysis": {"summary": "", "facts": [], "inferences": [], "evidence_gaps": []},
+            "seasonality": [],
+            "market_entry_notes": [],
+        },
+        "competitor_analysis": {
+            "summary": "",
+            "competitors": [],
+            "competitive_advantages": [],
+            "competitive_disadvantages": [],
+            "evidence_gaps": [],
+        },
+        "pricing_analysis": {
+            "current_price": None,
+            "current_currency": "",
+            "recommended_price_range": {"min": None, "max": None, "currency": currency},
+            "pricing_commentary": "",
+            "margin_inputs_missing": [],
+            "cannot_calculate_reasons": [],
+        },
+        "creative_fit": {
+            "creative_missing": creative_missing,
+            "assets_reviewed": {"cover_images": [], "product_images": [], "videos": []},
+            "cover_image_audit": {
+                "score": 0,
+                "issues": [],
+                "localization_needed": [],
+                "claim_risks": [],
+                "recommended_cover_directions": [],
+            },
+            "product_image_audit": {"score": 0, "issues": [], "recommended_image_directions": []},
+            "video_audit": {
+                "score": 0,
+                "timestamp_findings": [],
+                "hook_analysis": "",
+                "proof_gaps": [],
+                "scenes_to_keep": [],
+                "scenes_to_replace_or_reshoot": [],
+            },
+            "localized_copy_directions": {
+                "cover_text_direction": [],
+                "hook_direction": [],
+                "cta_direction": [],
+                "language_notes": [],
+            },
+            "final_creative_decision": "NO_CREATIVE_PROVIDED" if creative_missing else "LOCALIZE_BEFORE_TEST",
+        },
+        "landing_page_localization": {
+            "localization_difficulty": 50,
+            "hero_section": {
+                "title_direction": "",
+                "subtitle_direction": "",
+                "cta_direction": "",
+                "image_direction": "",
+            },
+            "sections_needed": [],
+            "trust_elements_needed": [],
+            "claims_to_avoid_or_rewrite": [],
+            "unit_and_currency_notes": [],
+            "faq_directions": [],
+        },
+        "risks": {
+            "claim_risks": [],
+            "compliance_risks": [],
+            "operational_risks": [],
+            "trust_risks": [],
+            "localization_risks": [],
+        },
+        "recommendations": {
+            "recommended_positioning": "",
+            "ad_test_angles": [],
+            "audience_suggestions": [],
+            "landing_page_actions": [],
+            "creative_actions": [],
+            "first_30_day_test_plan": {
+                "test_priority": "medium",
+                "creative_variants": [],
+                "landing_page_variants": [],
+                "success_metrics": [],
+                "kill_criteria": [],
+                "scale_criteria": [],
+            },
+        },
+        "sources": [],
+        "missing_data": missing,
+        "warnings": [],
+    }

@@ -51,7 +51,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None):
+                 max_output_tokens=None, google_search=None, url_context=None):
         media_list = None
         if media:
             media_list = [media] if isinstance(media, (str, Path)) else list(media)
@@ -66,6 +66,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
             google_search=bool(google_search),
+            url_context=bool(url_context),
         )
 
         last_err: Exception | None = None
@@ -77,7 +78,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
                 input_tokens, output_tokens = _extract_gemini_tokens(resp)
                 usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
                 if response_schema is not None:
-                    raw_text = resp.text or ""
+                    raw_text = resp.text
                     parsed = getattr(resp, "parsed", None)
                     if parsed is None:
                         try:
@@ -90,7 +91,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
                                 "usage": usage,
                                 "json_parse_error": str(exc),
                             }
-                    return {"text": raw_text, "json": parsed, "raw": resp, "usage": usage}
+                    return {"text": raw_text or None, "json": parsed, "raw": resp, "usage": usage}
                 return {"text": resp.text or "", "json": None, "raw": resp, "usage": usage}
             except Exception as exc:
                 last_err = exc

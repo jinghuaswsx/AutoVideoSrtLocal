@@ -125,6 +125,7 @@ def _build_config(
     response_schema: dict | None,
     max_output_tokens: int | None,
     google_search: bool | None = None,
+    url_context: bool | None = None,
 ):
     kwargs: dict[str, Any] = {}
     if system:
@@ -139,8 +140,13 @@ def _build_config(
             kwargs["response_json_schema"] = response_schema
         else:
             kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
+    tools = []
     if google_search:
-        kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+        tools.append(genai_types.Tool(google_search=genai_types.GoogleSearch()))
+    if url_context:
+        tools.append(genai_types.Tool(url_context=genai_types.UrlContext()))
+    if tools:
+        kwargs["tools"] = tools
     return genai_types.GenerateContentConfig(**kwargs)
 
 

@@ -230,6 +230,7 @@ pushes = _appcore_pushes
 from . import shopify_image as _shopify_image_routes
 from . import link_check as _link_check_routes
 from . import evaluation as _evaluation
+from . import fine_ai_evaluation as fine_ai_evaluation
 from . import raw_sources as _raw_sources
 from . import translate as _translate
 from . import items as _items
@@ -384,6 +385,11 @@ _build_product_evaluation_response = _evaluation._build_product_evaluation_respo
 _build_product_evaluation_preview_response = _evaluation._build_product_evaluation_preview_response
 _build_product_evaluation_payload_response = _evaluation._build_product_evaluation_payload_response
 _media_evaluation_flask_response = _evaluation._media_evaluation_flask_response
+api_product_fine_ai_evaluation_create = fine_ai_evaluation.api_product_fine_ai_evaluation_create
+api_product_fine_ai_evaluation_status = fine_ai_evaluation.api_product_fine_ai_evaluation_status
+api_product_fine_ai_evaluation_result = fine_ai_evaluation.api_product_fine_ai_evaluation_result
+api_product_fine_ai_evaluation_latest = fine_ai_evaluation.api_product_fine_ai_evaluation_latest
+api_product_fine_ai_evaluation_country_rerun = fine_ai_evaluation.api_product_fine_ai_evaluation_country_rerun
 
 _medias_page_context = _pages._medias_page_context
 _media_page_flask_response = _pages._media_page_flask_response
