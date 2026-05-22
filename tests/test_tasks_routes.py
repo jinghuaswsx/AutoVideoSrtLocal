@@ -174,7 +174,18 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "已完成任务" in body
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
+    assert "const TC_TASK_PAGE_SIZE = 50;" in body
     assert "page_size: String(TC_TASK_PAGE_SIZE)" in body
+    assert 'class="tc-pager__summary"' in body
+    assert "共 ${total} 条" in body
+    assert "每页 ${pageSize} 条" in body
+    assert "第 ${page} / ${totalPages} 页" in body
+    assert "第一页" in body
+    assert "最后一页" in body
+    assert "function tcTaskGotoPage" in body
+    assert "function tcTaskJumpPage" in body
+    assert "function tcNormalizeTaskPage" in body
+    assert "Number.isFinite(parsed)" in body
     assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
@@ -465,6 +476,32 @@ def test_api_list_delegates_task_type_filter(authed_user_client_no_db, monkeypat
 
     assert rsp.status_code == 200
     assert captured["task_type"] == "translate"
+
+
+def test_api_list_defaults_to_50_items_per_page(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [],
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+            "total": 0,
+            "total_pages": 1,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine")
+
+    assert rsp.status_code == 200
+    assert captured["page_size"] == 50
+    assert rsp.get_json()["page_size"] == 50
 
 
 def test_api_list_rejects_invalid_task_type(authed_user_client_no_db, monkeypatch):
