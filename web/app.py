@@ -121,6 +121,7 @@ from web.routes.productivity_stats import bp as productivity_stats_bp
 from web.routes.tools import bp as tools_bp
 from web.routes.admin_runtime import bp as admin_runtime_bp
 from web.routes.tos_file_management import bp as tos_file_management_bp
+from web.routes.product_research import bp as product_research_bp
 
 log = logging.getLogger(__name__)
 
@@ -147,6 +148,7 @@ _COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
     "raw_video_pool",
     "new_product_review",
     "xuanpin",
+    "product_research",
 }
 
 
@@ -377,6 +379,8 @@ def create_app() -> Flask:
     app.register_blueprint(tools_bp)
     app.register_blueprint(admin_runtime_bp)
     app.register_blueprint(tos_file_management_bp)
+    app.register_blueprint(product_research_bp)
+    csrf.exempt(product_research_bp)
 
     # admin 蓝图的 JSON PUT API 豁免 CSRF（前端用 X-CSRFToken header）
     # 这里不需要额外豁免，因为 admin 蓝图的 API 用 JS fetch + CSRFToken
