@@ -16,6 +16,74 @@ def test_material_key_is_stable_and_path_specific():
     assert len(first) == 64
 
 
+def test_get_material_detail_returns_latest_snapshot_and_history(monkeypatch):
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    material_key = "a" * 64
+    older = {
+        "id": 1,
+        "snapshot_date": date(2026, 5, 21),
+        "snapshot_at": datetime(2026, 5, 21, 5, 0, 2),
+        "snapshot_slot": "0500",
+        "ranking_snapshot_date": date(2026, 5, 20),
+        "material_key": material_key,
+        "product_code": "cool-widget",
+        "rank_position": 7,
+        "product_name": "Cool Widget",
+        "product_url": "https://shop.example/products/cool-widget",
+        "mk_product_id": 901,
+        "mk_product_name": "MK Cool",
+        "mk_product_link": "https://shop.example/products/cool-widget-rjc",
+        "video_name": "winner.mp4",
+        "video_path": "uploads2/winner.mp4",
+        "video_image_path": "uploads2/winner.jpg",
+        "cumulative_90_spend": 12000,
+        "video_ads_count": 12,
+        "video_author": "Alice",
+        "video_upload_time": "2026-05-20T10:00:00",
+        "video_duration_seconds": 15.5,
+        "mk_video_metadata_json": "{}",
+        "created_at": None,
+        "updated_at": None,
+    }
+    latest = dict(
+        older,
+        id=2,
+        snapshot_date=date(2026, 5, 22),
+        snapshot_at=datetime(2026, 5, 22, 5, 0, 2),
+        snapshot_slot="0500",
+        cumulative_90_spend=12800,
+        video_ads_count=16,
+    )
+
+    def fake_query_one(sql, args=()):
+        assert "FROM mingkong_material_daily_snapshots" in sql
+        assert args == (material_key,)
+        return latest
+
+    def fake_query(sql, args=()):
+        assert "FROM mingkong_material_daily_snapshots" in sql
+        assert "ORDER BY snapshot_at ASC" in sql
+        assert args == (material_key,)
+        return [older, latest]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    detail = mm.get_material_detail(material_key)
+
+    assert detail["material"]["video_name"] == "winner.mp4"
+    assert detail["material"]["snapshot_at"] == "2026-05-22 05:00:02"
+    assert detail["history"][0]["spend_delta"] == 0.0
+    assert detail["history"][1]["spend_delta"] == 800.0
+    assert detail["summary"] == {
+        "history_count": 2,
+        "first_snapshot_at": "2026-05-21 05:00:02",
+        "latest_snapshot_at": "2026-05-22 05:00:02",
+        "min_cumulative_90_spend": 12000.0,
+        "max_cumulative_90_spend": 12800.0,
+    }
+
+
 def test_media_search_code_for_adds_rjc_suffix_once():
     assert mm.media_search_code_for("cool-widget") == "cool-widget-rjc"
     assert mm.media_search_code_for("cool-widget-rjc") == "cool-widget-rjc"

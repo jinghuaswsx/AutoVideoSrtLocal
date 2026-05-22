@@ -129,6 +129,92 @@ def test_xuanpin_mk_video_cards_copy_code_and_show_first_mk_product_link(authed_
     assert "renderMkProductLinkCopyButton(productLinkRaw)" in body
 
 
+def test_xuanpin_mk_video_cards_link_to_material_detail_page(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function renderMkMaterialDetailHref(r)" in body
+    assert "encodeURIComponent(r.material_key || '')" in body
+    assert 'class="mk-video-detail-link"' in body
+    assert 'target="_blank" rel="noopener noreferrer"' in body
+
+
+def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
+    authed_client_no_db,
+    monkeypatch,
+):
+    material_key = "a" * 64
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.get_material_detail",
+        lambda key: {
+            "material": {
+                "material_key": key,
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "mk_product_name": "MK Cool",
+                "mk_product_link": "https://shop.example/products/cool-widget-rjc",
+                "video_name": "winner.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "local_cover_url": "",
+                "video_spends": 12800.0,
+                "video_spends_text": "1.28万",
+                "video_ads_count": 16,
+                "video_author": "Alice",
+                "video_upload_time": "2026-05-20T10:00:00",
+                "snapshot_at": "2026-05-22 05:00:02",
+            },
+            "history": [
+                {
+                    "snapshot_at": "2026-05-21 05:00:02",
+                    "snapshot_slot": "0500",
+                    "cumulative_90_spend": 12000.0,
+                    "spend_delta": 0.0,
+                    "video_ads_count": 12,
+                },
+                {
+                    "snapshot_at": "2026-05-22 05:00:02",
+                    "snapshot_slot": "0500",
+                    "cumulative_90_spend": 12800.0,
+                    "spend_delta": 800.0,
+                    "video_ads_count": 16,
+                },
+            ],
+            "summary": {"history_count": 2},
+        }
+        if key == material_key
+        else None,
+    )
+
+    resp = authed_client_no_db.get(f"/xuanpin/mk/videos/{material_key}")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "明空视频素材详情" in body
+    assert "winner.mp4" in body
+    assert "mk-detail-media-grid" in body
+    assert "mk-detail-cover-frame" in body
+    assert "mk-detail-video-frame" in body
+    assert "/xuanpin/api/mk-media?path=uploads2/winner.jpg" in body
+    assert "/xuanpin/api/mk-video?path=uploads2/winner.mp4" in body
+    assert "历史同步消耗" in body
+    assert "2026-05-22 05:00:02" in body
+    assert "800" in body
+
+
+def test_xuanpin_mk_video_material_detail_page_404_when_missing(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr("appcore.mingkong_materials.get_material_detail", lambda key: None)
+
+    resp = authed_client_no_db.get(f"/xuanpin/mk/videos/{'b' * 64}")
+
+    assert resp.status_code == 404
+
+
 def test_xuanpin_mk_video_import_metadata_includes_mk_paths(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

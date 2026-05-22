@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
+from web.auth import admin_required
 from appcore.fine_ai_evaluation_service import (
     FineAiEvaluationError,
     FineAiEvaluationNotFound,
@@ -128,6 +129,30 @@ def mk_selection_page():
     if not _is_admin():
         abort(403)
     return render_template("mk_selection.html")
+
+
+@bp.route("/mk/videos/<material_key>", methods=["GET"])
+@login_required
+@admin_required
+def mk_video_material_detail_page(material_key: str):
+    detail = _mingkong_materials().get_material_detail(material_key)
+    if not detail:
+        abort(404)
+    material = detail.get("material") or {}
+    cover_path = str(material.get("video_image_path") or "").strip()
+    video_path = str(material.get("video_path") or "").strip()
+    local_cover_url = str(material.get("local_cover_url") or "").strip()
+    cover_url = local_cover_url or (url_for("xuanpin.api_mk_media_proxy", path=cover_path) if cover_path else "")
+    video_url = url_for("xuanpin.api_mk_video_proxy", path=video_path) if video_path else ""
+    return render_template(
+        "mk_video_material_detail.html",
+        detail=detail,
+        material=material,
+        history=detail.get("history") or [],
+        summary=detail.get("summary") or {},
+        cover_url=cover_url,
+        video_url=video_url,
+    )
 
 
 @bp.route("/tabcut", methods=["GET"])

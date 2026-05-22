@@ -1641,6 +1641,59 @@ def list_material_library(
     }
 
 
+def get_material_detail(material_key: str) -> dict[str, Any] | None:
+    guard_against_windows_local_mysql()
+    key = str(material_key or "").strip().lower()
+    if not key:
+        return None
+    latest = query_one(
+        """
+        SELECT s.*, COALESCE(mp.total_90_spend, s.cumulative_90_spend)
+                 AS product_total_90_spend
+        FROM mingkong_material_daily_snapshots s
+        LEFT JOIN mingkong_material_products mp
+          ON mp.run_id = s.run_id AND mp.product_code = s.product_code
+        WHERE s.material_key = %s
+        ORDER BY s.snapshot_at DESC, s.id DESC
+        LIMIT 1
+        """,
+        (key,),
+    )
+    if not latest:
+        return None
+    rows = query(
+        """
+        SELECT s.*
+        FROM mingkong_material_daily_snapshots s
+        WHERE s.material_key = %s
+        ORDER BY snapshot_at ASC, id ASC
+        """,
+        (key,),
+    )
+    history: list[dict[str, Any]] = []
+    previous_spend: float | None = None
+    for raw in rows or []:
+        item = _serialize_material_row(raw)
+        spend = _as_float(item.get("cumulative_90_spend"))
+        item["previous_cumulative_90_spend"] = previous_spend
+        item["spend_delta"] = 0.0 if previous_spend is None else max(0.0, spend - previous_spend)
+        history.append(item)
+        previous_spend = spend
+    spends = [_as_float(item.get("cumulative_90_spend")) for item in history]
+    summary = {
+        "history_count": len(history),
+        "first_snapshot_at": history[0]["snapshot_at"] if history else "",
+        "latest_snapshot_at": history[-1]["snapshot_at"] if history else "",
+        "min_cumulative_90_spend": min(spends) if spends else 0.0,
+        "max_cumulative_90_spend": max(spends) if spends else 0.0,
+    }
+    return {
+        "material": _serialize_material_row(latest),
+        "history": history,
+        "summary": summary,
+    }
+
+
 def list_yesterday_top100(
     *,
     snapshot_date: str | None = None,
