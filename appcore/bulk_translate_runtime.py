@@ -1406,7 +1406,7 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
         prompt=prompt,
         items=items,
         medias_context=medias_context,
-        concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
+        concurrency_mode=_safe_get_image_translate_concurrency_mode(),
         channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)
@@ -1462,7 +1462,7 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
         prompt=prompt,
         items=items,
         medias_context=medias_context,
-        concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE,
+        concurrency_mode=_safe_get_image_translate_concurrency_mode(),
         channel=_safe_get_image_translate_channel(),
     )
     runner_dispatch.start_image_translate_runner(child_task_id, user_id)
@@ -1599,6 +1599,13 @@ def _safe_get_image_translate_channel() -> str:
     from appcore import image_translate_settings as its
 
     return its.get_material_image_translate_default_channel()
+
+
+def _safe_get_image_translate_concurrency_mode() -> str:
+    """素材管理批量翻译创建图片子任务时使用固定默认并发模式。"""
+    from appcore import image_translate_settings as its
+
+    return its.get_material_image_translate_default_concurrency_mode()
 
 
 def _default_image_translate_model_id(_user_id: int | None) -> str:

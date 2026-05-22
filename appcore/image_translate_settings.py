@@ -25,10 +25,11 @@ CHANNEL_LABELS: dict[str, str] = {
     "local_image_2": "本地 Image 2",
 }
 _CHANNEL_KEY = "image_translate.channel"
-_DEFAULT_CHANNEL = "local_image_2"
+_DEFAULT_CHANNEL = "apimart"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
-MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "local_image_2"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL = "apimart"
 MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID = "gpt-image-2"
+MATERIAL_IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE = "parallel"
 
 # OpenRouter OpenAI Image 2 质量档位开关与默认值；新建入口只暴露 low。
 _OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
@@ -660,7 +661,7 @@ def update_prompt(preset: str, lang: str, value: str) -> None:
 
 
 def get_channel() -> str:
-    """返回当前图片翻译通道。未配置或不合法时回退到本地 Image 2。"""
+    """返回当前图片翻译通道。未配置或不合法时回退到 APIMART Image 2。"""
     return _normalize_channel(_read(_CHANNEL_KEY))
 
 
@@ -693,6 +694,11 @@ def get_material_image_translate_default_model() -> str:
         MATERIAL_IMAGE_TRANSLATE_DEFAULT_MODEL_ID,
         channel=MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL,
     )
+
+
+def get_material_image_translate_default_concurrency_mode() -> str:
+    """素材管理入口创建图片翻译任务时使用的默认并发模式。"""
+    return MATERIAL_IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
 
 
 def set_default_model(channel: str, model_id: str) -> None:

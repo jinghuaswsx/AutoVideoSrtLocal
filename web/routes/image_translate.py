@@ -195,6 +195,19 @@ def _coerce_concurrency_mode_for_channel(mode: str, channel: str | None) -> str:
     return mode
 
 
+def _default_new_image_translate_concurrency_mode(channel: str | None) -> str:
+    channel_key = (channel or "").strip().lower()
+    if channel_key == its.MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL:
+        try:
+            mode = its.get_material_image_translate_default_concurrency_mode()
+        except Exception:
+            mode = ""
+        normalized = _normalize_concurrency_mode(mode)
+    else:
+        normalized = task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+    return _coerce_concurrency_mode_for_channel(normalized, channel_key)
+
+
 def _concurrency_mode_label(value: str | None) -> str:
     return "并行" if _normalize_concurrency_mode(value) == "parallel" else "串行"
 
@@ -645,7 +658,7 @@ def api_upload_complete():
         )
     mode_raw = (
         body.get("concurrency_mode")
-        or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+        or _default_new_image_translate_concurrency_mode(channel)
     ).strip().lower()
     if mode_raw not in {"sequential", "parallel"}:
         return image_translate_flask_response(
@@ -1325,6 +1338,7 @@ def page_list():
         history = history_all
 
     default_channel = _safe_image_translate_channel()
+    default_concurrency_mode = _default_new_image_translate_concurrency_mode(default_channel)
     return render_template(
         "image_translate_list.html",
         history=history,
@@ -1332,6 +1346,7 @@ def page_list():
         gemini_backend=_backend_badge(default_channel),
         image_translate_channels=_image_translate_channels_payload(),
         image_translate_default_channel=default_channel,
+        image_translate_default_concurrency_mode=default_concurrency_mode,
         is_admin=_is_superadmin_user(),
     )
 

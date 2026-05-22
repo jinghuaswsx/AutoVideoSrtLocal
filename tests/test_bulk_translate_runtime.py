@@ -83,11 +83,11 @@ def runtime_env(monkeypatch):
     return mod, fake_db
 
 
-def test_bulk_translate_image_children_use_global_serial_default():
+def test_bulk_translate_image_children_use_material_parallel_default():
     source = Path("appcore/bulk_translate_runtime.py").read_text(encoding="utf-8")
 
-    assert 'concurrency_mode="parallel"' not in source
-    assert source.count("concurrency_mode=store.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE") == 2
+    assert source.count("concurrency_mode=_safe_get_image_translate_concurrency_mode()") == 2
+    assert "get_material_image_translate_default_concurrency_mode" in source
 
 
 def _item(
@@ -206,9 +206,9 @@ def test_create_detail_images_child_skips_gif_sources(runtime_env, monkeypatch, 
     assert (child_task_id, child_type, child_status) == ("img-child-1", "image_translate", "running")
     assert [it["source_detail_image_id"] for it in created["items"]] == [11, 14]
     assert created["medias_context"]["source_detail_image_ids"] == [11, 14]
-    assert created["channel"] == "local_image_2"
+    assert created["channel"] == "apimart"
     assert created["model_id"] == "gpt-image-2"
-    assert created["concurrency_mode"] == "sequential"
+    assert created["concurrency_mode"] == "parallel"
     assert started == [("img-child-1", 1)]
 
 
