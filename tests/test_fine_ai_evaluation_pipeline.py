@@ -68,6 +68,39 @@ def test_pipeline_handles_empty_assets_without_crashing():
     assert "product_images" in result["countries"]["DE"]["missing_data"]
 
 
+def test_external_link_run_uses_product_link_without_local_product_lookup():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+    )
+
+    run = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        product_code="new-idea",
+        countries=["DE"],
+    )
+
+    stored = repository.get_run(run["evaluation_run_id"])
+    assert run["product_id"] == "0"
+    assert stored["product_snapshot"]["product_url"] == "https://example.test/products/new-idea"
+    assert stored["product_snapshot"]["product_name"] == "New Idea"
+    assert stored["metadata"]["source_type"] == "external_product_link"
+    assert stored["metadata"]["data_quality"]["has_product_url"] is True
+    assert stored["metadata"]["asset_snapshot"] == {
+        "cover_images": [],
+        "product_images": [],
+        "videos": [],
+        "asset_paths": [],
+        "warnings": [],
+    }
+
+
 class InMemoryEvaluationRepository:
     def __init__(self):
         self.rows = {}
@@ -123,6 +156,16 @@ class FakeAssetSnapshotService:
         if self.empty:
             return {"cover_images": [], "product_images": [], "videos": [], "asset_paths": []}
         return {"cover_images": [], "product_images": ["image"], "videos": ["video"], "asset_paths": []}
+
+
+class ExplodingProductSnapshotService:
+    def build_snapshot(self, *args, **kwargs):
+        raise AssertionError("external link evaluation must not load local media_products")
+
+
+class ExplodingAssetSnapshotService:
+    def build_snapshot(self, *args, **kwargs):
+        raise AssertionError("external link evaluation must not load local media assets")
 
 
 class FakeGeminiClient:

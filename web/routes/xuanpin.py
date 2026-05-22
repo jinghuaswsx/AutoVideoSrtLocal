@@ -3,6 +3,11 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
+from appcore.fine_ai_evaluation_service import (
+    FineAiEvaluationError,
+    FineAiEvaluationNotFound,
+    get_service as get_fine_ai_evaluation_service,
+)
 from appcore.tabcut_selection.categories import goods_category_options
 
 
@@ -60,6 +65,24 @@ def _mingkong_materials():
     from appcore import mingkong_materials as service
 
     return service
+
+
+def _fine_ai_ok(data, status: int = 200):
+    return jsonify({"success": True, "data": data, "error": None}), status
+
+
+def _fine_ai_err(code: str, message: str, status: int = 400):
+    return jsonify({"success": False, "data": None, "error": {"code": code, "message": message}}), status
+
+
+def _fine_ai_payload() -> dict:
+    return request.get_json(silent=True) or {}
+
+
+def _require_fine_ai_admin():
+    if not _is_admin():
+        return _fine_ai_err("FORBIDDEN", "Admin permission required", 403)
+    return None
 
 
 @bp.route("/", methods=["GET"])
@@ -194,6 +217,81 @@ def api_mk_video_proxy():
 @login_required
 def api_mk_detail_proxy(mk_id: int):
     return _medias_routes().api_mk_detail_proxy(mk_id)
+
+
+@bp.route("/api/fine-ai-evaluation", methods=["POST"])
+@login_required
+def api_fine_ai_external_create():
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    payload = _fine_ai_payload()
+    product_link = str(payload.get("product_link") or payload.get("product_url") or "").strip()
+    if not product_link:
+        return _fine_ai_err("PRODUCT_LINK_REQUIRED", "product_link is required", 400)
+    try:
+        service = get_fine_ai_evaluation_service()
+        run = service.create_external_link_run(
+            product_link=product_link,
+            product_name=str(payload.get("product_name") or "").strip(),
+            product_code=str(payload.get("product_code") or "").strip(),
+            countries=payload.get("countries") or None,
+            force_refresh=bool(payload.get("force_refresh", True)),
+            locale=str(payload.get("locale") or "zh-CN"),
+        )
+        service.start_run_async(run["evaluation_run_id"])
+        return _fine_ai_ok(run, 202)
+    except ValueError as exc:
+        return _fine_ai_err("INVALID_REQUEST", str(exc), 400)
+    except FineAiEvaluationError as exc:
+        return _fine_ai_err(exc.code, str(exc), 400)
+
+
+@bp.route("/api/fine-ai-evaluation/<evaluation_run_id>/status", methods=["GET"])
+@login_required
+def api_fine_ai_external_status(evaluation_run_id: str):
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    try:
+        return _fine_ai_ok(get_fine_ai_evaluation_service().get_status(0, evaluation_run_id))
+    except FineAiEvaluationNotFound as exc:
+        return _fine_ai_err(exc.code, "Evaluation run not found", 404)
+
+
+@bp.route("/api/fine-ai-evaluation/<evaluation_run_id>", methods=["GET"])
+@login_required
+def api_fine_ai_external_result(evaluation_run_id: str):
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    try:
+        return _fine_ai_ok(get_fine_ai_evaluation_service().get_result(0, evaluation_run_id))
+    except FineAiEvaluationNotFound as exc:
+        return _fine_ai_err(exc.code, "Evaluation run not found", 404)
+
+
+@bp.route("/api/fine-ai-evaluation/<evaluation_run_id>/countries/<country_code>/rerun", methods=["POST"])
+@login_required
+def api_fine_ai_external_country_rerun(evaluation_run_id: str, country_code: str):
+    admin_error = _require_fine_ai_admin()
+    if admin_error:
+        return admin_error
+    payload = _fine_ai_payload()
+    try:
+        data = get_fine_ai_evaluation_service().rerun_country(
+            0,
+            evaluation_run_id,
+            country_code,
+            force_refresh=bool(payload.get("force_refresh", True)),
+            include_assets=False,
+            include_videos=False,
+        )
+        return _fine_ai_ok(data, 202)
+    except FineAiEvaluationNotFound as exc:
+        return _fine_ai_err(exc.code, "Evaluation run not found", 404)
+    except ValueError as exc:
+        return _fine_ai_err("INVALID_COUNTRY_CODE", str(exc), 400)
 
 
 @bp.route("/api/tabcut/videos", methods=["GET"])

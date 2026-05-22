@@ -24,3 +24,14 @@ def test_fine_ai_button_checks_latest_before_starting_new_run():
     assert "await mkiFineAiOpenLatestOrStart(context);" in click_handler
     assert "await mkiFineAiStartRun(context);" not in click_handler
     assert "async function mkiFineAiOpenLatestOrStart(context)" in body
+
+
+def test_fine_ai_button_allows_external_product_link_without_local_product():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "const canFineAiEvaluate = Boolean(existingProductId || productLinkRaw);" in body
+    assert "${canFineAiEvaluate ? '' : 'disabled'}" in body
+    assert "只要商品链接存在即可进行精细 AI 评估" in body
+    assert "商品链接缺失，无法进行精细 AI 评估" in body
+    assert "externalProductLink" in body
+    assert "/xuanpin/api/fine-ai-evaluation" in body
