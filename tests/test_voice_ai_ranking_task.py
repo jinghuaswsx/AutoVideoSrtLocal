@@ -36,6 +36,7 @@ def test_queue_voice_ai_ranking_marks_running_and_starts_background(tmp_path):
 
     assert ok is True
     assert m_update.call_args.kwargs["voice_ai_rank_status"] == "running"
+    assert m_update.call_args.kwargs["voice_ai_rank_started_at"]
     assert m_update.call_args.kwargs["voice_ai_rankings"] == []
     assert m_update.call_args.kwargs["voice_ai_rank_model"] == "google/gemini-3.5-flash"
     assert m_update.call_args.kwargs["voice_match_candidates"] == candidates

@@ -56,6 +56,7 @@
   const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
   const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");
   const forceSpeedMatchBtn = document.getElementById("vs-force-speed-match-btn");
+  const rerunVoiceMatchBtn = document.getElementById("vs-rerun-voice-match-btn");
   const aiRankModalEl = document.getElementById("vs-ai-rank-modal");
   const aiRankCloseBtn = document.getElementById("vs-ai-rank-close-btn");
   const aiRankModalStatus = document.getElementById("vs-ai-rank-modal-status");
@@ -412,9 +413,11 @@
   let similarityRankMap = new Map();
   let voiceAiRankDebug = null;
   let voiceAiRankStatus = "";
+  let voiceAiRankRecovery = null;
   let voiceAiRankCacheKey = "all";
   let voiceAiAutoSelectEnabled = true;
   let voiceAiRankRerunning = false;
+  let voiceMatchRerunning = false;
   let voiceAiRankRequestState = "";
   let voiceSelectionMode = "ai_rank";
   let autoConfirmingVoice = false;
@@ -538,8 +541,20 @@
       || apiBase === "/api/omni-translate";
   }
 
+  function supportsVoiceMatchStepRerun() {
+    return apiBase === "/api/english-redub"
+      || apiBase === "/api/multi-translate"
+      || apiBase === "/api/omni-translate"
+      || apiBase === "/api/ja-translate";
+  }
+
   function normalizedVoiceAiRankStatus(status) {
     return String(status || "").trim().toLowerCase();
+  }
+
+  function isVoiceAiRankInterruptedStatus(status) {
+    const value = normalizedVoiceAiRankStatus(status);
+    return value === "interrupted" || value === "stale";
   }
 
   function isVoiceAiRankFailureStatus(status) {
@@ -563,6 +578,9 @@
       return "failed";
     }
     const status = normalizedVoiceAiRankStatus(voiceAiRankStatus);
+    if (isVoiceAiRankInterruptedStatus(status)) {
+      return "interrupted";
+    }
     if (status === "running" || status === "queued") {
       return "running";
     }
@@ -574,7 +592,7 @@
     const state = voiceAiRankDisplayState();
     aiRankStatusPill.classList.toggle("is-loading", state === "running");
     aiRankStatusPill.classList.toggle("is-success", state === "success");
-    aiRankStatusPill.classList.toggle("is-failed", state === "failed");
+    aiRankStatusPill.classList.toggle("is-failed", state === "failed" || state === "interrupted");
     if (!state) {
       aiRankStatusPill.hidden = true;
       aiRankStatusPill.textContent = "";
@@ -585,6 +603,8 @@
       aiRankStatusPill.textContent = "AI音色选择请求中.";
     } else if (state === "success") {
       aiRankStatusPill.textContent = "AI音色选择 已成功";
+    } else if (state === "interrupted") {
+      aiRankStatusPill.textContent = "AI音色选择 已中断";
     } else {
       aiRankStatusPill.textContent = "AI音色选择 已失败";
     }
@@ -622,6 +642,15 @@
       forceSpeedMatchBtn.classList.toggle("is-active", currentVoiceSelectionMode() === "speed_fallback");
       forceSpeedMatchBtn.title = "忽略当前 AI 排名顺序，改按旧的音色匹配加语速综合排序继续选择";
     }
+    if (rerunVoiceMatchBtn) {
+      const showRerunStep = !!voiceAiRankRecovery && supportsVoiceMatchStepRerun();
+      rerunVoiceMatchBtn.hidden = !showRerunStep;
+      rerunVoiceMatchBtn.disabled = voiceMatchRerunning || !showRerunStep;
+      rerunVoiceMatchBtn.classList.toggle("is-loading", voiceMatchRerunning);
+      rerunVoiceMatchBtn.setAttribute("aria-busy", voiceMatchRerunning ? "true" : "false");
+      rerunVoiceMatchBtn.textContent = voiceMatchRerunning ? "重跑中..." : "从音色选择重新跑";
+      rerunVoiceMatchBtn.title = "从 voice_match 这一步显式重跑，修复服务中断留下的异常状态";
+    }
   }
 
   function applyVoiceAiRankPayload(data) {
@@ -631,6 +660,7 @@
     voiceAiRankStatus = currentVoiceSelectionMode() === "speed_fallback"
       ? "speed_fallback"
       : (data.voice_ai_rank_status || "");
+    voiceAiRankRecovery = data.voice_ai_rank_recovery || null;
     voiceAiAutoSelectEnabled = data.voice_ai_auto_select_enabled !== false;
     voiceAiRankCacheKey = data.voice_ai_rank_cache_key || currentVoiceAiRankGender() || "all";
     updateVoiceAiRankControls();
@@ -825,8 +855,10 @@
   }
 
   function shouldPollVoiceAiRanking() {
+    const status = normalizedVoiceAiRankStatus(voiceAiRankStatus);
+    if (isVoiceAiRankInterruptedStatus(status)) return false;
     return currentVoiceSelectionMode() !== "speed_fallback"
-      && isVoiceAiRankPendingStatus(voiceAiRankStatus);
+      && isVoiceAiRankPendingStatus(status);
   }
 
   function currentVoiceSelectionMode() {
@@ -845,6 +877,9 @@
 
   function voiceSelectionBlockedReason() {
     if (canSelectVoiceWithoutAiGate()) return "";
+    if (isVoiceAiRankInterruptedStatus(voiceAiRankStatus)) {
+      return "AI音色排名因服务中断未完成，请点击“重新AI排名”、 “强制音色语速匹配排序”，或“从音色选择重新跑”";
+    }
     if (voiceAiAutoSelectEnabled && currentVoiceSelectionMode() === "ai_rank") {
       return "等待 AI 音色排名完成后自动继续，或点击“强制音色语速匹配排序”接管";
     }
@@ -1377,6 +1412,32 @@
     }
   }
 
+  async function rerunVoiceMatchStep() {
+    if (voiceMatchRerunning) return;
+    if (!supportsVoiceMatchStepRerun()) return;
+    voiceMatchRerunning = true;
+    updateVoiceAiRankControls();
+    try {
+      const resp = await fetch(`${apiBase}/${taskId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({ start_step: "voice_match" }),
+      });
+      if (!resp.ok) {
+        alert("从音色选择重跑失败：" + (await resp.text()));
+        return;
+      }
+      saveReloadState();
+      window.location.reload();
+    } catch (err) {
+      console.error("[voice-selector] voice_match rerun failed:", err);
+      alert("从音色选择重跑网络错误");
+    } finally {
+      voiceMatchRerunning = false;
+      updateVoiceAiRankControls();
+    }
+  }
+
   async function rerunVoiceAiRanking() {
     if (voiceAiRankRerunning) return;
     if (!supportsManualVoiceAiRanking()) return;
@@ -1526,6 +1587,7 @@
   if (aiRankDebugBtn) aiRankDebugBtn.addEventListener("click", () => openVoiceAiRankModal("request"));
   if (aiRankRunBtn) aiRankRunBtn.addEventListener("click", rerunVoiceAiRanking);
   if (forceSpeedMatchBtn) forceSpeedMatchBtn.addEventListener("click", forceSpeedMatchSorting);
+  if (rerunVoiceMatchBtn) rerunVoiceMatchBtn.addEventListener("click", rerunVoiceMatchStep);
   if (aiRankCloseBtn) aiRankCloseBtn.addEventListener("click", closeVoiceAiRankModal);
   if (modalEl) {
     modalEl.addEventListener("click", e => {

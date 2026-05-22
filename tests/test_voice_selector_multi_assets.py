@@ -206,6 +206,34 @@ def test_voice_selector_multi_exposes_force_speed_fallback_button_after_rerank()
     assert "forceSpeedMatchBtn.classList.toggle(\"is-active\"" in controls_block
 
 
+def test_voice_selector_multi_exposes_interrupted_ai_rank_recovery_actions():
+    heading_block = TEMPLATE[
+        TEMPLATE.index('<div class="vs-heading">'):
+        TEMPLATE.index('</div>', TEMPLATE.index('<div class="vs-heading">'))
+    ]
+    poll_block = SCRIPT[
+        SCRIPT.index("function shouldPollVoiceAiRanking"):
+        SCRIPT.index("function currentVoiceSelectionMode")
+    ]
+    blocked_block = SCRIPT[
+        SCRIPT.index("function voiceSelectionBlockedReason"):
+        SCRIPT.index("function shouldSkipAutomaticLibraryRefresh")
+    ]
+
+    assert 'id="vs-rerun-voice-match-btn"' in heading_block
+    assert heading_block.index('id="vs-force-speed-match-btn"') < heading_block.index('id="vs-rerun-voice-match-btn"')
+    assert 'const rerunVoiceMatchBtn = document.getElementById("vs-rerun-voice-match-btn");' in SCRIPT
+    assert 'let voiceAiRankRecovery = null;' in SCRIPT
+    assert "function isVoiceAiRankInterruptedStatus(status)" in SCRIPT
+    assert 'if (isVoiceAiRankInterruptedStatus(status)) return false;' in poll_block
+    assert "AI音色选择 已中断" in SCRIPT
+    assert "voiceAiRankRecovery = data.voice_ai_rank_recovery || null;" in SCRIPT
+    assert "请点击“重新AI排名”、 “强制音色语速匹配排序”，或“从音色选择重新跑”" in blocked_block
+    assert "async function rerunVoiceMatchStep()" in SCRIPT
+    assert 'body: JSON.stringify({ start_step: "voice_match" }),' in SCRIPT
+    assert 'rerunVoiceMatchBtn.addEventListener("click", rerunVoiceMatchStep);' in SCRIPT
+
+
 def test_voice_selector_multi_blocks_selection_until_ai_rank_or_force_fallback():
     launch_block = SCRIPT[
         SCRIPT.index("function updateLaunchState()"):

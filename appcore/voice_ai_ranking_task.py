@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from appcore import runner_lifecycle
@@ -42,6 +43,7 @@ def queue_voice_ai_ranking(
             voice_ai_rank_provider=model_selection["provider"],
             voice_ai_rank_debug=None,
             voice_ai_rank_usage_log_id=None,
+            voice_ai_rank_recovery=None,
         )
         return False
 
@@ -49,6 +51,13 @@ def queue_voice_ai_ranking(
     task_snapshot = dict(task or {})
     source_path = str(source_audio_path)
     task_dir_path = str(task_dir)
+    key = (str(task_id), signature)
+    with _running_lock:
+        if key in _running_signatures:
+            return False
+        _running_signatures.add(key)
+
+    started_at = datetime.now(timezone.utc).isoformat()
     task_state.update(
         task_id,
         voice_match_candidates=candidates_snapshot,
@@ -59,13 +68,11 @@ def queue_voice_ai_ranking(
         voice_ai_rank_debug=None,
         voice_ai_rank_usage_log_id=None,
         voice_ai_rank_candidate_signature=signature,
+        voice_ai_rank_started_at=started_at,
+        voice_ai_rank_finished_at=None,
+        voice_ai_rank_interrupted_at=None,
+        voice_ai_rank_recovery=None,
     )
-
-    key = (str(task_id), signature)
-    with _running_lock:
-        if key in _running_signatures:
-            return False
-        _running_signatures.add(key)
 
     sidecar_task_id = f"{task_id}:voice-ai:{signature[:12]}"
 
@@ -113,6 +120,8 @@ def queue_voice_ai_ranking(
                 model_selection=model_selection,
             ),
             voice_ai_rank_usage_log_id=None,
+            voice_ai_rank_finished_at=datetime.now(timezone.utc).isoformat(),
+            voice_ai_rank_recovery=None,
         )
         return False
     return True
@@ -151,6 +160,8 @@ def run_voice_ai_ranking_job(
                     model_selection=model_selection,
                 ),
                 voice_ai_rank_usage_log_id=None,
+                voice_ai_rank_finished_at=datetime.now(timezone.utc).isoformat(),
+                voice_ai_rank_recovery=None,
             )
         return
 
@@ -184,6 +195,8 @@ def run_voice_ai_ranking_job(
         voice_ai_rank_candidate_signature=state.get("voice_ai_rank_candidate_signature"),
         voice_ai_rank_active_key=state.get("voice_ai_rank_active_key") or "all",
         voice_ai_rank_cache=state.get("voice_ai_rank_cache") or {},
+        voice_ai_rank_finished_at=datetime.now(timezone.utc).isoformat(),
+        voice_ai_rank_recovery=None,
     )
 
 

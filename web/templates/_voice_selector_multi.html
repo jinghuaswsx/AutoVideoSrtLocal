@@ -15,6 +15,9 @@
     <button type="button" class="vs-force-speed-match-btn" id="vs-force-speed-match-btn">
       强制音色语速匹配排序
     </button>
+    <button type="button" class="vs-rerun-voice-match-btn" id="vs-rerun-voice-match-btn" hidden>
+      从音色选择重新跑
+    </button>
   </div>
 
   <div class="vs-sample" id="vs-sample" style="display:none;">
@@ -234,7 +237,8 @@
   @keyframes vs-ai-rank-spin { to { transform: rotate(360deg); } }
   .vs-ai-rank-debug-btn,
   .vs-ai-rank-run-btn,
-  .vs-force-speed-match-btn {
+  .vs-force-speed-match-btn,
+  .vs-rerun-voice-match-btn {
     margin-left: 0; padding: 6px 12px;
     border: 1px solid oklch(68% 0.11 155);
     background: oklch(96% 0.035 155); color: oklch(36% 0.11 155);
@@ -244,15 +248,19 @@
   .vs-ai-rank-debug-btn { margin-left: auto; }
   .vs-ai-rank-run-btn { margin-left: 0; }
   .vs-force-speed-match-btn { margin-left: 0; }
+  .vs-rerun-voice-match-btn { margin-left: 0; }
   .vs-ai-rank-debug-btn:hover,
   .vs-ai-rank-debug-btn:focus-visible,
   .vs-ai-rank-run-btn:hover,
   .vs-ai-rank-run-btn:focus-visible,
   .vs-force-speed-match-btn:hover,
-  .vs-force-speed-match-btn:focus-visible {
+  .vs-force-speed-match-btn:focus-visible,
+  .vs-rerun-voice-match-btn:hover,
+  .vs-rerun-voice-match-btn:focus-visible {
     background: oklch(92% 0.055 155); outline: none;
   }
-  .vs-ai-rank-run-btn:disabled { cursor: wait; opacity: 0.72; }
+  .vs-ai-rank-run-btn:disabled,
+  .vs-rerun-voice-match-btn:disabled { cursor: wait; opacity: 0.72; }
   .vs-force-speed-match-btn.is-active {
     border-color: oklch(63% 0.14 225);
     background: oklch(94% 0.055 225); color: oklch(34% 0.12 225);
@@ -261,7 +269,11 @@
   .vs-ai-rank-run-btn.is-loading {
     display: inline-flex; align-items: center; gap: 6px;
   }
-  .vs-ai-rank-run-btn.is-loading::before {
+  .vs-rerun-voice-match-btn.is-loading {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .vs-ai-rank-run-btn.is-loading::before,
+  .vs-rerun-voice-match-btn.is-loading::before {
     content: ""; width: 12px; height: 12px;
     border: 2px solid currentColor; border-right-color: transparent;
     border-radius: 999px; animation: vs-ai-rank-spin 0.8s linear infinite;
