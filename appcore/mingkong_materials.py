@@ -1725,6 +1725,7 @@ def list_yesterday_top100(
     *,
     snapshot_date: str | None = None,
     snapshot_at: str | None = None,
+    keyword: str = "",
     page: int | str | None = 1,
     page_size: int | str | None = 100,
 ) -> dict[str, Any]:
@@ -1747,20 +1748,25 @@ def list_yesterday_top100(
             "run_summary": None,
         }
     if selected_snapshot_at:
-        where_sql = "snapshot_at = %s"
+        where = ["t.snapshot_at = %s"]
         base_args: list[Any] = [selected_snapshot_at]
     else:
-        where_sql = "snapshot_date = %s"
+        where = ["t.snapshot_date = %s"]
         base_args = [snapshot]
+    keyword_sql, keyword_args = _material_keyword_condition("t", keyword)
+    if keyword_sql:
+        where.append(keyword_sql)
+        base_args.extend(keyword_args)
+    where_sql = " AND ".join(where)
     page_num, size, offset = _page_bounds(page, page_size)
     count_row = query_one(
-        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 WHERE {where_sql}",
+        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 t WHERE {where_sql}",
         tuple(base_args),
     ) or {}
     rows = query(
         f"""
-        SELECT *
-        FROM mingkong_material_daily_top100
+        SELECT t.*
+        FROM mingkong_material_daily_top100 t
         WHERE {where_sql}
         ORDER BY is_new_top100_entry DESC, yesterday_spend_delta DESC,
                  current_cumulative_90_spend DESC, video_ads_count DESC,

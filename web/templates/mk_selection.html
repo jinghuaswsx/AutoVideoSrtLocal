@@ -121,7 +121,7 @@
   .mk-product-name-cell { min-width:0; gap:6px; }
   .mk-library-status-cell { min-width:0; }
   .mk-library-status-metrics { max-width:142px; }
-  #searchInput { width:220px !important; }
+  #searchInput { width:440px !important; }
 }
 @media (min-width: 769px) and (orientation: portrait) {
   .sidebar { transform:translateX(-100%); }
@@ -152,7 +152,7 @@
   .oc-search { width:100%; align-items:center; gap:6px; flex-wrap:nowrap; }
   .oc-input { height:32px; padding:0 8px; font-size:13px; }
   .oc-select { width:118px; font-size:12px; }
-  #searchInput { width:min(190px, 22vw) !important; }
+  #searchInput { width:min(360px, 38vw) !important; }
   .oc-btn { height:32px; padding:0 9px; font-size:13px; }
   .mk-products-table-shell { overflow-x:visible; border-radius:var(--oc-r); }
   .oc-table { font-size:12px; }
@@ -528,7 +528,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="this_month">本月</option>
         <option value="last_month">上月</option>
       </select>
-      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:240px">
+      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:480px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
@@ -1169,6 +1169,7 @@ async function loadMkLocalMaterialLibrary(page) {
 async function loadMkYesterdayTop100(page) {
   mkYesterdayTop100Page = page;
   mkYesterdayTop100Loaded = true;
+  const kw = document.getElementById('searchInput').value.trim();
   const grid = document.getElementById('mkYesterdayTop100Grid');
   const status = document.getElementById('mkYesterdayTop100Status');
   const pagerIds = ['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'];
@@ -1176,7 +1177,7 @@ async function loadMkYesterdayTop100(page) {
   clearMkArchivePager(pagerIds);
   status.textContent = '正在读取昨天消耗前100归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}`;
+    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1185,7 +1186,7 @@ async function loadMkYesterdayTop100(page) {
     const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
     const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
-    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前100`;
+    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前100${kw ? ` · 搜索 ${kw}` : ''}`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前100归档</div>';
     } else {
