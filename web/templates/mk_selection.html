@@ -1344,6 +1344,7 @@ function renderMkVideoMaterialCard(r) {
   const fineAiResult = mkiFineAiCacheResult(mkiFineAiEvaluationFromStatus(productStatus));
   const hasFineAiEvaluationResult = mkiFineAiHasUsableResult(fineAiResult);
   const fineAiRunId = mkiFineAiResultKey(fineAiResult);
+  const fineAiButtonLabel = mkiFineAiButtonLabel(fineAiResult);
   const materialImportTitle = isMaterialImported
     ? '已入库'
     : (hasFineAiEvaluationResult ? '加入素材库' : mkiFineAiImportGateMessage());
@@ -1351,9 +1352,11 @@ function renderMkVideoMaterialCard(r) {
   const aiButtonTitle = existingProductId
     ? (hasAiEvaluationResult ? '查看 AI 评估结果，必要时可重新评估' : '打开 AI 评估请求与结果')
     : '先加入素材库后才能进行 AI 评估';
-  const fineAiButtonTitle = existingProductId
+  const fineAiButtonTitle = hasFineAiEvaluationResult
+    ? '查看 AI 精细评估结果，必要时可重新评估'
+    : (existingProductId
     ? '对当前单个商品串行执行 DE/FR/IT/ES/JP 五国精细 AI 评估'
-    : ((productLinkRaw && videoPath) ? '商品链接和当前视频存在即可进行精细 AI 评估' : '商品链接或视频缺失，无法进行精细 AI 评估');
+    : ((productLinkRaw && videoPath) ? '商品链接和当前视频存在即可进行精细 AI 评估' : '商品链接或视频缺失，无法进行精细 AI 评估'));
   const canCreateSmallLangTask = isMaterialImported && localProductId && localItemId;
   const uploadDate = escapeHtml(r.video_upload_time ? String(r.video_upload_time).split('T')[0] : '--');
   const author = escapeHtml(r.video_author || '--');
@@ -1478,7 +1481,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         onclick="mkiFineAiEvaluateFromCard(this)">
-      精细AI评估
+      ${fineAiButtonLabel}
     </button>
   </div>`;
 }
@@ -1569,6 +1572,7 @@ async function openDetail(mkId, mkName) {
         : '商品链接或视频缺失，无法进行精细 AI 评估';
       const detailHasFineAiEvaluationResult = false;
       const detailFineAiRunId = '';
+      const detailFineAiButtonLabel = mkiFineAiButtonLabel(null);
       html += `<div class="mk-video-card">
         <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${videoName}">${videoName}</div>
         <div class="mk-video-summary-row">
@@ -1661,7 +1665,7 @@ async function openDetail(mkId, mkName) {
             data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
             data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
             onclick="mkiFineAiEvaluateFromCard(this)">
-          精细AI评估
+          ${detailFineAiButtonLabel}
         </button>
       </div>`;
     });
@@ -1934,6 +1938,10 @@ function mkiFineAiHasUsableResult(result) {
   return (status === 'completed' || status === 'partially_completed') && mkiFineAiCountryCount(normalized) > 0;
 }
 
+function mkiFineAiButtonLabel(result) {
+  return mkiFineAiHasUsableResult(result) ? 'AI精细评估结果' : '精细AI评估';
+}
+
 function mkiFineAiStoreResultOnElement(el, result) {
   if (!el) return;
   const normalized = mkiFineAiCacheResult(result);
@@ -1959,6 +1967,28 @@ function mkiFineAiResultFromButton(btn) {
   if (!card) return null;
   const carrier = card.querySelector('[data-mki-fine-ai-run-id]');
   return mkiFineAiResultFromElement(carrier);
+}
+
+function mkiFineAiButtonLabelFromElement(btn) {
+  if (btn && btn.dataset.mkiFineAiHasResult === '1') return 'AI精细评估结果';
+  return mkiFineAiButtonLabel(mkiFineAiResultFromButton(btn));
+}
+
+function mkiFineAiUpdateCardButtonLabels(card) {
+  if (!card) return;
+  card.querySelectorAll('.mki-fine-ai-btn').forEach(btn => {
+    const label = mkiFineAiButtonLabelFromElement(btn);
+    btn.textContent = label;
+    if (label === 'AI精细评估结果') {
+      btn.title = '查看 AI 精细评估结果，必要时可重新评估';
+    }
+  });
+}
+
+function mkiFineAiRestoreButtonLabel(btn, original) {
+  if (!btn) return;
+  const resultLabel = mkiFineAiButtonLabelFromElement(btn);
+  btn.textContent = resultLabel === 'AI精细评估结果' ? resultLabel : (original || resultLabel);
 }
 
 function mkiFineAiImportGateMessage() {
@@ -1993,6 +2023,7 @@ function mkiFineAiApplyCardResult(context, result) {
     mkiFineAiStoreResultOnElement(btn, normalized);
   });
   mkiFineAiUpdateMaterialImportGate(card);
+  mkiFineAiUpdateCardButtonLabels(card);
   if (mkiImportProgressButton && card.contains(mkiImportProgressButton)) {
     mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   }
@@ -3156,14 +3187,14 @@ async function mkiFineAiOpenLatestOrStart(context) {
     }
     if (btn) {
       btn.disabled = false;
-      btn.textContent = original || '精细AI评估';
+      mkiFineAiRestoreButtonLabel(btn, original);
     }
     await mkiFineAiStartRun(context);
   } finally {
     context.loadingLatest = false;
     if (btn && !context.running) {
       btn.disabled = false;
-      btn.textContent = original || '精细AI评估';
+      mkiFineAiRestoreButtonLabel(btn, original);
     }
   }
 }
@@ -3284,7 +3315,7 @@ async function mkiFineAiStartRun(context) {
     context.running = false;
     if (btn) {
       btn.disabled = false;
-      btn.textContent = original || '精细AI评估';
+      mkiFineAiRestoreButtonLabel(btn, original);
     }
   }
 }

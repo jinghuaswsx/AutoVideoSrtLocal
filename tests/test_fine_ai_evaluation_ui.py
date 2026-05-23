@@ -14,6 +14,18 @@ def test_mk_selection_has_fine_ai_button_and_json_renderer():
     assert "marked.parse" not in body
 
 
+def test_fine_ai_button_switches_to_result_label_when_result_exists():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "AI精细评估结果" in body
+    assert "function mkiFineAiButtonLabel(result)" in body
+    assert "return mkiFineAiHasUsableResult(result) ? 'AI精细评估结果' : '精细AI评估';" in body
+    assert "const fineAiButtonLabel = mkiFineAiButtonLabel(fineAiResult);" in body
+    assert "${fineAiButtonLabel}" in body
+    assert "function mkiFineAiUpdateCardButtonLabels(card)" in body
+    assert "mkiFineAiUpdateCardButtonLabels(card);" in body
+
+
 def test_fine_ai_button_checks_latest_before_starting_new_run():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
