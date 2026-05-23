@@ -4925,7 +4925,8 @@ function mkiXiaoSetControlsDisabled(disabled) {
   if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
   if (raw) raw.disabled = !!disabled;
   document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
-    cb.disabled = !!disabled;
+    var isExisting = cb.getAttribute('data-mki-existing') === '1';
+    cb.disabled = !!disabled || isExisting;
   });
 }
 
@@ -5048,7 +5049,7 @@ async function mkiXiaoOpenModal(options = {}) {
     var label = mkiXiaoLangLabel(l);
     if (!code) return '';
     var isExisting = !!l.existing;
-    var disabledAttr = isExisting ? ' disabled' : '';
+    var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
     var labelText = isExisting ? label + ' (已有任务)' : label;
     var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
     return '<label class="mki-xiao-lang-pill">'
