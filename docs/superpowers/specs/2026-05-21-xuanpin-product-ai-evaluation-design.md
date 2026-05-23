@@ -11,7 +11,7 @@
 - use case 继续复用 `material_evaluation.evaluate`，避免拆出第二套产品评估链路。
 - 通道固定为 OpenRouter，模型为 `google/gemini-3.5-flash`。
 - 输入包括明空商品链接（卡片标题跳转或标题下方产品链接，不使用尚未生成的 Shopify/本地站点链接）、商品主图、指定英文视频素材的前 30 秒 480p LLM 优化片段。
-- 评估国家固定为德国、法国、意大利、西班牙、日本，对应语种代码为 `DE`、`FR`、`IT`、`ES`、`JA`。
+- 评估国家固定为德国、法国、意大利、西班牙、日本、美国，对应语种代码为 `DE`、`FR`、`IT`、`ES`、`JA`、`EN`。
 - 输出保持结构化 JSON，国家项包含 `score`、`is_suitable`、`decision`、`recommendation`、`summary`、`reason`、`suggestions` 等字段。`recommendation` 只取 `做` 或 `不做`，便于前端直接映射 ✅/❌。
 
 ## 触发点
