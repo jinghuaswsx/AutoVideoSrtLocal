@@ -131,6 +131,8 @@ def _reset_item_processing_state(item: dict) -> None:
     item["result_channel"] = ""
     item["result_model_id"] = ""
     item["eval_status"] = "pending"
+    item["eval_channel"] = ""
+    item["eval_model_id"] = ""
     item["eval_result"] = None
     item["eval_error"] = ""
     # Keep async provider snapshots across retries. The next run checks the
@@ -748,8 +750,20 @@ class ImageTranslateRuntime:
         return f"artifacts/image_translate/{uid}/{task['id']}/out_{idx}{ext}"
 
     def _evaluate_item_quality(self, task: dict, task_id: str, item: dict, src_path: str, dst_key: str) -> None:
+        from appcore import llm_bindings
+        binding = llm_bindings.resolve("image_translate.eval")
+        eval_channel = binding.get("provider") or "openrouter"
+        eval_model_id = binding.get("model") or "google/gemini-1.5-flash-lite"
+
+        logger.info(
+            "[image_translate] evaluating item %d with provider=%s model=%s",
+            item.get("idx"), eval_channel, eval_model_id
+        )
+
         with self._state_lock:
             item["eval_status"] = "running"
+            item["eval_channel"] = eval_channel
+            item["eval_model_id"] = eval_model_id
             item["eval_result"] = None
             item["eval_error"] = ""
             store.update(task_id, items=task["items"])
@@ -809,6 +823,8 @@ class ImageTranslateRuntime:
                 "result_channel": item.get("result_channel") or "",
                 "result_model_id": item.get("result_model_id") or "",
                 "eval_status": item.get("eval_status") or "pending",
+                "eval_channel": item.get("eval_channel") or "",
+                "eval_model_id": item.get("eval_model_id") or "",
                 "eval_result": item.get("eval_result"),
                 "eval_error": item.get("eval_error") or "",
             },
