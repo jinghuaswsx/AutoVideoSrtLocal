@@ -138,6 +138,18 @@ def list_enabled_target_languages() -> list[dict]:
     return languages
 
 
+def get_existing_task_languages_for_item(media_item_id: int) -> list[str]:
+    """获取该素材已创建的、非取消状态的活跃子任务语言列表"""
+    rows = query_all(
+        "SELECT DISTINCT country_code FROM tasks "
+        "WHERE media_item_id=%s AND parent_task_id IS NOT NULL "
+        "AND status <> %s",
+        (int(media_item_id), CHILD_CANCELLED)
+    )
+    return [str(row["country_code"]).strip().upper() for row in rows if row.get("country_code")]
+
+
+
 def list_product_english_items(product_id: int) -> list[dict]:
     rows = query_all(
         "SELECT id, filename, object_key FROM media_items "
@@ -855,6 +867,13 @@ def create_parent_task(
     norm_countries = [c.strip().upper() for c in countries if c and c.strip()]
     if not norm_countries:
         raise ValueError("countries must be non-empty after normalization")
+
+    if media_item_id is not None:
+        existing_langs = get_existing_task_languages_for_item(media_item_id)
+        duplicates = [c for c in norm_countries if c in existing_langs]
+        if duplicates:
+            raise ValueError(f"以下语言已存在活跃任务，不能重复创建: {', '.join(duplicates)}")
+
     assignment_map = _normalize_language_assignments(
         countries=norm_countries,
         translator_id=translator_id,
