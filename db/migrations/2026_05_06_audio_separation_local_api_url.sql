@@ -13,6 +13,6 @@ SET `value` = 'http://127.0.0.1:83'
 WHERE `key` = 'audio_separation_api_url'
   AND TRIM(TRAILING '/' FROM TRIM(`value`)) IN (
     '',
-    'http://172.30.254.12',
-    'http://172.30.254.12/separate'
+    'http://172.16.254.106',
+    'http://172.16.254.106/separate'
   );
