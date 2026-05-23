@@ -447,6 +447,16 @@ USE_CASES: dict[str, UseCase] = {
         "gemini",
         "images",
     ),
+    "image_translate.eval": _uc(
+        "image_translate.eval",
+        "image",
+        "图片翻译效果评估",
+        "用 Gemini 1.5 Flash-Lite 评估翻译后的商品图是否纯净、无多语混杂并符合排版要求",
+        "openrouter",
+        "google/gemini-1.5-flash-lite",
+        "openrouter",
+        "tokens",
+    ),
     "link_check.analyze": _uc(
         "link_check.analyze",
         "image",

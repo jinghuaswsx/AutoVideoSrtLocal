@@ -6,6 +6,7 @@ import os
 import tempfile
 import threading
 import time
+import json
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -43,6 +44,41 @@ _TEXT_DETECT_PROMPT = (
     "水印、数字、字母或短语。只要有可读文字就返回 has_text=true；"
     "如果没有可读文字，或只有无法辨认的纹理/装饰，就返回 has_text=false。"
     "reason 用一句简短中文说明判断依据。"
+)
+
+_EVAL_SCHEMA = {
+    "type": "object",
+    "required": [
+        "status",
+        "has_mixed_languages",
+        "mixed_languages_details",
+        "has_layout_issue",
+        "layout_issue_details",
+        "translation_quality_score",
+        "issues",
+        "summary",
+    ],
+    "properties": {
+        "status": {"type": "string", "enum": ["passed", "warning", "failed"]},
+        "has_mixed_languages": {"type": "boolean"},
+        "mixed_languages_details": {"type": "string"},
+        "has_layout_issue": {"type": "boolean"},
+        "layout_issue_details": {"type": "string"},
+        "translation_quality_score": {"type": "integer"},
+        "issues": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+    },
+}
+
+_EVAL_PROMPT = (
+    "你是一位非常严格的电商图片翻译和本地化质检专家。\n"
+    "请对比这两张商品详情图，第一张是原始英文图，第二张是翻译后的目标语言图（目标语种: {target_lang_name}），详细评估翻译质量。\n\n"
+    "请重点检查并回答以下问题：\n"
+    "1. 语言一致性：第二张图中是否存在多语言混杂？原有的可翻译英语营销文本或标注是否漏擦除、漏翻译并原样保留？（物理包装印刷英文、型号及专有名词除外）。\n"
+    "2. 翻译准确度与地道度：目标语言翻译是否准确、流畅、符合目标市场习惯？是否有严重机翻、错误拼写？\n"
+    "3. 排版视觉效果：是否存在严重的文字重叠、文字溢出、遮挡或缺乏背景导致视觉突兀的排版瑕疵？\n\n"
+    "所有面向人工阅读的字段（包括 summary、issues、mixed_languages_details、layout_issue_details）必须使用简体中文进行回答。\n"
+    "translation_quality_score 的范围为 1 至 10（整数）。"
 )
 
 # 任务级熔断：当上游持续返回 429/5xx 时，避免把所有 items 都跑完 3 次重试
@@ -94,6 +130,9 @@ def _reset_item_processing_state(item: dict) -> None:
     item["result_source"] = ""
     item["result_channel"] = ""
     item["result_model_id"] = ""
+    item["eval_status"] = "pending"
+    item["eval_result"] = None
+    item["eval_error"] = ""
     # Keep async provider snapshots across retries. The next run checks the
     # saved upstream task before submitting another paid generation.
 
@@ -444,6 +483,24 @@ class ImageTranslateRuntime:
                     store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
+
+                if result_source == "copied_source":
+                    with self._state_lock:
+                        item["eval_status"] = "skipped"
+                        item["eval_result"] = None
+                        item["eval_error"] = ""
+                        store.update(task_id, items=task["items"])
+                    self._emit_item(task_id, item)
+                else:
+                    try:
+                        self._evaluate_item_quality(task, task_id, item, src_path, dst_key)
+                    except Exception as eval_exc:
+                        logger.error("[image_translate] eval quality failed for item %d: %s", idx, eval_exc)
+                        with self._state_lock:
+                            item["eval_status"] = "failed"
+                            item["eval_error"] = str(eval_exc)
+                            store.update(task_id, items=task["items"])
+                        self._emit_item(task_id, item)
                 return
             except gemini_image.GeminiImageError as e:
                 with self._state_lock:
@@ -690,6 +747,49 @@ class ImageTranslateRuntime:
         uid = task.get("_user_id") or 0
         return f"artifacts/image_translate/{uid}/{task['id']}/out_{idx}{ext}"
 
+    def _evaluate_item_quality(self, task: dict, task_id: str, item: dict, src_path: str, dst_key: str) -> None:
+        with self._state_lock:
+            item["eval_status"] = "running"
+            item["eval_result"] = None
+            item["eval_error"] = ""
+            store.update(task_id, items=task["items"])
+        self._emit_item(task_id, item)
+
+        dst_path = str(local_media_storage.safe_local_path_for(dst_key))
+        if not os.path.exists(dst_path):
+            raise FileNotFoundError(f"evaluated target image not found at: {dst_path}")
+
+        target_lang_name = task.get("target_language_name") or task.get("target_language") or "目标语言"
+        prompt = _EVAL_PROMPT.format(target_lang_name=target_lang_name)
+
+        result = llm_client.invoke_generate(
+            "image_translate.eval",
+            prompt=prompt,
+            media=[src_path, dst_path],
+            user_id=task.get("_user_id"),
+            project_id=task_id,
+            response_schema=_EVAL_SCHEMA,
+            temperature=0,
+            billing_extra={
+                "operation": "image_translate_quality_evaluation",
+                "item_idx": item.get("idx"),
+                "filename": item.get("filename") or "",
+                "source_key": item.get("src_tos_key") or "",
+                "target_key": dst_key,
+            },
+        )
+
+        eval_data = result.get("json") if isinstance(result, dict) else None
+        if not isinstance(eval_data, dict):
+            raise ValueError("评估未返回 JSON 结构化结果")
+
+        with self._state_lock:
+            item["eval_status"] = "done"
+            item["eval_result"] = eval_data
+            item["eval_error"] = ""
+            store.update(task_id, items=task["items"])
+        self._emit_item(task_id, item)
+
     def _emit_item(self, task_id: str, item: dict) -> None:
         self.bus.publish(Event(
             type="image_translate:item_updated",
@@ -708,6 +808,9 @@ class ImageTranslateRuntime:
                 "result_source": item.get("result_source") or "",
                 "result_channel": item.get("result_channel") or "",
                 "result_model_id": item.get("result_model_id") or "",
+                "eval_status": item.get("eval_status") or "pending",
+                "eval_result": item.get("eval_result"),
+                "eval_error": item.get("eval_error") or "",
             },
         ))
 

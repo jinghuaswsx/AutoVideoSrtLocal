@@ -89,6 +89,20 @@
 .it-meta-chip--source.is-copy,
 .it-meta-chip--model.is-copy { background:var(--success-bg,#ecfdf5); color:var(--success-fg,#047857); border-color:#bbf7d0; }
 .it-meta-chip--detect.is-warning { background:var(--warning-bg,#fef3c7); color:var(--warning-fg,#92400e); border-color:#fde68a; }
+.it-meta-chip--eval { display:inline-flex; align-items:center; min-height:22px; padding:2px 8px;
+                      border-radius:999px; border:1px solid transparent; font-size:12px; line-height:1.35; }
+.it-meta-chip--eval.is-eval-running { background:#f0f6ff; color:#1d6fe8; border-color:#bcd8ff; animation: it-pulse 1.5s infinite ease-in-out; }
+.it-meta-chip--eval.is-eval-passed { background:#ecfdf5; color:#047857; border-color:#bbf7d0; font-weight: 600; box-shadow: 0 2px 4px rgba(4,120,87,.08); }
+.it-meta-chip--eval.is-eval-warning { background:#fffbeb; color:#d97706; border-color:#fde68a; font-weight: 600; }
+.it-meta-chip--eval.is-eval-warning-mixed,
+.it-meta-chip--eval.is-eval-warning-layout { background:#fff7ed; color:#ea580c; border-color:#ffedd5; font-weight: 600; }
+.it-meta-chip--eval.is-eval-failed { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+
+@keyframes it-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
 .it-item .it-item-status { font-size:12px; color:#6b7280; }
 .it-item .it-item-actions { display:flex; gap:8px; align-items:center; }
 .it-meta-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; }

@@ -416,6 +416,62 @@
       meta.appendChild(el);
     }
 
+    function evalStatusBadge(it){
+      var status = it.eval_status || "pending";
+      var source = it.result_source || "";
+      if (source === "copied_source") return null;
+      if (status === "pending") {
+        return null;
+      }
+      if (status === "running") {
+        return {label: "🔍 质检评估中...", tone: "eval-running"};
+      }
+      if (status === "failed") {
+        return {label: "❌ 质检评估失败", tone: "eval-failed", title: it.eval_error || "大模型评估超时或失败"};
+      }
+      if (status === "done" && it.eval_result) {
+        var res = it.eval_result;
+        var score = res.translation_quality_score || 0;
+        var label = "🏆 译文质检评分: " + score + "/10";
+        var tone = "eval-done";
+        if (score >= 8) {
+          tone = "eval-passed";
+        } else if (score >= 6) {
+          tone = "eval-warning";
+        } else {
+          tone = "eval-failed";
+        }
+        var title = "评分依据: " + (res.summary || "") + "\n" +
+                    (res.issues && res.issues.length ? ("问题点: " + res.issues.join("; ")) : "无明显问题");
+        return {label: label, tone: tone, title: title};
+      }
+      return null;
+    }
+
+    function mixedLanguagesBadge(it) {
+      if (it.eval_status !== "done" || !it.eval_result) return null;
+      if (it.eval_result.has_mixed_languages) {
+        return {
+          label: "⚠️ 语言混杂警告",
+          tone: "eval-warning-mixed",
+          title: "混杂详情: " + (it.eval_result.mixed_languages_details || "存在英文/原语漏翻译")
+        };
+      }
+      return null;
+    }
+
+    function layoutIssueBadge(it) {
+      if (it.eval_status !== "done" || !it.eval_result) return null;
+      if (it.eval_result.has_layout_issue) {
+        return {
+          label: "⚠️ 排版瑕疵",
+          tone: "eval-warning-layout",
+          title: "瑕疵详情: " + (it.eval_result.layout_issue_details || "排版重叠或溢出")
+        };
+      }
+      return null;
+    }
+
     function appendItemMeta(container, it, state){
       var primaryMeta = document.createElement("div");
       primaryMeta.className = "it-item-meta it-item-meta--primary";
@@ -427,6 +483,13 @@
       modelMeta.className = "it-item-meta it-item-model-meta";
       appendBadge(modelMeta, resultModelBadge(it, state), "it-meta-chip it-meta-chip--model");
       if (modelMeta.children.length) container.appendChild(modelMeta);
+
+      var evalMeta = document.createElement("div");
+      evalMeta.className = "it-item-meta it-item-eval-meta";
+      appendBadge(evalMeta, evalStatusBadge(it), "it-meta-chip it-meta-chip--eval");
+      appendBadge(evalMeta, mixedLanguagesBadge(it), "it-meta-chip it-meta-chip--eval");
+      appendBadge(evalMeta, layoutIssueBadge(it), "it-meta-chip it-meta-chip--eval");
+      if (evalMeta.children.length) container.appendChild(evalMeta);
     }
 
     function appendItemMedia(container, child, modifier){
