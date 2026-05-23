@@ -434,6 +434,21 @@ def test_xuanpin_mk_small_language_uses_fine_ai_country_decisions(authed_client_
     assert "mkiXiaoApplyAiSuggestions(options.fineAiResult)" in body
 
 
+def test_xuanpin_mk_small_language_modal_shows_fine_ai_top_panel(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="mkiXiaoFineAi"' in body
+    assert 'aria-label="AI 精细评估建议"' in body
+    assert "function mkiXiaoRenderFineAiPanel(result)" in body
+    assert "mkiXiaoRenderFineAiPanel(options.fineAiResult || null);" in body
+    assert "mkiImportProgressFineAiTable(result)" in body
+    assert "mkiXiaoOpenFineAi()" in body
+    assert "sourceButton: btn" in body
+    assert "sourceButton: mkiImportProgressButton" in body
+
+
 def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
