@@ -508,11 +508,12 @@
   padding: 24px; background: rgba(15, 23, 42, .42);
 }
 .mki-xiao-dialog {
-  width: min(720px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
+  width: min(1040px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
   border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg); background: #fff;
   box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
 }
 .mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+.mki-xiao-fine-ai { margin-bottom: 18px; }
 .mki-xiao-field { margin-bottom: 18px; }
 .mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
 .mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
@@ -2027,6 +2028,10 @@ function mkiFineAiApplyCardResult(context, result) {
   if (mkiImportProgressButton && card.contains(mkiImportProgressButton)) {
     mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   }
+  if (mkiXiaoFineAiSourceButton && card.contains(mkiXiaoFineAiSourceButton)) {
+    mkiXiaoRenderFineAiPanel(normalized);
+    mkiXiaoApplyAiSuggestions(normalized);
+  }
 }
 
 function mkiFineAiCountryLookupCodes(code) {
@@ -2227,6 +2232,54 @@ function mkiImportProgressRenderFineAiPanel(btn) {
       </div>
       <div class="mki-progress-fine-ai-actions">
         <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiImportProgressOpenFineAi()">查看/重跑精细评估</button>
+      </div>
+    </div>
+    ${mkiImportProgressFineAiTable(result)}
+  `;
+}
+
+function mkiXiaoOpenFineAi() {
+  const card = mkiXiaoFineAiSourceButton && (mkiXiaoFineAiSourceButton.closest('.mk-video-card') || mkiXiaoFineAiSourceButton.closest('.mki-detail-video-card'));
+  const fineAiBtn = card && card.querySelector('.mki-fine-ai-btn');
+  if (!fineAiBtn || fineAiBtn.disabled) {
+    mkiToast('warning', '当前卡片缺少商品链接或视频，无法发起 AI 精细评估');
+    return;
+  }
+  mkiFineAiEvaluateFromCard(fineAiBtn);
+  setTimeout(() => {
+    document.querySelectorAll('.ect-modal-overlay').forEach(node => {
+      node.style.zIndex = '2300';
+    });
+  }, 0);
+}
+
+function mkiXiaoRenderFineAiPanel(result) {
+  const panel = document.getElementById('mkiXiaoFineAi');
+  if (!panel) return;
+  const hasResult = mkiFineAiHasUsableResult(result);
+  if (!hasResult) {
+    panel.innerHTML = `
+      <div class="mki-progress-fine-ai-empty">
+        <div>
+          <strong>建议先完成 AI 精细评估</strong>
+          <div>还没有可用的 5 国精细评估结果。可以继续创建小语种任务，但建议先查看 DE/FR/IT/ES/JP 的投放建议。</div>
+        </div>
+        <button type="button" class="oc-btn oc-btn--primary" onclick="mkiXiaoOpenFineAi()">AI 精细评估</button>
+      </div>`;
+    return;
+  }
+  const normalized = mkiFineAiNormalizeResult(result) || {};
+  const summary = normalized.summary || {};
+  const overall = summary.overall_recommendation || normalized.status || '';
+  const avg = summary.average_score || '';
+  panel.innerHTML = `
+    <div class="mki-progress-fine-ai-head">
+      <div>
+        <h4 class="mki-progress-fine-ai-title">AI 精细评估建议</h4>
+        <p class="mki-progress-fine-ai-subtitle">综合建议：${escapeHtml(overall || '-')} ${avg ? '· 平均分 ' + escapeHtml(avg) : ''}</p>
+      </div>
+      <div class="mki-progress-fine-ai-actions">
+        <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiXiaoOpenFineAi()">查看/重跑精细评估</button>
       </div>
     </div>
     ${mkiImportProgressFineAiTable(result)}
@@ -4164,7 +4217,9 @@ async function mkiImportProgressCreateSmallLangTask() {
   const selection = await mkiXiaoOpenModal({
     title: '创建小语种翻译任务',
     endpoint: endpoint,
-    productId: mkiImportProgressProductId
+    productId: mkiImportProgressProductId,
+    fineAiResult: mkiFineAiResultFromButton(mkiImportProgressButton),
+    sourceButton: mkiImportProgressButton
   });
   if (!selection) return;
   if (!selection.countries.length) {
@@ -4320,6 +4375,7 @@ let mkiXiaoLangsCache = null;
 let mkiXiaoLockTranslator = false;
 let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
 let mkiXiaoAiProductId = null;
+let mkiXiaoFineAiSourceButton = null;
 const MKI_AI_SUGGESTION_CACHE = new Map();
 
 function mkiXiaoLangCode(lang) {
@@ -4570,6 +4626,8 @@ async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoLockTranslator = !!options.lockTranslator;
   mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
   mkiXiaoAiProductId = Number(options.productId || options.aiProductId || 0) || null;
+  mkiXiaoFineAiSourceButton = options.sourceButton || null;
+  options.fineAiResult = options.fineAiResult || mkiFineAiResultFromButton(mkiXiaoFineAiSourceButton);
   // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
@@ -4598,6 +4656,7 @@ async function mkiXiaoOpenModal(options = {}) {
   if (rawDefault) rawSel.value = String(rawDefault);
   const titleEl = document.getElementById('mkiXiaoTitle');
   if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+  mkiXiaoRenderFineAiPanel(options.fineAiResult || null);
 
   // Load languages
   if (!mkiXiaoLangsCache) {
@@ -4682,7 +4741,8 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     title: '创建小语种翻译任务',
     endpoint: endpoint,
     productId: productId,
-    fineAiResult: mkiFineAiResultFromButton(btn)
+    fineAiResult: mkiFineAiResultFromButton(btn),
+    sourceButton: btn
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -4728,7 +4788,8 @@ async function mkiXiaoHandleClick(btn) {
     title: '创建小语种翻译任务',
     endpoint: endpoint,
     productId: Number(btn.dataset.mkiLocalProductId || btn.dataset.mkiAiProductId || 0),
-    fineAiResult: mkiFineAiResultFromButton(btn)
+    fineAiResult: mkiFineAiResultFromButton(btn),
+    sourceButton: btn
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -4825,6 +4886,7 @@ async function mkiXiaoHandleClick(btn) {
 <div id="mkiXiaoModal" class="mki-xiao-backdrop">
   <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
     <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+    <section id="mkiXiaoFineAi" class="mki-progress-fine-ai mki-xiao-fine-ai" aria-label="AI 精细评估建议"></section>
     <div class="mki-xiao-field">
       <label class="mki-xiao-label" for="mkiXiaoTranslator">小语种翻译负责人：</label>
       <select id="mkiXiaoTranslator" class="oc-input" style="width:100%; height:36px;"></select>
