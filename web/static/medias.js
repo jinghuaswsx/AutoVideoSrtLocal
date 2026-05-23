@@ -1723,7 +1723,7 @@
         <col style="width:56px">
         <col style="width:300px">
         <col style="width:92px">
-        <col style="width:150px">
+        <col style="width:180px">
         <col style="width:104px">
         <col style="width:240px">
       </colgroup>
@@ -1743,7 +1743,7 @@
           <th>素材数</th>
           <th>语种覆盖</th>
           <th>修改时间</th>
-          <th>备注说明</th>
+          <th>产品链接</th>
           <th>投放推送</th>
           <th>操作</th>
         </tr>
@@ -1751,7 +1751,20 @@
         <tbody>
           ${items.map(rowHTML).join('')}
         </tbody>
-      </table>`;
+      </table>
+      <div class="oc-domain-check-all-bar">
+        <button type="button" id="checkAllDomainsBtn" class="oc-btn ghost">检测全部产品链接</button>
+      </div>`;
+    grid.querySelectorAll('[data-check-domain]').forEach(b =>
+      b.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const rowEl = this.closest('.oc-domain-row');
+        const pid = rowEl ? parseInt(rowEl.dataset.pid, 10) : 0;
+        const domain = this.dataset.checkDomain;
+        if (pid && domain) checkDomainLink(pid, domain, rowEl);
+      }));
+    const checkAllBtn = grid.querySelector('#checkAllDomainsBtn');
+    if (checkAllBtn) checkAllBtn.addEventListener('click', function(e) { e.stopPropagation(); checkAllDomainLinks(); });
     grid.querySelectorAll('[data-edit]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); openEdit(+b.dataset.edit); }));
     grid.querySelectorAll('[data-del]').forEach(b =>
@@ -2225,7 +2238,7 @@
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
-        <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
+        <td class="oc-domain-cell" data-pid="${p.id}">${renderProductLinkCell(p)}</td>
         <td class="product-push-cell">
           <div class="product-push-actions">
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
@@ -2251,6 +2264,65 @@
           </div>
         </td>
       </tr>`;
+  }
+
+  function renderProductLinkCell(p) {
+    const domains = Array.isArray(p.product_link_domains) ? p.product_link_domains : [];
+    if (!domains.length) {
+      return '<span class="muted">—</span>';
+    }
+    return `<div class="oc-domain-list">`
+      + domains.map((d) => {
+          const domain = escapeHtml(d.domain || '');
+          return `<div class="oc-domain-row" data-pid="${p.id}" data-domain="${domain}">
+            <span class="oc-domain-tag">${domain}</span>
+            <span class="oc-domain-status" data-status-domain="${domain}"></span>
+            <button type="button" class="oc-domain-check-btn" data-check-domain="${domain}">检测</button>
+          </div>`;
+        }).join('')
+      + `</div>`;
+  }
+
+  async function checkDomainLink(pid, domain, rowEl) {
+    const statusEl = rowEl.querySelector('[data-status-domain="' + CSS.escape(domain) + '"]');
+    const btnEl = rowEl.querySelector('[data-check-domain="' + CSS.escape(domain) + '"]');
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '...'; }
+    try {
+      const data = await fetchJSON(
+        '/medias/api/products/' + pid + '/link-availability/en',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain }) }
+      );
+      const items = data.items || [];
+      const item = items.find(function(it) { return (it.domain || '') === domain; }) || items[0] || {};
+      const status = item.http_status || 0;
+      if (statusEl) {
+        statusEl.textContent = status || (item.error ? 'ERR' : '—');
+        statusEl.className = 'oc-domain-status ' + (status >= 200 && status < 400 ? 'ok' : 'fail');
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = 'ERR';
+        statusEl.className = 'oc-domain-status fail';
+      }
+    } finally {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = '检测'; }
+    }
+  }
+
+  async function checkAllDomainLinks() {
+    const btn = document.getElementById('checkAllDomainsBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '检测中...'; }
+    const rows = document.querySelectorAll('.oc-domain-row');
+    const promises = [];
+    rows.forEach(function(rowEl) {
+      const pid = rowEl.dataset.pid;
+      const domain = rowEl.dataset.domain;
+      if (pid && domain) {
+        promises.push(checkDomainLink(parseInt(pid, 10), domain, rowEl));
+      }
+    });
+    await Promise.allSettled(promises);
+    if (btn) { btn.disabled = false; btn.textContent = '检测全部产品链接'; }
   }
 
   function renderProductLinksPushList(links) {

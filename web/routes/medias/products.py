@@ -74,7 +74,9 @@ def _mk_copywriting_http_get(*args, **kwargs):
 def _build_products_list_response(args):
     return _build_products_list_response_impl(
         args,
-        serialize_product_fn=_serialize_product,
+        serialize_product_fn=lambda *a, **kw: _serialize_product(
+            *a, **kw, include_product_link_domains=True
+        ),
     )
 
 
