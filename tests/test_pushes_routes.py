@@ -1787,6 +1787,7 @@ def test_push_rework_reject_delegates_to_task_service(
         "actor_user_id": 1,
         "issue_keys": ["has_object", "has_push_texts"],
         "reason": "视频不合格，需要重做字幕和英文文案格式",
+        "image_urls": [],
     }
     assert captured["audit"]["action"] == "push_rework_rejected"
     assert captured["audit"]["target_id"] == 905
@@ -1944,6 +1945,7 @@ def test_push_rework_reject_infers_unbound_task_and_binds_item(
         "actor_user_id": 1,
         "issue_keys": ["has_object"],
         "reason": "任务中心产出的视频不符合要求，需要负责人重新处理",
+        "image_urls": [],
     }
     assert captured["updates"] == [(1364, 30)]
     assert captured["refreshes"] == [1364]
