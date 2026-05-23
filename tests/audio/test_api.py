@@ -2,7 +2,7 @@
 Tests for Audio Separator API (tools/audio_separator/api_server.py).
 
 Service is now mounted under the `/separate` URL prefix on the Caddy gateway
-at http://172.30.254.12 (port 80). The audio service itself listens on
+at http://172.16.254.106 (port 80). The audio service itself listens on
 internal port 8081 — Caddy routes `/separate/*` there.
 
 The service must be running before executing these tests.
@@ -14,7 +14,7 @@ Usage:
 import os
 import requests
 
-API_BASE = "http://172.30.254.12"
+API_BASE = "http://172.16.254.106"
 PREFIX = "/separate"
 TIMEOUT = 120  # allow time for GPU queue
 
