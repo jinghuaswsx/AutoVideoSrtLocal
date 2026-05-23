@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from appcore import runner_lifecycle
+from appcore import fine_ai_evaluation_model_config as fine_ai_model_config
 from appcore.fine_ai_evaluation_aggregator import build_summary
 from appcore.fine_ai_evaluation_country_config import (
     DEFAULT_COUNTRY_CODES,
@@ -65,7 +66,8 @@ class FineAiEvaluationService:
         country_retry_attempts: int = 2,
     ):
         self.repository = repository or FineAiEvaluationRepository()
-        self.gemini_client = gemini_client or FineAiGeminiClient()
+        self.gemini_client = gemini_client
+        self._gemini_client_injected = gemini_client is not None
         self.product_snapshot_service = product_snapshot_service or ProductSnapshotService()
         self.asset_snapshot_service = asset_snapshot_service or AssetSnapshotService()
         self.external_card_video_snapshot_service = (
@@ -85,8 +87,10 @@ class FineAiEvaluationService:
         include_videos: bool = True,
         locale: str = "zh-CN",
         product_url_override: str | None = None,
+        model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
     ) -> dict[str, Any]:
         country_codes = normalize_country_codes(countries)
+        model_config = fine_ai_model_config.get_profile_config(model_profile)
         product_snapshot = self.product_snapshot_service.build_snapshot(
             product_id,
             include_assets=include_assets,
@@ -112,8 +116,9 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
-                "model": MODEL,
-                "provider": PROVIDER,
+                "model_profile": model_config["profile"],
+                "model": model_config["model"],
+                "provider": model_config["provider"],
                 "force_refresh": bool(force_refresh),
                 "include_assets": bool(include_assets),
                 "include_videos": bool(include_videos),
@@ -154,10 +159,12 @@ class FineAiEvaluationService:
         card_video_url: str = "",
         card_video_name: str = "",
         card_video_duration_seconds: Any = None,
+        model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
     ) -> dict[str, Any]:
         product_url = str(product_link or "").strip()
         if not product_url:
             raise ValueError("product_link is required")
+        model_config = fine_ai_model_config.get_profile_config(model_profile)
         link_check = _sanitize_link_check_result(link_check_result)
         if link_check.get("ok") and link_check.get("selected_link"):
             product_url = str(link_check["selected_link"]).strip()
@@ -205,8 +212,9 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
-                "model": MODEL,
-                "provider": PROVIDER,
+                "model_profile": model_config["profile"],
+                "model": model_config["model"],
+                "provider": model_config["provider"],
                 "force_refresh": bool(force_refresh),
                 "include_assets": has_card_video,
                 "include_videos": has_card_video,
@@ -265,6 +273,9 @@ class FineAiEvaluationService:
             product_snapshot=product_snapshot,
             asset_snapshot=asset_snapshot,
         )
+        metadata = _ensure_model_config_metadata(metadata)
+        model_config = _fine_ai_model_config_from_metadata(metadata)
+        gemini_client = self._gemini_client_for_metadata(metadata)
 
         try:
             progress = _mark_progress_step(
@@ -285,7 +296,7 @@ class FineAiEvaluationService:
                 started_at=_now_iso(),
                 progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
             )
-            product_facts = self.gemini_client.generate_product_facts(
+            product_facts = gemini_client.generate_product_facts(
                 product_snapshot=product_snapshot,
                 countries=country_configs(country_codes),
             )
@@ -395,7 +406,7 @@ class FineAiEvaluationService:
             )
             for attempt in range(1, self.country_retry_attempts + 1):
                 try:
-                    result = self.gemini_client.generate_country_evaluation(
+                    result = gemini_client.generate_country_evaluation(
                         product_snapshot=product_snapshot,
                         product_facts=product_facts,
                         country=country,
@@ -541,8 +552,9 @@ class FineAiEvaluationService:
         summary = build_summary(countries)
         frontend = build_frontend(summary, countries)
         metadata.update({
-            "model": MODEL,
-            "provider": PROVIDER,
+            "model_profile": model_config["profile"],
+            "model": model_config["model"],
+            "provider": model_config["provider"],
             "countries_requested": country_codes,
             "countries_completed": completed_codes,
             "countries_failed": failed_codes,
@@ -725,7 +737,9 @@ class FineAiEvaluationService:
                 include_videos=include_videos,
             )
         metadata["asset_snapshot"] = asset_snapshot
-        product_facts = run.get("product_facts") or self.gemini_client.generate_product_facts(
+        metadata = _ensure_model_config_metadata(metadata)
+        gemini_client = self._gemini_client_for_metadata(metadata)
+        product_facts = run.get("product_facts") or gemini_client.generate_product_facts(
             product_snapshot=product_snapshot,
             countries=country_configs(run.get("countries") or DEFAULT_COUNTRY_CODES),
         )
@@ -751,7 +765,7 @@ class FineAiEvaluationService:
             model_id=metadata.get("model") or MODEL,
         )
         try:
-            result = self.gemini_client.generate_country_evaluation(
+            result = gemini_client.generate_country_evaluation(
                 product_snapshot=product_snapshot,
                 product_facts=product_facts,
                 country=country,
@@ -858,6 +872,13 @@ class FineAiEvaluationService:
         if str(run.get("product_id") or "") != str(product_id):
             raise FineAiEvaluationNotFound("Evaluation run not found")
 
+    def _gemini_client_for_metadata(self, metadata: dict[str, Any]):
+        if self._gemini_client_injected:
+            return self.gemini_client
+        config = _fine_ai_model_config_from_metadata(metadata)
+        self.gemini_client = FineAiGeminiClient(provider=config["provider"])
+        return self.gemini_client
+
     def _call_metadata(self) -> dict[str, Any]:
         return dict(getattr(self.gemini_client, "last_call_metadata", {}) or {})
 
@@ -904,6 +925,25 @@ def get_service() -> FineAiEvaluationService:
             country_request_interval_seconds=PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS
         )
     return _SERVICE
+
+
+def _fine_ai_model_config_from_metadata(metadata: dict[str, Any]) -> dict[str, str]:
+    profile = str((metadata or {}).get("model_profile") or fine_ai_model_config.MANUAL_PROFILE).strip()
+    provider = str((metadata or {}).get("provider") or "").strip()
+    if provider in fine_ai_model_config.ALLOWED_PROVIDERS:
+        return fine_ai_model_config.resolve_config(profile=profile, provider=provider)
+    return fine_ai_model_config.get_profile_config(
+        profile if profile in fine_ai_model_config.PROFILES else fine_ai_model_config.MANUAL_PROFILE
+    )
+
+
+def _ensure_model_config_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    out = dict(metadata or {})
+    config = _fine_ai_model_config_from_metadata(out)
+    out["model_profile"] = config["profile"]
+    out["provider"] = config["provider"]
+    out["model"] = config["model"]
+    return out
 
 
 def _now_iso() -> str:

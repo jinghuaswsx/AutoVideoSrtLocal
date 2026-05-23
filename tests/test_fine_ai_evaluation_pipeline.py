@@ -1,3 +1,13 @@
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _stub_fine_ai_model_settings(monkeypatch):
+    from appcore import fine_ai_evaluation_model_config as model_config
+
+    monkeypatch.setattr(model_config.settings_store, "get_setting", lambda key: None)
+
+
 def test_pipeline_extracts_product_facts_once_and_evaluates_five_countries_serially():
     from appcore.fine_ai_evaluation_country_config import DEFAULT_COUNTRY_CODES
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
@@ -477,6 +487,40 @@ def test_external_link_run_uses_product_link_without_local_product_lookup():
         "asset_paths": [],
         "warnings": [],
     }
+
+
+def test_external_link_run_records_manual_fine_ai_model_profile(monkeypatch):
+    from appcore import fine_ai_evaluation_model_config as model_config
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    monkeypatch.setattr(
+        model_config,
+        "get_profile_config",
+        lambda profile: {
+            "profile": profile,
+            "provider": "openrouter",
+            "model": "google/gemini-3.5-flash",
+            "label": "OPENROUTER",
+        },
+    )
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=ExplodingProductSnapshotService(),
+        asset_snapshot_service=ExplodingAssetSnapshotService(),
+    )
+
+    run = service.create_external_link_run(
+        product_link="https://example.test/products/new-idea",
+        product_name="New Idea",
+        countries=["DE"],
+    )
+
+    stored = repository.get_run(run["evaluation_run_id"])
+    assert stored["metadata"]["model_profile"] == "manual"
+    assert stored["metadata"]["provider"] == "openrouter"
+    assert stored["metadata"]["model"] == "google/gemini-3.5-flash"
 
 
 def test_external_link_run_records_product_link_check_progress():

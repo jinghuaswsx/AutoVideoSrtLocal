@@ -330,6 +330,7 @@ def _run_candidate(
             card_video_name=str(row.get("video_name") or "").strip(),
             card_video_duration_seconds=row.get("video_duration_seconds"),
             force_refresh=True,
+            model_profile="scheduled",
         )
         evaluation_run_id = str(run.get("evaluation_run_id") or "")
         result = fine_ai_service.run_evaluation(evaluation_run_id)
