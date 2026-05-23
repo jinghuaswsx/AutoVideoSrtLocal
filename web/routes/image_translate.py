@@ -396,6 +396,9 @@ def _mark_item_as_copied_source_result(task: dict, item: dict) -> str:
     item["result_source"] = "copied_source"
     item["result_channel"] = ""
     item["result_model_id"] = ""
+    item["eval_status"] = "skipped"
+    item["eval_result"] = None
+    item["eval_error"] = ""
     return dst_key
 
 
@@ -453,6 +456,9 @@ def _reset_item_processing_state(item: dict) -> None:
     item["result_source"] = ""
     item["result_channel"] = ""
     item["result_model_id"] = ""
+    item["eval_status"] = "pending"
+    item["eval_result"] = None
+    item["eval_error"] = ""
 
 
 def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object_key: str, filename: str) -> dict:
