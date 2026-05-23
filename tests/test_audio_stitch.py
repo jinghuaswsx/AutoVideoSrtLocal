@@ -269,3 +269,54 @@ def test_build_stitched_audio_raises_on_empty_segments(tmp_path):
     except ValueError:
         return
     assert False, "应该抛 ValueError"
+
+
+def test_apply_asr_window_audio_schedule_absolute_align():
+    scheduled = apply_asr_window_audio_schedule(
+        [
+            {
+                "asr_index": 0,
+                "start_time": 0.5,
+                "end_time": 3.0,
+                "tts_duration": 1.8,
+                "text": "First speech",
+            },
+            {
+                "asr_index": 1,
+                "start_time": 5.0,
+                "end_time": 8.0,
+                "tts_duration": 1.5,
+                "text": "Second speech",
+            },
+            {
+                "asr_index": 2,
+                "start_time": 7.5,
+                "end_time": 9.5,
+                "tts_duration": 1.2,
+                "text": "Push-forward speech",
+            },
+            {
+                "asr_index": 3,
+                "start_time": 8.0,
+                "end_time": 9.0,
+                "tts_duration": 1.0,
+                "text": "Spillover speech",
+            },
+        ],
+        max_gap=0.25,
+        preserve_gap_threshold=1.0,
+        absolute_align=True,
+    )
+
+    assert scheduled[0]["audio_start_time"] == 0.5
+    assert scheduled[0]["audio_end_time"] == 2.3
+    assert scheduled[0]["timeline_mode"] == "asr_absolute_primary"
+
+    assert scheduled[1]["audio_start_time"] == 5.0
+    assert scheduled[1]["audio_end_time"] == 6.5
+
+    assert scheduled[2]["audio_start_time"] == 7.5
+    assert scheduled[2]["audio_end_time"] == 8.7
+
+    assert scheduled[3]["audio_start_time"] == 8.7
+    assert scheduled[3]["audio_end_time"] == 9.7
