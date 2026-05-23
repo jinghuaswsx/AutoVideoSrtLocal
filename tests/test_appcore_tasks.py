@@ -93,6 +93,57 @@ def test_infer_single_child_task_id_for_media_item_ignores_ambiguous_matches(mon
     assert tasks.infer_single_child_task_id_for_media_item(599, "de") is None
 
 
+def test_infer_single_child_task_id_from_raw_source_matches_reused_parent(monkeypatch):
+    captured = {}
+
+    def fake_query_all(sql, args):
+        captured["sql"] = " ".join(str(sql).split())
+        captured["args"] = args
+        return [
+            {
+                "id": 93,
+                "payload_json": '{"raw_source_id":187,"media_item_id":1376}',
+            },
+            {
+                "id": 47,
+                "payload_json": '{"raw_source_id":999,"media_item_id":1376}',
+            },
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.infer_single_child_task_id_from_raw_source(602, " ES ", 187) == 93
+    assert "raw_source_reused" in captured["sql"]
+    assert captured["args"] == (
+        602,
+        "es",
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_DONE,
+    )
+
+
+def test_latest_child_task_id_for_media_item_returns_latest_active_child(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["sql"] = " ".join(str(sql).split())
+        captured["args"] = args
+        return {"id": 99}
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+
+    assert tasks.latest_child_task_id_for_media_item(599, " DE ") == 99
+    assert "ORDER BY id DESC LIMIT 1" in captured["sql"]
+    assert captured["args"] == (
+        599,
+        "de",
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_DONE,
+    )
+
+
 def test_resolve_child_task_for_media_item_upload_accepts_matching_assignee(monkeypatch):
     captured = {}
 

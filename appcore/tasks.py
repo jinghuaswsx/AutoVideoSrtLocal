@@ -229,6 +229,69 @@ def infer_single_child_task_id_for_media_item(
     return task_ids[0] if len(task_ids) == 1 else None
 
 
+def infer_single_child_task_id_from_raw_source(
+    product_id: int,
+    lang: str,
+    source_raw_id: int,
+) -> int | None:
+    product_id_int = _positive_int(product_id)
+    raw_source_id_int = _positive_int(source_raw_id)
+    lang_norm = str(lang or "").strip().lower()
+    if not product_id_int or not lang_norm or raw_source_id_int is None:
+        return None
+
+    rows = query_all(
+        "SELECT c.id, e.payload_json FROM tasks c "
+        "JOIN tasks p ON p.id=c.parent_task_id "
+        "JOIN task_events e ON e.task_id=p.id AND e.event_type='raw_source_reused' "
+        "WHERE c.media_product_id=%s "
+        "AND LOWER(TRIM(COALESCE(c.country_code, '')))=%s "
+        "AND c.parent_task_id IS NOT NULL "
+        "AND c.status IN (%s,%s,%s) "
+        "ORDER BY c.id DESC",
+        (
+            product_id_int,
+            lang_norm,
+            CHILD_ASSIGNED,
+            CHILD_REVIEW,
+            CHILD_DONE,
+        ),
+    )
+    task_ids: list[int] = []
+    for row in rows or []:
+        payload = _parse_event_payload_obj((row or {}).get("payload_json"))
+        if _positive_int(payload.get("raw_source_id")) != raw_source_id_int:
+            continue
+        task_id = _positive_int((row or {}).get("id"))
+        if task_id is not None and task_id not in task_ids:
+            task_ids.append(task_id)
+    return task_ids[0] if len(task_ids) == 1 else None
+
+
+def latest_child_task_id_for_media_item(product_id: int, lang: str) -> int | None:
+    product_id_int = _positive_int(product_id)
+    lang_norm = str(lang or "").strip().lower()
+    if not product_id_int or not lang_norm:
+        return None
+
+    row = query_one(
+        "SELECT id FROM tasks "
+        "WHERE media_product_id=%s "
+        "AND LOWER(TRIM(COALESCE(country_code, '')))=%s "
+        "AND parent_task_id IS NOT NULL "
+        "AND status IN (%s,%s,%s) "
+        "ORDER BY id DESC LIMIT 1",
+        (
+            product_id_int,
+            lang_norm,
+            CHILD_ASSIGNED,
+            CHILD_REVIEW,
+            CHILD_DONE,
+        ),
+    )
+    return _positive_int((row or {}).get("id"))
+
+
 def resolve_child_task_for_media_item_upload(
     *,
     task_id: int,

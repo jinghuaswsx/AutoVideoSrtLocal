@@ -1839,10 +1839,10 @@ def test_push_rework_reject_falls_back_to_latest_task_on_ambiguity_no_db(
         lambda product_id, lang: None,
         raising=False,
     )
-    # Mock query_one to return the latest task ID (99)
     monkeypatch.setattr(
-        "web.routes.pushes.query_one",
-        lambda sql, args: {"id": 99},
+        "web.routes.pushes.tasks_svc.latest_child_task_id_for_media_item",
+        lambda product_id, lang: 99,
+        raising=False,
     )
 
     def fake_reject_child_from_push(**kwargs):
@@ -1948,6 +1948,114 @@ def test_push_rework_reject_infers_unbound_task_and_binds_item(
     assert captured["updates"] == [(1364, 30)]
     assert captured["refreshes"] == [1364]
     assert captured["audit"]["detail"]["task_id"] == 30
+
+
+def test_push_rework_reject_infers_task_from_reused_raw_source(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {"updates": [], "refreshes": []}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 602,
+            "task_id": None,
+            "lang": "es",
+            "source_raw_id": 187,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_from_raw_source",
+        lambda product_id, lang, source_raw_id: 93,
+        raising=False,
+    )
+
+    def fake_reject_child_from_push(**kwargs):
+        captured["service"] = kwargs
+        return {
+            "task_id": kwargs["task_id"],
+            "status": "assigned",
+            "issue_keys": kwargs["issue_keys"],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.reject_child_from_push",
+        fake_reject_child_from_push,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.refresh_push_status_cache_for_item",
+        lambda item_id: captured["refreshes"].append(item_id),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.system_audit.record_from_request",
+        lambda **kwargs: captured.setdefault("audit", kwargs),
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1404/reject-to-task",
+        json={
+            "issue_keys": ["has_object", "has_cover"],
+            "reason": "复用原始素材生成的视频和封面不合格，需要负责人重新处理",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["task_id"] == 93
+    assert captured["service"] == {
+        "task_id": 93,
+        "actor_user_id": 1,
+        "issue_keys": ["has_object", "has_cover"],
+        "reason": "复用原始素材生成的视频和封面不合格，需要负责人重新处理",
+    }
+    assert captured["updates"] == [(1404, 93)]
+    assert captured["refreshes"] == [1404]
+    assert captured["audit"]["detail"]["task_id"] == 93
+
+
+def test_push_rework_task_id_uses_auto_translated_source_ref_id(monkeypatch):
+    from web.routes import pushes as pushes_route
+
+    captured = {}
+    monkeypatch.setattr(
+        pushes_route.tasks_svc,
+        "infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: None,
+        raising=False,
+    )
+
+    def fake_infer_from_raw_source(product_id, lang, source_raw_id):
+        captured["args"] = (product_id, lang, source_raw_id)
+        return 93
+
+    monkeypatch.setattr(
+        pushes_route.tasks_svc,
+        "infer_single_child_task_id_from_raw_source",
+        fake_infer_from_raw_source,
+        raising=False,
+    )
+
+    assert pushes_route._resolve_rework_task_id(
+        {
+            "id": 1404,
+            "product_id": 602,
+            "task_id": None,
+            "lang": "es",
+            "source_raw_id": None,
+            "source_ref_id": 187,
+            "auto_translated": 1,
+        },
+    ) == 93
+    assert captured["args"] == (602, "es", 187)
 
 
 def test_push_rework_reject_requires_admin(
