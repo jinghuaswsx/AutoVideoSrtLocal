@@ -474,8 +474,13 @@ def _reconcile_one_sentence(
             current["best_effort"] = True
             _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_skipped")
         else:
-            # === 本地声学沙盒重试循环 ===
-            best_candidate = _candidate_from_current(current, round_number=0)
+            # === 本地声学沙盒重写与初筛阶段 ===
+            initial_candidate = _candidate_from_current(current, round_number=0)
+            initial_candidate["sandbox_predicted"] = False  # 它是有物理音频的真实候选
+            
+            sandbox_candidates = [initial_candidate]
+            seen_texts = {current["text"].strip()}  # 去重用的文本集合
+            
             round_limit = min(max_rewrite_rounds, max_tts_regenerate_attempts)
             
             for rewrite_round in range(1, round_limit + 1):
@@ -560,24 +565,18 @@ def _reconcile_one_sentence(
                     if debug_calls:
                         current.setdefault("_llm_debug_calls", []).extend(debug_calls)
                     new_text = str(rewrite_result.get("text") or "")
-                    if "covered_source_terms" in rewrite_result:
-                        current["covered_source_terms"] = list(rewrite_result.get("covered_source_terms") or [])
-                    if "omitted_source_terms" in rewrite_result:
-                        current["omitted_source_terms"] = list(rewrite_result.get("omitted_source_terms") or [])
-                    elif action == "repair_coverage":
-                        current["omitted_source_terms"] = []
-                    if "coverage_ok" in rewrite_result:
-                        current["coverage_ok"] = bool(rewrite_result.get("coverage_ok"))
-                    elif action == "repair_coverage":
-                        current["coverage_ok"] = True
+                    covered_source_terms = list(rewrite_result.get("covered_source_terms") or [])
+                    omitted_source_terms = list(rewrite_result.get("omitted_source_terms") or [])
+                    if action == "repair_coverage":
+                        omitted_source_terms = []
+                    coverage_ok = bool(rewrite_result.get("coverage_ok")) if "coverage_ok" in rewrite_result else (action == "repair_coverage")
                 else:
                     new_text = str(rewrite_result or "")
-                    if action == "repair_coverage":
-                        current["covered_source_terms"] = list(current.get("must_keep_terms") or [])
-                        current["omitted_source_terms"] = []
-                        current["coverage_ok"] = True
+                    covered_source_terms = list(current.get("must_keep_terms") or []) if action == "repair_coverage" else []
+                    omitted_source_terms = []
+                    coverage_ok = True
                 
-                # === 优化三：本地声学时长预测沙盒测速（0 云端 API 消耗） ===
+                # === 优化三：本地声学时长预测沙盒测速 ===
                 predicted_duration = predict_tts_duration(new_text, voice_id, target_language)
                 
                 current["text"] = new_text
@@ -587,8 +586,14 @@ def _reconcile_one_sentence(
                 
                 # 记录沙盒预测的临时状态
                 current["tts_duration"] = predicted_duration
+                
+                temp_candidate_dict = {
+                    "coverage_ok": coverage_ok,
+                    "omitted_source_terms": omitted_source_terms,
+                    "covered_source_terms": covered_source_terms,
+                }
                 status, speed = classify_overshoot(current["target_duration"], predicted_duration)
-                if _semantic_coverage_issue(current):
+                if _semantic_coverage_issue(temp_candidate_dict):
                     status = "needs_semantic_repair"
                 current["status"] = status
                 current["speed"] = speed
@@ -608,58 +613,147 @@ def _reconcile_one_sentence(
                     "delta_pct": _delta_pct(current["target_duration"], predicted_duration),
                     "status": status,
                     "reason": _duration_reason(status),
-                    "coverage_ok": current.get("coverage_ok", True),
-                    "omitted_source_terms": list(current.get("omitted_source_terms") or []),
+                    "coverage_ok": coverage_ok,
+                    "omitted_source_terms": omitted_source_terms,
                     "selected": False,
                     "sandbox_predicted": True,
                 }
                 current["attempts"].append(attempt)
                 _emit_sentence_progress(on_progress, position=position, current=current, phase="rewrite_attempt")
                 
-                candidate = _candidate_from_current(current, round_number=rewrite_round)
-                if _candidate_rank(candidate) <= _candidate_rank(best_candidate):
-                    best_candidate = candidate
+                new_text_stripped = new_text.strip()
+                if new_text_stripped and new_text_stripped not in seen_texts:
+                    seen_texts.add(new_text_stripped)
+                    candidate = _candidate_from_current(current, round_number=rewrite_round)
+                    candidate["coverage_ok"] = coverage_ok
+                    candidate["omitted_source_terms"] = omitted_source_terms
+                    candidate["covered_source_terms"] = covered_source_terms
+                    candidate["sandbox_predicted"] = True
+                    sandbox_candidates.append(candidate)
                 
-                # 如果沙盒预测时长已经完美，直接命中沙盒收敛，提前退出循环
-                if status == "ok":
+                # 如果沙盒预测时长已经完美且语义无缺陷，智能提前退出循环以节约 LLM 开销
+                if status == "ok" and not _semantic_coverage_issue(temp_candidate_dict):
                     break
             
-            # === 沙盒收敛结束，选取最优候选进行 唯一一次 云端真实 TTS ===
-            _apply_candidate(current, best_candidate)
+            # === Stage 1 粗筛：排序并筛选出 Top 3 沙盒候选文本 ===
+            def _rank_sandbox_candidate(c: dict) -> tuple[int, float]:
+                return (
+                    1 if _semantic_coverage_issue(c) else 0,
+                    abs(duration_ratio(c["target_duration"], c["tts_duration"]) - 1.0)
+                )
+            
+            sorted_candidates = sorted(sandbox_candidates, key=_rank_sandbox_candidate)
+            top_candidates = sorted_candidates[:3]
+            
+            # === Stage 2 精筛：多候选并发真实合成与物理对齐决策 ===
             _emit_sentence_progress(on_progress, position=position, current=current, phase="tts_regen_start")
             
-            # 唯一的真实 TTS API 调用
-            current["tts_path"], real_duration = _regenerate_segment(
-                sentence=current,
-                voice_id=voice_id,
-                target_language=target_language,
-                suffix=_candidate_suffix("rewrite_v2_final", current["selected_attempt_round"]),
-            )
-            current["tts_regenerate_attempts"] += 1
-            current["tts_duration"] = real_duration
-            current["duration_ratio"] = duration_ratio(current["target_duration"], real_duration)
+            def _generate_candidate_audio(c: dict) -> dict:
+                if not c.get("sandbox_predicted", True):
+                    return c
+                
+                temp_sentence = {
+                    "asr_index": asr_index,
+                    "text": c["text"],
+                    "tts_base_path": current["tts_base_path"],
+                    "tts_path": current["tts_path"]
+                }
+                path, real_duration = _regenerate_segment(
+                    sentence=temp_sentence,
+                    voice_id=voice_id,
+                    target_language=target_language,
+                    suffix=_candidate_suffix("rewrite_v2_final", c["round"]),
+                )
+                c["tts_path"] = path
+                c["tts_duration"] = real_duration
+                c["duration_ratio"] = duration_ratio(c["target_duration"], real_duration)
+                c["sandbox_predicted"] = False
+                
+                status, speed = classify_overshoot(c["target_duration"], real_duration)
+                if _semantic_coverage_issue(c):
+                    status = "needs_semantic_repair"
+                c["status"] = status
+                c["speed"] = speed
+                return c
+
+            real_candidates = []
+            winner = None
             
-            # 对真实配音结果进行重新校验
-            status, speed = classify_overshoot(current["target_duration"], real_duration)
-            if _semantic_coverage_issue(current):
-                status = "needs_semantic_repair"
-            current["status"] = status
-            current["speed"] = speed
+            for c in top_candidates:
+                # 触发真实的物理合成
+                real_c = _generate_candidate_audio(c)
+                real_candidates.append(real_c)
+                
+                # 只有真正触发了物理生成的重写候选才累加 count
+                if c["round"] > 0:
+                    current["tts_regenerate_attempts"] += 1
+                
+                # 校验它的物理时长是否已经完美（即真实的 status == "ok"，或者在 FFmpeg 变速完美区内）
+                ratio = duration_ratio(real_c["target_duration"], real_c["tts_duration"])
+                perfect_sync = (real_c["status"] == "ok")
+                tempo_adjustable = (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO) and not _semantic_coverage_issue(real_c)
+                
+                # 额外增加“沙盒完美”判定：若此重写候选在沙盒中预测完美，且它就是我们的 Top 1 首选，直接锁定退出！
+                # 这样对于绝大多数能成功收敛的句子，物理 ElevenLabs 合成仅需跑 1 次 API，完美拉平老 V2 的 0 浪费开销！
+                sandbox_est = predict_tts_duration(c["text"], voice_id, target_language)
+                sandbox_status, _ = classify_overshoot(c["target_duration"], sandbox_est)
+                temp_c_dict = {
+                    "coverage_ok": c.get("coverage_ok", True),
+                    "omitted_source_terms": c.get("omitted_source_terms", []),
+                }
+                if _semantic_coverage_issue(temp_c_dict):
+                    sandbox_status = "needs_semantic_repair"
+                sandbox_perfect = (sandbox_status == "ok")
+                
+                if perfect_sync or tempo_adjustable or sandbox_perfect:
+                    winner = real_c
+                    break
             
-            # 更新对应最优 attempt 的真实数据
+            # 如果跑完一遍（或者因为中途不完美没有 break），我们在所有已物理生成的 real_candidates 中挑选最好的
+            if not winner:
+                def _rank_real_candidate(c: dict) -> tuple[int, float]:
+                    return (
+                        1 if _semantic_coverage_issue(c) else 0,
+                        abs(duration_ratio(c["target_duration"], c["tts_duration"]) - 1.0)
+                    )
+                sorted_real_candidates = sorted(real_candidates, key=_rank_real_candidate)
+                winner = sorted_real_candidates[0]
+            
+            # 应用物理表现最佳的最终获胜候选
+            _apply_candidate(current, winner)
+            current["tts_duration"] = winner["tts_duration"]
+            current["duration_ratio"] = winner["duration_ratio"]
+            current["status"] = winner["status"]
+            current["speed"] = winner["speed"]
+            
+            # 清理其余未被选中的落选音频文件，避免积压废音频
+            for c in real_candidates:
+                if c["round"] != winner["round"]:
+                    path_to_remove = c.get("tts_path")
+                    if path_to_remove and os.path.exists(path_to_remove) and path_to_remove != winner.get("tts_path"):
+                        try:
+                            os.remove(path_to_remove)
+                        except Exception:
+                            pass
+            
+            # 更新对应 attempts 里的真实物理时长和状态，保留 Gantt Panel 数据一致性
             for att in current["attempts"]:
-                if int(att.get("round", -1)) == current["selected_attempt_round"]:
-                    att["tts_duration"] = real_duration
-                    att["duration_ratio"] = round(current["duration_ratio"], 4)
-                    att["delta_pct"] = _delta_pct(current["target_duration"], real_duration)
-                    att["status"] = status
-                    att["reason"] = _duration_reason(status)
+                att_round = int(att.get("round", -1))
+                matching_real = next((rc for rc in real_candidates if rc["round"] == att_round), None)
+                if matching_real:
+                    att["tts_duration"] = matching_real["tts_duration"]
+                    att["duration_ratio"] = round(matching_real["duration_ratio"], 4)
+                    att["delta_pct"] = _delta_pct(matching_real["target_duration"], matching_real["tts_duration"])
+                    att["status"] = matching_real["status"]
+                    att["reason"] = _duration_reason(matching_real["status"])
                     att["sandbox_predicted"] = False
+                
+                att["selected"] = (att_round == winner["round"])
             
-            _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
+            _mark_selected_attempt(current["attempts"], winner["round"])
             
-            # 如果真实音频不完美，但落在 0.9 - 1.1 变速区间，利用 FFmpeg 变速拉齐
-            if status in {"needs_rewrite", "needs_expand"} and ffmpeg_tempo_enabled:
+            # 物理真实配音如果微有出入，利用 FFmpeg 变速修正
+            if current["status"] in {"needs_rewrite", "needs_expand"} and ffmpeg_tempo_enabled:
                 _try_ffmpeg_tempo_alignment(
                     current=current,
                     position=position,
