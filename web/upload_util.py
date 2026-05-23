@@ -72,14 +72,17 @@ def _write_temp_and_commit(destination: str | os.PathLike[str], writer) -> str:
             tos_backup_storage.upload_local_file(temp_name, object_key)
         os.replace(temp_name, destination_path)
         if not _should_upload_before_local_replace():
-            try:
-                tos_backup_storage.ensure_remote_copy_for_local_path(destination_path)
-            except Exception:
-                log.warning(
-                    "TOS backup sync failed after local upload commit: %s",
-                    destination_path,
-                    exc_info=True,
-                )
+            import threading
+            def _async_backup(path):
+                try:
+                    tos_backup_storage.ensure_remote_copy_for_local_path(path)
+                except Exception:
+                    log.warning(
+                        "TOS backup sync failed in background: %s",
+                        path,
+                        exc_info=True,
+                    )
+            threading.Thread(target=_async_backup, args=(destination_path,), daemon=True).start()
         return str(destination_path)
     finally:
         if os.path.exists(temp_name):

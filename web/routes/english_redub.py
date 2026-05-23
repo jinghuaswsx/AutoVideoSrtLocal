@@ -267,16 +267,18 @@ def _copy_source_video_for_duplicate(
     destination = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     shutil.copy2(source_video_path, destination)
 
-    try:
-        from appcore import tos_backup_storage
-
-        tos_backup_storage.ensure_remote_copy_for_local_path(destination)
-    except Exception:
-        log.warning(
-            "[english_redub] TOS backup sync failed after duplicate source copy: %s",
-            destination,
-            exc_info=True,
-        )
+    import threading
+    def _async_backup(path):
+        try:
+            from appcore import tos_backup_storage
+            tos_backup_storage.ensure_remote_copy_for_local_path(path)
+        except Exception:
+            log.warning(
+                "[english_redub] TOS backup sync failed in background: %s",
+                path,
+                exc_info=True,
+            )
+    threading.Thread(target=_async_backup, args=(destination,), daemon=True).start()
 
     content_type = mimetypes.guess_type(original_filename or destination)[0] or "application/octet-stream"
     return destination, os.path.getsize(destination), content_type
