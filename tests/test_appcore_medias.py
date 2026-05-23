@@ -716,9 +716,8 @@ def test_update_product_owner_uses_translation_scope_validation(monkeypatch):
         medias.update_product_owner(42, 7)
 
 
-def test_update_product_owner_syncs_tables_and_triggers_task_cascade_unit(monkeypatch):
+def test_update_product_owner_syncs_material_tables_without_task_cascade_unit(monkeypatch):
     calls = []
-    cascade_calls = []
 
     def fake_query_one(sql, args=None):
         if "FROM media_products" in sql:
@@ -756,7 +755,13 @@ def test_update_product_owner_syncs_tables_and_triggers_task_cascade_unit(monkey
     monkeypatch.setattr(medias, "get_conn", lambda: FakeConn())
 
     from appcore import tasks
-    monkeypatch.setattr(tasks, "on_product_owner_changed", lambda **kw: cascade_calls.append(kw))
+    monkeypatch.setattr(
+        tasks,
+        "on_product_owner_changed",
+        lambda **kw: (_ for _ in ()).throw(
+            AssertionError("product owner changes must not cascade task assignees")
+        ),
+    )
 
     medias.update_product_owner(42, 7)
 
@@ -768,11 +773,6 @@ def test_update_product_owner_syncs_tables_and_triggers_task_cascade_unit(monkey
         ("commit", None),
         ("close", None),
     ]
-    assert cascade_calls == [{
-        "product_id": 42,
-        "new_user_id": 7,
-        "actor_user_id": None,
-    }]
 
 
 def test_update_product_owner_rejects_unknown_product(ephemeral_users):

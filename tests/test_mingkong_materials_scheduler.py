@@ -49,6 +49,31 @@ def test_mingkong_material_ad_status_scheduler_registered_in_app_scheduler():
     assert "mingkong_material_ad_status_scheduler.register(_scheduler)" in source
 
 
+def test_mingkong_fine_ai_auto_evaluation_registered():
+    from appcore import scheduled_tasks
+
+    task = scheduled_tasks.get_task_definition("mingkong_fine_ai_auto_evaluation_tick")
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+    enriched = definitions["mingkong_fine_ai_auto_evaluation_tick"]
+
+    assert task["code"] == "mingkong_fine_ai_auto_evaluation_tick"
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "mingkong_fine_ai_auto_evaluation_tick"
+    assert task["runner"] == "appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "10 分钟" in task["schedule"]
+    assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
+    assert enriched["control_strategy"] == "apscheduler"
+    assert enriched["log_source"] == "db:scheduled_task_runs"
+
+
+def test_mingkong_fine_ai_auto_evaluation_scheduler_registered_in_app_scheduler():
+    source = (Path(__file__).resolve().parents[1] / "appcore" / "scheduler.py").read_text(encoding="utf-8")
+
+    assert "mingkong_fine_ai_auto_evaluation_scheduler" in source
+    assert "mingkong_fine_ai_auto_evaluation_scheduler.register(_scheduler)" in source
+
+
 def test_mingkong_material_daily_snapshot_systemd_units():
     root = Path(__file__).resolve().parents[1]
     service_path = root / "deploy" / "server_browser" / "autovideosrt-mingkong-material-daily-snapshot.service"

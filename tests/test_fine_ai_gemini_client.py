@@ -1,3 +1,45 @@
+def test_fine_ai_prompts_require_chinese_human_readable_output():
+    from appcore.fine_ai_evaluation_prompts import (
+        COUNTRY_EVALUATION_SYSTEM_PROMPT,
+        JSON_REPAIR_SYSTEM_PROMPT,
+        PRODUCT_FACT_SYSTEM_PROMPT,
+        build_country_evaluation_prompt,
+        build_json_repair_prompt,
+        build_product_fact_prompt,
+    )
+
+    product_prompt = build_product_fact_prompt(
+        product_snapshot={"product_id": "123", "product_name": "Sample"},
+        countries=[{"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国"}],
+    )
+    country_prompt = build_country_evaluation_prompt(
+        product_snapshot={"product_id": "123", "product_name": "Sample"},
+        product_facts={"product_id": "123"},
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国"},
+        asset_snapshot={"videos": []},
+    )
+    repair_prompt = build_json_repair_prompt(
+        raw_response='{"decision":{"one_sentence_reason":"Looks promising"}}',
+        parse_error="demo",
+    )
+
+    common_rule = "所有面向运营阅读的字符串值必须使用简体中文"
+    contract_rule = "字段名、国家代码、固定枚举值、货币代码、URL/source_url、时间戳、文件路径、ID 按 schema 和输入原样保留"
+    for prompt_text in (
+        PRODUCT_FACT_SYSTEM_PROMPT,
+        COUNTRY_EVALUATION_SYSTEM_PROMPT,
+        JSON_REPAIR_SYSTEM_PROMPT,
+        product_prompt,
+        country_prompt,
+        repair_prompt,
+    ):
+        assert common_rule in prompt_text
+        assert contract_rule in prompt_text
+
+    assert "generated_search_keywords.english_keywords 字段名保持不变，但字段值也输出中文关键词" in product_prompt
+    assert "country_name 和 country_name_zh 都输出中文国家名" in country_prompt
+
+
 def test_fine_ai_gemini_client_invokes_vertex_adc_without_search_and_with_url_context(monkeypatch):
     from appcore import fine_ai_gemini_client as mod
 

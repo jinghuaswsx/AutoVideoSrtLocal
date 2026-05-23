@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 RUN_STATUSES = {"queued", "running", "completed", "partially_completed", "failed", "cancelled"}
 COUNTRY_PENDING_STATUSES = {"pending", "waiting", "running", "completed", "failed", "skipped"}
-PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS = 30
+PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS = 0
 
 
 class FineAiEvaluationError(RuntimeError):
@@ -62,6 +62,7 @@ class FineAiEvaluationService:
         external_card_video_snapshot_service=None,
         country_request_interval_seconds: float = 0,
         country_request_sleeper=None,
+        country_retry_attempts: int = 2,
     ):
         self.repository = repository or FineAiEvaluationRepository()
         self.gemini_client = gemini_client or FineAiGeminiClient()
@@ -72,6 +73,7 @@ class FineAiEvaluationService:
         )
         self.country_request_interval_seconds = max(0.0, float(country_request_interval_seconds or 0))
         self.country_request_sleeper = country_request_sleeper or time.sleep
+        self.country_retry_attempts = max(1, int(country_retry_attempts or 1))
 
     def create_run(
         self,
@@ -391,74 +393,115 @@ class FineAiEvaluationService:
                     base_progress=progress,
                 ),
             )
-            try:
-                result = self.gemini_client.generate_country_evaluation(
-                    product_snapshot=product_snapshot,
-                    product_facts=product_facts,
-                    country=country,
-                    asset_snapshot=asset_snapshot,
-                    asset_paths=list(asset_snapshot.get("asset_paths") or []),
-                )
-                call_trace = self._call_trace(result)
-                result = _normalize_country_result(result, country, asset_snapshot)
-                validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
-                completed_codes.append(code)
-                countries[code] = result
-                call_metadata = self._call_metadata()
-                progress = _mark_progress_step(
-                    progress,
-                    step_key,
-                    "completed",
-                    f"{code} 评估完成：{(result.get('decision') or {}).get('final_decision') or '-'} / {((result.get('scores') or {}).get('overall_score'))}",
-                    debug=[
-                        *_country_result_debug(result),
-                        *_usage_debug(call_metadata),
-                    ],
-                    llm_trace=call_trace,
-                )
-                self.repository.upsert_country(
-                    evaluation_run_id,
-                    code,
-                    {
-                        "product_id": product_id,
-                        "status": "completed",
-                        "full_result": result,
-                        "metadata": call_metadata,
-                        "raw_response": _country_raw_response(call_trace, call_metadata),
-                    },
-                )
-            except Exception as exc:
-                log.exception("fine AI country evaluation failed: run=%s country=%s", evaluation_run_id, code)
-                failed_codes.append(code)
-                failed = _failed_country_result(country, str(exc))
-                countries[code] = failed
-                call_metadata = self._call_metadata()
-                call_trace = self._call_trace(countries.get(code), error=exc)
-                progress = _mark_progress_step(
-                    progress,
-                    step_key,
-                    "failed",
-                    f"{code} 评估失败：{str(exc)[:160]}",
-                    level="error",
-                    debug=[
-                        {"label": "Country", "value": code},
-                        {"label": "Error", "value": str(exc)[:500]},
-                        *_usage_debug(call_metadata),
-                    ],
-                    llm_trace=call_trace,
-                )
-                self.repository.upsert_country(
-                    evaluation_run_id,
-                    code,
-                    {
-                        "product_id": product_id,
-                        "status": "failed",
-                        "full_result": failed,
-                        "metadata": call_metadata,
-                        "raw_response": _country_raw_response(call_trace, call_metadata),
-                        "error_message": str(exc)[:500],
-                    },
-                )
+            for attempt in range(1, self.country_retry_attempts + 1):
+                try:
+                    result = self.gemini_client.generate_country_evaluation(
+                        product_snapshot=product_snapshot,
+                        product_facts=product_facts,
+                        country=country,
+                        asset_snapshot=asset_snapshot,
+                        asset_paths=list(asset_snapshot.get("asset_paths") or []),
+                    )
+                    call_trace = self._call_trace(result)
+                    result = _normalize_country_result(result, country, asset_snapshot)
+                    validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
+                    completed_codes.append(code)
+                    countries[code] = result
+                    call_metadata = self._call_metadata()
+                    call_metadata["attempts"] = attempt
+                    progress = _mark_progress_step(
+                        progress,
+                        step_key,
+                        "completed",
+                        f"{code} 评估完成：{(result.get('decision') or {}).get('final_decision') or '-'} / {((result.get('scores') or {}).get('overall_score'))}",
+                        debug=[
+                            *_country_result_debug(result),
+                            *_usage_debug(call_metadata),
+                        ],
+                        llm_trace=call_trace,
+                    )
+                    self.repository.upsert_country(
+                        evaluation_run_id,
+                        code,
+                        {
+                            "product_id": product_id,
+                            "status": "completed",
+                            "full_result": result,
+                            "metadata": call_metadata,
+                            "raw_response": _country_raw_response(call_trace, call_metadata),
+                        },
+                    )
+                    break
+                except Exception as exc:
+                    call_metadata = self._call_metadata()
+                    call_metadata["attempts"] = attempt
+                    call_trace = self._call_trace(countries.get(code), error=exc)
+                    if attempt < self.country_retry_attempts:
+                        log.warning(
+                            "fine AI country evaluation retrying: run=%s country=%s attempt=%s",
+                            evaluation_run_id,
+                            code,
+                            attempt,
+                            exc_info=True,
+                        )
+                        progress = _mark_progress_step(
+                            progress,
+                            step_key,
+                            "running",
+                            f"{code} 第 {attempt} 次失败，准备重试：{str(exc)[:160]}",
+                            level="warning",
+                            debug=[
+                                {"label": "Country", "value": code},
+                                {"label": "Attempt", "value": attempt},
+                                {"label": "Error", "value": str(exc)[:500]},
+                                *_usage_debug(call_metadata),
+                            ],
+                            llm_trace=call_trace,
+                        )
+                        self.repository.update_run(
+                            evaluation_run_id,
+                            status="running",
+                            progress=_progress(
+                                country_codes,
+                                f"country_evaluation_{code}",
+                                running_country=code,
+                                completed_steps=_completed_step_count(progress),
+                                completed_countries=completed_codes,
+                                failed_countries=failed_codes,
+                                base_progress=progress,
+                            ),
+                        )
+                        continue
+                    log.exception("fine AI country evaluation failed: run=%s country=%s", evaluation_run_id, code)
+                    failed_codes.append(code)
+                    failed = _failed_country_result(country, str(exc))
+                    countries[code] = failed
+                    progress = _mark_progress_step(
+                        progress,
+                        step_key,
+                        "failed",
+                        f"{code} 评估失败：{str(exc)[:160]}",
+                        level="error",
+                        debug=[
+                            {"label": "Country", "value": code},
+                            {"label": "Attempt", "value": attempt},
+                            {"label": "Error", "value": str(exc)[:500]},
+                            *_usage_debug(call_metadata),
+                        ],
+                        llm_trace=call_trace,
+                    )
+                    self.repository.upsert_country(
+                        evaluation_run_id,
+                        code,
+                        {
+                            "product_id": product_id,
+                            "status": "failed",
+                            "full_result": failed,
+                            "metadata": call_metadata,
+                            "raw_response": _country_raw_response(call_trace, call_metadata),
+                            "error_message": str(exc)[:500],
+                        },
+                    )
             self.repository.update_run(
                 evaluation_run_id,
                 status="running",

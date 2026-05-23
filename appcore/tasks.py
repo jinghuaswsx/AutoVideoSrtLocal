@@ -12,7 +12,6 @@ import json
 from typing import Any, Iterable
 from urllib.parse import quote, urlencode
 
-from appcore import mk_import as mk_import_svc
 from appcore import user_notifications as notifications_svc
 from appcore.db import execute, get_conn, query_one, query_all
 
@@ -918,66 +917,6 @@ def create_parent_task(
             raise
     finally:
         conn.close()
-
-
-def import_and_create_task(
-    *,
-    mk_video_metadata: dict,
-    translator_id: int | None = None,
-    countries: list[str],
-    language_assignments: dict[str, int] | None = None,
-    actor_user_id: int,
-) -> dict:
-    """Import a mk video + create parent task + N child tasks in one call.
-
-    If the video is already imported, look up the existing product and create
-    the task from it (skipping the import step).
-
-    Returns:
-        {"parent_task_id": int, "media_product_id": int, "media_item_id": int,
-         "is_new_product": bool}
-    """
-    import_translator_id = translator_id
-    if import_translator_id is None and language_assignments:
-        first_country = next(iter(language_assignments))
-        import_translator_id = int(language_assignments[first_country])
-
-    try:
-        import_result = mk_import_svc.import_mk_video(
-            mk_video_metadata=mk_video_metadata,
-            translator_id=int(import_translator_id),
-            actor_user_id=int(actor_user_id),
-        )
-        product_id = import_result["media_product_id"]
-        item_id = import_result["media_item_id"]
-        is_new = import_result["is_new_product"]
-        warnings = list(import_result.get("warnings") or [])
-    except mk_import_svc.DuplicateError:
-        existing = mk_import_svc.find_existing_product_item_by_meta(mk_video_metadata)
-        if not existing or not existing.get("item_id"):
-            raise
-        product_id = existing["product_id"]
-        item_id = existing["item_id"]
-        is_new = False
-        warnings = list(existing.get("warnings") or [])
-    parent_id = create_parent_task(
-        media_product_id=product_id,
-        media_item_id=item_id,
-        countries=countries,
-        translator_id=int(translator_id) if translator_id is not None else None,
-        language_assignments=language_assignments,
-        raw_processor_id=None,
-        created_by=int(actor_user_id),
-    )
-    result = {
-        "parent_task_id": parent_id,
-        "media_product_id": product_id,
-        "media_item_id": item_id,
-        "is_new_product": is_new,
-    }
-    if warnings:
-        result["warnings"] = warnings
-    return result
 
 
 class ConflictError(RuntimeError):
@@ -3330,36 +3269,9 @@ def cancel_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
 def on_product_owner_changed(
     *, product_id: int, new_user_id: int, actor_user_id: int | None = None,
 ) -> int:
-    """素材产品负责人变更时被调用。把状态非 done/cancelled 的子任务的
-    assignee_id 同步到 new_user_id。返回受影响的子任务数。"""
-    conn = get_conn()
-    try:
-        conn.begin()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, assignee_id FROM tasks "
-                    "WHERE media_product_id=%s AND parent_task_id IS NOT NULL "
-                    "AND status NOT IN (%s, %s)",
-                    (int(product_id), CHILD_DONE, CHILD_CANCELLED),
-                )
-                rows = cur.fetchall()
-                affected = 0
-                for r in rows:
-                    if r["assignee_id"] == int(new_user_id):
-                        continue
-                    cur.execute(
-                        "UPDATE tasks SET assignee_id=%s, updated_at=NOW() "
-                        "WHERE id=%s",
-                        (int(new_user_id), r["id"]),
-                    )
-                    _write_event(cur, r["id"], "assignee_changed", actor_user_id,
-                                 {"old": r["assignee_id"], "new": int(new_user_id)})
-                    affected += 1
-            conn.commit()
-            return affected
-        except Exception:
-            conn.rollback()
-            raise
-    finally:
-        conn.close()
+    """Deprecated compatibility hook.
+
+    产品负责人只代表素材归属；任务负责人以创建任务时的显式指派为准。
+    保留该函数避免历史调用方崩溃，但不再读写 tasks。
+    """
+    return 0

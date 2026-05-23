@@ -1,5 +1,7 @@
 import io
 
+from web.routes import tasks as tasks_route_module
+
 
 def test_index_renders_for_admin(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
@@ -875,16 +877,13 @@ def test_create_parent_rejects_missing_language_assignments(authed_client_no_db,
     assert "language_assignments" in resp.get_json()["error"]
 
 
-def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db, monkeypatch):
+def test_legacy_import_and_create_route_is_removed(authed_client_no_db, monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        "web.routes.tasks.ensure_translation_work_user",
-        lambda user_id: (_ for _ in ()).throw(ValueError("该用户不在翻译工作范围")),
-    )
-    monkeypatch.setattr(
-        "web.routes.tasks.tasks_svc.import_and_create_task",
-        lambda **kwargs: calls.append(kwargs) or {"parent_task_id": 1},
-    )
+    if hasattr(tasks_route_module.tasks_svc, "import_and_create_task"):
+        monkeypatch.setattr(
+            "web.routes.tasks.tasks_svc.import_and_create_task",
+            lambda **kwargs: calls.append(kwargs) or {"parent_task_id": 1},
+        )
 
     resp = authed_client_no_db.post(
         "/tasks/api/import-and-create",
@@ -895,67 +894,8 @@ def test_import_and_create_rejects_non_translation_work_user(authed_client_no_db
         },
     )
 
-    assert resp.status_code == 400
-    assert "翻译工作范围" in resp.get_json()["error"]
+    assert resp.status_code == 404
     assert calls == []
-
-
-def test_import_and_create_accepts_language_assignments(authed_client_no_db, monkeypatch):
-    ensure_calls = []
-    evaluation_calls = []
-    captured = {}
-
-    monkeypatch.setattr(
-        "web.routes.tasks.ensure_translation_work_user",
-        lambda user_id: ensure_calls.append(user_id) or None,
-    )
-    monkeypatch.setattr(
-        "web.routes.tasks.tasks_svc.import_and_create_task",
-        lambda **kwargs: captured.update(kwargs) or {
-            "parent_task_id": 1,
-            "media_product_id": 2,
-            "media_item_id": 3,
-            "is_new_product": False,
-        },
-    )
-    monkeypatch.setattr(
-        "web.routes.tasks._trigger_material_evaluation",
-        lambda **kwargs: evaluation_calls.append(kwargs) or True,
-    )
-
-    resp = authed_client_no_db.post(
-        "/tasks/api/import-and-create",
-        json={
-            "mk_video_metadata": {
-                "filename": "x.mp4",
-                "product_link": "https://mingkong.example/item/import-and-create",
-            },
-            "countries": ["DE", "FR"],
-            "language_assignments": {"DE": 9, "fr": 10},
-        },
-    )
-
-    assert resp.status_code == 200
-    assert captured == {
-        "mk_video_metadata": {
-            "filename": "x.mp4",
-            "product_link": "https://mingkong.example/item/import-and-create",
-        },
-        "translator_id": None,
-        "countries": ["DE", "FR"],
-        "language_assignments": {"DE": 9, "FR": 10},
-        "actor_user_id": 1,
-    }
-    assert ensure_calls == [9, 10]
-    assert evaluation_calls == [
-        {
-            "product_id": 2,
-            "media_item_id": 3,
-            "force": False,
-            "manual": False,
-            "product_url_override": "https://mingkong.example/item/import-and-create",
-        }
-    ]
 
 
 def test_create_parent_requires_raw_processor_id(authed_client_no_db, monkeypatch):
@@ -1088,34 +1028,6 @@ def test_create_parent_skips_raw_niuma_when_raw_source_ready(authed_client_no_db
             "raw_source_id": 301,
         },
     }
-
-
-def test_import_and_create_returns_product_link_warnings(authed_client_no_db, monkeypatch):
-    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
-
-    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
-    monkeypatch.setattr(
-        "web.routes.tasks.tasks_svc.import_and_create_task",
-        lambda **kwargs: {
-            "parent_task_id": 11,
-            "media_product_id": 22,
-            "media_item_id": 33,
-            "is_new_product": True,
-            "warnings": warnings,
-        },
-    )
-
-    rsp = authed_client_no_db.post(
-        "/tasks/api/import-and-create",
-        json={
-            "mk_video_metadata": {"filename": "demo.mp4"},
-            "translator_id": 2,
-            "countries": ["DE"],
-        },
-    )
-
-    assert rsp.status_code == 200
-    assert rsp.get_json()["warnings"] == warnings
 
 
 def test_parent_action_routes_registered_admin(authed_client_no_db):
