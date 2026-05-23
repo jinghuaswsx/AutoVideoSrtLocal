@@ -397,6 +397,8 @@ def _mark_item_as_copied_source_result(task: dict, item: dict) -> str:
     item["result_channel"] = ""
     item["result_model_id"] = ""
     item["eval_status"] = "skipped"
+    item["eval_channel"] = ""
+    item["eval_model_id"] = ""
     item["eval_result"] = None
     item["eval_error"] = ""
     return dst_key
@@ -457,6 +459,8 @@ def _reset_item_processing_state(item: dict) -> None:
     item["result_channel"] = ""
     item["result_model_id"] = ""
     item["eval_status"] = "pending"
+    item["eval_channel"] = ""
+    item["eval_model_id"] = ""
     item["eval_result"] = None
     item["eval_error"] = ""
 

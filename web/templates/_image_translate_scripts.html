@@ -498,6 +498,21 @@
       return null;
     }
 
+    function evalModelBadge(it, state){
+      var source = it.result_source || "";
+      if (source === "copied_source") return null;
+      var status = it.eval_status || "pending";
+      if (status === "pending") return null;
+      var channel = (it.eval_channel || "").trim();
+      var modelId = (it.eval_model_id || "").trim();
+      if (!channel && !modelId) return null;
+      var provider = imageTranslateChannelLabel(channel, state);
+      var parts = [];
+      if (provider) parts.push("供应商：" + provider);
+      if (modelId) parts.push("模型ID：" + modelId);
+      return {label: "质检模型：" + parts.join("；"), tone: "eval-model", title: parts.join("\n")};
+    }
+
     function appendItemMeta(container, it, state){
       var primaryMeta = document.createElement("div");
       primaryMeta.className = "it-item-meta it-item-meta--primary";
@@ -513,6 +528,7 @@
       var evalMeta = document.createElement("div");
       evalMeta.className = "it-item-meta it-item-eval-meta";
       appendBadge(evalMeta, evalStatusBadge(it), "it-meta-chip it-meta-chip--eval");
+      appendBadge(evalMeta, evalModelBadge(it, state), "it-meta-chip it-meta-chip--eval-model");
       appendBadge(evalMeta, mixedLanguagesBadge(it), "it-meta-chip it-meta-chip--eval");
       appendBadge(evalMeta, layoutIssueBadge(it), "it-meta-chip it-meta-chip--eval");
       if (evalMeta.children.length) container.appendChild(evalMeta);
