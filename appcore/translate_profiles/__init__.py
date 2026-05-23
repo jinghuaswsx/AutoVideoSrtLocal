@@ -23,6 +23,7 @@ from .base import TranslateProfile
 from .default_profile import DefaultProfile
 from .omni_profile import OmniProfile
 from .av_sync_profile import AvSyncProfile
+from .omni_v2_profile import OmniV2Profile
 
 _REGISTRY: dict[str, TranslateProfile] = {}
 
@@ -50,6 +51,7 @@ def available_profiles() -> list[TranslateProfile]:
 register_profile(DefaultProfile())
 register_profile(OmniProfile())
 register_profile(AvSyncProfile())
+register_profile(OmniV2Profile())
 
 
 __all__ = [
@@ -57,6 +59,7 @@ __all__ = [
     "DefaultProfile",
     "OmniProfile",
     "AvSyncProfile",
+    "OmniV2Profile",
     "register_profile",
     "get_profile",
     "available_profiles",

@@ -14,6 +14,7 @@ from __future__ import annotations
 from .base import TtsConvergenceStrategy
 from .five_round_rewrite import FiveRoundRewriteLoopStrategy
 from .sentence_reconcile import SentenceReconcileStrategy
+from .sentence_reconcile_v2 import SentenceReconcileStrategyV2
 
 _REGISTRY: dict[str, TtsConvergenceStrategy] = {}
 
@@ -40,12 +41,14 @@ def available_strategies() -> list[TtsConvergenceStrategy]:
 
 register_strategy(FiveRoundRewriteLoopStrategy())
 register_strategy(SentenceReconcileStrategy())
+register_strategy(SentenceReconcileStrategyV2())
 
 
 __all__ = [
     "TtsConvergenceStrategy",
     "FiveRoundRewriteLoopStrategy",
     "SentenceReconcileStrategy",
+    "SentenceReconcileStrategyV2",
     "register_strategy",
     "get_strategy",
     "available_strategies",

@@ -198,6 +198,30 @@ def _audio_file_already_valid(output_path: str, *, min_bytes: int = 1024) -> boo
         return False
 
 
+def get_tts_cache_key(
+    text: str,
+    voice_id: str,
+    model_id: str,
+    language_code: str | None,
+    speed: float | None,
+    stability: float | None,
+    similarity_boost: float | None,
+) -> str:
+    import hashlib
+    import json
+    payload = {
+        "text": text or "",
+        "voice_id": voice_id or "",
+        "model_id": model_id or "",
+        "language_code": language_code or "",
+        "speed": round(float(speed), 4) if speed is not None else 1.0,
+        "stability": round(float(stability), 4) if stability is not None else None,
+        "similarity_boost": round(float(similarity_boost), 4) if similarity_boost is not None else None,
+    }
+    payload_str = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+
+
 def generate_segment_audio(
     text: str,
     voice_id: str,
@@ -213,6 +237,23 @@ def generate_segment_audio(
     if _audio_file_already_valid(output_path):
         log.info("tts segment cache hit, skipping ElevenLabs call: %s", output_path)
         return output_path
+
+    import shutil
+    cache_key = get_tts_cache_key(
+        text, voice_id, model_id, language_code, speed, stability, similarity_boost
+    )
+    cache_dir = os.path.join("instance", "tts_cache")
+    cache_file = os.path.join(cache_dir, f"{cache_key}.mp3")
+
+    if _audio_file_already_valid(cache_file):
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        try:
+            shutil.copy2(cache_file, output_path)
+            log.info("tts segment globally cache hit (hash=%s), copied to: %s", cache_key, output_path)
+            return output_path
+        except Exception:
+            log.warning("failed to copy globally cached tts segment, falling back", exc_info=True)
+
     client = _get_client(api_key=elevenlabs_api_key)
     kwargs = dict(
         text=text,
@@ -257,6 +298,14 @@ def generate_segment_audio(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
         f.write(audio_bytes)
+
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        shutil.copy2(output_path, cache_file)
+        log.info("tts segment globally cache stored (hash=%s): %s", cache_key, cache_file)
+    except Exception:
+        log.warning("failed to store tts segment to global cache: %s", cache_file, exc_info=True)
+
     return output_path
 
 
