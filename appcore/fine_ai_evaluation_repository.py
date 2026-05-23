@@ -71,8 +71,7 @@ class FineAiEvaluationRepository:
 
     def list_inflight_runs(self) -> list[dict[str, Any]]:
         rows = query(
-            "SELECT * FROM ai_evaluation_runs WHERE status IN ('queued', 'running') "
-            "ORDER BY updated_at ASC, id ASC",
+            "SELECT * FROM ai_evaluation_runs WHERE status IN ('queued', 'running')",
             (),
         )
         return [_load_run(row) for row in rows or []]
