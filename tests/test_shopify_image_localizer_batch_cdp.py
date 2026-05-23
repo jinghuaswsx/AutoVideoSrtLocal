@@ -901,6 +901,28 @@ def test_plan_body_html_replacements_includes_payment_screenshot_before_matching
     assert plan["skipped_missing"] == []
 
 
+def test_apply_uploaded_replacements_replaces_lazy_loading_and_removes_srcset():
+    html = (
+        '<p><img alt="demo" src="https://old.example.com/a.jpg" '
+        'data-src="https://old.example.com/a.jpg" '
+        'data-lazy-src="https://old.example.com/a.jpg" '
+        'srcset="https://old.example.com/a_480w.jpg 480w, https://old.example.com/a_800w.jpg 800w" '
+        'data-srcset="https://old.example.com/a_480w.jpg 480w" '
+        'style="max-width: 100%; height: auto;"></p>'
+    )
+
+    updated = taa_cdp.apply_uploaded_replacements(
+        html,
+        [{"old": "https://old.example.com/a.jpg", "new": "https://cdn.shopify.com/a.jpg"}],
+    )
+
+    assert 'src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'data-src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'data-lazy-src="https://cdn.shopify.com/a.jpg"' in updated
+    assert 'srcset=' not in updated
+    assert 'data-srcset=' not in updated
+
+
 def test_apply_uploaded_replacements_preserves_display_size():
     html = (
         '<p><img alt="demo" src="https://old.example.com/a.jpg" '

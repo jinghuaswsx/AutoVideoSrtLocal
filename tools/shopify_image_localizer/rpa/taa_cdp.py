@@ -978,7 +978,16 @@ def _replace_img_src_preserving_tag(
     def repl(match: re.Match) -> str:
         tag = match.group(0)
         quote = match.group(1)
+        # 1. Replace src attribute
         tag = tag.replace(f"{quote}{old_src}{quote}", f"{quote}{new_src}{quote}", 1)
+        # 2. Also replace any other attributes containing the old_src URL inside the tag
+        tag = tag.replace(old_src, new_src)
+        # 3. Robustly replace any data-...src attributes to ensure lazy loading loads the new image
+        tag = re.sub(r'\b(data-\w*src)\s*=\s*(["\'])(.*?)\2', f'\\1="{new_src}"', tag, flags=re.I)
+        # 4. Strip/remove srcset and data-srcset attributes from the tag completely
+        # This prevents browser from loading responsive variations of the original English images
+        tag = re.sub(r'\s+data-srcset\s*=\s*(["\'])(.*?)\1', '', tag, flags=re.I)
+        tag = re.sub(r'\s+srcset\s*=\s*(["\'])(.*?)\1', '', tag, flags=re.I)
         return _apply_display_size_to_img_tag(tag, display_size)
 
     updated, count = pattern.subn(repl, html)
