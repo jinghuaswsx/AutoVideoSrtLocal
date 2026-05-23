@@ -251,6 +251,26 @@ def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monke
     ]
 
 
+def test_repository_lists_inflight_runs_without_sorting_large_table(monkeypatch):
+    from appcore import fine_ai_evaluation_repository as repo_mod
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(repo_mod, "query", fake_query)
+
+    rows = repo_mod.FineAiEvaluationRepository().list_inflight_runs()
+
+    assert rows == []
+    assert "status IN ('queued', 'running')" in captured["sql"]
+    assert "ORDER BY" not in captured["sql"].upper()
+    assert captured["args"] == ()
+
+
 def test_external_link_zero_product_id_status_is_not_treated_as_missing(monkeypatch):
     from appcore import active_tasks
     from appcore import fine_ai_evaluation_repository as repo_mod

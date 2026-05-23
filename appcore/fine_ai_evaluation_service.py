@@ -266,7 +266,12 @@ class FineAiEvaluationService:
         if not callable(list_inflight_runs):
             return 0
         recovered_count = 0
-        for run in list_inflight_runs():
+        try:
+            inflight_runs = list_inflight_runs()
+        except Exception:
+            log.warning("fine AI evaluation interrupted recovery scan failed", exc_info=True)
+            return 0
+        for run in inflight_runs:
             evaluation_run_id = str(run.get("evaluation_run_id") or "")
             try:
                 before = str(run.get("status") or "").lower()
