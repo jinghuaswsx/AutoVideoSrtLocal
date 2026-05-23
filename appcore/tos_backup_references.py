@@ -84,11 +84,6 @@ def _output_relative_path(value: object) -> Path | None:
 def collect_protected_file_refs() -> list[ProtectedFileRef]:
     grouped: dict[str, dict[str, set[str]]] = {}
 
-    for row in query("SELECT id, state_json FROM projects WHERE deleted_at IS NULL"):
-        state = _parse_state_json((row or {}).get("state_json"))
-        video_path = _clean_text(state.get("video_path"))
-        if video_path:
-            _add_local_path(grouped, video_path, "project_video")
 
     for row in query(
         "SELECT object_key, cover_object_key "

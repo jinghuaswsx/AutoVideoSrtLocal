@@ -240,7 +240,7 @@ def register(scheduler) -> None:
         TASK_CODE,
         run_scheduled_backup,
         "cron",
-        hour=2,
+        hour=1,
         minute=0,
         id=TASK_CODE,
         replace_existing=True,
