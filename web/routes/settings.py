@@ -605,18 +605,6 @@ def _handle_fine_ai_provider_profiles_post() -> None:
             except ValueError as exc:
                 flash(str(exc), "error")
 
-    model_fields = {
-        fine_ai_model_config.MANUAL_PROFILE: "fine_ai_manual_model",
-        fine_ai_model_config.SCHEDULED_PROFILE: "fine_ai_scheduled_model",
-    }
-    for profile, field_name in model_fields.items():
-        if field_name in request.form:
-            model = (request.form.get(field_name) or "").strip()
-            try:
-                fine_ai_model_config.set_profile_model(profile, model)
-            except ValueError as exc:
-                flash(str(exc), "error")
-
     if "fine_ai_parallel_mode" in request.form:
         mode = (request.form.get("fine_ai_parallel_mode") or "").strip()
         try:

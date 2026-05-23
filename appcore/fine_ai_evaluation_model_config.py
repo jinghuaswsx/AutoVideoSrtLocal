@@ -17,11 +17,6 @@ SETTING_KEYS = {
     SCHEDULED_PROFILE: "fine_ai_evaluation.scheduled_provider",
 }
 
-MODEL_SETTING_KEYS = {
-    MANUAL_PROFILE: "fine_ai_evaluation.manual_model",
-    SCHEDULED_PROFILE: "fine_ai_evaluation.scheduled_model",
-}
-
 ALLOWED_PROVIDERS = (
     "openrouter",
     "gemini_aistudio",
@@ -40,11 +35,6 @@ DEFAULT_PROVIDERS = {
     MANUAL_PROFILE: "gemini_aistudio",
     SCHEDULED_PROFILE: "gemini_vertex_adc",
 }
-
-ALLOWED_MODELS = (
-    "gemini-3.5-flash",
-    "gemini-1.5-flash",
-)
 
 BASE_MODEL = "gemini-3.5-flash"
 OPENROUTER_MODEL = f"google/{BASE_MODEL}"
@@ -76,8 +66,7 @@ def get_profile_config(profile: str) -> dict[str, str]:
     except Exception:
         stored_provider = ""
     provider = stored_provider if stored_provider in ALLOWED_PROVIDERS else default_provider
-    model = get_profile_model(normalized_profile)
-    return _config(normalized_profile, provider, model)
+    return _config(normalized_profile, provider)
 
 
 def set_profile_provider(profile: str, provider: str) -> None:
@@ -86,25 +75,6 @@ def set_profile_provider(profile: str, provider: str) -> None:
     if normalized_provider not in ALLOWED_PROVIDERS:
         raise ValueError(f"Unsupported fine AI provider: {provider}")
     settings_store.set_setting(SETTING_KEYS[normalized_profile], normalized_provider)
-
-
-def get_profile_model(profile: str) -> str:
-    normalized_profile = _validate_profile(profile)
-    try:
-        stored_model = str(settings_store.get_setting(MODEL_SETTING_KEYS[normalized_profile]) or "").strip()
-    except Exception:
-        stored_model = ""
-    if stored_model not in ALLOWED_MODELS:
-        return "gemini-3.5-flash"
-    return stored_model
-
-
-def set_profile_model(profile: str, model: str) -> None:
-    normalized_profile = _validate_profile(profile)
-    normalized_model = str(model or "").strip()
-    if normalized_model not in ALLOWED_MODELS:
-        raise ValueError(f"Unsupported fine AI model: {model}")
-    settings_store.set_setting(MODEL_SETTING_KEYS[normalized_profile], normalized_model)
 
 
 def get_parallel_mode() -> str:
@@ -132,29 +102,21 @@ def resolve_config(
 ) -> dict[str, str]:
     profile_value = _normalize_profile(profile)
     provider_value = str(provider or "").strip()
-    model_value = str(model or "").strip()
 
     if provider_value:
         if provider_value not in ALLOWED_PROVIDERS:
             raise ValueError(f"Unsupported fine AI provider: {provider}")
-        if not model_value:
-            model_value = get_profile_model(profile_value)
-        elif model_value not in ALLOWED_MODELS:
-            raise ValueError(f"Unsupported fine AI model: {model_value}")
-        return _config(profile_value, provider_value, model_value)
+        return _config(profile_value, provider_value)
 
     return get_profile_config(profile_value)
 
 
-def model_for_provider(provider: str, model: str | None = None) -> str:
+def model_for_provider(provider: str) -> str:
     normalized_provider = str(provider or "").strip()
-    m = model or BASE_MODEL
     if normalized_provider == "openrouter":
-        if not m.startswith("google/"):
-            return f"google/{m}"
-        return m
+        return OPENROUTER_MODEL
     if normalized_provider in ALLOWED_PROVIDERS:
-        return m
+        return BASE_MODEL
     raise ValueError(f"Unsupported fine AI provider: {provider}")
 
 
@@ -163,11 +125,11 @@ def label_for_provider(provider: str) -> str:
     return PROVIDER_LABELS.get(normalized_provider, normalized_provider)
 
 
-def _config(profile: str, provider: str, model: str) -> dict[str, str]:
+def _config(profile: str, provider: str) -> dict[str, str]:
     return {
         "profile": profile,
         "provider": provider,
-        "model": model_for_provider(provider, model),
+        "model": model_for_provider(provider),
         "label": PROVIDER_LABELS[provider],
     }
 
