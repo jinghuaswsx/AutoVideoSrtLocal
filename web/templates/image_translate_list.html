@@ -58,6 +58,17 @@
             <div id="itModelPills" class="it-pill-group" role="radiogroup"></div>
             <input type="hidden" id="itModel" value="">
         </div>
+        
+        <div class="form-row" id="itImageSizeRow" style="display:none">
+            <label>生图分辨率限制与资费控制</label>
+            <div id="itImageSizePills" class="it-pill-group" role="radiogroup">
+                <button type="button" class="it-pill" data-value="0.5K" role="radio" aria-checked="false">0.5K (资费控制 $0.006 - $0.01，实测推荐)</button>
+                <button type="button" class="it-pill is-active" data-value="1K" role="radio" aria-checked="true">1K (默认规格)</button>
+                <button type="button" class="it-pill" data-value="2K" role="radio" aria-checked="false">2K (高清规格)</button>
+            </div>
+            <p class="hint">注：在 OpenRouter / Google Vertex AI 通道下，生成 0.5K 的图仅需 ~2400 token（资费仅约 0.006美金），后台生图后会自动执行高保真超分算法无损放大贴回，确保画质与低资费兼得。</p>
+            <input type="hidden" id="itImageSize" value="1K">
+        </div>
 
         <div class="form-row">
             <label>处理模式</label>

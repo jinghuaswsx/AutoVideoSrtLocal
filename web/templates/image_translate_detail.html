@@ -19,6 +19,7 @@
       <div><label>预设</label><strong id="itMetaPreset">{{ '封面图翻译' if state.preset == 'cover' else '产品详情图翻译' }}</strong></div>
       <div><label>目标语言</label><strong id="itMetaLang">{{ state.target_language_name }}</strong></div>
       <div><label>模型</label><strong id="itMetaModel">{{ state.model_id }}</strong></div>
+      <div><label>生图分辨率限制</label><strong id="itMetaImageSize">{{ state.image_size or '1K' }}</strong></div>
       <div>
         <label>处理模式</label>
         <span id="itMetaConcurrencyMode"
@@ -95,6 +96,16 @@
         </div>
         <input id="itRerunConcurrencyValue" type="hidden" value="{{ state.concurrency_mode or 'sequential' }}">
         <p id="itRerunConcurrencyHint" class="it-rerun-hint">只有 OpenRouter 和 APIMART 可以并行，其他供应商只能串行。</p>
+      </div>
+      <div class="it-rerun-step" id="itRerunImageSizeRow" style="display:none">
+        <label>生图分辨率限制与资费控制</label>
+        <div id="itRerunImageSizePills" class="it-pill-group">
+          <button type="button" class="it-pill" role="radio" data-value="0.5K">0.5K (资费控制 $0.006 - $0.01)</button>
+          <button type="button" class="it-pill is-active" role="radio" data-value="1K">1K (默认规格)</button>
+          <button type="button" class="it-pill" role="radio" data-value="2K">2K (高清规格)</button>
+        </div>
+        <input id="itRerunImageSizeValue" type="hidden" value="1K">
+        <p class="it-rerun-hint">注：0.5K 规格仅适用于 OpenRouter / Vertex AI 等支持的分辨率限制模式，后台会自动以超分算法放大回原图尺寸。</p>
       </div>
       <div id="itRerunError" class="inline-error" hidden></div>
       <div class="it-rerun-actions">

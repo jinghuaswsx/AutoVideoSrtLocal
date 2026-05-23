@@ -1,4 +1,4 @@
-﻿"""Gemini 图像生成封装（Nano Banana 系列）。
+"""Gemini 图像生成封装（Nano Banana 系列）。
 
 对外暴露 generate_image()，根据 system_settings 里的 image_translate.channel
 分发到三条通道：AI Studio / Google Cloud (Vertex AI) / OpenRouter。
@@ -88,7 +88,7 @@ _OPENROUTER_OPENAI_IMAGE2_QUALITY_MAP: dict[str, str] = {
 }
 _OPENROUTER_OPENAI_IMAGE2_DEFAULT_SIZE = "1K"
 _OPENROUTER_OPENAI_IMAGE2_COVER_SIZE = "2K"
-_OPENROUTER_OPENAI_IMAGE2_SIZES = {"1K", "2K"}
+_OPENROUTER_OPENAI_IMAGE2_SIZES = {"0.5K", "1K", "2K"}
 _OPENROUTER_OPENAI_IMAGE2_IMAGE_TRANSLATE_SIZE = "1K"
 _OPENROUTER_OPENAI_IMAGE2_ASPECT_RATIOS: dict[str, tuple[int, int]] = {
     "1:1": (1, 1),
@@ -474,6 +474,7 @@ def _generate_via_genai(
     api_key: str,
     project: str = "",
     location: str = "",
+    image_size: str | None = None,
     timeout_seconds: float | int | None = None,
 ) -> tuple[bytes, str, Any]:
     client = _get_image_client(api_key, backend=backend, project=project, location=location)
@@ -482,11 +483,17 @@ def _generate_via_genai(
         genai_types.Part.from_text(text=prompt),
     ]
     generate_kwargs: dict[str, Any] = {"model": model_id, "contents": contents}
+    
+    generate_config_kwargs = {}
     timeout_ms = _timeout_ms(timeout_seconds)
     if timeout_ms is not None:
-        generate_kwargs["config"] = genai_types.GenerateContentConfig(
-            http_options=genai_types.HttpOptions(timeout=timeout_ms)
-        )
+        generate_config_kwargs["http_options"] = genai_types.HttpOptions(timeout=timeout_ms)
+    if image_size:
+        generate_config_kwargs["modalities"] = ["IMAGE"]
+        generate_config_kwargs["image_config"] = {"image_size": image_size}
+        
+    if generate_config_kwargs:
+        generate_kwargs["config"] = genai_types.GenerateContentConfig(**generate_config_kwargs)
     try:
         resp = client.models.generate_content(**generate_kwargs)
     except Exception as e:
@@ -734,6 +741,7 @@ def _generate_via_openrouter(
     extra_body: dict[str, Any] = {"usage": {"include": True}}
     if image_quality is not None:
         extra_body["quality"] = image_quality
+    if openrouter_image_size:
         image_config = {
             "image_size": _normalize_openrouter_openai_image2_size(openrouter_image_size),
         }
@@ -1267,6 +1275,7 @@ def generate_image(
                     backend="cloud" if channel == "cloud_adc" else channel,
                     api_key=api_key,
                     project=project, location=location,
+                    image_size=openrouter_image_size,
                     timeout_seconds=normalized_timeout,
                 )
                 meta = getattr(resp, "usage_metadata", None)

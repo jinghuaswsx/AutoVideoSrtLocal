@@ -28,6 +28,9 @@
     var modelPills = document.getElementById("itModelPills");
     var concurrencyEl = document.getElementById("itConcurrencyMode");
     var concurrencyPills = document.getElementById("itConcurrencyPills");
+    var imageSizeEl = document.getElementById("itImageSize");
+    var imageSizeRow = document.getElementById("itImageSizeRow");
+    var imageSizePills = document.getElementById("itImageSizePills");
     var promptEl = document.getElementById("itPrompt");
     var fileInput = document.getElementById("itFileInput");
     var thumbsEl = document.getElementById("itThumbs");
@@ -72,6 +75,18 @@
       }
       if (!concurrencyEl.value) concurrencyEl.value = "sequential";
       setPillActive(concurrencyPills, concurrencyEl.value);
+    }
+
+    function enforceListImageSize(channel) {
+      if (!imageSizeRow || !imageSizeEl || !imageSizePills) return;
+      var supportsImageSize = channel === "openrouter" || channel === "cloud" || channel === "cloud_adc";
+      if (supportsImageSize) {
+        imageSizeRow.style.display = "block";
+      } else {
+        imageSizeRow.style.display = "none";
+        imageSizeEl.value = "1K";
+        setPillActive(imageSizePills, "1K");
+      }
     }
 
     function renderPills(groupEl, items) {
@@ -152,6 +167,7 @@
             channelEl.value = d.channel;
             setPillActive(channelPills, d.channel);
             enforceListConcurrency(d.channel);
+            enforceListImageSize(d.channel);
           }
           if (items.length) {
             var defaultId = (d.default_model_id || "").trim();
@@ -164,10 +180,16 @@
 
     bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); loadModels(); });
     setPillActive(presetPills, presetEl.value || "cover");
-    bindPillGroup(channelPills, channelEl, function(value){ enforceListConcurrency(value); loadModels(); });
+    bindPillGroup(channelPills, channelEl, function(value){
+      enforceListConcurrency(value);
+      enforceListImageSize(value);
+      loadModels();
+    });
     setPillActive(channelPills, channelEl.value || "");
     enforceListConcurrency(channelEl.value || "");
+    enforceListImageSize(channelEl.value || "");
     bindPillGroup(concurrencyPills, concurrencyEl, null);
+    bindPillGroup(imageSizePills, imageSizeEl, null);
 
     fileInput.onchange = function(){
       var chosen = Array.prototype.slice.call(fileInput.files || []);
@@ -245,6 +267,7 @@
             model_id: modelEl.value,
             prompt: promptEl.value,
             concurrency_mode: concurrencyEl.value,
+            image_size: imageSizeEl.value || "1K",
             uploaded: bootstrap.uploads.map(function(u,idx){
               return {idx: u.idx, object_key: u.object_key, filename: state.files[idx].name, size: state.files[idx].size};
             }),
@@ -322,6 +345,9 @@
     var rerunChannelPills = document.getElementById("itRerunChannelPills");
     var rerunModelPills = document.getElementById("itRerunModelPills");
     var rerunConcurrencyPills = document.getElementById("itRerunConcurrencyPills");
+    var rerunImageSizeRow = document.getElementById("itRerunImageSizeRow");
+    var rerunImageSizePills = document.getElementById("itRerunImageSizePills");
+    var rerunImageSizeValue = document.getElementById("itRerunImageSizeValue");
     var rerunChannelValue = document.getElementById("itRerunChannelValue");
     var rerunModelValue = document.getElementById("itRerunModelValue");
     var rerunConcurrencyValue = document.getElementById("itRerunConcurrencyValue");
@@ -602,6 +628,18 @@
       setRerunPillActive(rerunConcurrencyPills, rerunConcurrencyValue.value);
     }
 
+    function enforceRerunImageSize(channel) {
+      if (!rerunImageSizeRow || !rerunImageSizeValue || !rerunImageSizePills) return;
+      var supportsImageSize = channel === "openrouter" || channel === "cloud" || channel === "cloud_adc";
+      if (supportsImageSize) {
+        rerunImageSizeRow.style.display = "block";
+      } else {
+        rerunImageSizeRow.style.display = "none";
+        rerunImageSizeValue.value = "1K";
+        setRerunPillActive(rerunImageSizePills, "1K");
+      }
+    }
+
     function loadRerunModels(){
       if (!rerunChannelValue || !rerunModelPills || !rerunModelValue) return Promise.resolve();
       var channel = rerunChannelValue.value || "";
@@ -640,11 +678,15 @@
       currentState = currentState || window.imageTranslateBootstrap || {};
       var channel = currentState.channel || "apimart";
       var mode = currentState.concurrency_mode || "sequential";
+      var imageSize = currentState.image_size || "1K";
       rerunChannelValue.value = channel;
       rerunModelValue.value = currentState.model_id || "";
       rerunConcurrencyValue.value = mode;
+      rerunImageSizeValue.value = imageSize;
       renderRerunPills(rerunChannelPills, window.imageTranslateChannels || [], channel);
+      setRerunPillActive(rerunImageSizePills, imageSize);
       enforceRerunConcurrency(channel);
+      enforceRerunImageSize(channel);
       setRerunError("");
       rerunModal.hidden = false;
       loadRerunModels();
@@ -661,7 +703,8 @@
       var payload = {
         channel: channel,
         model_id: rerunModelValue.value || "",
-        concurrency_mode: rerunConcurrencyValue.value || "sequential"
+        concurrency_mode: rerunConcurrencyValue.value || "sequential",
+        image_size: rerunImageSizeValue.value || "1K"
       };
       rerunSubmit.disabled = true;
       fetch("/api/image-translate/" + taskId + "/rerun-unfinished", {
@@ -860,6 +903,10 @@
         channelEl.textContent = state.channel_label || channel;
         channelEl.className = "chip chip--backend is-" + channel;
       }
+      var metaImageSizeEl = document.getElementById("itMetaImageSize");
+      if (metaImageSizeEl) {
+        metaImageSizeEl.textContent = state.image_size || "1K";
+      }
       if (rerunBtn) {
         rerunBtn.disabled = state.is_running === true;
         rerunBtn.title = state.is_running === true ? "任务正在跑，等跑完再换通道重跑" : "";
@@ -912,9 +959,11 @@
 
     bindRerunPillGroup(rerunChannelPills, rerunChannelValue, function(channel){
       enforceRerunConcurrency(channel);
+      enforceRerunImageSize(channel);
       loadRerunModels();
     });
     bindRerunPillGroup(rerunModelPills, rerunModelValue);
+    bindRerunPillGroup(rerunImageSizePills, rerunImageSizeValue);
     bindRerunPillGroup(rerunConcurrencyPills, rerunConcurrencyValue, function(){
       enforceRerunConcurrency(rerunChannelValue && rerunChannelValue.value);
     });
