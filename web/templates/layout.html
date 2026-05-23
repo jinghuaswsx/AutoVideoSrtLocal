@@ -767,7 +767,6 @@
       or request.path.startswith('/tools')
       or request.path.startswith('/productivity-stats')
       or request.path.startswith('/admin/security-audit')
-      or request.path.startswith('/ai-product-research')
     %}
     {% set task_center_active =
       request.path.startswith('/tasks/') and not request.path.startswith('/tasks/api')
@@ -976,6 +975,11 @@
         </div>
       </details>
       {% endif %}
+      {% if current_user.is_admin and has_permission('lab') %}
+      <a href="/ai-product-research" {% if request.path.startswith('/ai-product-research') %}class="active"{% endif %}>
+        <span class="nav-icon">📖</span> AI产品调研
+      </a>
+      {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
@@ -1089,9 +1093,6 @@
             <span class="nav-icon">🕵</span> 未建档订单
           </a>
           {% endif %}
-          <a href="/ai-product-research" {% if request.path.startswith('/ai-product-research') %}class="active"{% endif %}>
-            <span class="nav-icon">📖</span> AI产品调研
-          </a>
           <a href="{{ url_for('tools.index') }}" {% if request.path.startswith('/tools') %}class="active"{% endif %}>
             <span class="nav-icon">∑</span> 小工具
           </a>
