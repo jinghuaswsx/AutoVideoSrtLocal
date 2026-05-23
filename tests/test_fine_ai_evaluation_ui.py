@@ -232,6 +232,49 @@ def test_fine_ai_standalone_result_inlines_country_summary_into_summary_step():
     assert "renderCountryDecisionSummary(resultForSummary)" in script
 
 
+def test_fine_ai_modal_result_renders_structured_overview_before_progress():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function mkiFineAiRenderStructuredResultOverview" in body
+    assert "function mkiFineAiRenderResultCountryMatrix" in body
+    assert "AI 精细评估结果总览" in body
+    assert "<tr><th>AI 评分</th>" in body
+    assert "<tr><th>评估结果</th>" in body
+    assert "<tr><th>结论依据</th>" in body
+    assert "<tr><th>主要风险</th>" in body
+    assert "<tr><th>下一步</th>" in body
+    assert ".fine-ai-result-overview" in body
+    assert ".fine-ai-result-table" in body
+
+    start = body.index("function mkiFineAiRenderResult(data, context)")
+    end = body.index("function mkiFineAiDetailUrl", start)
+    render_result = body[start:end]
+    assert render_result.index("mkiFineAiRenderStructuredResultOverview(result)") < render_result.index(
+        "mkiFineAiRenderProgress"
+    )
+
+
+def test_fine_ai_standalone_result_renders_structured_overview_before_progress():
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "function renderStructuredResultOverview" in script
+    assert "function renderResultCountryMatrix" in script
+    assert "AI 精细评估结果总览" in script
+    assert "<tr><th>AI 评分</th>" in script
+    assert "<tr><th>评估结果</th>" in script
+    assert "<tr><th>结论依据</th>" in script
+    assert "<tr><th>主要风险</th>" in script
+    assert "<tr><th>下一步</th>" in script
+    assert ".fine-ai-result-overview" in template
+    assert ".fine-ai-result-table" in template
+
+    start = script.index("function renderResult(result)")
+    end = script.index("async function loadOnce", start)
+    render_result = script[start:end]
+    assert render_result.index("renderStructuredResultOverview(result)") < render_result.index("renderProgress")
+
+
 def test_fine_ai_standalone_step_cards_show_model_badge_and_llm_trace_button():
     script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
     template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")

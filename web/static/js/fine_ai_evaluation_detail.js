@@ -545,6 +545,139 @@
     return action || countryTopRisk(country) || '暂不投入，先处理阻塞风险或补齐关键信息。';
   }
 
+  function resultCountryRows(result) {
+    const entries = countryEntries(result);
+    const byCode = new Map(entries);
+    const preferred = ['DE', 'FR', 'IT', 'ES', 'JP'];
+    const rows = preferred
+      .filter(code => byCode.has(code))
+      .map(code => [code, byCode.get(code)]);
+    entries.forEach(([code, country]) => {
+      if (!preferred.includes(code)) rows.push([code, country]);
+    });
+    return rows;
+  }
+
+  function decisionClass(country) {
+    const decision = countryFinalDecision(country);
+    if (decision === 'GO') return 'go';
+    if (decision === 'TEST') return 'test';
+    if (decision === 'HOLD') return 'hold';
+    if (decision === 'FAILED') return 'failed';
+    return 'empty';
+  }
+
+  function countryScoreNumber(country) {
+    const value = Number(((country || {}).scores || {}).overall_score);
+    if (!Number.isFinite(value)) return null;
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+
+  function renderResultScoreCell(country) {
+    const score = countryScoreNumber(country);
+    if (score === null) {
+      return '<div class="fine-ai-result-score"><strong>-</strong><small>暂无评分</small><div class="fine-ai-result-score-track"><div class="fine-ai-result-score-fill" style="width:0%"></div></div></div>';
+    }
+    return `<div class="fine-ai-result-score">
+      <strong>${escapeHtml(score)}<small>/100</small></strong>
+      <div class="fine-ai-result-score-track"><div class="fine-ai-result-score-fill" style="width:${score}%"></div></div>
+    </div>`;
+  }
+
+  function countrySubtitle(code, country) {
+    return [
+      code,
+      (country || {}).language,
+      (country || {}).currency,
+    ].map(item => String(item || '').trim()).filter(Boolean).join(' · ');
+  }
+
+  function riskItems(country) {
+    const missing = Array.isArray((country || {}).missing_data) ? (country || {}).missing_data : [];
+    const items = [
+      ...countryRisks(country),
+      ...(missing.map(item => '待补充：' + item)),
+    ].map(item => String(item || '').trim()).filter(Boolean);
+    const error = String((((country || {}).error || {}).message) || (country || {}).error_message || '').trim();
+    if (error) items.unshift('评估失败：' + error);
+    return items;
+  }
+
+  function renderListCell(items) {
+    const values = (Array.isArray(items) ? items : [items])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    if (!values.length) return '<span class="ect-muted">-</span>';
+    return `<ul class="fine-ai-result-list">${values.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+  }
+
+  function renderResultCountryMatrix(result) {
+    const rows = resultCountryRows(result);
+    if (!rows.length) return '';
+    const countryCells = rows.map(([code, country]) => `
+      <td><div class="fine-ai-result-country">
+        <strong>${escapeHtml(country.country_name_zh || country.country_name || code)}</strong>
+        <span>${escapeHtml(countrySubtitle(code, country))}</span>
+      </div></td>
+    `).join('');
+    const scoreCells = rows.map(([, country]) => `<td>${renderResultScoreCell(country)}</td>`).join('');
+    const decisionCells = rows.map(([, country]) => {
+      const confidence = String(((country.decision || {}).confidence) || country.confidence || '').trim();
+      return `<td><div class="fine-ai-result-decision">
+        <span class="fine-ai-result-pill is-${escapeHtml(decisionClass(country))}">${escapeHtml(decisionDisplay(countryFinalDecision(country)))}</span>
+        ${confidence ? `<small>置信度：${escapeHtml(confidence)}</small>` : ''}
+      </div></td>`;
+    }).join('');
+    const reasonCells = rows.map(([, country]) => `<td>${escapeHtml(countryReason(country))}</td>`).join('');
+    const riskCells = rows.map(([, country]) => `<td>${renderListCell(riskItems(country).slice(0, 2))}</td>`).join('');
+    const actionCells = rows.map(([, country]) => `<td>${renderListCell(countryNextAction(country))}</td>`).join('');
+    return `<div class="fine-ai-result-scroll">
+      <table class="fine-ai-result-table">
+        <tbody>
+          <tr><th>国家</th>${countryCells}</tr>
+          <tr><th>AI 评分</th>${scoreCells}</tr>
+          <tr><th>评估结果</th>${decisionCells}</tr>
+          <tr><th>结论依据</th>${reasonCells}</tr>
+          <tr><th>主要风险</th>${riskCells}</tr>
+          <tr><th>下一步</th>${actionCells}</tr>
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  function resultMetric(label, value, unit = '') {
+    const display = value === null || value === undefined || value === '' ? '-' : value;
+    return `<div class="fine-ai-result-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(display))}${unit ? `<small>${escapeHtml(unit)}</small>` : ''}</strong>
+    </div>`;
+  }
+
+  function renderStructuredResultOverview(result) {
+    const matrix = renderResultCountryMatrix(result);
+    if (!matrix) return '';
+    const summary = (result || {}).summary || {};
+    const counts = summary.decision_counts || {};
+    const recommendation = String(summary.overall_recommendation || (result || {}).status || '').trim() || '-';
+    return `<section class="fine-ai-result-overview" aria-label="AI 精细评估结果总览">
+      <div class="fine-ai-result-overview-head">
+        <div>
+          <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览</h4>
+          <p class="fine-ai-result-overview-subtitle">按国家横向对比评分、投放结论、核心风险和下一步动作。</p>
+        </div>
+        <div class="fine-ai-result-metrics">
+          ${resultMetric('平均分', summary.average_score ?? '', '/100')}
+          ${resultMetric('推荐结论', recommendation)}
+          ${resultMetric('GO', counts.GO ?? 0)}
+          ${resultMetric('TEST', counts.TEST ?? 0)}
+          ${resultMetric('HOLD', counts.HOLD ?? 0)}
+        </div>
+      </div>
+      ${matrix}
+    </section>`;
+  }
+
   function renderSummaryRerunButton(code, country) {
     if (
       !config.rerun_url_template
@@ -707,6 +840,7 @@
     currentPayload = result || {};
     body.innerHTML = `
       ${renderContextCopyPanel(result)}
+      ${renderStructuredResultOverview(result)}
       ${renderProgress(result.progress || {}, result.status || '', result)}
       ${renderSummary(result)}
       ${renderCountryResults(result)}
