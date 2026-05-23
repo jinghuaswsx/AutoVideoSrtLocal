@@ -83,7 +83,7 @@ def get_parallel_mode() -> str:
     except Exception:
         stored = ""
     if stored not in ALLOWED_PARALLEL_MODES:
-        return "parallel"
+        return "serial"
     return stored
 
 

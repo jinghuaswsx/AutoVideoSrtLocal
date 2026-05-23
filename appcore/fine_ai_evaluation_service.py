@@ -462,6 +462,11 @@ class FineAiEvaluationService:
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
         parallel_mode = fine_ai_model_config.get_parallel_mode()
 
+        # Google Vertex AI ADC 通道由于 Tier 较低且有频率限制，强制使用串行逻辑，防止并发 Rate Limit 报错
+        active_provider = metadata.get("provider")
+        if active_provider == "gemini_vertex_adc":
+            parallel_mode = "serial"
+
         if parallel_mode == "parallel":
             import threading
             from concurrent.futures import ThreadPoolExecutor
