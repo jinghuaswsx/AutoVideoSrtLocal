@@ -191,6 +191,51 @@ def test_run_candidate_fails_before_llm_when_product_link_unavailable(monkeypatc
     assert len(writes) == 2
 
 
+def test_cache_card_video_forces_local_mingkong_download(monkeypatch):
+    from appcore import local_media_storage
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    from web.routes import medias as media_routes
+    from web.routes.medias import mk_selection
+
+    class MissingLocalPath:
+        def is_file(self):
+            return False
+
+    captured = {}
+    monkeypatch.setattr(media_routes, "_normalize_mk_media_path", lambda value: "uploads2/video-1.mp4")
+    monkeypatch.setattr(
+        media_routes,
+        "_cache_mk_video",
+        lambda media_path: (_ for _ in ()).throw(
+            AssertionError("auto task must bypass remote-only cache shortcut")
+        ),
+    )
+    monkeypatch.setattr(local_media_storage, "safe_local_path_for", lambda object_key: MissingLocalPath())
+    monkeypatch.setattr(mk_selection, "_mk_video_cache_object_key", lambda media_path: "mk/videos/video-1.mp4")
+    monkeypatch.setattr(mk_selection, "_build_mk_request_headers", lambda: {"Authorization": "Bearer token"})
+    monkeypatch.setattr(mk_selection, "_get_mk_api_base_url", lambda: "https://mk.example")
+    monkeypatch.setattr(mk_selection, "_mk_http_get", object())
+
+    def fake_cache_impl(media_path, **kwargs):
+        object_key = kwargs["cache_object_key_fn"](media_path)
+        captured["media_path"] = media_path
+        captured["object_key"] = object_key
+        captured["storage_exists"] = kwargs["storage_exists_fn"](object_key)
+        captured["safe_local_path_for_fn"] = kwargs["safe_local_path_for_fn"]
+        captured["http_get_fn"] = kwargs["http_get_fn"]
+        return object_key
+
+    monkeypatch.setattr(mk_selection, "_cache_mk_video_impl", fake_cache_impl)
+
+    object_key = mod._cache_card_video("uploads2/video-1.mp4")
+
+    assert object_key == "mk/videos/video-1.mp4"
+    assert captured["media_path"] == "uploads2/video-1.mp4"
+    assert captured["storage_exists"] is False
+    assert captured["safe_local_path_for_fn"] is local_media_storage.safe_local_path_for
+    assert captured["http_get_fn"] is mk_selection._mk_http_get
+
+
 def test_tick_skips_when_existing_run_younger_than_30_minutes(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 

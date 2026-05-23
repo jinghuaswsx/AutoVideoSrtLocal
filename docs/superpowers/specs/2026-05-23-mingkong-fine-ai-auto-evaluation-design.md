@@ -154,9 +154,10 @@ LIMIT 100
    - 确认当前 run 仍是最新 running run；否则停止本轮。
    - upsert 自动评估记录为 `running`，写入 `scheduled_run_id` 和卡片快照。
    - 复用现有卡片外链精细评估创建逻辑：
-     - 商品链接使用卡片 `mk_product_link`，缺失时回退 `product_url`。
-     - 视频使用卡片 `video_path` / `video_name` / `video_duration_seconds`。
-     - `product_code`、`mk_product_id` 一并写入 run metadata。
+   - 商品链接使用卡片 `mk_product_link`，缺失时回退 `product_url`。
+   - 视频使用卡片 `video_path` / `video_name` / `video_duration_seconds`。
+   - 自动任务必须强制把当前卡片视频落到本地缓存；远端备份存在但本地文件缺失时不能直接复用远端 object key，避免后续裁剪/LLM 素材准备卡在远端读取。
+   - `product_code`、`mk_product_id` 一并写入 run metadata。
    - 同步执行 `FineAiEvaluationService.run_evaluation(evaluation_run_id)`。
    - 根据最终 run status 更新自动评估记录。
 7. 汇总本轮扫描数、创建数、完成数、失败数、跳过原因，写入 `scheduled_task_runs.summary_json`。

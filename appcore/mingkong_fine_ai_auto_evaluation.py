@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from appcore import scheduled_tasks
+from appcore import local_media_storage, scheduled_tasks
 from appcore.db import execute, query
 from appcore.fine_ai_evaluation_service import get_service as get_fine_ai_evaluation_service
 
@@ -261,11 +261,21 @@ def _finish_record(
 
 def _cache_card_video(video_path: str) -> str:
     from web.routes import medias as media_routes
+    from web.routes.medias import mk_selection
 
     normalized = media_routes._normalize_mk_media_path(video_path)
     if not normalized:
         raise ValueError("invalid Mingkong video path")
-    return media_routes._cache_mk_video(normalized)
+    return mk_selection._cache_mk_video_impl(
+        normalized,
+        cache_object_key_fn=mk_selection._mk_video_cache_object_key,
+        storage_exists_fn=lambda object_key: local_media_storage.safe_local_path_for(object_key).is_file(),
+        build_headers_fn=mk_selection._build_mk_request_headers,
+        get_base_url_fn=mk_selection._get_mk_api_base_url,
+        safe_local_path_for_fn=local_media_storage.safe_local_path_for,
+        max_bytes=mk_selection._MAX_MK_VIDEO_BYTES,
+        http_get_fn=mk_selection._mk_http_get,
+    )
 
 
 def _run_candidate(
