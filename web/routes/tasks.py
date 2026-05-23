@@ -683,7 +683,18 @@ def api_translation_work_users():
 @bp.route("/api/languages", methods=["GET"])
 @login_required
 def api_languages():
-    return _json_response({"languages": tasks_svc.list_enabled_target_languages()})
+    media_item_id = request.args.get("media_item_id")
+    existing_langs = []
+    if media_item_id:
+        try:
+            item_id_int = int(media_item_id)
+            existing_langs = tasks_svc.get_existing_task_languages_for_item(item_id_int)
+        except (ValueError, TypeError):
+            pass
+    langs = tasks_svc.list_enabled_target_languages()
+    for l in langs:
+        l["existing"] = l["code"] in existing_langs
+    return _json_response({"languages": langs})
 
 
 @bp.route("/api/product/<int:pid>/en_items", methods=["GET"])

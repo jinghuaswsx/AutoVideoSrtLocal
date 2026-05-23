@@ -582,6 +582,29 @@
 .mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
 .mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+.mki-xiao-lang-card--disabled,
+.mki-xiao-lang-pill:has(.mki-xiao-lang-card--disabled) {
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+.mki-xiao-lang-card--disabled {
+  opacity: 0.65;
+  background: var(--oc-bg-muted) !important;
+  border-color: var(--oc-border) !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-ai-suggestion {
+  color: #9ca3af !important;
+}
+.mki-xiao-lang-pill:hover .mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+}
 .mki-xiao-lang-card {
   display: inline-flex; flex-direction: column; align-items: center; gap: 5px;
   padding: 5px; border: 1px solid transparent; border-radius: var(--oc-r-lg);
@@ -4565,6 +4588,7 @@ async function mkiImportProgressCreateSmallLangTask() {
     title: '创建小语种翻译任务',
     endpoint: endpoint,
     productId: mkiImportProgressProductId,
+    itemId: mkiImportProgressItemId,
     fineAiResult: mkiFineAiResultFromButton(mkiImportProgressButton),
     sourceButton: mkiImportProgressButton
   });
@@ -5007,25 +5031,33 @@ async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoRenderFineAiPanel(options.fineAiResult || null);
 
   // Load languages
-  if (!mkiXiaoLangsCache) {
-    try {
-      const r = await fetch('/tasks/api/languages');
-      const data = await r.json();
-      mkiXiaoLangsCache = data.languages || [];
-    } catch (e) { mkiXiaoLangsCache = []; }
+  let langs = [];
+  try {
+    const url = options.itemId 
+      ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(options.itemId)
+      : '/tasks/api/languages';
+    const r = await fetch(url);
+    const data = await r.json();
+    langs = data.languages || [];
+  } catch (e) { 
+    langs = []; 
   }
   var langsDiv = document.getElementById('mkiXiaoLangs');
-  langsDiv.innerHTML = mkiXiaoLangsCache.map(function(l) {
+  langsDiv.innerHTML = langs.map(function(l) {
     var code = mkiXiaoLangCode(l);
     var label = mkiXiaoLangLabel(l);
     if (!code) return '';
+    var isExisting = !!l.existing;
+    var disabledAttr = isExisting ? ' disabled' : '';
+    var labelText = isExisting ? label + ' (已有任务)' : label;
+    var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
     return '<label class="mki-xiao-lang-pill">'
-      + '<span class="mki-xiao-lang-card" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="当前还没有 AI 评估结果">'
-      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '">'
-      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="当前还没有 AI 评估结果">'
-      + '<span class="mki-xiao-lang-main">' + escapeHtml(label) + '</span>'
+      + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
+      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
       + '</span>'
-      + '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>'
+      + '<small class="mki-xiao-ai-suggestion">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</small>'
       + '</span></label>';
   }).join('');
   if (options.fineAiResult) {
@@ -5089,6 +5121,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     title: '创建小语种翻译任务',
     endpoint: endpoint,
     productId: productId,
+    itemId: itemId,
     fineAiResult: mkiFineAiResultFromButton(btn),
     sourceButton: btn
   });
