@@ -1819,6 +1819,71 @@ def test_push_rework_reject_requires_task_link(
     assert resp.get_json()["error"] == "task_not_linked"
 
 
+def test_push_rework_reject_falls_back_to_latest_task_on_ambiguity_no_db(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {"updates": []}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 599,
+            "task_id": None,
+            "lang": "de",
+        },
+    )
+    # Simulate multiple tasks matching, so infer_single_child_task_id_for_media_item returns None
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: None,
+        raising=False,
+    )
+    # Mock query_one to return the latest task ID (99)
+    monkeypatch.setattr(
+        "web.routes.pushes.query_one",
+        lambda sql, args: {"id": 99},
+    )
+
+    def fake_reject_child_from_push(**kwargs):
+        captured["service"] = kwargs
+        return {
+            "task_id": kwargs["task_id"],
+            "status": "assigned",
+            "issue_keys": kwargs["issue_keys"],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.reject_child_from_push",
+        fake_reject_child_from_push,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.refresh_push_status_cache_for_item",
+        lambda item_id: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.system_audit.record_from_request",
+        lambda **kwargs: None,
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1364/reject-to-task",
+        json={
+            "issue_keys": ["has_object"],
+            "reason": "视频产出不符合要求，需要负责人重新处理",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["task_id"] == 99
+    assert captured["service"]["task_id"] == 99
+    assert captured["updates"] == [(1364, 99)]
+
+
 def test_push_rework_reject_infers_unbound_task_and_binds_item(
     authed_client_no_db, monkeypatch,
 ):

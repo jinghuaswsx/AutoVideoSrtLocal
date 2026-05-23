@@ -133,7 +133,23 @@ def _resolve_rework_task_id(item: dict) -> int | None:
     if lang == "en":
         return None
     try:
-        return tasks_svc.infer_single_child_task_id_for_media_item(product_id, lang)
+        inferred = tasks_svc.infer_single_child_task_id_for_media_item(product_id, lang)
+        if inferred is not None:
+            return inferred
+        # Fallback for multiple matching tasks (ambiguity). We should reject to the latest task
+        # matching product and language rather than disabling the rework button completely.
+        from appcore.db import query_one
+        row = query_one(
+            "SELECT id FROM tasks "
+            "WHERE media_product_id=%s "
+            "AND LOWER(TRIM(COALESCE(country_code, '')))=%s "
+            "AND parent_task_id IS NOT NULL "
+            "AND status IN ('assigned', 'review', 'done') "
+            "ORDER BY id DESC LIMIT 1",
+            (product_id, lang),
+        )
+        if row:
+            return _positive_int(row.get("id"))
     except Exception:
         log.debug(
             "infer rework task id failed product_id=%s lang=%s",
