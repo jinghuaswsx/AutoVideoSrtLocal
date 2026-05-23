@@ -73,6 +73,7 @@ def index():
 
 from appcore import medias, push_quality_checks, pushes, system_audit
 from appcore import tasks as tasks_svc
+from appcore.db import query_one
 
 _PAGE_SIZE_DEFAULT = 20
 _AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
@@ -138,7 +139,6 @@ def _resolve_rework_task_id(item: dict) -> int | None:
             return inferred
         # Fallback for multiple matching tasks (ambiguity). We should reject to the latest task
         # matching product and language rather than disabling the rework button completely.
-        from appcore.db import query_one
         row = query_one(
             "SELECT id FROM tasks "
             "WHERE media_product_id=%s "
