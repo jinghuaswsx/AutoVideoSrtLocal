@@ -279,7 +279,7 @@ class SubtitleRemovalRuntime:
                 {"step": "poll", "status": status, "message": progress.get("emsg") or status or "polling"},
             )
 
-            if status == "success":
+            if status in ("success", "done"):
                 self._download_and_finalize_result(task_id, progress)
                 return
             if status == "failed":
