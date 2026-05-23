@@ -505,6 +505,7 @@ def _state_payload(task: dict) -> dict:
         "steps": dict(task.get("steps") or {}),
         "error": task.get("error") or "",
         "is_running": image_translate_runner.is_running(task.get("id") or ""),
+        "image_size": task.get("image_size") or "1K",
     }
 
 
@@ -623,6 +624,9 @@ def api_upload_complete():
     prompt_tpl = (body.get("prompt") or "").strip()
     product_name_raw = (body.get("product_name") or "").strip()
     uploaded = body.get("uploaded") or []
+    image_size = (body.get("image_size") or "1K").strip().upper()
+    if image_size not in {"0.5K", "1K", "2K"}:
+        image_size = "1K"
 
     with _upload_guard:
         rv = _upload_reservations.get(task_id)
@@ -739,6 +743,7 @@ def api_upload_complete():
         project_name=project_name,
         concurrency_mode=mode_raw,
         channel=channel,
+        image_size=image_size,
     )
     with _upload_guard:
         _upload_reservations.pop(task_id, None)
@@ -1130,6 +1135,9 @@ def api_rerun_unfinished_with_channel(task_id: str):
         )
 
     body = request.get_json(silent=True) or {}
+    image_size = (body.get("image_size") or task.get("image_size") or "1K").strip().upper()
+    if image_size not in {"0.5K", "1K", "2K"}:
+        image_size = "1K"
     channel = _requested_image_translate_channel(body.get("channel") or task.get("channel"))
     if not channel:
         return image_translate_flask_response(
@@ -1173,6 +1181,7 @@ def api_rerun_unfinished_with_channel(task_id: str):
     task["channel"] = channel
     task["model_id"] = model_id
     task["concurrency_mode"] = concurrency_mode
+    task["image_size"] = image_size
     task["status"] = "queued"
     task["error"] = ""
     task.setdefault("steps", {})["process"] = "pending"
@@ -1190,6 +1199,7 @@ def api_rerun_unfinished_with_channel(task_id: str):
         channel=channel,
         model_id=model_id,
         concurrency_mode=concurrency_mode,
+        image_size=image_size,
         steps=task.get("steps", {}),
         error="",
     )
@@ -1203,6 +1213,7 @@ def api_rerun_unfinished_with_channel(task_id: str):
                 "channel": channel,
                 "model_id": model_id,
                 "concurrency_mode": concurrency_mode,
+                "image_size": image_size,
             },
             status_code=202,
         )
