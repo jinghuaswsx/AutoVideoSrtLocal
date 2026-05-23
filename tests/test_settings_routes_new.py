@@ -34,6 +34,8 @@ def _neutralize_db(monkeypatch):
     monkeypatch.setattr("appcore.api_keys.query_one", fake_api_key_query_one)
     monkeypatch.setattr("appcore.api_keys.execute", lambda *a, **k: 0)
     monkeypatch.setattr("appcore.db._get_pool", lambda: MagicMock())
+    monkeypatch.setattr("appcore.settings._query_one", lambda *a, **k: None)
+    monkeypatch.setattr("appcore.settings._execute", lambda *a, **k: 0)
     # DAO 默认返回空：无 provider 时 providers Tab 仍能渲染
     monkeypatch.setattr("appcore.llm_provider_configs.query", lambda *a, **k: [])
     monkeypatch.setattr("appcore.llm_provider_configs.query_one", lambda *a, **k: None)
@@ -585,6 +587,53 @@ def test_settings_get_renders_meta_hot_posts_translate_model_controls(admin_no_d
     assert 'data-code="meta_hot_posts.translate_message"' not in body
 
 
+def test_settings_get_renders_fine_ai_provider_profile_controls(admin_no_db_client):
+    profile_configs = {
+        "manual": {
+            "profile": "manual",
+            "provider": "gemini_aistudio",
+            "model": "gemini-3.5-flash",
+            "label": "GOOGLE AI STUDIO",
+        },
+        "scheduled": {
+            "profile": "scheduled",
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-3.5-flash",
+            "label": "GOOGLE VERTEX AI ADC",
+        },
+    }
+    provider_options = [
+        {"provider": "openrouter", "label": "OPENROUTER", "model": "google/gemini-3.5-flash"},
+        {"provider": "gemini_aistudio", "label": "GOOGLE AI STUDIO", "model": "gemini-3.5-flash"},
+        {"provider": "gemini_vertex", "label": "GOOGLE VERTEX AI", "model": "gemini-3.5-flash"},
+        {"provider": "gemini_vertex_adc", "label": "GOOGLE VERTEX AI ADC", "model": "gemini-3.5-flash"},
+    ]
+
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3-pro-image-preview"), \
+         patch("web.routes.settings.fine_ai_model_config.all_profile_configs",
+               return_value=profile_configs), \
+         patch("web.routes.settings.fine_ai_model_config.provider_options",
+               return_value=provider_options):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'name="fine_ai_manual_provider"' in body
+    assert 'name="fine_ai_scheduled_provider"' in body
+    assert "AI 精细评估模型配置" in body
+    assert "Gemini 3.5 Flash" in body
+    assert 'value="gemini_aistudio" selected' in body
+    assert 'value="gemini_vertex_adc" selected' in body
+    assert "OPENROUTER" in body
+    assert "GOOGLE VERTEX AI ADC" in body
+
+
 def test_settings_post_providers_saves_meta_hot_posts_translate_binding(admin_no_db_client):
     with patch("web.routes.settings.set_image_translate_channel"), \
          patch("web.routes.settings.set_image_translate_default_model"), \
@@ -605,6 +654,27 @@ def test_settings_post_providers_saves_meta_hot_posts_translate_binding(admin_no
         model="google/gemini-3-flash-preview",
         updated_by=1,
     )
+
+
+def test_settings_post_providers_saves_fine_ai_provider_profiles(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config"), \
+         patch("web.routes.settings.llm_bindings.upsert"), \
+         patch("web.routes.settings.fine_ai_model_config.set_profile_provider") as m_set:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "fine_ai_manual_provider": "openrouter",
+            "fine_ai_scheduled_provider": "gemini_vertex_adc",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert [call.args for call in m_set.call_args_list] == [
+        ("manual", "openrouter"),
+        ("scheduled", "gemini_vertex_adc"),
+    ]
 
 
 def test_settings_post_providers_saves_meta_hot_posts_vertex_adc_flash_lite(admin_no_db_client):

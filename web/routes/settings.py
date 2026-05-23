@@ -23,6 +23,7 @@ from appcore import (
     browser_login_credentials,
     english_redub_settings,
     feishu_alerts,
+    fine_ai_evaluation_model_config as fine_ai_model_config,
     infra_credentials,
     llm_bindings,
     llm_provider_configs,
@@ -450,6 +451,8 @@ def index():
         openrouter_openai_image2_enabled=openrouter_openai_image2_enabled,
         openrouter_openai_image2_default_quality=openrouter_openai_image2_default_quality,
         meta_hot_posts_translate_binding=_meta_hot_posts_translate_binding_view(bindings_rows),
+        fine_ai_profile_configs=fine_ai_model_config.all_profile_configs(),
+        fine_ai_provider_options=fine_ai_model_config.provider_options(),
         bindings_grouped=bindings_grouped,
         voice_ai_auto_select_enabled=is_voice_ai_auto_select_enabled(),
         module_labels=MODULE_LABELS,
@@ -478,6 +481,7 @@ def _handle_providers_post() -> None:
     """保存 providers Tab：每个 provider_code 独立保存，admin-only。"""
     user_id = current_user.id
     _handle_meta_hot_posts_translate_binding_post(user_id)
+    _handle_fine_ai_provider_profiles_post()
     known_codes = set(llm_provider_configs.known_provider_codes())
     clear_keys = set(request.form.getlist("clear") or [])
     for provider_code in known_codes:
@@ -585,6 +589,21 @@ def _handle_meta_hot_posts_translate_binding_post(user_id: int) -> None:
         model=model_id,
         updated_by=user_id,
     )
+
+
+def _handle_fine_ai_provider_profiles_post() -> None:
+    fields = {
+        fine_ai_model_config.MANUAL_PROFILE: "fine_ai_manual_provider",
+        fine_ai_model_config.SCHEDULED_PROFILE: "fine_ai_scheduled_provider",
+    }
+    for profile, field_name in fields.items():
+        if field_name not in request.form:
+            continue
+        provider = (request.form.get(field_name) or "").strip()
+        try:
+            fine_ai_model_config.set_profile_provider(profile, provider)
+        except ValueError as exc:
+            flash(str(exc), "error")
 
 
 def _handle_bindings_post() -> None:

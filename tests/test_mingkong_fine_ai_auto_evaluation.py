@@ -146,6 +146,7 @@ def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
     assert result["status"] == "completed"
     assert created["product_link"] == "https://shop.example/products/replacement"
     assert created["link_check_result"] == link_check
+    assert created["model_profile"] == "scheduled"
     assert created["card_video_path"] == row["video_path"]
     assert len(writes) == 2
 

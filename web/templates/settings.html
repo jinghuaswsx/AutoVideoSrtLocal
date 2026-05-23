@@ -210,6 +210,26 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </p>
 
     <hr class="divider">
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 10px;color:#111827">AI 精细评估模型配置</h3>
+    <label>前端按钮点击 Provider</label>
+    <select name="fine_ai_manual_provider">
+      {% for opt in fine_ai_provider_options %}
+      <option value="{{ opt.provider }}" {{ 'selected' if fine_ai_profile_configs['manual'].provider == opt.provider }}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <label>定时 AI 精细评估 Provider</label>
+    <select name="fine_ai_scheduled_provider">
+      {% for opt in fine_ai_provider_options %}
+      <option value="{{ opt.provider }}" {{ 'selected' if fine_ai_profile_configs['scheduled'].provider == opt.provider }}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      模型固定为 Gemini 3.5 Flash；OpenRouter 会使用 <code>google/gemini-3.5-flash</code>，
+      Google AI Studio / Vertex / Vertex ADC 使用 <code>gemini-3.5-flash</code>。
+      前端按钮默认 GOOGLE AI STUDIO，定时任务默认 GOOGLE VERTEX AI ADC。
+    </p>
+
+    <hr class="divider">
     <label>Admin 偏好：翻译默认模型选择器</label>
     <div style="display:flex;gap:8px">
       <select id="translate_provider_group" style="flex:0 0 200px">

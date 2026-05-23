@@ -40,7 +40,7 @@ def test_fine_ai_prompts_require_chinese_human_readable_output():
     assert "country_name 和 country_name_zh 都输出中文国家名" in country_prompt
 
 
-def test_fine_ai_gemini_client_invokes_vertex_adc_without_search_and_with_url_context(monkeypatch):
+def test_fine_ai_gemini_client_invokes_manual_default_aistudio_without_search_and_with_url_context(monkeypatch):
     from appcore import fine_ai_gemini_client as mod
 
     calls = []
@@ -50,6 +50,7 @@ def test_fine_ai_gemini_client_invokes_vertex_adc_without_search_and_with_url_co
         return {"json": _country_result(), "usage": {"input_tokens": 1, "output_tokens": 2}}
 
     monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(mod.model_config.settings_store, "get_setting", lambda key: None)
 
     client = mod.FineAiGeminiClient()
     result = client.generate_country_evaluation(
@@ -77,11 +78,57 @@ def test_fine_ai_gemini_client_invokes_vertex_adc_without_search_and_with_url_co
     assert result["country_code"] == "DE"
     assert calls[0][0] == "fine_ai_evaluation.country"
     kwargs = calls[0][1]
-    assert kwargs["provider_override"] == "gemini_vertex_adc"
+    assert kwargs["provider_override"] == "gemini_aistudio"
     assert kwargs["model_override"] == "gemini-3.5-flash"
     assert kwargs["google_search"] is False
     assert kwargs["url_context"] is True
     assert "temperature" not in kwargs
+
+
+def test_fine_ai_gemini_client_maps_openrouter_to_google_gemini_35_flash(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    def fake_invoke(use_case_code, **kwargs):
+        return {
+            "json": _country_result(),
+            "text": '{"country_code":"DE"}',
+            "usage": {"input_tokens": 11, "output_tokens": 22},
+            "usage_log_id": 99,
+            "raw": {"provider_response_id": "raw-123", "nested": {"ok": True}},
+        }
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+
+    client = mod.FineAiGeminiClient(provider="openrouter")
+    result = client.generate_country_evaluation(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        product_facts={
+            "product_id": "123",
+            "product_name": "Sample",
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {"english_keywords": [], "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []}},
+        },
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "寰峰浗", "language": "German", "currency": "EUR"},
+        asset_snapshot={"cover_images": [], "product_images": [], "videos": []},
+        asset_paths=["G:/tmp/card_15s_llm.mp4"],
+    )
+
+    trace = client.last_call_trace
+    assert result["country_code"] == "DE"
+    assert trace["provider"] == "openrouter"
+    assert trace["model_id"] == "google/gemini-3.5-flash"
+    assert trace["request"]["payload"]["provider_override"] == "openrouter"
+    assert trace["request"]["payload"]["model_override"] == "google/gemini-3.5-flash"
+    assert trace["response"]["raw_payload"]["raw"]["provider_response_id"] == "raw-123"
 
 
 def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
@@ -97,6 +144,7 @@ def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
         }
 
     monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(mod.model_config.settings_store, "get_setting", lambda key: None)
 
     client = mod.FineAiGeminiClient()
     result = client.generate_country_evaluation(
@@ -123,12 +171,12 @@ def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
 
     trace = client.last_call_trace
     assert result["country_code"] == "DE"
-    assert trace["provider"] == "gemini_vertex_adc"
+    assert trace["provider"] == "gemini_aistudio"
     assert trace["model_id"] == "gemini-3.5-flash"
     assert trace["use_case_code"] == "fine_ai_evaluation.country"
     assert trace["request"]["system_prompt"] == mod.COUNTRY_EVALUATION_SYSTEM_PROMPT
     assert "Sample" in trace["request"]["prompt"]
-    assert trace["request"]["payload"]["provider_override"] == "gemini_vertex_adc"
+    assert trace["request"]["payload"]["provider_override"] == "gemini_aistudio"
     assert trace["request"]["payload"]["media"] == ["G:/tmp/card_15s_llm.mp4"]
     assert trace["response"]["summary"]["input_tokens"] == 11
     assert trace["response"]["parsed_json"]["country_code"] == "DE"
@@ -158,7 +206,7 @@ def test_fine_ai_gemini_client_uses_toolless_json_repair_call_after_parse_failur
 
     monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
 
-    client = mod.FineAiGeminiClient()
+    client = mod.FineAiGeminiClient(provider="openrouter")
     result = client.generate_country_evaluation(
         product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
         product_facts={
@@ -185,9 +233,13 @@ def test_fine_ai_gemini_client_uses_toolless_json_repair_call_after_parse_failur
     assert [call[0] for call in calls] == ["fine_ai_evaluation.country", "fine_ai_evaluation.country"]
     first_kwargs = calls[0][1]
     repair_kwargs = calls[1][1]
+    assert first_kwargs["provider_override"] == "openrouter"
+    assert first_kwargs["model_override"] == "google/gemini-3.5-flash"
     assert first_kwargs["google_search"] is False
     assert first_kwargs["url_context"] is True
     assert first_kwargs["media"] == ["G:/tmp/demo.mp4"]
+    assert repair_kwargs["provider_override"] == "openrouter"
+    assert repair_kwargs["model_override"] == "google/gemini-3.5-flash"
     assert repair_kwargs["google_search"] is False
     assert repair_kwargs["url_context"] is False
     assert repair_kwargs["media"] is None
@@ -222,6 +274,7 @@ def test_fine_ai_gemini_client_retries_original_call_when_json_repair_fails(monk
         return {"json": _country_result(), "usage": {"input_tokens": 11, "output_tokens": 22}}
 
     monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(mod.model_config.settings_store, "get_setting", lambda key: None)
 
     client = mod.FineAiGeminiClient()
     result = client.generate_country_evaluation(

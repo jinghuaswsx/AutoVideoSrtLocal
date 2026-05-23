@@ -13,6 +13,7 @@ import json
 import logging
 from typing import Any
 
+from appcore import fine_ai_evaluation_model_config as model_config
 from appcore import llm_client
 from appcore.fine_ai_evaluation_prompts import (
     COUNTRY_EVALUATION_SYSTEM_PROMPT,
@@ -31,8 +32,8 @@ from appcore.llm_providers._helpers.vertex_json import parse_json_content
 
 log = logging.getLogger(__name__)
 
-PROVIDER = "gemini_vertex_adc"
-MODEL = "gemini-3.5-flash"
+PROVIDER = model_config.DEFAULT_PROVIDERS[model_config.MANUAL_PROFILE]
+MODEL = model_config.BASE_MODEL
 PRODUCT_FACTS_USE_CASE = "fine_ai_evaluation.product_facts"
 COUNTRY_USE_CASE = "fine_ai_evaluation.country"
 RAW_RESPONSE_PREVIEW_CHARS = 8000
@@ -40,7 +41,19 @@ ORIGINAL_PARSE_RETRY_ATTEMPTS = 2
 
 
 class FineAiGeminiClient:
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        profile: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+    ):
+        resolved = model_config.resolve_config(profile=profile, provider=provider)
+        self.profile = resolved["profile"]
+        self.provider = resolved["provider"]
+        self.model = model_config.model_for_provider(self.provider)
+        if model and model == self.model:
+            self.model = model
         self.last_call_metadata: dict[str, Any] = {}
         self.last_call_trace: dict[str, Any] = {}
 
@@ -175,14 +188,14 @@ class FineAiGeminiClient:
                 "media": media or None,
                 "response_schema": schema,
                 "max_output_tokens": 12288,
-                "provider_override": PROVIDER,
-                "model_override": MODEL,
+                "provider_override": self.provider,
+                "model_override": self.model,
                 "google_search": google_search,
                 "url_context": url_context,
                 "project_id": attempt_project_id,
                 "billing_extra": {
-                    "provider": PROVIDER,
-                    "model": MODEL,
+                    "provider": self.provider,
+                    "model": self.model,
                     "thinking_level": thinking_level,
                     "google_search": bool(google_search),
                     "url_context": bool(url_context),
@@ -198,8 +211,8 @@ class FineAiGeminiClient:
                     media=media or None,
                     response_schema=schema,
                     max_output_tokens=12288,
-                    provider_override=PROVIDER,
-                    model_override=MODEL,
+                    provider_override=self.provider,
+                    model_override=self.model,
                     google_search=google_search,
                     url_context=url_context,
                     project_id=attempt_project_id,
@@ -214,7 +227,12 @@ class FineAiGeminiClient:
                     error=exc,
                 )
                 raise
-            metadata = _response_metadata(result, thinking_level=thinking_level)
+            metadata = _response_metadata(
+                result,
+                thinking_level=thinking_level,
+                provider=self.provider,
+                model=self.model,
+            )
             metadata["structured_retry_attempt"] = attempt
             if retry_history:
                 metadata["structured_retry_history"] = retry_history[-3:]
@@ -311,14 +329,14 @@ class FineAiGeminiClient:
             media=None,
             response_schema=schema,
             max_output_tokens=12288,
-            provider_override=PROVIDER,
-            model_override=MODEL,
+            provider_override=self.provider,
+            model_override=self.model,
             google_search=False,
             url_context=False,
             project_id=f"{project_id}-json-repair" if project_id else None,
             billing_extra={
-                "provider": PROVIDER,
-                "model": MODEL,
+                "provider": self.provider,
+                "model": self.model,
                 "thinking_level": thinking_level,
                 "google_search": False,
                 "url_context": False,
@@ -326,7 +344,12 @@ class FineAiGeminiClient:
                 "json_repair": True,
             },
         )
-        repair_metadata = _response_metadata(repair_result, thinking_level=thinking_level)
+        repair_metadata = _response_metadata(
+            repair_result,
+            thinking_level=thinking_level,
+            provider=self.provider,
+            model=self.model,
+        )
         metadata["repair_usage"] = repair_metadata.get("usage") or {}
         metadata["repair_usage_log_id"] = repair_metadata.get("usage_log_id")
         payload = repair_result.get("json")
@@ -377,12 +400,18 @@ def _repair_json_text(raw: str) -> str:
     return text.strip()
 
 
-def _response_metadata(result: dict[str, Any], *, thinking_level: str) -> dict[str, Any]:
+def _response_metadata(
+    result: dict[str, Any],
+    *,
+    thinking_level: str,
+    provider: str = PROVIDER,
+    model: str = MODEL,
+) -> dict[str, Any]:
     raw = result.get("raw")
     usage = result.get("usage") or {}
     metadata = {
-        "provider": PROVIDER,
-        "model": MODEL,
+        "provider": provider,
+        "model": model,
         "thinking_level": thinking_level,
         "usage": usage,
         "usage_log_id": result.get("usage_log_id"),
@@ -405,15 +434,17 @@ def _build_call_trace(
 ) -> dict[str, Any]:
     usage = result.get("usage") or {}
     media = request_payload.get("media") or []
+    provider = request_payload.get("provider_override") or PROVIDER
+    model = request_payload.get("model_override") or MODEL
     trace = {
-        "provider": PROVIDER,
-        "model_id": MODEL,
+        "provider": provider,
+        "model_id": model,
         "use_case_code": request_payload.get("use_case_code") or "",
         "project_id": request_payload.get("project_id") or "",
         "request": {
             "summary": {
-                "provider": PROVIDER,
-                "model_id": MODEL,
+                "provider": provider,
+                "model_id": model,
                 "use_case_code": request_payload.get("use_case_code") or "",
                 "project_id": request_payload.get("project_id") or "",
                 "media_count": len(media) if isinstance(media, list) else 1,
