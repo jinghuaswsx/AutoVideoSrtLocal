@@ -48,6 +48,8 @@ def get_scheduler() -> BackgroundScheduler:
         meta_hot_posts_scheduler.register(_scheduler)
         from appcore import tos_file_management
         tos_file_management.register(_scheduler)
+        from appcore import shopify_image_localizer_release
+        shopify_image_localizer_release.register(_scheduler)
         scheduled_tasks.apply_scheduler_controls(_scheduler)
     return _scheduler
 

@@ -49,7 +49,7 @@
 - 实时大盘 / 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md` + `2026-05-09-realtime-dashboard-store-filter.md` + `2026-05-10-realtime-dashboard-profit-margin.md`
 - 店小秘 watchdog / ROI 锁告警：`docs/superpowers/specs/2026-05-09-dianxiaomi-order-freshness-watchdog.md` + `2026-05-09-roi-hourly-sync-lock-recovery.md`
 - 选品/产品链接体系：3 份 `2026-05-09-product-link-*.md`; 顶部国家勾选前置校验 `2026-05-09-product-edit-ad-supported-langs-precheck-design.md`; TABCUT 价格筛选 `2026-05-13-tabcut-video-price-filter-design.md`
-- Shopify Image Localizer：发布/打包/API key/BOM/CDP 门禁必须先读 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
+- Shopify Image Localizer：发布规范与定时发布见 [specs/2026-05-24-shopify-image-localizer-release-standard-fix.md](docs/superpowers/specs/2026-05-24-shopify-image-localizer-release-standard-fix.md)；开发与打包门禁读 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
 - 模板/静态资源/订单分析：见 [web/templates/CLAUDE.md](web/templates/CLAUDE.md)、[web/static/CLAUDE.md](web/static/CLAUDE.md)、[appcore/order_analytics/CLAUDE.md](appcore/order_analytics/CLAUDE.md)
 - 任务中心/流程闭环：`2026-05-16-task-center-e2e-flow-design.md`（选品→任务→素材→推送）；所有任务流 UI 必须展示处理中、成功下一步入口、失败请求与原因；按语言指派见 `2026-05-20-task-center-per-language-assignment-design.md`
 ## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）

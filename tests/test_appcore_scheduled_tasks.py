@@ -1208,3 +1208,16 @@ def test_sync_scheduler_job_state_resumes_paused_enabled_job(monkeypatch):
     scheduled_tasks.sync_scheduler_job_state(fake, "meta_hot_posts_video_localization_tick")
 
     assert fake.calls == [("resume", "meta_hot_posts_video_localization_tick")]
+
+
+def test_task_definitions_include_shopify_image_localizer_auto_release():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["shopify_image_localizer_auto_release"]
+    assert task["schedule"] == "每 30 分钟"
+    assert task["source_type"] == "apscheduler"
+    assert task["runner"] == "appcore.shopify_image_localizer_release.run_scheduled_auto_release_wrapper"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-24-shopify-image-localizer-release-standard-fix.md" in task["description"]

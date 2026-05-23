@@ -613,6 +613,19 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "log_table": "tos_file_scan_runs",
         "default_enabled": True,
     },
+    "shopify_image_localizer_auto_release": {
+        "code": "shopify_image_localizer_auto_release",
+        "name": "Shopify Image Localizer 自动定时发布",
+        "description": "每30分钟检测 master 分支的 version.py 是否被更新，若检测到新版本则在 Linux Wine 环境下执行打包并自动发布更新。Docs-anchor: docs/superpowers/specs/2026-05-24-shopify-image-localizer-release-standard-fix.md",
+        "schedule": "每 30 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "shopify_image_localizer_auto_release",
+        "runner": "appcore.shopify_image_localizer_release.run_scheduled_auto_release_wrapper",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+        "default_enabled": True,
+    },
 }
 
 _RUNS_TABLE_SQL = """
