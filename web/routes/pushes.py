@@ -157,6 +157,35 @@ def _resolve_rework_task_id(item: dict) -> int | None:
             lang,
             exc_info=True,
         )
+    source_raw_id = _positive_int((item or {}).get("source_raw_id"))
+    if source_raw_id is None and (item or {}).get("auto_translated"):
+        source_raw_id = _positive_int((item or {}).get("source_ref_id"))
+    if source_raw_id is not None:
+        try:
+            task_id = tasks_svc.infer_single_child_task_id_from_raw_source(
+                product_id,
+                lang,
+                source_raw_id,
+            )
+            if task_id is not None:
+                return task_id
+        except Exception:
+            log.debug(
+                "infer rework task id from raw source failed product_id=%s lang=%s source_raw_id=%s",
+                product_id,
+                lang,
+                source_raw_id,
+                exc_info=True,
+            )
+    try:
+        return tasks_svc.latest_child_task_id_for_media_item(product_id, lang)
+    except Exception:
+        log.debug(
+            "infer latest rework task id failed product_id=%s lang=%s",
+            product_id,
+            lang,
+            exc_info=True,
+        )
         return None
 
 
