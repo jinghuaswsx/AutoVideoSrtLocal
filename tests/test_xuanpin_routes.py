@@ -263,6 +263,22 @@ def test_xuanpin_mk_material_import_modal_shows_fine_ai_soft_advice(authed_clien
     assert "if (!mkiFineAiCanImportMaterial(btn))" not in body
 
 
+def test_xuanpin_mk_material_import_fine_ai_country_columns_are_tinted_by_decision(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiFineAiCellClassForImport(row, baseClass)" in body
+    assert "mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell')" in body
+    assert "mkiFineAiCellClassForImport(row, 'fine-ai-result-cell')" in body
+    assert ".mki-progress-fine-ai-cell.is-go" in body
+    assert ".mki-progress-fine-ai-cell.is-test" in body
+    assert ".mki-progress-fine-ai-cell.is-hold" in body
+    assert ".fine-ai-result-cell.is-go" in body
+    assert ".fine-ai-result-cell.is-test" in body
+    assert ".fine-ai-result-cell.is-hold" in body
+
+
 def test_xuanpin_mk_video_cards_show_product_icon_for_product_library_status(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

@@ -313,6 +313,16 @@
 .fine-ai-result-table tr:first-child th,
 .fine-ai-result-table tr:first-child td { border-top:0; }
 .fine-ai-result-table th:first-child { width:92px; position:sticky; left:0; z-index:1; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:800; }
+.fine-ai-result-cell.is-go,
+.mki-progress-fine-ai-cell.is-go { background:oklch(98% 0.018 165); }
+.fine-ai-result-cell.is-test,
+.mki-progress-fine-ai-cell.is-test { background:oklch(98.5% 0.030 85); }
+.fine-ai-result-cell.is-hold,
+.fine-ai-result-cell.is-failed,
+.mki-progress-fine-ai-cell.is-hold,
+.mki-progress-fine-ai-cell.is-failed { background:oklch(98% 0.020 25); }
+.fine-ai-result-cell.is-empty,
+.mki-progress-fine-ai-cell.is-empty { background:#fff; }
 .fine-ai-result-country { display:grid; gap:3px; }
 .fine-ai-result-country strong { color:var(--oc-fg); font-size:13px; }
 .fine-ai-result-country span { color:var(--oc-fg-muted); font-size:11px; }
@@ -2140,6 +2150,10 @@ function mkiFineAiDecisionClassForImport(row) {
   return 'empty';
 }
 
+function mkiFineAiCellClassForImport(row, baseClass) {
+  return `${baseClass} is-${mkiFineAiDecisionClassForImport(row)}`;
+}
+
 function mkiFineAiFirstText(values) {
   const list = Array.isArray(values) ? values : [values];
   for (const value of list) {
@@ -2200,25 +2214,25 @@ function mkiFineAiProgressTableRows(result) {
 function mkiImportProgressFineAiTable(result) {
   const rows = mkiFineAiProgressTableRows(result);
   const countryCells = rows.map(({code, row}) => `
-    <td><div class="mki-progress-fine-ai-country">
+    <td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell'))}"><div class="mki-progress-fine-ai-country">
       <strong>${escapeHtml(mkiFineAiCountryNameForImport(code, row))}</strong>
       <span>${escapeHtml(code)}</span>
     </div></td>
   `).join('');
   const scoreCells = rows.map(({row}) => {
     const score = mkiFineAiScoreForImport(row);
-    return `<td><div class="mki-progress-fine-ai-score">
+    return `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell'))}"><div class="mki-progress-fine-ai-score">
       <strong>${score === null ? '-' : escapeHtml(score)}</strong>
       <div class="mki-progress-fine-ai-score-track"><div class="mki-progress-fine-ai-score-fill" style="width:${score === null ? 0 : score}%"></div></div>
     </div></td>`;
   }).join('');
   const decisionCells = rows.map(({row}) => {
     const cls = mkiFineAiDecisionClassForImport(row);
-    return `<td><span class="mki-progress-fine-ai-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span></td>`;
+    return `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell'))}"><span class="mki-progress-fine-ai-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span></td>`;
   }).join('');
-  const summaryCells = rows.map(({row}) => `<td>${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
+  const summaryCells = rows.map(({row}) => `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell'))}">${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
   const adviceCells = rows.map(({row}) => `
-    <td><ul class="mki-progress-fine-ai-list">${mkiFineAiAdviceItemsForImport(row).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></td>
+    <td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-cell'))}"><ul class="mki-progress-fine-ai-list">${mkiFineAiAdviceItemsForImport(row).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></td>
   `).join('');
   return `<div class="mki-progress-fine-ai-scroll">
     <table class="mki-progress-fine-ai-table">
@@ -2304,23 +2318,23 @@ function mkiFineAiRenderResultCountryMatrix(result) {
   const rows = mkiFineAiProgressTableRows(result);
   if (!rows.some(({row}) => row)) return '';
   const countryCells = rows.map(({code, row}) => `
-    <td><div class="fine-ai-result-country">
+    <td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}"><div class="fine-ai-result-country">
       <strong>${escapeHtml(mkiFineAiCountryNameForImport(code, row))}</strong>
       <span>${escapeHtml(mkiFineAiResultCountrySubtitle(code, row))}</span>
     </div></td>
   `).join('');
-  const scoreCells = rows.map(({row}) => `<td>${mkiFineAiResultScoreCell(row)}</td>`).join('');
+  const scoreCells = rows.map(({row}) => `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}">${mkiFineAiResultScoreCell(row)}</td>`).join('');
   const decisionCells = rows.map(({row}) => {
     const cls = mkiFineAiDecisionClassForImport(row);
     const confidence = String((row && row.decision && row.decision.confidence) || (row && row.confidence) || '').trim();
-    return `<td><div class="fine-ai-result-decision">
+    return `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}"><div class="fine-ai-result-decision">
       <span class="fine-ai-result-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span>
       ${confidence ? `<small>置信度：${escapeHtml(confidence)}</small>` : ''}
     </div></td>`;
   }).join('');
-  const reasonCells = rows.map(({row}) => `<td>${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
-  const riskCells = rows.map(({row}) => `<td>${mkiFineAiResultListCell(mkiFineAiRiskItemsForResult(row).slice(0, 2))}</td>`).join('');
-  const actionCells = rows.map(({row}) => `<td>${mkiFineAiResultListCell(mkiFineAiNextActionForResult(row))}</td>`).join('');
+  const reasonCells = rows.map(({row}) => `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}">${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
+  const riskCells = rows.map(({row}) => `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}">${mkiFineAiResultListCell(mkiFineAiRiskItemsForResult(row).slice(0, 2))}</td>`).join('');
+  const actionCells = rows.map(({row}) => `<td class="${escapeHtml(mkiFineAiCellClassForImport(row, 'fine-ai-result-cell'))}">${mkiFineAiResultListCell(mkiFineAiNextActionForResult(row))}</td>`).join('');
   return `<div class="fine-ai-result-scroll">
     <table class="fine-ai-result-table">
       <tbody>
