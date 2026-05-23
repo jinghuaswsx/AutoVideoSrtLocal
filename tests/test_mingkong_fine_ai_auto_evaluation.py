@@ -191,6 +191,28 @@ def test_run_candidate_fails_before_llm_when_product_link_unavailable(monkeypatc
     assert len(writes) == 2
 
 
+def test_run_candidate_skips_when_material_already_claimed(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+
+    row = _candidate(1)
+    monkeypatch.setattr(mod, "_claim_running_record", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        mod,
+        "_resolve_product_link",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("claimed cards must not create Fine AI runs")),
+    )
+
+    result = mod._run_candidate(
+        row,
+        scheduled_run_id=101,
+        source_bucket=mod.SOURCE_TOP500,
+        source_rank=1,
+        service=object(),
+    )
+
+    assert result == {"status": "skipped", "reason": "already_claimed"}
+
+
 def test_cache_card_video_forces_local_mingkong_download(monkeypatch):
     from appcore import local_media_storage
     from appcore import mingkong_fine_ai_auto_evaluation as mod
@@ -264,6 +286,8 @@ def test_tick_replaces_running_run_older_than_30_minutes(monkeypatch):
     running = {"id": 42, "started_at": now - timedelta(seconds=1900)}
     monkeypatch.setattr(mod, "_now", lambda: now)
     finish_calls = _patch_run_logging(monkeypatch, mod, latest_running=running, start_id=101)
+    write_calls = []
+    monkeypatch.setattr(mod, "execute", lambda sql, args=(): write_calls.append((sql, args)) or 1)
     monkeypatch.setattr(mod, "_fetch_top500_candidates", lambda limit: [])
     monkeypatch.setattr(mod, "_fetch_yesterday_top100_candidates", lambda limit: [])
 
@@ -274,6 +298,23 @@ def test_tick_replaces_running_run_older_than_30_minutes(monkeypatch):
     assert finish_calls[0]["run_id"] == 42
     assert finish_calls[0]["status"] == "failed"
     assert "exceeded" in finish_calls[0]["error_message"]
+    assert "UPDATE mingkong_fine_ai_auto_evaluations" in write_calls[0][0]
+    assert write_calls[0][1][1] == 42
+
+
+def test_fetch_candidates_exclude_any_existing_auto_record(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+
+    captured = []
+    monkeypatch.setattr(mod, "query", lambda sql, args=(): captured.append(sql) or [])
+
+    assert mod._fetch_top500_candidates(10) == []
+    assert mod._fetch_yesterday_top100_candidates(10) == []
+
+    joined_sql = "\n".join(captured)
+    assert "LEFT JOIN mingkong_fine_ai_auto_evaluations a" in joined_sql
+    assert "a.status IN" not in joined_sql
+    assert "WHERE a.id IS NULL" in joined_sql
 
 
 def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monkeypatch):

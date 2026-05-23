@@ -64,6 +64,8 @@
 
 接管只负责让调度层继续前进。Python 线程无法强杀时，旧线程如果还在运行，必须通过“当前 run id 校验”在每张卡片之间停止写入后续任务：旧 run 发现自己不再是最新 running run 后，结束本轮循环并返回 `superseded`。
 
+接管旧 run 时，旧 run 名下仍处于 `running` 的自动评估记录必须同步标记为 `failed`，错误信息说明被新 run 接管。新 run 不能重新领取任何已经存在自动评估记录的 `material_key`，包括 `running` / `failed` / `skipped` / `completed`，避免旧线程尚未自然退出时同一卡片被重复创建 Fine AI run。
+
 ## 候选来源和优先级
 
 候选必须来自本地归档表，不实时请求明空列表。
@@ -100,7 +102,7 @@ LIMIT 100
 
 - 在 Top500 内重复，只取一次。
 - 同时出现在 Top500 和 Top100，只按 Top500 优先级跑一次。
-- 已有自动评估终态记录后，不再自动跑第二轮。
+- 已有任何自动评估记录后，不再自动跑第二轮。`running` 记录表示卡片已经被某个 run 领取；如领取方被 30 分钟接管，接管逻辑会把该记录标记为 `failed`，但仍不再自动重跑。
 
 ## 自动评估记录表
 
@@ -147,8 +149,8 @@ LIMIT 100
 
 1. 执行单例和接管检查。
 2. 创建本轮 `scheduled_task_runs`。
-3. 查询 Top500 候选，过滤已在 `mingkong_fine_ai_auto_evaluations` 有终态记录的 `material_key`。
-4. 如果 Top500 没有可跑候选，查询全部 Top100 候选，继续过滤已跑记录。
+3. 查询 Top500 候选，过滤已在 `mingkong_fine_ai_auto_evaluations` 有任何记录的 `material_key`。
+4. 如果 Top500 没有可跑候选，查询全部 Top100 候选，继续过滤已领取或已跑记录。
 5. 取最多 10 张卡片。
 6. 对每张卡片：
    - 确认当前 run 仍是最新 running run；否则停止本轮。

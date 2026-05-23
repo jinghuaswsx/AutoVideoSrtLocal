@@ -81,11 +81,32 @@ def _guard_singleton(*, stale_after_seconds: int = STALE_AFTER_SECONDS) -> dict[
         },
         error_message=f"running Mingkong fine AI auto evaluation exceeded {int(stale_after_seconds)}s; superseded by a new run",
     )
+    _mark_running_records_superseded(running_id, stale_after_seconds=stale_after_seconds)
     return {
         "stale_run_replaced": running_id,
         "running_started_at": running.get("started_at"),
         "running_age_seconds": age_seconds,
     }
+
+
+def _mark_running_records_superseded(run_id: int, *, stale_after_seconds: int = STALE_AFTER_SECONDS) -> None:
+    if not run_id:
+        return
+    execute(
+        """
+        UPDATE mingkong_fine_ai_auto_evaluations
+        SET status='failed',
+            last_error=%s,
+            finished_at=NOW(),
+            updated_at=NOW()
+        WHERE scheduled_run_id=%s
+          AND status='running'
+        """,
+        (
+            f"scheduled run exceeded {int(stale_after_seconds)}s and was superseded by a newer run",
+            int(run_id),
+        ),
+    )
 
 
 def _is_current_run(run_id: int | None) -> bool:
@@ -147,7 +168,6 @@ def _fetch_top500_candidates(limit: int) -> list[dict[str, Any]]:
         ) top500
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
           ON a.material_key = top500.material_key
-         AND a.status IN ('completed', 'partially_completed', 'failed', 'skipped')
         WHERE a.id IS NULL
         ORDER BY top500.cumulative_90_spend DESC, top500.video_ads_count DESC, top500.id ASC
         LIMIT %s
@@ -173,7 +193,6 @@ def _fetch_yesterday_top100_candidates(limit: int) -> list[dict[str, Any]]:
         ) top100
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
           ON a.material_key = top100.material_key
-         AND a.status IN ('completed', 'partially_completed', 'failed', 'skipped')
         WHERE a.id IS NULL
         ORDER BY top100.display_position ASC, top100.rank_position ASC, top100.id ASC
         LIMIT %s
@@ -183,40 +202,21 @@ def _fetch_yesterday_top100_candidates(limit: int) -> list[dict[str, Any]]:
     return [dict(row) for row in rows or []]
 
 
-def _upsert_running_record(
+def _claim_running_record(
     row: dict[str, Any],
     *,
     scheduled_run_id: int | None,
     source_bucket: str,
     source_rank: int,
-) -> None:
-    execute(
+) -> bool:
+    affected = execute(
         """
-        INSERT INTO mingkong_fine_ai_auto_evaluations
+        INSERT IGNORE INTO mingkong_fine_ai_auto_evaluations
         (material_key, source_bucket, source_rank, product_code, product_url,
          mk_product_id, mk_product_link, video_name, video_path, video_image_path,
          cumulative_90_spend, yesterday_spend_delta, status, attempts,
          scheduled_run_id, started_at)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'running',1,%s,NOW())
-        ON DUPLICATE KEY UPDATE
-          source_bucket=VALUES(source_bucket),
-          source_rank=VALUES(source_rank),
-          product_code=VALUES(product_code),
-          product_url=VALUES(product_url),
-          mk_product_id=VALUES(mk_product_id),
-          mk_product_link=VALUES(mk_product_link),
-          video_name=VALUES(video_name),
-          video_path=VALUES(video_path),
-          video_image_path=VALUES(video_image_path),
-          cumulative_90_spend=VALUES(cumulative_90_spend),
-          yesterday_spend_delta=VALUES(yesterday_spend_delta),
-          status='running',
-          attempts=attempts + 1,
-          last_error=NULL,
-          scheduled_run_id=VALUES(scheduled_run_id),
-          started_at=NOW(),
-          finished_at=NULL,
-          updated_at=NOW()
         """,
         (
             _candidate_key(row),
@@ -234,6 +234,7 @@ def _upsert_running_record(
             scheduled_run_id,
         ),
     )
+    return int(affected or 0) > 0
 
 
 def _finish_record(
@@ -291,12 +292,13 @@ def _run_candidate(
         return {"status": "skipped", "reason": "missing_material_key"}
     product_link = _candidate_product_link(row)
     video_path = str(row.get("video_path") or "").strip()
-    _upsert_running_record(
+    if not _claim_running_record(
         row,
         scheduled_run_id=scheduled_run_id,
         source_bucket=source_bucket,
         source_rank=source_rank,
-    )
+    ):
+        return {"status": "skipped", "reason": "already_claimed"}
     if not product_link:
         _finish_record(material_key, status="skipped", error="missing_product_link")
         return {"status": "skipped", "reason": "missing_product_link"}
