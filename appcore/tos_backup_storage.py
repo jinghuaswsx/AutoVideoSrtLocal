@@ -236,16 +236,8 @@ def reconcile_local_file(local_path: str | os.PathLike[str]) -> SyncResult:
 
 
 def ensure_remote_copy_for_local_path(local_path: str | os.PathLike[str]) -> SyncResult | None:
-    if not is_enabled():
-        return None
-    path = Path(local_path)
-    if not path.is_file():
-        return SyncResult(str(path), backup_object_key_for_local_path(path), "failed", False, False, "local file missing")
-    key = backup_object_key_for_local_path(path)
-    if object_exists(key):
-        return SyncResult(str(path), key, "synced", True, True)
-    upload_local_file(path, key)
-    return SyncResult(str(path), key, "uploaded", True, False)
+    # 实时备份已停用，改由每日凌晨1点定时任务统一同步备份
+    return None
 
 
 def ensure_local_copy_for_local_path(local_path: str | os.PathLike[str]) -> SyncResult | None:
