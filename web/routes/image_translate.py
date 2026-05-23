@@ -1295,9 +1295,13 @@ def page_list():
             state = {}
         items = state.get("items") or []
         done = sum(1 for it in items if it.get("status") == "done")
+        total = len(items)
         preset = state.get("preset") or ""
         preset_label = "封面图翻译" if preset == "cover" else ("产品详情图翻译" if preset == "detail" else "")
         raw_status = row.get("status") or state.get("status") or ""
+        display_status = raw_status
+        if raw_status == "done" and total > 0 and done < total:
+            display_status = "interrupted"
         concurrency_mode = _normalize_concurrency_mode(state.get("concurrency_mode"))
         channel = (state.get("channel") or "").strip().lower()
         if channel not in its.CHANNELS:
@@ -1306,9 +1310,9 @@ def page_list():
         task_item = {
             "id": row["id"],
             "created_at": row.get("created_at"),
-            "status": raw_status,
-            "status_label": _STATUS_LABELS.get(raw_status, raw_status),
-            "is_interrupted": raw_status == "interrupted",
+            "status": display_status,
+            "status_label": _STATUS_LABELS.get(display_status, display_status),
+            "is_interrupted": display_status == "interrupted",
             "preset": preset,
             "preset_label": preset_label,
             "target_language_name": state.get("target_language_name") or "",
@@ -1319,7 +1323,7 @@ def page_list():
             "model_id": state.get("model_id") or "",
             "concurrency_mode": concurrency_mode,
             "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
-            "total": len(items),
+            "total": total,
             "done": done,
             "user_id": row.get("user_id") if _is_superadmin_user() else None,
             "task_type": task_type,

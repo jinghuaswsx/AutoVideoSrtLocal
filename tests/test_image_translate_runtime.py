@@ -275,6 +275,8 @@ def test_runtime_image_generation_timeout_fails_without_retry(tmp_path):
     assert task["items"][0]["attempts"] == 1
     assert task["items"][0]["status"] == "failed"
     assert "120s" in task["items"][0]["error"]
+    assert task["status"] == "interrupted"
+    assert task["steps"]["process"] == "interrupted"
 
 
 def test_runtime_apimart_resume_timeout_fails_without_resubmit(tmp_path):

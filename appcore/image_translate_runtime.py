@@ -226,8 +226,20 @@ class ImageTranslateRuntime:
             task["steps"]["process"] = "error"
             task["error"] = circuit_msg
         else:
-            task["status"] = "done"
-            task["steps"]["process"] = "done"
+            _update_progress(task)
+            progress = task.get("progress") or {}
+            total = int(progress.get("total") or 0)
+            done = int(progress.get("done") or 0)
+            failed = int(progress.get("failed") or 0)
+            running = int(progress.get("running") or 0)
+            if done == total and failed == 0 and running == 0:
+                task["status"] = "done"
+                task["steps"]["process"] = "done"
+                task["error"] = ""
+            else:
+                task["status"] = "interrupted"
+                task["steps"]["process"] = "interrupted"
+                task["error"] = "部分图片翻译未完成，请重新生成未完成图片"
         try:
             self._finalize_auto_apply(task)
         except Exception as exc:

@@ -562,6 +562,44 @@ def test_image_translate_page_emphasizes_product_name_before_submit(authed_clien
     assert 'class="it-product-name-input"' in body
 
 
+def test_image_translate_history_does_not_show_done_for_partial_task(authed_client_no_db, monkeypatch):
+    import json
+    from web.routes import image_translate as r
+
+    state = {
+        "type": "image_translate",
+        "status": "done",
+        "preset": "detail",
+        "target_language_name": "葡萄牙语",
+        "project_name": "手摇发电太阳能收音机-商品详情-葡萄牙语-20260520",
+        "channel": "openrouter",
+        "model_id": "gpt-image-2",
+        "concurrency_mode": "sequential",
+        "items": [
+            {"idx": 0, "status": "done"},
+            {"idx": 1, "status": "done"},
+            {"idx": 2, "status": "failed"},
+            {"idx": 3, "status": "failed"},
+        ],
+    }
+    rows = [{
+        "id": "img-partial",
+        "created_at": "2026-05-20 09:42:24",
+        "status": "done",
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }]
+    monkeypatch.setattr(r, "_is_superadmin_user", lambda: False)
+    monkeypatch.setattr(r.image_translate_store, "list_user_projects", lambda *a, **kw: rows)
+
+    resp = authed_client_no_db.get("/image-translate")
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert "2 / 4" in body
+    assert 'data-status="interrupted"' in body
+    assert ">中断<" in body
+
+
 def test_bootstrap_returns_local_upload_urls(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     resp = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
