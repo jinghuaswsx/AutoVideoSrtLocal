@@ -485,7 +485,7 @@
            + `</span>`;
     });
     const rows = [];
-    for (let i = 0; i < chips.length; i += 4) rows.push(chips.slice(i, i + 4));
+    for (let i = 0; i < chips.length; i += 3) rows.push(chips.slice(i, i + 3));
     return `<div class="oc-lang-bar">`
          + rows.filter((row) => row.length).map((row) => `<div class="oc-lang-row">${row.join('')}</div>`).join('')
          + `</div>`;
