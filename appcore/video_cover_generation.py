@@ -1145,7 +1145,7 @@ def generate_ad_copy_sets(
             provider_override=selection.provider,
             model_override=selection.model,
             temperature=0.4,
-            max_tokens=2400,
+            max_tokens=4000,
             response_format={"type": "json_object"},
             billing_extra={"source": "video_cover"},
         )
