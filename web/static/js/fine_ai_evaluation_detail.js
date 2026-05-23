@@ -2,7 +2,7 @@
   const config = window.FINE_AI_EVALUATION_PAGE || {};
   const body = document.getElementById('fineAiPageBody');
   const refreshBtn = document.getElementById('fineAiRefreshBtn');
-  const terminalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
+  const terminalStatuses = ['completed', 'partially_completed', 'failed', 'interrupted', 'cancelled'];
   let pollTimer = null;
   let elapsedTimer = null;
   let currentPayload = {};
@@ -152,6 +152,7 @@
       completed: '评估完成',
       partially_completed: '部分完成',
       failed: '评估失败',
+      interrupted: '已中断',
       cancelled: '已取消',
     };
     if (labels[value]) return labels[value];
@@ -175,6 +176,7 @@
       waiting: '等待中',
       completed: '已完成',
       failed: '失败',
+      interrupted: '已中断',
       skipped: '已跳过',
     };
     if (labels[value]) return labels[value];

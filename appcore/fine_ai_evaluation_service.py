@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from appcore import runner_lifecycle
+from appcore import active_tasks, runner_lifecycle
 from appcore import fine_ai_evaluation_model_config as fine_ai_model_config
 from appcore.fine_ai_evaluation_aggregator import build_summary
 from appcore.fine_ai_evaluation_country_config import (
@@ -34,9 +34,14 @@ from appcore.fine_ai_gemini_client import MODEL, PROVIDER, FineAiGeminiClient
 
 log = logging.getLogger(__name__)
 
-RUN_STATUSES = {"queued", "running", "completed", "partially_completed", "failed", "cancelled"}
+RUN_STATUSES = {"queued", "running", "completed", "partially_completed", "failed", "interrupted", "cancelled"}
+INFLIGHT_RUN_STATUSES = {"queued", "running"}
 COUNTRY_PENDING_STATUSES = {"pending", "waiting", "running", "completed", "failed", "skipped"}
 PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS = 0
+INTERRUPTED_ERROR_MESSAGE = (
+    "Fine AI evaluation was interrupted by service restart or background worker shutdown; "
+    "unfinished countries were marked failed so they can be rerun."
+)
 
 
 class FineAiEvaluationError(RuntimeError):
@@ -254,6 +259,109 @@ class FineAiEvaluationService:
             daemon=True,
             stage="run",
             interrupt_policy="cautious",
+        )
+
+    def recover_interrupted_runs(self) -> int:
+        list_inflight_runs = getattr(self.repository, "list_inflight_runs", None)
+        if not callable(list_inflight_runs):
+            return 0
+        recovered_count = 0
+        for run in list_inflight_runs():
+            evaluation_run_id = str(run.get("evaluation_run_id") or "")
+            try:
+                before = str(run.get("status") or "").lower()
+                recovered = self.recover_run_if_interrupted(evaluation_run_id, run=run)
+                after = str(recovered.get("status") or "").lower()
+                if before in INFLIGHT_RUN_STATUSES and after == "interrupted":
+                    recovered_count += 1
+            except Exception:
+                log.warning("fine AI evaluation interrupted recovery failed: run=%s", evaluation_run_id, exc_info=True)
+        return recovered_count
+
+    def recover_run_if_interrupted(
+        self,
+        evaluation_run_id: str,
+        *,
+        run: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        run = dict(run or self._require_run(evaluation_run_id))
+        if str(run.get("status") or "").lower() not in INFLIGHT_RUN_STATUSES:
+            return run
+        if _is_fine_ai_run_active(str(evaluation_run_id)):
+            return run
+
+        country_codes = normalize_country_codes(run.get("countries") or DEFAULT_COUNTRY_CODES)
+        metadata = dict(run.get("metadata") or {})
+        product_snapshot = dict(run.get("product_snapshot") or {})
+        asset_snapshot = metadata.get("asset_snapshot") or {}
+        product_id = str(run.get("product_id") or product_snapshot.get("product_id") or "")
+        countries = _unwrap_country_results(self.repository.list_countries(evaluation_run_id))
+
+        completed_codes = _ordered_country_codes(
+            country_codes,
+            {
+                *(metadata.get("countries_completed") or []),
+                *[code for code, item in countries.items() if item.get("status") == "completed"],
+            },
+        )
+        failed_codes = set(metadata.get("countries_failed") or [])
+        failed_codes.update(code for code, item in countries.items() if item.get("status") == "failed")
+        newly_failed_codes: list[str] = []
+        for code in country_codes:
+            if code in completed_codes:
+                continue
+            if code not in failed_codes:
+                newly_failed_codes.append(code)
+            failed_codes.add(code)
+
+        progress = _ensure_progress(
+            run.get("progress"),
+            country_codes,
+            product_snapshot=product_snapshot,
+            asset_snapshot=asset_snapshot,
+        )
+        progress = _mark_unfinished_progress_steps_interrupted(progress, country_codes)
+        ordered_failed_codes = _ordered_country_codes(country_codes, failed_codes)
+        progress = _progress(
+            country_codes,
+            "interrupted",
+            completed_steps=_completed_step_count(progress),
+            completed_countries=completed_codes,
+            failed_countries=ordered_failed_codes,
+            base_progress=progress,
+        )
+
+        for code in newly_failed_codes:
+            failed = _failed_country_result(get_country_config(code), INTERRUPTED_ERROR_MESSAGE)
+            self.repository.upsert_country(
+                evaluation_run_id,
+                code,
+                {
+                    "product_id": product_id,
+                    "status": "failed",
+                    "full_result": failed,
+                    "metadata": {"interrupted": True, "reason": "service_restart"},
+                    "error_message": INTERRUPTED_ERROR_MESSAGE,
+                },
+            )
+
+        run_errors = list(metadata.get("run_errors") or [])
+        run_errors.append({"stage": "interrupted_recovery", "message": INTERRUPTED_ERROR_MESSAGE})
+        metadata.update({
+            "countries_completed": completed_codes,
+            "countries_failed": ordered_failed_codes,
+            "run_errors": run_errors[-20:],
+            "interrupted": True,
+            "interrupted_reason": "service_restart_or_worker_shutdown",
+        })
+        log.warning("fine AI evaluation interrupted recovery: run=%s", evaluation_run_id)
+        return self.repository.update_run(
+            evaluation_run_id,
+            status="interrupted",
+            metadata=metadata,
+            failed_at=_now_iso(),
+            error_message=INTERRUPTED_ERROR_MESSAGE,
+            progress=progress,
         )
 
     def run_evaluation(self, evaluation_run_id: str) -> dict[str, Any]:
@@ -597,7 +705,7 @@ class FineAiEvaluationService:
         return self.get_result(product_id, evaluation_run_id)
 
     def get_status(self, product_id: int | str, evaluation_run_id: str) -> dict[str, Any]:
-        run = self._require_run(evaluation_run_id)
+        run = self.recover_run_if_interrupted(evaluation_run_id)
         self._assert_product(run, product_id)
         metadata = run.get("metadata") or {}
         return {
@@ -617,7 +725,7 @@ class FineAiEvaluationService:
         }
 
     def get_result(self, product_id: int | str, evaluation_run_id: str) -> dict[str, Any]:
-        run = self._require_run(evaluation_run_id)
+        run = self.recover_run_if_interrupted(evaluation_run_id)
         self._assert_product(run, product_id)
         countries = _unwrap_country_results(self.repository.list_countries(evaluation_run_id))
         return _build_result_payload(run, countries)
@@ -626,6 +734,7 @@ class FineAiEvaluationService:
         run = self.repository.get_latest_run(product_id)
         if not run:
             raise FineAiEvaluationNotFound("Evaluation run not found")
+        run = self.recover_run_if_interrupted(run["evaluation_run_id"], run=run)
         countries = _unwrap_country_results(self.repository.list_countries(run["evaluation_run_id"]))
         return _build_result_payload(run, countries)
 
@@ -650,6 +759,7 @@ class FineAiEvaluationService:
         )
         if not run:
             raise FineAiEvaluationNotFound("Evaluation run not found")
+        run = self.recover_run_if_interrupted(run["evaluation_run_id"], run=run)
         countries = _unwrap_country_results(self.repository.list_countries(run["evaluation_run_id"]))
         return _build_result_payload(run, countries)
 
@@ -663,7 +773,7 @@ class FineAiEvaluationService:
         include_assets: bool = True,
         include_videos: bool = True,
     ) -> dict[str, Any]:
-        run = self._require_run(evaluation_run_id)
+        run = self.recover_run_if_interrupted(evaluation_run_id)
         self._assert_product(run, product_id)
         code = normalize_country_codes([country_code])[0]
         metadata = run.get("metadata") or {}
@@ -925,6 +1035,67 @@ def get_service() -> FineAiEvaluationService:
             country_request_interval_seconds=PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS
         )
     return _SERVICE
+
+
+def recover_interrupted_fine_ai_evaluations() -> int:
+    return get_service().recover_interrupted_runs()
+
+
+def _is_fine_ai_run_active(evaluation_run_id: str) -> bool:
+    run_id = str(evaluation_run_id or "").strip()
+    if not run_id:
+        return False
+    if active_tasks.is_active("fine_ai_evaluation", run_id):
+        return True
+    prefix = f"{run_id}:"
+    return any(
+        task.project_type == "fine_ai_evaluation" and task.task_id.startswith(prefix)
+        for task in active_tasks.list_active_tasks()
+    )
+
+
+def _ordered_country_codes(country_codes: list[str] | tuple[str, ...], values) -> list[str]:
+    value_set = {str(value or "").upper() for value in values or []}
+    ordered = [code for code in country_codes if code in value_set]
+    extras = sorted(value for value in value_set if value and value not in ordered)
+    return ordered + extras
+
+
+def _mark_unfinished_progress_steps_interrupted(
+    progress: dict[str, Any],
+    country_codes: list[str] | tuple[str, ...],
+) -> dict[str, Any]:
+    out = dict(progress or {})
+    steps = {str(step.get("key") or ""): step for step in out.get("steps") or []}
+    for key in ("data_preparation", "product_fact_extraction", "summary"):
+        status = str((steps.get(key) or {}).get("status") or "").lower()
+        if status in {"completed", "failed", "skipped"}:
+            continue
+        out = _mark_progress_step(
+            out,
+            key,
+            "failed",
+            INTERRUPTED_ERROR_MESSAGE,
+            level="error",
+            debug=[{"label": "Recovery", "value": "service_restart_or_worker_shutdown"}],
+        )
+    for code in country_codes:
+        key = _country_step_key(code)
+        status = str((steps.get(key) or {}).get("status") or "").lower()
+        if status in {"completed", "failed", "skipped"}:
+            continue
+        out = _mark_progress_step(
+            out,
+            key,
+            "failed",
+            INTERRUPTED_ERROR_MESSAGE,
+            level="error",
+            debug=[
+                {"label": "Country", "value": code},
+                {"label": "Recovery", "value": "service_restart_or_worker_shutdown"},
+            ],
+        )
+    return out
 
 
 def _fine_ai_model_config_from_metadata(metadata: dict[str, Any]) -> dict[str, str]:

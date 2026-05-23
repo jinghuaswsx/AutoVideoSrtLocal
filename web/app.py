@@ -23,6 +23,7 @@ from wtforms.validators import ValidationError
 from appcore import task_state
 from appcore import realtime_events
 from appcore.bulk_translate_recovery import mark_interrupted_bulk_translate_tasks
+from appcore.fine_ai_evaluation_service import recover_interrupted_fine_ai_evaluations
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
@@ -236,6 +237,12 @@ def _run_startup_recovery() -> None:
         mark_interrupted_bulk_translate_tasks()
     except Exception:
         log.warning("bulk_translate startup interruption marking failed", exc_info=True)
+    try:
+        recovered = recover_interrupted_fine_ai_evaluations()
+        if recovered:
+            log.warning("fine AI evaluation interrupted recovery: recovered=%s", recovered)
+    except Exception:
+        log.warning("fine AI evaluation startup interruption marking failed", exc_info=True)
     try:
         from appcore import tasks as task_center_tasks
 
