@@ -6,7 +6,7 @@ from appcore import mingkong_fine_ai_auto_evaluation, scheduled_tasks
 TASK_CODE = "mingkong_fine_ai_auto_evaluation_tick"
 
 
-def tick_once(limit: int = 10) -> dict:
+def tick_once(limit: int = mingkong_fine_ai_auto_evaluation.MAX_BATCH_SIZE) -> dict:
     return mingkong_fine_ai_auto_evaluation.tick_once(limit=limit)
 
 

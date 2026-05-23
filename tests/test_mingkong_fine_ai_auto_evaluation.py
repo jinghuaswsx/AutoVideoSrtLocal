@@ -89,7 +89,7 @@ def test_tick_uses_all_yesterday_top100_after_top500_exhausted(monkeypatch):
     assert [item["row"]["is_new_top100_entry"] for item in processed] == [False, True]
 
 
-def test_tick_limits_each_round_to_ten(monkeypatch):
+def test_tick_limits_each_round_to_two(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
     _patch_run_logging(monkeypatch, mod)
@@ -104,8 +104,9 @@ def test_tick_limits_each_round_to_ten(monkeypatch):
 
     summary = mod.tick_once(limit=10)
 
-    assert summary["processed"] == 10
-    assert len(processed) == 10
+    assert summary["limit"] == 2
+    assert summary["processed"] == 2
+    assert len(processed) == 2
 
 
 def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):

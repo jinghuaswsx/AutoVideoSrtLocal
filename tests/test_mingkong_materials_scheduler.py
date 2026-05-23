@@ -62,9 +62,25 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     assert task["runner"] == "appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once"
     assert task["log_table"] == "scheduled_task_runs"
     assert "10 分钟" in task["schedule"]
+    assert "每轮最多 2 张卡片" in task["schedule"]
     assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
     assert enriched["control_strategy"] == "apscheduler"
     assert enriched["log_source"] == "db:scheduled_task_runs"
+
+
+def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_two(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation_scheduler as scheduler
+
+    captured = {}
+
+    def fake_tick_once(*, limit):
+        captured["limit"] = limit
+        return {"limit": limit}
+
+    monkeypatch.setattr(scheduler.mingkong_fine_ai_auto_evaluation, "tick_once", fake_tick_once)
+
+    assert scheduler.tick_once() == {"limit": 2}
+    assert captured["limit"] == 2
 
 
 def test_mingkong_fine_ai_auto_evaluation_scheduler_registered_in_app_scheduler():

@@ -11,7 +11,7 @@
 ## 目标
 
 1. 每 10 分钟启动一次自动评估 tick。
-2. 每轮最多处理 10 张视频卡片。
+2. 每轮最多处理 2 张视频卡片。
 3. 同一时间只允许一个同类自动评估任务运行。
 4. 单个自动评估任务最多存活 30 分钟。
 5. 优先处理明空 `视频素材库` 按 90 天消耗倒序 Top500。
@@ -21,6 +21,8 @@
 9. 国家之间不等待，先把任务跑起来。
 10. 不开启 Google Search 工具。
 11. 单国家评估失败时自动重试 1 次；第二次无论成功或失败都结束该国家并进入下一步。
+
+生产观察显示单张卡片真实执行时长通常在 4-6 分钟，保留 10 分钟 tick 周期时，每轮上限收敛为 2 张，减少超过 30 分钟后被新任务接管的失败记录。
 
 ## 非目标
 
@@ -151,7 +153,7 @@ LIMIT 100
 2. 创建本轮 `scheduled_task_runs`。
 3. 查询 Top500 候选，过滤已在 `mingkong_fine_ai_auto_evaluations` 有任何记录的 `material_key`。
 4. 如果 Top500 没有可跑候选，查询全部 Top100 候选，继续过滤已领取或已跑记录。
-5. 取最多 10 张卡片。
+5. 取最多 2 张卡片。
 6. 对每张卡片：
    - 确认当前 run 仍是最新 running run；否则停止本轮。
    - upsert 自动评估记录为 `running`，写入 `scheduled_run_id` 和卡片快照。
@@ -222,7 +224,7 @@ LIMIT 100
 - scheduler registry 测试确认任务登记、10 分钟 interval、`scheduled_task_runs` 日志源。
 - service 测试确认 Top500 优先、Top500 耗尽后取全部 Top100。
 - service 测试确认同一 `material_key` 在两个来源重复时只跑一次。
-- service 测试确认一轮最多取 10 个。
+- service 测试确认一轮最多取 2 个。
 - service 测试确认 running run 未超过 30 分钟时跳过。
 - service 测试确认 running run 超过 30 分钟时标记旧 run failed 并启动新 run。
 - Fine AI pipeline 测试确认国家失败会自动重试 1 次，第二次失败后继续后续国家。

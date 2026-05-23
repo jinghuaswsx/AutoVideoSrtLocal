@@ -192,7 +192,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
             "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
             "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
         ),
-        "schedule": "每 10 分钟（每轮最多 10 张卡片，单轮最长 30 分钟）",
+        "schedule": "每 10 分钟（每轮最多 2 张卡片，单轮最长 30 分钟）",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "mingkong_fine_ai_auto_evaluation_tick",

@@ -13,7 +13,7 @@ TASK_CODE = "mingkong_fine_ai_auto_evaluation_tick"
 SOURCE_TOP500 = "top500_90d_spend"
 SOURCE_YESTERDAY_TOP100 = "yesterday_top100"
 TERMINAL_RECORD_STATUSES = {"completed", "partially_completed", "failed", "skipped"}
-MAX_BATCH_SIZE = 10
+MAX_BATCH_SIZE = 2
 STALE_AFTER_SECONDS = 30 * 60
 
 log = logging.getLogger(__name__)
