@@ -375,6 +375,7 @@
 .mki-progress-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
   padding: 18px 20px 14px; border-bottom: 1px solid var(--oc-border);
+  position: sticky; top: 0; background: #fff; z-index: 1;
 }
 .mki-progress-title { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 800; }
 .mki-progress-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--oc-fg-muted); line-height: 1.45; }
@@ -384,6 +385,22 @@
 }
 .mki-progress-close:hover { color: var(--oc-fg); background: var(--oc-bg-muted); }
 .mki-progress-body { padding: 16px 20px 18px; }
+.mki-progress-info {
+  display: grid; gap: 8px; margin-bottom: 14px; padding: 12px 14px;
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); background: #fff;
+}
+.mki-progress-info-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; font-size: 13px; line-height: 1.45; }
+.mki-progress-info-label { flex: 0 0 auto; color: var(--oc-fg-muted); font-weight: 700; min-width: 80px; }
+.mki-progress-info-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; word-break: break-word; }
+.mki-progress-info-link { color: var(--oc-accent); text-decoration: none; word-break: break-all; }
+.mki-progress-info-link:hover { text-decoration: underline; }
+.mki-progress-info-status { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; }
+.mki-progress-info-status--ok { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-progress-info-status--fail { background: oklch(96% .04 25); color: oklch(42% .14 25); }
+.mki-progress-info-status--checking { background: var(--oc-bg-muted); color: var(--oc-fg-muted); }
+.mki-progress-info-copy { width: 24px; height: 24px; flex: 0 0 auto; padding: 0; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r); background: #fff; color: var(--oc-fg-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mki-progress-info-copy:hover { border-color: var(--oc-accent); color: var(--oc-accent); }
+.mki-progress-info-copy svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mki-progress-meta {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;
 }
@@ -610,6 +627,7 @@
 @keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
   .mki-progress-backdrop { padding: 12px; }
+  .mki-progress-info-label { min-width: 64px; }
   .mki-progress-meta { grid-template-columns: 1fr; }
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
@@ -1471,6 +1489,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-material-imported="${isMaterialImported ? '1' : ''}"
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
+        data-mki-spends="${escapeHtml(spendText)}"
         ${isMaterialImported ? 'disabled' : ''}
         onclick="mkiHandleClick(this)">
       ${isMaterialImported ? '已入库' : '加入素材库'}
@@ -1657,6 +1676,7 @@ async function openDetail(mkId, mkName) {
             data-mki-material-imported=""
             data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
             data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
+            data-mki-spends="${spendText}"
             onclick="mkiHandleClick(this)">
           加入素材库
         </button>
@@ -3966,6 +3986,83 @@ function mkiImportProgressStepActionHtml(stepKey) {
   return `<div class="mki-progress-step-actions">${retryButton}</div>`;
 }
 
+function mkiCopyProgressInfoText(btn) {
+  const targetId = btn.dataset.copyTarget;
+  const el = targetId ? document.getElementById(targetId) : null;
+  const text = el ? (el.textContent || '').trim() : '';
+  if (!text) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+    setTimeout(function() { btn.innerHTML = oldHtml; }, 900);
+  } catch (_err) {}
+}
+
+function mkiCopyProgressInfoLink(btn) {
+  const targetId = btn.dataset.copyTarget;
+  const el = targetId ? document.getElementById(targetId) : null;
+  const text = el ? (el.getAttribute('href') || '').trim() : '';
+  if (!text) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+    setTimeout(function() { btn.innerHTML = oldHtml; }, 900);
+  } catch (_err) {}
+}
+
+function mkiImportProgressProbeLink(url) {
+  const statusEl = document.getElementById('mkiImportProgressLinkStatus');
+  if (!statusEl) return;
+  statusEl.className = 'mki-progress-info-status mki-progress-info-status--checking';
+  statusEl.textContent = '检测中';
+  if (!url) {
+    statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
+    statusEl.textContent = '无链接';
+    return;
+  }
+  fetch('/mk-import/probe-url?url=' + encodeURIComponent(url))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        statusEl.className = 'mki-progress-info-status mki-progress-info-status--ok';
+        statusEl.textContent = '200';
+      } else {
+        statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
+        statusEl.textContent = data.status_code ? String(data.status_code) : (data.detail || '不可达');
+      }
+    })
+    .catch(function() {
+      statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
+      statusEl.textContent = '检测失败';
+    });
+}
+
 function mkiImportProgressOpen(meta) {
   const modal = document.getElementById('mkiImportProgressModal');
   if (!modal) return;
@@ -3987,6 +4084,36 @@ function mkiImportProgressOpen(meta) {
   `).join('');
   document.getElementById('mkiImportProgressFile').textContent = meta.filename || '--';
   document.getElementById('mkiImportProgressProduct').textContent = meta.product_name || meta.product_code || '--';
+
+  // populate product info panel
+  var infoPanel = document.getElementById('mkiImportProgressInfo');
+  var productName = String(meta.product_name || '').trim();
+  var productLink = String(meta.product_link || '').trim();
+  var productCode = String(meta.product_code || '').trim();
+  var spends = String(meta.spends || '').trim();
+  if (infoPanel) {
+    document.getElementById('mkiImportProgressProductCnName').textContent = productName || '--';
+    var linkEl = document.getElementById('mkiImportProgressProductLink');
+    if (productLink && /^https?:\/\//i.test(productLink)) {
+      linkEl.href = productLink;
+      linkEl.textContent = productLink;
+    } else {
+      linkEl.removeAttribute('href');
+      linkEl.textContent = productLink || '--';
+    }
+    document.getElementById('mkiImportProgressProductCode').textContent = productCode || '--';
+    document.getElementById('mkiImportProgressSpends').textContent = spends || '--';
+    infoPanel.hidden = false;
+    if (productLink && /^https?:\/\//i.test(productLink)) {
+      mkiImportProgressProbeLink(productLink);
+    } else {
+      var statusEl = document.getElementById('mkiImportProgressLinkStatus');
+      if (statusEl) {
+        statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
+        statusEl.textContent = '无链接';
+      }
+    }
+  }
   mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   document.getElementById('mkiImportProgressError').hidden = true;
   document.getElementById('mkiImportProgressError').textContent = '';
@@ -4493,6 +4620,7 @@ async function mkiHandleClick(btn) {
       product_code: btn.dataset.mkiProductCode,
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
       media_product_id: localProductId > 0 ? localProductId : null,
+      spends: btn.dataset.mkiSpends || '',
     };
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
@@ -4987,6 +5115,31 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
       <button type="button" class="mki-progress-close" onclick="mkiImportProgressClose()" aria-label="关闭">×</button>
     </div>
     <div class="mki-progress-body">
+      <div id="mkiImportProgressInfo" class="mki-progress-info" hidden>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品中文名</span>
+          <span id="mkiImportProgressProductCnName" class="mki-progress-info-value">--</span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品链接</span>
+          <span class="mki-progress-info-value">
+            <a id="mkiImportProgressProductLink" class="mki-progress-info-link" href="#" target="_blank" rel="noopener noreferrer">--</a>
+            <span id="mkiImportProgressLinkStatus" class="mki-progress-info-status mki-progress-info-status--checking">检测中</span>
+            <button type="button" class="mki-progress-info-copy" data-copy-target="mkiImportProgressProductLink" onclick="mkiCopyProgressInfoLink(this)" title="复制链接" aria-label="复制链接"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品ID</span>
+          <span class="mki-progress-info-value">
+            <span id="mkiImportProgressProductCode" class="mki-progress-info-value" style="font-family:'JetBrains Mono',monospace; font-size:12px;">--</span>
+            <button type="button" class="mki-progress-info-copy" data-copy-target="mkiImportProgressProductCode" onclick="mkiCopyProgressInfoText(this)" title="复制产品ID" aria-label="复制产品ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">90天消耗</span>
+          <span id="mkiImportProgressSpends" class="mki-progress-info-value">--</span>
+        </div>
+      </div>
       <div class="mki-progress-meta">
         <div class="mki-progress-meta-item">
           <span class="mki-progress-meta-label">素材</span>

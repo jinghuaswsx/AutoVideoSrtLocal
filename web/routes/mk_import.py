@@ -51,6 +51,23 @@ def _trigger_material_evaluation(
     )
 
 
+@bp.route("/probe-url", methods=["GET"])
+@login_required
+def probe_url():
+    """简单检测一个 URL 的 HTTP 可达状态，用于前端弹窗展示。"""
+    url = (request.args.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "status_code": None, "detail": "empty url"})
+    ok, detail = mk_import_svc._probe_product_link(url)
+    status_code = None
+    if detail and detail.startswith("HTTP "):
+        try:
+            status_code = int(detail.split(" ")[1])
+        except (IndexError, ValueError):
+            pass
+    return jsonify({"ok": ok, "status_code": status_code, "detail": detail or ""})
+
+
 @bp.route("/check", methods=["GET", "POST"])
 @login_required
 def check():
