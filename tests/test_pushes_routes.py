@@ -2018,6 +2018,7 @@ def test_push_rework_reject_infers_task_from_reused_raw_source(
         "actor_user_id": 1,
         "issue_keys": ["has_object", "has_cover"],
         "reason": "复用原始素材生成的视频和封面不合格，需要负责人重新处理",
+        "image_urls": [],
     }
     assert captured["updates"] == [(1404, 93)]
     assert captured["refreshes"] == [1404]
