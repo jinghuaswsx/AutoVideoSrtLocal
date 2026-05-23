@@ -297,6 +297,40 @@
 .mki-fine-ai-context-label { flex:0 0 auto; color:var(--oc-fg-muted); font-weight:700; }
 .mki-fine-ai-context-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mki-fine-ai-context-copy-btn:disabled { opacity:.45; cursor:not-allowed; }
+.fine-ai-result-overview { margin:0 0 16px; border:1px solid var(--oc-border); border-radius:8px; background:#fff; overflow:hidden; }
+.fine-ai-result-overview-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 14px; background:var(--oc-bg-subtle); border-bottom:1px solid var(--oc-border); }
+.fine-ai-result-overview-title { margin:0; font-size:15px; line-height:1.35; font-weight:800; color:var(--oc-fg); }
+.fine-ai-result-overview-subtitle { margin:4px 0 0; font-size:12px; color:var(--oc-fg-muted); line-height:1.45; }
+.fine-ai-result-metrics { display:flex; align-items:stretch; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+.fine-ai-result-metric { min-width:86px; padding:8px 10px; border:1px solid var(--oc-border); border-radius:8px; background:#fff; }
+.fine-ai-result-metric span { display:block; color:var(--oc-fg-muted); font-size:11px; line-height:1.3; }
+.fine-ai-result-metric strong { display:flex; align-items:center; gap:4px; margin-top:4px; color:var(--oc-fg); font-size:16px; line-height:1.2; font-weight:800; }
+.fine-ai-result-metric small { color:var(--oc-fg-muted); font-size:11px; font-weight:600; }
+.fine-ai-result-scroll { overflow-x:auto; }
+.fine-ai-result-table { width:100%; min-width:1120px; border-collapse:collapse; table-layout:fixed; font-size:12px; }
+.fine-ai-result-table th,
+.fine-ai-result-table td { border-top:1px solid var(--oc-border); border-right:1px solid var(--oc-border); padding:10px 12px; vertical-align:top; text-align:left; line-height:1.45; }
+.fine-ai-result-table tr:first-child th,
+.fine-ai-result-table tr:first-child td { border-top:0; }
+.fine-ai-result-table th:first-child { width:92px; position:sticky; left:0; z-index:1; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:800; }
+.fine-ai-result-country { display:grid; gap:3px; }
+.fine-ai-result-country strong { color:var(--oc-fg); font-size:13px; }
+.fine-ai-result-country span { color:var(--oc-fg-muted); font-size:11px; }
+.fine-ai-result-score { display:grid; gap:5px; }
+.fine-ai-result-score strong { font-size:16px; font-variant-numeric:tabular-nums; }
+.fine-ai-result-score small { color:var(--oc-fg-muted); font-size:11px; }
+.fine-ai-result-score-track { height:4px; border-radius:999px; background:var(--oc-bg-muted); overflow:hidden; }
+.fine-ai-result-score-fill { height:100%; border-radius:inherit; background:var(--oc-accent); }
+.fine-ai-result-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 9px; border-radius:999px; font-weight:800; border:1px solid transparent; }
+.fine-ai-result-pill.is-go { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.fine-ai-result-pill.is-test { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
+.fine-ai-result-pill.is-hold,
+.fine-ai-result-pill.is-failed { background:oklch(96% .04 25); color:oklch(42% .14 25); }
+.fine-ai-result-pill.is-empty { background:var(--oc-bg-muted); color:var(--oc-fg-muted); border-color:var(--oc-border); }
+.fine-ai-result-decision { display:grid; gap:4px; }
+.fine-ai-result-decision small { color:var(--oc-fg-muted); font-size:11px; }
+.fine-ai-result-list { margin:0; padding-left:16px; }
+.fine-ai-result-list li { margin:2px 0; }
 @keyframes mkiFineAiPulse { from { transform:scale(.72); opacity:.9; } to { transform:scale(1.8); opacity:0; } }
 .ect-modal-header .ect-modal-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
 .ect-modal-header .ect-modal-header-actions + .ect-modal-close { margin-left:0; }
@@ -2084,12 +2118,14 @@ function mkiFineAiSummaryForImport(row) {
   const decision = row.decision || {};
   const recommendations = row.recommendations || {};
   return mkiFineAiFirstText([
+    decision.one_sentence_reason,
     decision.summary,
     row.summary,
     decision.reason,
     (decision.why || [])[0],
     (recommendations.ad_test_angles || [])[0],
     (recommendations.landing_page_actions || [])[0],
+    (row.error || {}).message,
     row.error_message,
   ]) || '暂无详细说明';
 }
@@ -2101,10 +2137,17 @@ function mkiFineAiAdviceItemsForImport(row) {
   const risks = row.risks || {};
   const items = [
     ...(Array.isArray(decision.why) ? decision.why : []),
+    ...(Array.isArray(recommendations.creative_actions) ? recommendations.creative_actions : []),
     ...(Array.isArray(recommendations.ad_test_angles) ? recommendations.ad_test_angles : []),
     ...(Array.isArray(recommendations.landing_page_actions) ? recommendations.landing_page_actions : []),
+    ...(Array.isArray(recommendations.audience_suggestions) ? recommendations.audience_suggestions : []),
+    ...(Array.isArray(risks.claim_risks) ? risks.claim_risks : []),
+    ...(Array.isArray(risks.compliance_risks) ? risks.compliance_risks : []),
+    ...(Array.isArray(risks.operational_risks) ? risks.operational_risks : []),
+    ...(Array.isArray(risks.trust_risks) ? risks.trust_risks : []),
     ...(Array.isArray(risks.localization_risks) ? risks.localization_risks : []),
     ...(Array.isArray(row.missing_data) ? row.missing_data.map(item => '待补充：' + item) : []),
+    (row.error || {}).message ? '评估失败：' + (row.error || {}).message : '',
     row.error_message ? '评估失败：' + row.error_message : '',
   ].map(item => String(item || '').trim()).filter(Boolean);
   return items.length ? items.slice(0, 3) : [mkiFineAiSummaryForImport(row)];
@@ -2152,6 +2195,141 @@ function mkiImportProgressFineAiTable(result) {
       </tbody>
     </table>
   </div>`;
+}
+
+function mkiFineAiRiskItemsForResult(row) {
+  if (!row) return [];
+  const risks = row.risks || {};
+  const items = [
+    ...(Array.isArray(risks.claim_risks) ? risks.claim_risks : []),
+    ...(Array.isArray(risks.compliance_risks) ? risks.compliance_risks : []),
+    ...(Array.isArray(risks.operational_risks) ? risks.operational_risks : []),
+    ...(Array.isArray(risks.trust_risks) ? risks.trust_risks : []),
+    ...(Array.isArray(risks.localization_risks) ? risks.localization_risks : []),
+    ...(Array.isArray(row.missing_data) ? row.missing_data.map(item => '待补充：' + item) : []),
+  ].map(item => String(item || '').trim()).filter(Boolean);
+  const error = String(((row.error || {}).message) || row.error_message || '').trim();
+  if (error) items.unshift('评估失败：' + error);
+  return items;
+}
+
+function mkiFineAiTopRiskForResult(row) {
+  const items = mkiFineAiRiskItemsForResult(row);
+  return items.length ? items[0] : '-';
+}
+
+function mkiFineAiNextActionForResult(row) {
+  if (!row) return '先完成该国家精细评估，再决定是否投放。';
+  const decision = mkiFineAiDecisionForImport(row);
+  const recommendations = row.recommendations || {};
+  const action = mkiFineAiFirstText([
+    ...(Array.isArray(recommendations.creative_actions) ? recommendations.creative_actions : []),
+    ...(Array.isArray(recommendations.landing_page_actions) ? recommendations.landing_page_actions : []),
+    ...(Array.isArray(recommendations.ad_test_angles) ? recommendations.ad_test_angles : []),
+    ...(Array.isArray(recommendations.audience_suggestions) ? recommendations.audience_suggestions : []),
+  ]);
+  if (decision === 'FAILED') return '重跑 AI 评估；若仍失败，先补齐落地页、素材或履约数据。';
+  if (decision === 'GO') return action || '准备首轮投放素材、落地页和预算，可以进入执行。';
+  if (decision === 'TEST') return action || '先小预算测试，重点观察点击、转化、履约和合规反馈。';
+  if (decision === 'HOLD') return action || mkiFineAiTopRiskForResult(row) || '暂不投入，先处理阻塞风险或补齐关键信息。';
+  return action || '结合详情页复核后再决定下一步。';
+}
+
+function mkiFineAiResultListCell(items) {
+  const values = (Array.isArray(items) ? items : [items])
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  if (!values.length) return '<span class="ect-muted">-</span>';
+  return `<ul class="fine-ai-result-list">${values.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+}
+
+function mkiFineAiResultScoreCell(row) {
+  const score = mkiFineAiScoreForImport(row);
+  if (score === null) {
+    return '<div class="fine-ai-result-score"><strong>-</strong><small>暂无评分</small><div class="fine-ai-result-score-track"><div class="fine-ai-result-score-fill" style="width:0%"></div></div></div>';
+  }
+  return `<div class="fine-ai-result-score">
+    <strong>${escapeHtml(score)}<small>/100</small></strong>
+    <div class="fine-ai-result-score-track"><div class="fine-ai-result-score-fill" style="width:${score}%"></div></div>
+  </div>`;
+}
+
+function mkiFineAiResultCountrySubtitle(code, row) {
+  const parts = [
+    code,
+    row && row.language,
+    row && row.currency,
+  ].map(item => String(item || '').trim()).filter(Boolean);
+  return parts.join(' · ');
+}
+
+function mkiFineAiRenderResultCountryMatrix(result) {
+  const rows = mkiFineAiProgressTableRows(result);
+  if (!rows.some(({row}) => row)) return '';
+  const countryCells = rows.map(({code, row}) => `
+    <td><div class="fine-ai-result-country">
+      <strong>${escapeHtml(mkiFineAiCountryNameForImport(code, row))}</strong>
+      <span>${escapeHtml(mkiFineAiResultCountrySubtitle(code, row))}</span>
+    </div></td>
+  `).join('');
+  const scoreCells = rows.map(({row}) => `<td>${mkiFineAiResultScoreCell(row)}</td>`).join('');
+  const decisionCells = rows.map(({row}) => {
+    const cls = mkiFineAiDecisionClassForImport(row);
+    const confidence = String((row && row.decision && row.decision.confidence) || (row && row.confidence) || '').trim();
+    return `<td><div class="fine-ai-result-decision">
+      <span class="fine-ai-result-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span>
+      ${confidence ? `<small>置信度：${escapeHtml(confidence)}</small>` : ''}
+    </div></td>`;
+  }).join('');
+  const reasonCells = rows.map(({row}) => `<td>${escapeHtml(mkiFineAiSummaryForImport(row))}</td>`).join('');
+  const riskCells = rows.map(({row}) => `<td>${mkiFineAiResultListCell(mkiFineAiRiskItemsForResult(row).slice(0, 2))}</td>`).join('');
+  const actionCells = rows.map(({row}) => `<td>${mkiFineAiResultListCell(mkiFineAiNextActionForResult(row))}</td>`).join('');
+  return `<div class="fine-ai-result-scroll">
+    <table class="fine-ai-result-table">
+      <tbody>
+        <tr><th>国家</th>${countryCells}</tr>
+        <tr><th>AI 评分</th>${scoreCells}</tr>
+        <tr><th>评估结果</th>${decisionCells}</tr>
+        <tr><th>结论依据</th>${reasonCells}</tr>
+        <tr><th>主要风险</th>${riskCells}</tr>
+        <tr><th>下一步</th>${actionCells}</tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function mkiFineAiResultMetric(label, value, unit = '') {
+  const display = value === null || value === undefined || value === '' ? '-' : value;
+  return `<div class="fine-ai-result-metric">
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(String(display))}${unit ? `<small>${escapeHtml(unit)}</small>` : ''}</strong>
+  </div>`;
+}
+
+function mkiFineAiRenderStructuredResultOverview(result) {
+  const normalized = mkiFineAiNormalizeResult(result) || result || {};
+  const matrix = mkiFineAiRenderResultCountryMatrix(normalized);
+  if (!matrix) return '';
+  const summary = normalized.summary || {};
+  const counts = summary.decision_counts || {};
+  const recommendation = String(summary.overall_recommendation || normalized.status || '').trim() || '-';
+  return `<section class="fine-ai-result-overview" aria-label="AI 精细评估结果总览">
+    <div class="fine-ai-result-overview-head">
+      <div>
+        <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览</h4>
+        <p class="fine-ai-result-overview-subtitle">按国家横向对比评分、投放结论、核心风险和下一步动作。</p>
+      </div>
+      <div class="fine-ai-result-metrics">
+        ${mkiFineAiResultMetric('平均分', summary.average_score ?? '', '/100')}
+        ${mkiFineAiResultMetric('推荐结论', recommendation)}
+        ${mkiFineAiResultMetric('GO', counts.GO ?? 0)}
+        ${mkiFineAiResultMetric('TEST', counts.TEST ?? 0)}
+        ${mkiFineAiResultMetric('HOLD', counts.HOLD ?? 0)}
+      </div>
+    </div>
+    ${matrix}
+  </section>`;
 }
 
 function mkiImportProgressOpenFineAi() {
@@ -2576,7 +2754,7 @@ function mkiFineAiSeverity(decision) {
   const value = String(decision || '').toUpperCase();
   if (value === 'GO' || value === 'SUCCESS') return 'ect-tag-success';
   if (value === 'TEST' || value === 'WARNING') return 'ect-tag-warning';
-  if (value === 'HOLD' || value === 'DANGER') return 'ect-tag-danger';
+  if (value === 'HOLD' || value === 'FAILED' || value === 'DANGER') return 'ect-tag-danger';
   return 'ect-tag-info';
 }
 
@@ -3031,6 +3209,7 @@ function mkiFineAiRenderResult(data, context) {
   const summary = result.summary || {};
   return `
     ${mkiFineAiRenderContextCopyPanel(mkiFineAiContextSource(context, result))}
+    ${mkiFineAiRenderStructuredResultOverview(result)}
     ${mkiFineAiRenderProgress(result.progress || {}, result.status || '')}
     ${mkiFineAiRenderCards(frontend)}
     ${mkiFineAiRenderCharts(frontend)}
