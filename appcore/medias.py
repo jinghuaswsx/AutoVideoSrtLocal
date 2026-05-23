@@ -706,18 +706,7 @@ def update_product_owner(product_id: int, new_user_id: int) -> None:
     finally:
         conn.close()
 
-    # 联动任务中心：未完成子任务的 assignee 跟换；已完成 / 已取消保留快照
-    try:
-        from appcore import tasks
-        tasks.on_product_owner_changed(
-            product_id=pid, new_user_id=uid, actor_user_id=None,
-        )
-    except Exception:
-        # 任务中心 cascade 失败不应回滚 owner 变更（已 commit）；记日志即可
-        import logging
-        logging.getLogger(__name__).exception(
-            "task-center cascade failed for product_id=%s", pid,
-        )
+    # 产品负责人只代表素材归属；任务中心负责人由父任务/语种任务创建时显式指派。
 
 
 def parse_ad_supported_langs(value: str | None) -> list[str]:

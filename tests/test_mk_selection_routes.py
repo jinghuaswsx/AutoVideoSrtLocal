@@ -154,11 +154,12 @@ def test_mk_import_progress_modal_present():
     assert "原视频处理人认领后会自动提交牛马去字幕" not in template
 
 
-def test_mk_import_progress_modal_width_is_expanded_to_150_percent():
+def test_mk_import_progress_modal_uses_full_padded_overlay_width():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert ".mki-progress-modal" in template
-    assert "width: min(840px, 94vw)" in template
+    assert "padding: 10vh 10vw" in template
+    assert "width: 100%; max-height: 100%" in template
 
 
 def test_mk_import_progress_uses_product_owner_step_before_domains():
@@ -423,6 +424,8 @@ def test_mk_selection_small_language_modal_matches_task_parent_contract():
     assert "function mkiXiaoLanguageAssignments(selection)" in template
     assert "raw_processor_id: selection.rawProcessorId" in template
     assert "language_assignments: mkiXiaoLanguageAssignments(selection)" in template
+    assert "/tasks/api/import-and-create" not in template
+    assert "function mkiXiaoHandleClick" not in template
 
 
 def test_mk_selection_small_language_modal_keeps_task_creation_feedback_inline():

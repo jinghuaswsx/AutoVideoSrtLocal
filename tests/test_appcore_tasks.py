@@ -141,87 +141,24 @@ def test_resolve_child_task_for_media_item_upload_rejects_other_assignee(monkeyp
         )
 
 
-def test_import_and_create_task_passes_product_link_warnings(monkeypatch):
-    captured = {}
-    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
-
-    def fake_import_mk_video(**kwargs):
-        captured.update(kwargs)
-        return {
-            "media_product_id": 12,
-            "media_item_id": 34,
-            "is_new_product": True,
-            "warnings": warnings,
-        }
-
-    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", fake_import_mk_video)
-    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
-
-    result = tasks.import_and_create_task(
-        mk_video_metadata={"filename": "demo.mp4"},
-        translator_id=7,
-        countries=["DE"],
-        actor_user_id=1,
-    )
-
-    assert "require_product_link_available" not in captured
-    assert result == {
-        "parent_task_id": 56,
-        "media_product_id": 12,
-        "media_item_id": 34,
-        "is_new_product": True,
-        "warnings": warnings,
-    }
+def test_legacy_import_and_create_service_is_removed():
+    assert not hasattr(tasks, "import_and_create_task")
 
 
-def test_import_and_create_task_passes_existing_item_product_link_warnings(monkeypatch):
-    warnings = [{"type": "product_link_unavailable", "detail": "HTTP 404"}]
-
-    def duplicate_import(**kwargs):
-        raise tasks.mk_import_svc.DuplicateError("dupe")
-
-    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", duplicate_import)
+def test_on_product_owner_changed_is_noop_to_preserve_task_assignees(monkeypatch):
     monkeypatch.setattr(
-        tasks.mk_import_svc,
-        "find_existing_product_item_by_meta",
-        lambda meta: {"product_id": 12, "item_id": 34, "warnings": warnings},
+        tasks,
+        "get_conn",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("product owner changes must not query or mutate tasks")
+        ),
     )
-    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
 
-    result = tasks.import_and_create_task(
-        mk_video_metadata={"filename": "demo.mp4"},
-        translator_id=7,
-        countries=["DE"],
+    assert tasks.on_product_owner_changed(
+        product_id=42,
+        new_user_id=7,
         actor_user_id=1,
-    )
-
-    assert result["warnings"] == warnings
-
-
-def test_import_and_create_task_uses_first_language_assignment_as_import_owner(monkeypatch):
-    captured = {}
-
-    def fake_import_mk_video(**kwargs):
-        captured.update(kwargs)
-        return {
-            "media_product_id": 12,
-            "media_item_id": 34,
-            "is_new_product": True,
-        }
-
-    monkeypatch.setattr(tasks.mk_import_svc, "import_mk_video", fake_import_mk_video)
-    monkeypatch.setattr(tasks, "create_parent_task", lambda **kwargs: 56)
-
-    result = tasks.import_and_create_task(
-        mk_video_metadata={"filename": "demo.mp4"},
-        translator_id=None,
-        countries=["DE", "FR"],
-        language_assignments={"DE": 7, "FR": 8},
-        actor_user_id=1,
-    )
-
-    assert captured["translator_id"] == 7
-    assert result["parent_task_id"] == 56
+    ) == 0
 
 
 import pytest
@@ -1686,7 +1623,7 @@ def test_cancel_child_does_not_change_parent(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
-def test_owner_change_cascades_to_non_terminal_children(
+def test_owner_change_does_not_cascade_to_language_assignees(
     db_user_admin, db_user_translator, db_product
 ):
     from appcore import tasks
@@ -1712,7 +1649,7 @@ def test_owner_change_cascades_to_non_terminal_children(
     execute("UPDATE tasks SET status='done', completed_at=NOW(), assignee_id=%s WHERE id=%s",
             (db_user_translator, fr_id))
 
-    tasks.on_product_owner_changed(
+    affected = tasks.on_product_owner_changed(
         product_id=db_product["product_id"],
         new_user_id=new_translator,
         actor_user_id=db_user_admin,
@@ -1721,27 +1658,32 @@ def test_owner_change_cascades_to_non_terminal_children(
     de = query_one("SELECT assignee_id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
                    (parent_id,))
     fr = query_one("SELECT assignee_id FROM tasks WHERE id=%s", (fr_id,))
-    assert de["assignee_id"] == new_translator     # 未完成跟换
-    assert fr["assignee_id"] == db_user_translator # 已 done 不变
+    assert affected == 0
+    assert de["assignee_id"] == db_user_translator
+    assert fr["assignee_id"] == db_user_translator
 
     events = query_all(
-        "SELECT * FROM task_events WHERE event_type='assignee_changed'"
+        "SELECT * FROM task_events "
+        "WHERE event_type='assignee_changed' "
+        "AND task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)",
+        (parent_id, parent_id),
     )
-    assert len(events) >= 1
+    assert events == []
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
     execute("DELETE FROM users WHERE username=%s", ("_t_tc_tr2",))
 
 
-def test_update_product_owner_invokes_task_cascade(
+def test_update_product_owner_does_not_invoke_task_cascade(
     monkeypatch, db_user_admin, db_user_translator, db_product
 ):
-    """Verify appcore.medias.update_product_owner triggers tasks.on_product_owner_changed."""
+    """Verify appcore.medias.update_product_owner keeps task assignees isolated."""
     from appcore import medias, tasks
-    called = []
-    monkeypatch.setattr(tasks, "on_product_owner_changed",
-                        lambda **kw: called.append(kw))
+    monkeypatch.setattr(
+        tasks,
+        "on_product_owner_changed",
+        lambda **kw: (_ for _ in ()).throw(
+            AssertionError("product owner changes must not cascade task assignees")
+        ),
+    )
     medias.update_product_owner(db_product["product_id"], db_user_translator)
-    assert len(called) == 1
-    assert called[0]["product_id"] == db_product["product_id"]
-    assert called[0]["new_user_id"] == db_user_translator

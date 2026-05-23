@@ -11,7 +11,6 @@ from flask_login import current_user, login_required
 
 from web.auth import permission_required
 from appcore import local_media_storage, object_keys
-from appcore import mk_import as mk_import_svc
 from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
@@ -407,76 +406,6 @@ def api_create_parent():
             item_id,
         )
     return _json_response({"parent_task_id": parent_id, "raw_processing": raw_processing})
-
-
-@bp.route("/api/import-and-create", methods=["POST"])
-@login_required
-@admin_required
-def api_import_and_create():
-    payload = request.get_json(silent=True) or {}
-    try:
-        meta = payload["mk_video_metadata"]
-        translator_id_raw = payload.get("translator_id")
-        translator_id = int(translator_id_raw) if translator_id_raw is not None else None
-        countries = _normalize_countries(payload.get("countries") or [])
-        language_assignments = _parse_language_assignments(
-            payload.get("language_assignments"),
-            countries,
-        )
-    except (KeyError, TypeError, ValueError) as e:
-        return _json_response({"error": f"参数错误: {e}"}, 400)
-    try:
-        _validate_translation_targets(
-            translator_id=translator_id,
-            language_assignments=language_assignments,
-        )
-    except ValueError as e:
-        return _json_response({"error": str(e)}, 400)
-    try:
-        result = tasks_svc.import_and_create_task(
-            mk_video_metadata=meta,
-            translator_id=translator_id,
-            countries=countries,
-            language_assignments=language_assignments,
-            actor_user_id=int(current_user.id),
-        )
-    except mk_import_svc.DuplicateError as e:
-        return _json_response({"error": f"视频已入库: {e}"}, 409)
-    except mk_import_svc.DownloadError as e:
-        return _json_response({"error": f"下载失败: {e}"}, 502)
-    except mk_import_svc.StorageError as e:
-        return _json_response({"error": f"存储失败: {e}"}, 500)
-    except mk_import_svc.DBError as e:
-        return _json_response({"error": f"数据库错误: {e}"}, 500)
-    except ValueError as e:
-        return _json_response({"error": str(e)}, 400)
-    _audit_task_action(
-        result["parent_task_id"],
-        "task_import_and_create",
-        {
-            "media_product_id": result["media_product_id"],
-            "media_item_id": result["media_item_id"],
-            "countries": countries,
-            "translator_id": translator_id,
-            **({"language_assignments": language_assignments} if language_assignments else {}),
-            "is_new_product": result["is_new_product"],
-        },
-    )
-    try:
-        _trigger_material_evaluation(
-            product_id=int(result.get("media_product_id") or 0),
-            media_item_id=int(result.get("media_item_id") or 0),
-            force=False,
-            manual=False,
-            product_url_override=str(meta.get("product_link") or "").strip() or None,
-        )
-    except Exception:
-        current_app.logger.exception(
-            "trigger material evaluation after import-and-create failed product_id=%s item_id=%s",
-            result.get("media_product_id"),
-            result.get("media_item_id"),
-        )
-    return _json_response(result)
 
 
 @bp.route("/api/parent/<int:tid>/claim", methods=["POST"])
