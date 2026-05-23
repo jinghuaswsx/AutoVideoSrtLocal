@@ -245,6 +245,7 @@ class SentenceReconcileStrategyV2(TtsConvergenceStrategy):
                 final_sentences,
                 max_gap=0.25,
                 preserve_gap_threshold=1.0,
+                absolute_align=True,
             )
             alignment_summary = _default_speech_shot_alignment_summary(final_sentences)
             task_for_alignment = task_state.get(task_id) or task
@@ -299,6 +300,7 @@ class SentenceReconcileStrategyV2(TtsConvergenceStrategy):
 
             task = task_state.get(task_id) or task
             variants, variant_state = _ensure_variant_state(task, "av")
+            timeline_mode = final_sentences[0].get("timeline_mode", "asr_absolute_primary") if final_sentences else "asr_absolute_primary"
             variant_state.update(
                 {
                     "sentences": final_sentences,
@@ -308,7 +310,7 @@ class SentenceReconcileStrategyV2(TtsConvergenceStrategy):
                     "voice_id": voice.get("id") or tts_voice_id,
                     "av_debug": av_debug,
                     "source_normalization": source_normalization,
-                    "audio_timeline_mode": "asr_window_primary",
+                    "audio_timeline_mode": timeline_mode,
                     "max_compact_gap": 0.25,
                     "final_compose_summary": final_compose_summary,
                     "speech_shot_alignment": alignment_summary,
@@ -328,7 +330,7 @@ class SentenceReconcileStrategyV2(TtsConvergenceStrategy):
                 final_compose_summary=final_compose_summary,
                 speech_shot_alignment=alignment_summary,
                 av_debug=av_debug,
-                audio_timeline_mode="asr_window_primary",
+                audio_timeline_mode=timeline_mode,
                 max_compact_gap=0.25,
             )
             task_state.set_preview_file(task_id, "tts_full_audio", final_full_audio_path)

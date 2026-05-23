@@ -226,6 +226,7 @@ def apply_asr_window_audio_schedule(
     *,
     max_gap: float = 0.25,
     preserve_gap_threshold: float = 1.0,
+    absolute_align: bool = False,
 ) -> List[Dict[str, Any]]:
     """Return sentences placed on ASR speech windows.
 
@@ -258,7 +259,14 @@ def apply_asr_window_audio_schedule(
             audio_gap = source_gap if gap_preserved else min(source_gap, gap_limit)
             compact_applied = source_gap > audio_gap + 0.001
 
-        audio_start = cursor + audio_gap
+        if absolute_align:
+            audio_start = max(cursor, source_start)
+            audio_gap = max(0.0, audio_start - cursor)
+            gap_preserved = audio_gap > 0.0
+            compact_applied = False
+        else:
+            audio_start = cursor + audio_gap
+
         audio_end = audio_start + max(0.0, tts_duration)
 
         item["source_start_time"] = round(source_start, 3)
@@ -271,7 +279,7 @@ def apply_asr_window_audio_schedule(
         item["asr_window_gap_preserved"] = gap_preserved
         item["max_compact_gap"] = round(gap_limit, 3)
         item["preserve_gap_threshold"] = round(preserve_threshold, 3)
-        item["timeline_mode"] = "asr_window_primary"
+        item["timeline_mode"] = "asr_absolute_primary" if absolute_align else "asr_window_primary"
 
         scheduled.append(item)
         cursor = audio_end
