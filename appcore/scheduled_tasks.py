@@ -183,6 +183,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "mingkong_fine_ai_auto_evaluation_tick": {
+        "code": "mingkong_fine_ai_auto_evaluation_tick",
+        "name": "明空视频卡片 AI 精细评估自动任务",
+        "description": (
+            "每 10 分钟从明空视频素材库 90 天消耗 Top500 优先取任务；"
+            "Top500 无可跑任务后再跑昨天消耗前100的全部 Top100。"
+            "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
+        ),
+        "schedule": "每 10 分钟（每轮最多 10 张卡片，单轮最长 30 分钟）",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "mingkong_fine_ai_auto_evaluation_tick",
+        "runner": "appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_realtime_import": {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",
