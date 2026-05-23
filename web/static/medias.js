@@ -5402,6 +5402,216 @@
     }
   }
 
+  function edRenderLinkCheckConsole(task) {
+    const consoleBox = $('edLinkCheckConsole');
+    if (!consoleBox) return;
+
+    if (!task || (!task.task_id && !task.id)) {
+      consoleBox.innerHTML = '';
+      consoleBox.hidden = true;
+      return;
+    }
+
+    consoleBox.hidden = false;
+
+    // Define the 4 steps of the audit
+    const steps = [
+      {
+        key: 'lock_locale',
+        name: '语言区域锁定 (Language / Locale Lock)',
+        icon: '🔒',
+        getDetails: (t) => {
+          const ev = t.locale_evidence || {};
+          const lines = [];
+          if (t.target_language) lines.push(`目标语种：${t.target_language_name || langDisplayName(t.target_language)}`);
+          if (ev.requested_url) lines.push(`请求 URL：${ev.requested_url}`);
+          if (t.resolved_url) lines.push(`最终指向：${t.resolved_url}`);
+          if (ev.lock_source) lines.push(`锁定方式：${ev.lock_source}`);
+          if (ev.locked) {
+            lines.push(`状态：成功锁定 [OK]`);
+          } else if (ev.failure_reason) {
+            lines.push(`锁定失败原因：${ev.failure_reason}`);
+          }
+          if (ev.attempts && ev.attempts.length) {
+            lines.push(`尝试记录：`);
+            ev.attempts.forEach((att, idx) => {
+              lines.push(`  [${idx + 1}] URL: ${att.url || '-'} | HTTP: ${att.http_code || '-'} | Lang: ${att.lang || '-'}`);
+            });
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'download',
+        name: '图片资源下载提取 (Shopify Image Extraction)',
+        icon: '📥',
+        getDetails: (t) => {
+          const lines = [];
+          if (t.progress && typeof t.progress.total === 'number') {
+            lines.push(`检测到 Shopify 图片总量：${t.progress.total} 张`);
+            lines.push(`已成功拉取图片：${t.progress.downloaded ?? 0} / ${t.progress.total} 张`);
+          }
+          if (t.page_language) {
+            lines.push(`网页 HTML 文本语言：${t.page_language} (${langDisplayName(t.page_language)})`);
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'analyze',
+        name: '小语种图片与翻译审计 (Visual Contrast Audit)',
+        icon: '🔍',
+        getDetails: (t) => {
+          const lines = [];
+          const progress = t.progress || {};
+          const summary = t.summary || {};
+          if (typeof progress.total === 'number') {
+            lines.push(`二值快速匹配 (Fast Match)：${progress.binary_checked ?? 0} 张已比对`);
+            if (summary.binary_direct_pass_count) lines.push(`  - 快检直接通过 (Pass)：${summary.binary_direct_pass_count} 张`);
+            if (summary.binary_direct_replace_count) lines.push(`  - 快检直接不通过 (Replace)：${summary.binary_direct_replace_count} 张`);
+            lines.push(`大模型同图辅助分析 (Same Image LLM)：${progress.same_image_llm_done ?? 0} 张已判定`);
+            if (summary.same_image_llm_yes_count) lines.push(`  - 同图判定一致：${summary.same_image_llm_yes_count} 张`);
+            lines.push(`Gemini 多模态文本审计 (Gemini OCR)：${progress.analyzed ?? 0} / ${progress.total} 张完成`);
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'summarize',
+        name: '最终质量结论裁决 (Final Quality Verdict)',
+        icon: '⚖️',
+        getDetails: (t) => {
+          const s = t.summary || {};
+          const lines = [];
+          if (t.status === 'done' || t.status === 'review_ready') {
+            lines.push(`审计结果汇总：`);
+            lines.push(`  - 翻译合格直接通过：${s.pass_count ?? 0} 项`);
+            lines.push(`  - 无文字背景图忽略：${s.no_text_count ?? 0} 项`);
+            lines.push(`  - 存在英语/未翻译需替换：${s.replace_count ?? 0} 项`);
+            lines.push(`  - 无法确定需人工复核：${s.review_count ?? 0} 项`);
+            if (s.reference_matched_count) lines.push(`  - 成功匹配本地参考图：${s.reference_matched_count} 张`);
+          }
+          return lines.join('\n');
+        }
+      }
+    ];
+
+    let html = `
+      <div class="oc-console-wrapper">
+        <div class="oc-console-header">
+          <span>🖥️ 实时链接审计台 (Audit Console)</span>
+          <span class="oc-console-task-id">Task: ${escapeHtml(task.task_id || task.id || '')}</span>
+        </div>
+        <div class="oc-console-steps">
+    `;
+
+    steps.forEach((step, idx) => {
+      const stepState = (task.steps && task.steps[step.key]) || ''; // 'running', 'done', 'error' or empty
+      const stepMsg = (task.step_messages && task.step_messages[step.key]) || '';
+      
+      let badgeClass = 'queued';
+      let badgeLabel = '排队中';
+      let statusIcon = '●';
+
+      if (stepState === 'running') {
+        badgeClass = 'running';
+        badgeLabel = '执行中';
+        statusIcon = '<span class="oc-spinner-sm"></span>';
+      } else if (stepState === 'done') {
+        badgeClass = 'done';
+        badgeLabel = '已完成';
+        statusIcon = '✓';
+      } else if (stepState === 'error') {
+        badgeClass = 'error';
+        badgeLabel = '失败';
+        statusIcon = '✗';
+      } else {
+        // Fallback checks based on task status
+        if (task.status === 'failed') {
+          badgeClass = 'queued';
+          badgeLabel = '已停止';
+        } else if (task.status === 'queued') {
+          badgeClass = 'queued';
+          badgeLabel = '排队中';
+        } else {
+          // Check if previous step was done, meaning this one is waiting
+          const prevStep = steps[idx - 1];
+          if (prevStep && task.steps && task.steps[prevStep.key] === 'done') {
+            badgeClass = 'running';
+            badgeLabel = '等待中';
+          }
+        }
+      }
+
+      const details = step.getDetails(task);
+      const detailsBlock = details
+        ? `<pre class="oc-console-step-logs">${escapeHtml(details)}</pre>`
+        : '';
+
+      html += `
+        <div class="oc-console-step-item">
+          <div class="oc-console-step-row">
+            <span class="oc-console-step-status ${badgeClass}">${statusIcon}</span>
+            <span class="oc-console-step-name">${step.icon} ${escapeHtml(step.name)}</span>
+            <span class="oc-console-step-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+            ${stepMsg ? `<span class="oc-console-step-msg">${escapeHtml(stepMsg)}</span>` : ''}
+          </div>
+          ${detailsBlock}
+        </div>
+      `;
+    });
+
+    // Render Final Verdict Banner
+    let verdictHtml = '';
+    const isFinished = ['done', 'review_ready', 'failed'].includes(task.status);
+    const overall = (task.summary && task.summary.overall_decision) || '';
+    
+    if (isFinished) {
+      if (task.status === 'failed') {
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-error">
+            <strong>❌ 审计故障：</strong>检测任务在执行过程中出错，原因：${escapeHtml(task.error || '未知错误')}。请检查网络或稍后重试。
+          </div>
+        `;
+      } else if (overall === 'done') {
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-pass">
+            <strong>🎉 审计合格：</strong>页面文案与商品图片已完全替换为目标小语种 (${escapeHtml(task.target_language_name || langDisplayName(task.target_language))})，无任何遗漏，完美通关！
+          </div>
+        `;
+      } else if (overall === 'unfinished') {
+        const replaceCount = task.summary.replace_count ?? 0;
+        const reviewCount = task.summary.review_count ?? 0;
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-fail">
+            <strong>⚠️ 审计未通过：</strong>网页存在未翻译的英语图片或文案（有 ${replaceCount} 张图片需要替换，${reviewCount} 项待人工复核）。请立即排查！
+          </div>
+        `;
+      } else {
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-fail">
+            <strong>⚠️ 审计未就绪：</strong>未获取到明确的审计结论。请人工检查或重新发起检测。
+          </div>
+        `;
+      }
+    } else {
+      verdictHtml = `
+        <div class="oc-console-verdict verdict-running">
+          <span class="oc-spinner-sm"></span>
+          <strong>🤖 正在进行小语种合规性审计...</strong> 预计需要 1-3 分钟，请稍候。
+        </div>
+      `;
+    }
+
+    html += `
+      </div>
+      ${verdictHtml}
+    </div>
+    `;
+
+    consoleBox.innerHTML = html;
+  }
+
   function edRenderLinkCheckModal() {
     const summaryBox = $('edLinkCheckModalSummary');
     const refsBox = $('edLinkCheckRefs');
@@ -5419,8 +5629,11 @@
       itemsBox.innerHTML = '<div class="oc-detail-images-empty">还没有检测结果</div>';
       $('edLinkCheckRefsBadge').textContent = '0';
       $('edLinkCheckItemsBadge').textContent = '0';
+      edRenderLinkCheckConsole(null);
       return;
     }
+
+    edRenderLinkCheckConsole(task);
 
     const summary = task.summary || {};
     const progress = task.progress || {};
@@ -5900,6 +6113,7 @@
     buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal" ${domainAttr}>标记链接异常</button>`);
     if (lang && lang !== 'en') {
+      buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="audit-one" data-lang="${escapeHtml(lang)}" ${domainAttr}>审计图片与翻译</button>`);
       buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-clear" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记图片未替换</button>`);
     }
@@ -6123,8 +6337,57 @@
     if ($('edProductLinksMask')) $('edProductLinksMask').hidden = true;
   }
 
+  async function edTriggerLinkCheckAudit(lang, domain, url) {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid) return;
+
+    edState.linkCheckModalLang = lang;
+    edState.linkCheckModalDomain = domain;
+    edState.linkCheckDetailTask = null;
+    edState.linkCheckDetailError = '';
+
+    $('edLinkCheckMask').hidden = false;
+    edRenderLinkCheckModal();
+
+    try {
+      const data = await fetchJSON(`/medias/api/products/${pid}/link-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang, link_url: url }),
+      });
+      
+      edSetLinkCheckTask(lang, {
+        task_id: data.task_id,
+        status: data.status || 'queued',
+        link_url: url,
+        domain: domain,
+        status_key: data.status_key || edStatusKey(lang, domain),
+        checked_at: new Date().toISOString(),
+        summary: {
+          overall_decision: 'running',
+          pass_count: 0,
+          replace_count: 0,
+          review_count: 0,
+        },
+      });
+
+      edPollLinkCheck(lang, domain);
+    } catch (e) {
+      alert('链接审计启动失败：' + (e.message || e));
+    }
+  }
+
   async function edHandleProductLinksAction(action, domain, langArg) {
     const lang = langArg || edState.productLinksModal.lang || edState.activeLang;
+    if (action === 'audit-one') {
+      const item = (edState.productLinksModal.items || []).find((it) => it.domain === domain);
+      const url = item && item.link_url;
+      if (!url || !/^https?:\/\//i.test(url)) {
+        alert('该域名的链接无效');
+        return;
+      }
+      return edTriggerLinkCheckAudit(lang, domain, url);
+    }
     if (action === 'recheck-one') {
       return edRunSingleAvailability(domain);
     }
@@ -7109,6 +7372,7 @@
     }
     $('edCopyProductIdBtn') && $('edCopyProductIdBtn').addEventListener('click', (e) => edCopyProductId(e.currentTarget));
     $('edCopyProductUrlBtn') && $('edCopyProductUrlBtn').addEventListener('click', (e) => edCopyLocalizedProductUrl(e.currentTarget));
+    $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edStartLinkCheck);
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
     $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);
     $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);
