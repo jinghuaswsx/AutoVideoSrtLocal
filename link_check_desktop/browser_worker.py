@@ -3,7 +3,7 @@ from __future__ import annotations
 import mimetypes
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
@@ -28,6 +28,20 @@ _NOT_FOUND_TOKENS = (
     "non trouve",
     "non trouvé",
 )
+
+
+def _add_cache_buster(url: str) -> str:
+    import time
+    try:
+        parsed = urlparse(url)
+        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+        # Filter out existing cache busters to keep the URL clean
+        query_pairs = [(k, v) for k, v in query_pairs if k not in ("nocache", "t", "_")]
+        query_pairs.append(("nocache", str(int(time.time() * 1000))))
+        query = urlencode(query_pairs, doseq=True)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment))
+    except Exception:
+        return url
 
 
 def _report(status_cb, message: str) -> None:
@@ -89,7 +103,8 @@ def _build_session(context, user_agent: str) -> requests.Session:
 
 
 def _download_image(session: requests.Session, url: str, output_path: Path) -> dict:
-    response = session.get(url, timeout=30, allow_redirects=True)
+    nocache_url = _add_cache_buster(url)
+    response = session.get(nocache_url, timeout=30, allow_redirects=True)
     response.raise_for_status()
     content_type = response.headers.get("Content-Type") or ""
     if not _supported_raster_asset(response.url, content_type):
@@ -196,6 +211,18 @@ def _refresh_page_assets(page, context, status_cb=None, *, refresh_count: int = 
         _hard_refresh_page(page)
 
 
+def _scroll_page_viewport(page) -> None:
+    try:
+        # Scroll down in increments to trigger lazy-loaded images
+        for i in range(5):
+            page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {i} / 4)")
+            page.wait_for_timeout(400)
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(400)
+    except Exception:
+        pass
+
+
 def capture_page(*, target_url: str, target_language: str, workspace, status_cb=None) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -206,18 +233,24 @@ def capture_page(*, target_url: str, target_language: str, workspace, status_cb=
         page = context.new_page()
         page.set_default_timeout(30000)
 
+        # Force disable cache immediately before any page visits
+        _disable_browser_cache(context, page)
+
+        # Apply cache buster to bypass CDN/Shopify HTML page cache
+        nocache_url = _add_cache_buster(target_url)
+
         _report(status_cb, "第一次打开目标页")
-        first_response = page.goto(target_url, wait_until="domcontentloaded")
+        first_response = page.goto(nocache_url, wait_until="domcontentloaded")
         page.wait_for_timeout(1500)
         first_final_url = page.url
         first_html_lang = page.eval_on_selector("html", "el => el.lang || ''")
         first_status, first_page_title = _assert_valid_page(first_response, page)
-        redirected = first_final_url != target_url
+        redirected = first_final_url != nocache_url
 
         final_response = first_response
         if redirected or not _is_locked(first_html_lang, target_language):
             _report(status_cb, "检测到重定向或语种未锁定，第二次打开原始目标页")
-            final_response = page.goto(target_url, wait_until="domcontentloaded")
+            final_response = page.goto(nocache_url, wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
 
         final_status, page_title = _assert_valid_page(final_response, page)
@@ -227,6 +260,8 @@ def capture_page(*, target_url: str, target_language: str, workspace, status_cb=
 
         if locked:
             _refresh_page_assets(page, context, status_cb)
+            # Programmatically scroll the page to load all lazy-loaded images
+            _scroll_page_viewport(page)
             _assert_valid_page(None, page)
             final_url = page.url
             html_lang = page.eval_on_selector("html", "el => el.lang || ''")

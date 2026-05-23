@@ -13,6 +13,20 @@ class LocaleLockError(RuntimeError):
     pass
 
 
+def _add_cache_buster(url: str) -> str:
+    import time
+    try:
+        parsed = urlparse(url)
+        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+        # Filter out existing cache busters to keep the URL clean
+        query_pairs = [(k, v) for k, v in query_pairs if k not in ("nocache", "t", "_")]
+        query_pairs.append(("nocache", str(int(time.time() * 1000))))
+        query = urlencode(query_pairs, doseq=True)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment))
+    except Exception:
+        return url
+
+
 class ImageRedirectMismatchError(RuntimeError):
     pass
 
@@ -277,8 +291,9 @@ class LinkCheckFetcher:
         )
 
     def fetch_page(self, url: str, target_language: str) -> FetchedPage:
-        response = self._request_page(url, target_language)
-        response, soup, lang = self._lock_target_locale(response, requested_url=url, target_language=target_language)
+        nocache_url = _add_cache_buster(url)
+        response = self._request_page(nocache_url, target_language)
+        response, soup, lang = self._lock_target_locale(response, requested_url=nocache_url, target_language=target_language)
         if not _is_locale_locked(
             resolved_url=response.url,
             page_language=lang,
@@ -326,8 +341,9 @@ class LinkCheckFetcher:
         output_dir.mkdir(parents=True, exist_ok=True)
         downloaded = []
         for index, item in enumerate(images):
+            nocache_url = _add_cache_buster(item["source_url"])
             response = self.session.get(
-                item["source_url"],
+                nocache_url,
                 headers={"User-Agent": "Mozilla/5.0"},
                 allow_redirects=True,
                 timeout=20,

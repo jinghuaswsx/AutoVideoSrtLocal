@@ -16,7 +16,8 @@ class _FakeSession:
         self.headers = {}
 
     def get(self, url: str, timeout: int = 30, allow_redirects: bool = True):
-        if url.endswith(".svg"):
+        from urllib.parse import urlparse
+        if urlparse(url).path.endswith(".svg"):
             return SimpleNamespace(
                 url=url,
                 headers={"Content-Type": "image/svg+xml"},
