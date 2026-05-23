@@ -51,7 +51,8 @@ class GeminiAIStudioAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None, url_context=None):
+                 max_output_tokens=None, google_search=None, url_context=None,
+                 timeout_seconds=None):
         media_list = None
         if media:
             media_list = [media] if isinstance(media, (str, Path)) else list(media)
@@ -67,6 +68,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
             max_output_tokens=max_output_tokens,
             google_search=bool(google_search),
             url_context=bool(url_context),
+            timeout_seconds=timeout_seconds,
         )
 
         last_err: Exception | None = None
@@ -102,7 +104,8 @@ class GeminiAIStudioAdapter(LLMAdapter):
         raise GeminiError(f"Gemini 调用失败：{last_err}") from last_err
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
-             max_tokens=None, response_format=None, extra_body=None):
+             max_tokens=None, response_format=None, extra_body=None,
+             timeout_seconds=None):
         system, user_parts = None, []
         for m in messages:
             role, content = m.get("role"), m.get("content", "")
@@ -119,4 +122,5 @@ class GeminiAIStudioAdapter(LLMAdapter):
             model=model, prompt="\n\n".join(user_parts), user_id=user_id,
             system=system, response_schema=schema,
             temperature=temperature, max_output_tokens=max_tokens,
+            timeout_seconds=timeout_seconds,
         )

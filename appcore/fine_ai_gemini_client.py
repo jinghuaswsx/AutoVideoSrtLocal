@@ -48,12 +48,10 @@ class FineAiGeminiClient:
         provider: str | None = None,
         model: str | None = None,
     ):
-        resolved = model_config.resolve_config(profile=profile, provider=provider)
+        resolved = model_config.resolve_config(profile=profile, provider=provider, model=model)
         self.profile = resolved["profile"]
         self.provider = resolved["provider"]
-        self.model = model_config.model_for_provider(self.provider)
-        if model and model == self.model:
-            self.model = model
+        self.model = resolved["model"]
         self.last_call_metadata: dict[str, Any] = {}
         self.last_call_trace: dict[str, Any] = {}
 
@@ -217,6 +215,7 @@ class FineAiGeminiClient:
                     url_context=url_context,
                     project_id=attempt_project_id,
                     billing_extra=request_payload["billing_extra"],
+                    timeout_seconds=40.0,
                 )
             except Exception as exc:
                 self.last_call_trace = _build_call_trace(
@@ -343,6 +342,7 @@ class FineAiGeminiClient:
                 "tools": [],
                 "json_repair": True,
             },
+            timeout_seconds=40.0,
         )
         repair_metadata = _response_metadata(
             repair_result,

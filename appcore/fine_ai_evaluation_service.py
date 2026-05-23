@@ -460,120 +460,383 @@ class FineAiEvaluationService:
             return self.get_result(product_id, evaluation_run_id)
 
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
-        for index, code in enumerate(country_codes):
-            country = get_country_config(code)
-            step_key = _country_step_key(code)
-            if index > 0 and self.country_request_interval_seconds > 0:
-                wait_label = _format_seconds(self.country_request_interval_seconds)
+        parallel_mode = fine_ai_model_config.get_parallel_mode()
+
+        if parallel_mode == "parallel":
+            import threading
+            from concurrent.futures import ThreadPoolExecutor
+
+            db_lock = threading.Lock()
+            shared_state = {
+                "progress": progress,
+                "completed_codes": completed_codes,
+                "failed_codes": failed_codes,
+                "running_countries": set(),
+            }
+
+            def evaluate_single_country(code: str):
+                country = get_country_config(code)
+                step_key = _country_step_key(code)
+                thread_gemini_client = FineAiGeminiClient(
+                    profile=metadata.get("model_profile"),
+                    provider=metadata.get("provider"),
+                    model=metadata.get("model"),
+                )
+
+                # Mark country as running
+                with db_lock:
+                    progress_step = _mark_progress_step(
+                        shared_state["progress"],
+                        step_key,
+                        "running",
+                        f"{code} 开始请求大模型评估",
+                        debug=_llm_debug(metadata, {
+                            "Country": code,
+                            "Language": country.get("language") or "",
+                            "Currency": country.get("currency") or "",
+                            "Images": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or []),
+                            "Videos": len(asset_snapshot.get("videos") or []),
+                        }),
+                        provider=metadata.get("provider") or PROVIDER,
+                        model_id=metadata.get("model") or MODEL,
+                    )
+                    shared_state["progress"] = progress_step
+                    shared_state["running_countries"].add(code)
+
+                    active_running = list(shared_state["running_countries"])[0] if shared_state["running_countries"] else code
+                    self.repository.update_run(
+                        evaluation_run_id,
+                        status="running",
+                        progress=_progress(
+                            country_codes,
+                            f"country_evaluation_{active_running}",
+                            running_country=active_running,
+                            completed_steps=_completed_step_count(shared_state["progress"]),
+                            completed_countries=shared_state["completed_codes"],
+                            failed_countries=shared_state["failed_codes"],
+                            base_progress=shared_state["progress"],
+                        ),
+                    )
+
+                result_payload = None
+                exception_raised = None
+                call_trace = None
+                call_metadata = None
+
+                for attempt in range(1, self.country_retry_attempts + 1):
+                    try:
+                        res = thread_gemini_client.generate_country_evaluation(
+                            product_snapshot=product_snapshot,
+                            product_facts=product_facts,
+                            country=country,
+                            asset_snapshot=asset_snapshot,
+                            asset_paths=list(asset_snapshot.get("asset_paths") or []),
+                        )
+                        call_trace = dict(getattr(thread_gemini_client, "last_call_trace", {}) or {})
+                        res = _normalize_country_result(res, country, asset_snapshot)
+                        validate_json_schema(res, COUNTRY_EVALUATION_SCHEMA)
+                        result_payload = res
+                        exception_raised = None
+                        call_metadata = dict(getattr(thread_gemini_client, "last_call_metadata", {}) or {})
+                        call_metadata["attempts"] = attempt
+                        break
+                    except Exception as exc:
+                        exception_raised = exc
+                        call_metadata = dict(getattr(thread_gemini_client, "last_call_metadata", {}) or {})
+                        call_metadata["attempts"] = attempt
+                        call_trace = dict(getattr(thread_gemini_client, "last_call_trace", {}) or {})
+                        if not call_trace:
+                            call_trace = {
+                                "provider": call_metadata.get("provider") or PROVIDER,
+                                "model_id": call_metadata.get("model") or call_metadata.get("model_id") or MODEL,
+                                "request": {"summary": {}, "system_prompt": "", "prompt": "", "payload": {}},
+                                "response": {
+                                    "summary": dict(call_metadata.get("usage") or {}),
+                                    "parsed_json": {},
+                                    "raw_payload": {},
+                                },
+                            }
+                        call_trace["error"] = {
+                            "type": type(exc).__name__,
+                            "message": str(exc)[:1000],
+                        }
+
+                        if attempt < self.country_retry_attempts:
+                            log.warning(
+                                "fine AI country evaluation retrying: run=%s country=%s attempt=%s",
+                                evaluation_run_id,
+                                code,
+                                attempt,
+                                exc_info=True,
+                            )
+                            with db_lock:
+                                progress_step = _mark_progress_step(
+                                    shared_state["progress"],
+                                    step_key,
+                                    "running",
+                                    f"{code} 第 {attempt} 次失败，准备重试：{str(exc)[:160]}",
+                                    level="warning",
+                                    debug=[
+                                        {"label": "Country", "value": code},
+                                        {"label": "Attempt", "value": attempt},
+                                        {"label": "Error", "value": str(exc)[:500]},
+                                        *_usage_debug(call_metadata),
+                                    ],
+                                    llm_trace=call_trace,
+                                )
+                                shared_state["progress"] = progress_step
+
+                                active_running = list(shared_state["running_countries"])[0] if shared_state["running_countries"] else code
+                                self.repository.update_run(
+                                    evaluation_run_id,
+                                    status="running",
+                                    progress=_progress(
+                                        country_codes,
+                                        f"country_evaluation_{active_running}",
+                                        running_country=active_running,
+                                        completed_steps=_completed_step_count(shared_state["progress"]),
+                                        completed_countries=shared_state["completed_codes"],
+                                        failed_countries=shared_state["failed_codes"],
+                                        base_progress=shared_state["progress"],
+                                    ),
+                                )
+                            time.sleep(1.0)
+                            continue
+
+                # Finalize result
+                with db_lock:
+                    shared_state["running_countries"].discard(code)
+                    if exception_raised is None and result_payload is not None:
+                        shared_state["completed_codes"].append(code)
+                        countries[code] = result_payload
+                        progress_step = _mark_progress_step(
+                            shared_state["progress"],
+                            step_key,
+                            "completed",
+                            f"{code} 评估完成：{(result_payload.get('decision') or {}).get('final_decision') or '-'} / {((result_payload.get('scores') or {}).get('overall_score'))}",
+                            debug=[
+                                *_country_result_debug(result_payload),
+                                *_usage_debug(call_metadata),
+                            ],
+                            llm_trace=call_trace,
+                        )
+                        shared_state["progress"] = progress_step
+
+                        self.repository.upsert_country(
+                            evaluation_run_id,
+                            code,
+                            {
+                                "product_id": product_id,
+                                "status": "completed",
+                                "full_result": result_payload,
+                                "metadata": call_metadata,
+                                "raw_response": _country_raw_response(call_trace, call_metadata),
+                            },
+                        )
+                    else:
+                        exc = exception_raised or RuntimeError("Evaluation failed")
+                        log.exception("fine AI country evaluation failed: run=%s country=%s", evaluation_run_id, code)
+                        shared_state["failed_codes"].append(code)
+                        failed = _failed_country_result(country, str(exc))
+                        countries[code] = failed
+                        progress_step = _mark_progress_step(
+                            shared_state["progress"],
+                            step_key,
+                            "failed",
+                            f"{code} 评估失败：{str(exc)[:160]}",
+                            level="error",
+                            debug=[
+                                {"label": "Country", "value": code},
+                                {"label": "Attempt", "value": call_metadata.get("attempts", self.country_retry_attempts)},
+                                {"label": "Error", "value": str(exc)[:500]},
+                                *_usage_debug(call_metadata),
+                            ],
+                            llm_trace=call_trace,
+                        )
+                        shared_state["progress"] = progress_step
+
+                        self.repository.upsert_country(
+                            evaluation_run_id,
+                            code,
+                            {
+                                "product_id": product_id,
+                                "status": "failed",
+                                "full_result": failed,
+                                "metadata": call_metadata,
+                                "raw_response": _country_raw_response(call_trace, call_metadata),
+                                "error_message": str(exc)[:500],
+                            },
+                        )
+
+                    active_running = list(shared_state["running_countries"])[0] if shared_state["running_countries"] else ""
+                    self.repository.update_run(
+                        evaluation_run_id,
+                        status="running",
+                        progress=_progress(
+                            country_codes,
+                            f"country_evaluation_done_{code}" if not active_running else f"country_evaluation_{active_running}",
+                            running_country=active_running,
+                            completed_steps=_completed_step_count(shared_state["progress"]),
+                            completed_countries=shared_state["completed_codes"],
+                            failed_countries=shared_state["failed_codes"],
+                            base_progress=shared_state["progress"],
+                        ),
+                    )
+
+            with ThreadPoolExecutor(max_workers=len(country_codes)) as executor:
+                executor.map(evaluate_single_country, country_codes)
+
+            completed_codes = shared_state["completed_codes"]
+            failed_codes = shared_state["failed_codes"]
+            progress = shared_state["progress"]
+
+        else:
+            for index, code in enumerate(country_codes):
+                country = get_country_config(code)
+                step_key = _country_step_key(code)
+                if index > 0 and self.country_request_interval_seconds > 0:
+                    wait_label = _format_seconds(self.country_request_interval_seconds)
+                    progress = _mark_progress_step(
+                        progress,
+                        step_key,
+                        "waiting",
+                        f"{code} 等待 {wait_label} 后再请求大模型，避免触发频率限制",
+                        debug=[
+                            {"label": "Country", "value": code},
+                            {"label": "Wait", "value": wait_label},
+                        ],
+                    )
+                    self.repository.update_run(
+                        evaluation_run_id,
+                        status="running",
+                        progress=_progress(
+                            country_codes,
+                            f"country_wait_{code}",
+                            waiting_country=code,
+                            completed_steps=_completed_step_count(progress),
+                            completed_countries=completed_codes,
+                            failed_countries=failed_codes,
+                            base_progress=progress,
+                        ),
+                    )
+                    self.country_request_sleeper(self.country_request_interval_seconds)
                 progress = _mark_progress_step(
                     progress,
                     step_key,
-                    "waiting",
-                    f"{code} 等待 {wait_label} 后再请求大模型，避免触发频率限制",
-                    debug=[
-                        {"label": "Country", "value": code},
-                        {"label": "Wait", "value": wait_label},
-                    ],
+                    "running",
+                    f"{code} 开始请求大模型评估",
+                    debug=_llm_debug(metadata, {
+                        "Country": code,
+                        "Language": country.get("language") or "",
+                        "Currency": country.get("currency") or "",
+                        "Images": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or []),
+                        "Videos": len(asset_snapshot.get("videos") or []),
+                    }),
+                    provider=metadata.get("provider") or PROVIDER,
+                    model_id=metadata.get("model") or MODEL,
                 )
                 self.repository.update_run(
                     evaluation_run_id,
                     status="running",
                     progress=_progress(
                         country_codes,
-                        f"country_wait_{code}",
-                        waiting_country=code,
+                        f"country_evaluation_{code}",
+                        running_country=code,
                         completed_steps=_completed_step_count(progress),
                         completed_countries=completed_codes,
                         failed_countries=failed_codes,
                         base_progress=progress,
                     ),
                 )
-                self.country_request_sleeper(self.country_request_interval_seconds)
-            progress = _mark_progress_step(
-                progress,
-                step_key,
-                "running",
-                f"{code} 开始请求大模型评估",
-                debug=_llm_debug(metadata, {
-                    "Country": code,
-                    "Language": country.get("language") or "",
-                    "Currency": country.get("currency") or "",
-                    "Images": len(asset_snapshot.get("product_images") or []) + len(asset_snapshot.get("cover_images") or []),
-                    "Videos": len(asset_snapshot.get("videos") or []),
-                }),
-                provider=metadata.get("provider") or PROVIDER,
-                model_id=metadata.get("model") or MODEL,
-            )
-            self.repository.update_run(
-                evaluation_run_id,
-                status="running",
-                progress=_progress(
-                    country_codes,
-                    f"country_evaluation_{code}",
-                    running_country=code,
-                    completed_steps=_completed_step_count(progress),
-                    completed_countries=completed_codes,
-                    failed_countries=failed_codes,
-                    base_progress=progress,
-                ),
-            )
-            for attempt in range(1, self.country_retry_attempts + 1):
-                try:
-                    result = gemini_client.generate_country_evaluation(
-                        product_snapshot=product_snapshot,
-                        product_facts=product_facts,
-                        country=country,
-                        asset_snapshot=asset_snapshot,
-                        asset_paths=list(asset_snapshot.get("asset_paths") or []),
-                    )
-                    call_trace = self._call_trace(result)
-                    result = _normalize_country_result(result, country, asset_snapshot)
-                    validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
-                    completed_codes.append(code)
-                    countries[code] = result
-                    call_metadata = self._call_metadata()
-                    call_metadata["attempts"] = attempt
-                    progress = _mark_progress_step(
-                        progress,
-                        step_key,
-                        "completed",
-                        f"{code} 评估完成：{(result.get('decision') or {}).get('final_decision') or '-'} / {((result.get('scores') or {}).get('overall_score'))}",
-                        debug=[
-                            *_country_result_debug(result),
-                            *_usage_debug(call_metadata),
-                        ],
-                        llm_trace=call_trace,
-                    )
-                    self.repository.upsert_country(
-                        evaluation_run_id,
-                        code,
-                        {
-                            "product_id": product_id,
-                            "status": "completed",
-                            "full_result": result,
-                            "metadata": call_metadata,
-                            "raw_response": _country_raw_response(call_trace, call_metadata),
-                        },
-                    )
-                    break
-                except Exception as exc:
-                    call_metadata = self._call_metadata()
-                    call_metadata["attempts"] = attempt
-                    call_trace = self._call_trace(countries.get(code), error=exc)
-                    if attempt < self.country_retry_attempts:
-                        log.warning(
-                            "fine AI country evaluation retrying: run=%s country=%s attempt=%s",
-                            evaluation_run_id,
-                            code,
-                            attempt,
-                            exc_info=True,
+                for attempt in range(1, self.country_retry_attempts + 1):
+                    try:
+                        result = gemini_client.generate_country_evaluation(
+                            product_snapshot=product_snapshot,
+                            product_facts=product_facts,
+                            country=country,
+                            asset_snapshot=asset_snapshot,
+                            asset_paths=list(asset_snapshot.get("asset_paths") or []),
                         )
+                        call_trace = self._call_trace(result)
+                        result = _normalize_country_result(result, country, asset_snapshot)
+                        validate_json_schema(result, COUNTRY_EVALUATION_SCHEMA)
+                        completed_codes.append(code)
+                        countries[code] = result
+                        call_metadata = self._call_metadata()
+                        call_metadata["attempts"] = attempt
                         progress = _mark_progress_step(
                             progress,
                             step_key,
-                            "running",
-                            f"{code} 第 {attempt} 次失败，准备重试：{str(exc)[:160]}",
-                            level="warning",
+                            "completed",
+                            f"{code} 评估完成：{(result.get('decision') or {}).get('final_decision') or '-'} / {((result.get('scores') or {}).get('overall_score'))}",
+                            debug=[
+                                *_country_result_debug(result),
+                                *_usage_debug(call_metadata),
+                            ],
+                            llm_trace=call_trace,
+                        )
+                        self.repository.upsert_country(
+                            evaluation_run_id,
+                            code,
+                            {
+                                "product_id": product_id,
+                                "status": "completed",
+                                "full_result": result,
+                                "metadata": call_metadata,
+                                "raw_response": _country_raw_response(call_trace, call_metadata),
+                            },
+                        )
+                        break
+                    except Exception as exc:
+                        call_metadata = self._call_metadata()
+                        call_metadata["attempts"] = attempt
+                        call_trace = self._call_trace(countries.get(code), error=exc)
+                        if attempt < self.country_retry_attempts:
+                            log.warning(
+                                "fine AI country evaluation retrying: run=%s country=%s attempt=%s",
+                                evaluation_run_id,
+                                code,
+                                attempt,
+                                exc_info=True,
+                            )
+                            progress = _mark_progress_step(
+                                progress,
+                                step_key,
+                                "running",
+                                f"{code} 第 {attempt} 次失败，准备重试：{str(exc)[:160]}",
+                                level="warning",
+                                debug=[
+                                    {"label": "Country", "value": code},
+                                    {"label": "Attempt", "value": attempt},
+                                    {"label": "Error", "value": str(exc)[:500]},
+                                    *_usage_debug(call_metadata),
+                                ],
+                                llm_trace=call_trace,
+                            )
+                            self.repository.update_run(
+                                evaluation_run_id,
+                                status="running",
+                                progress=_progress(
+                                    country_codes,
+                                    f"country_evaluation_{code}",
+                                    running_country=code,
+                                    completed_steps=_completed_step_count(progress),
+                                    completed_countries=completed_codes,
+                                    failed_countries=failed_codes,
+                                    base_progress=progress,
+                                ),
+                            )
+                            continue
+                        log.exception("fine AI country evaluation failed: run=%s country=%s", evaluation_run_id, code)
+                        failed_codes.append(code)
+                        failed = _failed_country_result(country, str(exc))
+                        countries[code] = failed
+                        progress = _mark_progress_step(
+                            progress,
+                            step_key,
+                            "failed",
+                            f"{code} 评估失败：{str(exc)[:160]}",
+                            level="error",
                             debug=[
                                 {"label": "Country", "value": code},
                                 {"label": "Attempt", "value": attempt},
@@ -582,62 +845,30 @@ class FineAiEvaluationService:
                             ],
                             llm_trace=call_trace,
                         )
-                        self.repository.update_run(
+                        self.repository.upsert_country(
                             evaluation_run_id,
-                            status="running",
-                            progress=_progress(
-                                country_codes,
-                                f"country_evaluation_{code}",
-                                running_country=code,
-                                completed_steps=_completed_step_count(progress),
-                                completed_countries=completed_codes,
-                                failed_countries=failed_codes,
-                                base_progress=progress,
-                            ),
+                            code,
+                            {
+                                "product_id": product_id,
+                                "status": "failed",
+                                "full_result": failed,
+                                "metadata": call_metadata,
+                                "raw_response": _country_raw_response(call_trace, call_metadata),
+                                "error_message": str(exc)[:500],
+                            },
                         )
-                        continue
-                    log.exception("fine AI country evaluation failed: run=%s country=%s", evaluation_run_id, code)
-                    failed_codes.append(code)
-                    failed = _failed_country_result(country, str(exc))
-                    countries[code] = failed
-                    progress = _mark_progress_step(
-                        progress,
-                        step_key,
-                        "failed",
-                        f"{code} 评估失败：{str(exc)[:160]}",
-                        level="error",
-                        debug=[
-                            {"label": "Country", "value": code},
-                            {"label": "Attempt", "value": attempt},
-                            {"label": "Error", "value": str(exc)[:500]},
-                            *_usage_debug(call_metadata),
-                        ],
-                        llm_trace=call_trace,
-                    )
-                    self.repository.upsert_country(
-                        evaluation_run_id,
-                        code,
-                        {
-                            "product_id": product_id,
-                            "status": "failed",
-                            "full_result": failed,
-                            "metadata": call_metadata,
-                            "raw_response": _country_raw_response(call_trace, call_metadata),
-                            "error_message": str(exc)[:500],
-                        },
-                    )
-            self.repository.update_run(
-                evaluation_run_id,
-                status="running",
-                progress=_progress(
-                    country_codes,
-                    f"country_evaluation_{code}",
-                    completed_steps=_completed_step_count(progress),
-                    completed_countries=completed_codes,
-                    failed_countries=failed_codes,
-                    base_progress=progress,
-                ),
-            )
+                self.repository.update_run(
+                    evaluation_run_id,
+                    status="running",
+                    progress=_progress(
+                        country_codes,
+                        f"country_evaluation_{code}",
+                        completed_steps=_completed_step_count(progress),
+                        completed_countries=completed_codes,
+                        failed_countries=failed_codes,
+                        base_progress=progress,
+                    ),
+                )
 
         countries = _unwrap_country_results(self.repository.list_countries(evaluation_run_id)) or countries
         progress = _mark_progress_step(

@@ -111,6 +111,62 @@ def _pre_restart(args: argparse.Namespace) -> int:
     return 0
 
 
+def _kill(args: argparse.Namespace) -> int:
+    task_spec = str(args.task or "").strip()
+    if ":" not in task_spec:
+        print("error: --task must be in format <project_type>:<task_id>")
+        return 1
+    project_type, task_id = task_spec.split(":", 1)
+
+    tasks = _load_tasks(args.max_age_seconds)
+    target_task = None
+    for task in tasks:
+        if task.project_type == project_type and task.task_id == task_id:
+            target_task = task
+            break
+
+    if not target_task:
+        print(f"error: active task {task_spec} not found")
+        try:
+            active_tasks.unregister(project_type, task_id)
+            print("cleaned stale database registration row (if any)")
+        except Exception:
+            pass
+        return 1
+
+    pid = target_task.process_id
+    if not pid:
+        print("error: task has no associated process_id")
+        return 1
+
+    print(f"found active task {task_spec} with PID {pid}")
+
+    import signal
+    import os
+
+    sig = signal.SIGKILL
+    if args.sig:
+        sig_name = str(args.sig).strip().upper()
+        if not sig_name.startswith("SIG"):
+            sig_name = f"SIG{sig_name}"
+        sig = getattr(signal, sig_name, signal.SIGKILL)
+
+    try:
+        print(f"sending {sig} to process {pid}...")
+        os.kill(pid, sig)
+        print("process killed successfully")
+    except OSError as exc:
+        print(f"failed to kill process {pid}: {exc}")
+
+    try:
+        active_tasks.unregister(project_type, task_id)
+        print("database registration row deleted successfully")
+    except Exception as exc:
+        print(f"failed to unregister task in database: {exc}")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inspect AutoVideoSrt active background tasks.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -124,6 +180,12 @@ def build_parser() -> argparse.ArgumentParser:
     pre_restart.add_argument("--force", action="store_true", help="Snapshot and allow restart despite blockers.")
     pre_restart.add_argument("--max-age-seconds", type=int, default=30)
     pre_restart.set_defaults(func=_pre_restart)
+
+    kill_parser = subparsers.add_parser("kill", help="Forcefully terminate an active task process.")
+    kill_parser.add_argument("--task", required=True, help="Task specifier in <project_type>:<task_id> format.")
+    kill_parser.add_argument("--sig", default="KILL", help="Signal to send, e.g. TERM or KILL (default: KILL).")
+    kill_parser.add_argument("--max-age-seconds", type=int, default=3600)
+    kill_parser.set_defaults(func=_kill)
     return parser
 
 

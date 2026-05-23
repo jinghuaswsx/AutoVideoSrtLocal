@@ -126,6 +126,7 @@ def _build_config(
     max_output_tokens: int | None,
     google_search: bool | None = None,
     url_context: bool | None = None,
+    timeout_seconds: float | None = None,
 ):
     kwargs: dict[str, Any] = {}
     if system:
@@ -147,6 +148,8 @@ def _build_config(
         tools.append(genai_types.Tool(url_context=genai_types.UrlContext()))
     if tools:
         kwargs["tools"] = tools
+    if timeout_seconds is not None:
+        kwargs["http_options"] = genai_types.HttpOptions(timeout=int(timeout_seconds * 1000))
     return genai_types.GenerateContentConfig(**kwargs)
 
 

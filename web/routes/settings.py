@@ -453,6 +453,7 @@ def index():
         meta_hot_posts_translate_binding=_meta_hot_posts_translate_binding_view(bindings_rows),
         fine_ai_profile_configs=fine_ai_model_config.all_profile_configs(),
         fine_ai_provider_options=fine_ai_model_config.provider_options(),
+        fine_ai_parallel_mode=fine_ai_model_config.get_parallel_mode(),
         bindings_grouped=bindings_grouped,
         voice_ai_auto_select_enabled=is_voice_ai_auto_select_enabled(),
         module_labels=MODULE_LABELS,
@@ -597,11 +598,29 @@ def _handle_fine_ai_provider_profiles_post() -> None:
         fine_ai_model_config.SCHEDULED_PROFILE: "fine_ai_scheduled_provider",
     }
     for profile, field_name in fields.items():
-        if field_name not in request.form:
-            continue
-        provider = (request.form.get(field_name) or "").strip()
+        if field_name in request.form:
+            provider = (request.form.get(field_name) or "").strip()
+            try:
+                fine_ai_model_config.set_profile_provider(profile, provider)
+            except ValueError as exc:
+                flash(str(exc), "error")
+
+    model_fields = {
+        fine_ai_model_config.MANUAL_PROFILE: "fine_ai_manual_model",
+        fine_ai_model_config.SCHEDULED_PROFILE: "fine_ai_scheduled_model",
+    }
+    for profile, field_name in model_fields.items():
+        if field_name in request.form:
+            model = (request.form.get(field_name) or "").strip()
+            try:
+                fine_ai_model_config.set_profile_model(profile, model)
+            except ValueError as exc:
+                flash(str(exc), "error")
+
+    if "fine_ai_parallel_mode" in request.form:
+        mode = (request.form.get("fine_ai_parallel_mode") or "").strip()
         try:
-            fine_ai_model_config.set_profile_provider(profile, provider)
+            fine_ai_model_config.set_parallel_mode(mode)
         except ValueError as exc:
             flash(str(exc), "error")
 

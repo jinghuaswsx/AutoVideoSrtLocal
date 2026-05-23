@@ -30,6 +30,7 @@ class LLMAdapter(ABC):
         max_tokens: int | None = None,
         response_format: dict | None = None,
         extra_body: dict | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict:
         raise NotImplementedError(f"{self.provider_code} does not support chat()")
 
@@ -46,5 +47,6 @@ class LLMAdapter(ABC):
         max_output_tokens: int | None = None,
         google_search: bool | None = None,
         url_context: bool | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict:
         raise NotImplementedError(f"{self.provider_code} does not support generate()")

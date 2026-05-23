@@ -14,7 +14,7 @@ SOURCE_TOP500 = "top500_90d_spend"
 SOURCE_YESTERDAY_TOP100 = "yesterday_top100"
 TERMINAL_RECORD_STATUSES = {"completed", "partially_completed", "failed", "skipped"}
 MAX_BATCH_SIZE = 2
-STALE_AFTER_SECONDS = 30 * 60
+STALE_AFTER_SECONDS = 8 * 60
 
 log = logging.getLogger(__name__)
 
@@ -374,11 +374,23 @@ def tick_once(limit: int = MAX_BATCH_SIZE, *, stale_after_seconds: int = STALE_A
         summary["source_bucket"] = source_bucket
         summary["scanned"] = len(candidates)
 
+        import time
+        start_time = time.time()
         for index, row in enumerate(candidates[:safe_limit], start=1):
             if not _is_current_run(run_id):
                 summary["superseded"] = True
                 summary["stop_reason"] = "newer_run_started"
                 break
+
+            elapsed = time.time() - start_time
+            if elapsed > 6 * 60:
+                summary["stop_reason"] = "time_budget_exceeded"
+                log.info(
+                    "Mingkong fine AI auto evaluation tick exceeded 6-minute budget (elapsed=%.1fs); breaking gracefully",
+                    elapsed
+                )
+                break
+
             result = _run_candidate(
                 row,
                 scheduled_run_id=run_id,

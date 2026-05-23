@@ -332,7 +332,8 @@ class OpenRouterAdapter(LLMAdapter):
         }
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
-             max_tokens=None, response_format=None, extra_body=None):
+             max_tokens=None, response_format=None, extra_body=None,
+             timeout_seconds=None):
         media_kind = "image" if _has_media(messages) else "text"
         creds = self.resolve_credentials(user_id, media_kind=media_kind)
         client = _openrouter_client(creds)
@@ -359,7 +360,9 @@ class OpenRouterAdapter(LLMAdapter):
         retry_label = f"openrouter:{creds.get('provider_code', 'unknown')}"
         for attempt in range(max(1, attempts)):
             resp = _call_with_network_retry(
-                lambda: client.chat.completions.create(model=model, messages=messages, **kwargs),
+                lambda: client.chat.completions.create(
+                    model=model, messages=messages, timeout=timeout_seconds, **kwargs
+                ),
                 label=retry_label,
             )
             choices = getattr(resp, "choices", None)
@@ -395,7 +398,8 @@ class OpenRouterAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None, url_context=None):
+                 max_output_tokens=None, google_search=None, url_context=None,
+                 timeout_seconds=None):
         media_list = _normalize_media(media)
         schema_via_prompt = bool(response_schema is not None and google_search)
         prompt_for_model = _append_schema_instruction(prompt, response_schema) if schema_via_prompt else prompt
@@ -421,6 +425,7 @@ class OpenRouterAdapter(LLMAdapter):
             max_tokens=max_output_tokens,
             response_format=response_format,
             extra_body=extra_body,
+            timeout_seconds=timeout_seconds,
         )
         if response_schema is not None:
             result["json"] = _parse_json_content(result.get("text") or "")
@@ -451,7 +456,8 @@ class DoubaoAdapter(LLMAdapter):
         }
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
-             max_tokens=None, response_format=None, extra_body=None):
+             max_tokens=None, response_format=None, extra_body=None,
+             timeout_seconds=None):
         creds = self.resolve_credentials(user_id, model_id=model)
         client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
         # 豆包不支持 response_format / OpenRouter plugins；一律忽略
@@ -461,7 +467,9 @@ class DoubaoAdapter(LLMAdapter):
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         resp = _call_with_network_retry(
-            lambda: client.chat.completions.create(model=model, messages=messages, **kwargs),
+            lambda: client.chat.completions.create(
+                model=model, messages=messages, timeout=timeout_seconds, **kwargs
+            ),
             label=f"doubao:{creds.get('provider_code', 'unknown')}",
         )
         usage = getattr(resp, "usage", None)
@@ -476,7 +484,8 @@ class DoubaoAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None, url_context=None):
+                 max_output_tokens=None, google_search=None, url_context=None,
+                 timeout_seconds=None):
         creds = self.resolve_credentials(
             user_id,
             media_kind="video" if media else "text",

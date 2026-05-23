@@ -188,6 +188,7 @@ def invoke_chat(
     provider_override: str | None = None,
     model_override: str | None = None,
     billing_extra: dict | None = None,
+    timeout_seconds: float | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
     provider = provider_override or binding["provider"]
@@ -212,6 +213,7 @@ def invoke_chat(
             model=model, messages=messages, user_id=user_id,
             temperature=temperature, max_tokens=max_tokens,
             response_format=response_format, extra_body=extra_body,
+            timeout_seconds=timeout_seconds,
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
@@ -261,6 +263,7 @@ def invoke_generate(
     google_search: bool | None = None,
     url_context: bool | None = None,
     billing_extra: dict | None = None,
+    timeout_seconds: float | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
     provider = provider_override or binding["provider"]
@@ -313,6 +316,7 @@ def invoke_generate(
             max_output_tokens=max_output_tokens,
             google_search=google_search,
             url_context=url_context,
+            timeout_seconds=timeout_seconds,
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,

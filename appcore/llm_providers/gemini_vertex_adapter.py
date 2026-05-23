@@ -122,7 +122,8 @@ class GeminiVertexAdapter(LLMAdapter):
         )
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
-             max_tokens=None, response_format=None, extra_body=None):
+             max_tokens=None, response_format=None, extra_body=None,
+             timeout_seconds=None):
         payload, usage, raw = self._call(
             model=model, messages=messages,
             response_format=response_format,
@@ -138,7 +139,8 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None, url_context=None):
+                 max_output_tokens=None, google_search=None, url_context=None,
+                 timeout_seconds=None):
         media_list = _normalize_media(media)
         if media_list or google_search or url_context:
             return self._generate_with_media(
@@ -152,6 +154,7 @@ class GeminiVertexAdapter(LLMAdapter):
                 max_output_tokens=max_output_tokens,
                 google_search=google_search,
                 url_context=url_context,
+                timeout_seconds=timeout_seconds,
             )
         messages = []
         if system:
@@ -167,11 +170,13 @@ class GeminiVertexAdapter(LLMAdapter):
             model=model, messages=messages, user_id=user_id,
             temperature=temperature, max_tokens=max_output_tokens,
             response_format=response_format,
+            timeout_seconds=timeout_seconds,
         )
 
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
-                             max_output_tokens=None, google_search=None, url_context=None):
+                             max_output_tokens=None, google_search=None, url_context=None,
+                             timeout_seconds=None):
         # 直接调 gemini_calls helper + SDK；不再 from appcore import gemini，
         # 避免业务模块对 adapter 形成反向依赖（B-1/B-2 收尾的关键约束）。
         creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
@@ -184,6 +189,7 @@ class GeminiVertexAdapter(LLMAdapter):
             max_output_tokens=max_output_tokens,
             google_search=google_search,
             url_context=url_context,
+            timeout_seconds=timeout_seconds,
         )
 
         last_err: Exception | None = None
