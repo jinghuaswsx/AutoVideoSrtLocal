@@ -2098,6 +2098,26 @@ function mkiFineAiApplyCardResult(context, result) {
   }
 }
 
+function mkiFineAiUseExistingResult(context, result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  if (!context || !context.shell || !context.shell.body || !mkiFineAiHasUsableResult(normalized)) return false;
+  const resultProductId = Number((normalized && normalized.product_id) || 0);
+  if (!resultProductId) {
+    const externalLink = String(context.externalProductLink || context.productLink || '').trim();
+    if (externalLink) {
+      context.productId = 0;
+      context.externalProductLink = externalLink;
+      context.productLink = externalLink;
+    }
+  }
+  context.runId = mkiFineAiResultKey(normalized) || context.runId || '';
+  mkiFineAiApplyCardResult(context, normalized);
+  mkiFineAiRefreshDetailButton(context);
+  context.shell.body.innerHTML = mkiFineAiRenderResult(normalized, context);
+  mkiFineAiBindModalEvents(context);
+  return true;
+}
+
 function mkiFineAiCountryLookupCodes(code) {
   const value = String(code || '').trim().toUpperCase();
   if (value === 'JA') return ['JA', 'JP'];
@@ -3436,6 +3456,8 @@ async function mkiFineAiLoadLatest(context, options = {}) {
 
 async function mkiFineAiOpenLatestOrStart(context) {
   if (context.loadingLatest || context.running) return;
+  const existingResult = mkiFineAiResultFromButton(context.button);
+  if (mkiFineAiUseExistingResult(context, existingResult)) return;
   context.loadingLatest = true;
   const btn = context.button;
   const original = btn ? btn.textContent : '';

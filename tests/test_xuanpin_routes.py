@@ -481,6 +481,24 @@ def test_xuanpin_mk_ai_evaluation_result_button_opens_result_and_can_rerun(authe
     assert "if (context.hasExistingResult) {" in body
 
 
+def test_xuanpin_mk_fine_ai_result_button_uses_cached_result_before_latest_or_start(
+    authed_client_no_db,
+):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    cached_lookup = "const existingResult = mkiFineAiResultFromButton(context.button);"
+    cached_short_circuit = "if (mkiFineAiUseExistingResult(context, existingResult)) return;"
+
+    assert "function mkiFineAiUseExistingResult(context, result)" in body
+    assert cached_lookup in body
+    assert cached_short_circuit in body
+    assert body.index(cached_lookup) < body.index("const loaded = await mkiFineAiLoadLatest")
+    assert "context.productId = 0;" in body
+    assert "context.externalProductLink = externalLink;" in body
+
+
 def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_no_db, monkeypatch):
     calls = []
 
