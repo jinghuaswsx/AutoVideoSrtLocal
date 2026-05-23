@@ -57,3 +57,4 @@
 - status API 能看到当前步骤、国家状态、步骤日志和调试字段。
 - result API 保留最终 `progress_json`，完成后仍能复盘执行过程。
 - 单国家失败时，失败国家卡片变为 failed，后续国家继续执行，最终 run 为 `partially_completed`。
+- 服务重启或 worker 消失后，启动恢复只做状态收口，不自动续跑：无活跃线程的 queued/running run 标为 `interrupted`，未完成国家写入 failed 结果以便用户手动重跑；前端把 `interrupted` 视为终态并停止轮询。

@@ -111,6 +111,20 @@ def test_fine_ai_progress_renders_waiting_state_for_country_rate_limit():
     assert ".mki-fine-ai-status-pill.is-waiting" in template
 
 
+def test_fine_ai_progress_treats_interrupted_as_terminal_status():
+    body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+    script = Path("web/static/js/fine_ai_evaluation_detail.js").read_text(encoding="utf-8")
+    template = Path("web/templates/fine_ai_evaluation_detail.html").read_text(encoding="utf-8")
+
+    assert "'interrupted'" in script
+    assert "'completed', 'partially_completed', 'failed', 'interrupted', 'cancelled'" in script
+    assert "'completed', 'partially_completed', 'failed', 'interrupted', 'cancelled'" in body
+    assert ".mki-fine-ai-step-card.is-interrupted" in body
+    assert ".mki-fine-ai-status-pill.is-interrupted" in body
+    assert ".mki-fine-ai-step-card.is-interrupted" in template
+    assert ".mki-fine-ai-status-pill.is-interrupted" in template
+
+
 def test_fine_ai_startup_progress_has_live_timer_and_running_data_preparation():
     body = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

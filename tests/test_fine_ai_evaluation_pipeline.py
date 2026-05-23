@@ -252,9 +252,11 @@ def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monke
 
 
 def test_external_link_zero_product_id_status_is_not_treated_as_missing(monkeypatch):
+    from appcore import active_tasks
     from appcore import fine_ai_evaluation_repository as repo_mod
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
+    active_tasks.clear_active_tasks_for_tests()
     monkeypatch.setattr(
         repo_mod,
         "query_one",
@@ -273,10 +275,103 @@ def test_external_link_zero_product_id_status_is_not_treated_as_missing(monkeypa
         gemini_client=FakeGeminiClient([]),
     )
 
-    status = service.get_status(0, "eval_external")
+    active_tasks.register("fine_ai_evaluation", "eval_external")
+    try:
+        status = service.get_status(0, "eval_external")
+    finally:
+        active_tasks.unregister("fine_ai_evaluation", "eval_external")
 
     assert status["product_id"] == "0"
     assert status["status"] == "running"
+
+
+def test_recover_interrupted_run_marks_orphan_running_country_failed_and_terminal():
+    from appcore import active_tasks
+    from appcore.fine_ai_evaluation_service import (
+        FineAiEvaluationService,
+        _country_step_key,
+        _mark_progress_step,
+        _progress,
+    )
+
+    active_tasks.clear_active_tasks_for_tests()
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123, countries=["DE", "FR"])
+    evaluation_run_id = run["evaluation_run_id"]
+    repository.upsert_country(
+        evaluation_run_id,
+        "DE",
+        {
+            "product_id": "123",
+            "status": "completed",
+            "full_result": make_country_result("DE"),
+        },
+    )
+    progress = repository.rows[evaluation_run_id]["progress"]
+    progress = _mark_progress_step(progress, "product_fact_extraction", "completed", "facts done")
+    progress = _mark_progress_step(progress, _country_step_key("DE"), "completed", "DE done")
+    progress = _mark_progress_step(progress, _country_step_key("FR"), "running", "FR running")
+    progress = _progress(
+        ["DE", "FR"],
+        "country_evaluation_FR",
+        running_country="FR",
+        completed_countries=["DE"],
+        base_progress=progress,
+    )
+    repository.update_run(
+        evaluation_run_id,
+        status="running",
+        product_facts={"product_id": "123"},
+        metadata={"countries_completed": ["DE"], "countries_failed": []},
+        progress=progress,
+        started_at="2026-05-23T08:00:00Z",
+    )
+
+    recovered = service.recover_run_if_interrupted(evaluation_run_id)
+
+    assert recovered["status"] == "interrupted"
+    assert recovered["metadata"]["countries_completed"] == ["DE"]
+    assert recovered["metadata"]["countries_failed"] == ["FR"]
+    assert recovered["progress"]["countries"]["FR"] == "failed"
+    result = service.get_result(123, evaluation_run_id)
+    assert result["status"] == "interrupted"
+    assert result["countries"]["DE"]["status"] == "completed"
+    assert result["countries"]["FR"]["status"] == "failed"
+    fr_step = next(step for step in result["progress"]["steps"] if step["key"] == "country_FR")
+    assert fr_step["status"] == "failed"
+    assert "interrupted" in fr_step["message"].lower()
+
+
+def test_recover_interrupted_run_leaves_active_run_running():
+    from appcore import active_tasks
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    active_tasks.clear_active_tasks_for_tests()
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(123, countries=["DE"])
+    evaluation_run_id = run["evaluation_run_id"]
+    repository.update_run(evaluation_run_id, status="running")
+    active_tasks.register("fine_ai_evaluation", evaluation_run_id)
+    try:
+        recovered = service.recover_run_if_interrupted(evaluation_run_id)
+    finally:
+        active_tasks.unregister("fine_ai_evaluation", evaluation_run_id)
+
+    assert recovered["status"] == "running"
 
 
 def test_pipeline_continues_when_one_country_fails():
@@ -698,6 +793,13 @@ class InMemoryEvaluationRepository:
     def get_latest_run(self, product_id):
         rows = [row for row in self.rows.values() if str(row["product_id"]) == str(product_id)]
         return dict(rows[-1]) if rows else None
+
+    def list_inflight_runs(self):
+        return [
+            dict(row)
+            for row in self.rows.values()
+            if str(row.get("status") or "").lower() in {"queued", "running"}
+        ]
 
     def get_latest_external_link_run(self, product_link, **kwargs):
         product_link = str(product_link or "").strip()

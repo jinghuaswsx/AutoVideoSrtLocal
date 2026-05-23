@@ -1025,6 +1025,16 @@ def test_startup_recovery_does_not_resume_runners(monkeypatch):
     monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: calls.append("generic"))
     monkeypatch.setattr(web_app, "mark_interrupted_bulk_translate_tasks", lambda: calls.append("bulk"))
     monkeypatch.setattr(
+        web_app,
+        "recover_interrupted_fine_ai_evaluations",
+        lambda: calls.append("fine_ai"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.tasks.recover_pending_manual_raw_results",
+        lambda: {"completed": 0, "failed": 0},
+    )
+    monkeypatch.setattr(
         "web.routes.subtitle_removal.resume_inflight_tasks",
         lambda: calls.append("subtitle_resume"),
     )
@@ -1035,13 +1045,13 @@ def test_startup_recovery_does_not_resume_runners(monkeypatch):
 
     web_app._run_startup_recovery()
 
-    assert calls == ["generic", "bulk"]
+    assert calls == ["generic", "bulk", "fine_ai"]
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 
-    called = {"generic": 0, "bulk": 0}
+    called = {"generic": 0, "bulk": 0, "fine_ai": 0}
     monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: called.update({"generic": called["generic"] + 1}))
     monkeypatch.setattr(
         web_app,
@@ -1049,9 +1059,19 @@ def test_create_app_runs_interrupted_task_recovery(monkeypatch):
         lambda: called.update({"bulk": called["bulk"] + 1}),
         raising=False,
     )
+    monkeypatch.setattr(
+        web_app,
+        "recover_interrupted_fine_ai_evaluations",
+        lambda: called.update({"fine_ai": called["fine_ai"] + 1}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.tasks.recover_pending_manual_raw_results",
+        lambda: {"completed": 0, "failed": 0},
+    )
     monkeypatch.setattr(web_app, "_seed_default_prompts", lambda: None)
 
     app = create_app()
 
     assert app
-    assert called == {"generic": 1, "bulk": 1}
+    assert called == {"generic": 1, "bulk": 1, "fine_ai": 1}

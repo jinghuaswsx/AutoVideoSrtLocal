@@ -255,6 +255,7 @@
 .mki-fine-ai-step-card.is-running { border-color:oklch(76% 0.09 230); border-left-color:var(--oc-accent); background:oklch(97% 0.018 230); box-shadow:0 0 0 3px rgba(14,165,233,.10); }
 .mki-fine-ai-step-card.is-completed { border-left-color:oklch(58% 0.12 160); background:oklch(98% 0.018 160); }
 .mki-fine-ai-step-card.is-failed { border-left-color:oklch(55% 0.16 25); background:oklch(98% 0.018 25); }
+.mki-fine-ai-step-card.is-interrupted { border-left-color:oklch(55% 0.16 25); background:oklch(98% 0.018 25); }
 .mki-fine-ai-step-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .mki-fine-ai-step-title { display:flex; align-items:center; gap:10px; min-width:0; font-weight:800; color:var(--oc-fg); flex-wrap:wrap; }
 .mki-fine-ai-step-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; }
@@ -276,12 +277,14 @@
 .mki-fine-ai-step-card.is-running .mki-fine-ai-step-dot::after { content:""; position:absolute; inset:-6px; border-radius:inherit; border:2px solid rgba(14,165,233,.30); animation:mkiFineAiPulse 1.05s ease-out infinite; }
 .mki-fine-ai-step-card.is-completed .mki-fine-ai-step-dot { background:oklch(58% 0.12 160); }
 .mki-fine-ai-step-card.is-failed .mki-fine-ai-step-dot { background:oklch(55% 0.16 25); }
+.mki-fine-ai-step-card.is-interrupted .mki-fine-ai-step-dot { background:oklch(55% 0.16 25); }
 .mki-fine-ai-status-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 10px; border-radius:9999px; font-size:12px; font-weight:700; }
 .mki-fine-ai-status-pill.is-pending { background:oklch(94% 0.010 230); color:var(--oc-fg-muted); }
 .mki-fine-ai-status-pill.is-waiting { background:oklch(94% 0.055 80); color:oklch(42% 0.12 65); }
 .mki-fine-ai-status-pill.is-running { background:oklch(91% 0.08 220); color:oklch(42% 0.14 235); }
 .mki-fine-ai-status-pill.is-completed { background:var(--oc-success-bg); color:var(--oc-success-fg); }
 .mki-fine-ai-status-pill.is-failed { background:oklch(96% 0.04 25); color:oklch(42% 0.14 25); }
+.mki-fine-ai-status-pill.is-interrupted { background:oklch(96% 0.04 25); color:oklch(42% 0.14 25); }
 .mki-fine-ai-step-desc { margin:8px 0 0; color:var(--oc-fg-muted); font-size:13px; line-height:1.5; }
 .mki-fine-ai-debug-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
 .mki-fine-ai-debug-item { min-width:0; padding:8px 10px; border:1px solid var(--oc-border); border-radius:6px; background:rgba(255,255,255,.72); }
@@ -2906,6 +2909,7 @@ function mkiFineAiStatusLabel(status) {
     completed: '评估完成',
     partially_completed: '部分完成',
     failed: '评估失败',
+    interrupted: '已中断',
     cancelled: '已取消',
   };
   if (labels[value]) return labels[value];
@@ -2929,6 +2933,7 @@ function mkiFineAiStepStatusLabel(status) {
     waiting: '等待中',
     completed: '已完成',
     failed: '失败',
+    interrupted: '已中断',
     skipped: '已跳过',
   };
   if (labels[value]) return labels[value];
@@ -2944,7 +2949,7 @@ function mkiFineAiSecondsSince(startedAt) {
 
 function mkiFineAiElapsedLabel(progress, status) {
   const payload = progress || {};
-  const finalStatuses = ['completed', 'partially_completed', 'failed', 'cancelled'];
+  const finalStatuses = ['completed', 'partially_completed', 'failed', 'interrupted', 'cancelled'];
   const isFinal = finalStatuses.includes(String(status || '').toLowerCase());
   let seconds = Math.max(0, Number(payload.elapsed_seconds || 0));
   if (!isFinal && payload.started_at) {
@@ -3617,7 +3622,7 @@ async function mkiFineAiPollStatus(context) {
     mkiFineAiRefreshDetailButton(context);
     context.shell.body.innerHTML = mkiFineAiRenderStatus(status, context);
     mkiFineAiBindModalEvents(context);
-    if (['completed', 'partially_completed', 'failed', 'cancelled'].includes(status.status)) {
+    if (['completed', 'partially_completed', 'failed', 'interrupted', 'cancelled'].includes(status.status)) {
       const resultResp = await mkiFetchJson(mkiFineAiEndpoint(context, `/${encodeURIComponent(context.runId)}`));
       mkiFineAiStopElapsedTicker(context);
       const result = resultResp.data || {};
