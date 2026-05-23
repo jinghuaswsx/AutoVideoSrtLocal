@@ -556,6 +556,192 @@ def _fine_ai_status_by_product_ids(product_ids: set[int]) -> dict[int, dict[str,
     return out
 
 
+def _fine_ai_card_links(item: dict[str, Any]) -> set[str]:
+    links = {
+        str(item.get("mk_product_link") or "").strip(),
+        str(item.get("product_url") or "").strip(),
+    }
+    metadata = _metadata_for_row(item)
+    if isinstance(metadata, dict):
+        links.add(str(metadata.get("product_link") or "").strip())
+    return {link for link in links if link}
+
+
+def _fine_ai_run_links(metadata: dict[str, Any]) -> set[str]:
+    link_check = metadata.get("link_check") if isinstance(metadata, dict) else {}
+    if not isinstance(link_check, dict):
+        link_check = {}
+    return {
+        link
+        for link in {
+            str(metadata.get("external_product_link") or "").strip(),
+            str(link_check.get("original_link") or "").strip(),
+            str(link_check.get("selected_link") or "").strip(),
+        }
+        if link
+    }
+
+
+def _fine_ai_external_card_video_path(metadata: dict[str, Any]) -> str:
+    card_video = metadata.get("external_card_video") if isinstance(metadata, dict) else {}
+    if not isinstance(card_video, dict):
+        return ""
+    return normalize_mk_media_path(str(card_video.get("path") or card_video.get("source_path") or ""))
+
+
+def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    card_index: dict[str, dict[str, Any]] = {}
+    for item in items or []:
+        material_key = str(item.get("material_key") or "").strip()
+        video_path = normalize_mk_media_path(str(item.get("video_path") or ""))
+        links = _fine_ai_card_links(item)
+        if material_key and video_path and links:
+            card_index[material_key] = {
+                "video_path": video_path,
+                "links": links,
+            }
+    if not card_index:
+        return {}
+
+    matched: dict[str, dict[str, Any]] = {}
+    run_ids: list[str] = []
+    auto_lookup = {material_key.lower(): material_key for material_key in card_index}
+    auto_keys = list(auto_lookup)
+    if auto_keys:
+        placeholders = ",".join(["%s"] * len(auto_keys))
+        try:
+            auto_rows = query(
+                f"""
+                SELECT material_key, evaluation_run_id
+                FROM mingkong_fine_ai_auto_evaluations
+                WHERE material_key IN ({placeholders})
+                  AND status IN ('completed', 'partially_completed')
+                  AND evaluation_run_id IS NOT NULL
+                  AND evaluation_run_id <> ''
+                ORDER BY updated_at DESC, id DESC
+                """,
+                tuple(auto_keys),
+            )
+        except Exception:
+            logger.exception("failed to load Mingkong fine AI auto evaluation links")
+            auto_rows = []
+
+        run_to_material: dict[str, str] = {}
+        for row in auto_rows or []:
+            material_key = auto_lookup.get(str(row.get("material_key") or "").strip().lower())
+            run_id = str(row.get("evaluation_run_id") or "").strip()
+            if material_key and run_id and material_key not in matched:
+                run_to_material[run_id] = material_key
+
+        if run_to_material:
+            run_placeholders = ",".join(["%s"] * len(run_to_material))
+            try:
+                auto_run_rows = query(
+                    f"""
+                    SELECT id, evaluation_run_id, product_id, status,
+                           summary_json, frontend_json, progress_json, metadata_json,
+                           created_at, updated_at, completed_at, failed_at
+                    FROM ai_evaluation_runs
+                    WHERE evaluation_run_id IN ({run_placeholders})
+                      AND status IN ('completed', 'partially_completed')
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    tuple(run_to_material),
+                )
+            except Exception:
+                logger.exception("failed to load external fine AI runs from auto evaluation links")
+                auto_run_rows = []
+            for row in auto_run_rows or []:
+                run_id = str(row.get("evaluation_run_id") or "").strip()
+                material_key = run_to_material.get(run_id)
+                if material_key and material_key not in matched:
+                    matched[material_key] = row
+                    run_ids.append(run_id)
+
+    try:
+        rows = query(
+            """
+            SELECT id, evaluation_run_id, product_id, status,
+                   summary_json, frontend_json, progress_json, metadata_json,
+                   created_at, updated_at, completed_at, failed_at
+            FROM ai_evaluation_runs
+            WHERE product_id = 0
+              AND status IN ('completed', 'partially_completed')
+              AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_type')) = 'external_product_link'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1000
+            """
+        )
+    except Exception:
+        logger.exception("failed to load external fine AI evaluation runs for mingkong cards")
+        rows = []
+
+    for row in rows or []:
+        run_id = str(row.get("evaluation_run_id") or "").strip()
+        metadata = _json_loads(row.get("metadata_json"), {}) or {}
+        if not run_id or not isinstance(metadata, dict):
+            continue
+        run_links = _fine_ai_run_links(metadata)
+        run_video_path = _fine_ai_external_card_video_path(metadata)
+        if not run_links or not run_video_path:
+            continue
+        for material_key, card in card_index.items():
+            if material_key in matched:
+                continue
+            if run_video_path != card["video_path"]:
+                continue
+            if not (run_links & card["links"]):
+                continue
+            matched[material_key] = row
+            run_ids.append(run_id)
+            break
+
+    countries_by_run: dict[str, dict[str, dict[str, Any]]] = {run_id: {} for run_id in run_ids}
+    if run_ids:
+        placeholders = ",".join(["%s"] * len(run_ids))
+        try:
+            country_rows = query(
+                f"""
+                SELECT evaluation_run_id, country_code, country_name, status,
+                       scores_json, decision_json, full_result_json, error_message
+                FROM ai_country_evaluations
+                WHERE evaluation_run_id IN ({placeholders})
+                ORDER BY id ASC
+                """,
+                tuple(run_ids),
+            )
+        except Exception:
+            logger.exception("failed to load external fine AI country evaluations for mingkong cards")
+            country_rows = []
+        for row in country_rows or []:
+            run_id = str(row.get("evaluation_run_id") or "").strip()
+            country = _fine_ai_country_payload(row)
+            code = str(country.get("country_code") or row.get("country_code") or "").upper()
+            if run_id and code:
+                countries_by_run.setdefault(run_id, {})[code] = country
+
+    out: dict[str, dict[str, Any]] = {}
+    for material_key, row in matched.items():
+        run_id = str(row.get("evaluation_run_id") or "").strip()
+        status = str(row.get("status") or "").strip()
+        countries = countries_by_run.get(run_id) or {}
+        out[material_key] = {
+            "evaluation_run_id": run_id,
+            "product_id": 0,
+            "status": status,
+            "has_result": _fine_ai_has_result(status, countries),
+            "summary": _json_loads(row.get("summary_json"), {}) or {},
+            "frontend": _json_loads(row.get("frontend_json"), {}) or {},
+            "progress": _json_loads(row.get("progress_json"), {}) or {},
+            "countries": countries,
+            "created_at": _iso_datetime(row.get("created_at")),
+            "updated_at": _iso_datetime(row.get("updated_at")),
+            "completed_at": _iso_datetime(row.get("completed_at")),
+            "failed_at": _iso_datetime(row.get("failed_at")),
+        }
+    return out
+
+
 def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     product_hashes: set[str] = set()
     material_hashes: set[str] = set()
@@ -601,12 +787,16 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
     }
     ai_status_by_product_id = _ai_evaluation_status_by_product_ids(product_ids)
     fine_ai_status_by_product_id = _fine_ai_status_by_product_ids(product_ids)
+    fine_ai_status_by_material_key = _fine_ai_status_by_external_cards(items)
 
     for item, media_code, material_key, _product_hash, _material_hash, product_status, material_status in preliminary:
         product_id = _as_int(product_status.get("media_product_id"))
         if product_id in ai_status_by_product_id:
             product_status.update(ai_status_by_product_id[product_id])
-        product_status["fine_ai_evaluation"] = fine_ai_status_by_product_id.get(product_id)
+        product_status["fine_ai_evaluation"] = (
+            fine_ai_status_by_product_id.get(product_id)
+            or fine_ai_status_by_material_key.get(str(item.get("material_key") or "").strip())
+        )
         if not material_status["has_local_match"]:
             legacy_status = _legacy_material_status_for_item(
                 item,

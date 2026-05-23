@@ -295,6 +295,70 @@ def test_pipeline_continues_when_one_country_fails():
     assert progress["countries"]["JP"] == "completed"
 
 
+def test_country_failure_retries_once_then_continues():
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    class FlakyCountryGeminiClient(FakeGeminiClient):
+        def __init__(self, calls, fail_once_country):
+            super().__init__(calls)
+            self.fail_once_country = fail_once_country
+            self.failed_once = False
+
+        def generate_country_evaluation(self, *, product_snapshot, product_facts, country, asset_snapshot, asset_paths):
+            code = country["country_code"]
+            if code == self.fail_once_country and not self.failed_once:
+                self.failed_once = True
+                self.calls.append((f"country:{code}", len(asset_paths)))
+                self.last_call_metadata = {
+                    "provider": "fake-provider",
+                    "model": "fake-model",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                }
+                self.last_call_trace = _fake_trace(
+                    f"country:{code}",
+                    {"error": "first attempt failed"},
+                    product_id=product_snapshot["product_id"],
+                )
+                raise RuntimeError("first attempt failed")
+            return super().generate_country_evaluation(
+                product_snapshot=product_snapshot,
+                product_facts=product_facts,
+                country=country,
+                asset_snapshot=asset_snapshot,
+                asset_paths=asset_paths,
+            )
+
+    calls = []
+    service = FineAiEvaluationService(
+        repository=InMemoryEvaluationRepository(),
+        gemini_client=FlakyCountryGeminiClient(calls, fail_once_country="FR"),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+        country_retry_attempts=2,
+    )
+
+    run = service.create_run(123, countries=["DE", "FR", "IT"])
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "completed"
+    assert [call[0] for call in calls] == [
+        "product_facts",
+        "country:DE",
+        "country:FR",
+        "country:FR",
+        "country:IT",
+    ]
+    assert result["countries"]["FR"]["status"] == "completed"
+    fr_step = next(step for step in result["progress"]["steps"] if step["key"] == "country_FR")
+    assert any("第 1 次失败" in log["message"] for log in fr_step["logs"])
+
+
+def test_production_fine_ai_country_request_interval_defaults_to_zero():
+    from appcore import fine_ai_evaluation_service as mod
+
+    assert mod.PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS == 0
+
+
 def test_country_request_waits_between_countries_and_marks_progress():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 
