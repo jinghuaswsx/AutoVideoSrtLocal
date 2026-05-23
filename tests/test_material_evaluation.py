@@ -31,6 +31,7 @@ def _fixed_target_country_rows(*, score: int = 88, suitable: bool = True) -> lis
             ("it", "Italy"),
             ("es", "Spain"),
             ("ja", "Japan"),
+            ("en", "United States"),
         ]
     ]
 
@@ -44,9 +45,9 @@ def test_response_schema_requires_fixed_xuanpin_target_countries():
 
     countries = schema["properties"]["countries"]
     item_props = countries["items"]["properties"]
-    assert countries["minItems"] == 5
-    assert countries["maxItems"] == 5
-    assert item_props["lang"]["enum"] == ["de", "fr", "it", "es", "ja"]
+    assert countries["minItems"] == 6
+    assert countries["maxItems"] == 6
+    assert item_props["lang"]["enum"] == ["de", "fr", "it", "es", "ja", "en"]
     assert item_props["recommendation"]["enum"] == ["做", "不做"]
     assert "summary" in item_props
     assert item_props["reason"]["maxLength"] == 100
@@ -77,8 +78,7 @@ def test_prompt_mentions_europe_small_languages_and_input_assets():
         languages=[{"code": "de", "name": "德语"}, {"code": "fr", "name": "法语"}],
     )
 
-    assert "欧洲市场" in prompt
-    assert "小语种国家" in prompt
+    assert "全球主要市场" in prompt
     assert "商品主图" in prompt
     assert "商品链接" in prompt
     assert "推广视频" in prompt
@@ -293,7 +293,7 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert detail["model"] == "google/gemini-3.5-flash"
     assert detail["search_tools"] == [{"type": "openrouter:web_search"}]
     assert detail["countries"][0]["lang"] == "de"
-    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja"]
+    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja", "en"]
 
 
 def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypatch, tmp_path):

@@ -43,6 +43,7 @@ _TARGET_EVALUATION_LANGUAGES = (
     {"code": "it", "name": "意大利语", "country": "意大利"},
     {"code": "es", "name": "西班牙语", "country": "西班牙"},
     {"code": "ja", "name": "日语", "country": "日本"},
+    {"code": "en", "name": "英语", "country": "美国"},
 )
 
 
@@ -297,7 +298,7 @@ def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:
             code = str((item or ["", ""])[0]).strip().lower()
             name = str((item or ["", ""])[1] if len(item) > 1 else code).strip()
             country = ""
-        if not code or code == "en" or code in seen:
+        if not code or code in seen:
             continue
         seen.add(code)
         normalized.append({"code": code, "name": name or code, "country": country or name or code})
@@ -364,8 +365,8 @@ def build_response_schema(languages: list[Any]) -> dict:
 
 def build_system_prompt() -> str:
     return (
-        "你是跨境电商欧洲市场选品评估专家，熟悉欧盟消费文化、广告合规、"
-        "平台短视频转化和小语种本地化风险。请只输出符合 schema 的 JSON，"
+        "你是跨境电商全球市场选品评估专家，熟悉欧美及亚太消费文化、广告合规、"
+        "平台短视频转化和各国本地化风险。请只输出符合 schema 的 JSON，"
         "不要输出 Markdown。"
     )
 
@@ -386,7 +387,7 @@ def build_prompt(
     product_code = str(product.get("product_code") or "").strip() or "无"
     eval_date = as_of_date or datetime.now().date()
     eval_date_text = eval_date.isoformat()
-    return f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在目标国家/语种市场推广；业务以欧洲市场为主，如果语种配置或 country 判断涉及非欧洲国家，也必须按该国家的真实季节和消费场景判断。
+    return f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在目标国家/语种市场推广；业务覆盖全球主要市场，必须按每个目标国家的真实季节和消费场景判断。
 
 输入素材顺序：
 1. 商品主图：判断品类、外观、卖点、潜在合规风险。
