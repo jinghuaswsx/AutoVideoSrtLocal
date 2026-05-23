@@ -491,3 +491,30 @@ def test_list_projects_with_state_omits_user_scope_for_admin():
             ("ja_translate",),
         )
     ]
+
+
+def test_omni_translate_v2_project_type_is_supported():
+    calls = []
+
+    def fake_query(sql, args):
+        calls.append((sql, args))
+        return []
+
+    rows = store.list_projects_with_state(
+        user_id=7,
+        project_type="omni_translate_v2",
+        is_admin=True,
+        query_func=fake_query,
+    )
+
+    assert rows == []
+    assert calls == [
+        (
+            "SELECT id, original_filename, display_name, thumbnail_path, status, "
+            "       state_json, created_at, expires_at, deleted_at "
+            "FROM projects "
+            "WHERE type = %s AND deleted_at IS NULL "
+            "ORDER BY created_at DESC",
+            ("omni_translate_v2",),
+        )
+    ]
