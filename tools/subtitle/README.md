@@ -5,7 +5,7 @@
 ## 部署位置
 
 - **运行目录**: `G:\subtitle\`
-- **服务地址**: `http://172.16.254.106/subtitle/*`（走 [Caddy 网关](../gateway/README.md) 80 端口）
+- **服务地址**: `http://172.30.254.12/subtitle/*`（走 [Caddy 网关](../gateway/README.md) 80 端口）
 - **内部端口**: 8082（仅本机；外部访问统一走网关 80）
 - **URL 前缀**: `/subtitle`（用 `APIRouter(prefix="/subtitle")` 实现）
 - **GPU**: NVIDIA RTX 3060 (12GB)；显存软限 50%（≈ 6GB），与 audio_separator/vace 共租 12GB 卡
@@ -15,7 +15,7 @@
 ## 架构
 
 ```
-客户端 POST http://172.16.254.106/subtitle/remove  (timeout=1800s)
+客户端 POST http://172.30.254.12/subtitle/remove  (timeout=1800s)
   → Caddy:80 反向代理到 localhost:8082
   → 服务端计算 MD5 → 检查 1h 内存缓存
   → 命中则 0ms 返回缓存
@@ -57,7 +57,7 @@
 ```python
 import requests
 
-API = "http://172.16.254.106"
+API = "http://172.30.254.12"
 
 # 健康检查
 print(requests.get(f"{API}/subtitle/health").json())
@@ -149,7 +149,7 @@ nohup /g/subtitle/Python/python.exe /g/subtitle/api_server.py &
 ### 6. 健康检查（外部 URL，需先起 Caddy 网关）
 
 ```bash
-curl http://172.16.254.106/subtitle/health
+curl http://172.30.254.12/subtitle/health
 ```
 
 或直接打内部端口：

@@ -5,7 +5,7 @@
 ## 部署位置
 
 - **运行目录**: `G:\audio\`
-- **服务地址**: `http://172.16.254.106/separate/*`（走 [Caddy 网关](../gateway/README.md) 80 端口）
+- **服务地址**: `http://172.30.254.12/separate/*`（走 [Caddy 网关](../gateway/README.md) 80 端口）
 - **内部端口**: 8081（仅本机；外部访问统一走网关 80）
 - **URL 前缀**: `/separate`（用 `APIRouter(prefix="/separate")` 实现）
 - **GPU**: NVIDIA RTX 3060 (12GB)；显存软限 50%（≈ 6GB），与 subtitle/vace 共租 12GB 卡
@@ -14,7 +14,7 @@
 ## 架构
 
 ```
-客户端 POST http://172.16.254.106/separate/{run|download}  (timeout=300s)
+客户端 POST http://172.30.254.12/separate/{run|download}  (timeout=300s)
   → Caddy:80 反向代理到 localhost:8081
   → 服务端计算 MD5 → 检查 1h 内存缓存
   → 命中则 0ms 返回缓存
@@ -47,7 +47,7 @@
 ```python
 import requests
 
-API = "http://172.16.254.106"
+API = "http://172.30.254.12"
 
 # 健康检查
 r = requests.get(f"{API}/separate/health")

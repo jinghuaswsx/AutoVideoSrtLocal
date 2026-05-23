@@ -5,7 +5,7 @@
 ## 拓扑
 
 ```
-                    Caddy :80 (LAN 入口 172.16.254.106)
+                    Caddy :80 (LAN 入口 172.30.254.12)
                     ┌────────────┬───────────┬──────────┐
                     │            │           │          │
               /separate/*   /subtitle/*  /vace/*   handle /
@@ -76,7 +76,7 @@ G:\gateway\caddy.exe reload --config G:\gateway\Caddyfile
 ```python
 import requests
 
-API = "http://172.16.254.106"
+API = "http://172.30.254.12"
 
 # 健康检查（任意一个）
 print(requests.get(f"{API}/separate/health").json())
