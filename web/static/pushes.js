@@ -1398,8 +1398,9 @@
       const reason = el('textarea', {
         class: 'pm-rework-textarea',
         rows: '4',
-        placeholder: '填写打回说明，例如：视频字幕错位，英文文案格式不符合三段要求。',
+        placeholder: '填写打回说明，例如：视频字幕错位，英文文案格式不符合三段要求。支持直接截图粘贴图片。',
       });
+      const pastedImagesContainer = el('div', { class: 'pm-rework-pasted-images' });
       const status = el('div', { class: 'pm-rework-status', hidden: true });
       const actions = el('div', { class: 'pm-rework-actions' });
       const cancel = el('button', { type: 'button', class: 'btn-mini' }, '取消');
@@ -1410,8 +1411,65 @@
       dialog.appendChild(list);
       dialog.appendChild(el('div', { class: 'pm-rework-note' }, '打回后，这条推送记录会自动变为未就绪；勾选项会在任务详情中显示为管理员已拒绝。'));
       dialog.appendChild(reason);
+      dialog.appendChild(pastedImagesContainer);
       dialog.appendChild(status);
       dialog.appendChild(actions);
+
+      const uploadedImageUrls = [];
+
+      reason.addEventListener('paste', async (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.indexOf('image') !== -1) {
+            const file = item.getAsFile();
+            if (!file) continue;
+
+            e.preventDefault();
+
+            const previewId = 'pasted-img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+            const previewEl = el('div', { class: 'pm-rework-pasted-image-card', id: previewId }, [
+              el('div', { class: 'pm-rework-pasted-image-loading' }, '正在上传...'),
+            ]);
+            pastedImagesContainer.appendChild(previewEl);
+
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+
+              const uploadResp = await fetchJSON(`/pushes/api/items/${itemId}/upload-rework-screenshot`, {
+                method: 'POST',
+                body: formData,
+              });
+
+              if (uploadResp && uploadResp.url) {
+                const imageUrl = uploadResp.url;
+                uploadedImageUrls.push(imageUrl);
+
+                clear(previewEl);
+                previewEl.appendChild(el('img', { src: previewMediaSrc(imageUrl), class: 'pm-rework-pasted-image-img' }));
+                const delBtn = el('button', { type: 'button', class: 'pm-rework-pasted-image-del' }, '×');
+                delBtn.addEventListener('click', (ev) => {
+                  ev.stopPropagation();
+                  const idx = uploadedImageUrls.indexOf(imageUrl);
+                  if (idx !== -1) uploadedImageUrls.splice(idx, 1);
+                  previewEl.remove();
+                });
+                previewEl.appendChild(delBtn);
+              } else {
+                throw new Error('upload failed');
+              }
+            } catch (err) {
+              console.error(err);
+              clear(previewEl);
+              previewEl.appendChild(el('span', { class: 'pm-rework-pasted-image-error' }, '上传失败'));
+              window.setTimeout(() => {
+                previewEl.remove();
+              }, 3000);
+            }
+          }
+        }
+      });
 
       const closeRework = () => {
         if (reworkOverlay.parentNode) reworkOverlay.parentNode.removeChild(reworkOverlay);
@@ -1460,7 +1518,7 @@
           const body = await fetchJSON(`/pushes/api/items/${itemId}/reject-to-task`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ issue_keys: selected, reason: reasonText }),
+            body: JSON.stringify({ issue_keys: selected, reason: reasonText, image_urls: uploadedImageUrls }),
           });
           status.textContent = '已打回任务负责人继续处理。';
           status.classList.add('pm-rework-status--ok');

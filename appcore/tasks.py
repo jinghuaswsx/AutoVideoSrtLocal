@@ -3136,6 +3136,7 @@ def reject_child_from_push(
     actor_user_id: int,
     issue_keys: Iterable[Any],
     reason: str,
+    image_urls: Iterable[str] = None,
 ) -> dict:
     """管理员从推送管理打回已产出的翻译素材，让负责人继续处理。"""
     if not reason or len(reason.strip()) < MIN_REASON_LEN:
@@ -3152,6 +3153,7 @@ def reject_child_from_push(
         "issue_keys": normalized_keys,
         "issue_labels": issue_labels,
         "task_check_keys": task_check_keys,
+        "image_urls": list(image_urls) if image_urls else [],
     }
 
     conn = get_conn()
@@ -3233,6 +3235,7 @@ def reject_child_from_push(
         "issue_labels": issue_labels,
         "task_check_keys": task_check_keys,
         "reason": reason,
+        "image_urls": list(image_urls) if image_urls else [],
     }
 
 

@@ -396,6 +396,7 @@ def api_reject_to_task(item_id: int):
     body = request.get_json(silent=True) or {}
     issue_keys = body.get("issue_keys") or body.get("issues") or []
     reason = str(body.get("reason") or "").strip()
+    image_urls = body.get("image_urls") or []
     if linked_task_id is None:
         medias.update_item_task_id(item_id, int(task_id))
     try:
@@ -404,6 +405,7 @@ def api_reject_to_task(item_id: int):
             actor_user_id=int(current_user.id),
             issue_keys=issue_keys,
             reason=reason,
+            image_urls=image_urls,
         )
     except ValueError as exc:
         return _json_response({"error": "invalid_request", "message": str(exc)}, 400)
@@ -417,6 +419,7 @@ def api_reject_to_task(item_id: int):
             "task_id": int(task_id),
             "issue_keys": result.get("issue_keys") or [],
             "reason": reason,
+            "image_urls": image_urls,
         },
     )
     try:
@@ -424,6 +427,57 @@ def api_reject_to_task(item_id: int):
     except Exception:
         log.debug("refresh push status cache failed item_id=%s", item_id, exc_info=True)
     return _json_response(result)
+
+
+@bp.route("/api/items/<int:item_id>/upload-rework-screenshot", methods=["POST"])
+@login_required
+@admin_required
+def api_upload_rework_screenshot(item_id: int):
+    import os
+    import uuid
+    from pathlib import Path
+    
+    item = medias.get_item(item_id)
+    if not item:
+        return _json_response({"error": "item_not_found"}, 404)
+        
+    if "file" not in request.files:
+        return _json_response({"error": "no_file_uploaded"}, 400)
+        
+    file = request.files["file"]
+    if not file or not file.filename:
+        return _json_response({"error": "empty_file"}, 400)
+        
+    from web.upload_util import validate_image_extension, save_uploaded_file_to_path
+    if not validate_image_extension(file.filename):
+        return _json_response({"error": "invalid_file_type", "message": "Only image files are allowed"}, 400)
+        
+    ext = os.path.splitext(file.filename)[1].lower()
+    random_filename = f"{uuid.uuid4().hex}{ext}"
+    
+    screenshots_dir = Path(config.UPLOAD_DIR) / "rework_screenshots"
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+    
+    target_path = screenshots_dir / random_filename
+    save_uploaded_file_to_path(file, target_path)
+    
+    url = f"/pushes/api/rework-screenshot/{random_filename}"
+    return _json_response({"url": url})
+
+
+@bp.route("/api/rework-screenshot/<filename>", methods=["GET"])
+@login_required
+def api_get_rework_screenshot(filename: str):
+    import os
+    from werkzeug.utils import secure_filename
+    from flask import send_from_directory
+    
+    safe_name = secure_filename(filename)
+    if not safe_name or safe_name != filename:
+        return _json_response({"error": "invalid_filename"}, 400)
+        
+    screenshots_dir = os.path.join(config.UPLOAD_DIR, "rework_screenshots")
+    return send_from_directory(screenshots_dir, safe_name)
 
 
 @bp.route("/api/items/<int:item_id>/quality-check/retry", methods=["POST"])
