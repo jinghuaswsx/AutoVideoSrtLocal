@@ -60,10 +60,10 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     assert task["code"] == "mingkong_fine_ai_auto_evaluation_tick"
     assert task["source_type"] == "systemd"
     assert task["source_ref"] == "autovideosrt-mingkong-fine-ai-worker.service"
-    assert task["runner"] == "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4"
+    assert task["runner"] == "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2"
     assert task["log_table"] == "mingkong_fine_ai_auto_evaluations"
     assert "连续后台任务池" in task["schedule"]
-    assert "4 个卡片并发" in task["schedule"]
+    assert "2 个卡片并发" in task["schedule"]
     assert "Top1000" in task["description"]
     assert "昨天消耗前300" in task["description"]
     assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
@@ -98,7 +98,7 @@ def test_mingkong_fine_ai_worker_systemd_unit():
     service = service_path.read_text(encoding="utf-8")
 
     assert "WorkingDirectory=/opt/autovideosrt" in service
-    assert "python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4" in service
+    assert "python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2" in service
     assert "Restart=always" in service
 
 
