@@ -958,6 +958,11 @@
         <span class="nav-icon">🔍</span> 选品中心
       </a>
       {% endif %}
+      {% if has_permission('ai_listing') or current_user.is_admin %}
+      <a href="/ai-listing" {% if request.path.startswith('/ai-listing') %}class="active"{% endif %}>
+        <span class="nav-icon">🛒</span> AI 自动上品
+      </a>
+      {% endif %}
       {% if has_permission('task_center') %}
       {% set task_creator_active = request.path.startswith('/task-creator') %}
       <details class="sidebar-group sidebar-taskcenter-group" {% if task_center_active or task_creator_active %}open{% endif %}>
