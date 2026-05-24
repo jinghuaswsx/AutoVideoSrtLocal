@@ -192,11 +192,11 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
             "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
             "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
         ),
-        "schedule": "连续后台任务池（默认 4 个卡片并发，单卡国家评估默认串行）",
+        "schedule": "连续后台任务池（默认 6 个卡片并发，单卡国家评估默认串行）",
         "source_type": "systemd",
         "source_label": "Linux systemd service",
         "source_ref": "autovideosrt-mingkong-fine-ai-worker.service",
-        "runner": "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4",
+        "runner": "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 6",
         "deployment": "线上 systemd 常驻服务",
         "log_table": "mingkong_fine_ai_auto_evaluations",
     },
