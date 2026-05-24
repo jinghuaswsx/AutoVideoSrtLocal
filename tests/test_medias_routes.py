@@ -469,8 +469,8 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
     assert payload["llm"]["provider"] == "openrouter"
     assert payload["llm"]["model"] == "google/gemini-3.5-flash"
-    assert payload["llm"]["google_search"] is True
-    assert payload["llm"]["tools"] == [{"type": "openrouter:web_search"}]
+    assert payload["llm"]["google_search"] is False
+    assert payload["llm"]["tools"] == []
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
 
 
@@ -743,8 +743,8 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
     assert payload["request"]["provider"] == "openrouter"
     assert payload["request"]["model"] == "google/gemini-3.5-flash"
-    assert payload["request"]["google_search"] is True
-    assert payload["request"]["tools"] == [{"type": "openrouter:web_search"}]
+    assert payload["request"]["google_search"] is False
+    assert payload["request"]["tools"] == []
 
 
 def test_item_bootstrap_rejects_bad_localized_material_filename(

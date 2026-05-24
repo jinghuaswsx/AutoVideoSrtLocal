@@ -428,8 +428,12 @@ class OpenRouterAdapter(LLMAdapter):
             timeout_seconds=timeout_seconds,
         )
         if response_schema is not None:
-            result["json"] = _parse_json_content(result.get("text") or "")
-            result["text"] = None
+            try:
+                result["json"] = _parse_json_content(result.get("text") or "")
+                result["text"] = None
+            except Exception as exc:
+                result["json"] = None
+                result["json_parse_error"] = str(exc)
         else:
             result["json"] = None
         return result

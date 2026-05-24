@@ -362,6 +362,25 @@ def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     assert "JSON Schema" in sent_messages[0]["content"]
 
 
+def test_openrouter_generate_keeps_raw_text_when_schema_json_is_invalid(fake_provider_db):
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    raw_text = '{"countries":[{"lang":"de","reason":"truncated'
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        _mock_openai(m_openai, content=raw_text)
+
+        result = OpenRouterAdapter().generate(
+            model="google/gemini-3.5-flash",
+            prompt="score this",
+            response_schema={"type": "object"},
+            google_search=True,
+        )
+
+    assert result["json"] is None
+    assert result["text"] == raw_text
+    assert "Unterminated string" in result["json_parse_error"]
+
+
 def test_openrouter_media_parts_use_video_url_for_video_files(tmp_path):
     image_path = tmp_path / "cover.jpg"
     video_path = tmp_path / "promo.mp4"
