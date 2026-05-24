@@ -1202,7 +1202,8 @@ def list_detail_images(product_id: int, lang: str) -> list[dict]:
     return query(
         "SELECT id, product_id, lang, sort_order, object_key, "
         "  content_type, file_size, width, height, origin_type, "
-        "  source_detail_image_id, image_translate_task_id, created_at "
+        "  source_detail_image_id, image_translate_task_id, created_at, "
+        "  eval_status, eval_result_json, eval_error, eval_channel, eval_model_id, eval_updated_at "
         "FROM media_product_detail_images "
         "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
         "ORDER BY sort_order ASC, id ASC",
@@ -1214,9 +1215,28 @@ def get_detail_image(image_id: int) -> dict | None:
     return query_one(
         "SELECT id, product_id, lang, sort_order, object_key, "
         "  content_type, file_size, width, height, origin_type, "
-        "  source_detail_image_id, image_translate_task_id, created_at, deleted_at "
+        "  source_detail_image_id, image_translate_task_id, created_at, deleted_at, "
+        "  eval_status, eval_result_json, eval_error, eval_channel, eval_model_id, eval_updated_at "
         "FROM media_product_detail_images WHERE id=%s",
         (image_id,),
+    )
+
+
+def update_detail_image_evaluation(
+    image_id: int,
+    *,
+    eval_status: str,
+    eval_result_json: str | None = None,
+    eval_error: str | None = None,
+    eval_channel: str | None = None,
+    eval_model_id: str | None = None,
+) -> int:
+    return execute(
+        "UPDATE media_product_detail_images SET "
+        "  eval_status=%s, eval_result_json=%s, eval_error=%s, "
+        "  eval_channel=%s, eval_model_id=%s, eval_updated_at=NOW() "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (eval_status, eval_result_json, eval_error, eval_channel, eval_model_id, image_id),
     )
 
 

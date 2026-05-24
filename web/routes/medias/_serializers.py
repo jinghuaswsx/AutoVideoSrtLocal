@@ -335,6 +335,34 @@ def _serialize_link_check_task(task: dict) -> dict:
 
 
 def _serialize_detail_image(row: dict) -> dict:
+    eval_result = None
+    if row.get("eval_result_json"):
+        try:
+            eval_result = json.loads(row.get("eval_result_json"))
+        except Exception:
+            pass
+
+    source_image_thumbnail_url = None
+    if row.get("lang") != "en":
+        try:
+            source_img = None
+            source_detail_image_id = row.get("source_detail_image_id")
+            if source_detail_image_id:
+                source_img = medias.get_detail_image(source_detail_image_id)
+            if not source_img:
+                # 回退：按同 sort_order 找 en 语种图
+                sort_order = row.get("sort_order") or 0
+                en_images = medias.list_detail_images(row["product_id"], "en")
+                for img in en_images:
+                    if img.get("sort_order") == sort_order:
+                        source_img = img
+                        break
+            if source_img:
+                source_image_thumbnail_url = f"/medias/detail-image/{source_img['id']}"
+        except Exception:
+            # 容错防崩：无 DB 环境或连接断开时，仅做降级
+            pass
+
     return {
         "id": row["id"],
         "product_id": row["product_id"],
@@ -350,4 +378,11 @@ def _serialize_detail_image(row: dict) -> dict:
         "image_translate_task_id": row.get("image_translate_task_id"),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "thumbnail_url": f"/medias/detail-image/{row['id']}",
+        "source_image_thumbnail_url": source_image_thumbnail_url,
+        "eval_status": row.get("eval_status") or "pending" if row.get("lang") != "en" else None,
+        "eval_result": eval_result,
+        "eval_error": row.get("eval_error") or "",
+        "eval_channel": row.get("eval_channel") or "",
+        "eval_model_id": row.get("eval_model_id") or "",
+        "eval_updated_at": row["eval_updated_at"].isoformat() if row.get("eval_updated_at") else None,
     }

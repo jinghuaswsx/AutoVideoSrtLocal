@@ -1131,16 +1131,64 @@
       const imageId = Number(it.id) || 0;
       const checked = selectedDetailImageIds.has(Number(it.id)) ? 'checked' : '';
       const selectedClass = checked ? ' is-selected' : '';
+      
+      let bannerHTML = '';
+      let evalBtnHTML = '';
+      const lang = getLang();
+      
+      if (lang !== 'en' && !isGifItem(it)) {
+        const status = it.eval_status || 'pending';
+        if (status === 'done' && it.eval_result) {
+          const res = it.eval_result;
+          const score = Number(res.translation_quality_score) || 0;
+          let bannerClass = 'eval-green';
+          let bannerText = `优质 (${score}/10)`;
+          let bannerTip = res.summary || '翻译质量优秀，符合要求。';
+
+          if (score <= 5) {
+            bannerClass = 'eval-red';
+            bannerText = `质量差 (${score}/10)`;
+            bannerTip = res.summary || '质量较差，有较多错误。';
+          } else if (score <= 7 || res.has_mixed_languages || res.has_layout_issue) {
+            bannerClass = 'eval-yellow';
+            bannerText = `警告 (${score}/10)`;
+            const warnings = [];
+            if (res.has_mixed_languages) warnings.push('语言混杂');
+            if (res.has_layout_issue) warnings.push('排版瑕疵');
+            if (warnings.length > 0) {
+              bannerText += ` · ${warnings.join('+')}`;
+            }
+            bannerTip = res.summary || '有些许翻译或排版瑕疵，请注意。';
+          }
+          bannerHTML = `<div class="oc-detail-image-eval-banner ${bannerClass}" title="${escapeHtml(bannerTip)}">${escapeHtml(bannerText)}</div>`;
+        } else if (status === 'failed') {
+          bannerHTML = `<div class="oc-detail-image-eval-banner eval-red" title="${escapeHtml(it.eval_error || '评估失败')}">质检失败</div>`;
+        } else if (status === 'running') {
+          bannerHTML = `<div class="oc-detail-image-eval-banner eval-blue">质检中...</div>`;
+        }
+        
+        evalBtnHTML = `
+          <button class="oc-detail-image-eval-btn" type="button" data-detail-image-eval title="翻译质量对比检测">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span>质量检测</span>
+          </button>
+        `;
+      }
+
       return `
         <div class="oc-detail-image${selectedClass}" data-id="${imageId}">
-          <img src="${escapeHtml(imageUrl)}" alt="详情图 ${idx + 1}" loading="lazy">
-          <label class="oc-detail-image-select-wrap" title="选择这张详情图">
-            <input class="oc-detail-image-select" type="checkbox" aria-label="选择详情图 ${idx + 1}" ${checked}>
+          ${bannerHTML}
+          <img src="${escapeHtml(imageUrl)}" alt="ͼ ${idx + 1}" loading="lazy">
+          <label class="oc-detail-image-select-wrap" title="ѡͼ">
+            <input class="oc-detail-image-select" type="checkbox" aria-label="ѡͼ ${idx + 1}" ${checked}>
             <span></span>
           </label>
           <span class="oc-detail-image-idx">${idx + 1}</span>
-          <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>替换</button>
-          <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
+          <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>滻</button>
+          ${evalBtnHTML}
+          <button class="oc-detail-image-del" type="button" title="ɾ" aria-label="ɾ">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round">
               <path d="M3 3l8 8M11 3l-8 8"></path>
@@ -1149,6 +1197,7 @@
         </div>
       `;
     }
+
 
     function ensureSelectionToolbar() {
       if (!grid || detailImagesToolbar || !grid.parentNode) return detailImagesToolbar;
@@ -1248,6 +1297,9 @@
         });
         targetGrid.querySelectorAll('[data-detail-image-replace]').forEach(btn => {
           btn.addEventListener('click', replaceSelectedDetailImage);
+        });
+        targetGrid.querySelectorAll('[data-detail-image-eval]').forEach(btn => {
+          btn.addEventListener('click', onDetailImageEvalClick);
         });
         targetGrid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
           btn.addEventListener('click', onDelete);
@@ -1603,6 +1655,167 @@
       e.target.value = '';
       uploadFiles(files);
     });
+
+    let currentEvalItem = null;
+
+    function showDetailQualityCheckModal(item) {
+      currentEvalItem = item;
+      const mask = $('edDetailQualityCheckMask');
+      if (!mask) return;
+
+      $('edDetailQualitySourceImg').src = safeMediaSrc(item.source_image_thumbnail_url || '');
+      $('edDetailQualityTargetImg').src = safeMediaSrc(item.thumbnail_url || '');
+
+      updateDetailQualityModalUI(item);
+      mask.hidden = false;
+
+      if (item.eval_status === 'pending') {
+        triggerDetailQualityCheckAPI(item);
+      }
+    }
+
+    function updateDetailQualityModalUI(item) {
+      const status = item.eval_status || 'pending';
+      const scoreBadge = $('edDetailQualityScoreBadge');
+      const statusText = $('edDetailQualityStatusText');
+      const modelText = $('edDetailQualityModelText');
+      const mixedLang = $('edDetailQualityMixedLang');
+      const layoutText = $('edDetailQualityLayout');
+      const summaryText = $('edDetailQualitySummary');
+      const loading = $('edDetailQualityLoading');
+      const content = $('edDetailQualityContent');
+      const recheckBtn = $('edDetailQualityRecheckBtn');
+
+      if (status === 'running') {
+        loading.style.display = 'flex';
+        content.style.display = 'none';
+        recheckBtn.disabled = true;
+        recheckBtn.textContent = '检测中...';
+      } else {
+        loading.style.display = 'none';
+        content.style.display = 'flex';
+        recheckBtn.disabled = false;
+        recheckBtn.textContent = '重新检测';
+
+        if (status === 'done' && item.eval_result) {
+          const res = item.eval_result;
+          const score = Number(res.translation_quality_score) || 0;
+          
+          scoreBadge.textContent = String(score);
+          if (score >= 8 && !res.has_mixed_languages && !res.has_layout_issue) {
+            scoreBadge.style.background = '#22c55e';
+            statusText.textContent = 'Passed (质量优秀)';
+            statusText.style.color = '#22c55e';
+          } else if (score <= 5) {
+            scoreBadge.style.background = '#ef4444';
+            statusText.textContent = 'Failed (质量差)';
+            statusText.style.color = '#ef4444';
+          } else {
+            scoreBadge.style.background = '#f59e0b';
+            statusText.textContent = 'Warning (存在瑕疵)';
+            statusText.style.color = '#f59e0b';
+          }
+
+          modelText.textContent = `供应商: ${item.eval_channel || 'OpenRouter'} | 模型: ${item.eval_model_id || 'google/gemini-3.1-flash-lite'}`;
+          
+          mixedLang.innerHTML = res.has_mixed_languages 
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在多语言混杂：</span>${escapeHtml(res.mixed_languages_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 未检测到多语言混杂</span>';
+
+          layoutText.innerHTML = res.has_layout_issue
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在排版视觉瑕疵：</span>${escapeHtml(res.layout_issue_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 排版视觉效果优良</span>';
+
+          summaryText.textContent = res.summary || '无诊断建议。';
+        } else if (status === 'failed') {
+          scoreBadge.textContent = '✕';
+          scoreBadge.style.background = '#ef4444';
+          statusText.textContent = '检测失败';
+          statusText.style.color = '#ef4444';
+          modelText.textContent = '质检接口请求出错';
+          mixedLang.textContent = '-';
+          layoutText.textContent = '-';
+          summaryText.textContent = item.eval_error || '未知网络/服务器错误。';
+        } else {
+          scoreBadge.textContent = '-';
+          scoreBadge.style.background = '#cbd5e1';
+          statusText.textContent = '尚未质检';
+          statusText.style.color = 'var(--oc-fg)';
+          modelText.textContent = '等待触发';
+          mixedLang.textContent = '尚未质检';
+          layoutText.textContent = '尚未质检';
+          summaryText.textContent = '点击“重新检测”或下方按钮触发 AI 进行多维度翻译质量诊断。';
+        }
+      }
+    }
+
+    async function triggerDetailQualityCheckAPI(item) {
+      const pid = await ensurePid({ allowCreate: false });
+      if (!pid) return;
+      
+      item.eval_status = 'running';
+      updateDetailQualityModalUI(item);
+      renderGrid();
+
+      try {
+        const resp = await fetchJSON(`/medias/api/products/${pid}/detail-images/${item.id}/quality-check`, {
+          method: 'POST',
+        });
+        
+        if (resp.success && resp.detail_image) {
+          const updated = resp.detail_image;
+          Object.assign(item, updated);
+          
+          if (currentEvalItem && currentEvalItem.id === item.id) {
+            updateDetailQualityModalUI(currentEvalItem);
+          }
+          renderGrid();
+        } else {
+          throw new Error(resp.error || '大模型质检失败');
+        }
+      } catch (err) {
+        item.eval_status = 'failed';
+        item.eval_error = err.message || String(err);
+        if (currentEvalItem && currentEvalItem.id === item.id) {
+          updateDetailQualityModalUI(currentEvalItem);
+        }
+        renderGrid();
+      }
+    }
+
+    async function onDetailImageEvalClick(e) {
+      e.stopPropagation();
+      const card = e.currentTarget.closest('.oc-detail-image');
+      if (!card) return;
+      const imgId = Number(card.dataset.id);
+      if (!imgId) return;
+      const item = items.find(it => it.id === imgId);
+      if (!item) return;
+      
+      showDetailQualityCheckModal(item);
+    }
+
+    // 质检 Modal 事件监听器
+    const qCheckMask = $('edDetailQualityCheckMask');
+    if (qCheckMask) {
+      const closeBtn = $('edDetailQualityCheckClose');
+      const doneBtn = $('edDetailQualityDoneBtn');
+      const recheckBtn = $('edDetailQualityRecheckBtn');
+
+      const hideQModal = () => { qCheckMask.hidden = true; currentEvalItem = null; };
+      if (closeBtn) closeBtn.addEventListener('click', hideQModal);
+      if (doneBtn) doneBtn.addEventListener('click', hideQModal);
+      if (recheckBtn) {
+        recheckBtn.addEventListener('click', () => {
+          if (currentEvalItem) {
+            triggerDetailQualityCheckAPI(currentEvalItem);
+          }
+        });
+      }
+      qCheckMask.addEventListener('click', (e) => {
+        if (e.target === qCheckMask) hideQModal();
+      });
+    }
 
     return {
       load, reset, show, hide,

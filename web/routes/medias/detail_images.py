@@ -607,6 +607,139 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
     return routes._detail_image_json_flask_response(outcome)
 
 
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/quality-check", methods=["POST"])
+@login_required
+def api_detail_image_quality_check(pid: int, image_id: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    target_image = medias.get_detail_image(image_id)
+    if not target_image or int(target_image.get("product_id") or 0) != pid:
+        return _routes()._detail_image_json_flask_response(
+            {"error": "商品详情图片未找到"}, 404
+        )
+
+    if target_image.get("lang") == "en":
+        return _routes()._detail_image_json_flask_response(
+            {"error": "无需对英语原图进行翻译质量检测"}, 400
+        )
+
+    # 1. 查找源英文图
+    source_image = None
+    source_detail_image_id = target_image.get("source_detail_image_id")
+    if source_detail_image_id:
+        source_image = medias.get_detail_image(source_detail_image_id)
+
+    if not source_image:
+        # 回退：按同 sort_order 找 en 语种图
+        sort_order = target_image.get("sort_order") or 0
+        en_images = medias.list_detail_images(pid, "en")
+        for img in en_images:
+            if img.get("sort_order") == sort_order:
+                source_image = img
+                break
+
+    if not source_image:
+        return _routes()._detail_image_json_flask_response(
+            {"error": "未找到对比的英文原图，请先上传英文原图并保持相同的排序"}, 400
+        )
+
+    # 2. 定位物理路径
+    from appcore import local_media_storage, llm_bindings, llm_client
+    import os
+    import json
+    from appcore.image_translate_runtime import _EVAL_PROMPT, _EVAL_SCHEMA
+
+    src_key = source_image["object_key"]
+    dst_key = target_image["object_key"]
+
+    src_path = str(local_media_storage.safe_local_path_for(src_key))
+    dst_path = str(local_media_storage.safe_local_path_for(dst_key))
+
+    if not os.path.exists(src_path):
+        return _routes()._detail_image_json_flask_response(
+            {"error": f"英文原图本地物理文件不存在: {src_key}"}, 400
+        )
+    if not os.path.exists(dst_path):
+        return _routes()._detail_image_json_flask_response(
+            {"error": f"翻译图本地物理文件不存在: {dst_key}"}, 400
+        )
+
+    # 3. 实时评估
+    binding = llm_bindings.resolve("image_translate.eval")
+    eval_channel = binding.get("provider") or "openrouter"
+    eval_model_id = binding.get("model") or "google/gemini-3.1-flash-lite"
+
+    # 先更新状态为 running
+    medias.update_detail_image_evaluation(
+        image_id,
+        eval_status="running",
+        eval_channel=eval_channel,
+        eval_model_id=eval_model_id,
+    )
+
+    try:
+        target_lang_name = medias.get_language_name(target_image["lang"]) or "目标语言"
+        prompt = _EVAL_PROMPT.format(target_lang_name=target_lang_name)
+
+        result = llm_client.invoke_generate(
+            "image_translate.eval",
+            prompt=prompt,
+            media=[src_path, dst_path],
+            user_id=current_user.id,
+            project_id=f"detail_eval_{image_id}",
+            response_schema=_EVAL_SCHEMA,
+            temperature=0,
+            billing_extra={
+                "operation": "detail_image_manual_quality_evaluation",
+                "item_idx": image_id,
+                "filename": os.path.basename(dst_key),
+                "source_key": src_key,
+                "target_key": dst_key,
+            },
+        )
+
+        eval_data = result.get("json") if isinstance(result, dict) else None
+        if not isinstance(eval_data, dict):
+            raise ValueError("大模型质检未返回符合 Schema 的 JSON 数据")
+
+        # 更新数据库成功状态
+        medias.update_detail_image_evaluation(
+            image_id,
+            eval_status="done",
+            eval_result_json=json.dumps(eval_data, ensure_ascii=False),
+            eval_channel=eval_channel,
+            eval_model_id=eval_model_id,
+        )
+
+        updated_image = medias.get_detail_image(image_id)
+        return _routes()._detail_image_json_flask_response(
+            {
+                "success": True,
+                "detail_image": _serialize_detail_image(updated_image)
+            }
+        )
+
+    except Exception as exc:
+        medias.update_detail_image_evaluation(
+            image_id,
+            eval_status="failed",
+            eval_error=str(exc),
+            eval_channel=eval_channel,
+            eval_model_id=eval_model_id,
+        )
+        updated_image = medias.get_detail_image(image_id)
+        return _routes()._detail_image_json_flask_response(
+            {
+                "success": False,
+                "error": str(exc),
+                "detail_image": _serialize_detail_image(updated_image),
+            },
+            500,
+        )
+
+
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])
 @login_required
 def detail_image_proxy(image_id: int):
