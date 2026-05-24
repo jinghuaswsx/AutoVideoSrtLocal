@@ -12,7 +12,7 @@ def test_four_asr_normalize_use_cases_registered():
 def test_detect_use_case_uses_gemini_flash_lite():
     uc = get_use_case("asr_normalize.detect_language")
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["module"] == "video_translate"
     assert uc["units_type"] == "tokens"
     assert uc["usage_log_service"] == "openrouter"

@@ -141,6 +141,27 @@ def test_runtime_records_best_reference_match(monkeypatch):
         },
     )
     monkeypatch.setattr(
+        "appcore.link_check_runtime.run_binary_quick_check",
+        lambda *args, **kwargs: {
+            "status": "pass",
+            "binary_similarity": 0.94,
+            "foreground_overlap": 0.91,
+            "threshold": 0.90,
+            "reason": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.judge_same_image",
+        lambda *args, **kwargs: {
+            "status": "done",
+            "answer": "是",
+            "channel": "cloud",
+            "channel_label": "Google Cloud (Vertex AI)",
+            "model": "gemini-3.1-flash-lite-preview",
+            "reason": "",
+        },
+    )
+    monkeypatch.setattr(
         "appcore.link_check_runtime.analyze_image",
         lambda *args, **kwargs: {
             "decision": "pass",
@@ -244,22 +265,32 @@ def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
 
     analyze_calls = []
 
-    def _unexpected_analyze(*args, **kwargs):
-        analyze_calls.append((args, kwargs))
-        return {"decision": "replace"}
+    def _mock_analyze(image_path, *, target_language, target_language_name):
+        analyze_calls.append((image_path, target_language))
+        return {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "German text",
+            "quality_score": 95,
+            "quality_reason": "文案与排版优秀",
+            "needs_replacement": False,
+        }
 
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _unexpected_analyze)
+    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
 
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-binary-pass")
 
     saved = task_state.get("lc-binary-pass")
     item = saved["items"][0]
-    assert analyze_calls == []
+    assert len(analyze_calls) == 1
     assert item["binary_quick_check"]["status"] == "pass"
     assert item["same_image_llm"]["answer"] == "是"
     assert item["analysis"]["decision"] == "pass"
-    assert item["analysis"]["decision_source"] == "binary_quick_check"
+    assert item["analysis"]["decision_source"] == "gemini_quality_audit"
+    assert "换图检测已换到位" in item["analysis"]["quality_reason"]
     assert saved["summary"]["binary_checked_count"] == 1
     assert saved["summary"]["same_image_llm_done_count"] == 1
     assert saved["summary"]["same_image_llm_yes_count"] == 1
@@ -347,6 +378,95 @@ def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypat
     assert item["analysis"]["decision_source"] == "gemini_language_check"
     assert saved["summary"]["reference_unmatched_count"] == 1
     assert saved["summary"]["binary_checked_count"] == 0
+
+
+def test_runtime_replaces_image_when_same_image_is_false(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    ref_path = task_dir / "ref.jpg"
+    ref_path.write_bytes(b"ref")
+    site_path = task_dir / "site.jpg"
+    site_path.write_bytes(b"site")
+
+    task_state.create_link_check(
+        "lc-same-image-false",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[{"id": "ref-1", "filename": "ref.jpg", "local_path": str(ref_path)}],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site.jpg",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.find_best_reference",
+        lambda *args, **kwargs: {
+            "status": "matched",
+            "score": 0.93,
+            "reference_path": str(ref_path),
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.run_binary_quick_check",
+        lambda *args, **kwargs: {
+            "status": "fail",
+            "binary_similarity": 0.34,
+            "foreground_overlap": 0.21,
+            "threshold": 0.90,
+            "reason": "mismatch",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.judge_same_image",
+        lambda *args, **kwargs: {
+            "status": "done",
+            "answer": "不是",
+            "channel": "cloud",
+            "channel_label": "Google Cloud (Vertex AI)",
+            "model": "gemini-3.1-flash-lite-preview",
+            "reason": "",
+        },
+    )
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-same-image-false")
+
+    saved = task_state.get("lc-same-image-false")
+    item = saved["items"][0]
+    assert item["analysis"]["decision"] == "replace"
+    assert item["analysis"]["decision_source"] == "same_image_llm_check"
+    assert "换图未换到位" in item["analysis"]["quality_reason"]
 
 
 def test_runtime_persists_step_flow_and_summary_during_success(monkeypatch):

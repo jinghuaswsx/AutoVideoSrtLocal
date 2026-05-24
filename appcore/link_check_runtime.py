@@ -262,39 +262,38 @@ class LinkCheckRuntime:
                 task["progress"]["same_image_llm_done"] += 1
 
             binary_status = result["binary_quick_check"].get("status")
-            if binary_status == "pass":
-                result["analysis"] = {
-                    "decision": "pass",
-                    "decision_source": "binary_quick_check",
-                    "has_text": True,
-                    "detected_language": task["target_language"],
-                    "language_match": True,
-                    "text_summary": "",
-                    "quality_score": 100,
-                    "quality_reason": "参考图已匹配且二值快检通过，跳过语言模型",
-                    "needs_replacement": False,
-                }
-                return
-            if binary_status == "fail":
+            same_image_ans = result["same_image_llm"].get("answer")
+
+            # 1. 换图检测部分（Part 1）：判断真实页面的图跟后台翻译结果图是不是一张图（有没有换到位）
+            is_replaced = (binary_status == "pass" or same_image_ans == "是")
+
+            if not is_replaced:
+                # 换图未换到位（与后台翻译参考图不一致，或是没有被翻译的原图/错误图）
                 result["analysis"] = {
                     "decision": "replace",
-                    "decision_source": "binary_quick_check",
+                    "decision_source": "same_image_llm_check",
                     "has_text": True,
                     "detected_language": "",
                     "language_match": False,
                     "text_summary": "",
                     "quality_score": 0,
-                    "quality_reason": "参考图已匹配，但二值快检未通过，判定需要替换",
+                    "quality_reason": "检测到页面图片与后台翻译的参考图不一致，换图未换到位",
                     "needs_replacement": True,
                 }
                 return
 
+            # 2. 质量检测部分（Part 2）：已经换到位了，对该图进行质量与语言文案的审计评估
             result["analysis"] = analyze_image(
                 item["local_path"],
                 target_language=task["target_language"],
                 target_language_name=task["target_language_name"],
             )
-            result["analysis"]["decision_source"] = "gemini_language_check"
+            result["analysis"]["decision_source"] = "gemini_quality_audit"
+            quality_reason = result["analysis"].get("quality_reason") or ""
+            if result["analysis"]["decision"] == "pass":
+                result["analysis"]["quality_reason"] = f"换图检测已换到位。文案质量与语言审计合格：{quality_reason}"
+            else:
+                result["analysis"]["quality_reason"] = f"换图检测已换到位，但图片质量/语言文案审计未通过：{quality_reason}"
             return
 
         if reference_paths:

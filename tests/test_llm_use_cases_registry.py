@@ -95,16 +95,20 @@ def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite"
     assert USE_CASES["image_translate.detect"]["usage_log_service"] == "gemini"
     assert USE_CASES["image_translate.detect"]["units_type"] == "images"
-    for code in ("image_translate.generate",
-                 "link_check.analyze",
-                 "link_check.same_image"):
+    
+    gen = USE_CASES["image_translate.generate"]
+    assert gen["default_provider"] == "gemini_aistudio"
+    assert gen["usage_log_service"] == "gemini"
+
+    for code in ("link_check.analyze", "link_check.same_image"):
         uc = USE_CASES[code]
-        assert uc["default_provider"] == "gemini_aistudio"
-        assert uc["usage_log_service"] == "gemini"
+        assert uc["default_provider"] == "openrouter"
+        assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+        assert uc["usage_log_service"] == "openrouter"
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 59
+    assert len(USE_CASES) == 64
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -249,6 +253,8 @@ def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
         "meta_hot_posts.europe_fit_translate",
         "meta_hot_posts.video_copyability",
         "meta_hot_posts.video_copyability_translate",
+        "fine_ai_evaluation.product_facts",
+        "fine_ai_evaluation.country",
     }
 
 
@@ -281,9 +287,9 @@ def test_omni_translate_module_label_exists():
 
 def test_same_image_use_case_defaults():
     uc = USE_CASES["link_check.same_image"]
-    assert uc["default_provider"] == "gemini_aistudio"
-    assert uc["default_model"] == "gemini-3.1-flash-lite"
-    assert uc["usage_log_service"] == "gemini"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "openrouter"
 
 
 def test_new_billing_backfill_use_cases_defaults():
