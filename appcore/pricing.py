@@ -81,6 +81,13 @@ def compute_cost_cny(
             "unit_output_cny": Decimal("0.00000204"),
         }
 
+    # Defensive fallback for Gemini 3.5 Flash if database row is missing
+    if not row and "gemini-3.5-flash" in model.lower() and units_type == "tokens":
+        row = {
+            "unit_input_cny": Decimal("0.0000102"),
+            "unit_output_cny": Decimal("0.0000612"),
+        }
+
     if not row:
         return None, "unknown"
 

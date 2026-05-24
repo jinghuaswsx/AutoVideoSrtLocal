@@ -481,4 +481,25 @@ def test_gemini_1_5_flash_pricing_tiered_cost(monkeypatch):
     assert cost2 == Decimal("0.408000")
 
 
+def test_gemini_3_5_flash_pricing_fallback(monkeypatch):
+    from appcore.pricing import compute_cost_cny
+    from decimal import Decimal
+
+    # Mock _load_prices to return empty to trigger fallback
+    monkeypatch.setattr("appcore.pricing._load_prices", lambda: {})
+
+    cost, source = compute_cost_cny(
+        provider="gemini_aistudio",
+        model="gemini-3.5-flash",
+        units_type="tokens",
+        input_tokens=10000,
+        output_tokens=5000,
+        request_units=None,
+    )
+    assert source == "pricebook"
+    # 10000 * 0.0000102 + 5000 * 0.0000612 = 0.102 + 0.306 = 0.408
+    assert cost == Decimal("0.408000")
+
+
+
 
