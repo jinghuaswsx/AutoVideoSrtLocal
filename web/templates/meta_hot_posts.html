@@ -341,6 +341,123 @@ button.mh-link-btn { cursor:pointer; }
     display: flex;
   }
 }
+
+:root {
+  --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+  --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+  --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+  --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+  --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+  --oc-accent-subtle: oklch(94% 0.04 225); --oc-danger: oklch(58% 0.18 25);
+  --oc-success: oklch(62% 0.13 165);
+  --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+  --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+  --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
+}
+.mki-btn:disabled, .mki-btn--disabled {
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+  cursor: not-allowed; border-color: var(--oc-border);
+}
+.mki-toast {
+  position: fixed; bottom: 24px; right: 24px; padding: 12px 16px;
+  border-radius: var(--oc-r-md); font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 2000; max-width: 400px;
+}
+.mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-toast--warning { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
+.mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+
+.mki-xiao-backdrop {
+  position: fixed; inset: 0; z-index: 2200; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(15, 23, 42, .42);
+}
+.mki-xiao-dialog {
+  width: min(1040px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg); background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+}
+.mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+.mki-xiao-fine-ai { margin-bottom: 18px; }
+.mki-xiao-field { margin-bottom: 18px; }
+.mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
+.mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+.mki-xiao-lang-card--disabled,
+.mki-xiao-lang-pill:has(.mki-xiao-lang-card--disabled) {
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+.mki-xiao-lang-card--disabled {
+  opacity: 0.65;
+  background: var(--oc-bg-muted) !important;
+  border-color: var(--oc-border) !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-ai-suggestion {
+  color: #9ca3af !important;
+}
+.mki-xiao-lang-pill:hover .mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+}
+.mki-xiao-lang-card {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 5px; border: 1px solid transparent; border-radius: var(--oc-r-lg);
+  background: var(--oc-bg); transition: background 120ms, border-color 120ms;
+}
+.mki-xiao-lang-card--high { border-color: oklch(83% 0.06 165); background: var(--oc-success-bg); }
+.mki-xiao-lang-card--medium { border-color: oklch(86% 0.08 85); background: var(--oc-warning-bg); }
+.mki-xiao-lang-card--low { border-color: oklch(86% 0.07 25); background: oklch(97% 0.04 25); }
+.mki-xiao-lang-check {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.mki-xiao-lang-pill-box {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 74px; min-height: 50px; padding: 7px 14px; border: 1.5px solid var(--oc-border-strong);
+  border-radius: 9999px; background: #fff; color: var(--oc-fg);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.mki-xiao-lang-main { font-size: 14px; font-weight: 800; line-height: 1.1; }
+.mki-xiao-ai-suggestion { font-size: 10px; font-weight: 700; line-height: 1.1; color: var(--oc-fg-muted); white-space: nowrap; }
+.mki-xiao-lang-card--high .mki-xiao-ai-suggestion { color: var(--oc-success-fg); }
+.mki-xiao-lang-card--medium .mki-xiao-ai-suggestion { color: var(--oc-warning-fg); }
+.mki-xiao-lang-card--low .mki-xiao-ai-suggestion { color: var(--oc-danger); }
+.mki-xiao-lang-pill:hover .mki-xiao-lang-pill-box { border-color: var(--oc-accent); color: var(--oc-accent); }
+.mki-xiao-lang-check:checked + span,
+.mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box {
+  background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
+}
+.mki-xiao-lang-check:focus-visible + .mki-xiao-lang-pill-box {
+  outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
+}
+.mki-xiao-status {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--oc-r-md);
+  border: 1px solid var(--oc-border); font-size: 13px; line-height: 1.55;
+}
+.mki-xiao-status--running {
+  border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a;
+}
+.mki-xiao-status--success {
+  border-color: #bbf7d0; background: #f0fdf4; color: #14532d;
+}
+.mki-xiao-status--error {
+  border-color: #fecaca; background: #fef2f2; color: #7f1d1d;
+}
+.mki-xiao-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
+.mki-ai-reevaluate-btn {
+  height: 32px; padding: 0 14px; border: 1.5px solid var(--oc-accent); border-radius: 8px;
+  background: #fff; color: var(--oc-accent); cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all 120ms; margin-left: 12px;
+}
+.mki-ai-reevaluate-btn:hover:not(:disabled) { background: var(--oc-accent-subtle); }
+.mki-ai-reevaluate-btn:disabled { border-color: var(--oc-border); color: var(--oc-fg-muted); background: var(--oc-bg-muted); cursor: not-allowed; }
+.ect-modal-header-actions { display: flex; align-items: center; margin-left: auto; }
 {% endblock %}
 {% block content %}
 <div class="meta-hot-page">
@@ -504,9 +621,52 @@ button.mh-link-btn { cursor:pointer; }
         <div class="mh-ai-panel" id="mhAiResultPanel" hidden>暂无结果</div>
       </div>
     </div>
+  <div class="mh-modal" id="mhImportOwnerModal" hidden>
+    <div class="mh-modal-panel" style="width: 420px;">
+      <div class="mh-modal-head">
+        <h3>选择产品负责人</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <div style="margin-bottom: 15px;">
+          <label for="mhImportOwnerSelect" style="display:block; margin-bottom:6px; font-weight:bold; font-size:13px;">指派负责人：</label>
+          <select id="mhImportOwnerSelect" class="mh-select" style="width:100%; height:36px;"></select>
+        </div>
+        <div class="mh-modal-actions" style="justify-content: flex-end;">
+          <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">取消</button>
+          <button id="mhImportOwnerConfirm" class="mh-btn" type="button">确认导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建小语种翻译任务 modal -->
+  <div id="mkiXiaoModal" class="mki-xiao-backdrop">
+    <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
+      <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+      <div class="mki-xiao-field">
+        <label class="mki-xiao-label" for="mkiXiaoTranslator">小语种翻译负责人：</label>
+        <select id="mkiXiaoTranslator" class="mh-select" style="width:100%; height:36px;"></select>
+        <div class="mki-progress-domain-subtitle" style="font-size:11px; color:var(--mh-muted); margin-top:4px;">产品负责人用于素材归属；小语种翻译负责人用于当前语言任务，可与产品负责人不同。</div>
+      </div>
+      <div class="mki-xiao-field">
+        <label class="mki-xiao-label" for="mkiXiaoRawProcessor">原视频处理人：</label>
+        <select id="mkiXiaoRawProcessor" class="mh-select" style="width:100%; height:36px;"></select>
+      </div>
+      <div class="mki-xiao-field">
+        <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
+        <div id="mkiXiaoLangs" class="mki-xiao-lang-pills"></div>
+      </div>
+      <div id="mkiXiaoStatus" class="mki-xiao-status" hidden></div>
+      <div class="mki-xiao-actions">
+        <button id="mkiXiaoCancel" class="mh-btn secondary" onclick="mkiXiaoCancel()">取消</button>
+        <button id="mkiXiaoConfirm" class="mh-btn" onclick="mkiXiaoOK()">确认创建</button>
+      </div>
+    </div>
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script>
 function safeMetaHotPage(value) {
   const page = Number.parseInt(value || '1', 10);
@@ -1092,6 +1252,23 @@ function renderCard(row) {
   const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
   const postId = Number(row.id || 0);
   const cardFlags = `${row.copycat ? '<span>产品观察</span>' : ''}${renderMetaHotPushedBadge(row)}`;
+
+  const localProductId = Number(row.local_product_id || 0);
+  const localItemId = Number(row.local_media_item_id || 0);
+  const isImported = localProductId > 0 && localItemId > 0;
+
+  const importBtn = isImported
+    ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>已入库</button>`
+    : `<button class="mh-link-btn mki-import-btn" type="button" onclick="mkiImportMetaHotPost(this, ${postId})">加入素材库</button>`;
+
+  const smallLangBtn = isImported
+    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateSmallLangTaskFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">创建小语种任务</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">创建小语种任务</button>`;
+
+  const fineAiBtn = isImported
+    ? `<button class="mh-link-btn" type="button" onclick="mkiFineAiEvaluateFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">AI精细评估</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">AI精细评估</button>`;
+
   return `<article class="mh-card" data-post-id="${postId}">
     ${renderMetaHotPostId(row)}
     <div class="mh-card-head">
@@ -1120,6 +1297,9 @@ function renderCard(row) {
       <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">${MH_AI_MODES.us_copyability.label}</button>
       <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">${MH_AI_MODES.europe_translation.label}</button>
       ${row.product_url ? `<button class="mh-link-btn" type="button" style="background:var(--primary-blue,#2563eb);color:#fff;border-color:var(--primary-blue,#2563eb)" onclick="quickCreateAiListingTask(event, '${esc(row.product_url)}')">🛒 AI上品</button>` : ''}
+      ${importBtn}
+      ${smallLangBtn}
+      ${fineAiBtn}
       ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
       ${row.ad_library_url ? `<a class="mh-link-btn" href="${esc(row.ad_library_url)}" target="_blank" rel="noopener noreferrer">去主页广告</a>` : ''}
       ${row.product_url ? `<a class="mh-link-btn" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">去商品页</a>` : ''}
@@ -1889,6 +2069,720 @@ window.addEventListener('hashchange', () => {
   const tab = location.hash.replace('#', '') || 'library';
   if (tab !== mhSubtab) switchMetaHotSubtab(tab);
 });
+// ==================== METADATA MATERIAL IMPORT & EVALUATION INTEGRATION ====================
+
+let mkiTranslatorsCache = null;
+let mkiImportingPostId = null;
+
+function mkiToast(kind, msg) {
+  const old = document.querySelectorAll('.mki-toast');
+  old.forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'mki-toast mki-toast--' + kind;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function mkiFetchActiveUsers() {
+  const r = await fetch('/tasks/api/translation-work-users');
+  const data = await r.json();
+  return data.users || [];
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function mkiUserLabel(user) {
+  const fallback = user && user.id ? `用户 #${user.id}` : '';
+  return String((user && (user.display_name || user.username)) || fallback).trim();
+}
+
+function mkiUserOption(user) {
+  return `<option value="${escapeHtml(user.id)}">${escapeHtml(mkiUserLabel(user))}</option>`;
+}
+
+async function mkiImportMetaHotPost(btn, postId) {
+  mkiImportingPostId = Number(postId);
+  const modal = document.getElementById('mhImportOwnerModal');
+  const select = document.getElementById('mhImportOwnerSelect');
+  const confirmBtn = document.getElementById('mhImportOwnerConfirm');
+  
+  if (!modal || !select || !confirmBtn) return;
+  
+  select.innerHTML = '<option value="">加载中...</option>';
+  confirmBtn.disabled = true;
+  modal.hidden = false;
+  
+  if (!mkiTranslatorsCache) {
+    try {
+      mkiTranslatorsCache = await mkiFetchActiveUsers();
+    } catch (e) {
+      mkiTranslatorsCache = [];
+    }
+  }
+  
+  if (!mkiTranslatorsCache.length) {
+    select.innerHTML = '<option value="">没有可用产品负责人</option>';
+    return;
+  }
+  
+  select.innerHTML = '<option value="">请选择产品负责人</option>' + mkiTranslatorsCache.map(mkiUserOption).join('');
+  confirmBtn.disabled = false;
+  
+  confirmBtn.onclick = async function() {
+    const ownerId = Number(select.value || 0);
+    if (!ownerId) {
+      alert('请选择产品负责人');
+      return;
+    }
+    
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '导入中...';
+    qs('mhStatus').textContent = '正在导入至英文素材库并启动AI评估...';
+    
+    try {
+      const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/import`, {
+        method: 'POST',
+        headers: metaHotJsonHeaders(),
+        body: JSON.stringify({ translator_id: ownerId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'import_failed');
+      
+      const cached = mhItemsById.get(Number(postId));
+      if (cached) {
+        cached.local_product_id = data.media_product_id;
+        cached.local_media_item_id = data.media_item_id;
+        updateMetaHotCard(cached);
+      }
+      
+      modal.hidden = false;
+      closeMetaHotModal('mhImportOwnerModal');
+      qs('mhStatus').textContent = '素材已成功加入素材库！AI 评估已在后台自动触发。';
+      mkiToast('success', '加入素材库成功！');
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '确认导入';
+      alert('导入失败：' + (err.message || '网络错误'));
+      qs('mhStatus').textContent = '加入素材库失败';
+    }
+  };
+}
+
+// ---- 创建小语种翻译任务 modal ----
+let mkiXiaoResolve = null;
+let mkiXiaoTranslatorsCache = null;
+let mkiXiaoRawProcessorsCache = null;
+let mkiXiaoLangsCache = null;
+let mkiXiaoLockTranslator = false;
+let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
+let mkiXiaoAiProductId = null;
+let mkiXiaoFineAiSourceButton = null;
+
+function mkiXiaoLangCode(lang) {
+  if (lang && typeof lang === 'object') {
+    return String(lang.code || '').trim().toUpperCase();
+  }
+  return String(lang || '').trim().toUpperCase();
+}
+
+function mkiXiaoLangLabel(lang) {
+  var code = mkiXiaoLangCode(lang);
+  if (!code) return '';
+  if (lang && typeof lang === 'object') {
+    var directLabel = String(lang.label || '').trim();
+    if (directLabel) return directLabel;
+    var name = String(lang.name_zh || lang.name || '').trim();
+    if (name) return name + ' (' + code + ')';
+  }
+  var fallback = {
+    DE: '德语',
+    FR: '法语',
+    ES: '西班牙语',
+    IT: '意大利语',
+    JA: '日语',
+    PT: '葡萄牙语',
+    NL: '荷兰语',
+    SV: '瑞典语',
+    FI: '芬兰语'
+  }[code];
+  return fallback ? fallback + ' (' + code + ')' : code;
+}
+
+function mkiXiaoSetStatus(kind, html) {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = false;
+  statusEl.className = 'mki-xiao-status mki-xiao-status--' + kind;
+  statusEl.innerHTML = html;
+}
+
+function mkiXiaoHideStatus() {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = true;
+  statusEl.innerHTML = '';
+}
+
+function mkiXiaoSetControlsDisabled(disabled) {
+  var translator = document.getElementById('mkiXiaoTranslator');
+  var raw = document.getElementById('mkiXiaoRawProcessor');
+  if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
+  if (raw) raw.disabled = !!disabled;
+  document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
+    var isExisting = cb.getAttribute('data-mki-existing') === '1';
+    cb.disabled = !!disabled || isExisting;
+  });
+}
+
+function mkiXiaoSetBusy(isBusy) {
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(isBusy);
+  if (confirmBtn) {
+    confirmBtn.disabled = !!isBusy;
+    confirmBtn.textContent = isBusy ? '创建中...' : '确认创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = !!isBusy;
+    cancelBtn.textContent = '取消';
+  }
+}
+
+function mkiXiaoTaskHref(taskId) {
+  return '/tasks/?task_id=' + encodeURIComponent(taskId);
+}
+
+function mkiXiaoShowCreateSuccess(taskId) {
+  var href = mkiXiaoTaskHref(taskId);
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '已创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('success',
+    '<strong>任务已创建，父任务 #' + escapeHtml(taskId) + '</strong>'
+    + '<div>下一步：进入任务中心处理这个任务。</div>'
+    + '<div class="mki-xiao-status-actions"><a class="mh-btn" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(href) + '">打开任务 #' + escapeHtml(taskId) + '</a></div>'
+  );
+}
+
+function mkiXiaoShowCreateFailure(endpoint, error) {
+  var message = error && error.message ? error.message : String(error || '未知错误');
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '创建失败';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('error',
+    '<strong>请求失败</strong>'
+    + '<div>请求：' + escapeHtml(endpoint || mkiXiaoCurrentEndpoint) + '</div>'
+    + '<div>原因：' + escapeHtml(message) + '</div>'
+    + '<div>关闭后可回到当前卡片重新发起创建。</div>'
+  );
+}
+
+function mkiXiaoRequestError(endpoint, rsp, data) {
+  var statusText = rsp ? (rsp.status + (rsp.statusText ? ' ' + rsp.statusText : '')) : 'unknown';
+  var detail = data && (data.error || data.detail || data.message);
+  return new Error('请求 ' + endpoint + ' 返回 ' + statusText + '：' + (detail || '无错误详情'));
+}
+
+async function mkiXiaoOpenModal(options = {}) {
+  mkiXiaoLockTranslator = !!options.lockTranslator;
+  mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
+  mkiXiaoAiProductId = Number(options.productId || 0) || null;
+  mkiXiaoFineAiSourceButton = options.sourceButton || null;
+
+  if (!mkiXiaoTranslatorsCache) {
+    try {
+      mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
+    } catch (e) { mkiXiaoTranslatorsCache = []; }
+  }
+  mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
+  if (!mkiXiaoTranslatorsCache.length) {
+    alert('没有可用翻译工作用户');
+    return null;
+  }
+  
+  const sel = document.getElementById('mkiXiaoTranslator');
+  sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
+  if (options.translatorId) sel.value = String(options.translatorId);
+  const rawSel = document.getElementById('mkiXiaoRawProcessor');
+  rawSel.innerHTML = '<option value="">请选择原视频处理人</option>' + mkiXiaoRawProcessorsCache.map(mkiUserOption).join('');
+  const rawDefault = options.rawProcessorId || (
+    options.translatorId && mkiXiaoRawProcessorsCache.some(function(u) { return Number(u.id) === Number(options.translatorId); })
+      ? options.translatorId
+      : null
+  );
+  if (rawDefault) rawSel.value = String(rawDefault);
+  const titleEl = document.getElementById('mkiXiaoTitle');
+  if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+
+  let langs = [];
+  try {
+    const url = options.itemId 
+      ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(options.itemId)
+      : '/tasks/api/languages';
+    const r = await fetch(url);
+    const data = await r.json();
+    langs = data.languages || [];
+  } catch (e) { 
+    langs = []; 
+  }
+  var langsDiv = document.getElementById('mkiXiaoLangs');
+  langsDiv.innerHTML = langs.map(function(l) {
+    var code = mkiXiaoLangCode(l);
+    var label = mkiXiaoLangLabel(l);
+    if (!code) return '';
+    var isExisting = !!l.existing;
+    var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
+    var labelText = isExisting ? label + ' (已有任务)' : label;
+    var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
+    return '<label class="mki-xiao-lang-pill">'
+      + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
+      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
+      + '</span>'
+      + '<small class="mki-xiao-ai-suggestion">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</small>'
+      + '</span></label>';
+  }).join('');
+
+  mkiXiaoHideStatus();
+  mkiXiaoSetBusy(false);
+  document.getElementById('mkiXiaoModal').style.display = 'flex';
+  return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
+}
+
+function mkiXiaoSelectedCountries() {
+  var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+  var checked = [];
+  for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked.push(cbs[i].value); }
+  return checked;
+}
+
+function mkiXiaoOK() {
+  var translatorId = parseInt(document.getElementById('mkiXiaoTranslator').value);
+  var rawProcessorId = parseInt(document.getElementById('mkiXiaoRawProcessor').value);
+  var countries = mkiXiaoSelectedCountries();
+  if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
+  if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
+  if (!countries.length) { alert('请选择目标国家'); return; }
+  mkiXiaoSetBusy(true);
+  mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
+  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries}); mkiXiaoResolve = null; }
+}
+
+function mkiXiaoCancel() {
+  document.getElementById('mkiXiaoModal').style.display = 'none';
+  if (mkiXiaoResolve) { mkiXiaoResolve(null); mkiXiaoResolve = null; }
+}
+
+function mkiXiaoLanguageAssignments(selection) {
+  var assignments = {};
+  var translatorId = Number(selection && selection.translatorId || 0);
+  var countries = selection && Array.isArray(selection.countries) ? selection.countries : [];
+  countries.forEach(function(country) {
+    var code = String(country || '').trim().toUpperCase();
+    if (code && translatorId) assignments[code] = translatorId;
+  });
+  return assignments;
+}
+
+async function mkiCreateSmallLangTaskFromMetaHot(btn, postId) {
+  const productId = Number(btn.dataset.mkiLocalProductId || 0);
+  const itemId = Number(btn.dataset.mkiLocalItemId || 0);
+  if (!productId || !itemId) {
+    mkiToast('warning', '请先加入素材库后才能创建小语种任务');
+    return;
+  }
+  const endpoint = '/tasks/api/parent';
+  const selection = await mkiXiaoOpenModal({
+    title: '创建小语种翻译任务',
+    endpoint: endpoint,
+    productId: productId,
+    itemId: itemId,
+    sourceButton: btn
+  });
+  if (!selection) return;
+  if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
+  if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '创建中...';
+  try {
+    const cachedItem = mhItemsById.get(Number(postId));
+    const productLink = cachedItem ? (cachedItem.product_url || '') : '';
+    const rsp = await fetch(endpoint, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({
+        media_product_id: productId,
+        media_item_id: itemId,
+        product_link: productLink || null,
+        translator_id: selection.translatorId,
+        raw_processor_id: selection.rawProcessorId,
+        language_assignments: mkiXiaoLanguageAssignments(selection),
+        countries: selection.countries
+      })
+    });
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+    const taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    btn.textContent = '任务 #' + taskId;
+    btn.classList.add('mki-btn--disabled');
+    btn.disabled = true;
+    mkiXiaoShowCreateSuccess(taskId);
+    mkiToast('success', '任务已创建 #' + taskId);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiXiaoShowCreateFailure(endpoint, e);
+    mkiToast('error', '创建失败：' + e.message);
+  }
+}
+
+// ---- AI 精细评估 Logic ----
+
+async function mkiFetchJson(url, options = {}) {
+  const resp = await fetch(url, options);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.success === false) {
+    const err = data && data.error;
+    const message = (err && typeof err === 'object' ? err.message : err)
+      || (data && (data.message || data.detail))
+      || resp.statusText
+      || '请求失败';
+    const error = new Error(message);
+    if (err && typeof err === 'object' && err.details) error.details = err.details;
+    if (err && typeof err === 'object' && err.code) error.code = err.code;
+    error.status = resp.status;
+    throw error;
+  }
+  return data;
+}
+
+function mkiAiProductEndpoint(productId, suffix, itemId, productLink) {
+  let url = `/medias/api/products/${encodeURIComponent(productId)}${suffix || ''}`;
+  const params = new URLSearchParams();
+  const numericItemId = Number(itemId || 0);
+  if (numericItemId > 0) params.set('media_item_id', String(numericItemId));
+  const sourceProductLink = String(productLink || '').trim();
+  if (sourceProductLink) params.set('product_link', sourceProductLink);
+  const query = params.toString();
+  if (query) url += `?${query}`;
+  return url;
+}
+
+function mkiAiParseDetail(raw) {
+  if (!raw) return null;
+  if (window.EvalCountryTable && typeof window.EvalCountryTable.parse === 'function') {
+    return window.EvalCountryTable.parse(raw);
+  }
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  }
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function mkiAiEvaluationResultFromStatus(status) {
+  return String((status && status.ai_evaluation_result) || '').trim();
+}
+
+function mkiAiButtonLabel(r) {
+  const productStatus = (r && r.product_ad_status) || {};
+  return mkiAiEvaluationResultFromStatus(productStatus) ? 'AI评估结果' : 'AI评估';
+}
+
+function mkiAiCountryRows(raw) {
+  const detail = mkiAiParseDetail(raw);
+  const countries = detail && Array.isArray(detail.countries) ? detail.countries : [];
+  return countries.filter(row => row && typeof row === 'object');
+}
+
+function mkiAiVideoProcessingText(video) {
+  const info = video && video.processing || {};
+  const parts = [];
+  if (video && video.clip_seconds) parts.push(`${video.clip_seconds}秒短片`);
+  if (info.max_height) parts.push(`${info.max_height}P`);
+  if (info.fps) parts.push(`${info.fps}帧`);
+  if (info.video_bitrate) parts.push(`${String(info.video_bitrate).toUpperCase()}码率`);
+  if (info.drop_audio === false && info.audio_bitrate) parts.push(`音频${info.audio_bitrate}`);
+  return parts.join(' / ') || '-';
+}
+
+function mkiAiRenderRequestPreview(panel, preview, fullPayloadUrl) {
+  if (!panel) return;
+  if (!preview) {
+    panel.innerHTML = '<div class="ect-empty">正在加载请求数据、商品主图和视频素材...</div>';
+    return;
+  }
+  const media = preview.media || [];
+  const cover = media.find(item => item.role === 'product_cover') || {};
+  const video = media.find(item => item.role === 'english_video') || {};
+  const product = preview.product || {};
+  const llm = preview.llm || {};
+  const coverUrl = String(cover.preview_url || '').startsWith('/') ? cover.preview_url : '';
+  const videoUrl = String(video.preview_url || '').startsWith('/') ? video.preview_url : '';
+  const originalVideoUrl = String(video.original_preview_url || '').startsWith('/') ? video.original_preview_url : '';
+  const videoDisplayName = video.submitted_filename || video.filename || video.object_key || '';
+  const productUrl = String(product.product_url || '');
+  const safeProductUrl = /^https?:\/\//i.test(productUrl) ? productUrl : '';
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+      <button type="button" class="mh-btn" data-mki-ai-full-payload>完整请求报文</button>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:16px;align-items:start;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求素材</h4>
+        <div style="width:180px;height:180px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${coverUrl ? `<img src="${escapeHtml(coverUrl)}" alt="商品主图" style="width:100%;height:100%;object-fit:contain;">` : '暂无主图'}
+        </div>
+        <div style="width:180px;margin-top:10px;color:var(--oc-fg-muted);font-size:12px;line-height:1.4;word-break:break-word;">${escapeHtml(videoDisplayName || '暂无视频')}</div>
+        <div style="width:180px;height:320px;margin-top:8px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${videoUrl ? `<video controls preload="metadata" src="${escapeHtml(videoUrl)}" style="width:100%;height:100%;object-fit:contain;"></video>` : '暂无视频'}
+        </div>
+      </div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求关键字段</h4>
+        <dl style="display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px 10px;margin:0;font-size:13px;line-height:1.5;">
+          <dt style="color:var(--oc-fg-muted);">商品链接</dt><dd style="margin:0;word-break:break-word;">${safeProductUrl ? `<a href="${escapeHtml(safeProductUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productUrl)}</a>` : escapeHtml(productUrl || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">商品主图</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(cover.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">AI请求短片</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(mkiAiVideoProcessingText(video))}</dd>
+          <dt style="color:var(--oc-fg-muted);">短片预览</dt><dd style="margin:0;word-break:break-word;">${videoUrl ? `<a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(videoUrl)}</a>` : '-'}</dd>
+          <dt style="color:var(--oc-fg-muted);">原始视频</dt><dd style="margin:0;word-break:break-word;">${originalVideoUrl ? `<a href="${escapeHtml(originalVideoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(video.object_key || originalVideoUrl)}</a>` : escapeHtml(video.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">语种国家</dt><dd style="margin:0;">${escapeHtml((preview.languages || []).map(lang => `${lang.country || lang.name}(${String(lang.code || '').toUpperCase()})`).join('、') || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Provider</dt><dd style="margin:0;">${escapeHtml(llm.provider || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Model</dt><dd style="margin:0;">${escapeHtml(llm.model || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">UseCase</dt><dd style="margin:0;">${escapeHtml(llm.use_case || '-')}</dd>
+        </dl>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">User Prompt</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml((preview.prompts || {}).user || '')}</pre></div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">Response Schema / Request JSON</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml(JSON.stringify({schema: preview.response_schema || {}, request: preview.request || {}}, null, 2))}</pre></div>
+    </div>`;
+  if (fullPayloadUrl) {
+    const fullBtn = panel.querySelector('[data-mki-ai-full-payload]');
+    if (fullBtn) fullBtn.onclick = () => mkiAiOpenFullPayload(fullPayloadUrl);
+  }
+}
+
+async function mkiAiOpenFullPayload(url) {
+  if (!url || !window.EvalCountryTable) return;
+  const shell = window.EvalCountryTable.openModal('', {title: '完整请求报文'});
+  const body = shell.body;
+  body.innerHTML = '<div class="ect-empty">正在加载完整请求报文...</div>';
+  try {
+    const data = await mkiFetchJson(url);
+    body.innerHTML = `<pre class="ect-modal-json">${escapeHtml(JSON.stringify(data.payload || data, null, 2))}</pre>`;
+  } catch (e) {
+    body.innerHTML = `<div class="ect-empty">完整报文加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+function mkiAiRenderDetailHtml(detail) {
+  const parsed = mkiAiParseDetail(detail);
+  if (parsed && Array.isArray(parsed.countries) && parsed.countries.length) {
+    return window.EvalCountryTable.render(parsed);
+  }
+  const fallback = parsed || detail || {};
+  const text = typeof fallback === 'string' ? fallback : JSON.stringify(fallback, null, 2);
+  return `<pre class="ect-modal-json">${escapeHtml(text)}</pre>`;
+}
+
+function mkiAiSetResultPanel(shell, detail) {
+  if (!shell || !shell.resultPanel) return;
+  shell.resultPanel.innerHTML = mkiAiRenderDetailHtml(detail);
+  if (shell.setActiveTab) shell.setActiveTab('result');
+}
+
+function mkiAiSetButtonResultState(btn) {
+  if (!btn) return;
+  btn.dataset.mkiAiHasResult = '1';
+  btn.disabled = false;
+  btn.textContent = 'AI精细评估';
+}
+
+function mkiAiSetReevaluateBusy(button, busy) {
+  if (!button) return;
+  button.disabled = !!busy;
+  button.textContent = busy ? '评估中...' : '重新评估';
+}
+
+function mkiAiAttachReevaluateButton(shell, context) {
+  const header = shell && shell.modal && shell.modal.querySelector('.ect-modal-header');
+  if (!header) return null;
+  let actions = header.querySelector('.ect-modal-header-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'ect-modal-header-actions';
+    const closeButton = header.querySelector('.ect-modal-close');
+    header.insertBefore(actions, closeButton || null);
+  }
+  let button = actions.querySelector('[data-mki-ai-reevaluate]');
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mki-ai-reevaluate-btn';
+    button.dataset.mkiAiReevaluate = '1';
+    button.textContent = '重新评估';
+    actions.appendChild(button);
+  }
+  context.reevaluateButton = button;
+  button.onclick = () => mkiAiRunEvaluation(context, { forceTab: true });
+  return button;
+}
+
+async function mkiAiLoadRequestPreview(context) {
+  const shell = context.shell;
+  try {
+    mkiAiRenderRequestPreview(shell.requestPanel, null, '');
+    const preview = await mkiFetchJson(context.previewUrl);
+    mkiAiRenderRequestPreview(shell.requestPanel, preview.payload || null, (preview.payload || {}).full_payload_url);
+  } catch (e) {
+    if (shell.requestPanel) shell.requestPanel.innerHTML = `<div class="ect-empty">请求数据加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiShowExistingResult(context) {
+  const shell = context.shell;
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在加载 AI 评估结果...</div>';
+  if (shell.setActiveTab) shell.setActiveTab('result');
+  try {
+    const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+    const product = fresh.product || null;
+    const detail = product && product.ai_evaluation_detail;
+    if (detail) {
+      mkiAiSetResultPanel(shell, detail);
+      return;
+    }
+    if (shell.resultPanel) {
+      shell.resultPanel.innerHTML = '<div class="ect-empty">暂无评估详情，可点击右上角“重新评估”。</div>';
+    }
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">结果加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiRunEvaluation(context, options = {}) {
+  if (context.running) return;
+  context.running = true;
+  const btn = context.button;
+  const shell = context.shell;
+  const original = btn ? btn.textContent : '';
+  if (options.forceTab && shell.setActiveTab) shell.setActiveTab('result');
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在等待大模型结构化评估结果...</div>';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '请求中...';
+  }
+  mkiAiSetReevaluateBusy(context.reevaluateButton, true);
+  try {
+    const data = await mkiFetchJson(context.runUrl, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({
+        ...(context.itemId > 0 ? {media_item_id: context.itemId} : {}),
+        ...(context.productLink ? {product_link: context.productLink} : {}),
+      }),
+    });
+    let product = null;
+    try {
+      const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+      product = fresh.product || null;
+    } catch (_) {}
+    const detail = product && product.ai_evaluation_detail
+      || data?.result?.detail
+      || data?.result?.ai_evaluation_detail
+      || data?.detail
+      || data?.result
+      || data;
+    mkiAiSetResultPanel(shell, detail);
+    mkiAiSetButtonResultState(btn);
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">评估失败：${escapeHtml(e.message || e)}</div>`;
+    if (shell.setActiveTab) shell.setActiveTab('result');
+    if (btn) {
+      btn.textContent = original || (context.hasExistingResult ? 'AI精细评估' : 'AI精细评估');
+      btn.disabled = false;
+    }
+  } finally {
+    context.running = false;
+    mkiAiSetReevaluateBusy(context.reevaluateButton, false);
+  }
+}
+
+async function mkiFineAiEvaluateFromMetaHot(btn, postId) {
+  const productId = Number(btn.dataset.mkiLocalProductId || 0);
+  const itemId = Number(btn.dataset.mkiLocalItemId || 0);
+  if (!productId) {
+    mkiToast('warning', '先加入素材库后才能进行 AI 评估');
+    return;
+  }
+  if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
+    mkiToast('error', 'AI 评估弹窗组件未加载');
+    return;
+  }
+  const cachedItem = mhItemsById.get(Number(postId));
+  const productLink = cachedItem ? (cachedItem.product_url || '') : '';
+  const title = cachedItem && cachedItem.product_title ? `AI评估 - ${cachedItem.product_title}` : 'AI评估';
+  
+  const shell = window.EvalCountryTable.openModal('', {title, withRequestTab: true});
+  if (shell.setActiveTab) shell.setActiveTab('request');
+  
+  const context = {
+    button: btn,
+    shell,
+    productId,
+    itemId,
+    productLink,
+    hasExistingResult: btn.dataset.mkiAiHasResult === '1',
+    previewUrl: mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink),
+    runUrl: mkiAiProductEndpoint(productId, '/evaluate', 0, ''),
+    running: false,
+    reevaluateButton: null,
+  };
+  mkiAiAttachReevaluateButton(shell, context);
+  mkiAiLoadRequestPreview(context);
+  
+  try {
+    const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(productId)}`);
+    const product = fresh.product || null;
+    const detail = product && product.ai_evaluation_detail;
+    if (detail) {
+      context.hasExistingResult = true;
+      btn.dataset.mkiAiHasResult = '1';
+      mkiAiSetResultPanel(shell, detail);
+      return;
+    }
+  } catch (_) {}
+  
+  await mkiAiRunEvaluation(context);
+}
+
+// ==================== END INTEGRATION ====================
+
 initMetaHotSubtabFromHash();
 </script>
 {% endblock %}
