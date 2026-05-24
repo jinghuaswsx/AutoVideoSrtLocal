@@ -11,7 +11,7 @@
 ## 目标
 
 1. 使用常驻后台 worker 池持续处理自动评估任务，不再依赖 10 分钟 APScheduler tick。
-2. 默认任务池并发为 2 张视频卡片；某张卡片跑完后立即补下一张。
+2. 默认任务池并发为 4 张视频卡片；某张卡片跑完后立即补下一张。
 3. 同一时间只允许一个 worker 进程运行。
 4. 单个卡片任务在领取后跑完即结束；如进程重启，已经领取过的 `material_key` 不再自动重复领取。
 5. 优先处理明空 `视频素材库` 按 90 天消耗倒序 Top1000 视频卡片。
@@ -22,7 +22,7 @@
 10. 不开启 Google Search 工具。
 11. 单国家评估失败时自动重试 1 次；第二次无论成功或失败都结束该国家并进入下一步。
 
-生产观察显示单张卡片真实执行时长通常在 4-6 分钟。改为常驻任务池后，吞吐由“每 10 分钟最多 2 张”变为“多个卡片同时跑，跑完即补位”。2026-05-24 生产观察未出现 `429` 后，任务池先从 2 张提高到 4 张；首个 30 分钟窗口仍未出现 `429` 后，再提高到 6 张。随后 6 并发在 ADC Gemini 3.5 Flash 通道出现明确 `429 RESOURCE_EXHAUSTED`，回退 4 后短窗口仍有 429，默认并发最终回退到 2。单张卡片内部的国家评估默认仍保持串行，避免 ADC 通道突然增加国家级并发。
+生产观察显示单张卡片真实执行时长通常在 4-6 分钟。改为常驻任务池后，吞吐由“每 10 分钟最多 2 张”变为“多个卡片同时跑，跑完即补位”。2026-05-24 生产观察未出现 `429` 后，任务池先从 2 张提高到 4 张；首个 30 分钟窗口仍未出现 `429` 后，再提高到 6 张。随后 6 并发在 ADC Gemini 3.5 Flash 通道出现明确 `429 RESOURCE_EXHAUSTED`，回退 4 后短窗口仍有 429，一度降到 2。运营确认后，默认并发固定为 4；429 只记录观察，不触发自动降级。单张卡片内部的国家评估默认仍保持串行，避免 ADC 通道突然增加国家级并发。
 
 ## 非目标
 
@@ -46,10 +46,10 @@
 
 - Code：`mingkong_fine_ai_auto_evaluation_tick`
 - Name：`明空视频卡片 AI 精细评估任务池`
-- Schedule：连续后台任务池，默认 2 个卡片并发
+- Schedule：连续后台任务池，默认 4 个卡片并发
 - Source type：`systemd`
 - Source ref：`autovideosrt-mingkong-fine-ai-worker.service`
-- Runner：`tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2`
+- Runner：`tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4`
 - Status table：`mingkong_fine_ai_auto_evaluations`
 
 Web 进程 APScheduler 不再注册该任务。worker 自己持有进程锁，防止重复启动；systemd 负责拉起和异常重启。
@@ -222,7 +222,7 @@ worker 池：
 - scheduler registry 测试确认任务登记为 systemd worker，且 Web APScheduler 不再注册该任务。
 - service 测试确认 Top1000 优先、Top1000 耗尽后取全部 Top300。
 - service 测试确认同一 `material_key` 在两个来源重复时只跑一次。
-- service 测试确认 worker 池最多 2 个卡片并发，并在卡片完成后补位。
+- service 测试确认 worker 池最多 4 个卡片并发，并在卡片完成后补位。
 - Fine AI pipeline 测试确认国家失败会自动重试 1 次，第二次失败后继续后续国家。
 - Fine AI client 测试确认 `google_search=False`。
 - xuanpin route / serializer 测试确认外链卡片能读取自动任务生成的精细评估结果。
