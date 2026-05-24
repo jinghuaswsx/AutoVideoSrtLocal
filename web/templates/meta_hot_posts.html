@@ -1296,6 +1296,7 @@ function renderCard(row) {
       ${renderFavoriteButton(row, 'text')}
       <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">${MH_AI_MODES.us_copyability.label}</button>
       <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">${MH_AI_MODES.europe_translation.label}</button>
+      ${row.product_url ? `<button class="mh-link-btn" type="button" style="background:var(--primary-blue,#2563eb);color:#fff;border-color:var(--primary-blue,#2563eb)" onclick="quickCreateAiListingTask(event, '${esc(row.product_url)}')">🛒 AI上品</button>` : ''}
       ${importBtn}
       ${smallLangBtn}
       ${fineAiBtn}
@@ -1332,6 +1333,38 @@ function updateMetaHotCard(item) {
     if (video && !video.paused && !video.ended) video.pause();
     card.outerHTML = renderCard(item);
   }
+}
+function quickCreateAiListingTask(event, productUrl) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!confirm('确定要将该商品一键加入 AI 自动上品排队中吗？系统将自动解析引流博客，生成爆款 HTML 详情页及商品生图资产。')) return;
+  
+  const formData = new FormData();
+  formData.append('source_link', productUrl);
+  formData.append('target_store_domain', 'premium-deals.myshopify.com');
+  formData.append('pricing_ratio', '1.5');
+  formData.append('pricing_offset', '0.00');
+  formData.append('source_type', 'meta_hot_post');
+  
+  fetch('/ai-listing/create', {
+    method: "POST",
+    body: formData,
+    headers: {
+      "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+    }
+  })
+  .then(resp => resp.json())
+  .then(data => {
+    if (data.ok) {
+      alert('一键 AI 上品任务创建成功！正在后台解析中，您可以点击左侧菜单“AI自动上品”进入工作台查看。');
+    } else {
+      alert('创建失败: ' + data.error);
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    alert('请求出错');
+  });
 }
 async function translateMetaHotAiAnalysisToChinese(event, postId, mode) {
   event.preventDefault();

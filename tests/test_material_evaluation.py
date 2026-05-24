@@ -66,7 +66,8 @@ def test_material_evaluation_defaults_to_openrouter_gemini35(monkeypatch):
 
     assert config["provider"] == "openrouter"
     assert config["model"] == "google/gemini-3.5-flash"
-    assert config["search_tools"] == [{"type": "openrouter:web_search"}]
+    assert config["search_enabled"] is False
+    assert config["search_tools"] == []
 
 
 def test_prompt_mentions_europe_small_languages_and_input_assets():
@@ -286,12 +287,14 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert "listing_status" not in result
     assert llm_calls[0][1]["provider_override"] == "openrouter"
     assert llm_calls[0][1]["model_override"] == "google/gemini-3.5-flash"
-    assert llm_calls[0][1]["google_search"] is True
+    assert llm_calls[0][1]["google_search"] is False
+    assert llm_calls[0][1]["billing_extra"]["tools"] == []
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
     assert detail["provider"] == "openrouter"
     assert detail["model"] == "google/gemini-3.5-flash"
-    assert detail["search_tools"] == [{"type": "openrouter:web_search"}]
+    assert detail["search_enabled"] is False
+    assert detail["search_tools"] == []
     assert detail["countries"][0]["lang"] == "de"
     assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja", "en"]
 
@@ -387,12 +390,13 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
     assert result["status"] == "evaluated"
     assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
     assert llm_calls[0][1]["model_override"] == "gemini-3.5-flash"
-    assert llm_calls[0][1]["google_search"] is True
-    assert llm_calls[0][1]["billing_extra"]["tools"] == [{"google_search": {}}]
+    assert llm_calls[0][1]["google_search"] is False
+    assert llm_calls[0][1]["billing_extra"]["tools"] == []
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["provider"] == "gemini_aistudio"
     assert detail["model"] == "gemini-3.5-flash"
-    assert detail["search_tools"] == [{"google_search": {}}]
+    assert detail["search_enabled"] is False
+    assert detail["search_tools"] == []
 
 
 @pytest.mark.parametrize("provider", ["gemini_vertex", "gemini_aistudio"])
@@ -413,7 +417,8 @@ def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provid
 
     assert config["provider"] == provider
     assert config["model"] == "gemini-3.5-flash"
-    assert config["search_tools"] == [{"google_search": {}}]
+    assert config["search_enabled"] is False
+    assert config["search_tools"] == []
 
 
 def test_evaluate_ready_product_sends_30s_clip_to_llm(monkeypatch, tmp_path):
@@ -713,6 +718,55 @@ def test_evaluation_blocks_404_product_link_before_llm(monkeypatch):
     assert result["product_id"] == 7
     assert result["product_url"] == "https://newjoyloo.com/products/missing-product-rjc"
     assert result["error"] == "HTTP 404"
+    assert calls == {"llm": 0, "updates": 0, "attempts": 0, "materialize": 0}
+
+
+def test_evaluation_blocks_missing_product_link_before_llm(monkeypatch):
+    from appcore import material_evaluation
+
+    calls = {"llm": 0, "updates": 0, "attempts": 0, "materialize": 0}
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Missing Link Product",
+            "product_code": "",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(material_evaluation.pushes, "resolve_product_page_url", lambda lang, product: "")
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: calls.__setitem__("materialize", calls["materialize"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_start",
+        lambda *args, **kwargs: calls.__setitem__("attempts", calls["attempts"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: calls.__setitem__("llm", calls["llm"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: calls.__setitem__("updates", calls["updates"] + 1),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result == {"status": "missing_product_link", "product_id": 7}
     assert calls == {"llm": 0, "updates": 0, "attempts": 0, "materialize": 0}
 
 
@@ -1029,6 +1083,181 @@ def test_evaluation_failure_returns_error_and_saves_detail(monkeypatch, tmp_path
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["error"] == "upstream timeout"
     assert finishes[0][1] == {"success": False, "error": "upstream timeout"}
+
+
+def test_evaluation_repairs_invalid_llm_json_before_marking_failed(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    calls = []
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+
+    def fake_invoke(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {
+                "json": None,
+                "text": '{"countries":[{"lang":"de","reason":"truncated',
+                "json_parse_error": "Unterminated string",
+                "usage_log_id": 101,
+            }
+        assert kwargs["media"] is None
+        assert kwargs["google_search"] is False
+        assert "修复" in kwargs["prompt"]
+        assert "Unterminated string" in kwargs["prompt"]
+        return {
+            "json": {
+                "countries": _fixed_target_country_rows(score=88)
+            },
+            "usage_log_id": 102,
+        }
+
+    monkeypatch.setattr(material_evaluation.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result["status"] == "evaluated"
+    assert updates["ai_evaluation_result"] == "适合推广"
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert detail["llm_recovery"]["json_repair_succeeded"] is True
+    assert detail["llm_recovery"]["initial_usage_log_id"] == 101
+    assert detail["llm_recovery"]["repair_usage_log_id"] == 102
+
+
+def test_evaluation_retries_original_call_when_invalid_json_has_no_raw_text(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    calls = []
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+
+    def fake_invoke(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {
+                "json": None,
+                "text": "",
+                "json_parse_error": "Expecting value: line 1 column 1 (char 0)",
+                "usage_log_id": 201,
+            }
+        assert kwargs["media"] == [cover, video]
+        assert kwargs["project_id"] == "media-product-7-retry-2"
+        return {
+            "json": {
+                "countries": _fixed_target_country_rows(score=88)
+            },
+            "usage_log_id": 202,
+        }
+
+    monkeypatch.setattr(material_evaluation.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result["status"] == "evaluated"
+    assert updates["ai_evaluation_result"] == "适合推广"
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert detail["llm_recovery"]["original_retry_attempted"] is True
+    assert detail["llm_recovery"]["retry_usage_log_id"] == 202
 
 
 def test_manual_evaluation_failure_preserves_existing_success(monkeypatch, tmp_path):

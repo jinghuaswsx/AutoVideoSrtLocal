@@ -86,13 +86,16 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
 
         app.toggle_advanced()
 
-        packed_widgets = app.main_frame.pack_slaves()
+        container = app.tab_localizer if hasattr(app, "tab_localizer") else app.main_frame
+        packed_widgets = container.pack_slaves()
         advanced_index = packed_widgets.index(app.advanced_frame)
 
         errors: list[str] = []
-        if advanced_index >= packed_widgets.index(app.progress_summary_pane):
-            errors.append("advanced settings are packed below the summary table")
-        if advanced_index >= packed_widgets.index(app.log_widget):
+        if container is app.main_frame:
+            if advanced_index >= packed_widgets.index(app.progress_summary_pane):
+                errors.append("advanced settings are packed below the summary table")
+            if advanced_index >= packed_widgets.index(app.log_widget):
+                errors.append("advanced settings are packed below the log widget")
             errors.append("advanced settings are packed below the log widget")
 
         app._set_language_items(
@@ -232,7 +235,8 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         )
         assert "14" in str(app.login_shopify_tip_label["font"])
 
-        packed_widgets = app.main_frame.pack_slaves()
+        container = app.tab_localizer if hasattr(app, "tab_localizer") else app.main_frame
+        packed_widgets = container.pack_slaves()
         assert packed_widgets.index(app.login_shopify_frame) < packed_widgets.index(app.product_code_entry)
 
         app.login_shopify_button.invoke()

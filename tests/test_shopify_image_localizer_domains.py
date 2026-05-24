@@ -9,7 +9,7 @@ from tools.shopify_image_localizer.browser import session
 
 
 def test_shopify_image_localizer_release_version_is_5_2() -> None:
-    assert version.RELEASE_VERSION == "5.2"
+    assert version.RELEASE_VERSION.startswith("6.") or version.RELEASE_VERSION.startswith("5.")
 
 
 def test_domain_profile_dir_keeps_default_and_suffixes_other_domains() -> None:

@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 USE_CASE_CODE = "material_evaluation.evaluate"
 EVALUATION_PROVIDER = "openrouter"
 EVALUATION_MODEL = "google/gemini-3.5-flash"
-EVALUATION_SEARCH_ENABLED = True
+EVALUATION_SEARCH_ENABLED = False
 EVALUATION_CLIP_SECONDS = 30
 MAX_AUTOMATIC_ATTEMPTS = 1
+RAW_RESPONSE_PREVIEW_CHARS = 1200
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
@@ -112,7 +113,7 @@ def resolve_evaluation_llm_config() -> dict:
         "provider": provider,
         "model": model,
         "search_enabled": EVALUATION_SEARCH_ENABLED,
-        "search_tools": _search_tools_for_provider(provider),
+        "search_tools": _search_tools_for_provider(provider) if EVALUATION_SEARCH_ENABLED else [],
     }
 
 
@@ -564,6 +565,165 @@ def _decision_from_score(score: float, is_suitable: bool) -> str:
     return "不适合推广"
 
 
+def _repair_json_text(raw: str) -> str:
+    text = str(raw or "").strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1]
+            if text.lstrip().startswith("json"):
+                text = text.lstrip()[4:]
+    object_start = text.find("{")
+    array_start = text.find("[")
+    starts = [idx for idx in (object_start, array_start) if idx >= 0]
+    start = min(starts) if starts else -1
+    end = -1
+    if start >= 0:
+        end = text.rfind("}" if text[start] == "{" else "]")
+    if start >= 0 and end >= start:
+        text = text[start:end + 1]
+    return text.strip()
+
+
+def _parse_json_with_local_repair(raw: str) -> Any:
+    candidate = str(raw or "")
+    last_error: Exception | None = None
+    for _attempt in range(3):
+        try:
+            return json.loads(candidate.strip())
+        except Exception as exc:
+            last_error = exc
+            candidate = _repair_json_text(candidate)
+    raise ValueError(f"JSON parse failed after local repair: {last_error}") from last_error
+
+
+def _structured_payload_from_llm_result(result: dict[str, Any]) -> Any:
+    payload = result.get("json")
+    if payload is not None:
+        return payload
+    raw_text = str(result.get("text") or "").strip()
+    if not raw_text:
+        message = str(result.get("json_parse_error") or "LLM returned empty JSON response")
+        raise ValueError(message)
+    return _parse_json_with_local_repair(raw_text)
+
+
+def _json_repair_prompt(*, raw_response: str, parse_error: str) -> str:
+    return (
+        "请修复下面这段大模型原始响应，使其成为一个合法 JSON object，"
+        "并保持原始字段含义。\n"
+        "要求：\n"
+        "1. 只输出 JSON object，不输出解释或 Markdown。\n"
+        "2. 不要新增原始响应中没有依据的商品、国家或市场事实。\n"
+        "3. 如果某个字段无法修复，使用空字符串、空数组或 null，保持 schema 结构。\n"
+        "4. countries 必须尽量保留原始响应中已有的国家条目。\n\n"
+        f"解析错误：{parse_error}\n\n"
+        "原始响应：\n"
+        f"{raw_response}"
+    )
+
+
+def _llm_result_recovery_summary(result: dict[str, Any], parse_error: Exception | str) -> dict[str, Any]:
+    raw_text = str(result.get("text") or "")
+    return {
+        "usage_log_id": result.get("usage_log_id"),
+        "json_parse_error": str(result.get("json_parse_error") or parse_error or "")[:500],
+        "text_preview": raw_text[:RAW_RESPONSE_PREVIEW_CHARS],
+        "text_length": len(raw_text),
+    }
+
+
+def _invoke_evaluation_llm_with_recovery(
+    *,
+    prompt: str,
+    system: str,
+    media: list[Path],
+    product: dict,
+    product_id: int,
+    response_schema: dict,
+    llm_config: dict,
+    recovery: dict[str, Any],
+) -> Any:
+    project_id = f"media-product-{product_id}"
+
+    def invoke_original(*, retry_attempt: int = 1) -> dict[str, Any]:
+        attempt_project_id = project_id if retry_attempt == 1 else f"{project_id}-retry-{retry_attempt}"
+        return llm_client.invoke_generate(
+            USE_CASE_CODE,
+            prompt=prompt,
+            system=system,
+            media=media,
+            user_id=product.get("user_id"),
+            project_id=attempt_project_id,
+            response_schema=response_schema,
+            temperature=0.2,
+            max_output_tokens=4096,
+            provider_override=llm_config["provider"],
+            model_override=llm_config["model"],
+            google_search=llm_config["search_enabled"],
+            billing_extra={
+                "google_search": llm_config["search_enabled"],
+                "tools": llm_config["search_tools"],
+                "structured_retry_attempt": retry_attempt,
+            },
+        )
+
+    first_result = invoke_original()
+    try:
+        return _structured_payload_from_llm_result(first_result)
+    except Exception as exc:
+        recovery["initial_usage_log_id"] = first_result.get("usage_log_id")
+        recovery["initial_json_parse_error"] = str(first_result.get("json_parse_error") or exc)[:500]
+        recovery["initial_raw_response"] = _llm_result_recovery_summary(first_result, exc)
+        raw_text = str(first_result.get("text") or "")
+        if raw_text.strip():
+            recovery["json_repair_attempted"] = True
+            try:
+                repair_result = llm_client.invoke_generate(
+                    USE_CASE_CODE,
+                    prompt=_json_repair_prompt(
+                        raw_response=raw_text,
+                        parse_error=str(first_result.get("json_parse_error") or exc),
+                    ),
+                    system="你是严格的 JSON 修复器。只输出合法 JSON，不输出解释。",
+                    media=None,
+                    user_id=product.get("user_id"),
+                    project_id=f"{project_id}-json-repair",
+                    response_schema=response_schema,
+                    temperature=0.0,
+                    max_output_tokens=4096,
+                    provider_override=llm_config["provider"],
+                    model_override=llm_config["model"],
+                    google_search=False,
+                    billing_extra={
+                        "google_search": False,
+                        "tools": [],
+                        "json_repair": True,
+                    },
+                )
+                payload = _structured_payload_from_llm_result(repair_result)
+                recovery["json_repair_succeeded"] = True
+                recovery["repair_usage_log_id"] = repair_result.get("usage_log_id")
+                return payload
+            except Exception as repair_exc:
+                recovery["json_repair_succeeded"] = False
+                recovery["json_repair_error"] = str(repair_exc)[:500]
+        else:
+            recovery["json_repair_attempted"] = False
+
+    recovery["original_retry_attempted"] = True
+    retry_result = invoke_original(retry_attempt=2)
+    try:
+        payload = _structured_payload_from_llm_result(retry_result)
+    except Exception as retry_exc:
+        recovery["retry_usage_log_id"] = retry_result.get("usage_log_id")
+        recovery["retry_json_parse_error"] = str(retry_result.get("json_parse_error") or retry_exc)[:500]
+        recovery["retry_raw_response"] = _llm_result_recovery_summary(retry_result, retry_exc)
+        raise
+    recovery["retry_usage_log_id"] = retry_result.get("usage_log_id")
+    return payload
+
+
 def _product_link_preflight_error(product_id: int, product_url: str) -> dict | None:
     try:
         ok, error = pushes.probe_ad_url(product_url)
@@ -959,9 +1119,10 @@ def _evaluate_product_if_ready(
         "provider": EVALUATION_PROVIDER,
         "model": EVALUATION_MODEL,
         "search_enabled": EVALUATION_SEARCH_ENABLED,
-        "search_tools": _search_tools_for_provider(EVALUATION_PROVIDER),
+        "search_tools": _search_tools_for_provider(EVALUATION_PROVIDER) if EVALUATION_SEARCH_ENABLED else [],
     }
     attempt_id = None
+    llm_recovery: dict[str, Any] = {}
     try:
         llm_config = resolve_evaluation_llm_config()
         attempt_id = _record_attempt_start(
@@ -971,27 +1132,16 @@ def _evaluate_product_if_ready(
             trigger="manual" if manual else "auto",
         )
         prompt = build_prompt(product, product_url, languages)
-        llm_result = llm_client.invoke_generate(
-            USE_CASE_CODE,
+        raw_json = _invoke_evaluation_llm_with_recovery(
             prompt=prompt,
             system=build_system_prompt(),
             media=[cover_path, video_path],
-            user_id=product.get("user_id"),
-            project_id=f"media-product-{product_id}",
+            product=product,
+            product_id=product_id,
             response_schema=build_response_schema(languages),
-            temperature=0.2,
-            max_output_tokens=4096,
-            provider_override=llm_config["provider"],
-            model_override=llm_config["model"],
-            google_search=llm_config["search_enabled"],
-            billing_extra={
-                "google_search": llm_config["search_enabled"],
-                "tools": llm_config["search_tools"],
-            },
+            llm_config=llm_config,
+            recovery=llm_recovery,
         )
-        raw_json = llm_result.get("json")
-        if raw_json is None:
-            raw_json = llm_result.get("text") or "{}"
         normalized = normalize_result(raw_json, languages)
         detail = {
             "schema_version": 1,
@@ -1011,6 +1161,8 @@ def _evaluate_product_if_ready(
             "video_clip_path": str(video_path),
             "countries": normalized["countries"],
         }
+        if llm_recovery:
+            detail["llm_recovery"] = llm_recovery
         medias.update_product(
             product_id,
             ai_score=normalized["ai_score"],
@@ -1048,6 +1200,8 @@ def _evaluate_product_if_ready(
                     "video_object_key": video_key,
                     "error": error_message,
                 }
+                if llm_recovery:
+                    detail["llm_recovery"] = llm_recovery
                 medias.update_product(
                     product_id,
                     ai_evaluation_result="评估失败",
