@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from flask import abort, request
+from flask import abort, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore import (
@@ -616,14 +616,10 @@ def api_detail_image_quality_check(pid: int, image_id: int):
 
     target_image = medias.get_detail_image(image_id)
     if not target_image or int(target_image.get("product_id") or 0) != pid:
-        return _routes()._detail_image_json_flask_response(
-            {"error": "商品详情图片未找到"}, 404
-        )
+        return jsonify({"error": "商品详情图片未找到"}), 404
 
     if target_image.get("lang") == "en":
-        return _routes()._detail_image_json_flask_response(
-            {"error": "无需对英语原图进行翻译质量检测"}, 400
-        )
+        return jsonify({"error": "无需对英语原图进行翻译质量检测"}), 400
 
     # 1. 查找源英文图
     source_image = None
@@ -641,9 +637,7 @@ def api_detail_image_quality_check(pid: int, image_id: int):
                 break
 
     if not source_image:
-        return _routes()._detail_image_json_flask_response(
-            {"error": "未找到对比的英文原图，请先上传英文原图并保持相同的排序"}, 400
-        )
+        return jsonify({"error": "未找到对比的英文原图，请先上传英文原图并保持相同的排序"}), 400
 
     # 2. 定位物理路径
     from appcore import local_media_storage, llm_bindings, llm_client
@@ -658,13 +652,9 @@ def api_detail_image_quality_check(pid: int, image_id: int):
     dst_path = str(local_media_storage.safe_local_path_for(dst_key))
 
     if not os.path.exists(src_path):
-        return _routes()._detail_image_json_flask_response(
-            {"error": f"英文原图本地物理文件不存在: {src_key}"}, 400
-        )
+        return jsonify({"error": f"英文原图本地物理文件不存在: {src_key}"}), 400
     if not os.path.exists(dst_path):
-        return _routes()._detail_image_json_flask_response(
-            {"error": f"翻译图本地物理文件不存在: {dst_key}"}, 400
-        )
+        return jsonify({"error": f"翻译图本地物理文件不存在: {dst_key}"}), 400
 
     # 3. 实时评估
     binding = llm_bindings.resolve("image_translate.eval")
@@ -714,12 +704,12 @@ def api_detail_image_quality_check(pid: int, image_id: int):
         )
 
         updated_image = medias.get_detail_image(image_id)
-        return _routes()._detail_image_json_flask_response(
+        return jsonify(
             {
                 "success": True,
                 "detail_image": _serialize_detail_image(updated_image)
             }
-        )
+        ), 200
 
     except Exception as exc:
         medias.update_detail_image_evaluation(
@@ -730,14 +720,13 @@ def api_detail_image_quality_check(pid: int, image_id: int):
             eval_model_id=eval_model_id,
         )
         updated_image = medias.get_detail_image(image_id)
-        return _routes()._detail_image_json_flask_response(
+        return jsonify(
             {
                 "success": False,
                 "error": str(exc),
                 "detail_image": _serialize_detail_image(updated_image),
-            },
-            500,
-        )
+            }
+        ), 500
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])

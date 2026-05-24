@@ -1822,6 +1822,7 @@
       items: () => items.slice(),
       staticItems: () => items.filter(it => !isGifItem(it)),
       gifItems:    () => items.filter(isGifItem),
+      triggerQualityCheck: triggerDetailQualityCheckAPI,
     };
   }
 
@@ -5956,6 +5957,12 @@
       headerClearBtn.hidden = isEnglishDetailLang;
       headerClearBtn.disabled = !hasItems;
     }
+    const batchEvalBtn = $('edDetailImagesBatchEvalBtn');
+    if (batchEvalBtn) {
+      const hasItems = Array.isArray(detailItems) && detailItems.filter(it => !String(it && it.object_key || '').toLowerCase().endsWith('.gif')).length > 0;
+      batchEvalBtn.hidden = isEnglishDetailLang;
+      batchEvalBtn.disabled = !hasItems;
+    }
     if (!status) return;
     if (isEnglishDetailLang) {
       status.hidden = true;
@@ -7825,6 +7832,53 @@
       edStartDetailTranslate().catch((err) => {
         console.error('[detail-images] start translate (header) failed:', err);
       });
+    });
+    $('edDetailImagesBatchEvalBtn') && $('edDetailImagesBatchEvalBtn').addEventListener('click', async () => {
+      const ctrl = edDetailImagesCtrl;
+      const list = ctrl ? ctrl.staticItems() : [];
+      if (!list.length) {
+        alert('当前没有可供质检的静态详情图');
+        return;
+      }
+      const ok = window.confirm(`确定开始对当前语种全部 ${list.length} 张静态图进行 AI 翻译质量质检？`);
+      if (!ok) return;
+
+      const btn = $('edDetailImagesBatchEvalBtn');
+      const origText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>正在批量质检中...</span>`;
+      }
+
+      try {
+        const concurrency = 3;
+        const queue = [...list];
+        const activePromises = [];
+
+        async function worker() {
+          while (queue.length > 0) {
+            const item = queue.shift();
+            if (item.eval_status === 'running') continue;
+            try {
+              await ctrl.triggerQualityCheck(item);
+            } catch (err) {
+              console.error('Batch Quality Check item failed:', item.id, err);
+            }
+          }
+        }
+
+        for (let i = 0; i < Math.min(concurrency, list.length); i++) {
+          activePromises.push(worker());
+        }
+        await Promise.all(activePromises);
+      } catch (err) {
+        alert('批量质检失败：' + (err.message || err));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      }
     });
     $('edDetailImagesClearAllBtn') && $('edDetailImagesClearAllBtn').addEventListener('click', async () => {
       const pid = edState.productData && edState.productData.product && edState.productData.product.id;
