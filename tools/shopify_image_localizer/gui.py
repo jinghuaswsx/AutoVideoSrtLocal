@@ -77,6 +77,7 @@ class ShopifyImageLocalizerApp:
         # 批量语言选择
         self.batch_languages: list[str] = []  # 已选择的批量语言标签列表
         self.current_running_language: str = ""  # 当前正在运行的语言
+        self.localized_links: list[dict[str, str]] = []  # 当前会话中成功换图的所有小语种链接
 
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -323,6 +324,13 @@ class ShopifyImageLocalizerApp:
             width=16,
         )
         self.open_download_button.pack(side="left", padx=(8, 0))
+        self.link_check_button = tk.Button(
+            self.action_frame,
+            text="链接检查",
+            command=self.open_link_check_dialog,
+            width=12,
+        )
+        self.link_check_button.pack(side="left", padx=(8, 0))
         self.advanced_button = tk.Button(
             self.action_frame,
             text="显示高级设置",
@@ -603,6 +611,7 @@ class ShopifyImageLocalizerApp:
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
         self.batch_select_btn.configure(state=state)
+        self.link_check_button.configure(state=state)
         if not running:
             self._progress_finish()
 
@@ -1740,6 +1749,23 @@ class ShopifyImageLocalizerApp:
                 self.current_running_language = ""
                 self._update_login_status(shopify_domain)
 
+                # Cache successfully localized links from batch in the session
+                for r in results:
+                    if r.get("success") and r.get("result"):
+                        res = r["result"]
+                        l_code = res.get("lang")
+                        p_code = res.get("product_code") or product_code
+                        dom = res.get("shopify_domain") or shopify_domain
+                        if l_code and p_code and dom:
+                            url = self.build_product_page_url(dom, l_code, p_code)
+                            if url and not any(item["url"] == url for item in self.localized_links):
+                                self.localized_links.append({
+                                    "lang": l_code,
+                                    "domain": dom,
+                                    "url": url,
+                                    "status": "待检测"
+                                })
+
                 if first_workspace:
                     self._workspace_root = first_workspace
                     self.open_workspace_button.configure(state="normal")
@@ -1789,6 +1815,22 @@ class ShopifyImageLocalizerApp:
 
     def _render_result(self, result: dict) -> None:
         self._handle_shopify_product_id(result.get("shopify_product_id"))
+        
+        # Caching the successfully localized link in the session
+        lang_code = result.get("lang")
+        product_code = result.get("product_code")
+        domain = self.current_shopify_domain_var.get() or result.get("shopify_domain") or settings.DEFAULT_SHOPIFY_DOMAIN
+        if lang_code and product_code and domain:
+            url = self.build_product_page_url(domain, lang_code, product_code)
+            if url:
+                if not any(item["url"] == url for item in self.localized_links):
+                    self.localized_links.append({
+                        "lang": lang_code,
+                        "domain": domain,
+                        "url": url,
+                        "status": "待检测"
+                    })
+
         workspace = str(result.get("workspace_root") or result.get("workspace") or "")
         self._workspace_root = workspace
         download_dir = str(result.get("download_dir") or "")
@@ -1993,3 +2035,654 @@ class ShopifyImageLocalizerApp:
         dialog.protocol("WM_DELETE_WINDOW", reject)
         self.root.wait_window(dialog)
         return bool(accepted["value"])
+
+    def build_product_page_url(self, domain: str, lang_code: str, product_code: str) -> str:
+        domain = str(domain or "").strip()
+        lang_code = str(lang_code or "").strip().lower()
+        product_code = str(product_code or "").strip().lower()
+        if not domain or not product_code:
+            return ""
+        
+        domain_clean = domain
+        if "://" in domain_clean:
+            domain_clean = domain_clean.split("://", 1)[1]
+        domain_clean = domain_clean.rstrip("/")
+        
+        # Shopify handles EN/default domain without lang code prefix
+        is_en = (lang_code == "en" or lang_code.startswith("en-") or lang_code in {"english", "英语", "英文"})
+        if is_en or not lang_code:
+            return f"https://{domain_clean}/products/{product_code}"
+        else:
+            return f"https://{domain_clean}/{lang_code}/products/{product_code}"
+
+    def _language_label_for_code(self, lang_code: str) -> str:
+        lang_code = str(lang_code or "").strip().lower()
+        for item in self.language_items:
+            code = str(item.get("code") or "").strip().lower()
+            if code == lang_code:
+                return self._language_label(item)
+        return lang_code
+
+    def open_link_check_dialog(self) -> None:
+        p_code = self.product_code_var.get().strip()
+        domain = self.current_shopify_domain_var.get().strip()
+        
+        # Standalone Link Check input validations
+        if not p_code:
+            messagebox.showwarning("提示", "请先在主界面中输入商品 ID", parent=self.root)
+            return
+        if not domain:
+            messagebox.showwarning("提示", "请先在主界面中选择店铺域名", parent=self.root)
+            return
+            
+        lang_labels = []
+        if self.batch_languages:
+            lang_labels = list(self.batch_languages)
+        else:
+            single_val = self.language_var.get().strip()
+            if single_val:
+                lang_labels = [single_val]
+                
+        if not lang_labels:
+            messagebox.showwarning("提示", "请先选择单项语言或批量选择语言", parent=self.root)
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("小语种链接审计与检测")
+        dialog.geometry("850x450")
+        dialog.minsize(750, 350)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        title_label = tk.Label(
+            dialog,
+            text="Shopify 小语种前台商品链接自动审计与检测",
+            font=("TkDefaultFont", 14, "bold"),
+            fg="#0f4c81"
+        )
+        title_label.pack(pady=(12, 8))
+
+        # Prep list to show based on the current active inputs in the main window
+        items_to_show = []
+        for label in lang_labels:
+            lang_code = self.language_label_to_code.get(label) or label
+            if lang_code:
+                url = self.build_product_page_url(domain, lang_code, p_code)
+                if url:
+                    item = {
+                        "lang": lang_code,
+                        "domain": domain,
+                        "url": url,
+                        "status": "待检测"
+                    }
+                    items_to_show.append(item)
+                    if not any(x["url"] == url for x in self.localized_links):
+                        self.localized_links.append(item)
+
+        tree_frame = tk.Frame(dialog)
+        tree_frame.pack(fill="both", expand=True, padx=16, pady=4)
+
+        tree = ttk.Treeview(
+            tree_frame,
+            columns=("lang", "domain", "url", "status"),
+            show="headings",
+            selectmode="browse"
+        )
+        tree.heading("lang", text="语言")
+        tree.heading("domain", text="店铺域名")
+        tree.heading("url", text="前台产品链接")
+        tree.heading("status", text="检测状态")
+
+        tree.column("lang", width=120, anchor="w", stretch=False)
+        tree.column("domain", width=160, anchor="w", stretch=False)
+        tree.column("url", width=380, anchor="w", stretch=True)
+        tree.column("status", width=100, anchor="center", stretch=False)
+
+        # Style tags
+        tree.tag_configure("待检测", foreground="#555555")
+        tree.tag_configure("检测中", foreground="#1976d2", font=("TkDefaultFont", 9, "bold"))
+        tree.tag_configure("正常", foreground="#2e7d32", font=("TkDefaultFont", 9, "bold"))
+        tree.tag_configure("复核", foreground="#ed6c02", font=("TkDefaultFont", 9, "bold"))
+        tree.tag_configure("异常", foreground="#d32f2f", font=("TkDefaultFont", 9, "bold"))
+
+        scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        iid_to_item = {}
+        def refresh_tree():
+            for item_iid in tree.get_children():
+                tree.delete(item_iid)
+            iid_to_item.clear()
+            for item in items_to_show:
+                lang_label = self._language_label_for_code(item["lang"])
+                status = item["status"]
+                iid = tree.insert(
+                    "",
+                    "end",
+                    values=(lang_label, item["domain"], item["url"], status),
+                    tags=(status,)
+                )
+                iid_to_item[iid] = item
+
+        refresh_tree()
+
+        # Bottom Buttons frame
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(fill="x", padx=16, pady=12)
+
+        def get_selected_item():
+            selected = tree.selection()
+            if not selected:
+                return None
+            return iid_to_item.get(selected[0])
+
+        def update_item_status(item, new_status):
+            item["status"] = new_status
+            refresh_tree()
+
+        def run_single():
+            item = get_selected_item()
+            if not item:
+                messagebox.showwarning("提示", "请先在列表中选中一个要检测的链接", parent=dialog)
+                return
+            self.run_single_link_check_gui(item, dialog, lambda it, st, res=None: update_item_status(it, st))
+
+        def run_all():
+            if not items_to_show:
+                messagebox.showinfo("提示", "当前没有可检测的链接", parent=dialog)
+                return
+            
+            btn_single.configure(state="disabled")
+            btn_all.configure(state="disabled")
+            
+            batch_results = []
+            
+            def run_batch_sequentially(index=0):
+                if index >= len(items_to_show):
+                    btn_single.configure(state="normal")
+                    btn_all.configure(state="normal")
+                    
+                    if batch_results:
+                        try:
+                            batch_report_path = self.write_batch_link_check_report(batch_results)
+                            if batch_report_path:
+                                from link_check_desktop import report as link_check_report
+                                link_check_report.open_report(batch_report_path)
+                        except Exception as report_exc:
+                            self._append_log(f"生成批量检测 HTML 报告失败: {report_exc}")
+                            
+                    messagebox.showinfo("批量检测完成", "所有小语种链接批量审计与检测完成！\n已自动合并生成批量网页报告并打开。", parent=dialog)
+                    return
+                
+                item = items_to_show[index]
+                
+                def on_finished(finished_item, final_status, result_dict=None):
+                    update_item_status(finished_item, final_status)
+                    if result_dict is not None:
+                        batch_results.append(result_dict)
+                    self._ui_after(1500, lambda: [console_win.destroy(), run_batch_sequentially(index + 1)])
+
+                console_win = self.run_single_link_check_gui(item, dialog, on_finished)
+            
+            run_batch_sequentially()
+
+        btn_single = tk.Button(btn_frame, text="检测选中链接", command=run_single, width=16, bg="#1976d2", fg="white")
+        btn_single.pack(side="left", padx=(0, 10))
+
+        btn_all = tk.Button(btn_frame, text="全部批量检测", command=run_all, width=16, bg="#2e7d32", fg="white")
+        btn_all.pack(side="left")
+
+        btn_close = tk.Button(btn_frame, text="关闭", command=dialog.destroy, width=10)
+        btn_close.pack(side="right")
+
+    def run_single_link_check_gui(self, item: dict, parent_dialog: tk.Toplevel, on_finish_cb) -> tk.Toplevel:
+        console_win = tk.Toplevel(parent_dialog)
+        console_win.title(f"链接检测控制台 - {item['url']}")
+        console_win.geometry("850x550")
+        console_win.transient(parent_dialog)
+        console_win.grab_set()
+
+        # Console Header Info
+        header_frame = tk.Frame(console_win, bg="#1e293b", padx=12, pady=10)
+        header_frame.pack(fill="x")
+
+        lang_label = self._language_label_for_code(item["lang"])
+        info_text = f"检测目标: {lang_label} | {item['domain']}\n链接: {item['url']}"
+        tk.Label(
+            header_frame,
+            text=info_text,
+            fg="#cbd5e1",
+            bg="#1e293b",
+            justify="left",
+            anchor="w",
+            font=("TkDefaultFont", 10, "bold")
+        ).pack(side="left")
+
+        # Scrolling terminal console styled beautifully
+        term_frame = tk.Frame(console_win)
+        term_frame.pack(fill="both", expand=True, padx=12, pady=12)
+
+        term_text = tk.Text(
+            term_frame,
+            bg="#0f172a",
+            fg="#cbd5e1",
+            selectbackground="#334155",
+            font=("Consolas", 10),
+            insertbackground="#ffffff",
+            wrap="word",
+            state="disabled"
+        )
+        term_scroll = ttk.Scrollbar(term_frame, orient="vertical", command=term_text.yview)
+        term_text.configure(yscrollcommand=term_scroll.set)
+        term_text.pack(side="left", fill="both", expand=True)
+        term_scroll.pack(side="right", fill="y")
+
+        # Status footer
+        footer_frame = tk.Frame(console_win, padx=12, pady=8)
+        footer_frame.pack(fill="x", side="bottom")
+
+        close_btn = tk.Button(footer_frame, text="关闭", command=console_win.destroy, width=12, state="disabled")
+        close_btn.pack(side="right")
+
+        def append_log(msg: str, tag: str = None) -> None:
+            term_text.configure(state="normal")
+            if tag:
+                if tag == "error":
+                    term_text.tag_config("error", foreground="#ef4444")
+                elif tag == "success":
+                    term_text.tag_config("success", foreground="#10b981", font=("Consolas", 10, "bold"))
+                elif tag == "info":
+                    term_text.tag_config("info", foreground="#60a5fa")
+                
+                term_text.insert("end", f"{msg}\n", tag)
+            else:
+                term_text.insert("end", f"{msg}\n")
+            term_text.configure(state="disabled")
+            term_text.see("end")
+
+        base_url = self.base_url_var.get().strip()
+        api_key = self.api_key_var.get().strip()
+        target_url = item["url"]
+
+        on_finish_cb(item, "检测中")
+        append_log("[INFO] 正在启动链接检查 background thread...", "info")
+
+        def worker():
+            from link_check_desktop import controller as link_check_controller
+            from link_check_desktop import report as link_check_report
+            
+            def thread_status_cb(msg):
+                self._ui_after(0, append_log, f"[*] {msg}")
+
+            try:
+                result = link_check_controller.run_link_check(
+                    base_url=base_url,
+                    api_key=api_key,
+                    target_url=target_url,
+                    status_cb=thread_status_cb
+                )
+                
+                summary = result.get("analysis", {}).get("summary", {})
+                decision = str(summary.get("overall_decision", "Review")).strip()
+                report_html_path = result.get("report_html_path") or ""
+                
+                status_mapping = {
+                    "Pass": "正常",
+                    "Replace": "复核",
+                    "Review": "复核",
+                }
+                final_status = status_mapping.get(decision, "复核")
+
+                self._ui_after(0, append_log, "\n=============================================", "success")
+                self._ui_after(0, append_log, f"[SUCCESS] 链接审计成功完成！", "success")
+                self._ui_after(0, append_log, f"[+] 产品 ID: {result.get('product', {}).get('id', '')}")
+                self._ui_after(0, append_log, f"[+] 目标语言: {result.get('target_language_name', '')} ({result.get('target_language', '')})")
+                self._ui_after(0, append_log, f"[+] 整体审计结果: {decision}", "success" if decision == "Pass" else "info")
+                self._ui_after(0, append_log, f"[+] 通过判定数: {summary.get('pass_count', 0)}")
+                self._ui_after(0, append_log, f"[+] 需替换数: {summary.get('replace_count', 0)}")
+                self._ui_after(0, append_log, f"[+] 需复核数: {summary.get('review_count', 0)}")
+                self._ui_after(0, append_log, f"[+] 结果报告: {report_html_path}")
+                self._ui_after(0, append_log, "=============================================\n", "success")
+                
+                self._ui_after(0, on_finish_cb, item, final_status, result)
+
+                if report_html_path:
+                    try:
+                        link_check_report.open_report(report_html_path)
+                    except Exception as r_exc:
+                        self._ui_after(0, append_log, f"[!] 自动打开报告失败: {r_exc}", "error")
+
+            except Exception as exc:
+                friendly = self._friendly_link_check_error(exc)
+                self._ui_after(0, append_log, f"\n[ERROR] 链接审计执行失败！", "error")
+                self._ui_after(0, append_log, f"[Reason] {friendly}", "error")
+                self._ui_after(0, on_finish_cb, item, "异常", None)
+            finally:
+                self._ui_after(0, close_btn.configure, {"state": "normal"})
+
+        threading.Thread(target=worker, daemon=True).start()
+        return console_win
+
+    def write_batch_link_check_report(self, batch_results: list[dict]) -> str | None:
+        if not batch_results:
+            return None
+        
+        from pathlib import Path
+        workspace_dir = None
+        if self._workspace_root:
+            workspace_dir = Path(self._workspace_root)
+        else:
+            first_ws = batch_results[0].get("workspace_root")
+            if first_ws:
+                workspace_dir = Path(first_ws).parent
+                
+        if not workspace_dir:
+            workspace_dir = Path.home() / ".gemini" / "antigravity"
+            
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        report_path = workspace_dir / "batch_link_check_report.html"
+        
+        html_content = self._generate_batch_report_html(batch_results)
+        report_path.write_text(html_content, encoding="utf-8")
+        return str(report_path)
+
+    def _generate_batch_report_html(self, batch_results: list[dict]) -> str:
+        import html
+        from pathlib import Path
+        
+        total_count = len(batch_results)
+        pass_count = sum(1 for r in batch_results if r.get("analysis", {}).get("summary", {}).get("overall_decision") == "Pass")
+        review_count = sum(1 for r in batch_results if r.get("analysis", {}).get("summary", {}).get("overall_decision") in {"Review", "Replace"})
+        
+        pass_rate = f"{pass_count / total_count * 100:.1f}%" if total_count > 0 else "0.0%"
+        
+        rows_html = ""
+        for idx, result in enumerate(batch_results, start=1):
+            product_id = result.get("product", {}).get("id") or "-"
+            lang_name = f"{result.get('target_language_name', '')} ({result.get('target_language', '')})"
+            domain = result.get("normalized_url", "").split("://", 1)[-1].split("/", 1)[0]
+            summary = result.get("analysis", {}).get("summary") or {}
+            decision = str(summary.get("overall_decision") or "Review").strip()
+            
+            badge_class = "success" if decision == "Pass" else "warning"
+            badge_label = "合格 (Pass)" if decision == "Pass" else f"需复核 ({decision})"
+            
+            pass_imgs = summary.get("pass_count", 0)
+            replace_imgs = summary.get("replace_count", 0)
+            review_imgs = summary.get("review_count", 0)
+            total_imgs = pass_imgs + replace_imgs + review_imgs
+            
+            img_pass_rate = f"{pass_imgs / total_imgs * 100:.1f}%" if total_imgs > 0 else "0.0%"
+            
+            single_report = result.get("report_html_path") or ""
+            report_link = ""
+            if single_report:
+                report_uri = Path(single_report).as_uri()
+                report_link = f'<a href="{report_uri}" class="report-btn" target="_blank">查看单项报告</a>'
+            else:
+                report_link = '<span class="no-report">未生成</span>'
+                
+            rows_html += f"""
+            <tr>
+                <td>{idx}</td>
+                <td class="mono">{html.escape(product_id)}</td>
+                <td>{html.escape(lang_name)}</td>
+                <td>{html.escape(domain)}</td>
+                <td><span class="badge {badge_class}">{html.escape(badge_label)}</span></td>
+                <td><strong>{img_pass_rate}</strong> <small class="text-muted">({pass_imgs}/{total_imgs})</small></td>
+                <td><span class="text-danger">{replace_imgs} 处需替换</span> / <span class="text-warning">{review_imgs} 处需复核</span></td>
+                <td>{report_link}</td>
+            </tr>
+            """
+            
+        css_style = """
+        :root {
+          --primary: #0f4c81;
+          --primary-dark: #0b3a63;
+          --accent: #2563eb;
+          --bg: #f8fafc;
+          --panel: #ffffff;
+          --border: #e2e8f0;
+          --text: #1e293b;
+          --text-muted: #64748b;
+          --success: #10b981;
+          --success-bg: #ecfdf5;
+          --warning: #f59e0b;
+          --warning-bg: #fffbeb;
+          --danger: #ef4444;
+          --danger-bg: #fef2f2;
+        }
+        
+        body {
+          margin: 0;
+          background-color: var(--bg);
+          color: var(--text);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          line-height: 1.5;
+        }
+        
+        .container {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 40px 20px;
+        }
+        
+        header {
+          background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+          color: #ffffff;
+          padding: 30px;
+          border-radius: 16px;
+          margin-bottom: 30px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        header h1 {
+          margin: 0 0 10px 0;
+          font-size: 28px;
+          font-weight: 700;
+        }
+        
+        header p {
+          margin: 0;
+          opacity: 0.9;
+          font-size: 14px;
+        }
+        
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 20px;
+          margin-bottom: 30px;
+        }
+        
+        .stat-card {
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          padding: 20px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+          text-align: center;
+        }
+        
+        .stat-card h3 {
+          margin: 0 0 8px 0;
+          color: var(--text-muted);
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        
+        .stat-card .value {
+          font-size: 28px;
+          font-weight: 700;
+          color: var(--primary);
+        }
+        
+        .stat-card .value.success {
+          color: var(--success);
+        }
+        
+        .stat-card .value.warning {
+          color: var(--warning);
+        }
+        
+        .panel {
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+        }
+        
+        .panel h2 {
+          margin: 0 0 20px 0;
+          font-size: 20px;
+          color: var(--primary);
+        }
+        
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          text-align: left;
+        }
+        
+        th {
+          background-color: #f1f5f9;
+          color: var(--text-muted);
+          font-weight: 600;
+          padding: 14px 16px;
+          font-size: 13px;
+          text-transform: uppercase;
+          border-bottom: 2px solid var(--border);
+        }
+        
+        td {
+          padding: 16px;
+          border-bottom: 1px solid var(--border);
+          font-size: 14px;
+        }
+        
+        tr:hover {
+          background-color: #f8fafc;
+        }
+        
+        .mono {
+          font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+          font-size: 13px;
+        }
+        
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 4px 10px;
+          border-radius: 9999px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+        
+        .badge.success {
+          background-color: var(--success-bg);
+          color: var(--success);
+        }
+        
+        .badge.warning {
+          background-color: var(--warning-bg);
+          color: var(--warning);
+        }
+        
+        .text-muted {
+          color: var(--text-muted);
+        }
+        
+        .text-danger {
+          color: var(--danger);
+          font-weight: 600;
+        }
+        
+        .text-warning {
+          color: var(--warning);
+          font-weight: 600;
+        }
+        
+        .report-btn {
+          display: inline-block;
+          background-color: var(--accent);
+          color: #ffffff;
+          padding: 6px 12px;
+          border-radius: 8px;
+          text-decoration: none;
+          font-size: 12px;
+          font-weight: 600;
+          transition: background-color 0.2s;
+        }
+        
+        .report-btn:hover {
+          background-color: #1d4ed8;
+        }
+        
+        .no-report {
+          color: var(--text-muted);
+          font-style: italic;
+        }
+        """
+        
+        return f"""<!doctype html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Shopify 小语种前台链接批量审计报告</title>
+          <style>{css_style}</style>
+        </head>
+        <body>
+          <div class="container">
+            <header>
+              <h1>Shopify 小语种前台链接批量审计报告</h1>
+              <p>本页由 Shopify Image Localizer GUI 客户端在批量链接审计完成后自动合并生成。</p>
+            </header>
+            
+            <div class="stats-grid">
+              <div class="stat-card">
+                <h3>总审计链接数</h3>
+                <div class="value">{total_count}</div>
+              </div>
+              <div class="stat-card">
+                <h3>合格链接 (Pass)</h3>
+                <div class="value success">{pass_count}</div>
+              </div>
+              <div class="stat-card">
+                <h3>需复核链接 (Review)</h3>
+                <div class="value warning">{review_count}</div>
+              </div>
+              <div class="stat-card">
+                <h3>批量整体合格率</h3>
+                <div class="value success">{pass_rate}</div>
+              </div>
+            </div>
+            
+            <div class="panel">
+              <h2>审计详情列表</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>序号</th>
+                    <th>产品 ID</th>
+                    <th>目标语言</th>
+                    <th>店铺域名</th>
+                    <th>整体判定</th>
+                    <th>图片匹配率</th>
+                    <th>差异详情</th>
+                    <th>单项详细报告</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows_html}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </body>
+        </html>
+        """
