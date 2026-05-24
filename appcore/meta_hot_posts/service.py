@@ -1430,3 +1430,121 @@ def resolve_local_video_cover_response(post_id: int) -> LocalVideoResponse:
     if path is None:
         return LocalVideoResponse(None, 404, "not_found")
     return LocalVideoResponse(path, 200, None)
+
+
+def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dict[str, Any]:
+    from appcore.db import execute, query_one
+    from appcore import object_keys, local_media_storage
+    from appcore.medias import create_item
+    from appcore.meta_hot_posts import video_localization
+    import os
+
+    # 1. Fetch hot post and check existing import
+    row = query_one(
+        "SELECT p.*, a.product_title, a.product_main_image_url, a.category_l1 "
+        "FROM meta_hot_posts p "
+        "LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash "
+        "WHERE p.id = %s LIMIT 1",
+        (int(post_id),)
+    )
+    if not row:
+        raise ValueError(f"Meta hot post not found: {post_id}")
+
+    local_product_id = row.get("local_product_id")
+    local_media_item_id = row.get("local_media_item_id")
+    if local_product_id and local_media_item_id:
+        return {
+            "media_product_id": int(local_product_id),
+            "media_item_id": int(local_media_item_id),
+            "is_new_product": False,
+        }
+
+    # 2. Check localized video file
+    if row.get("local_video_status") != "downloaded" or not row.get("local_video_path"):
+        raise ValueError("本地视频尚未就绪，请等待视频本地化完成")
+
+    local_path = video_localization.resolve_local_video_path(str(row.get("local_video_path") or ""))
+    if local_path is None or not local_path.exists():
+        raise ValueError("本地视频文件不存在")
+
+    # Resolve cover
+    local_cover_path = None
+    if row.get("local_video_cover_path"):
+        cover_res = video_localization.resolve_output_relative_file_path(str(row.get("local_video_cover_path") or ""))
+        if cover_res and cover_res.exists():
+            local_cover_path = cover_res
+
+    # 3. Create or reuse media product
+    product_code = f"meta-hot-{post_id}"
+    existing_product = query_one(
+        "SELECT id, user_id FROM media_products WHERE product_code = %s AND deleted_at IS NULL LIMIT 1",
+        (product_code,)
+    )
+
+    is_new = existing_product is None
+    if is_new:
+        product_title = row.get("product_title") or f"Meta热帖产品 {post_id}"
+        product_link = row.get("product_url") or ""
+        main_image = row.get("product_main_image_url") or row.get("image_url") or ""
+        product_id = execute(
+            "INSERT INTO media_products (user_id, name, product_code, product_link, main_image) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (
+                int(translator_id),
+                str(product_title)[:255],
+                product_code,
+                str(product_link)[:2047],
+                str(main_image)[:2047],
+            )
+        )
+        owner_uid = int(translator_id)
+    else:
+        product_id = int(existing_product["id"])
+        owner_uid = int(existing_product["user_id"])
+
+    # 4. Copy video to local media store
+    filename = f"meta_hot_{post_id}.mp4"
+    dest_key = object_keys.build_media_object_key(owner_uid, product_id, filename)
+    with open(local_path, "rb") as handle:
+        local_media_storage.write_stream(dest_key, handle)
+    file_size = local_path.stat().st_size
+
+    # Copy cover to local media store if exists
+    cover_key = None
+    if local_cover_path:
+        cover_filename = f"meta_hot_{post_id}_cover.jpg"
+        cover_key = object_keys.build_media_object_key(owner_uid, product_id, cover_filename)
+        with open(local_cover_path, "rb") as handle:
+            local_media_storage.write_stream(cover_key, handle)
+
+    # 5. Insert media item via create_item
+    duration_val = row.get("local_video_duration_seconds") or 0
+    try:
+        duration_seconds = float(duration_val)
+    except (TypeError, ValueError):
+        duration_seconds = 0.0
+
+    item_id = create_item(
+        product_id=product_id,
+        user_id=owner_uid,
+        filename=filename,
+        object_key=dest_key,
+        display_name=row.get("product_title") or f"Meta热帖素材 {post_id}",
+        duration_seconds=duration_seconds if duration_seconds > 0 else None,
+        file_size=file_size,
+        cover_object_key=cover_key,
+        lang="en",
+    )
+
+    # 6. Update mapping back to meta_hot_posts
+    execute(
+        "UPDATE meta_hot_posts SET local_product_id = %s, local_media_item_id = %s WHERE id = %s",
+        (product_id, item_id, int(post_id))
+    )
+
+    return {
+        "media_product_id": product_id,
+        "media_item_id": item_id,
+        "is_new_product": is_new,
+    }
+

@@ -777,6 +777,56 @@ def api_meta_hot_posts_ai_analysis_run(post_id: int, mode: str):
     return jsonify(result.payload), result.status_code
 
 
+@bp.route("/api/meta-hot-posts/<int:post_id>/import", methods=["POST"])
+@login_required
+@admin_required
+def api_meta_hot_posts_import(post_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        translator_id = int(payload.get("translator_id") or 0)
+    except (TypeError, ValueError):
+        translator_id = 0
+    if not translator_id:
+        return jsonify({"success": False, "error": "translator_id_required"}), 400
+
+    from appcore.meta_hot_posts.service import import_hot_post
+    from appcore import runner_lifecycle, material_evaluation
+
+    try:
+        res = import_hot_post(
+            post_id=post_id,
+            translator_id=translator_id,
+            actor_user_id=int(current_user.id),
+        )
+
+        if res.get("media_product_id"):
+            runner_lifecycle.start_tracked_thread(
+                project_type="material_evaluation",
+                task_id=str(res["media_product_id"]),
+                target=material_evaluation.evaluate_product_if_ready,
+                args=(res["media_product_id"],),
+                kwargs={"force": True, "manual": True},
+                daemon=True,
+                user_id=int(current_user.id),
+                runner="appcore.material_evaluation.evaluate_product_if_ready",
+                entrypoint="meta_hot_posts.import",
+                stage="queued_evaluation",
+                details={"source": "meta_hot_posts_import"},
+            )
+
+        return jsonify({
+            "success": True,
+            "media_product_id": res["media_product_id"],
+            "media_item_id": res["media_item_id"],
+            "is_new_product": res["is_new_product"]
+        })
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": f"Internal error: {exc}"}), 500
+
+
+
 @bp.route("/api/meta-hot-posts/<int:post_id>/local-video", methods=["GET"])
 @login_required
 def api_meta_hot_posts_local_video(post_id: int):
