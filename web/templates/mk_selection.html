@@ -696,7 +696,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   {% include "_xuanpin_tabs.html" %}
   <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
     <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
-    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top100')" data-mk-library-tab="yesterday-top100">昨天消耗前100</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top300')" data-mk-library-tab="yesterday-top300">昨天消耗前300</button>
     <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
   </div>
   <div class="oc-header oc-header--actions">
@@ -774,7 +774,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
 
   <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
     <div class="mk-video-library-head">
-      <span id="mkYesterdayTop100Status">切换到昨天消耗前100后加载本地归档</span>
+      <span id="mkYesterdayTop100Status">切换到昨天消耗前300后加载本地归档</span>
     </div>
     <div class="oc-pager" id="mkYesterdayTop100PagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkYesterdayTop100Grid">
@@ -1134,7 +1134,7 @@ function runMkSearch(options = {}) {
   }
   if (currentMkLibraryTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
-  } else if (currentMkLibraryTab === 'yesterday-top100') {
+  } else if (currentMkLibraryTab === 'yesterday-top300') {
     loadMkYesterdayTop100(1);
   } else {
     loadData(1);
@@ -1198,7 +1198,8 @@ function onMkRangeChange() {
 }
 
 function normalizeMkLibraryTab(tab) {
-  return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'videos';
+  if (tab === 'yesterday-top100') return 'yesterday-top300';
+  return ['products', 'videos', 'yesterday-top300'].includes(tab) ? tab : 'videos';
 }
 
 function applyMkLibraryTabState() {
@@ -1209,7 +1210,7 @@ function applyMkLibraryTabState() {
   });
   document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
   document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
-  document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top100';
+  document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top300';
 }
 
 function switchMkLibraryTab(tab, options = {}) {
@@ -1220,7 +1221,7 @@ function switchMkLibraryTab(tab, options = {}) {
   applyMkLibraryTabState();
   if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
     loadMkLocalMaterialLibrary(1);
-  } else if (currentMkLibraryTab === 'yesterday-top100' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
+  } else if (currentMkLibraryTab === 'yesterday-top300' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
     loadMkYesterdayTop100(1);
   } else if (currentMkLibraryTab === 'products' && (!mkProductsLoaded || options.forceLoad)) {
     loadData(1);
@@ -1357,11 +1358,11 @@ async function loadMkYesterdayTop100(page) {
   const grid = document.getElementById('mkYesterdayTop100Grid');
   const status = document.getElementById('mkYesterdayTop100Status');
   const pagerIds = ['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'];
-  grid.innerHTML = '<div class="oc-empty">加载昨天消耗前100中...</div>';
+  grid.innerHTML = '<div class="oc-empty">加载昨天消耗前300中...</div>';
   clearMkArchivePager(pagerIds);
-  status.textContent = '正在读取昨天消耗前100归档...';
+  status.textContent = '正在读取昨天消耗前300归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1370,16 +1371,16 @@ async function loadMkYesterdayTop100(page) {
     const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
     const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
-    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前100${kw ? ` · 搜索 ${kw}` : ''}`;
+    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}`;
     if (!data.items || !data.items.length) {
-      grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前100归档</div>';
+      grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前300归档</div>';
     } else {
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
     renderMkArchivePager(['mkYesterdayTop100PagerTop', 'mkYesterdayTop100PagerBottom'], 'loadMkYesterdayTop100', page, total);
   } catch (e) {
-    status.textContent = '昨天消耗前100加载失败';
+    status.textContent = '昨天消耗前300加载失败';
     grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
   }
 }
@@ -1460,7 +1461,7 @@ function renderMkVideoMaterialCard(r) {
     ? `<span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
     : '';
   const newTop100Html = r.is_new_top100_entry
-    ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top100</span></span></span>'
+    ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top300</span></span></span>'
     : '';
   return `<div class="mk-video-card">
     ${statusIconsHtml}
@@ -1859,7 +1860,7 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
   await loadMkSelectionSnapshots();
   if (initialTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
-  } else if (initialTab === 'yesterday-top100') {
+  } else if (initialTab === 'yesterday-top300') {
     loadMkYesterdayTop100(1);
   } else {
     loadData(1);

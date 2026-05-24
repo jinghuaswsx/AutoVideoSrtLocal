@@ -48,7 +48,7 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
     assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
     video_tab = 'class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab(\'videos\')" data-mk-library-tab="videos">视频素材库'
-    yesterday_tab = 'data-mk-library-tab="yesterday-top100">昨天消耗前100'
+    yesterday_tab = 'data-mk-library-tab="yesterday-top300">昨天消耗前300'
     products_tab = 'data-mk-library-tab="products">产品库'
     assert video_tab in body
     assert yesterday_tab in body
@@ -250,7 +250,8 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert ".mk-library-tabs { display:flex;" in template
     assert "width:max-content" in template
     assert "function normalizeMkLibraryTab(tab)" in template
-    assert "return ['products', 'videos', 'yesterday-top100'].includes(tab) ? tab : 'videos';" in template
+    assert "if (tab === 'yesterday-top100') return 'yesterday-top300';" in template
+    assert "return ['products', 'videos', 'yesterday-top300'].includes(tab) ? tab : 'videos';" in template
     assert "function initMkLibraryTabFromHash()" in template
     assert "location.hash = currentMkLibraryTab;" in template
     assert "let currentMkLibraryTab = 'videos';" in template
@@ -259,10 +260,12 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "mkSnapshotQueryParam()" in template
     assert "mkRangeQueryParam()" in template
     assert "if (initialTab === 'videos')" in template
-    assert "if (initialTab === 'yesterday-top100')" in template
+    assert "if (initialTab === 'yesterday-top300')" in template
     assert "/xuanpin/api/mk-material-library" in template
-    assert "/xuanpin/api/mk-yesterday-top100" in template
+    assert "/xuanpin/api/mk-yesterday-top300" in template
     assert "/xuanpin/api/mk-video-materials" not in template
+    assert "昨天消耗前100" not in template
+    assert "新进Top100" not in template
 
 
 def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector():
@@ -277,7 +280,7 @@ def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector
         "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}`;"
     ) in template
     assert (
-        "const url = `/xuanpin/api/mk-yesterday-top100?page=${page}"
+        "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
         "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template

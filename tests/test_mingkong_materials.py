@@ -433,6 +433,30 @@ def test_build_top100_rows_recovers_spend_from_raw_metadata_when_numeric_row_is_
     assert rows[0]["yesterday_spend_delta"] == 30500.0
 
 
+def test_build_top100_rows_defaults_to_top300():
+    rows = mm.build_top100_rows(
+        snapshot_date="2026-05-18",
+        snapshot_at="2026-05-18 18:00:00",
+        previous_snapshot_date=None,
+        previous_snapshot_at=None,
+        comparison_interval_seconds=None,
+        current_rows=[
+            {
+                "material_key": f"material-{index:03d}",
+                "cumulative_90_spend": 1000 - index,
+                "video_ads_count": 1,
+                "rank_position": index,
+            }
+            for index in range(1, 306)
+        ],
+        previous_by_key={},
+        previous_top100_keys=set(),
+    )
+
+    assert len(rows) == 300
+    assert {row["rank_position"] for row in rows} == set(range(1, 301))
+
+
 def test_build_top100_rows_marks_new_entry_and_clamps_negative_delta():
     current = [
         {
@@ -594,6 +618,52 @@ def test_build_top100_rows_does_not_inflate_untracked_products():
     assert by_key["new-video-on-known-product"]["yesterday_spend_delta"] == 1200.0
     assert by_key["matched-video"]["yesterday_spend_delta"] == 200.0
     assert rows[0]["material_key"] == "new-video-on-known-product"
+
+
+def test_generate_daily_top100_builds_top300_archive(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        mm,
+        "_latest_snapshot_identity",
+        lambda table, snapshot_date=None: {
+            "snapshot_date": "2026-05-18",
+            "snapshot_at": "2026-05-18 18:00:00",
+            "snapshot_slot": "1800",
+        },
+    )
+    monkeypatch.setattr(
+        mm,
+        "_snapshot_run_metadata",
+        lambda snapshot_at: {"source_product_count": 500, "source_product_limit": 500},
+    )
+    monkeypatch.setattr(mm, "_previous_material_snapshot_for", lambda **kwargs: None)
+    monkeypatch.setattr(
+        mm,
+        "_snapshot_rows_by_date",
+        lambda snapshot_date, snapshot_at=None: [
+            {
+                "material_key": f"material-{index:03d}",
+                "cumulative_90_spend": 1000 - index,
+                "video_ads_count": 1,
+                "rank_position": index,
+            }
+            for index in range(1, 306)
+        ],
+    )
+    monkeypatch.setattr(mm, "_previous_top100_keys", lambda snapshot_date, snapshot_at=None: set())
+
+    def fake_replace(rows):
+        captured["rows"] = rows
+        return len(rows)
+
+    monkeypatch.setattr(mm, "_replace_top100_rows", fake_replace)
+
+    result = mm.generate_daily_top100("2026-05-18", "2026-05-18 18:00:00")
+
+    assert len(captured["rows"]) == 300
+    assert result["top100_count"] == 300
+    assert result["top300_count"] == 300
 
 
 def test_select_mingkong_product_prefers_spend_over_video_count_after_exact_match():

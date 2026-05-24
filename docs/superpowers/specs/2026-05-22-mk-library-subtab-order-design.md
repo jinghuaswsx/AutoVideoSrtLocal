@@ -13,14 +13,15 @@ On `/xuanpin/mk`, the Mingkong inner library tabs should prioritize the video
 material workflow:
 
 1. `视频素材库`
-2. `昨天消耗前100`
+2. `昨天消耗前300`
 3. `产品库`
 
 When the page opens without a hash, `视频素材库` is the default active inner tab.
 Existing hash deep links keep working:
 
 - `#videos` opens `视频素材库`.
-- `#yesterday-top100` opens `昨天消耗前100`.
+- `#yesterday-top300` opens `昨天消耗前300`.
+- legacy `#yesterday-top100` also opens `昨天消耗前300`.
 - `#products` opens `产品库`.
 
 The product table row `素材库` action still switches to `视频素材库` and filters by

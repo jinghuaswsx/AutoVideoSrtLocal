@@ -154,7 +154,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "明空素材每日快照",
         "description": (
             "每天 05:00、17:00 读取店小秘 Listing 最新可用快照 Top500 产品 code，"
-            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前100。"
+            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前300。"
             "Docs-anchor: "
             "docs/superpowers/specs/2026-05-20-mingkong-product-local-aggregate-stats-design.md"
         ),
@@ -187,8 +187,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_fine_ai_auto_evaluation_tick",
         "name": "明空视频卡片 AI 精细评估任务池",
         "description": (
-            "后台 worker 池持续从明空视频素材库 90 天消耗 Top500 优先取任务；"
-            "Top500 无可跑任务后再跑昨天消耗前100的全部 Top100。"
+            "后台 worker 池持续从明空视频素材库 90 天消耗 Top1000 优先取任务；"
+            "Top1000 无可跑任务后再跑昨天消耗前300的全部 Top300。"
             "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
             "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
         ),

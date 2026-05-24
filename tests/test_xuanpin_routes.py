@@ -99,9 +99,10 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert 'aria-label="明空选品库类型"' in body
     assert "产品库" in body
     assert "视频素材库" in body
-    assert "昨天消耗前100" in body
+    assert "昨天消耗前300" in body
+    assert "昨天消耗前100" not in body
     assert "/xuanpin/api/mk-material-library" in body
-    assert "/xuanpin/api/mk-yesterday-top100" in body
+    assert "/xuanpin/api/mk-yesterday-top300" in body
 
 
 def test_xuanpin_mk_video_cards_clamp_copy_and_hide_missing_sales(authed_client_no_db):
@@ -989,14 +990,14 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
     }
 
 
-def test_xuanpin_mk_yesterday_top100_api_reads_archive(
+def test_xuanpin_mk_yesterday_top300_api_reads_archive(
     authed_client_no_db,
     monkeypatch,
 ):
-    captured = {}
+    captured = []
 
     def fake_list_yesterday_top100(**kwargs):
-        captured.update(kwargs)
+        captured.append(kwargs)
         return {
             "items": [{"video_name": "fresh.mp4", "is_new_top100_entry": True}],
             "snapshot": "2026-05-18",
@@ -1010,18 +1011,23 @@ def test_xuanpin_mk_yesterday_top100_api_reads_archive(
     )
 
     resp = authed_client_no_db.get(
-        "/xuanpin/api/mk-yesterday-top100?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
+        "/xuanpin/api/mk-yesterday-top300?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
     )
 
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
-    assert captured == {
+    assert captured[-1] == {
         "snapshot_date": "2026-05-18",
         "snapshot_at": None,
         "keyword": "baseball",
         "page": "1",
         "page_size": "100",
     }
+
+    legacy_resp = authed_client_no_db.get("/xuanpin/api/mk-yesterday-top100?page=2&page_size=50")
+    assert legacy_resp.status_code == 200
+    assert captured[-1]["page"] == "2"
+    assert captured[-1]["page_size"] == "50"
 
 
 def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):

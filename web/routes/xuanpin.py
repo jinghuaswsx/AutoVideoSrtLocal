@@ -321,9 +321,10 @@ def api_mk_material_library():
     return jsonify(result)
 
 
+@bp.route("/api/mk-yesterday-top300", methods=["GET"])
 @bp.route("/api/mk-yesterday-top100", methods=["GET"])
 @login_required
-def api_mk_yesterday_top100():
+def api_mk_yesterday_top300():
     if not _is_admin():
         return jsonify({"error": "forbidden"}), 403
     result = _mingkong_materials().list_yesterday_top100(

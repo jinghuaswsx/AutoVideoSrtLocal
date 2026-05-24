@@ -24,6 +24,8 @@ _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 _COVER_CACHE_PREFIX = "artifacts/mingkong-material-covers"
 _COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 _SECONDS_PER_DAY = 24 * 60 * 60
+# Legacy table/helper names still say top100; the business archive now keeps Top300.
+YESTERDAY_SPEND_TOP_LIMIT = 300
 _AD_STATUS_SCOPE_PRODUCT = "product"
 _AD_STATUS_SCOPE_MATERIAL = "material"
 logger = logging.getLogger(__name__)
@@ -1335,7 +1337,7 @@ def build_top100_rows(
     previous_by_key: dict[str, dict[str, Any]],
     previous_top100_keys: set[str],
     previous_product_codes: set[str] | None = None,
-    limit: int = 100,
+    limit: int = YESTERDAY_SPEND_TOP_LIMIT,
 ) -> list[dict[str, Any]]:
     resolved_snapshot_at = _coerce_datetime(snapshot_at) if snapshot_at else ""
     snapshot_slot = _snapshot_slot_for(resolved_snapshot_at) if resolved_snapshot_at else ""
@@ -2509,7 +2511,7 @@ def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) ->
         previous_by_key=previous_by_key,
         previous_top100_keys=_previous_top100_keys(previous_snapshot_date, previous_snapshot_at or None),
         previous_product_codes=previous_product_codes if previous_snapshot else None,
-        limit=100,
+        limit=YESTERDAY_SPEND_TOP_LIMIT,
     )
     inserted = _replace_top100_rows(top100_rows)
     return {
@@ -2521,6 +2523,7 @@ def generate_daily_top100(snapshot_date: str, snapshot_at: str | None = None) ->
             (previous_snapshot or {}).get("comparison_interval_seconds") if previous_snapshot else None
         ),
         "top100_count": inserted,
+        "top300_count": inserted,
     }
 
 

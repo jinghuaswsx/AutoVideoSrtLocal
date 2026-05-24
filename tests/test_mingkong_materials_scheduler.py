@@ -16,6 +16,7 @@ def test_mingkong_material_daily_snapshot_registered():
     assert task["runner"] == "tools/mingkong_material_daily_snapshot.py"
     assert task["log_table"] == "scheduled_task_runs"
     assert "Top500" in task["description"]
+    assert "昨日消耗前300" in task["description"]
     assert "05:00" in task["schedule"]
     assert "17:00" in task["schedule"]
     assert "2026-05-20-mingkong-product-local-aggregate-stats-design.md" in task["description"]
@@ -63,6 +64,8 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     assert task["log_table"] == "mingkong_fine_ai_auto_evaluations"
     assert "连续后台任务池" in task["schedule"]
     assert "6 个卡片并发" in task["schedule"]
+    assert "Top1000" in task["description"]
+    assert "昨天消耗前300" in task["description"]
     assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
     assert enriched["control_strategy"] == "systemd"
     assert enriched["log_source"] == "db:mingkong_fine_ai_auto_evaluations"

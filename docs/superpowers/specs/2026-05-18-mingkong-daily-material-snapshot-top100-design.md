@@ -1,6 +1,6 @@
-# Mingkong Daily Material Snapshot Top100 Design
+# Mingkong Daily Material Snapshot Top300 Design
 
-Last updated: 2026-05-20
+Last updated: 2026-05-24
 
 ## Context
 
@@ -9,13 +9,18 @@ Last updated: 2026-05-20
 but it cannot answer daily questions such as:
 
 - Which videos consumed the most yesterday?
-- Which videos newly entered yesterday's Top100?
+- Which videos newly entered yesterday's Top300?
 - How much did each video's Mingkong 90-day spend increase from the previous snapshot?
 
 Operations need a local historical material library for the latest Dianxiaomi Listing
 Top500 products. The library must archive daily Mingkong material state and derive a
-daily "yesterday spend Top100" list from the difference between consecutive 90-day spend
+daily "yesterday spend Top300" list from the difference between consecutive 90-day spend
 snapshots.
+
+2026-05-24 update: operator-facing labels, menus, API aliases, default display range,
+and automatic evaluation scope use Top300 for yesterday-spend cards. Existing database
+table and legacy helper names that contain `top100` stay in place for compatibility;
+their default business limit is now 300.
 
 ## Scope
 
@@ -35,11 +40,11 @@ In scope:
 5. Store daily per-material snapshots of the Mingkong cumulative 90-day spend value.
 6. Compare the current snapshot with the previous-date material snapshot whose timestamp
    is closest to 24 hours earlier, then compute the latest one-day spend delta.
-7. Persist a daily "昨天消耗前100" result table.
+7. Persist a daily "昨天消耗前300" result table.
 8. Change the `/xuanpin/mk` `视频素材库` inner tab so clicking it shows the latest
    locally archived material card list, including localized cover/video preview URLs and
    stored spend data. It must not depend on a live Mingkong request at click time.
-9. Add a `/xuanpin/mk` `昨天消耗前100` inner tab that reads the persisted Top100
+9. Add a `/xuanpin/mk` `昨天消耗前300` inner tab that reads the persisted Top300
    result instead of calling Mingkong live.
 10. The `视频素材库` list must read only completed `mingkong_material_sync_runs`
     (`status='success'`). A partially running same-day snapshot must not become the
@@ -108,7 +113,7 @@ The runner behavior:
 3. Process products in internal batches of 10.
 4. Continue serially without a fixed sleep interval between products.
 5. Continue until the 500-product queue is finished.
-6. Finalize material snapshots and generate the Top100 archive.
+6. Finalize material snapshots and generate the Top300 archive.
 7. Finish the run with summary counters.
 
 If a previous run for the same `snapshot_date + snapshot_slot` is already complete,
@@ -271,7 +276,8 @@ Indexes:
 
 ### `mingkong_material_daily_top100`
 
-Stores the archived "昨天消耗前100" result for each snapshot date.
+Stores the archived "昨天消耗前300" result for each snapshot date. The table name remains
+`top100` for compatibility with existing migrations and indexes.
 
 Required fields:
 
@@ -304,7 +310,7 @@ Required fields:
 - `yesterday_spend_delta`
 - `video_ads_count`
 - `is_new_material`
-- `is_new_top100_entry`
+- `is_new_top100_entry` (legacy field name; means newly entered the current Top300)
 - `created_at`
 
 Unique key:
@@ -332,7 +338,7 @@ After each 05:00 or 17:00 material snapshot is stored:
    is closest to exactly 24 hours before the current `snapshot_at`. For example, a 17:00
    current snapshot should prefer the previous day's 17:00 snapshot over the previous
    day's 05:00 snapshot.
-4. Store the chosen previous snapshot in Top100 rows as `previous_snapshot_date`,
+4. Store the chosen previous snapshot in Top300 rows as `previous_snapshot_date`,
    `previous_snapshot_at`, `previous_snapshot_slot`, and `comparison_interval_seconds`.
 5. Join current rows to previous rows by `material_key`.
 6. Compute:
@@ -352,31 +358,31 @@ yesterday_spend_delta =
      `yesterday_spend_delta = current.cumulative_90_spend`.
    - If the `product_code` did not exist in the previous snapshot, the baseline is
      unknown because the product was not tracked then; use `yesterday_spend_delta = 0`
-     so old 90-day cumulative spend cannot inflate the daily Top100.
+     so old 90-day cumulative spend cannot inflate the daily Top300.
 9. If the raw difference is negative, clamp to `0` and keep enough summary data for
    operators to notice possible upstream reset behavior.
-10. Take the Top100 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
+10. Take the Top300 by `yesterday_spend_delta DESC`, tie-breaking by current cumulative
    spend, ads count, product rank, and material key.
 
-## New Top100 Entry Calculation
+## New Top300 Entry Calculation
 
-`is_new_top100_entry` compares Top100 membership with the previous archived Top100:
+`is_new_top100_entry` compares Top300 membership with the previous archived Top300:
 
-- Current Top100 contains `material_key`.
-- Previous Top100 for the chosen `previous_snapshot_at` does not contain `material_key`.
+- Current Top300 contains `material_key`.
+- Previous Top300 for the chosen `previous_snapshot_at` does not contain `material_key`.
 
 This is different from `is_new_material`. A video can be old in the material library but
-new to the daily Top100.
+new to the daily Top300.
 
 ## Display Sorting
 
 The `/xuanpin/mk` new inner tab is named:
 
 ```text
-昨天消耗前100
+昨天消耗前300
 ```
 
-It reads the latest archived Top100 by default.
+It reads the latest archived Top300 by default.
 
 Display order:
 
@@ -384,7 +390,7 @@ Display order:
 2. Then `yesterday_spend_delta DESC`.
 3. Then `current_cumulative_90_spend DESC`.
 4. Then `video_ads_count DESC`.
-5. Then original Top100 `rank_position ASC`.
+5. Then original Top300 `rank_position ASC`.
 
 The persisted `rank_position` keeps the pure spend-delta rank. `display_position` is
 stored as the UI order after new-entry prioritization.
@@ -413,18 +419,22 @@ Response fields:
 - `total`
 - `run_summary`
 
-Add an admin-only API for the archived daily Top100:
+Add an admin-only API for the archived daily Top300:
 
 ```text
-GET /xuanpin/api/mk-yesterday-top100
+GET /xuanpin/api/mk-yesterday-top300
 ```
+
+The legacy `GET /xuanpin/api/mk-yesterday-top100` route remains as a compatibility alias
+and returns the same Top300 archive.
 
 Query parameters:
 
-- `snapshot`: optional snapshot date; default latest archived Top100 date.
-- `snapshot_at`: optional exact snapshot timestamp; default latest archived Top100 time.
+- `snapshot`: optional snapshot date; default latest archived Top300 date.
+- `snapshot_at`: optional exact snapshot timestamp; default latest archived Top300 time.
 - `page`: default `1`.
 - `page_size`: default `100`, max `100`.
+- `keyword`: optional product/material search term.
 
 Response fields:
 
@@ -441,9 +451,9 @@ The page changes stay inside `mk_selection.html`:
 - Keep `产品库`.
 - Change `视频素材库` to read local archived snapshot rows and render localized cover
   and data video cards when clicked. Each card also displays `昨日消耗` using the same
-  current-vs-previous material snapshot delta calculation as `昨天消耗前100`; when no
+  current-vs-previous material snapshot delta calculation as `昨天消耗前300`; when no
   previous material row exists, the delta is the current 90-day spend.
-- Add `昨天消耗前100`.
+- Add `昨天消耗前300`.
 - Both material card tabs use local archived rows only.
 - Cards reuse the existing Mingkong media proxy paths for cover/video preview.
 - Existing `加入素材库` and `做小语种` actions are available when metadata is sufficient.
@@ -456,7 +466,7 @@ The page changes stay inside `mk_selection.html`:
   continue unless failures exceed a conservative threshold such as 50 consecutive failures.
 - Missing product handle: record skipped product state.
 - Empty Mingkong match: record no-match product state.
-- No previous snapshot: generate Top100 from current cumulative spend, mark entries as new.
+- No previous snapshot: generate Top300 from current cumulative spend, mark entries as new.
 
 ## Verification
 
@@ -468,11 +478,11 @@ Focused automated checks:
 - Service tests cover latest Dianxiaomi Top500 selection from `dianxiaomi_rankings`.
 - Service tests cover Mingkong fetch flattening and upsert of all visible videos.
 - Service tests cover delta calculation, new-material handling, negative-delta clamp, and
-  new Top100 membership.
+  new Top300 membership.
 - Scheduler tests cover 05:00/17:00 registration and scheduled task registry metadata.
 - Route tests cover `/xuanpin/api/mk-material-library` local archived material listing.
-- Route tests cover `/xuanpin/api/mk-yesterday-top100` admin behavior.
-- Template tests cover local `视频素材库` behavior and the new `昨天消耗前100` inner tab.
+- Route tests cover `/xuanpin/api/mk-yesterday-top300` admin behavior and legacy alias compatibility.
+- Template tests cover local `视频素材库` behavior and the new `昨天消耗前300` inner tab.
 
 Manual/server verification:
 
