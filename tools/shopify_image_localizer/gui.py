@@ -91,18 +91,16 @@ class ShopifyImageLocalizerApp:
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
 
-        # 引入 ttk.Notebook 实现双 Tab 面板
-        self.notebook = ttk.Notebook(self.main_frame)
-        self.notebook.pack(fill="both", expand=False, pady=(0, 10))
+        # 引入内容容器 Frame 代替 ttk.Notebook 实现双 Tab 面板切换
+        self.content_frame = tk.Frame(self.main_frame)
 
-        self.tab_localizer = tk.Frame(self.notebook)
-        self.tab_ai_listing = tk.Frame(self.notebook)
-
-        self.notebook.add(self.tab_localizer, text=" 批量换图工具 ")
-        self.notebook.add(self.tab_ai_listing, text=" AI自动上品 ")
+        self.tab_localizer = tk.Frame(self.content_frame)
+        self.tab_ai_listing = tk.Frame(self.content_frame)
 
         self._build_form()
         self._build_ai_listing_tab()
+        self.content_frame.pack(fill="both", expand=False, pady=(0, 10))
+        self.switch_tab("localizer")
         self._build_summary()
         self._build_log()
         self.root.protocol("WM_DELETE_WINDOW", self.close_application)
@@ -112,6 +110,42 @@ class ShopifyImageLocalizerApp:
         self._load_languages_async()
         self._load_domains_async()
         _ = prompt_on_start
+
+    def switch_tab(self, tab_name: str) -> None:
+        if tab_name == "localizer":
+            self.tab_ai_listing.pack_forget()
+            self.tab_localizer.pack(fill="both", expand=True)
+            self.btn_toggle_localizer.configure(
+                bg="#1976d2",
+                fg="white",
+                activebackground="#1565c0",
+                activeforeground="white",
+                font=("TkDefaultFont", 11, "bold"),
+            )
+            self.btn_toggle_ai_listing.configure(
+                bg="#f5f5f5",
+                fg="#333333",
+                activebackground="#e0e0e0",
+                activeforeground="#333333",
+                font=("TkDefaultFont", 11),
+            )
+        else:
+            self.tab_localizer.pack_forget()
+            self.tab_ai_listing.pack(fill="both", expand=True)
+            self.btn_toggle_localizer.configure(
+                bg="#f5f5f5",
+                fg="#333333",
+                activebackground="#e0e0e0",
+                activeforeground="#333333",
+                font=("TkDefaultFont", 11),
+            )
+            self.btn_toggle_ai_listing.configure(
+                bg="#1976d2",
+                fg="white",
+                activebackground="#1565c0",
+                activeforeground="white",
+                font=("TkDefaultFont", 11, "bold"),
+            )
 
     def _mark_tk_mainloop_started(self) -> None:
         self._tk_mainloop_started = True
@@ -154,10 +188,39 @@ class ShopifyImageLocalizerApp:
             textvariable=self.current_login_status_var,
             anchor="w",
             font=("TkDefaultFont", 14, "bold"),
-            wraplength=900,
+            wraplength=500,
             justify="left",
         )
-        self.current_login_status_label.pack(side="left", anchor="w", fill="x", expand=True)
+        self.current_login_status_label.pack(side="left", anchor="w")
+
+        # 新增 Toggle 形式的 Tab 切换按钮组
+        self.toggle_frame = tk.Frame(self.top_bar_frame, bg="#e0e0e0", padx=1, pady=1)
+        self.toggle_frame.pack(side="left", padx=20)
+
+        self.btn_toggle_localizer = tk.Button(
+            self.toggle_frame,
+            text=" 批量换图工具 ",
+            command=lambda: self.switch_tab("localizer"),
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=4,
+            cursor="hand2",
+        )
+        self.btn_toggle_localizer.pack(side="left")
+
+        self.btn_toggle_ai_listing = tk.Button(
+            self.toggle_frame,
+            text=" 自动上品工具 ",
+            command=lambda: self.switch_tab("ai_listing"),
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=4,
+            cursor="hand2",
+        )
+        self.btn_toggle_ai_listing.pack(side="left", padx=(1, 0))
+
         self.close_app_button = tk.Button(
             self.top_bar_frame,
             text="关闭软件",
