@@ -8,7 +8,7 @@ def test_use_case_registry():
     uc = get_use_case("image_translate.eval")
     assert uc["code"] == "image_translate.eval"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-1.5-flash-lite"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["units_type"] == "tokens"
 
 def test_evaluation_fields_reset():
