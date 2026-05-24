@@ -162,6 +162,8 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
         video_filename="demo.mp4",
         user_id=7,
         task_id="cover-task-1",
+        cover_provider="openrouter",
+        cover_model="openai/gpt-5.4-image-2:low",
         product_fetch_fn=lambda url: _FakeProduct(),
         image_fetch_fn=lambda url: _png_bytes(size=(900, 900), color=(15, 90, 140)),
         thumbnail_extractor=fake_thumbnail,
@@ -581,8 +583,8 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert openrouter_image2.provider == "openrouter"
     assert openrouter_image2.model == "openai/gpt-5.4-image-2:high"
     default_cover = resolve_cover_model_selection(None, None)
-    assert default_cover.provider == "openrouter"
-    assert default_cover.model == "openai/gpt-5.4-image-2:low"
+    assert default_cover.provider == "local_image_2"
+    assert default_cover.model == "gpt-image-2"
     aistudio = resolve_cover_model_selection("gemini_aistudio", "nano_banana_2")
     assert aistudio.provider == "gemini_aistudio"
     assert aistudio.model == "gemini-3.1-flash-image-preview"
@@ -600,7 +602,7 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
-    assert options["steps"]["cover_generation"]["default_provider"] == "openrouter"
+    assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
     assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
     assert "gemini_vertex_adc" not in options["steps"]["video_analysis"]["providers"]
@@ -1120,13 +1122,13 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
 
     assert normalize_cover_execution_mode("openrouter", None) == "parallel"
     assert normalize_cover_execution_mode("openrouter", "") == "parallel"
-    assert normalize_cover_execution_mode("local", "parallel") == "serial"
+    assert normalize_cover_execution_mode("local", "parallel") == "parallel"
     assert normalize_cover_execution_mode("apimart", "parallel") == "serial"
 
     builtin = video_cover_settings.builtin_model_defaults()["cover_generation"]
     assert builtin == {
-        "provider": "openrouter",
-        "model_id": "openai/gpt-5.4-image-2:low",
+        "provider": "local_image_2",
+        "model_id": "gpt-image-2",
         "execution_mode": "parallel",
     }
 
@@ -1154,7 +1156,7 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
             "execution_mode": "parallel",
         }
     })
-    assert local["cover_generation"]["execution_mode"] == "serial"
+    assert local["cover_generation"]["execution_mode"] == "parallel"
 
     aistudio = video_cover_settings.normalize_model_defaults({
         "cover_generation": {
