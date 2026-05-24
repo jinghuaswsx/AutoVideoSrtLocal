@@ -80,6 +80,8 @@ def api_product_fine_ai_evaluation_create(pid: int):
         return error
     payload = _payload()
     try:
+        from flask_login import current_user
+        user_id = current_user.id if current_user and current_user.is_authenticated else None
         service = get_service()
         run = service.create_run(
             pid,
@@ -89,6 +91,7 @@ def api_product_fine_ai_evaluation_create(pid: int):
             include_videos=payload.get("include_videos", True) is not False,
             locale=str(payload.get("locale") or "zh-CN"),
             product_url_override=payload.get("product_link") or payload.get("product_url_override"),
+            user_id=user_id,
         )
         service.start_run_async(run["evaluation_run_id"])
         return _ok(run, 202)
@@ -144,6 +147,8 @@ def api_product_fine_ai_evaluation_country_rerun(pid: int, evaluation_run_id: st
         return error
     payload = _payload()
     try:
+        from flask_login import current_user
+        user_id = current_user.id if current_user and current_user.is_authenticated else None
         data = get_service().rerun_country(
             pid,
             evaluation_run_id,
@@ -151,6 +156,7 @@ def api_product_fine_ai_evaluation_country_rerun(pid: int, evaluation_run_id: st
             force_refresh=bool(payload.get("force_refresh", True)),
             include_assets=payload.get("include_assets", True) is not False,
             include_videos=payload.get("include_videos", True) is not False,
+            user_id=user_id,
         )
         return _ok(data, 202)
     except FineAiEvaluationNotFound as exc:

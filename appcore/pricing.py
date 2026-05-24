@@ -73,6 +73,14 @@ def compute_cost_cny(
     request_units: int | None,
 ) -> tuple[Decimal | None, Literal["pricebook", "unknown"]]:
     row = _lookup(provider, model)
+    
+    # Defensive fallback for Gemini 1.5 Flash if database row is missing
+    if not row and "gemini-1.5-flash" in model.lower() and units_type == "tokens":
+        row = {
+            "unit_input_cny": Decimal("0.00000051"),
+            "unit_output_cny": Decimal("0.00000204"),
+        }
+
     if not row:
         return None, "unknown"
 
@@ -84,6 +92,14 @@ def compute_cost_cny(
                 return None, "unknown"
             if input_tokens is None or output_tokens is None:
                 return None, "unknown"
+            
+            # Dynamic tiered pricing logic for Gemini 1.5 Flash
+            if "gemini-1.5-flash" in model.lower():
+                # Google official: prompts > 128K tokens are charged at a doubled rate
+                if input_tokens > 128000:
+                    unit_input = unit_input * 2
+                    unit_output = unit_output * 2
+
             cost = Decimal(input_tokens) * unit_input + Decimal(output_tokens) * unit_output
             return cost.quantize(_PRECISION), "pricebook"
 

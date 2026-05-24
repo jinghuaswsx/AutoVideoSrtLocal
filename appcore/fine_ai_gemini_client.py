@@ -50,11 +50,13 @@ class FineAiGeminiClient:
         profile: str | None = None,
         provider: str | None = None,
         model: str | None = None,
+        user_id: int | None = None,
     ):
         resolved = model_config.resolve_config(profile=profile, provider=provider, model=model)
         self.profile = resolved["profile"]
         self.provider = resolved["provider"]
         self.model = resolved["model"]
+        self.user_id = user_id
         self.last_call_metadata: dict[str, Any] = {}
         self.last_call_trace: dict[str, Any] = {}
 
@@ -211,6 +213,7 @@ class FineAiGeminiClient:
                 result = llm_client.invoke_generate(
                     use_case_code,
                     prompt=prompt,
+                    user_id=self.user_id,
                     system=system,
                     media=media or None,
                     response_schema=schema,
@@ -331,6 +334,7 @@ class FineAiGeminiClient:
         repair_result = llm_client.invoke_generate(
             use_case_code,
             prompt=build_json_repair_prompt(raw_response=raw_response, parse_error=parse_error),
+            user_id=self.user_id,
             system=JSON_REPAIR_SYSTEM_PROMPT,
             media=None,
             response_schema=schema,

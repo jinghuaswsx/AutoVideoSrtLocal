@@ -346,6 +346,20 @@ def _cache_card_video(video_path: str) -> str:
     )
 
 
+def resolve_billing_user_id(explicit_user_id: int | None = None) -> int:
+    if explicit_user_id:
+        return int(explicit_user_id)
+    rows = query(
+        "SELECT id FROM users "
+        "WHERE is_active=1 AND role IN ('superadmin','admin') "
+        "ORDER BY CASE WHEN username='admin' THEN 0 WHEN role='superadmin' THEN 1 ELSE 2 END, id ASC "
+        "LIMIT 1"
+    )
+    if not rows:
+        raise RuntimeError("No active admin user found for Fine AI Evaluation billing")
+    return int(rows[0]["id"])
+
+
 def _run_candidate(
     row: dict[str, Any],
     *,
@@ -376,6 +390,7 @@ def _run_candidate(
 
     evaluation_run_id = ""
     try:
+        user_id = resolve_billing_user_id(None)
         link_check = _resolve_product_link(product_link, candidate_links=_candidate_product_links(row))
         if not link_check.get("ok"):
             _finish_record(material_key, status="failed", error=link_check.get("message") or "product_link_unavailable")
@@ -399,6 +414,7 @@ def _run_candidate(
             card_video_duration_seconds=row.get("video_duration_seconds"),
             force_refresh=True,
             model_profile="scheduled",
+            user_id=user_id,
         )
         evaluation_run_id = str(run.get("evaluation_run_id") or "")
         result = fine_ai_service.run_evaluation(evaluation_run_id)

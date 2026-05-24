@@ -395,3 +395,90 @@ def _product_facts_result():
             "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []},
         },
     }
+
+
+def test_fine_ai_gemini_client_propagates_user_id(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        return {"json": _country_result(), "usage": {"input_tokens": 1, "output_tokens": 2}}
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+
+    client = mod.FineAiGeminiClient(user_id=42)
+    client.generate_country_evaluation(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        product_facts={
+            "product_id": "123",
+            "product_name": "Sample",
+            "category_detected": None,
+            "sku_facts": [],
+            "price_facts": [],
+            "dimension_facts": [],
+            "material_facts": [],
+            "feature_facts": [],
+            "claim_inventory": [],
+            "claim_consistency_risks": [],
+            "missing_data": [],
+            "assumptions": [],
+            "generated_search_keywords": {"english_keywords": [], "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []}},
+        },
+        country={"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国", "language": "German", "currency": "EUR"},
+        asset_snapshot={"cover_images": [], "product_images": [], "videos": []},
+        asset_paths=[],
+    )
+
+    assert len(calls) == 1
+    assert calls[0][1]["user_id"] == 42
+
+
+def test_gemini_1_5_flash_pricing_tiered_cost(monkeypatch):
+    from appcore.pricing import compute_cost_cny
+    from decimal import Decimal
+
+    # Mock _load_prices to prevent database connection attempts
+    monkeypatch.setattr(
+        "appcore.pricing._load_prices",
+        lambda: {
+            ("gemini_aistudio", "gemini-1.5-flash"): {
+                "provider": "gemini_aistudio",
+                "model": "gemini-1.5-flash",
+                "units_type": "tokens",
+                "unit_input_cny": Decimal("0.00000051"),
+                "unit_output_cny": Decimal("0.00000204"),
+                "unit_flat_cny": None,
+            }
+        }
+    )
+
+    # Test <= 128k input tokens (should use base rates: 0.075 / 0.30 USD/M -> 0.00000051 / 0.00000204 CNY/token)
+    cost1, source1 = compute_cost_cny(
+        provider="gemini_aistudio",
+        model="gemini-1.5-flash",
+        units_type="tokens",
+        input_tokens=10000,
+        output_tokens=5000,
+        request_units=None,
+    )
+    assert source1 == "pricebook"
+    # 10000 * 0.00000051 + 5000 * 0.00000204 = 0.0051 + 0.0102 = 0.0153
+    assert cost1 == Decimal("0.015300")
+
+    # Test > 128k input tokens (should double rates: 0.15 / 0.60 USD/M -> 0.00000102 / 0.00000408 CNY/token)
+    cost2, source2 = compute_cost_cny(
+        provider="gemini_aistudio",
+        model="gemini-1.5-flash",
+        units_type="tokens",
+        input_tokens=200000,
+        output_tokens=50000,
+        request_units=None,
+    )
+    assert source2 == "pricebook"
+    # 200000 * 0.00000102 + 50000 * 0.00000408 = 0.204 + 0.204 = 0.408
+    assert cost2 == Decimal("0.408000")
+
+
+

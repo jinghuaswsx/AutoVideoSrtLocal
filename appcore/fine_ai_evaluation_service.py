@@ -93,6 +93,7 @@ class FineAiEvaluationService:
         locale: str = "zh-CN",
         product_url_override: str | None = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         country_codes = normalize_country_codes(countries)
         model_config = fine_ai_model_config.get_profile_config(model_profile)
@@ -135,6 +136,7 @@ class FineAiEvaluationService:
                 "token_usage": {},
                 "asset_snapshot": asset_snapshot,
                 "data_quality": _data_quality(product_snapshot, asset_snapshot),
+                "user_id": user_id,
             },
             "progress": progress,
             "created_at": now,
@@ -165,6 +167,7 @@ class FineAiEvaluationService:
         card_video_name: str = "",
         card_video_duration_seconds: Any = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         product_url = str(product_link or "").strip()
         if not product_url:
@@ -235,6 +238,7 @@ class FineAiEvaluationService:
                 "token_usage": {},
                 "asset_snapshot": asset_snapshot,
                 "data_quality": _data_quality(product_snapshot, asset_snapshot),
+                "user_id": user_id,
             },
             "progress": progress,
             "created_at": now,
@@ -499,6 +503,7 @@ class FineAiEvaluationService:
                     profile=metadata.get("model_profile"),
                     provider=metadata.get("provider"),
                     model=metadata.get("model"),
+                    user_id=metadata.get("user_id"),
                 )
 
                 # Mark country as running
@@ -1026,11 +1031,14 @@ class FineAiEvaluationService:
         force_refresh: bool = True,
         include_assets: bool = True,
         include_videos: bool = True,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         run = self.recover_run_if_interrupted(evaluation_run_id)
         self._assert_product(run, product_id)
         code = normalize_country_codes([country_code])[0]
-        metadata = run.get("metadata") or {}
+        metadata = dict(run.get("metadata") or {})
+        if user_id is not None:
+            metadata["user_id"] = user_id
         completed_codes = [item for item in metadata.get("countries_completed") or [] if item != code]
         failed_codes = [item for item in metadata.get("countries_failed") or [] if item != code]
         progress = _ensure_progress(
@@ -1049,6 +1057,7 @@ class FineAiEvaluationService:
         self.repository.update_run(
             evaluation_run_id,
             status="running",
+            metadata=metadata,
             progress=_progress(
                 run.get("countries") or DEFAULT_COUNTRY_CODES,
                 f"country_evaluation_{code}",
@@ -1238,9 +1247,15 @@ class FineAiEvaluationService:
 
     def _gemini_client_for_metadata(self, metadata: dict[str, Any]):
         if self._gemini_client_injected:
+            if metadata.get("user_id") is not None:
+                self.gemini_client.user_id = metadata.get("user_id")
             return self.gemini_client
         config = _fine_ai_model_config_from_metadata(metadata)
-        self.gemini_client = FineAiGeminiClient(provider=config["provider"])
+        user_id = metadata.get("user_id")
+        self.gemini_client = FineAiGeminiClient(
+            provider=config["provider"],
+            user_id=user_id,
+        )
         return self.gemini_client
 
     def _call_metadata(self) -> dict[str, Any]:
