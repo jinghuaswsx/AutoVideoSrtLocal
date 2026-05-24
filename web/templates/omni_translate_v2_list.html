@@ -317,19 +317,7 @@
   margin: 8px auto 0; max-width: 180px; word-break: break-all;
 }
 
-/* ── Phase 4: 能力点配置 (Ocean Blue Admin tokens, hue 200-240) ── */
-.preset-row { display: flex; gap: 8px; align-items: center; }
-.preset-select {
-  flex: 1; min-width: 0; padding: 8px 12px; min-height: 44px; line-height: 1.4;
-  border: 1px solid var(--border-strong, oklch(84% 0.015 230));
-  border-radius: var(--radius, 6px); background: var(--bg, #fff);
-  color: var(--fg, oklch(22% 0.020 235)); font-size: 13px; font-family: inherit;
-  cursor: pointer; transition: border-color .12s;
-}
-.preset-select:focus {
-  outline: none; border-color: oklch(56% 0.16 230);
-  box-shadow: 0 0 0 2px oklch(56% 0.16 230 / 0.22);
-}
+/* ── Capability annotation styles (Ocean Blue Admin tokens, hue 200-240) ── */
 .plugin-capability-form {
   border: 1px solid var(--border, oklch(91% 0.012 230));
   border-radius: var(--radius-lg, 12px);
@@ -509,9 +497,9 @@
 <div class="modal-overlay" id="uploadOverlay">
   <div class="modal-box modal-box-wide">
     <h3>新建⚡ 全能视频翻译V2项目</h3>
-    <div class="modal-banner experimental" style="display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:16px;background:oklch(96% 0.05 85);border:1px solid oklch(84% 0.08 80);border-radius:8px;color:oklch(42% 0.10 60);font-size:13px;line-height:1.5;">
-      <span style="flex-shrink:0;">⚠️</span>
-      <span>实验通道：源语言直翻链路。问题反馈 → @owner。线上业务请用「多语视频翻译」。</span>
+    <div class="modal-banner experimental" style="display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:16px;background:oklch(96% 0.04 150);border:1px solid oklch(84% 0.07 150);border-radius:8px;color:oklch(38% 0.10 150);font-size:13px;line-height:1.5;">
+      <span style="flex-shrink:0;">⚡</span>
+      <span>稳定优化通道：固定使用 V2 默认流程，保留全能翻译主链路并优化执行效率。</span>
     </div>
     <form id="uploadForm" enctype="multipart/form-data">
       <div class="modal-scroll-body">
@@ -559,21 +547,6 @@
           <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
-
-        {% if current_user.is_superadmin %}
-        <!-- Phase 4: 超级管理员可选预设流程 -->
-        <div class="modal-field" id="pluginConfigField">
-          <label>处理流程预设</label>
-          <div class="preset-row">
-            <select id="presetSelect" class="preset-select" aria-label="选择预设">
-              <option value="">preset 加载中...</option>
-            </select>
-          </div>
-          <div class="modal-hint" style="margin:6px 0 12px;">
-            系统级 preset 由管理员在系统设置统一维护。
-          </div>
-        </div>
-        {% endif %}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -782,10 +755,6 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
 function openUpload() {
   _resetUploadModal();
   document.getElementById('uploadOverlay').classList.add('open');
-  // Phase 4: 首次打开弹窗时加载 preset（超级管理员有 dropdown，其余人静默加载默认）
-  if (!__omniPresetState.loaded) {
-    _loadOmniPresets();
-  }
 }
 
 (function initLangPills() {
@@ -867,102 +836,6 @@ function openUpload() {
   });
 })();
 
-// ────────────────────────────────────────────────────────────────────────
-// Phase 4: System preset selector (superadmin only). Others auto-use default.
-// ────────────────────────────────────────────────────────────────────────
-var __omniPresetState = {
-  presets: [],
-  defaultId: null,
-  currentPresetId: null,
-  currentCfg: null,
-  loaded: false,
-};
-
-function _cloneCfg(cfg) {
-  return JSON.parse(JSON.stringify(cfg || {}));
-}
-
-function _escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
-    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
-  });
-}
-
-async function _loadOmniPresets() {
-  var sel = document.getElementById('presetSelect');
-  try {
-    var [listRes, defRes] = await Promise.all([
-      fetch('/api/omni-presets'),
-      fetch('/api/omni-presets/default'),
-    ]);
-    if (!listRes.ok || !defRes.ok) throw new Error('preset 加载失败');
-    var listData = await listRes.json();
-    var defData = await defRes.json();
-    __omniPresetState.presets = (listData.presets || []).filter(function(p) {
-      return p.scope === 'system';
-    });
-    __omniPresetState.defaultId = listData.default_preset_id;
-
-    // 只有超级管理员页面上有 #presetSelect 元素，才渲染 dropdown
-    if (sel) {
-      _renderPresetDropdown();
-    }
-
-    var initial = null;
-    if (defData.preset && defData.preset.scope === 'system') {
-      initial = defData.preset;
-    } else {
-      initial = __omniPresetState.presets.find(function(p) {
-        return p.id === __omniPresetState.defaultId;
-      }) || __omniPresetState.presets[0] || null;
-    }
-    if (initial) {
-      _setPresetSelection(initial.id, initial.plugin_config);
-    }
-    __omniPresetState.loaded = true;
-  } catch (err) {
-    console.error('[omni-preset] load failed', err);
-    if (sel) {
-      sel.innerHTML = '<option value="">preset 加载失败：' + _escapeHtml(err.message || err) + '</option>';
-      sel.disabled = true;
-    }
-  }
-}
-
-function _renderPresetDropdown() {
-  var sel = document.getElementById('presetSelect');
-  if (!sel) return;
-  var systemPresets = __omniPresetState.presets.filter(function(p) { return p.scope === 'system'; });
-  if (!systemPresets.length) {
-    sel.innerHTML = '<option value="">没有可用系统 preset</option>';
-    sel.disabled = true;
-    return;
-  }
-  sel.disabled = false;
-  var html = '<optgroup label="系统级">';
-  systemPresets.forEach(function(p) {
-    html += '<option value="' + p.id + '">🌐 ' + _escapeHtml(p.name)
-            + (p.id === __omniPresetState.defaultId ? '（默认）' : '') + '</option>';
-  });
-  html += '</optgroup>';
-  sel.innerHTML = html;
-}
-
-function _setPresetSelection(presetId, cfg) {
-  var sel = document.getElementById('presetSelect');
-  if (sel && presetId) sel.value = String(presetId);
-  __omniPresetState.currentPresetId = presetId || '';
-  __omniPresetState.currentCfg = _cloneCfg(cfg || {});
-}
-
-document.addEventListener('change', function(e) {
-  if (e.target && e.target.id === 'presetSelect') {
-    var pid = parseInt(e.target.value, 10);
-    var preset = __omniPresetState.presets.find(function(p) { return p.id === pid && p.scope === 'system'; });
-    if (preset) _setPresetSelection(preset.id, preset.plugin_config);
-  }
-});
-
 function safeInternalHref(url, fallback) {
   var safeFallback = String(fallback || '/omni-translate-v2');
   var raw = String(url == null ? '' : url).trim();
@@ -1042,10 +915,6 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var nameInput = document.getElementById('projectName');
     var trimmedName = nameInput ? nameInput.value.trim() : '';
     formData.set('display_name', trimmedName);
-    // Phase 4: 把当前能力点配置作为 plugin_config 提交
-    if (__omniPresetState.loaded && __omniPresetState.currentCfg) {
-      formData.set('plugin_config', JSON.stringify(__omniPresetState.currentCfg));
-    }
     // 移除 cap_radio_/cap_check_ 这些前端表单字段（后端不认）
     Array.from(formData.keys()).forEach(function(k) {
       if (k.indexOf('cap_radio_') === 0 || k.indexOf('cap_check_') === 0 || k === 'preset_id') {

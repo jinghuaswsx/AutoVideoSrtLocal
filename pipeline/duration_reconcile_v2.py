@@ -631,8 +631,14 @@ def _reconcile_one_sentence(
                     candidate["sandbox_predicted"] = True
                     sandbox_candidates.append(candidate)
                 
-                # 如果沙盒预测时长已经完美且语义无缺陷，智能提前退出循环以节约 LLM 开销
-                if status == "ok" and not _semantic_coverage_issue(temp_candidate_dict):
+                # 沙盒预测只能做粗筛，不能单独决定最终候选。即使命中预测
+                # 窗口，也至少多保留一个备选文本，避免真实 TTS 测量偏离时
+                # 没有后续候选可选。
+                if (
+                    status == "ok"
+                    and not _semantic_coverage_issue(temp_candidate_dict)
+                    and len(sandbox_candidates) >= min(3, round_limit + 1)
+                ):
                     break
             
             # === Stage 1 粗筛：排序并筛选出 Top 3 沙盒候选文本 ===
@@ -693,19 +699,7 @@ def _reconcile_one_sentence(
                 perfect_sync = (real_c["status"] == "ok")
                 tempo_adjustable = (MIN_FFMPEG_TEMPO_RATIO <= ratio <= MAX_FFMPEG_TEMPO_RATIO) and not _semantic_coverage_issue(real_c)
                 
-                # 额外增加“沙盒完美”判定：若此重写候选在沙盒中预测完美，且它就是我们的 Top 1 首选，直接锁定退出！
-                # 这样对于绝大多数能成功收敛的句子，物理 ElevenLabs 合成仅需跑 1 次 API，完美拉平老 V2 的 0 浪费开销！
-                sandbox_est = predict_tts_duration(c["text"], voice_id, target_language)
-                sandbox_status, _ = classify_overshoot(c["target_duration"], sandbox_est)
-                temp_c_dict = {
-                    "coverage_ok": c.get("coverage_ok", True),
-                    "omitted_source_terms": c.get("omitted_source_terms", []),
-                }
-                if _semantic_coverage_issue(temp_c_dict):
-                    sandbox_status = "needs_semantic_repair"
-                sandbox_perfect = (sandbox_status == "ok")
-                
-                if perfect_sync or tempo_adjustable or sandbox_perfect:
+                if perfect_sync or tempo_adjustable:
                     winner = real_c
                     break
             

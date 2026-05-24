@@ -19,6 +19,7 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
     "image_translate": "图片翻译",
     "link_check": "链接检测",
     "omni_translate": "全能视频翻译",
+    "omni_translate_v2": "全能视频翻译V2",
     "video_cover": "文案封面生成",
 }
 

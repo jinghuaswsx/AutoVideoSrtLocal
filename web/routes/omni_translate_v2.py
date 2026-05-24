@@ -98,29 +98,18 @@ def _omni_pipeline_steps_for_task(
     *,
     include_analysis: bool = False,
 ) -> list[str]:
-    from appcore.omni_plugin_config import DEFAULT_PLUGIN_CONFIG
-    from appcore.runtime_omni import OmniTranslateRunner
+    from appcore.omni_v2_config import stored_or_fixed_plugin_config
+    from appcore.runtime_omni_v2 import OmniV2TranslateRunner
 
-    cfg = (task or {}).get("plugin_config")
-    if not cfg:
-        try:
-            from appcore import omni_preset_dao
-
-            preset = omni_preset_dao.get_default()
-            if preset and preset.get("plugin_config"):
-                cfg = preset["plugin_config"]
-        except Exception:
-            log.warning("[omni] resolve default preset failed for route task=%s", task_id, exc_info=True)
-    cfg = cfg or DEFAULT_PLUGIN_CONFIG
     try:
-        return OmniTranslateRunner.pipeline_step_names_for_config(
-            cfg,
+        return OmniV2TranslateRunner.pipeline_step_names_for_config(
+            stored_or_fixed_plugin_config(task),
             include_analysis=include_analysis,
         )
     except Exception:
-        log.warning("[omni] invalid task plugin_config, using default steps task=%s", task_id, exc_info=True)
-        return OmniTranslateRunner.pipeline_step_names_for_config(
-            DEFAULT_PLUGIN_CONFIG,
+        log.warning("[omni_v2] invalid fixed plugin_config, using built-in default steps task=%s", task_id, exc_info=True)
+        return OmniV2TranslateRunner.pipeline_step_names_for_config(
+            stored_or_fixed_plugin_config({}),
             include_analysis=include_analysis,
         )
 
@@ -450,6 +439,10 @@ def detail(task_id: str):
         state,
         include_analysis=True,
     )
+    from appcore.omni_v2_config import stored_or_fixed_plugin_config
+
+    annotation_state = dict(state)
+    annotation_state["plugin_config"] = stored_or_fixed_plugin_config(state)
     return render_template(
         "omni_translate_v2_detail.html",
         project=row,
@@ -459,7 +452,7 @@ def detail(task_id: str):
         pipeline_main_steps=pipeline_main_steps,
         pipeline_progress_steps=pipeline_progress_steps,
         pipeline_step_order=pipeline_step_order,
-        plugin_config_annotation=build_plugin_config_annotation(task_id, state),
+        plugin_config_annotation=build_plugin_config_annotation(task_id, annotation_state),
     )
 
 
@@ -504,50 +497,9 @@ def upload_and_start():
     if target_lang not in enabled_langs:
         return _json_response({"error": f"target_lang must be one of {list(enabled_langs)}"}, 400)
 
-    # Phase 3: 解析能力点配置
-    # 优先级: form.plugin_config (JSON 字符串) > form.preset_id (int) > 全站默认 preset
-    # 三个都没有时不写 plugin_config 字段；runtime _resolve_plugin_config 会
-    # 自己走兜底链（preset 默认 → 硬编码 DEFAULT）。
-    plugin_config_value: dict | None = None
-    raw_plugin_config = (request.form.get("plugin_config") or "").strip()
-    raw_preset_id = (request.form.get("preset_id") or "").strip()
-    if raw_plugin_config:
-        from appcore.omni_plugin_config import validate_plugin_config
-        try:
-            inline_cfg = json.loads(raw_plugin_config)
-        except json.JSONDecodeError:
-            return _json_response({"error": "plugin_config 必须是合法 JSON 对象"}, 400)
-        try:
-            plugin_config_value = validate_plugin_config(inline_cfg)
-        except ValueError as exc:
-            return _json_response({"error": f"plugin_config 不合法：{exc}"}, 400)
-    elif raw_preset_id:
-        try:
-            preset_id_int = int(raw_preset_id)
-        except (ValueError, TypeError):
-            return _json_response({"error": "preset_id 必须是整数"}, 400)
-        from appcore import omni_preset_dao
-        from appcore.omni_plugin_config import validate_plugin_config
-        preset = omni_preset_dao.get(preset_id_int)
-        if not preset:
-            return _json_response({"error": f"preset_id={preset_id_int} 不存在"}, 400)
-        # scope 隔离：用户级 preset 只能创建者自己用；系统级全员可用
-        if preset["scope"] == "user" and preset.get("user_id") != current_user.id:
-            return _json_response({"error": "无权使用他人的用户级 preset"}, 403)
-        try:
-            plugin_config_value = validate_plugin_config(preset["plugin_config"])
-        except ValueError as exc:
-            return _json_response({"error": f"preset 内的 plugin_config 不合法：{exc}"}, 400)
-    else:
-        # 走全站默认（非阻塞——找不到时 runtime 会兜底硬编码 DEFAULT）
-        from appcore import omni_preset_dao
-        from appcore.omni_plugin_config import validate_plugin_config
-        default_preset = omni_preset_dao.get_default()
-        if default_preset:
-            try:
-                plugin_config_value = validate_plugin_config(default_preset["plugin_config"])
-            except ValueError:
-                pass  # 让 runtime 走硬编码 DEFAULT
+    from appcore.omni_v2_config import current_fixed_plugin_config
+
+    plugin_config_value = current_fixed_plugin_config()
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -583,8 +535,7 @@ def upload_and_start():
         ),
         delivery_mode="local_primary",
     )
-    if plugin_config_value is not None:
-        update_kwargs["plugin_config"] = plugin_config_value
+    update_kwargs["plugin_config"] = plugin_config_value
     store.update(task_id, **update_kwargs)
 
     # 注册源视频到 preview_files，让 artifact 端点能直接 serve 给前端预览
@@ -682,8 +633,10 @@ def duplicate(task_id: str):
         ),
         delivery_mode="local_primary",
     )
+    from appcore.omni_v2_config import current_fixed_plugin_config
+
+    update_kwargs["plugin_config"] = current_fixed_plugin_config()
     for key in (
-        "plugin_config",
         "voice_gender",
         "voice_id",
         "subtitle_position",
