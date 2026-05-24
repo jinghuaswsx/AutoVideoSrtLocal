@@ -42,6 +42,35 @@ def test_fine_ai_model_config_rejects_invalid_provider():
         config.set_profile_provider("manual", "doubao")
 
 
+def test_fine_ai_country_concurrency_defaults_to_one(monkeypatch):
+    from appcore import fine_ai_evaluation_model_config as config
+
+    monkeypatch.setattr(config.settings_store, "get_setting", lambda key: None)
+
+    assert config.get_parallel_mode() == "serial"
+    assert config.get_country_concurrency() == 1
+
+
+def test_fine_ai_country_concurrency_saves_and_validates_range(monkeypatch):
+    from appcore import fine_ai_evaluation_model_config as config
+
+    store = {}
+    monkeypatch.setattr(config.settings_store, "get_setting", lambda key: store.get(key))
+    monkeypatch.setattr(config.settings_store, "set_setting", lambda key, value: store.__setitem__(key, value))
+
+    config.set_country_concurrency("2")
+
+    assert store[config.COUNTRY_CONCURRENCY_KEY] == "2"
+    assert config.get_country_concurrency() == 2
+
+    for invalid in ("0", "6", "abc"):
+        with pytest.raises(ValueError, match="Unsupported fine AI country concurrency"):
+            config.set_country_concurrency(invalid)
+
+    store[config.COUNTRY_CONCURRENCY_KEY] = "invalid"
+    assert config.get_country_concurrency() == 1
+
+
 def test_fine_ai_model_config_falls_back_when_stored_provider_is_invalid(monkeypatch):
     from appcore import fine_ai_evaluation_model_config as config
 

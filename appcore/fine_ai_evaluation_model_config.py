@@ -41,6 +41,9 @@ OPENROUTER_MODEL = f"google/{BASE_MODEL}"
 
 PARALLEL_MODE_KEY = "fine_ai_evaluation.parallel_mode"
 ALLOWED_PARALLEL_MODES = ("serial", "parallel")
+COUNTRY_CONCURRENCY_KEY = "fine_ai_evaluation.country_concurrency"
+MIN_COUNTRY_CONCURRENCY = 1
+MAX_COUNTRY_CONCURRENCY = 5
 
 
 def provider_options() -> list[dict[str, str]]:
@@ -92,6 +95,27 @@ def set_parallel_mode(mode: str) -> None:
     if normalized not in ALLOWED_PARALLEL_MODES:
         raise ValueError(f"Unsupported parallel mode: {mode}")
     settings_store.set_setting(PARALLEL_MODE_KEY, normalized)
+
+
+def get_country_concurrency() -> int:
+    try:
+        stored = settings_store.get_setting(COUNTRY_CONCURRENCY_KEY)
+        value = int(str(stored or "").strip())
+    except Exception:
+        value = MIN_COUNTRY_CONCURRENCY
+    if value < MIN_COUNTRY_CONCURRENCY or value > MAX_COUNTRY_CONCURRENCY:
+        return MIN_COUNTRY_CONCURRENCY
+    return value
+
+
+def set_country_concurrency(value: int | str) -> None:
+    try:
+        normalized = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"Unsupported fine AI country concurrency: {value}") from None
+    if normalized < MIN_COUNTRY_CONCURRENCY or normalized > MAX_COUNTRY_CONCURRENCY:
+        raise ValueError(f"Unsupported fine AI country concurrency: {value}")
+    settings_store.set_setting(COUNTRY_CONCURRENCY_KEY, str(normalized))
 
 
 def resolve_config(

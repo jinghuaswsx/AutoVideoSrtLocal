@@ -262,3 +262,16 @@ def test_gemini_31_pro_to_35_flash_migration_updates_bindings_prefs_and_pricing(
     assert "provider = 'gemini_aistudio' AND model = 'gemini-3.1-pro-preview'" in body
     assert "provider = 'gemini_vertex' AND model = 'gemini-3.1-pro-preview'" in body
     assert "provider = 'openrouter' AND model = 'google/gemini-3.1-pro-preview'" in body
+
+
+def test_meta_hot_posts_local_import_bindings_migration_adds_binding_fields():
+    body = Path("db/migrations/2026_05_24_meta_hot_posts_local_import_bindings.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER TABLE meta_hot_posts" in body
+    assert "local_product_id" in body
+    assert "local_media_item_id" in body
+    assert "idx_meta_hot_posts_local_product_id" in body
+    assert "idx_meta_hot_posts_local_media_item_id" in body
+

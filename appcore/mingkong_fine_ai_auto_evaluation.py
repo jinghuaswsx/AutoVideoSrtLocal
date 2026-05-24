@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +16,8 @@ SOURCE_TOP500 = "top500_90d_spend"
 SOURCE_YESTERDAY_TOP100 = "yesterday_top100"
 TERMINAL_RECORD_STATUSES = {"completed", "partially_completed", "failed", "skipped"}
 MAX_BATCH_SIZE = 2
+DEFAULT_WORKER_CONCURRENCY = 2
+WORKER_IDLE_SLEEP_SECONDS = 10
 STALE_AFTER_SECONDS = 8 * 60
 
 log = logging.getLogger(__name__)
@@ -260,6 +264,69 @@ def _finish_record(
     )
 
 
+def _claim_candidate_for_pool(
+    row: dict[str, Any],
+    *,
+    source_bucket: str,
+    source_rank: int,
+) -> dict[str, Any]:
+    material_key = _candidate_key(row)
+    if not material_key:
+        return {"status": "skipped", "reason": "missing_material_key"}
+    product_link = _candidate_product_link(row)
+    video_path = str(row.get("video_path") or "").strip()
+    if not _claim_running_record(
+        row,
+        scheduled_run_id=None,
+        source_bucket=source_bucket,
+        source_rank=source_rank,
+    ):
+        return {"status": "skipped", "reason": "already_claimed"}
+    if not product_link:
+        _finish_record(material_key, status="skipped", error="missing_product_link")
+        return {"status": "skipped", "reason": "missing_product_link", "material_key": material_key}
+    if not video_path:
+        _finish_record(material_key, status="skipped", error="missing_video_path")
+        return {"status": "skipped", "reason": "missing_video_path", "material_key": material_key}
+    return {
+        "status": "claimed",
+        "row": row,
+        "material_key": material_key,
+        "source_bucket": source_bucket,
+        "source_rank": int(source_rank),
+    }
+
+
+def _claim_candidate_batch(limit: int) -> dict[str, Any]:
+    safe_limit = max(1, int(limit or 1))
+    for source_bucket, fetcher in (
+        (SOURCE_TOP500, _fetch_top500_candidates),
+        (SOURCE_YESTERDAY_TOP100, _fetch_yesterday_top100_candidates),
+    ):
+        rows = fetcher(safe_limit)
+        if not rows:
+            continue
+        claimed: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for index, row in enumerate(rows, start=1):
+            item = _claim_candidate_for_pool(
+                row,
+                source_bucket=source_bucket,
+                source_rank=_source_rank(row, index),
+            )
+            if item.get("status") == "claimed":
+                claimed.append(item)
+            else:
+                skipped.append(item)
+        return {
+            "source_bucket": source_bucket,
+            "scanned": len(rows),
+            "claimed": claimed,
+            "skipped": skipped,
+        }
+    return {"source_bucket": "", "scanned": 0, "claimed": [], "skipped": []}
+
+
 def _cache_card_video(video_path: str) -> str:
     from web.routes import medias as media_routes
     from web.routes.medias import mk_selection
@@ -286,13 +353,14 @@ def _run_candidate(
     source_bucket: str,
     source_rank: int,
     service=None,
+    already_claimed: bool = False,
 ) -> dict[str, Any]:
     material_key = _candidate_key(row)
     if not material_key:
         return {"status": "skipped", "reason": "missing_material_key"}
     product_link = _candidate_product_link(row)
     video_path = str(row.get("video_path") or "").strip()
-    if not _claim_running_record(
+    if not already_claimed and not _claim_running_record(
         row,
         scheduled_run_id=scheduled_run_id,
         source_bucket=source_bucket,
@@ -341,6 +409,118 @@ def _run_candidate(
         log.exception("Mingkong fine AI auto evaluation failed material_key=%s", material_key)
         _finish_record(material_key, status="failed", evaluation_run_id=evaluation_run_id, error=str(exc))
         return {"status": "failed", "evaluation_run_id": evaluation_run_id, "error": str(exc)[:1000]}
+
+
+def _record_worker_result(summary: dict[str, Any], result: dict[str, Any]) -> None:
+    status = str((result or {}).get("status") or "")
+    summary["processed"] += 1
+    if status == "completed":
+        summary["completed"] += 1
+    elif status == "partially_completed":
+        summary["partially_completed"] += 1
+    elif status == "skipped":
+        summary["skipped"] += 1
+    else:
+        summary["failed"] += 1
+
+
+def _sleep_or_stop(stop_event, seconds: float, sleeper=time.sleep) -> None:
+    if stop_event is not None:
+        stop_event.wait(float(seconds))
+        return
+    sleeper(float(seconds))
+
+
+def _stop_requested(stop_event) -> bool:
+    return bool(stop_event is not None and stop_event.is_set())
+
+
+def run_worker_pool(
+    *,
+    max_workers: int = DEFAULT_WORKER_CONCURRENCY,
+    idle_sleep_seconds: float = WORKER_IDLE_SLEEP_SECONDS,
+    stop_event=None,
+    max_processed: int | None = None,
+    service=None,
+    sleeper=time.sleep,
+) -> dict[str, Any]:
+    """Continuously run Mingkong fine AI card tasks with a fixed task pool."""
+    safe_workers = max(1, min(10, int(max_workers or DEFAULT_WORKER_CONCURRENCY)))
+    summary = _empty_summary(safe_workers)
+    summary.update({
+        "mode": "worker_pool",
+        "max_workers": safe_workers,
+        "idle_cycles": 0,
+    })
+    active: dict[Future, dict[str, Any]] = {}
+    executor = ThreadPoolExecutor(max_workers=safe_workers, thread_name_prefix="mk-fine-ai")
+    try:
+        while True:
+            if _stop_requested(stop_event) and not active:
+                break
+            if max_processed is not None and summary["processed"] >= int(max_processed) and not active:
+                break
+
+            while not _stop_requested(stop_event) and len(active) < safe_workers:
+                if max_processed is not None:
+                    remaining_target = int(max_processed) - summary["processed"] - len(active)
+                    if remaining_target <= 0:
+                        break
+                    claim_limit = min(safe_workers - len(active), remaining_target)
+                else:
+                    claim_limit = safe_workers - len(active)
+
+                batch = _claim_candidate_batch(claim_limit)
+                summary["scanned"] += int(batch.get("scanned") or 0)
+                source_bucket = str(batch.get("source_bucket") or "")
+                if source_bucket:
+                    summary["source_bucket"] = source_bucket
+                for skipped in batch.get("skipped") or []:
+                    reason = str(skipped.get("reason") or "")
+                    if reason not in {"already_claimed", "missing_material_key"}:
+                        _record_worker_result(summary, skipped)
+                claimed = list(batch.get("claimed") or [])
+                if not claimed:
+                    break
+                for item in claimed:
+                    row = item["row"]
+                    future = executor.submit(
+                        _run_candidate,
+                        row,
+                        scheduled_run_id=None,
+                        source_bucket=item["source_bucket"],
+                        source_rank=item["source_rank"],
+                        service=service,
+                        already_claimed=True,
+                    )
+                    active[future] = item
+
+            if not active:
+                summary["idle_cycles"] += 1
+                _sleep_or_stop(stop_event, idle_sleep_seconds, sleeper=sleeper)
+                continue
+
+            done, _ = wait(
+                list(active.keys()),
+                timeout=float(idle_sleep_seconds),
+                return_when=FIRST_COMPLETED,
+            )
+            for future in done:
+                item = active.pop(future)
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    log.exception("Mingkong fine AI worker future failed")
+                    _finish_record(
+                        str(item.get("material_key") or ""),
+                        status="failed",
+                        error=str(exc),
+                    )
+                    result = {"status": "failed", "error": str(exc)[:1000]}
+                _record_worker_result(summary, result)
+    finally:
+        executor.shutdown(wait=True, cancel_futures=False)
+    return summary
 
 
 def _empty_summary(limit: int) -> dict[str, Any]:

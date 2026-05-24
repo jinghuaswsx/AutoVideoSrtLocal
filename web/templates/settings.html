@@ -210,7 +210,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </p>
 
     <hr class="divider">
-    <h3 style="font-size:15px;font-weight:700;margin:0 0 10px;color:#111827">AI 精细评估配置</h3>
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 10px;color:#111827">AI 精细评估模型配置</h3>
     <label>前端按钮点击 Provider</label>
     <select name="fine_ai_manual_provider">
       {% for opt in fine_ai_provider_options %}
@@ -227,14 +227,17 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 
     <label>国家评估并发模式</label>
     <select name="fine_ai_parallel_mode">
-      <option value="parallel" {{ 'selected' if fine_ai_parallel_mode == 'parallel' }}>并发执行 (Parallel - 5国多线程同时评估)</option>
       <option value="serial" {{ 'selected' if fine_ai_parallel_mode == 'serial' }}>顺序执行 (Serial - 逐国串行评估)</option>
+      <option value="parallel" {{ 'selected' if fine_ai_parallel_mode == 'parallel' }}>并发执行 (Parallel - 按配置并发评估国家)</option>
     </select>
+
+    <label>国家评估并发数</label>
+    <input type="number" name="fine_ai_country_concurrency" min="1" max="5" step="1" value="{{ fine_ai_country_concurrency or 1 }}">
     
     <p class="hint">
       模型固定为 Gemini 3.5 Flash；OpenRouter 会使用 <code>google/gemini-3.5-flash</code>，
       Google AI Studio / Vertex / Vertex ADC 使用 <code>gemini-3.5-flash</code>。
-      并发模式可显著降低单卡评估耗时，但需要确保所选通道拥有足够的并发配额。
+      默认保持串行；需要观察 ADC 额度时再切换并发，并发数建议先从 2 开始。
     </p>
 
     <hr class="divider">

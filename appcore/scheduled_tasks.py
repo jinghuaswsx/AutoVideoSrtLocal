@@ -185,20 +185,20 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "mingkong_fine_ai_auto_evaluation_tick": {
         "code": "mingkong_fine_ai_auto_evaluation_tick",
-        "name": "明空视频卡片 AI 精细评估自动任务",
+        "name": "明空视频卡片 AI 精细评估任务池",
         "description": (
-            "每 10 分钟从明空视频素材库 90 天消耗 Top500 优先取任务；"
+            "后台 worker 池持续从明空视频素材库 90 天消耗 Top500 优先取任务；"
             "Top500 无可跑任务后再跑昨天消耗前100的全部 Top100。"
             "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
             "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
         ),
-        "schedule": "每 10 分钟（每轮最多 2 张卡片，单轮最长 30 分钟）",
-        "source_type": "apscheduler",
-        "source_label": "Web 进程 APScheduler",
-        "source_ref": "mingkong_fine_ai_auto_evaluation_tick",
-        "runner": "appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once",
-        "deployment": "Web 服务启动时注册",
-        "log_table": "scheduled_task_runs",
+        "schedule": "连续后台任务池（默认 2 个卡片并发，单卡国家评估默认串行）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd service",
+        "source_ref": "autovideosrt-mingkong-fine-ai-worker.service",
+        "runner": "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2",
+        "deployment": "线上 systemd 常驻服务",
+        "log_table": "mingkong_fine_ai_auto_evaluations",
     },
     "meta_realtime_import": {
         "code": "meta_realtime_import",

@@ -7,7 +7,7 @@ import time
 import tkinter as tk
 from tkinter import font as tkfont, messagebox, ttk
 
-from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version
+from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version, ai_listing_uploader
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -79,10 +79,28 @@ class ShopifyImageLocalizerApp:
         self.current_running_language: str = ""  # 当前正在运行的语言
         self.localized_links: list[dict[str, str]] = []  # 当前会话中成功换图的所有小语种链接
 
+        # AI 自动上品相关属性
+        self.ai_tasks_list: list[dict] = []
+        self.ai_task_label_to_id: dict[str, int] = {}
+        self.ai_task_var = tk.StringVar()
+        self.ai_product_code_var = tk.StringVar()
+        self.ai_product_title_var = tk.StringVar()
+        self.ai_product_domain_var = tk.StringVar()
+        self.ai_shopify_product_id_var = tk.StringVar()
+
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
 
+        # 引入内容容器 Frame 代替 ttk.Notebook 实现双 Tab 面板切换
+        self.content_frame = tk.Frame(self.main_frame)
+
+        self.tab_localizer = tk.Frame(self.content_frame)
+        self.tab_ai_listing = tk.Frame(self.content_frame)
+
         self._build_form()
+        self._build_ai_listing_tab()
+        self.content_frame.pack(fill="both", expand=False, pady=(0, 10))
+        self.switch_tab("localizer")
         self._build_summary()
         self._build_log()
         self.root.protocol("WM_DELETE_WINDOW", self.close_application)
@@ -92,6 +110,42 @@ class ShopifyImageLocalizerApp:
         self._load_languages_async()
         self._load_domains_async()
         _ = prompt_on_start
+
+    def switch_tab(self, tab_name: str) -> None:
+        if tab_name == "localizer":
+            self.tab_ai_listing.pack_forget()
+            self.tab_localizer.pack(fill="both", expand=True)
+            self.btn_toggle_localizer.configure(
+                bg="#1976d2",
+                fg="white",
+                activebackground="#1565c0",
+                activeforeground="white",
+                font=("TkDefaultFont", 11, "bold"),
+            )
+            self.btn_toggle_ai_listing.configure(
+                bg="#f5f5f5",
+                fg="#333333",
+                activebackground="#e0e0e0",
+                activeforeground="#333333",
+                font=("TkDefaultFont", 11),
+            )
+        else:
+            self.tab_localizer.pack_forget()
+            self.tab_ai_listing.pack(fill="both", expand=True)
+            self.btn_toggle_localizer.configure(
+                bg="#f5f5f5",
+                fg="#333333",
+                activebackground="#e0e0e0",
+                activeforeground="#333333",
+                font=("TkDefaultFont", 11),
+            )
+            self.btn_toggle_ai_listing.configure(
+                bg="#1976d2",
+                fg="white",
+                activebackground="#1565c0",
+                activeforeground="white",
+                font=("TkDefaultFont", 11, "bold"),
+            )
 
     def _mark_tk_mainloop_started(self) -> None:
         self._tk_mainloop_started = True
@@ -134,10 +188,39 @@ class ShopifyImageLocalizerApp:
             textvariable=self.current_login_status_var,
             anchor="w",
             font=("TkDefaultFont", 14, "bold"),
-            wraplength=900,
+            wraplength=500,
             justify="left",
         )
-        self.current_login_status_label.pack(side="left", anchor="w", fill="x", expand=True)
+        self.current_login_status_label.pack(side="left", anchor="w")
+
+        # 新增 Toggle 形式的 Tab 切换按钮组
+        self.toggle_frame = tk.Frame(self.top_bar_frame, bg="#e0e0e0", padx=1, pady=1)
+        self.toggle_frame.pack(side="left", padx=20)
+
+        self.btn_toggle_localizer = tk.Button(
+            self.toggle_frame,
+            text=" 批量换图工具 ",
+            command=lambda: self.switch_tab("localizer"),
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=4,
+            cursor="hand2",
+        )
+        self.btn_toggle_localizer.pack(side="left")
+
+        self.btn_toggle_ai_listing = tk.Button(
+            self.toggle_frame,
+            text=" 自动上品工具 ",
+            command=lambda: self.switch_tab("ai_listing"),
+            relief="flat",
+            bd=0,
+            padx=16,
+            pady=4,
+            cursor="hand2",
+        )
+        self.btn_toggle_ai_listing.pack(side="left", padx=(1, 0))
+
         self.close_app_button = tk.Button(
             self.top_bar_frame,
             text="关闭软件",
@@ -153,7 +236,7 @@ class ShopifyImageLocalizerApp:
         # 用户不必再点「已登录」（仍可手动刷新）。
         self._update_login_status(self.current_shopify_domain_var.get() or None)
 
-        self.login_shopify_frame = tk.Frame(self.main_frame)
+        self.login_shopify_frame = tk.Frame(self.tab_localizer)
         self.login_shopify_frame.pack(fill="x", pady=(0, 10))
         initial_domains = [settings.normalize_domain(item.get("domain")) for item in self.domain_items]
         self.domain_box = ttk.Combobox(
@@ -201,13 +284,13 @@ class ShopifyImageLocalizerApp:
             lambda _event: self._refresh_login_tip(),
         )
 
-        tk.Label(self.main_frame, text="商品 ID").pack(anchor="w")
-        self.product_code_entry = tk.Entry(self.main_frame, textvariable=self.product_code_var, width=80)
+        tk.Label(self.tab_localizer, text="商品 ID").pack(anchor="w")
+        self.product_code_entry = tk.Entry(self.tab_localizer, textvariable=self.product_code_var, width=80)
         self.product_code_entry.pack(fill="x", pady=(4, 10))
         self.product_code_entry.focus_set()
 
         # 语言选择区域:垂直布局
-        language_row = tk.Frame(self.main_frame)
+        language_row = tk.Frame(self.tab_localizer)
         language_row.pack(fill="x", pady=(4, 10))
 
         # 单个语言选择
@@ -237,16 +320,16 @@ class ShopifyImageLocalizerApp:
         self.batch_languages_frame = tk.Frame(self.batch_language_controls_frame)
         self.batch_languages_frame.pack(side="left", fill="x", expand=True, padx=(12, 0))
 
-        tk.Label(self.main_frame, text="Shopify ID（可选）").pack(anchor="w")
+        tk.Label(self.tab_localizer, text="Shopify ID（可选）").pack(anchor="w")
         self.shopify_product_id_entry = tk.Entry(
-            self.main_frame,
+            self.tab_localizer,
             textvariable=self.shopify_product_id_var,
             width=80,
         )
         self.shopify_product_id_entry.pack(fill="x", pady=(4, 2))
 
         self.resolved_shopify_id_label = tk.Label(
-            self.main_frame,
+            self.tab_localizer,
             text="",
             justify="left",
             fg="#228B22",
@@ -255,7 +338,7 @@ class ShopifyImageLocalizerApp:
         self.resolved_shopify_id_label.pack(anchor="w", pady=(0, 4))
 
         self.tip_label = tk.Label(
-            self.main_frame,
+            self.tab_localizer,
             text=(
                 "Shopify ID 留空时自动从线上商品页实时获取，并回存到服务器；"
                 "填写后会优先使用该值。"
@@ -266,7 +349,7 @@ class ShopifyImageLocalizerApp:
         )
         self.tip_label.pack(anchor="w", pady=(0, 10))
 
-        self.action_frame = tk.Frame(self.main_frame)
+        self.action_frame = tk.Frame(self.tab_localizer)
         self.action_frame.pack(fill="x", pady=(4, 8))
         self.start_button = tk.Button(
             self.action_frame,
@@ -339,7 +422,7 @@ class ShopifyImageLocalizerApp:
         )
         self.advanced_button.pack(side="right")
 
-        self.advanced_frame = tk.Frame(self.main_frame)
+        self.advanced_frame = tk.Frame(self.tab_localizer)
         tk.Label(self.advanced_frame, text="服务端 API 地址（固定线上）").pack(anchor="w")
         tk.Entry(
             self.advanced_frame,
@@ -356,7 +439,7 @@ class ShopifyImageLocalizerApp:
             width=80,
         ).pack(fill="x", pady=(4, 8))
 
-        self.status_label = tk.Label(self.main_frame, textvariable=self.status_var, justify="left")
+        self.status_label = tk.Label(self.tab_localizer, textvariable=self.status_var, justify="left")
         self.status_label.pack(anchor="w", pady=(4, 8))
 
     def _build_summary(self) -> None:
@@ -598,6 +681,208 @@ class ShopifyImageLocalizerApp:
         self.advanced_button.configure(text="隐藏高级设置")
         self.advanced_visible = True
 
+    def _build_ai_listing_tab(self) -> None:
+        # AI自动上品任务操作区域
+        self.ai_action_frame = tk.Frame(self.tab_ai_listing)
+        self.ai_action_frame.pack(fill="x", pady=(10, 10))
+
+        self.ai_pull_button = tk.Button(
+            self.ai_action_frame,
+            text="🔄 拉取就绪任务",
+            command=self._load_ai_listing_tasks_async,
+            width=18,
+            height=2,
+            font=("TkDefaultFont", 12, "bold"),
+        )
+        self.ai_pull_button.pack(side="left", padx=(0, 10))
+
+        self.ai_task_box = ttk.Combobox(
+            self.ai_action_frame,
+            textvariable=self.ai_task_var,
+            state="readonly",
+            width=50,
+        )
+        self.ai_task_box.pack(side="left", padx=(0, 10), ipady=8)
+        self.ai_task_box.bind("<<ComboboxSelected>>", lambda _event: self._on_ai_task_selected())
+
+        # 任务详情数据卡片展示
+        self.ai_detail_card = tk.LabelFrame(self.tab_ai_listing, text=" 选中的上品任务详情 ", padx=15, pady=15)
+        self.ai_detail_card.pack(fill="x", pady=(0, 15))
+
+        # Title / Product Code / Domain / Shopify Product ID
+        tk.Label(self.ai_detail_card, text="商品唯一编码 (Product Code)").grid(row=0, column=0, sticky="w", pady=4)
+        self.ai_code_entry = tk.Entry(self.ai_detail_card, textvariable=self.ai_product_code_var, width=60, state="readonly")
+        self.ai_code_entry.grid(row=0, column=1, sticky="w", padx=10, pady=4)
+
+        tk.Label(self.ai_detail_card, text="英文商品标题 (Title)").grid(row=1, column=0, sticky="w", pady=4)
+        self.ai_title_entry = tk.Entry(self.ai_detail_card, textvariable=self.ai_product_title_var, width=60, state="readonly")
+        self.ai_title_entry.grid(row=1, column=1, sticky="w", padx=10, pady=4)
+
+        tk.Label(self.ai_detail_card, text="绑定的目标店铺 (Domain)").grid(row=2, column=0, sticky="w", pady=4)
+        self.ai_domain_entry = tk.Entry(self.ai_detail_card, textvariable=self.ai_product_domain_var, width=60, state="readonly")
+        self.ai_domain_entry.grid(row=2, column=1, sticky="w", padx=10, pady=4)
+
+        tk.Label(self.ai_detail_card, text="新建 Shopify ID").grid(row=3, column=0, sticky="w", pady=4)
+        self.ai_shopify_id_entry = tk.Entry(self.ai_detail_card, textvariable=self.ai_shopify_product_id_var, width=60, state="readonly")
+        self.ai_shopify_id_entry.grid(row=3, column=1, sticky="w", padx=10, pady=4)
+
+        # 底部执行按钮区域
+        self.ai_buttons_frame = tk.Frame(self.tab_ai_listing)
+        self.ai_buttons_frame.pack(fill="x", pady=(0, 10))
+
+        self.ai_start_button = tk.Button(
+            self.ai_buttons_frame,
+            text="🚀 开始全自动 RPA 上架",
+            command=self.start_ai_listing_upload,
+            width=24,
+            height=2,
+            font=("TkDefaultFont", 14, "bold"),
+            bg="#2e7d32",
+            fg="white",
+            activebackground="#1b5e20",
+            activeforeground="white",
+        )
+        self.ai_start_button.pack(side="left", padx=(0, 10))
+
+        self.ai_open_backend_button = tk.Button(
+            self.ai_buttons_frame,
+            text="🛒 访问已上架商品后台",
+            command=self.open_ai_shopify_product_backend,
+            width=24,
+            height=2,
+            font=("TkDefaultFont", 12),
+        )
+        self.ai_open_backend_button.pack(side="left")
+
+    def _load_ai_listing_tasks_async(self) -> None:
+        self._append_log("[AI自动上品] 正在从服务器拉取就绪任务...")
+        self.status_var.set("正在拉取就绪任务...")
+        def worker() -> None:
+            try:
+                base_url = self.base_url_var.get().strip()
+                api_key = self.api_key_var.get().strip()
+                res = api_client.fetch_ai_listing_tasks(base_url, api_key)
+                tasks = res.get("tasks") or []
+                self._ui_after(0, self._set_ai_listing_tasks, tasks)
+            except Exception as e:
+                self._ui_after(0, self._append_log, f"[AI自动上品] [错误] 拉取就绪任务失败: {e}")
+                self._ui_after(0, self.status_var.set, "拉取就绪任务失败")
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_ai_listing_tasks(self, tasks: list[dict]) -> None:
+        self.ai_tasks_list = tasks
+        self.ai_task_label_to_id.clear()
+        labels = []
+        for t in tasks:
+            label = f"{t['product_code']} - {t['generated_title'][:40]}"
+            self.ai_task_label_to_id[label] = t["id"]
+            labels.append(label)
+            
+        self.ai_task_box.configure(values=labels)
+        if labels:
+            self.ai_task_box.current(0)
+            self._on_ai_task_selected()
+            self._append_log(f"[AI自动上品] 已成功拉取 {len(labels)} 个就绪任务")
+            self.status_var.set("拉取成功，请选择任务后开始上架")
+        else:
+            self.ai_task_var.set("")
+            self.ai_product_code_var.set("")
+            self.ai_product_title_var.set("")
+            self.ai_product_domain_var.set("")
+            self.ai_shopify_product_id_var.set("")
+            self._append_log("[AI自动上品] 目前服务器上没有等待上架的就绪任务")
+            self.status_var.set("暂无就绪任务")
+
+    def _on_ai_task_selected(self) -> None:
+        label = self.ai_task_var.get()
+        task_id = self.ai_task_label_to_id.get(label)
+        if not task_id:
+            return
+        task = next((t for t in self.ai_tasks_list if t["id"] == task_id), None)
+        if task:
+            self.ai_product_code_var.set(task.get("product_code") or "")
+            self.ai_product_title_var.set(task.get("generated_title") or "")
+            self.ai_product_domain_var.set(task.get("target_store_domain") or "")
+            self.ai_shopify_product_id_var.set("")
+
+    def start_ai_listing_upload(self) -> None:
+        label = self.ai_task_var.get()
+        task_id = self.ai_task_label_to_id.get(label)
+        if not task_id:
+            messagebox.showwarning("警告", "请先选择一个上品任务")
+            return
+            
+        domain = self.ai_product_domain_var.get().strip()
+        if not domain:
+            messagebox.showwarning("警告", "商品绑定的目标店铺域名为空")
+            return
+            
+        self._current_cancel_token = cancellation.CancellationToken()
+        self._set_running_state(True, stoppable=True)
+        self.status_var.set("正在启动 RPA 全自动上品...")
+        self._append_log(f"[AI自动上品] 开始上架任务 ID={task_id}, 店铺={domain}")
+        
+        self._progress_start("开始全自动上品")
+        
+        def worker() -> None:
+            try:
+                base_url = self.base_url_var.get().strip()
+                api_key = self.api_key_var.get().strip()
+                user_dir = self.browser_user_data_dir_var.get().strip() or settings.DEFAULT_BROWSER_USER_DATA_DIR
+                
+                shopify_id = ai_listing_uploader.run_ai_listing_upload(
+                    base_url=base_url,
+                    api_key=api_key,
+                    task_id=task_id,
+                    user_data_dir=settings.browser_user_data_dir_for_domain(user_dir, domain),
+                    domain=domain,
+                    log_fn=lambda msg: self._ui_after(0, self._append_log, msg),
+                    progress_fn=lambda step: self._ui_after(0, self._progress_record_step, step),
+                    cancel_token=self._current_cancel_token,
+                )
+                
+                self._ui_after(0, self._on_ai_upload_completed, shopify_id)
+            except Exception as e:
+                self._ui_after(0, self._on_ai_upload_failed, str(e))
+                
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_ai_upload_completed(self, shopify_id: str) -> None:
+        self.ai_shopify_product_id_var.set(shopify_id)
+        self.status_var.set("RPA 上架成功！")
+        self._append_log(f"[AI自动上品] 上架成功！Shopify 生成的产品 ID: {shopify_id}")
+        self._progress_finish("上架成功")
+        self._set_running_state(False)
+        messagebox.showinfo("成功", f"商品已成功上架到 Shopify 店铺！\nShopify ID: {shopify_id}")
+        self._load_ai_listing_tasks_async()
+
+    def _on_ai_upload_failed(self, error_msg: str) -> None:
+        self.status_var.set("上架失败")
+        self._append_log(f"[AI自动上品] [错误] 上架失败: {error_msg}")
+        self._progress_finish("上架失败")
+        self._set_running_state(False)
+        messagebox.showerror("上架失败", f"上架过程中遇到错误:\n{error_msg}")
+
+    def open_ai_shopify_product_backend(self) -> None:
+        domain = self.ai_product_domain_var.get().strip()
+        shopify_id = self.ai_shopify_product_id_var.get().strip()
+        if not domain:
+            messagebox.showwarning("警告", "店铺域名为空")
+            return
+        
+        store_slug = settings.shopify_store_slug_for_domain(domain)
+        if not store_slug:
+            store_slug = settings.DEFAULT_SHOPIFY_STORE_SLUG
+            
+        import webbrowser
+        if shopify_id and shopify_id != "SUCCESS_MANUAL_CHECK":
+            url = f"https://admin.shopify.com/store/{store_slug}/products/{shopify_id}"
+        else:
+            url = f"https://admin.shopify.com/store/{store_slug}/products"
+            
+        self._append_log(f"[AI自动上品] 正在浏览器中打开: {url}")
+        webbrowser.open(url)
+
     def _set_running_state(self, running: bool, *, stoppable: bool = False) -> None:
         state = "disabled" if running else "normal"
         self.start_button.configure(state=state)
@@ -612,6 +897,10 @@ class ShopifyImageLocalizerApp:
         self.language_box.configure(state="disabled" if running else "readonly")
         self.batch_select_btn.configure(state=state)
         self.link_check_button.configure(state=state)
+        if hasattr(self, "ai_start_button"):
+            self.ai_start_button.configure(state=state)
+        if hasattr(self, "ai_pull_button"):
+            self.ai_pull_button.configure(state=state)
         if not running:
             self._progress_finish()
 

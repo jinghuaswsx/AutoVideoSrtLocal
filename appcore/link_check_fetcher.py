@@ -276,6 +276,7 @@ class FetchedPage:
     page_language: str
     html: str
     images: list[dict]
+    locale_evidence: dict | None = None
 
 
 class LinkCheckFetcher:
@@ -294,20 +295,44 @@ class LinkCheckFetcher:
         nocache_url = _add_cache_buster(url)
         response = self._request_page(nocache_url, target_language)
         response, soup, lang = self._lock_target_locale(response, requested_url=nocache_url, target_language=target_language)
-        if not _is_locale_locked(
+        
+        locked = _is_locale_locked(
             resolved_url=response.url,
             page_language=lang,
             target_language=target_language,
-        ):
-            raise LocaleLockError(
-                f"locale lock failed: target={target_language} resolved_url={response.url} page_lang={lang or 'unknown'}"
-            )
+        )
+        
+        locale_evidence = {
+            "target_language": target_language,
+            "requested_url": url,
+            "lock_source": "alternate_locale" if (response.url != nocache_url) else "initial",
+            "locked": locked,
+            "failure_reason": "" if locked else f"locale lock failed: target={target_language} resolved_url={response.url} page_lang={lang or 'unknown'}",
+            "attempts": [
+                {
+                    "phase": "initial",
+                    "attempt_index": 1,
+                    "wait_seconds_before_request": 0,
+                    "requested_url": nocache_url,
+                    "resolved_url": response.url,
+                    "page_language": lang,
+                    "locked": locked,
+                }
+            ],
+        }
+
+        if not locked:
+            exc = LocaleLockError(locale_evidence["failure_reason"])
+            exc.locale_evidence = locale_evidence
+            raise exc
+
         return FetchedPage(
             requested_url=url,
             resolved_url=response.url,
             page_language=lang,
             html=response.text,
             images=extract_images_from_html(response.text, base_url=response.url),
+            locale_evidence=locale_evidence,
         )
 
     def _lock_target_locale(self, response, *, requested_url: str, target_language: str):

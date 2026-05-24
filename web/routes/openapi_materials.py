@@ -409,3 +409,94 @@ def mark_failed(item_id: int):
         operator_user_id=_OPENAPI_OPERATOR_USER_ID,
     )
     return _openapi_payload_response(response_payload)
+
+
+@shopify_localizer_bp.route("/ai-listing/tasks", methods=["GET"])
+def shopify_localizer_list_ai_listing_tasks():
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+    
+    from appcore import db
+    tasks = db.query(
+        "SELECT id, product_code, source_link, transit_link, target_store_domain, pricing_ratio, pricing_offset, generated_title "
+        "FROM ai_listing_tasks "
+        "WHERE status = 'completed' AND (shopify_product_id IS NULL OR shopify_product_id = '') "
+        "ORDER BY id DESC"
+    )
+    return _openapi_payload_response({"tasks": tasks})
+
+
+@shopify_localizer_bp.route("/ai-listing/tasks/<int:task_id>", methods=["GET"])
+def shopify_localizer_get_ai_listing_task(task_id: int):
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+    
+    from appcore import db
+    task = db.query_one("SELECT * FROM ai_listing_tasks WHERE id = %s", (task_id,))
+    if not task:
+        return _openapi_error_response("task not found", 404)
+        
+    assets = db.query(
+        "SELECT id, asset_type, original_url, transformed_url, ai_classification, is_selected, sort_order "
+        "FROM ai_listing_assets "
+        "WHERE task_id = %s "
+        "ORDER BY sort_order ASC, id ASC",
+        (task_id,)
+    )
+    
+    import json
+    skus = []
+    if task["generated_skus_json"]:
+        try:
+            skus = json.loads(task["generated_skus_json"])
+        except Exception:
+            skus = []
+            
+    base_url = request.url_root.rstrip('/')
+    processed_assets = []
+    for asset in assets:
+        img_key = asset["transformed_url"] or asset["original_url"]
+        download_url = asset["original_url"]
+        if img_key and not img_key.startswith("http"):
+            download_url = f"{base_url}/medias/obj/{img_key}"
+            
+        processed_assets.append({
+            "id": asset["id"],
+            "asset_type": asset["asset_type"],
+            "original_url": asset["original_url"],
+            "transformed_url": asset["transformed_url"],
+            "download_url": download_url,
+            "ai_classification": asset["ai_classification"],
+            "is_selected": asset["is_selected"],
+            "sort_order": asset["sort_order"]
+        })
+        
+    return _openapi_payload_response({
+        "task": dict(task),
+        "assets": processed_assets,
+        "skus": skus
+    })
+
+
+@shopify_localizer_bp.route("/ai-listing/tasks/<int:task_id>/success", methods=["POST"])
+def shopify_localizer_ai_listing_task_success(task_id: int):
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+        
+    body = request.get_json(silent=True) or {}
+    shopify_product_id = str(body.get("shopify_product_id") or "").strip()
+    if not shopify_product_id:
+        return _openapi_error_response("missing shopify_product_id", 400)
+        
+    from appcore import db
+    task = db.query_one("SELECT id FROM ai_listing_tasks WHERE id = %s", (task_id,))
+    if not task:
+        return _openapi_error_response("task not found", 404)
+        
+    import datetime
+    db.execute(
+        "UPDATE ai_listing_tasks SET shopify_product_id = %s, shopify_published_at = %s WHERE id = %s",
+        (shopify_product_id, datetime.datetime.now(), task_id)
+    )
+    return _openapi_payload_response({"ok": True})
+

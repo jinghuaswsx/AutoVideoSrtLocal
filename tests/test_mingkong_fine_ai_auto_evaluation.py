@@ -109,6 +109,70 @@ def test_tick_limits_each_round_to_two(monkeypatch):
     assert len(processed) == 2
 
 
+def test_worker_pool_refills_finished_slot_while_other_task_is_running(monkeypatch):
+    import threading
+    import time
+
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+
+    rows = iter([_candidate(1), _candidate(2), _candidate(3)])
+
+    def fake_claim_batch(limit):
+        claimed = []
+        for _ in range(limit):
+            try:
+                row = next(rows)
+            except StopIteration:
+                break
+            claimed.append({
+                "row": row,
+                "material_key": row["material_key"],
+                "source_bucket": mod.SOURCE_TOP500,
+                "source_rank": row["rank_position"],
+            })
+        return {
+            "source_bucket": mod.SOURCE_TOP500 if claimed else "",
+            "scanned": len(claimed),
+            "claimed": claimed,
+            "skipped": [],
+        }
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    events = []
+
+    def fake_run_candidate(row, **kwargs):
+        nonlocal active, max_active
+        code = row["product_code"]
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+            events.append(("start", code))
+        try:
+            time.sleep(0.02 if code == "product-1" else 0.08)
+            return {"status": "completed"}
+        finally:
+            with lock:
+                events.append(("finish", code))
+                active -= 1
+
+    monkeypatch.setattr(mod, "_claim_candidate_batch", fake_claim_batch)
+    monkeypatch.setattr(mod, "_run_candidate", fake_run_candidate)
+
+    summary = mod.run_worker_pool(
+        max_workers=2,
+        idle_sleep_seconds=0.005,
+        max_processed=3,
+        sleeper=lambda seconds: None,
+    )
+
+    assert summary["processed"] == 3
+    assert summary["completed"] == 3
+    assert max_active == 2
+    assert events.index(("start", "product-3")) < events.index(("finish", "product-2"))
+
+
 def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
