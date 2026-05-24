@@ -737,3 +737,65 @@ def detail_image_proxy(image_id: int):
     if outcome.not_found:
         abort(404)
     return _detail_image_proxy_flask_response(outcome)
+
+
+@bp.route("/products/<int:pid>/detail-images/batch-evaluation-report", methods=["GET"])
+@login_required
+def api_detail_images_batch_evaluation_report(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    lang = (request.args.get("lang") or "").strip().lower()
+    if not lang:
+        abort(400, "Language parameter is required")
+
+    # Get all detail images for this language
+    all_images = medias.list_detail_images(pid, lang)
+    # Filter out gifs
+    from ._helpers import _detail_images_is_gif
+    images = [img for img in all_images if not _detail_images_is_gif(img.get("object_key") or "")]
+
+    # We want to deserialize and attach the source (English) image for comparison
+    en_images = medias.list_detail_images(pid, "en")
+    en_by_order = {img.get("sort_order", 0): img for img in en_images if not _detail_images_is_gif(img.get("object_key") or "")}
+
+    serialized_items = []
+    import json
+    for img in images:
+        serialized = _serialize_detail_image(img)
+        # Parse eval_result if exists
+        eval_result = None
+        eval_result_json = img.get("eval_result_json")
+        if eval_result_json:
+            try:
+                eval_result = json.loads(eval_result_json)
+            except Exception:
+                pass
+        serialized["eval_result"] = eval_result
+
+        # Attach source image
+        source_img = None
+        source_id = img.get("source_detail_image_id")
+        if source_id:
+            for en_img in en_images:
+                if en_img.get("id") == source_id:
+                    source_img = _serialize_detail_image(en_img)
+                    break
+        if not source_img:
+            # Fallback
+            so = img.get("sort_order") or 0
+            if so in en_by_order:
+                source_img = _serialize_detail_image(en_by_order[so])
+
+        serialized["source_image"] = source_img
+        serialized_items.append(serialized)
+
+    from flask import render_template
+    lang_name = medias.get_language_name(lang) or lang.upper()
+    return render_template(
+        "medias_batch_evaluation_report.html",
+        product=p,
+        lang=lang,
+        lang_name=lang_name,
+        items=serialized_items,
+    )

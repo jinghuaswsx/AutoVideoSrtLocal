@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>【{{ lang_name }}】详情图翻译质量评估分析报告 - {{ product.name }}</title>
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --font-heading: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      
+      /* Ocean Blue Palette */
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-bg: #f0f9ff;
+      --bg-base: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      
+      --fg-main: #0f172a;
+      --fg-muted: #475569;
+      --fg-light: #64748b;
+      
+      --success: #22c55e;
+      --success-bg: #f0fdf4;
+      --warning: #f59e0b;
+      --warning-bg: #fffbeb;
+      --danger: #ef4444;
+      --danger-bg: #fef2f2;
+      
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.02);
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background-color: var(--bg-base);
+      color: var(--fg-main);
+      font-family: var(--font-body);
+      line-height: 1.5;
+      padding: 40px 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+    
+    /* Header Styles */
+    header {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    
+    .header-info h1 {
+      font-family: var(--font-heading);
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--fg-main);
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .lang-badge {
+      background: var(--primary-bg);
+      color: var(--primary);
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 99px;
+      font-weight: 700;
+      border: 1px solid rgba(2, 132, 199, 0.15);
+    }
+    
+    .header-info p {
+      font-size: 14px;
+      color: var(--fg-muted);
+      font-weight: 500;
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-body);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      border: 1px solid var(--border);
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    
+    .btn-secondary {
+      background: white;
+      color: var(--fg-muted);
+    }
+    
+    .btn-secondary:hover {
+      background: #f8fafc;
+      color: var(--fg-main);
+    }
+    
+    /* Statistics Panel */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--border);
+    }
+    
+    .stat-card.primary::before { background: var(--primary); }
+    .stat-card.success::before { background: var(--success); }
+    .stat-card.warning::before { background: var(--warning); }
+    .stat-card.danger::before { background: var(--danger); }
+    
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--fg-light);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .stat-val {
+      font-family: var(--font-heading);
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--fg-main);
+      line-height: 1;
+    }
+    
+    /* Comparison Grid */
+    .comparison-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    
+    .comp-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: var(--shadow-md);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) 340px;
+      gap: 24px;
+      align-items: start;
+    }
+    
+    @media (max-width: 992px) {
+      .comp-row {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .image-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .pane-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--fg-light);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    
+    .pane-title span {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--fg-light);
+    }
+    
+    .pane-title.accent span { background: var(--primary); }
+    .pane-title.accent { color: var(--primary); }
+    
+    .image-wrapper {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #f8fafc;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
+      overflow: hidden;
+    }
+    
+    .image-wrapper img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 6px;
+      transition: transform 0.2s ease;
+    }
+    
+    .image-wrapper:hover img {
+      transform: scale(1.02);
+    }
+    
+    /* Result Pane */
+    .result-pane {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      background: #fafafb;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+    }
+    
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .score-badge {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-heading);
+      font-size: 24px;
+      font-weight: 800;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .score-badge.pass { background-color: var(--success); }
+    .score-badge.warn { background-color: var(--warning); }
+    .score-badge.fail { background-color: var(--danger); }
+    .score-badge.none { background-color: var(--fg-light); }
+    
+    .result-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--fg-main);
+    }
+    
+    .result-meta {
+      font-size: 10px;
+      color: var(--fg-light);
+      margin-top: 2px;
+    }
+    
+    .detail-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .detail-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--fg-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .detail-title span {
+      width: 3px;
+      height: 10px;
+      background: var(--primary);
+      border-radius: 2px;
+      display: inline-block;
+    }
+    
+    .detail-body {
+      font-size: 12px;
+      color: var(--fg-muted);
+      line-height: 1.6;
+      padding-left: 9px;
+    }
+    
+    /* Print styles */
+    @media print {
+      body {
+        background-color: white;
+        padding: 0;
+      }
+      
+      header, .comp-row {
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        border: 1px solid #cbd5e1 !important;
+        page-break-inside: avoid;
+      }
+      
+      .btn {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  
+  {% set total = items|length %}
+  {% set ns = namespace(pass=0, warn=0, fail=0, sum_score=0, count_scored=0) %}
+  
+  {% for it in items %}
+    {% if it.eval_status == 'done' and it.eval_result %}
+      {% set ns.count_scored = ns.count_scored + 1 %}
+      {% set score = it.eval_result.translation_quality_score|int %}
+      {% set ns.sum_score = ns.sum_score + score %}
+      {% if score >= 8 and not it.eval_result.has_mixed_languages and not it.eval_result.has_layout_issue %}
+        {% set ns.pass = ns.pass + 1 %}
+      {% elif score <= 5 %}
+        {% set ns.fail = ns.fail + 1 %}
+      {% else %}
+        {% set ns.warn = ns.warn + 1 %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  
+  {% set avg_score = 0.0 %}
+  {% if ns.count_scored > 0 %}
+    {% set avg_score = (ns.sum_score / ns.count_scored) | round(1) %}
+  {% endif %}
+
+  <div class="container">
+    
+    <!-- Header -->
+    <header>
+      <div class="header-info">
+        <h1>
+          <span>静态详情图翻译质量评估分析报告</span>
+          <span class="lang-badge">{{ lang_name }} ({{ lang|upper }})</span>
+        </h1>
+        <p>产品名称：{{ product.name }} | 产品 ID：{{ product.product_code }}</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="window.print()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:-2px;"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          <span>打印 / 保存为 PDF</span>
+        </button>
+        <button class="btn btn-secondary" onclick="window.close()">
+          <span>关闭页面</span>
+        </button>
+      </div>
+    </header>
+    
+    <!-- Stats Panel -->
+    <div class="stats-grid">
+      <div class="stat-card primary">
+        <span class="stat-label">静态图总数</span>
+        <span class="stat-val">{{ total }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">平均评估分数</span>
+        <span class="stat-val">{% if ns.count_scored > 0 %}{{ avg_score }} <span style="font-size:14px;color:var(--fg-light);">/10</span>{% else %}-{% endif %}</span>
+      </div>
+      <div class="stat-card success">
+        <span class="stat-label">质量优秀数</span>
+        <span class="stat-val">{{ ns.pass }}</span>
+      </div>
+      <div class="stat-card warning">
+        <span class="stat-label">存在瑕疵数</span>
+        <span class="stat-val">{{ ns.warn }}</span>
+      </div>
+      <div class="stat-card danger">
+        <span class="stat-label">质量差/失败</span>
+        <span class="stat-val">{{ ns.fail }}</span>
+      </div>
+    </div>
+    
+    <!-- Comparison Grid -->
+    <div class="comparison-grid">
+      {% for it in items %}
+        <div class="comp-row">
+          
+          <!-- Source image -->
+          <div class="image-pane">
+            <div class="pane-title">
+              <span></span>
+              <span>原始英文图</span>
+            </div>
+            <div class="image-wrapper">
+              {% if it.source_image and it.source_image.preview_url %}
+                <img src="{{ it.source_image.preview_url }}" alt="英文原图" loading="lazy">
+              {% else %}
+                <div style="font-size:12px;color:var(--fg-light);">无对比原图</div>
+              {% endif %}
+            </div>
+          </div>
+          
+          <!-- Target translated image -->
+          <div class="image-pane">
+            <div class="pane-title accent">
+              <span></span>
+              <span>{{ lang_name }} 译图</span>
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ it.preview_url }}" alt="翻译译图" loading="lazy">
+            </div>
+          </div>
+          
+          <!-- AI Evaluation result card -->
+          <div class="result-pane">
+            {% if it.eval_status == 'done' and it.eval_result %}
+              {% set score = it.eval_result.translation_quality_score|int %}
+              
+              <div class="result-header">
+                <div class="score-badge {% if score >= 8 and not it.eval_result.has_mixed_languages and not it.eval_result.has_layout_issue %}pass{% elif score <= 5 %}fail{% else %}warn{% endif %}">
+                  {{ score }}
+                </div>
+                <div>
+                  <div class="result-title">
+                    {% if score >= 8 and not it.eval_result.has_mixed_languages and not it.eval_result.has_layout_issue %}
+                      质量优秀 (Passed)
+                    {% elif score <= 5 %}
+                      质量差 (Failed)
+                    {% else %}
+                      存在瑕疵 (Warning)
+                    {% endif %}
+                  </div>
+                  <div class="result-meta">评估模型: {{ it.eval_model_id }}</div>
+                </div>
+              </div>
+              
+              <div class="detail-section">
+                <div class="detail-title"><span></span>语言混杂诊断</div>
+                <div class="detail-body">
+                  {% if it.eval_result.has_mixed_languages %}
+                    <span style="color:var(--danger);font-weight:600;">⚠️ 混杂英文：</span>{{ it.eval_result.mixed_languages_details }}
+                  {% else %}
+                    <span style="color:var(--success);font-weight:600;">✅ 未混杂英文</span>
+                  {% endif %}
+                </div>
+              </div>
+              
+              <div class="detail-section">
+                <div class="detail-title"><span></span>排版排检诊断</div>
+                <div class="detail-body">
+                  {% if it.eval_result.has_layout_issue %}
+                    <span style="color:var(--danger);font-weight:600;">⚠️ 视觉排版瑕疵：</span>{{ it.eval_result.layout_issue_details }}
+                  {% else %}
+                    <span style="color:var(--success);font-weight:600;">✅ 排版视觉极佳</span>
+                  {% endif %}
+                </div>
+              </div>
+              
+              <div class="detail-section">
+                <div class="detail-title"><span></span>诊断决策建议</div>
+                <div class="detail-body" style="font-style:italic;">
+                  {{ it.eval_result.summary }}
+                </div>
+              </div>
+              
+            {% elif it.eval_status == 'failed' %}
+              <div class="result-header">
+                <div class="score-badge fail">✕</div>
+                <div>
+                  <div class="result-title">评估出错</div>
+                  <div class="result-meta">检测失败</div>
+                </div>
+              </div>
+              <div class="detail-section">
+                <div class="detail-title"><span></span>出错详情</div>
+                <div class="detail-body" style="color:var(--danger);">
+                  {{ it.eval_error or '未知物理文件或API调用网络故障' }}
+                </div>
+              </div>
+            {% else %}
+              <div class="result-header">
+                <div class="score-badge none">-</div>
+                <div>
+                  <div class="result-title">尚未检测</div>
+                  <div class="result-meta">等待评估</div>
+                </div>
+              </div>
+              <div class="detail-section">
+                <div class="detail-title"><span></span>说明</div>
+                <div class="detail-body">
+                  该详情图尚未触发质量检测。
+                </div>
+              </div>
+            {% endif %}
+          </div>
+          
+        </div>
+      {% endfor %}
+    </div>
+    
+  </div>
+  
+</body>
+</html>

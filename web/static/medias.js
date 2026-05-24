@@ -7840,18 +7840,211 @@
         alert('当前没有可供质检的静态详情图');
         return;
       }
-      const ok = window.confirm(`确定开始对当前语种全部 ${list.length} 张静态图进行 AI 翻译质量质检？`);
-      if (!ok) return;
 
-      const btn = $('edDetailImagesBatchEvalBtn');
-      const origText = btn ? btn.innerHTML : '';
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<span>正在批量质检中...</span>`;
+      // 1. 显示批量质检 Modal 并初始化 UI 状态
+      const batchMask = $('edDetailBatchQualityCheckMask');
+      if (!batchMask) return;
+      batchMask.hidden = false;
+
+      const spinner = $('edDetailBatchSpinner');
+      const statusTitle = $('edDetailBatchStatusTitle');
+      const statusSub = $('edDetailBatchStatusSub');
+      const progressBar = $('edDetailBatchProgressBar');
+      const reportLink = $('edDetailBatchReportLink');
+      
+      const statTotal = $('edDetailBatchStatTotal');
+      const statDone = $('edDetailBatchStatDone');
+      const statPass = $('edDetailBatchStatPass');
+      const statWarning = $('edDetailBatchStatWarning');
+      const statFail = $('edDetailBatchStatFail');
+      const grid = $('edDetailBatchGrid');
+
+      // 初始化显示值
+      if (spinner) spinner.style.display = 'inline-block';
+      if (statusTitle) statusTitle.innerHTML = `<span class="oc-spinner sm" id="edDetailBatchSpinner" style="display:inline-block; border-width: 2px; width: 14px; height: 14px; margin-right: 6px;"></span><span>批量检测进行中...</span>`;
+      if (statusSub) statusSub.textContent = '正在并行依次调用 AI 专家模型评估详情图...';
+      if (progressBar) progressBar.style.width = '0%';
+      if (reportLink) reportLink.style.display = 'none';
+
+      const totalCount = list.length;
+      if (statTotal) statTotal.textContent = String(totalCount);
+      if (statDone) statDone.textContent = '0';
+      if (statPass) statPass.textContent = '0';
+      if (statWarning) statWarning.textContent = '0';
+      if (statFail) statFail.textContent = '0';
+
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[ch]));
       }
 
+      function safeMediaSrc(url) {
+        const raw = String(url == null ? '' : url).trim();
+        if (!raw) return '';
+        try {
+          const parsed = new URL(raw, window.location.origin);
+          return parsed.pathname + parsed.search + parsed.hash;
+        } catch (_) {
+          return '';
+        }
+      }
+
+      // 渲染单张图的 HTML 列
+      function renderBatchItemRow(item, index) {
+        const score = item.eval_result ? Number(item.eval_result.translation_quality_score) || 0 : 0;
+        const status = item.eval_status || 'pending';
+        
+        let scoreText = '-';
+        let badgeBg = '#cbd5e1';
+        let verdictText = '等待检测';
+        let verdictColor = 'var(--oc-fg-muted)';
+        
+        if (status === 'running') {
+          scoreText = '<span class="oc-spinner sm" style="border-width:2.2px; width:14px; height:14px; display:inline-block; border-color:var(--oc-accent) transparent transparent transparent;"></span>';
+          badgeBg = '#eff6ff';
+          verdictText = '评估中...';
+          verdictColor = 'var(--oc-accent)';
+        } else if (status === 'done' && item.eval_result) {
+          scoreText = String(score);
+          if (score >= 8 && !item.eval_result.has_mixed_languages && !item.eval_result.has_layout_issue) {
+            badgeBg = '#22c55e';
+            verdictText = '质量优秀 (Passed)';
+            verdictColor = '#22c55e';
+          } else if (score <= 5) {
+            badgeBg = '#ef4444';
+            verdictText = '质量差 (Failed)';
+            verdictColor = '#ef4444';
+          } else {
+            badgeBg = '#f59e0b';
+            verdictText = '存在瑕疵 (Warning)';
+            verdictColor = '#f59e0b';
+          }
+        } else if (status === 'failed') {
+          scoreText = '✕';
+          badgeBg = '#ef4444';
+          verdictText = '检测失败';
+          verdictColor = '#ef4444';
+        }
+
+        const srcPreviewUrl = item.source_image_thumbnail_url ? safeMediaSrc(item.source_image_thumbnail_url) : '';
+        const dstPreviewUrl = safeMediaSrc(item.thumbnail_url);
+
+        return `
+          <!-- Left: Source EN image -->
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:11px; font-weight:700; color:var(--oc-fg-muted); display:flex; align-items:center; gap:6px;">
+              <span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--oc-fg-muted);"></span>
+              <span>原始英文图 #${index + 1}</span>
+            </div>
+            <div style="border:1px solid var(--oc-border); border-radius:10px; background:#f8fafc; aspect-ratio:1.2; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden;">
+              ${srcPreviewUrl ? `<img src="${escapeHtml(srcPreviewUrl)}" alt="EN原图" style="max-width:100%; max-height:100%; object-fit:contain; border-radius:4px;">` : '<div style="font-size:11px; color:var(--oc-fg-light);">无对比原图</div>'}
+            </div>
+          </div>
+          
+          <!-- Middle: Translated image -->
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:11px; font-weight:700; color:var(--oc-accent); display:flex; align-items:center; gap:6px;">
+              <span style="display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--oc-accent);"></span>
+              <span>已翻译图 #${index + 1}</span>
+            </div>
+            <div style="border:1px solid var(--oc-border); border-radius:10px; background:#f8fafc; aspect-ratio:1.2; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden;">
+              <img src="${escapeHtml(dstPreviewUrl)}" alt="译图" style="max-width:100%; max-height:100%; object-fit:contain; border-radius:4px;">
+            </div>
+          </div>
+          
+          <!-- Right: AI Evaluation Result Pane -->
+          <div style="border:1px solid var(--oc-border); border-radius:12px; padding:12px; background:#fafafb; display:flex; flex-direction:column; gap:10px; font-size:12px;">
+            <div style="display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--oc-border); padding-bottom:8px;">
+              <div class="batch-score-badge" style="width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; color:#fff; background:${badgeBg};">${scoreText}</div>
+              <div>
+                <div style="font-weight:700; color:${verdictColor};">${verdictText}</div>
+                <div style="font-size:9px; color:var(--oc-fg-muted); margin-top:2px;">编号ID: ${item.id}</div>
+              </div>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <div>
+                <div style="font-weight:700; font-size:10px; color:var(--oc-fg); margin-bottom:2px;">多语言混杂</div>
+                <div class="batch-detail-mixed" style="color:var(--oc-fg-muted); font-size:11px; line-height:1.4;">
+                  ${status === 'done' && item.eval_result ? (item.eval_result.has_mixed_languages ? `<span style="color:#ef4444; font-weight:600;">⚠️ 发现英文：</span>${escapeHtml(item.eval_result.mixed_languages_details || '')}` : '<span style="color:#22c55e; font-weight:600;">✅ 未检测到多语言混杂</span>') : (status === 'failed' ? '-' : '等待质检...')}
+                </div>
+              </div>
+              <div>
+                <div style="font-weight:700; font-size:10px; color:var(--oc-fg); margin-bottom:2px;">视觉排版瑕疵</div>
+                <div class="batch-detail-layout" style="color:var(--oc-fg-muted); font-size:11px; line-height:1.4;">
+                  ${status === 'done' && item.eval_result ? (item.eval_result.has_layout_issue ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在排版视觉瑕疵：</span>${escapeHtml(item.eval_result.layout_issue_details || '')}` : '<span style="color:#22c55e; font-weight:600;">✅ 排版布局良佳</span>') : (status === 'failed' ? '-' : '等待质检...')}
+                </div>
+              </div>
+              <div>
+                <div style="font-weight:700; font-size:10px; color:var(--oc-fg); margin-bottom:2px;">诊断与改进建议</div>
+                <div class="batch-detail-summary" style="color:var(--oc-fg-muted); font-size:11px; line-height:1.4; font-style:italic;">
+                  ${status === 'done' && item.eval_result ? escapeHtml(item.eval_result.summary || '翻译契合，质量优良。') : (status === 'failed' ? escapeHtml(item.eval_error || '质检请求发生错误。') : '等待大模型诊断结论...')}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 初始化渲染整个列表到 grid
+      if (grid) {
+        grid.innerHTML = list.map((item, idx) => {
+          return `
+            <div class="oc-batch-item-row" id="batch-item-${item.id}" style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:16px; padding:16px; display:grid; grid-template-columns:1fr 1fr 340px; gap:16px; align-items:start; box-shadow:var(--shadow-sm); transition:all 0.2s ease;">
+              ${renderBatchItemRow(item, idx)}
+            </div>
+          `;
+        }).join('');
+      }
+
+      function updateStatsPanel() {
+        let done = 0, pass = 0, warn = 0, fail = 0;
+        list.forEach(item => {
+          const status = item.eval_status || 'pending';
+          if (status === 'done' || status === 'failed') {
+            done++;
+            if (status === 'done' && item.eval_result) {
+              const score = Number(item.eval_result.translation_quality_score) || 0;
+              if (score >= 8 && !item.eval_result.has_mixed_languages && !item.eval_result.has_layout_issue) {
+                pass++;
+              } else if (score <= 5) {
+                fail++;
+              } else {
+                warn++;
+              }
+            } else if (status === 'failed') {
+              fail++;
+            }
+          }
+        });
+
+        if (statDone) statDone.textContent = String(done);
+        if (statPass) statPass.textContent = String(pass);
+        if (statWarning) statWarning.textContent = String(warn);
+        if (statFail) statFail.textContent = String(fail);
+
+        const percent = totalCount ? Math.round((done / totalCount) * 100) : 0;
+        if (progressBar) progressBar.style.width = percent + '%';
+      }
+
+      // 更新单张图状态并重绘
+      function updateRowUI(item) {
+        const idx = list.findIndex(it => it.id === item.id);
+        const rowEl = $(`batch-item-${item.id}`);
+        if (rowEl) {
+          rowEl.innerHTML = renderBatchItemRow(item, idx);
+        }
+        updateStatsPanel();
+      }
+
+      // 执行队列质检任务
       try {
-        const concurrency = 3;
+        const concurrency = 2; // 为 OpenRouter 设定合适并发以防限流
         const queue = [...list];
         const activePromises = [];
 
@@ -7859,10 +8052,18 @@
           while (queue.length > 0) {
             const item = queue.shift();
             if (item.eval_status === 'running') continue;
+
+            item.eval_status = 'running';
+            updateRowUI(item);
+
             try {
               await ctrl.triggerQualityCheck(item);
             } catch (err) {
               console.error('Batch Quality Check item failed:', item.id, err);
+              item.eval_status = 'failed';
+              item.eval_error = err.message || String(err);
+            } finally {
+              updateRowUI(item);
             }
           }
         }
@@ -7871,15 +8072,30 @@
           activePromises.push(worker());
         }
         await Promise.all(activePromises);
-      } catch (err) {
-        alert('批量质检失败：' + (err.message || err));
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = origText;
+
+        // 检测彻底完毕
+        if (statusTitle) statusTitle.innerHTML = `<span>批量翻译质量检测已完成</span>`;
+        if (statusSub) statusSub.textContent = '所有详情图已质检完成。您可以点击下方按钮查看全屏独立评估报告。';
+        if (reportLink) {
+          const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+          const lang = edState.activeLang;
+          reportLink.href = `/medias/products/${pid}/detail-images/batch-evaluation-report?lang=${encodeURIComponent(lang)}`;
+          reportLink.style.display = 'inline-flex';
         }
+      } catch (err) {
+        alert('批量质检执行失败：' + (err.message || err));
       }
     });
+
+    // 绑定批量检测弹窗的关闭动作
+    const edDetailBatchCloseBtn = $('edDetailBatchCloseBtn');
+    const edDetailBatchQualityCheckClose = $('edDetailBatchQualityCheckClose');
+    const hideBatchQModal = () => {
+      const mask = $('edDetailBatchQualityCheckMask');
+      if (mask) mask.hidden = true;
+    };
+    if (edDetailBatchCloseBtn) edDetailBatchCloseBtn.addEventListener('click', hideBatchQModal);
+    if (edDetailBatchQualityCheckClose) edDetailBatchQualityCheckClose.addEventListener('click', hideBatchQModal);
     $('edDetailImagesClearAllBtn') && $('edDetailImagesClearAllBtn').addEventListener('click', async () => {
       const pid = edState.productData && edState.productData.product && edState.productData.product.id;
       const lang = (edState.activeLang || '').trim().toLowerCase();

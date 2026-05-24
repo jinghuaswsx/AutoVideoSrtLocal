@@ -626,3 +626,83 @@
   </div>
 </div>
 
+<!-- 商品详情图批量翻译质量检测与可视化面板弹窗 -->
+<div class="oc-modal-mask oc" id="edDetailBatchQualityCheckMask" hidden>
+  <div class="oc-modal oc-modal-wide" role="dialog" aria-modal="true" aria-labelledby="edDetailBatchQualityCheckTitle" style="max-width:1160px; width:95%;">
+    <div class="oc-modal-head">
+      <h3 id="edDetailBatchQualityCheckTitle">商品详情图批量翻译质量检测与多维度分析</h3>
+      <button class="oc-icon-btn" id="edDetailBatchQualityCheckClose" title="关闭" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    
+    <div class="oc-modal-body" style="padding:var(--oc-sp-5); max-height:80vh; overflow-y:auto; display:flex; flex-direction:column; gap:20px;">
+      
+      <!-- 进度与全局状态看板 -->
+      <div class="oc-batch-status-panel" style="background:var(--oc-bg-subtle); border:1px solid var(--oc-border); border-radius:16px; padding:var(--oc-sp-4); display:flex; flex-direction:column; gap:16px; box-shadow:inset 0 0 12px rgba(0,0,0,0.015);">
+        
+        <!-- 进度条与总体状态信息 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div id="edDetailBatchStatusTitle" style="font-size:16px; font-weight:700; color:var(--oc-fg); display:flex; align-items:center; gap:8px;">
+              <span class="oc-spinner sm" id="edDetailBatchSpinner" style="display:inline-block; border-width: 2px; width: 14px; height: 14px;"></span>
+              <span>批量检测进行中...</span>
+            </div>
+            <div id="edDetailBatchStatusSub" style="font-size:12px; color:var(--oc-fg-muted); margin-top:4px;">正在依次调用 AI 专家模型评估详情图...</div>
+          </div>
+          <div style="display:flex; gap:12px;">
+            <a id="edDetailBatchReportLink" class="oc-btn primary sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none; align-items:center; gap:6px; box-shadow:0 4px 12px rgba(37,99,235,0.25);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              <span>打开全屏独立质检评估报告</span>
+            </a>
+          </div>
+        </div>
+        
+        <!-- 进度条 -->
+        <div style="background:var(--oc-bg-card); height:10px; border-radius:5px; overflow:hidden; border:1px solid var(--oc-border);">
+          <div id="edDetailBatchProgressBar" style="background:linear-gradient(90deg, #2563eb, #3b82f6); height:100%; width:0%; transition:width 0.4s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        </div>
+        
+        <!-- 统计面板 -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:12px;">
+          <!-- 全部图片 -->
+          <div style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;">
+            <div style="font-size:11px; color:var(--oc-fg-muted); font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">详情图总数</div>
+            <div id="edDetailBatchStatTotal" style="font-size:24px; font-weight:800; color:var(--oc-fg);">0</div>
+          </div>
+          <!-- 已完成 -->
+          <div style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;">
+            <div style="font-size:11px; color:var(--oc-fg-muted); font-weight:600; text-transform: uppercase; letter-spacing: 0.05em;">已检测数</div>
+            <div id="edDetailBatchStatDone" style="font-size:24px; font-weight:800; color:var(--oc-accent);">0</div>
+          </div>
+          <!-- 优质 -->
+          <div style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;">
+            <div style="font-size:11px; color:var(--oc-fg-muted); font-weight:600; display:flex; align-items:center; gap:4px; text-transform: uppercase; letter-spacing: 0.05em;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e;"></span>优质 (&gt;=8分)</div>
+            <div id="edDetailBatchStatPass" style="font-size:24px; font-weight:800; color:#22c55e;">0</div>
+          </div>
+          <!-- 警告 -->
+          <div style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;">
+            <div style="font-size:11px; color:var(--oc-fg-muted); font-weight:600; display:flex; align-items:center; gap:4px; text-transform: uppercase; letter-spacing: 0.05em;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b;"></span>警告 (6-7分)</div>
+            <div id="edDetailBatchStatWarning" style="font-size:24px; font-weight:800; color:#f59e0b;">0</div>
+          </div>
+          <!-- 质量差 -->
+          <div style="background:var(--oc-bg-card); border:1px solid var(--oc-border); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center;">
+            <div style="font-size:11px; color:var(--oc-fg-muted); font-weight:600; display:flex; align-items:center; gap:4px; text-transform: uppercase; letter-spacing: 0.05em;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span>质量差 (&lt;=5分)</div>
+            <div id="edDetailBatchStatFail" style="font-size:24px; font-weight:800; color:#ef4444;">0</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 批量检测比对网格区 -->
+      <div id="edDetailBatchGrid" style="display:flex; flex-direction:column; gap:16px;">
+        <!-- 动态生成单张图对比行 -->
+      </div>
+      
+    </div>
+    
+    <div class="oc-modal-foot" style="justify-content:flex-end;">
+      <button class="oc-btn ghost" id="edDetailBatchCloseBtn">关闭弹窗</button>
+    </div>
+  </div>
+</div>
+
