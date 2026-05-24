@@ -2912,3 +2912,138 @@ def test_update_product_owner_maps_translation_scope_error_to_400(authed_client_
 
     assert resp.status_code == 400
     assert resp.get_json() == {"error": "该用户不在翻译工作范围"}
+
+
+def test_detail_image_retranslate_preview_endpoint(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes.medias import detail_images as r
+    from appcore import gemini_image, llm_client
+    import appcore
+    import os
+
+    # 1. Mock DB and products
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda p: True)
+
+    src_key = "1/medias/123/detail_en_0.jpg"
+    dst_key = "1/medias/123/detail_fr_0.jpg"
+
+    dummy_src = tmp_path / "en.jpg"
+    dummy_src.write_bytes(b"en-image-bytes")
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id, "product_id": 123, "lang": "fr", "sort_order": 0,
+            "object_key": dst_key, "source_detail_image_id": 10, "deleted_at": None,
+            "eval_result_json": '{"has_mixed_languages": true, "mixed_languages_details": "English words found"}'
+        } if image_id == 11 else {
+            "id": image_id, "product_id": 123, "lang": "en", "sort_order": 0,
+            "object_key": src_key, "deleted_at": None
+        }
+    )
+
+    # Mock storage
+    monkeypatch.setattr(appcore.local_media_storage, "safe_local_path_for", lambda key: dummy_src if key == src_key else tmp_path / os.path.basename(key))
+    monkeypatch.setattr(appcore.local_media_storage, "write_bytes", lambda key, payload: tmp_path / os.path.basename(key))
+
+    # Mock translate settings
+    monkeypatch.setattr(appcore.llm_bindings, "resolve", lambda use_case: {"provider": "gemini", "model": "gemini-2.5-flash"})
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "Translate to {target_language_name}"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda code: "French")
+    monkeypatch.setattr(r, "_safe_image_translate_channel", lambda: "gemini")
+    monkeypatch.setattr(r, "_default_image_translate_model_id", lambda: "gemini-2.5-flash")
+
+    # Mock LLM calls
+    monkeypatch.setattr(gemini_image, "generate_image", lambda **kw: (b"new-fr-bytes", "image/png"))
+    monkeypatch.setattr(llm_client, "invoke_generate", lambda *args, **kw: {"json": {"translation_quality_score": 9, "has_mixed_languages": False, "has_layout_issue": False}})
+
+    resp = authed_client_no_db.post("/medias/api/products/123/detail-images/11/retranslate/preview")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] is True
+    assert "draft_filename" in body["new_image"]
+    assert "draft" in body["new_image"]["url"]
+    assert body["new_image"]["eval_result"]["translation_quality_score"] == 9
+
+
+def test_detail_image_retranslate_confirm_endpoint(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes.medias import detail_images as r
+    import appcore
+    import os
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda p: True)
+
+    dst_key = "1/medias/123/detail_fr_0.jpg"
+    dst_file = tmp_path / "fr.jpg"
+    dst_file.write_bytes(b"old-bytes")
+
+    draft_file = tmp_path / "retranslate_11_abc.png"
+    draft_file.write_bytes(b"new-fr-bytes")
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id, "product_id": 123, "lang": "fr", "sort_order": 0,
+            "object_key": dst_key, "deleted_at": None
+        }
+    )
+
+    # Mock storage
+    def fake_safe_local_path(key):
+        if "drafts/" in key:
+            return draft_file
+        return dst_file
+
+    monkeypatch.setattr(appcore.local_media_storage, "safe_local_path_for", fake_safe_local_path)
+    monkeypatch.setattr(appcore.local_media_storage, "write_bytes", lambda key, payload: dst_file.write_bytes(payload))
+
+    db_updated = {}
+    eval_updated = {}
+
+    monkeypatch.setattr(r.medias, "execute", lambda sql, args: db_updated.update({"sql": sql, "args": args}))
+    monkeypatch.setattr(
+        r.medias,
+        "update_detail_image_evaluation",
+        lambda image_id, **kw: eval_updated.update({"image_id": image_id, **kw})
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/11/retranslate/confirm",
+        json={
+            "draft_filename": "retranslate_11_abc.png",
+            "eval_result": {"translation_quality_score": 9},
+            "eval_channel": "openrouter",
+            "eval_model_id": "google/gemini-3.1-flash-lite"
+        }
+    )
+
+    assert resp.status_code == 200
+    assert eval_updated["image_id"] == 11
+    assert eval_updated["eval_status"] == "done"
+    assert "9" in eval_updated["eval_result_json"]
+    assert db_updated["args"][3] == 11 # image_id is last arg
+
+
+def test_detail_image_retranslate_discard_endpoint(authed_client_no_db, monkeypatch, tmp_path):
+    from web.routes.medias import detail_images as r
+    import appcore
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda p: True)
+
+    draft_file = tmp_path / "retranslate_11_abc.png"
+    draft_file.write_bytes(b"new-fr-bytes")
+
+    monkeypatch.setattr(appcore.local_media_storage, "safe_local_path_for", lambda key: draft_file)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/11/retranslate/discard",
+        json={"draft_filename": "retranslate_11_abc.png"}
+    )
+
+    assert resp.status_code == 200
+    assert not draft_file.exists()
+

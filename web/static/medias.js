@@ -1838,47 +1838,112 @@
       const item = items.find(it => it.id === imgId);
       if (!item) return;
 
-      if (!window.confirm('确定要使用上一轮的质检反馈重新翻译这张详情图吗？\n重新翻译需要消耗大模型额度，生成的新图将自动物理覆盖原图并运行自动重新评估。')) {
+      if (!window.confirm('确定要使用上一轮的质检反馈重新翻译这张详情图吗？\n系统将生成新版译图并进行 AI 评估，然后展示三列对比视图供您做最终决策。')) {
         return;
       }
 
-      item.is_retranslating = true;
-      renderGrid();
+      const rCompareMask = $('edDetailRetranslateCompareMask');
+      if (!rCompareMask) return;
+
+      rCompareMask.hidden = false;
+      $('edDetailRetranslateLoading').style.display = 'flex';
+      $('edDetailRetranslateContent').style.display = 'none';
+      $('edDetailRetranslateCompareDiscardBtn').disabled = true;
+      $('edDetailRetranslateCompareAdoptBtn').disabled = true;
 
       try {
         const pid = await ensurePid({ allowCreate: false });
         if (!pid) {
-          item.is_retranslating = false;
-          renderGrid();
+          rCompareMask.hidden = true;
           return;
         }
 
-        const resp = await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}/retranslate`, {
+        const resp = await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}/retranslate/preview`, {
           method: 'POST',
         });
 
-        item.is_retranslating = false;
-        if (resp.success && resp.detail_image) {
-          const updated = resp.detail_image;
-          Object.assign(item, updated);
-          
-          if (currentEvalItem && currentEvalItem.id === item.id) {
-            updateDetailQualityModalUI(currentEvalItem);
+        $('edDetailRetranslateLoading').style.display = 'none';
+
+        if (resp.success && resp.source_image && resp.current_image && resp.new_image) {
+          $('edDetailRetranslateContent').style.display = 'grid';
+
+          // 填充原图
+          $('edDetailRetranslateOriginalImg').src = safeMediaSrc(resp.source_image.thumbnail_url || resp.source_image.url || '');
+
+          // 填充当前结果图与评估
+          $('edDetailRetranslateCurrentImg').src = safeMediaSrc(resp.current_image.thumbnail_url || resp.current_image.url || '');
+          const curRes = resp.current_image.eval_result || {};
+          const curScore = Number(curRes.translation_quality_score || 0);
+          $('edDetailRetranslateCurrentScore').textContent = curRes.translation_quality_score !== undefined ? String(curRes.translation_quality_score) : '-';
+          if (curScore >= 8 && !curRes.has_mixed_languages && !curRes.has_layout_issue) {
+            $('edDetailRetranslateCurrentScore').style.background = '#22c55e';
+          } else if (curScore <= 5) {
+            $('edDetailRetranslateCurrentScore').style.background = '#ef4444';
+          } else {
+            $('edDetailRetranslateCurrentScore').style.background = '#f59e0b';
           }
-          alert('重新生图与评分成功！');
-          renderGrid();
+          $('edDetailRetranslateCurrentModel').textContent = `模型: ${resp.current_image.eval_model_id || 'google/gemini-3.1-flash-lite'}`;
+          
+          $('edDetailRetranslateCurrentMixed').innerHTML = curRes.has_mixed_languages
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在多语言混杂：</span>${escapeHtml(curRes.mixed_languages_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 未检测到多语言混杂</span>';
+          
+          $('edDetailRetranslateCurrentLayout').innerHTML = curRes.has_layout_issue
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在排版视觉瑕疵：</span>${escapeHtml(curRes.layout_issue_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 排版视觉效果优良</span>';
+          
+          $('edDetailRetranslateCurrentSummary').textContent = curRes.summary || '无诊断建议。';
+
+          // 填充新翻译图与评估
+          $('edDetailRetranslateNewImg').src = safeMediaSrc(resp.new_image.url || '');
+          const newRes = resp.new_image.eval_result || {};
+          const newScore = Number(newRes.translation_quality_score || 0);
+          $('edDetailRetranslateNewScore').textContent = newRes.translation_quality_score !== undefined ? String(newRes.translation_quality_score) : '-';
+          
+          if (newScore >= 8 && !newRes.has_mixed_languages && !newRes.has_layout_issue) {
+            $('edDetailRetranslateNewStatus').textContent = 'Passed (质量优秀)';
+            $('edDetailRetranslateNewStatus').style.color = '#22c55e';
+            $('edDetailRetranslateNewScore').style.background = '#22c55e';
+          } else if (newScore <= 5) {
+            $('edDetailRetranslateNewStatus').textContent = 'Failed (质量差)';
+            $('edDetailRetranslateNewStatus').style.color = '#ef4444';
+            $('edDetailRetranslateNewScore').style.background = '#ef4444';
+          } else {
+            $('edDetailRetranslateNewStatus').textContent = 'Warning (存在瑕疵)';
+            $('edDetailRetranslateNewStatus').style.color = '#f59e0b';
+            $('edDetailRetranslateNewScore').style.background = '#f59e0b';
+          }
+          $('edDetailRetranslateNewModel').textContent = `模型: ${resp.new_image.eval_model_id || 'google/gemini-3.1-flash-lite'}`;
+
+          $('edDetailRetranslateNewMixed').innerHTML = newRes.has_mixed_languages
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在多语言混杂：</span>${escapeHtml(newRes.mixed_languages_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 未检测到多语言混杂</span>';
+          
+          $('edDetailRetranslateNewLayout').innerHTML = newRes.has_layout_issue
+            ? `<span style="color:#ef4444; font-weight:600;">⚠️ 存在排版视觉瑕疵：</span>${escapeHtml(newRes.layout_issue_details || '')}`
+            : '<span style="color:#22c55e; font-weight:600;">✅ 排版视觉效果优良</span>';
+          
+          $('edDetailRetranslateNewSummary').textContent = newRes.summary || '无诊断建议。';
+
+          // 暂存草稿数据
+          window.__retranslateDraft = {
+            pid,
+            imgId,
+            draft_filename: resp.new_image.draft_filename,
+            eval_result: newRes,
+            eval_channel: resp.new_image.eval_channel,
+            eval_model_id: resp.new_image.eval_model_id,
+            item
+          };
+
+          $('edDetailRetranslateCompareDiscardBtn').disabled = false;
+          $('edDetailRetranslateCompareAdoptBtn').disabled = false;
         } else {
-          throw new Error(resp.error || '重新生图失败');
+          throw new Error(resp.error || '重新生成译图失败');
         }
       } catch (err) {
-        item.is_retranslating = false;
-        item.eval_status = 'failed';
-        item.eval_error = err.message || String(err);
-        if (currentEvalItem && currentEvalItem.id === item.id) {
-          updateDetailQualityModalUI(currentEvalItem);
-        }
+        rCompareMask.hidden = true;
         alert(err.message || '重新翻译发生错误');
-        renderGrid();
       }
     }
 
@@ -1902,6 +1967,105 @@
       qCheckMask.addEventListener('click', (e) => {
         if (e.target === qCheckMask) hideQModal();
       });
+    }
+
+    // 重新翻译比对 Modal 事件监听器
+    const rCompareMask = $('edDetailRetranslateCompareMask');
+    if (rCompareMask) {
+      const closeBtn = $('edDetailRetranslateCompareClose');
+      const discardBtn = $('edDetailRetranslateCompareDiscardBtn');
+      const adoptBtn = $('edDetailRetranslateCompareAdoptBtn');
+
+      const hideCompareModal = async (cleanupBackend = false) => {
+        if (window.__retranslateDraft) {
+          const draft = window.__retranslateDraft;
+          if (cleanupBackend && draft.draft_filename) {
+            try {
+              await fetchJSON(`/medias/api/products/${draft.pid}/detail-images/${draft.imgId}/retranslate/discard`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ draft_filename: draft.draft_filename })
+              });
+            } catch (err) {
+              console.warn('[detail-images] discard draft failed:', err);
+            }
+          }
+          window.__retranslateDraft = null;
+        }
+        rCompareMask.hidden = true;
+      };
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => hideCompareModal(true));
+      }
+      rCompareMask.addEventListener('click', (e) => {
+        if (e.target === rCompareMask) {
+          if ($('edDetailRetranslateLoading').style.display !== 'flex') {
+            hideCompareModal(true);
+          }
+        }
+      });
+
+      if (discardBtn) {
+        discardBtn.addEventListener('click', async () => {
+          discardBtn.disabled = true;
+          adoptBtn.disabled = true;
+          try {
+            await hideCompareModal(true);
+            alert('已放弃本次修改，保留当前译图。');
+          } catch (err) {
+            console.error(err);
+          } finally {
+            discardBtn.disabled = false;
+            adoptBtn.disabled = false;
+          }
+        });
+      }
+
+      if (adoptBtn) {
+        adoptBtn.addEventListener('click', async () => {
+          if (!window.__retranslateDraft) return;
+          const draft = window.__retranslateDraft;
+          discardBtn.disabled = true;
+          adoptBtn.disabled = true;
+          
+          setProgress('正在应用新图并更新质检评分…');
+          try {
+            const resp = await fetchJSON(`/medias/api/products/${draft.pid}/detail-images/${draft.imgId}/retranslate/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                draft_filename: draft.draft_filename,
+                eval_result: draft.eval_result,
+                eval_channel: draft.eval_channel,
+                eval_model_id: draft.eval_model_id
+              })
+            });
+
+            if (resp.success && resp.detail_image) {
+              const updated = resp.detail_image;
+              Object.assign(draft.item, updated);
+              
+              if (currentEvalItem && currentEvalItem.id === draft.item.id) {
+                updateDetailQualityModalUI(currentEvalItem);
+              }
+              setProgress('重新翻译应用成功！');
+              alert('新图已成功覆盖应用并更新 AI 质检评分！');
+              renderGrid();
+              rCompareMask.hidden = true;
+              window.__retranslateDraft = null;
+            } else {
+              throw new Error(resp.error || '应用新图失败');
+            }
+          } catch (err) {
+            alert('采用新图发生错误：' + (err.message || String(err)));
+          } finally {
+            setProgress('');
+            discardBtn.disabled = false;
+            adoptBtn.disabled = false;
+          }
+        });
+      }
     }
 
     return {
