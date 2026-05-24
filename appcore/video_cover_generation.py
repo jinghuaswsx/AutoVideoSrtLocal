@@ -29,8 +29,8 @@ from pipeline.ffutil import extract_frame_at_timestamp, extract_thumbnail, probe
 from server_config import LOCAL_IMAGE_BASE_URL_DEFAULT
 
 
-DEFAULT_IMAGE_CHANNEL = "openrouter"
-DEFAULT_IMAGE_MODEL = "openai/gpt-5.4-image-2:low"
+DEFAULT_IMAGE_CHANNEL = "local_image_2"
+DEFAULT_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_COVER_EXECUTION_MODE = ""
 LOCAL_IMAGE_PROVIDER_CODE = "video_cover_local_image"
 OUTPUT_SIZE = (1080, 1920)
@@ -139,7 +139,7 @@ TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
 
 COVER_MODEL_OPTIONS: dict[str, Any] = {
     "label": "封面生成",
-    "default_provider": "openrouter",
+    "default_provider": "local_image_2",
     "providers": {
         "local_image_2": "本地 Image 2",
         "openrouter": "OPENROUTER",
@@ -294,7 +294,9 @@ def resolve_cover_model_selection(provider: str | None, model: str | None) -> Mo
 
 def normalize_cover_execution_mode(provider: str | None, mode: Any) -> str:
     provider_key = str(provider or "").strip().lower()
-    if provider_key != "openrouter":
+    if provider_key in {"local", "local_image", "local_image2"}:
+        provider_key = "local_image_2"
+    if provider_key not in {"openrouter", "local_image_2"}:
         return "serial"
     requested = str(mode or "").strip().lower()
     return requested if requested in {"parallel", "serial"} else "parallel"
@@ -1732,6 +1734,9 @@ def generate_video_covers(
         index = int(job["index"])
         prompt = str(job["prompt"])
         copy_item = job["copy_item"] if isinstance(job.get("copy_item"), dict) else {}
+        import time
+        import logging
+        start_time = time.time()
         try:
             generated_bytes, _mime = generate_cover_image(
                 prompt,
@@ -1746,6 +1751,10 @@ def generate_video_covers(
             raise
         except Exception as exc:
             raise VideoCoverGenerationError(f"封面生成失败：{exc}") from exc
+
+        elapsed = time.time() - start_time
+        logger = logging.getLogger("appcore.video_cover_generation")
+        logger.info(f"[TIMING] Cover #{index} generated via provider={cover_selection.provider} model={cover_selection.model} in {elapsed:.3f} seconds.")
 
         png, width, height = normalize_cover_png(generated_bytes)
         platform = spec.platform if image_count == 1 else f"{spec.platform}_{index}"
@@ -1762,6 +1771,7 @@ def generate_video_covers(
             "copy": copy_item,
             "formatted_copy": format_ad_copy_text(copy_item),
             "prompt": prompt,
+            "elapsed_seconds": round(elapsed, 2),
         }
 
     def record_cover(cover: dict[str, Any]) -> None:
@@ -1777,5 +1787,23 @@ def generate_video_covers(
     else:
         for job in cover_jobs:
             record_cover(build_cover(job))
+
+    # Calculate statistics
+    if covers:
+        elapseds = [c.get("elapsed_seconds") for c in covers if c.get("elapsed_seconds") is not None]
+        if elapseds:
+            import logging
+            logger = logging.getLogger("appcore.video_cover_generation")
+            avg_time = sum(elapseds) / len(elapseds)
+            min_time = min(elapseds)
+            max_time = max(elapseds)
+            logger.info(f"[TIMING SUMMARY] Concurrency={len(elapseds)} requests. Min={min_time:.2f}s, Max={max_time:.2f}s, Avg={avg_time:.2f}s")
+            print(f"\n================ [TIMING SUMMARY] ================\n"
+                  f"Concurrency: {len(elapseds)}\n"
+                  f"Individual Response Times: {elapseds}\n"
+                  f"Min Response Time: {min_time:.2f}s\n"
+                  f"Max Response Time: {max_time:.2f}s\n"
+                  f"Average Response Time: {avg_time:.2f}s\n"
+                  f"==================================================\n")
 
     return build_result()
