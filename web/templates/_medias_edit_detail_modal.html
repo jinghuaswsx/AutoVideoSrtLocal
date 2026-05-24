@@ -706,3 +706,112 @@
   </div>
 </div>
 
+<!-- 商品详情图重新翻译比对与确认弹窗 -->
+<div class="oc-modal-mask oc" id="edDetailRetranslateCompareMask" hidden>
+  <div class="oc-modal oc-modal-wide" role="dialog" aria-modal="true" aria-labelledby="edDetailRetranslateCompareTitle" style="max-width:1160px; width:95%;">
+    <div class="oc-modal-head">
+      <h3 id="edDetailRetranslateCompareTitle">商品详情图重新翻译比对与确认</h3>
+      <button class="oc-icon-btn" id="edDetailRetranslateCompareClose" title="关闭" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body" style="padding:var(--oc-sp-5); max-height:80vh; overflow-y:auto;">
+      <!-- 重新生图与检测加载中 -->
+      <div id="edDetailRetranslateLoading" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:var(--oc-sp-9);" class="oc-loading-container">
+        <div class="oc-spinner" style="width:40px; height:40px; border-width:3px;"></div>
+        <div style="font-size:14px; color:var(--oc-fg-muted); font-weight:500;">AI 重新生图并质检中，这通常需要 10-15 秒...</div>
+      </div>
+      
+      <!-- 比对网格区 -->
+      <div id="edDetailRetranslateContent" style="display:none;" class="oc-retranslate-compare-grid">
+        <!-- 第一列：原图 -->
+        <div class="oc-retranslate-compare-image-card">
+          <div class="oc-retranslate-compare-label original">
+            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--oc-fg-muted);"></span>
+            <span>英文原图</span>
+          </div>
+          <div class="oc-retranslate-compare-image-container">
+            <img id="edDetailRetranslateOriginalImg" src="" alt="英文原图">
+          </div>
+          <div style="padding:var(--oc-sp-3); font-size:12px; color:var(--oc-fg-muted); border:1px solid var(--oc-border); border-radius:12px; background:var(--oc-bg-subtle);">
+            对比参考原图，用于检查翻译完整度和关键信息。
+          </div>
+        </div>
+        
+        <!-- 第二列：当前结果图 -->
+        <div class="oc-retranslate-compare-image-card">
+          <div class="oc-retranslate-compare-label current">
+            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--oc-warning-fg);"></span>
+            <span>当前结果图 (存在问题)</span>
+          </div>
+          <div class="oc-retranslate-compare-image-container">
+            <img id="edDetailRetranslateCurrentImg" src="" alt="当前结果图">
+          </div>
+          <div class="oc-retranslate-compare-result-card">
+            <div style="display:flex; align-items:center; gap:var(--oc-sp-2); padding-bottom:var(--oc-sp-2); border-bottom:1px solid var(--oc-border);">
+              <div id="edDetailRetranslateCurrentScore" class="oc-retranslate-compare-score-badge">-</div>
+              <div>
+                <div style="font-weight:700; font-size:13px; color:var(--oc-danger-fg);">存在缺陷</div>
+                <div id="edDetailRetranslateCurrentModel" style="font-size:10px; color:var(--oc-fg-muted); margin-top:2px;">模型: -</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:11px; overflow-y:auto; max-height:160px; margin-top: 8px;">
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>语言混杂情况</div>
+                <div id="edDetailRetranslateCurrentMixed" class="oc-retranslate-compare-section-content">尚未评估</div>
+              </div>
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>排版视觉效果</div>
+                <div id="edDetailRetranslateCurrentLayout" class="oc-retranslate-compare-section-content">尚未评估</div>
+              </div>
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>综合诊断建议</div>
+                <div id="edDetailRetranslateCurrentSummary" class="oc-retranslate-compare-section-content">尚未评估</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 第三列：新翻译图 -->
+        <div class="oc-retranslate-compare-image-card">
+          <div class="oc-retranslate-compare-label new">
+            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--oc-accent);"></span>
+            <span>新翻译结果图 (等待决策)</span>
+          </div>
+          <div class="oc-retranslate-compare-image-container">
+            <img id="edDetailRetranslateNewImg" src="" alt="新翻译结果图">
+          </div>
+          <div class="oc-retranslate-compare-result-card" style="border-color:var(--oc-accent-border, var(--oc-accent));">
+            <div style="display:flex; align-items:center; gap:var(--oc-sp-2); padding-bottom:var(--oc-sp-2); border-bottom:1px solid var(--oc-border);">
+              <div id="edDetailRetranslateNewScore" class="oc-retranslate-compare-score-badge" style="background:var(--oc-accent);">-</div>
+              <div>
+                <div id="edDetailRetranslateNewStatus" style="font-weight:700; font-size:13px; color:var(--oc-fg);">等待决策</div>
+                <div id="edDetailRetranslateNewModel" style="font-size:10px; color:var(--oc-fg-muted); margin-top:2px;">模型: google/gemini-3.1-flash-lite</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:11px; overflow-y:auto; max-height:160px; margin-top: 8px;">
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>语言混杂情况</div>
+                <div id="edDetailRetranslateNewMixed" class="oc-retranslate-compare-section-content">新质检进行中...</div>
+              </div>
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>排版视觉效果</div>
+                <div id="edDetailRetranslateNewLayout" class="oc-retranslate-compare-section-content">新质检进行中...</div>
+              </div>
+              <div>
+                <div class="oc-retranslate-compare-section-title"><span></span>综合诊断建议</div>
+                <div id="edDetailRetranslateNewSummary" class="oc-retranslate-compare-section-content">新质检进行中...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="oc-modal-foot" style="justify-content:flex-end; gap:var(--oc-sp-3);">
+      <button type="button" class="oc-btn ghost" id="edDetailRetranslateCompareDiscardBtn" style="border-color:var(--oc-border-strong); color:var(--oc-fg-muted);" disabled>放弃修改，保留当前图</button>
+      <button type="button" class="oc-btn primary" id="edDetailRetranslateCompareAdoptBtn" style="min-width:160px;" disabled>采用新图，覆盖并应用</button>
+    </div>
+  </div>
+</div>
+
+

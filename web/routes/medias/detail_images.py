@@ -729,9 +729,9 @@ def api_detail_image_quality_check(pid: int, image_id: int):
         ), 500
 
 
-@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/retranslate", methods=["POST"])
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/retranslate/preview", methods=["POST"])
 @login_required
-def api_detail_image_retranslate(pid: int, image_id: int):
+def api_detail_image_retranslate_preview(pid: int, image_id: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -765,16 +765,13 @@ def api_detail_image_retranslate(pid: int, image_id: int):
     import os
     import json
     import logging
+    import uuid
     from datetime import datetime
-    from ._helpers import probe_media_info_safe
 
     logger = logging.getLogger("app.web.detail_images")
 
     src_key = source_image["object_key"]
-    dst_key = target_image["object_key"]
-
     src_path = str(local_media_storage.safe_local_path_for(src_key))
-    dst_path = str(local_media_storage.safe_local_path_for(dst_key))
 
     if not os.path.exists(src_path):
         return jsonify({"error": f"英文原图本地物理文件不存在: {src_key}"}), 400
@@ -823,20 +820,12 @@ def api_detail_image_retranslate(pid: int, image_id: int):
         )
         optimized_prompt = f"{baseline_prompt}\n{correction_block}"
 
-    # 4. 调用大模型重新生图
+    # 4. 调用大模型重新生图并保存为草稿/预览
     from appcore import gemini_image
     
     binding = llm_bindings.resolve("image_translate.generate")
     channel = binding.get("provider") or _safe_image_translate_channel()
     model_id = binding.get("model") or _default_image_translate_model_id()
-
-    # 先更新状态为 running
-    medias.update_detail_image_evaluation(
-        image_id,
-        eval_status="running",
-        eval_channel=channel,
-        eval_model_id=model_id,
-    )
 
     try:
         with open(src_path, "rb") as f:
@@ -850,45 +839,18 @@ def api_detail_image_retranslate(pid: int, image_id: int):
             source_mime=src_mime,
             model=model_id,
             user_id=current_user.id,
-            project_id=f"detail_retranslate_{image_id}",
+            project_id=f"detail_retranslate_draft_{image_id}",
             service="image_translate.generate",
             channel=channel or None,
         )
 
-        # 5. 备份原有图片，并用新图片覆盖
-        if os.path.exists(dst_path):
-            filename = os.path.basename(dst_key)
-            base, ext = os.path.splitext(filename)
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            backup_filename = f"{base}_bak_{timestamp}{ext}"
-            
-            dst_dir = os.path.dirname(dst_key)
-            backup_key = f"{dst_dir}/{backup_filename}" if dst_dir else backup_filename
-            backup_path = str(local_media_storage.safe_local_path_for(backup_key))
-            
-            os.rename(dst_path, backup_path)
-            logger.info(f"备份有问题原图：{dst_path} -> {backup_path}")
-        
-        local_media_storage.write_bytes(dst_key, out_bytes)
-        
-        # 探测新图宽高及大小
-        file_size = len(out_bytes)
-        width, height = None, None
-        try:
-            info = probe_media_info_safe(dst_path)
-            width = info.get("width")
-            height = info.get("height")
-        except Exception:
-            pass
+        # 写入草稿文件
+        draft_filename = f"retranslate_{image_id}_{uuid.uuid4().hex}.png"
+        draft_key = f"drafts/{pid}/{draft_filename}"
+        draft_path = local_media_storage.write_bytes(draft_key, out_bytes)
+        logger.info(f"重新翻译生成草稿文件：{draft_path}")
 
-        medias.execute(
-            "UPDATE media_product_detail_images "
-            "SET file_size=%s, width=%s, height=%s "
-            "WHERE id=%s AND deleted_at IS NULL",
-            (file_size, width, height, image_id),
-        )
-
-        # 6. 重新执行质检，获取新的评分和结果
+        # 5. 重新执行质检，获取新的评分和结果
         from appcore.image_translate_runtime import _EVAL_PROMPT, _EVAL_SCHEMA
         
         eval_binding = llm_bindings.resolve("image_translate.eval")
@@ -900,17 +862,17 @@ def api_detail_image_retranslate(pid: int, image_id: int):
         eval_result = llm_client.invoke_generate(
             "image_translate.eval",
             prompt=eval_prompt,
-            media=[src_path, dst_path],
+            media=[src_path, str(draft_path)],
             user_id=current_user.id,
-            project_id=f"detail_eval_post_retranslate_{image_id}",
+            project_id=f"detail_eval_post_retranslate_draft_{image_id}",
             response_schema=_EVAL_SCHEMA,
             temperature=0,
             billing_extra={
-                "operation": "detail_image_retranslate_quality_evaluation",
+                "operation": "detail_image_retranslate_quality_evaluation_draft",
                 "item_idx": image_id,
-                "filename": os.path.basename(dst_key),
+                "filename": draft_filename,
                 "source_key": src_key,
-                "target_key": dst_key,
+                "target_key": draft_key,
             },
         )
         
@@ -918,37 +880,175 @@ def api_detail_image_retranslate(pid: int, image_id: int):
         if not isinstance(eval_data, dict):
             raise ValueError("重新翻译后的质检未返回符合 Schema 的 JSON 数据")
             
-        medias.update_detail_image_evaluation(
-            image_id,
-            eval_status="done",
-            eval_result_json=json.dumps(eval_data, ensure_ascii=False),
-            eval_channel=eval_channel,
-            eval_model_id=eval_model_id,
-        )
-
-        updated_image = medias.get_detail_image(image_id)
-        return jsonify(
-            {
-                "success": True,
-                "detail_image": _serialize_detail_image(updated_image)
+        return jsonify({
+            "success": True,
+            "source_image": _serialize_detail_image(source_image),
+            "current_image": _serialize_detail_image(target_image),
+            "new_image": {
+                "draft_filename": draft_filename,
+                "url": f"/medias/api/products/{pid}/detail-images/draft/{draft_filename}",
+                "eval_result": eval_data,
+                "eval_channel": eval_channel,
+                "eval_model_id": eval_model_id
             }
-        ), 200
+        }), 200
 
     except Exception as exc:
-        logger.exception(f"重新翻译详情图失败: {exc}")
-        medias.update_detail_image_evaluation(
-            image_id,
-            eval_status="failed",
-            eval_error=str(exc),
-        )
-        updated_image = medias.get_detail_image(image_id)
-        return jsonify(
-            {
-                "success": False,
-                "error": str(exc),
-                "detail_image": _serialize_detail_image(updated_image),
-            }
-        ), 500
+        logger.exception(f"重新翻译详情图预览失败: {exc}")
+        return jsonify({
+            "success": False,
+            "error": str(exc)
+        }), 500
+
+
+@bp.route("/api/products/<int:pid>/detail-images/draft/<path:filename>", methods=["GET"])
+@login_required
+def api_detail_image_draft_proxy(pid: int, filename: str):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    from werkzeug.utils import secure_filename
+    clean_filename = secure_filename(filename)
+    draft_key = f"drafts/{pid}/{clean_filename}"
+    
+    from appcore import local_media_storage
+    if not local_media_storage.exists(draft_key):
+        abort(404)
+        
+    draft_path = local_media_storage.safe_local_path_for(draft_key)
+    from flask import send_file
+    return send_file(str(draft_path))
+
+
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/retranslate/confirm", methods=["POST"])
+@login_required
+def api_detail_image_retranslate_confirm(pid: int, image_id: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    target_image = medias.get_detail_image(image_id)
+    if not target_image or int(target_image.get("product_id") or 0) != pid:
+        return jsonify({"error": "商品详情图片未找到"}), 404
+
+    data = request.get_json() or {}
+    draft_filename = data.get("draft_filename")
+    eval_result = data.get("eval_result")
+    eval_channel = data.get("eval_channel")
+    eval_model_id = data.get("eval_model_id")
+
+    if not draft_filename:
+        return jsonify({"error": "缺失 draft_filename 参数"}), 400
+
+    from appcore import local_media_storage
+    from werkzeug.utils import secure_filename
+    import os
+    import json
+    import logging
+    from datetime import datetime
+    from ._helpers import probe_media_info_safe
+
+    logger = logging.getLogger("app.web.detail_images")
+
+    clean_filename = secure_filename(draft_filename)
+    draft_key = f"drafts/{pid}/{clean_filename}"
+    draft_path = local_media_storage.safe_local_path_for(draft_key)
+
+    if not os.path.exists(str(draft_path)):
+        return jsonify({"error": "新生成的草稿图片已过期或不存在"}), 400
+
+    dst_key = target_image["object_key"]
+    dst_path = str(local_media_storage.safe_local_path_for(dst_key))
+
+    # 1. 备份原图
+    if os.path.exists(dst_path):
+        filename = os.path.basename(dst_key)
+        base, ext = os.path.splitext(filename)
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        backup_filename = f"{base}_bak_{timestamp}{ext}"
+        
+        dst_dir = os.path.dirname(dst_key)
+        backup_key = f"{dst_dir}/{backup_filename}" if dst_dir else backup_filename
+        backup_path = str(local_media_storage.safe_local_path_for(backup_key))
+        
+        os.rename(dst_path, backup_path)
+        logger.info(f"备份有问题原图：{dst_path} -> {backup_path}")
+
+    # 2. 覆盖应用新图
+    with open(str(draft_path), "rb") as f:
+        out_bytes = f.read()
+    local_media_storage.write_bytes(dst_key, out_bytes)
+    logger.info(f"采用新图覆盖成功：{dst_path}")
+
+    # 探测新图宽高及大小
+    file_size = len(out_bytes)
+    width, height = None, None
+    try:
+        info = probe_media_info_safe(dst_path)
+        width = info.get("width")
+        height = info.get("height")
+    except Exception:
+        pass
+
+    medias.execute(
+        "UPDATE media_product_detail_images "
+        "SET file_size=%s, width=%s, height=%s "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (file_size, width, height, image_id),
+    )
+
+    # 3. 写入质检评估结果
+    medias.update_detail_image_evaluation(
+        image_id,
+        eval_status="done",
+        eval_result_json=json.dumps(eval_result, ensure_ascii=False) if eval_result else None,
+        eval_channel=eval_channel,
+        eval_model_id=eval_model_id,
+    )
+
+    # 4. 清理草稿文件
+    try:
+        os.remove(str(draft_path))
+    except Exception:
+        pass
+
+    updated_image = medias.get_detail_image(image_id)
+    return jsonify({
+        "success": True,
+        "detail_image": _serialize_detail_image(updated_image)
+    }), 200
+
+
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/retranslate/discard", methods=["POST"])
+@login_required
+def api_detail_image_retranslate_discard(pid: int, image_id: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    data = request.get_json() or {}
+    draft_filename = data.get("draft_filename")
+
+    if draft_filename:
+        from appcore import local_media_storage
+        from werkzeug.utils import secure_filename
+        import os
+        import logging
+        logger = logging.getLogger("app.web.detail_images")
+
+        clean_filename = secure_filename(draft_filename)
+        draft_key = f"drafts/{pid}/{clean_filename}"
+        draft_path = local_media_storage.safe_local_path_for(draft_key)
+
+        try:
+            if os.path.exists(str(draft_path)):
+                os.remove(str(draft_path))
+                logger.info(f"清理放弃的草稿文件成功：{draft_path}")
+        except Exception as exc:
+            logger.warning(f"清理草稿文件失败: {exc}")
+
+    return jsonify({"success": True}), 200
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])
