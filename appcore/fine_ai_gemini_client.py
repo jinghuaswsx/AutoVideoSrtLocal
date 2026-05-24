@@ -38,6 +38,9 @@ PRODUCT_FACTS_USE_CASE = "fine_ai_evaluation.product_facts"
 COUNTRY_USE_CASE = "fine_ai_evaluation.country"
 RAW_RESPONSE_PREVIEW_CHARS = 8000
 ORIGINAL_PARSE_RETRY_ATTEMPTS = 2
+DEFAULT_LLM_TIMEOUT_SECONDS = 40.0
+COUNTRY_EVALUATION_LLM_TIMEOUT_SECONDS = 60.0
+JSON_REPAIR_LLM_TIMEOUT_SECONDS = 40.0
 
 
 class FineAiGeminiClient:
@@ -175,6 +178,7 @@ class FineAiGeminiClient:
         self.last_call_trace = {}
         retry_history: list[dict[str, Any]] = []
         last_error: Exception | None = None
+        request_timeout_seconds = _request_timeout_seconds(use_case_code)
         for attempt in range(1, ORIGINAL_PARSE_RETRY_ATTEMPTS + 1):
             attempt_project_id = project_id
             if attempt > 1 and project_id:
@@ -191,6 +195,7 @@ class FineAiGeminiClient:
                 "google_search": google_search,
                 "url_context": url_context,
                 "project_id": attempt_project_id,
+                "timeout_seconds": request_timeout_seconds,
                 "billing_extra": {
                     "provider": self.provider,
                     "model": self.model,
@@ -199,6 +204,7 @@ class FineAiGeminiClient:
                     "url_context": bool(url_context),
                     "tools": tools or [],
                     "structured_retry_attempt": attempt,
+                    "timeout_seconds": request_timeout_seconds,
                 },
             }
             try:
@@ -215,7 +221,7 @@ class FineAiGeminiClient:
                     url_context=url_context,
                     project_id=attempt_project_id,
                     billing_extra=request_payload["billing_extra"],
-                    timeout_seconds=40.0,
+                    timeout_seconds=request_timeout_seconds,
                 )
             except Exception as exc:
                 self.last_call_trace = _build_call_trace(
@@ -321,6 +327,7 @@ class FineAiGeminiClient:
         metadata: dict[str, Any],
     ) -> dict:
         metadata["json_repair_attempted"] = True
+        repair_timeout_seconds = JSON_REPAIR_LLM_TIMEOUT_SECONDS
         repair_result = llm_client.invoke_generate(
             use_case_code,
             prompt=build_json_repair_prompt(raw_response=raw_response, parse_error=parse_error),
@@ -341,8 +348,9 @@ class FineAiGeminiClient:
                 "url_context": False,
                 "tools": [],
                 "json_repair": True,
+                "timeout_seconds": repair_timeout_seconds,
             },
-            timeout_seconds=40.0,
+            timeout_seconds=repair_timeout_seconds,
         )
         repair_metadata = _response_metadata(
             repair_result,
@@ -371,6 +379,12 @@ class FineAiGeminiClient:
             raise ValueError("Gemini JSON repair response is not an object")
         metadata["json_repair_succeeded"] = True
         return parsed
+
+
+def _request_timeout_seconds(use_case_code: str) -> float:
+    if use_case_code == COUNTRY_USE_CASE:
+        return COUNTRY_EVALUATION_LLM_TIMEOUT_SECONDS
+    return DEFAULT_LLM_TIMEOUT_SECONDS
 
 
 def _parse_json_with_repair(raw: str) -> Any:

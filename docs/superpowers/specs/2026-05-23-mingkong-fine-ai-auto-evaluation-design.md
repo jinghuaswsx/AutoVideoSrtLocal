@@ -204,6 +204,7 @@ worker 池：
 - 国家评估并发模式默认 `serial`，国家并发数默认 `1`；后台设置可切换为并发并配置国家并发数。
 - `FineAiGeminiClient` 继续对商品事实和国家评估传 `google_search=False`。
 - URL Context 保持现状，用于读取商品链接上下文；本需求只要求不开 Google Search。
+- 国家评估主请求单次 LLM 超时为 60 秒；商品事实提取和 JSON 修复请求保持 40 秒。生产观察里成功首次国家评估 P75 约 53 秒，原 40 秒偏紧。
 
 ## 错误处理
 

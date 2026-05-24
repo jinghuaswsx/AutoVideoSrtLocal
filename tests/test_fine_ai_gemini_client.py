@@ -82,7 +82,31 @@ def test_fine_ai_gemini_client_invokes_manual_default_aistudio_without_search_an
     assert kwargs["model_override"] == "gemini-3.5-flash"
     assert kwargs["google_search"] is False
     assert kwargs["url_context"] is True
+    assert kwargs["timeout_seconds"] == 60.0
     assert "temperature" not in kwargs
+
+
+def test_fine_ai_gemini_client_keeps_product_facts_timeout_at_40_seconds(monkeypatch):
+    from appcore import fine_ai_gemini_client as mod
+
+    calls = []
+
+    def fake_invoke(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        return {"json": _product_facts_result(), "usage": {"input_tokens": 1, "output_tokens": 2}}
+
+    monkeypatch.setattr(mod.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(mod.model_config.settings_store, "get_setting", lambda key: None)
+
+    client = mod.FineAiGeminiClient()
+    result = client.generate_product_facts(
+        product_snapshot={"product_id": "123", "product_name": "Sample", "product_url": "https://example.test/p"},
+        countries=[{"country_code": "DE", "country_name": "Germany", "country_name_zh": "德国"}],
+    )
+
+    assert result["product_id"] == "123"
+    assert calls[0][0] == "fine_ai_evaluation.product_facts"
+    assert calls[0][1]["timeout_seconds"] == 40.0
 
 
 def test_fine_ai_gemini_client_maps_openrouter_to_google_gemini_35_flash(monkeypatch):
@@ -238,11 +262,13 @@ def test_fine_ai_gemini_client_uses_toolless_json_repair_call_after_parse_failur
     assert first_kwargs["google_search"] is False
     assert first_kwargs["url_context"] is True
     assert first_kwargs["media"] == ["G:/tmp/demo.mp4"]
+    assert first_kwargs["timeout_seconds"] == 60.0
     assert repair_kwargs["provider_override"] == "openrouter"
     assert repair_kwargs["model_override"] == "google/gemini-3.5-flash"
     assert repair_kwargs["google_search"] is False
     assert repair_kwargs["url_context"] is False
     assert repair_kwargs["media"] is None
+    assert repair_kwargs["timeout_seconds"] == 40.0
     assert "修复" in repair_kwargs["prompt"]
     assert "Expecting property name" in repair_kwargs["prompt"]
     assert client.last_call_metadata["json_repair_attempted"] is True
@@ -302,8 +328,11 @@ def test_fine_ai_gemini_client_retries_original_call_when_json_repair_fails(monk
     assert result["country_code"] == "DE"
     assert len(calls) == 3
     assert calls[0][1]["url_context"] is True
+    assert calls[0][1]["timeout_seconds"] == 60.0
     assert calls[1][1]["url_context"] is False
+    assert calls[1][1]["timeout_seconds"] == 40.0
     assert calls[2][1]["url_context"] is True
+    assert calls[2][1]["timeout_seconds"] == 60.0
     assert calls[2][1]["project_id"].endswith("-retry-2")
     assert client.last_call_metadata["structured_retry_attempt"] == 2
 
@@ -344,4 +373,25 @@ def _country_result():
         "sources": [],
         "missing_data": [],
         "warnings": [],
+    }
+
+
+def _product_facts_result():
+    return {
+        "product_id": "123",
+        "product_name": "Sample",
+        "category_detected": None,
+        "sku_facts": [],
+        "price_facts": [],
+        "dimension_facts": [],
+        "material_facts": [],
+        "feature_facts": [],
+        "claim_inventory": [],
+        "claim_consistency_risks": [],
+        "missing_data": [],
+        "assumptions": [],
+        "generated_search_keywords": {
+            "english_keywords": [],
+            "country_keyword_hints": {"DE": [], "FR": [], "IT": [], "ES": [], "JP": []},
+        },
     }
