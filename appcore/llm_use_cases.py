@@ -692,6 +692,27 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    # AI 自动上品
+    "ai_listing.copywriting": _uc(
+        "ai_listing.copywriting",
+        "material",
+        "AI 上品详情页生成",
+        "根据抓取的竞品描述，利用 Gemini 生成符合高转化经典的英文 HTML 详情页排版",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
+    "ai_listing.transit_parse": _uc(
+        "ai_listing.transit_parse",
+        "material",
+        "AI 二跳落地页解析",
+        "结合引流预热页 HTML，智能识别并提取出真正的 Shopify 下单页链接",
+        "openrouter",
+        "google/gemini-3.1-flash-lite",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 def get_use_case(code: str) -> UseCase:

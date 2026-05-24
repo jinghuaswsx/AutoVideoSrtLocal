@@ -55,6 +55,7 @@ def menu_permission(
 PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     # A. 业务功能（普通用户也用）
     ("medias",                GROUP_BUSINESS,   "素材管理",         True,  True),
+    ("ai_listing",            GROUP_BUSINESS,   "AI自动上品",       True,  False),
     ("multi_translate",       GROUP_BUSINESS,   "多语种视频翻译",   True,  True),
     ("english_redub",         GROUP_BUSINESS,   "英语视频重新配音", True,  True),
     ("title_translate",       GROUP_BUSINESS,   "多语言标题翻译",   True,  True),
@@ -116,6 +117,7 @@ def is_user_permission_denied(username: str | None, code: str) -> bool:
 # Root 路由按此顺序找到用户第一个有权限的页面并跳转。
 HOME_REDIRECT_ORDER = [
     ("medias",           "/medias"),
+    ("ai_listing",       "/ai-listing"),
     ("pushes",           "/pushes"),
     ("data_analytics",   "/order-analytics"),
     ("order_profit",     "/order-profit"),

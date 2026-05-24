@@ -171,3 +171,48 @@ def fail_task(
     if response.status_code >= 400:
         raise ApiError(response.status_code, payload)
     return payload
+
+
+def fetch_ai_listing_tasks(base_url: str, api_key: str, *, timeout: int = 20) -> dict[str, Any]:
+    response = requests.get(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/ai-listing/tasks",
+        headers={"X-API-Key": api_key},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
+def fetch_ai_listing_task_detail(base_url: str, api_key: str, task_id: int, *, timeout: int = 20) -> dict[str, Any]:
+    response = requests.get(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/ai-listing/tasks/{int(task_id)}",
+        headers={"X-API-Key": api_key},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
+def submit_ai_listing_success(
+    base_url: str,
+    api_key: str,
+    task_id: int,
+    shopify_product_id: str,
+    *,
+    timeout: int = 20,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/ai-listing/tasks/{int(task_id)}/success",
+        headers={"X-API-Key": api_key},
+        json={"shopify_product_id": str(shopify_product_id).strip()},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+

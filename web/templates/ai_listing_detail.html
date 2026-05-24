@@ -1,0 +1,815 @@
+{% extends "layout.html" %}
+{% block title %}AI自动上品 - 工作台{% endblock %}
+{% block page_title %}AI 上品人机协同工作台{% endblock %}
+{% block content %}
+<div class="ai-detail-container">
+
+  <!-- Breadcrumbs & Status -->
+  <div class="detail-header">
+    <div class="breadcrumbs">
+      <a href="{{ url_for('ai_listing.index') }}">🛒 AI自动上品</a> &gt; <span>工作台 ({{ task.product_code }})</span>
+    </div>
+    <div class="status-indicator">
+      <span>发布店铺: <strong>{{ task.target_store_domain }}</strong></span>
+      <span class="status-chip is-{{ task.status }}">
+        {% if task.status == 'pending' %}排队中
+        {% elif task.status == 'parsing' %}二跳解析中
+        {% elif task.status == 'generating' %}AI生成中
+        {% elif task.status == 'completed' %}已就绪
+        {% elif task.status == 'failed' %}失败
+        {% endif %}
+      </span>
+      {% if task.status == 'failed' %}
+      <button onclick="rerunTask({{ task.id }})" class="btn btn-rerun">🔄 重新运行</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="workbench-layout">
+    
+    <!-- Left Column: Copywriting, SKU & Live Preview -->
+    <div class="workbench-left">
+      
+      <!-- Section 1: Product Copywriting Info -->
+      <div class="card workbench-card">
+        <div class="card-header">
+          <h3>✍️ 商品基础信息与定价</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>AI 生成的商品标题 (English Title)</label>
+            <input type="text" id="productTitle" class="form-control title-input" value="{{ task.generated_title or '' }}">
+          </div>
+
+          <div class="form-row-3">
+            <div class="form-group">
+              <label>定价比例系数</label>
+              <input type="number" id="pricingRatio" step="0.1" class="form-control" value="{{ task.pricing_ratio }}" onchange="recalculatePrices()">
+            </div>
+            <div class="form-group">
+              <label>定价浮动值 ($)</label>
+              <input type="number" id="pricingOffset" step="0.01" class="form-control" value="{{ task.pricing_offset }}" onchange="recalculatePrices()">
+            </div>
+            <div class="form-group" style="display: flex; align-items: flex-end;">
+              <button type="button" class="btn btn-secondary btn-full" onclick="recalculatePrices(true)">💡 一键自动取整</button>
+            </div>
+          </div>
+
+          <!-- SKUs Table -->
+          <div class="form-group">
+            <label>Shopify SKU 规格与定价映射列表</label>
+            <div class="table-responsive">
+              <table class="sku-table" id="skuTable">
+                <thead>
+                  <tr>
+                    <th>原 SKU Code / 规格属性</th>
+                    <th>折算后 Shopify 售价 (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for sku in skus %}
+                  <tr class="sku-row">
+                    <td>
+                      <input type="text" class="sku-code form-control plain" value="{{ sku.sku }}">
+                    </td>
+                    <td>
+                      <input type="number" step="0.01" class="sku-price form-control" value="{{ sku.price }}">
+                    </td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="2" class="empty-skus">暂无 SKU 规格数据</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Copywriting Description and Live Preview -->
+      <div class="card workbench-card">
+        <div class="card-header has-actions">
+          <h3>📝 爆款详情页富文本文案 (HTML)</h3>
+          <div class="header-actions">
+            <button class="toggle-btn active" onclick="switchPreviewMode('edit')">HTML 源码</button>
+            <button class="toggle-btn" onclick="switchPreviewMode('preview')">🛒 移动端预览效果</button>
+          </div>
+        </div>
+        <div class="card-body no-padding">
+          
+          <!-- Editor Area -->
+          <div id="htmlEditorArea" class="editor-area active">
+            <textarea id="productHtmlDesc" class="html-textarea" rows="18">{{ task.generated_html_desc or '' }}</textarea>
+            <div class="editor-tips">
+              <span>💡 一键复制：你可以直接全选复制此 HTML 代码到 Shopify 后台富文本编辑器源码视图中。</span>
+              <button class="btn btn-secondary btn-sm" onclick="copyHtmlToClipboard()">📋 一键复制详情HTML</button>
+            </div>
+          </div>
+
+          <!-- Mobile Live Preview Area -->
+          <div id="htmlPreviewArea" class="preview-area">
+            <div class="mobile-frame">
+              <div class="mobile-screen" id="mobilePreviewScreen">
+                <!-- Content injected dynamically via JS -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="workbench-footer">
+        <button class="btn btn-secondary" onclick="window.location.href='{{ url_for('ai_listing.index') }}'">返回看板</button>
+        <button class="btn btn-primary" onclick="saveTaskDetails()">💾 保存文案与价格修改</button>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Images Carousel & Inline Detail Images -->
+    <div class="workbench-right">
+      
+      <!-- Section 1: Carousel Images (Drag & Drop sorting) -->
+      <div class="card workbench-card">
+        <div class="card-header">
+          <h3>🖼️ 商品主图与轮播图 (可拖拽排序)</h3>
+        </div>
+        <div class="card-body">
+          <p class="asset-desc">长按图片可进行**拖拽重组排序**。勾选框决定该图片是否作为主图上传。</p>
+          <div class="assets-grid sortable-grid" id="carouselGrid">
+            {% for asset in assets if asset.asset_type == 'carousel' %}
+            <div class="asset-card" draggable="true" data-id="{{ asset.id }}" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+              <div class="asset-img-container">
+                <img src="/medias/obj/{{ asset.transformed_url or asset.original_url }}" class="asset-img">
+                <span class="diagnostic-badge is-showcase">细节展示</span>
+              </div>
+              <div class="asset-actions">
+                <label class="checkbox-label">
+                  <input type="checkbox" {% if asset.is_selected %}checked{% endif %} onchange="toggleAssetSelection({{ asset.id }}, this)"> 启用
+                </label>
+                <button class="btn-icon" onclick="translateImage({{ asset.id }}, this)" title="AI 本地化去字重绘">🎨 AI重绘</button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Detail Description Embedded Images (AI Tag Overlays) -->
+      <div class="card workbench-card">
+        <div class="card-header">
+          <h3>📸 详情页插图与 AI 诊断标签</h3>
+        </div>
+        <div class="card-body">
+          <p class="asset-desc">右键点击图片可一键复制。AI 自动诊断出的低转化图片（如支付图标、无关水印）建议剔除。</p>
+          <div class="assets-grid" id="detailImagesGrid">
+            {% for asset in assets if asset.asset_type == 'detail_image' %}
+            <div class="asset-card {% if not asset.is_selected %}discarded{% endif %}" id="asset-card-{{ asset.id }}">
+              <div class="asset-img-container">
+                <img src="/medias/obj/{{ asset.transformed_url or asset.original_url }}" class="asset-img">
+                
+                <!-- AI Diagnostic Chips -->
+                {% if asset.ai_classification == 'badge' %}
+                <span class="diagnostic-badge is-badge">🛡️ 支付与信任标 (建议过滤)</span>
+                {% elif asset.ai_classification == 'review' %}
+                <span class="diagnostic-badge is-review">⭐ 买家星级评价 (建议保留)</span>
+                {% else %}
+                <span class="diagnostic-badge is-showcase">📖 核心细节插图</span>
+                {% endif %}
+              </div>
+              <div class="asset-actions">
+                <label class="checkbox-label">
+                  <input type="checkbox" {% if asset.is_selected %}checked{% endif %} onchange="toggleAssetSelection({{ asset.id }}, this)"> 保留插图
+                </label>
+                <button class="btn-icon" onclick="translateImage({{ asset.id }}, this)" title="AI文字翻译及去字重绘">🎨 AI重绘</button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<style>
+  /* Premium E-commerce Workbench Stylesheet */
+  .ai-detail-container {
+    --primary-blue: #2563eb;
+    --primary-gradient: linear-gradient(135deg, #1d4ed8, #3b82f6);
+    --ocean-light: #eff6ff;
+    --text-slate-800: #1e293b;
+    --text-slate-500: #64748b;
+    --border-main: #e5e7eb;
+    animation: fadeIn 0.4s ease-out;
+  }
+
+  .detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+
+  .breadcrumbs {
+    font-size: 14px;
+    color: var(--text-slate-500);
+  }
+
+  .breadcrumbs a {
+    color: var(--primary-blue);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-chip {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .status-chip.is-pending { background: #fef3c7; color: #d97706; }
+  .status-chip.is-parsing { background: #e0f2fe; color: #0284c7; }
+  .status-chip.is-generating { background: #faf5ff; color: #7c3aed; }
+  .status-chip.is-completed { background: #dcfce7; color: #15803d; }
+  .status-chip.is-failed { background: #fee2e2; color: #b91c1c; }
+
+  /* Workbench Grid Columns */
+  .workbench-layout {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 24px;
+  }
+
+  @media (max-width: 1024px) {
+    .workbench-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .workbench-card {
+    border-radius: 12px;
+    border: 1px solid var(--border-main);
+    background: var(--bg-card);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-main);
+    background: var(--bg-body);
+  }
+
+  .card-header.has-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .card-header h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-slate-800);
+  }
+
+  .header-actions {
+    display: flex;
+    background: var(--border-main);
+    padding: 3px;
+    border-radius: 6px;
+  }
+
+  .toggle-btn {
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-slate-500);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .toggle-btn.active {
+    background: #fff;
+    color: var(--primary-blue);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .card-body {
+    padding: 20px;
+  }
+
+  .card-body.no-padding {
+    padding: 0;
+  }
+
+  .title-input {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .form-row-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+    margin-bottom: 16px;
+  }
+
+  .btn-full {
+    width: 100%;
+    justify-content: center;
+    padding: 10px;
+  }
+
+  /* SKU price table styling */
+  .sku-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .sku-table th {
+    background: var(--bg-body);
+    padding: 10px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--text-slate-500);
+    border-bottom: 1px solid var(--border-main);
+  }
+
+  .sku-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-main);
+  }
+
+  .form-control.plain {
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0;
+  }
+
+  .form-control.plain:focus {
+    border-color: var(--border-main);
+    background: #fff;
+  }
+
+  .empty-skus {
+    text-align: center;
+    color: var(--text-slate-500);
+    padding: 20px !important;
+  }
+
+  /* HTML HTML Text Editor */
+  .editor-area {
+    display: none;
+  }
+
+  .editor-area.active {
+    display: block;
+  }
+
+  .html-textarea {
+    width: 100%;
+    border: none;
+    padding: 16px;
+    font-family: var(--font-mono, monospace);
+    font-size: 13px;
+    line-height: 1.5;
+    background: #1e293b;
+    color: #f1f5f9;
+    resize: vertical;
+  }
+
+  .editor-tips {
+    background: var(--bg-body);
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-slate-500);
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  /* Mobile Live Preview Frame */
+  .preview-area {
+    display: none;
+    background: var(--bg-body);
+    padding: 30px;
+    justify-content: center;
+  }
+
+  .preview-area.active {
+    display: flex;
+  }
+
+  .mobile-frame {
+    width: 375px;
+    height: 600px;
+    background: #fff;
+    border: 12px solid #000;
+    border-radius: 36px;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  }
+
+  .mobile-screen {
+    padding: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #333;
+  }
+
+  .mobile-screen h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    color: #111;
+  }
+
+  .mobile-screen ul {
+    padding-left: 20px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-screen li {
+    margin-bottom: 6px;
+  }
+
+  /* Assets Cards and drag drop grid */
+  .assets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .asset-desc {
+    font-size: 12px;
+    color: var(--text-slate-500);
+  }
+
+  .asset-card {
+    border-radius: 8px;
+    border: 1px solid var(--border-main);
+    overflow: hidden;
+    background: #fff;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .asset-card.discarded {
+    opacity: 0.5;
+    filter: grayscale(80%);
+  }
+
+  .asset-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+
+  .sortable-grid .asset-card {
+    cursor: grab;
+  }
+
+  .sortable-grid .asset-card:active {
+    cursor: grabbing;
+  }
+
+  .asset-img-container {
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    position: relative;
+    background: #f8fafc;
+  }
+
+  .asset-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Overlaid AI classify tag chips */
+  .diagnostic-badge {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(15, 23, 42, 0.7);
+    color: #fff;
+    padding: 3px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-align: center;
+    backdrop-filter: blur(2px);
+  }
+
+  .diagnostic-badge.is-badge {
+    background: rgba(220, 38, 38, 0.85); /* Red overlay alert for badges */
+  }
+
+  .diagnostic-badge.is-review {
+    background: rgba(21, 128, 61, 0.85); /* Green overlay for reviews */
+  }
+
+  .diagnostic-badge.is-showcase {
+    background: rgba(37, 99, 235, 0.85); /* Blue overlay for details */
+  }
+
+  .asset-actions {
+    padding: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-main);
+  }
+
+  .checkbox-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-slate-800);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+
+  .btn-icon {
+    font-size: 10px;
+    background: var(--ocean-light);
+    color: var(--primary-blue);
+    border: none;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 700;
+    transition: all 0.15s;
+  }
+
+  .btn-icon:hover {
+    background: var(--primary-blue);
+    color: #fff;
+  }
+
+  .workbench-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 24px;
+    padding: 16px 0;
+  }
+
+  /* HTML5 drag over class */
+  .asset-card.drag-over {
+    border: 2px dashed var(--primary-blue);
+    transform: scale(0.95);
+  }
+</style>
+
+<script>
+  // Recalculate variant prices
+  function recalculatePrices(autoRound = false) {
+    const ratio = parseFloat(document.getElementById('pricingRatio').value) || 1.5;
+    const offset = parseFloat(document.getElementById('pricingOffset').value) || 0.0;
+    
+    document.querySelectorAll('.sku-row').forEach(row => {
+      const priceInput = row.querySelector('.sku-price');
+      // For demonstration, let's keep original price if exists, or compute from pricing rule
+      let originalVal = parseFloat(priceInput.value) || 19.99;
+      
+      // Calculate fresh price if they trigger the math
+      if (autoRound) {
+        let newPrice = Math.round(originalVal * ratio + offset);
+        // Ecommerce logic: force ending to .99
+        priceInput.value = (newPrice - 1) + 0.99;
+      }
+    });
+  }
+
+  // Toggle editor / live preview mode
+  function switchPreviewMode(mode) {
+    document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+    
+    if (mode === 'edit') {
+      document.querySelector('.toggle-btn[onclick*="edit"]').classList.add('active');
+      document.getElementById('htmlEditorArea').classList.add('active');
+      document.getElementById('htmlPreviewArea').classList.remove('active');
+    } else {
+      document.querySelector('.toggle-btn[onclick*="preview"]').classList.add('active');
+      document.getElementById('htmlEditorArea').classList.remove('active');
+      document.getElementById('htmlPreviewArea').classList.add('active');
+      
+      // Render text into live preview mobile frame
+      const htmlText = document.getElementById('productHtmlDesc').value;
+      document.getElementById('mobilePreviewScreen').innerHTML = htmlText;
+    }
+  }
+
+  // Copy HTML to Clipboard
+  function copyHtmlToClipboard() {
+    const textarea = document.getElementById('productHtmlDesc');
+    textarea.select();
+    document.execCommand('copy');
+    alert('详情富文本 HTML 代码已成功复制到剪贴板！');
+  }
+
+  // Save task updates via AJAX
+  function saveTaskDetails() {
+    const title = document.getElementById('productTitle').value.strip();
+    const htmlDesc = document.getElementById('productHtmlDesc').value;
+    const ratio = document.getElementById('pricingRatio').value;
+    const offset = document.getElementById('pricingOffset').value;
+    
+    // Gather skus array
+    const skus = [];
+    document.querySelectorAll('.sku-row').forEach(row => {
+      const sku = row.querySelector('.sku-code').value;
+      const price = parseFloat(row.querySelector('.sku-price').value) || 0.0;
+      skus.push({ sku, price, currency: 'USD' });
+    });
+
+    fetch("{{ url_for('ai_listing.edit_task', task_id=task.id) }}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+      },
+      body: JSON.stringify({
+        title,
+        html_description: htmlDesc,
+        pricing_ratio: ratio,
+        pricing_offset: offset,
+        skus
+      })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.ok) {
+        alert('工作台修改已成功保存并固化！');
+      } else {
+        alert('保存失败: ' + data.error);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert('请求网络出错');
+    });
+  }
+
+  // Toggle selection (inclusion) of assets
+  function toggleAssetSelection(assetId, checkbox) {
+    fetch(`/ai-listing/task/{{ task.id }}/asset/${assetId}/toggle`, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+      }
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.ok) {
+        const card = document.getElementById(`asset-card-${assetId}`);
+        if(card) {
+          if (data.is_selected) {
+            card.classList.remove('discarded');
+          } else {
+            card.classList.add('discarded');
+          }
+        }
+      }
+    });
+  }
+
+  // Translate Image Asset
+  function translateImage(assetId, btn) {
+    if (!confirm('确定使用 AI 重塑/本地化翻译此图片文本吗？此过程大约消耗少量 Token 并重新生成无水印插图。')) return;
+    
+    const origText = btn.innerText;
+    btn.innerText = '⏳ AI重绘中...';
+    btn.disabled = true;
+
+    fetch(`/ai-listing/task/{{ task.id }}/asset/${assetId}/translate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+      },
+      body: JSON.stringify({ prompt_text: '' })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      btn.innerText = origText;
+      btn.disabled = false;
+      if (data.ok) {
+        alert('AI 图片翻译重绘完成！');
+        window.location.reload();
+      } else {
+        alert('生图重绘失败: ' + data.error);
+      }
+    })
+    .catch(err => {
+      btn.innerText = origText;
+      btn.disabled = false;
+      console.error(err);
+      alert('网络交互请求失败');
+    });
+  }
+
+  // Helper string strip polyfill
+  if (!String.prototype.strip) {
+    String.prototype.strip = function () {
+      return this.replace(/^\s+|\s+$/g, '');
+    };
+  }
+
+  // HTML5 Drag and Drop Sorting Implementation
+  let dragSrcEl = null;
+
+  function handleDragStart(e) {
+    this.style.opacity = '0.4';
+    dragSrcEl = this;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.innerHTML);
+  }
+
+  function handleDragOver(e) {
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
+    return false;
+  }
+
+  function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+  }
+
+  function handleDrop(e) {
+    if (e.stopPropagation) {
+      e.stopPropagation();
+    }
+    this.classList.remove('drag-over');
+
+    if (dragSrcEl !== this) {
+      // Swap IDs in dataset to retain link to asset
+      const tempId = this.dataset.id;
+      this.dataset.id = dragSrcEl.dataset.id;
+      dragSrcEl.dataset.id = tempId;
+
+      // Swap actual HTML content
+      dragSrcEl.innerHTML = this.innerHTML;
+      this.innerHTML = e.dataTransfer.getData('text/html');
+
+      // Update sort order in backend via API
+      saveAssetsSortOrder();
+    }
+    return false;
+  }
+
+  function handleDragEnd(e) {
+    this.style.opacity = '1.0';
+    document.querySelectorAll('.asset-card').forEach(card => {
+      card.classList.remove('drag-over');
+    });
+  }
+
+  function saveAssetsSortOrder() {
+    const assetIds = [];
+    document.querySelectorAll('#carouselGrid .asset-card').forEach(card => {
+      assetIds.push(parseInt(card.dataset.id));
+    });
+
+    fetch(`/ai-listing/task/{{ task.id }}/asset/reorder`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+      },
+      body: JSON.stringify({ asset_ids: assetIds })
+    })
+    .catch(err => console.error('Sort order sync failed:', err));
+  }
+</script>
+{% endblock %}
