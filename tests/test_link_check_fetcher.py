@@ -85,7 +85,11 @@ def test_fetch_page_retries_target_hreflang_before_failing(monkeypatch):
     requested_urls = []
 
     def fake_get(url, *, headers, allow_redirects, timeout):
-        requested_urls.append(url)
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        parsed = urlparse(url)
+        query_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != "nocache"]
+        clean_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query_pairs), parsed.fragment))
+        requested_urls.append(clean_url)
         return responses[len(requested_urls) - 1]
 
     fetcher = LinkCheckFetcher()
@@ -309,11 +313,15 @@ def test_download_images_writes_files_into_task_directory(monkeypatch, tmp_path)
     requested_urls = []
 
     def fake_get(url, *, headers, allow_redirects, timeout):
-        requested_urls.append(url)
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        parsed = urlparse(url)
+        query_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != "nocache"]
+        clean_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query_pairs), parsed.fragment))
+        requested_urls.append(clean_url)
         return SimpleNamespace(
             url=url,
             status_code=200,
-            content=payloads[url],
+            content=payloads[clean_url],
             text="",
         )
 
@@ -359,3 +367,49 @@ def test_download_images_rejects_redirect_to_different_image(monkeypatch, tmp_pa
             ],
             tmp_path,
         )
+
+
+def test_fetch_page_attaches_locale_evidence_on_success(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return SimpleNamespace(
+            url="https://shop.example.com/de/products/demo?variant=123",
+            status_code=200,
+            text="<html lang='de'><body></body></html>",
+        )
+
+    fetcher = LinkCheckFetcher()
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    page = fetcher.fetch_page("https://shop.example.com/de/products/demo?variant=123", "de")
+
+    assert page.locale_evidence is not None
+    assert page.locale_evidence["locked"] is True
+    assert page.locale_evidence["target_language"] == "de"
+    assert len(page.locale_evidence["attempts"]) == 1
+    assert page.locale_evidence["attempts"][0]["locked"] is True
+
+
+def test_fetch_page_attaches_locale_evidence_on_error(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return SimpleNamespace(
+            url="https://shop.example.com/en/products/demo?variant=123",
+            status_code=200,
+            text="<html lang='en'><body></body></html>",
+        )
+
+    fetcher = LinkCheckFetcher()
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    with pytest.raises(LocaleLockError) as exc_info:
+        fetcher.fetch_page("https://shop.example.com/de/products/demo?variant=123", "de")
+
+    exc = exc_info.value
+    assert hasattr(exc, "locale_evidence")
+    assert exc.locale_evidence["locked"] is False
+    assert exc.locale_evidence["target_language"] == "de"
+    assert len(exc.locale_evidence["attempts"]) == 1
+    assert exc.locale_evidence["attempts"][0]["locked"] is False
