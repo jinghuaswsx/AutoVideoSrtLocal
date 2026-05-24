@@ -34,6 +34,9 @@ def _patch_run_logging(monkeypatch, mod, *, latest_running=None, start_id=101):
         "finish_run",
         lambda run_id, **kwargs: finish_calls.append({"run_id": run_id, **kwargs}),
     )
+    from appcore import fine_ai_evaluation_model_config as config_mod
+    monkeypatch.setattr(config_mod, "get_parallel_mode", lambda: "parallel")
+    monkeypatch.setattr(config_mod, "get_profile_config", lambda profile: {"provider": "openrouter"})
     return finish_calls
 
 
@@ -516,3 +519,26 @@ def test_enrich_cards_prefers_auto_material_key_result(monkeypatch):
     fine_ai = enriched[0]["product_ad_status"]["fine_ai_evaluation"]
     assert fine_ai["evaluation_run_id"] == "eval_auto"
     assert fine_ai["countries"]["FR"]["decision"]["final_decision"] == "WATCH"
+
+
+def test_tick_once_safe_limit_fallback_serial(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    _patch_run_logging(monkeypatch, mod)
+
+    # Force serial mode
+    from appcore import fine_ai_evaluation_model_config as config_mod
+    monkeypatch.setattr(config_mod, "get_parallel_mode", lambda: "serial")
+
+    monkeypatch.setattr(mod, "_fetch_top500_candidates", lambda limit: [_candidate(1), _candidate(2)])
+    monkeypatch.setattr(mod, "_fetch_yesterday_top100_candidates", lambda limit: [])
+    processed = []
+    monkeypatch.setattr(
+        mod,
+        "_run_candidate",
+        lambda row, **kwargs: processed.append(row["material_key"]) or {"status": "completed"},
+    )
+
+    summary = mod.tick_once(limit=10)
+    assert summary["limit"] == 1
+    assert summary["processed"] == 1
+    assert len(processed) == 1

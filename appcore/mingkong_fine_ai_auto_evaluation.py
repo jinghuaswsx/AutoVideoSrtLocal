@@ -538,7 +538,15 @@ def _empty_summary(limit: int) -> dict[str, Any]:
 
 
 def tick_once(limit: int = MAX_BATCH_SIZE, *, stale_after_seconds: int = STALE_AFTER_SECONDS) -> dict[str, Any]:
-    safe_limit = min(MAX_BATCH_SIZE, max(1, int(limit or MAX_BATCH_SIZE)))
+    from appcore import fine_ai_evaluation_model_config as fine_ai_model_config
+    parallel_mode = fine_ai_model_config.get_parallel_mode()
+    model_config = fine_ai_model_config.get_profile_config(fine_ai_model_config.SCHEDULED_PROFILE)
+    active_provider = model_config.get("provider")
+
+    if parallel_mode == "serial" or active_provider == "gemini_vertex_adc":
+        safe_limit = 1
+    else:
+        safe_limit = min(MAX_BATCH_SIZE, max(1, int(limit or MAX_BATCH_SIZE)))
     guard_summary = _guard_singleton(stale_after_seconds=stale_after_seconds)
     if guard_summary.get("skipped"):
         return guard_summary
