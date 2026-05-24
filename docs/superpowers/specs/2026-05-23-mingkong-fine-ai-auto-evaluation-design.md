@@ -1,6 +1,6 @@
 # 明空视频卡片 AI 精细评估自动任务设计
 
-最后更新：2026-05-23
+最后更新：2026-05-24
 
 ## 背景
 
@@ -10,10 +10,10 @@
 
 ## 目标
 
-1. 每 10 分钟启动一次自动评估 tick。
-2. 每轮最多处理 2 张视频卡片。
-3. 同一时间只允许一个同类自动评估任务运行。
-4. 单个自动评估任务最多存活 30 分钟。
+1. 使用常驻后台 worker 池持续处理自动评估任务，不再依赖 10 分钟 APScheduler tick。
+2. 默认任务池并发为 2 张视频卡片；某张卡片跑完后立即补下一张。
+3. 同一时间只允许一个 worker 进程运行。
+4. 单个卡片任务在领取后跑完即结束；如进程重启，已经领取过的 `material_key` 不再自动重复领取。
 5. 优先处理明空 `视频素材库` 按 90 天消耗倒序 Top500。
 6. Top500 没有可跑任务后，再处理 `昨天消耗前100` 的全部 Top100。
 7. 同一视频卡片只自动跑一轮；重复出现在两个列表里的卡片不重复跑。
@@ -22,7 +22,7 @@
 10. 不开启 Google Search 工具。
 11. 单国家评估失败时自动重试 1 次；第二次无论成功或失败都结束该国家并进入下一步。
 
-生产观察显示单张卡片真实执行时长通常在 4-6 分钟，保留 10 分钟 tick 周期时，每轮上限收敛为 2 张，减少超过 30 分钟后被新任务接管的失败记录。
+生产观察显示单张卡片真实执行时长通常在 4-6 分钟。改为常驻任务池后，吞吐由“每 10 分钟最多 2 张”变为“最多 2 张同时跑，跑完即补位”，但单张卡片内部的国家评估默认仍保持串行，避免 ADC 通道突然增加国家级并发。
 
 ## 非目标
 
@@ -38,35 +38,33 @@
 - `docs/superpowers/specs/2026-05-22-fine-ai-evaluation-progress-visualization-design.md`：`progress_json` 是执行可视化事实来源。
 - `docs/superpowers/specs/2026-05-22-fine-ai-material-import-advice-design.md`：加入素材库和小语种弹窗读取精细评估结果。
 - `docs/superpowers/specs/2026-05-18-mingkong-daily-material-snapshot-top100-design.md`：本地明空视频素材库和昨天消耗 Top100 的事实表。
-- `appcore/scheduled_tasks.py`：定时任务必须登记到后台任务清单。
+- `appcore/scheduled_tasks.py`：后台轮询 / systemd 常驻任务必须登记到后台任务清单。
 
 ## 调度
 
-新增 APScheduler 任务：
+改为 systemd 常驻 worker：
 
 - Code：`mingkong_fine_ai_auto_evaluation_tick`
-- Name：`明空视频卡片 AI 精细评估自动任务`
-- Schedule：每 10 分钟
-- Source type：`apscheduler`
-- Source ref：`mingkong_fine_ai_auto_evaluation_tick`
-- Runner：`appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once`
-- Log table：`scheduled_task_runs`
+- Name：`明空视频卡片 AI 精细评估任务池`
+- Schedule：连续后台任务池，默认 2 个卡片并发
+- Source type：`systemd`
+- Source ref：`autovideosrt-mingkong-fine-ai-worker.service`
+- Runner：`tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2`
+- Status table：`mingkong_fine_ai_auto_evaluations`
 
-注册到 Web 进程 APScheduler，使用 `scheduled_tasks.add_controlled_job()`，并设置 `max_instances=1`。`max_instances=1` 只解决同进程并发，业务层仍必须基于 `scheduled_task_runs` 做 30 分钟接管保护。
+Web 进程 APScheduler 不再注册该任务。worker 自己持有进程锁，防止重复启动；systemd 负责拉起和异常重启。
 
-## 单例和 30 分钟接管
+## 单例和进程锁
 
-每次 tick 开始先检查 `scheduled_tasks.latest_running_run("mingkong_fine_ai_auto_evaluation_tick")`。
+worker 启动时获取 `/tmp/autovideosrt-mingkong-fine-ai-worker.lock` 独占锁。
 
 处理规则：
 
-1. 没有同类 running run：创建本轮 `scheduled_task_runs`，正常取任务执行。
-2. 有同类 running run，且启动时间未超过 30 分钟：本轮直接返回 skipped，不创建新的 running run。
-3. 有同类 running run，且启动时间超过 30 分钟：把旧 run 标记为 failed，错误信息说明被新 run 接管；新 run 开始执行。
+1. 没有同类 worker：正常启动任务池。
+2. 已有 worker 持锁：新进程直接退出。
+3. 发布或手工重启时，先 stop/kill 旧 worker，再 start 新 worker。
 
-接管只负责让调度层继续前进。Python 线程无法强杀时，旧线程如果还在运行，必须通过“当前 run id 校验”在每张卡片之间停止写入后续任务：旧 run 发现自己不再是最新 running run 后，结束本轮循环并返回 `superseded`。
-
-接管旧 run 时，旧 run 名下仍处于 `running` 的自动评估记录必须同步标记为 `failed`，错误信息说明被新 run 接管。新 run 不能重新领取任何已经存在自动评估记录的 `material_key`，包括 `running` / `failed` / `skipped` / `completed`，避免旧线程尚未自然退出时同一卡片被重复创建 Fine AI run。
+卡片去重不依赖进程状态。`mingkong_fine_ai_auto_evaluations.material_key` 唯一约束保证同一视频卡片只自动领取一次；`running` / `failed` / `skipped` / `completed` 都表示这张卡片已经经历过自动流程，不再自动重跑。
 
 ## 候选来源和优先级
 
@@ -147,16 +145,13 @@ LIMIT 100
 
 ## 执行流程
 
-每轮 tick：
+worker 池：
 
-1. 执行单例和接管检查。
-2. 创建本轮 `scheduled_task_runs`。
-3. 查询 Top500 候选，过滤已在 `mingkong_fine_ai_auto_evaluations` 有任何记录的 `material_key`。
-4. 如果 Top500 没有可跑候选，查询全部 Top100 候选，继续过滤已领取或已跑记录。
-5. 取最多 2 张卡片。
-6. 对每张卡片：
-   - 确认当前 run 仍是最新 running run；否则停止本轮。
-   - upsert 自动评估记录为 `running`，写入 `scheduled_run_id` 和卡片快照。
+1. 按默认并发 2 维护卡片任务槽位。
+2. 有空槽时先查询 Top500 候选，过滤已在 `mingkong_fine_ai_auto_evaluations` 有任何记录的 `material_key`。
+3. 如果 Top500 没有可领取候选，查询全部 Top100 候选。
+4. 主线程先领取卡片，插入自动评估记录为 `running`，写入卡片快照；领取成功后才提交到线程池，避免同一轮重复提交。
+5. 对每张卡片：
    - 复用现有卡片外链精细评估创建逻辑：
    - 商品链接使用卡片 `mk_product_link`，缺失时回退 `product_url`。
    - 视频使用卡片 `video_path` / `video_name` / `video_duration_seconds`。
@@ -164,7 +159,8 @@ LIMIT 100
    - `product_code`、`mk_product_id` 一并写入 run metadata。
    - 同步执行 `FineAiEvaluationService.run_evaluation(evaluation_run_id)`。
    - 根据最终 run status 更新自动评估记录。
-7. 汇总本轮扫描数、创建数、完成数、失败数、跳过原因，写入 `scheduled_task_runs.summary_json`。
+6. 某张卡片完成后立即释放槽位并补下一张候选。
+7. worker 收到 SIGTERM/SIGINT 后停止领取新卡片，等待已提交卡片自然结束后退出。
 
 自动任务不调用前端 API。它复用后端 service 和同一套数据库结果，达到与点击按钮相同的数据效果。
 
@@ -205,6 +201,7 @@ LIMIT 100
 
 - 国家之间等待时间设为 0。
 - `FineAiEvaluationService.get_service()` 不再注入 30 秒国家等待。
+- 国家评估并发模式默认 `serial`，国家并发数默认 `1`；后台设置可切换为并发并配置国家并发数。
 - `FineAiGeminiClient` 继续对商品事实和国家评估传 `google_search=False`。
 - URL Context 保持现状，用于读取商品链接上下文；本需求只要求不开 Google Search。
 
@@ -215,18 +212,16 @@ LIMIT 100
 - 明空视频缓存失败：记录 failed，并保存错误摘要。
 - 商品链接探活失败：沿用现有 link check 失败结果，记录 failed。
 - 单国家失败：最多自动重试一次，最终可以得到 `partially_completed`。
-- 本轮任务超过 30 分钟被接管：旧 run 标 failed，新 run 继续从未跑过卡片取任务。
+- worker 进程异常退出：systemd 重启 worker；已经有自动评估记录的卡片不再自动领取。
 
 ## 验收
 
 自动化验证：
 
-- scheduler registry 测试确认任务登记、10 分钟 interval、`scheduled_task_runs` 日志源。
+- scheduler registry 测试确认任务登记为 systemd worker，且 Web APScheduler 不再注册该任务。
 - service 测试确认 Top500 优先、Top500 耗尽后取全部 Top100。
 - service 测试确认同一 `material_key` 在两个来源重复时只跑一次。
-- service 测试确认一轮最多取 2 个。
-- service 测试确认 running run 未超过 30 分钟时跳过。
-- service 测试确认 running run 超过 30 分钟时标记旧 run failed 并启动新 run。
+- service 测试确认 worker 池最多 2 个卡片并发，并在卡片完成后补位。
 - Fine AI pipeline 测试确认国家失败会自动重试 1 次，第二次失败后继续后续国家。
 - Fine AI client 测试确认 `google_search=False`。
 - xuanpin route / serializer 测试确认外链卡片能读取自动任务生成的精细评估结果。

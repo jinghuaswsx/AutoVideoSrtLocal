@@ -484,6 +484,91 @@ def test_production_fine_ai_country_request_interval_defaults_to_zero():
     assert mod.PRODUCTION_COUNTRY_REQUEST_INTERVAL_SECONDS == 0
 
 
+def test_parallel_country_mode_honors_adc_and_configured_country_concurrency(monkeypatch):
+    import threading
+    import time
+
+    from appcore import fine_ai_evaluation_model_config as model_config
+    from appcore import fine_ai_evaluation_service as service_mod
+    from appcore.fine_ai_evaluation_service import FineAiEvaluationService
+
+    store = {
+        model_config.PARALLEL_MODE_KEY: "parallel",
+        model_config.COUNTRY_CONCURRENCY_KEY: "2",
+        model_config.SETTING_KEYS[model_config.SCHEDULED_PROFILE]: "gemini_vertex_adc",
+    }
+    monkeypatch.setattr(model_config.settings_store, "get_setting", lambda key: store.get(key))
+
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    country_calls = []
+
+    class TrackingCountryGeminiClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.last_call_metadata = {}
+            self.last_call_trace = {}
+
+        def generate_country_evaluation(
+            self,
+            *,
+            product_snapshot,
+            product_facts,
+            country,
+            asset_snapshot,
+            asset_paths,
+        ):
+            nonlocal active, max_active
+            code = country["country_code"]
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                country_calls.append(code)
+            try:
+                time.sleep(0.03)
+                result = make_country_result(code)
+                self.last_call_metadata = {
+                    "provider": "gemini_vertex_adc",
+                    "model": "gemini-3.5-flash",
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                }
+                self.last_call_trace = _fake_trace(
+                    f"country:{code}",
+                    result,
+                    product_id=product_snapshot["product_id"],
+                )
+                return result
+            finally:
+                with lock:
+                    active -= 1
+
+    monkeypatch.setattr(service_mod, "FineAiGeminiClient", TrackingCountryGeminiClient)
+
+    repository = InMemoryEvaluationRepository()
+    service = FineAiEvaluationService(
+        repository=repository,
+        gemini_client=FakeGeminiClient([]),
+        product_snapshot_service=FakeProductSnapshotService(),
+        asset_snapshot_service=FakeAssetSnapshotService(),
+    )
+
+    run = service.create_run(
+        123,
+        countries=["DE", "FR", "IT"],
+        model_profile=model_config.SCHEDULED_PROFILE,
+    )
+    result = service.run_evaluation(run["evaluation_run_id"])
+
+    assert result["status"] == "completed"
+    assert result["metadata"]["provider"] == "gemini_vertex_adc"
+    assert result["metadata"]["country_parallel_mode"] == "parallel"
+    assert result["metadata"]["country_execution_mode"] == "parallel"
+    assert result["metadata"]["country_concurrency"] == 2
+    assert max_active == 2
+    assert set(country_calls) == {"DE", "FR", "IT"}
+
+
 def test_country_request_waits_between_countries_and_marks_progress():
     from appcore.fine_ai_evaluation_service import FineAiEvaluationService
 

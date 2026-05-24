@@ -461,13 +461,26 @@ class FineAiEvaluationService:
 
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
         parallel_mode = fine_ai_model_config.get_parallel_mode()
+        configured_country_concurrency = fine_ai_model_config.get_country_concurrency()
+        country_execution_mode = (
+            "parallel"
+            if parallel_mode == "parallel" and configured_country_concurrency > 1 and len(country_codes) > 1
+            else "serial"
+        )
+        country_concurrency = (
+            min(configured_country_concurrency, len(country_codes))
+            if country_execution_mode == "parallel"
+            else 1
+        )
+        metadata.update({
+            "country_parallel_mode": parallel_mode,
+            "country_execution_mode": country_execution_mode,
+            "country_concurrency": country_concurrency,
+            "country_concurrency_configured": configured_country_concurrency,
+        })
+        self.repository.update_run(evaluation_run_id, metadata=metadata)
 
-        # Google Vertex AI ADC 通道由于 Tier 较低且有频率限制，强制使用串行逻辑，防止并发 Rate Limit 报错
-        active_provider = metadata.get("provider")
-        if active_provider == "gemini_vertex_adc":
-            parallel_mode = "serial"
-
-        if parallel_mode == "parallel":
+        if country_execution_mode == "parallel":
             import threading
             from concurrent.futures import ThreadPoolExecutor
 
@@ -688,8 +701,8 @@ class FineAiEvaluationService:
                         ),
                     )
 
-            with ThreadPoolExecutor(max_workers=len(country_codes)) as executor:
-                executor.map(evaluate_single_country, country_codes)
+            with ThreadPoolExecutor(max_workers=country_concurrency) as executor:
+                list(executor.map(evaluate_single_country, country_codes))
 
             completed_codes = shared_state["completed_codes"]
             failed_codes = shared_state["failed_codes"]

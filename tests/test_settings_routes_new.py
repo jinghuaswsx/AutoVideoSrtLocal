@@ -619,13 +619,21 @@ def test_settings_get_renders_fine_ai_provider_profile_controls(admin_no_db_clie
          patch("web.routes.settings.fine_ai_model_config.all_profile_configs",
                return_value=profile_configs), \
          patch("web.routes.settings.fine_ai_model_config.provider_options",
-               return_value=provider_options):
+               return_value=provider_options), \
+         patch("web.routes.settings.fine_ai_model_config.get_parallel_mode",
+               return_value="serial"), \
+         patch("web.routes.settings.fine_ai_model_config.get_country_concurrency",
+               return_value=2):
         resp = admin_no_db_client.get("/settings?tab=providers")
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert 'name="fine_ai_manual_provider"' in body
     assert 'name="fine_ai_scheduled_provider"' in body
+    assert 'name="fine_ai_parallel_mode"' in body
+    assert 'name="fine_ai_country_concurrency"' in body
+    assert 'value="2"' in body
+    assert 'value="serial" selected' in body
     assert "AI 精细评估模型配置" in body
     assert "Gemini 3.5 Flash" in body
     assert 'value="gemini_aistudio" selected' in body
@@ -663,11 +671,15 @@ def test_settings_post_providers_saves_fine_ai_provider_profiles(admin_no_db_cli
          patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
          patch("appcore.llm_provider_configs.save_provider_config"), \
          patch("web.routes.settings.llm_bindings.upsert"), \
-         patch("web.routes.settings.fine_ai_model_config.set_profile_provider") as m_set:
+         patch("web.routes.settings.fine_ai_model_config.set_profile_provider") as m_set, \
+         patch("web.routes.settings.fine_ai_model_config.set_parallel_mode") as m_mode, \
+         patch("web.routes.settings.fine_ai_model_config.set_country_concurrency") as m_concurrency:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
             "fine_ai_manual_provider": "openrouter",
             "fine_ai_scheduled_provider": "gemini_vertex_adc",
+            "fine_ai_parallel_mode": "parallel",
+            "fine_ai_country_concurrency": "2",
         })
 
     assert resp.status_code in (302, 303)
@@ -675,6 +687,8 @@ def test_settings_post_providers_saves_fine_ai_provider_profiles(admin_no_db_cli
         ("manual", "openrouter"),
         ("scheduled", "gemini_vertex_adc"),
     ]
+    m_mode.assert_called_once_with("parallel")
+    m_concurrency.assert_called_once_with("2")
 
 
 def test_settings_post_providers_saves_meta_hot_posts_vertex_adc_flash_lite(admin_no_db_client):

@@ -454,6 +454,7 @@ def index():
         fine_ai_profile_configs=fine_ai_model_config.all_profile_configs(),
         fine_ai_provider_options=fine_ai_model_config.provider_options(),
         fine_ai_parallel_mode=fine_ai_model_config.get_parallel_mode(),
+        fine_ai_country_concurrency=fine_ai_model_config.get_country_concurrency(),
         bindings_grouped=bindings_grouped,
         voice_ai_auto_select_enabled=is_voice_ai_auto_select_enabled(),
         module_labels=MODULE_LABELS,
@@ -609,6 +610,13 @@ def _handle_fine_ai_provider_profiles_post() -> None:
         mode = (request.form.get("fine_ai_parallel_mode") or "").strip()
         try:
             fine_ai_model_config.set_parallel_mode(mode)
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    if "fine_ai_country_concurrency" in request.form:
+        raw_concurrency = (request.form.get("fine_ai_country_concurrency") or "").strip()
+        try:
+            fine_ai_model_config.set_country_concurrency(raw_concurrency)
         except ValueError as exc:
             flash(str(exc), "error")
 

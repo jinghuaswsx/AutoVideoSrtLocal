@@ -57,15 +57,15 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     enriched = definitions["mingkong_fine_ai_auto_evaluation_tick"]
 
     assert task["code"] == "mingkong_fine_ai_auto_evaluation_tick"
-    assert task["source_type"] == "apscheduler"
-    assert task["source_ref"] == "mingkong_fine_ai_auto_evaluation_tick"
-    assert task["runner"] == "appcore.mingkong_fine_ai_auto_evaluation_scheduler.tick_once"
-    assert task["log_table"] == "scheduled_task_runs"
-    assert "10 分钟" in task["schedule"]
-    assert "每轮最多 2 张卡片" in task["schedule"]
+    assert task["source_type"] == "systemd"
+    assert task["source_ref"] == "autovideosrt-mingkong-fine-ai-worker.service"
+    assert task["runner"] == "tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2"
+    assert task["log_table"] == "mingkong_fine_ai_auto_evaluations"
+    assert "连续后台任务池" in task["schedule"]
+    assert "2 个卡片并发" in task["schedule"]
     assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
-    assert enriched["control_strategy"] == "apscheduler"
-    assert enriched["log_source"] == "db:scheduled_task_runs"
+    assert enriched["control_strategy"] == "systemd"
+    assert enriched["log_source"] == "db:mingkong_fine_ai_auto_evaluations"
 
 
 def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_two(monkeypatch):
@@ -83,11 +83,20 @@ def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_two(monkeyp
     assert captured["limit"] == 2
 
 
-def test_mingkong_fine_ai_auto_evaluation_scheduler_registered_in_app_scheduler():
+def test_mingkong_fine_ai_auto_evaluation_scheduler_not_registered_in_app_scheduler():
     source = (Path(__file__).resolve().parents[1] / "appcore" / "scheduler.py").read_text(encoding="utf-8")
 
-    assert "mingkong_fine_ai_auto_evaluation_scheduler" in source
-    assert "mingkong_fine_ai_auto_evaluation_scheduler.register(_scheduler)" in source
+    assert "mingkong_fine_ai_auto_evaluation_scheduler.register(_scheduler)" not in source
+
+
+def test_mingkong_fine_ai_worker_systemd_unit():
+    root = Path(__file__).resolve().parents[1]
+    service_path = root / "deploy" / "server_browser" / "autovideosrt-mingkong-fine-ai-worker.service"
+    service = service_path.read_text(encoding="utf-8")
+
+    assert "WorkingDirectory=/opt/autovideosrt" in service
+    assert "python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2" in service
+    assert "Restart=always" in service
 
 
 def test_mingkong_material_daily_snapshot_systemd_units():
