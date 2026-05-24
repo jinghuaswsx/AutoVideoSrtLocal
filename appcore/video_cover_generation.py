@@ -1259,7 +1259,7 @@ def generate_local_cover_image(
             },
             data=form_data,
             files=files,
-            timeout=360,
+            timeout=300,
         )
     except requests.RequestException as exc:
         raise VideoCoverGenerationError(f"封面生成失败：本地接口请求失败：{exc}") from exc
@@ -1780,7 +1780,9 @@ def generate_video_covers(
             on_cover_done(build_result())
 
     if execution_mode == "parallel" and len(cover_jobs) > 1:
-        with ThreadPoolExecutor(max_workers=len(cover_jobs)) as executor:
+        is_local = str(cover_selection.provider or "").strip().lower() in {"local_image_2", "local", "local_image", "local_image2"}
+        max_workers = 2 if is_local else len(cover_jobs)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {executor.submit(build_cover, job): job for job in cover_jobs}
             for future in as_completed(future_map):
                 record_cover(future.result())
