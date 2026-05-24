@@ -729,6 +729,228 @@ def api_detail_image_quality_check(pid: int, image_id: int):
         ), 500
 
 
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>/retranslate", methods=["POST"])
+@login_required
+def api_detail_image_retranslate(pid: int, image_id: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    target_image = medias.get_detail_image(image_id)
+    if not target_image or int(target_image.get("product_id") or 0) != pid:
+        return jsonify({"error": "商品详情图片未找到"}), 404
+
+    if target_image.get("lang") == "en":
+        return jsonify({"error": "无需对英语原图进行翻译"}), 400
+
+    # 1. 查找源英文图
+    source_image = None
+    source_detail_image_id = target_image.get("source_detail_image_id")
+    if source_detail_image_id:
+        source_image = medias.get_detail_image(source_detail_image_id)
+
+    if not source_image:
+        sort_order = target_image.get("sort_order") or 0
+        en_images = medias.list_detail_images(pid, "en")
+        for img in en_images:
+            if img.get("sort_order") == sort_order:
+                source_image = img
+                break
+
+    if not source_image:
+        return jsonify({"error": "未找到对比的英文原图，请先上传英文原图并保持相同的排序"}), 400
+
+    # 2. 定位物理路径
+    from appcore import local_media_storage, llm_bindings, llm_client
+    import os
+    import json
+    import logging
+    from datetime import datetime
+    from ._helpers import probe_media_info_safe
+
+    logger = logging.getLogger("app.web.detail_images")
+
+    src_key = source_image["object_key"]
+    dst_key = target_image["object_key"]
+
+    src_path = str(local_media_storage.safe_local_path_for(src_key))
+    dst_path = str(local_media_storage.safe_local_path_for(dst_key))
+
+    if not os.path.exists(src_path):
+        return jsonify({"error": f"英文原图本地物理文件不存在: {src_key}"}), 400
+
+    # 3. 构造优化提示词
+    target_lang = target_image["lang"]
+    prompt_template = str((its.get_prompts_for_lang(target_lang).get("detail") or "")).strip()
+    if not prompt_template:
+        return jsonify({"error": f"当前语种 {target_lang} 未配置详情图翻译 prompt"}), 400
+
+    target_lang_name = medias.get_language_name(target_lang) or target_lang.upper()
+    baseline_prompt = prompt_template.replace("{target_language_name}", target_lang_name)
+
+    # 从现有的质检结果中提取问题
+    eval_result_json = target_image.get("eval_result_json")
+    eval_error = target_image.get("eval_error")
+    
+    # 构造修正提示词
+    corrections = []
+    if eval_result_json:
+        try:
+            eval_data = json.loads(eval_result_json)
+            if isinstance(eval_data, dict):
+                if eval_data.get("has_mixed_languages") and eval_data.get("mixed_languages_details"):
+                    corrections.append(f"- 中英混杂/漏译问题：{eval_data.get('mixed_languages_details')}")
+                if eval_data.get("has_layout_issue") and eval_data.get("layout_issue_details"):
+                    corrections.append(f"- 排版或文字溢出重叠问题：{eval_data.get('layout_issue_details')}")
+                issues = eval_data.get("issues")
+                if isinstance(issues, list) and issues:
+                    issues_str = "、".join(str(x) for x in issues)
+                    corrections.append(f"- 质检发现的具体问题清单：{issues_str}")
+                if eval_data.get("summary"):
+                    corrections.append(f"- 质检专家总结：{eval_data.get('summary')}")
+        except Exception:
+            pass
+
+    if not corrections and eval_error:
+        corrections.append(f"- 上一轮翻译/评估报错或缺陷：{eval_error}")
+
+    optimized_prompt = baseline_prompt
+    if corrections:
+        correction_block = (
+            "\n\n【重要！上一轮翻译缺陷修正指令 / Correction Instructions】\n"
+            "在上一轮的翻译中，该图片被评估发现存在以下问题，请在本次生成时务必严格纠正，确保翻译地道、无英文残留且排版美观：\n"
+            + "\n".join(corrections)
+        )
+        optimized_prompt = f"{baseline_prompt}\n{correction_block}"
+
+    # 4. 调用大模型重新生图
+    from appcore import gemini_image
+    
+    binding = llm_bindings.resolve("image_translate.generate")
+    channel = binding.get("provider") or _safe_image_translate_channel()
+    model_id = binding.get("model") or _default_image_translate_model_id()
+
+    # 先更新状态为 running
+    medias.update_detail_image_evaluation(
+        image_id,
+        eval_status="running",
+        eval_channel=channel,
+        eval_model_id=model_id,
+    )
+
+    try:
+        with open(src_path, "rb") as f:
+            src_bytes = f.read()
+
+        src_mime = image_translate_runtime.ImageTranslateRuntime._guess_mime(src_key, filename=os.path.basename(src_key), data=src_bytes)
+        
+        out_bytes, out_mime = gemini_image.generate_image(
+            prompt=optimized_prompt,
+            source_image=src_bytes,
+            source_mime=src_mime,
+            model=model_id,
+            user_id=current_user.id,
+            project_id=f"detail_retranslate_{image_id}",
+            service="image_translate.generate",
+            channel=channel or None,
+        )
+
+        # 5. 备份原有图片，并用新图片覆盖
+        if os.path.exists(dst_path):
+            filename = os.path.basename(dst_key)
+            base, ext = os.path.splitext(filename)
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            backup_filename = f"{base}_bak_{timestamp}{ext}"
+            
+            dst_dir = os.path.dirname(dst_key)
+            backup_key = f"{dst_dir}/{backup_filename}" if dst_dir else backup_filename
+            backup_path = str(local_media_storage.safe_local_path_for(backup_key))
+            
+            os.rename(dst_path, backup_path)
+            logger.info(f"备份有问题原图：{dst_path} -> {backup_path}")
+        
+        local_media_storage.write_bytes(dst_key, out_bytes)
+        
+        # 探测新图宽高及大小
+        file_size = len(out_bytes)
+        width, height = None, None
+        try:
+            info = probe_media_info_safe(dst_path)
+            width = info.get("width")
+            height = info.get("height")
+        except Exception:
+            pass
+
+        medias.execute(
+            "UPDATE media_product_detail_images "
+            "SET file_size=%s, width=%s, height=%s "
+            "WHERE id=%s AND deleted_at IS NULL",
+            (file_size, width, height, image_id),
+        )
+
+        # 6. 重新执行质检，获取新的评分和结果
+        from appcore.image_translate_runtime import _EVAL_PROMPT, _EVAL_SCHEMA
+        
+        eval_binding = llm_bindings.resolve("image_translate.eval")
+        eval_channel = eval_binding.get("provider") or "openrouter"
+        eval_model_id = eval_binding.get("model") or "google/gemini-3.1-flash-lite"
+        
+        eval_prompt = _EVAL_PROMPT.format(target_lang_name=target_lang_name)
+        
+        eval_result = llm_client.invoke_generate(
+            "image_translate.eval",
+            prompt=eval_prompt,
+            media=[src_path, dst_path],
+            user_id=current_user.id,
+            project_id=f"detail_eval_post_retranslate_{image_id}",
+            response_schema=_EVAL_SCHEMA,
+            temperature=0,
+            billing_extra={
+                "operation": "detail_image_retranslate_quality_evaluation",
+                "item_idx": image_id,
+                "filename": os.path.basename(dst_key),
+                "source_key": src_key,
+                "target_key": dst_key,
+            },
+        )
+        
+        eval_data = eval_result.get("json") if isinstance(eval_result, dict) else None
+        if not isinstance(eval_data, dict):
+            raise ValueError("重新翻译后的质检未返回符合 Schema 的 JSON 数据")
+            
+        medias.update_detail_image_evaluation(
+            image_id,
+            eval_status="done",
+            eval_result_json=json.dumps(eval_data, ensure_ascii=False),
+            eval_channel=eval_channel,
+            eval_model_id=eval_model_id,
+        )
+
+        updated_image = medias.get_detail_image(image_id)
+        return jsonify(
+            {
+                "success": True,
+                "detail_image": _serialize_detail_image(updated_image)
+            }
+        ), 200
+
+    except Exception as exc:
+        logger.exception(f"重新翻译详情图失败: {exc}")
+        medias.update_detail_image_evaluation(
+            image_id,
+            eval_status="failed",
+            eval_error=str(exc),
+        )
+        updated_image = medias.get_detail_image(image_id)
+        return jsonify(
+            {
+                "success": False,
+                "error": str(exc),
+                "detail_image": _serialize_detail_image(updated_image),
+            }
+        ), 500
+
+
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])
 @login_required
 def detail_image_proxy(image_id: int):

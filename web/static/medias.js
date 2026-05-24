@@ -1130,15 +1130,21 @@
       const imageUrl = safeMediaSrc(it.thumbnail_url);
       const imageId = Number(it.id) || 0;
       const checked = selectedDetailImageIds.has(Number(it.id)) ? 'checked' : '';
-      const selectedClass = checked ? ' is-selected' : '';
+      let selectedClass = checked ? ' is-selected' : '';
       
       let bannerHTML = '';
       let evalBtnHTML = '';
+      let retranslateBtnHTML = '';
       const lang = getLang();
       
       if (lang !== 'en' && !isGifItem(it)) {
         const status = it.eval_status || 'pending';
-        if (status === 'done' && it.eval_result) {
+        let showRetranslate = false;
+
+        if (it.is_retranslating) {
+          bannerHTML = `<div class="oc-detail-image-eval-banner eval-blue">重译中...</div>`;
+          showRetranslate = true;
+        } else if (status === 'done' && it.eval_result) {
           const res = it.eval_result;
           const score = Number(res.translation_quality_score) || 0;
           let bannerClass = 'eval-green';
@@ -1149,6 +1155,7 @@
             bannerClass = 'eval-red';
             bannerText = `质量差 (${score}/10)`;
             bannerTip = res.summary || '质量较差，有较多错误。';
+            showRetranslate = true;
           } else if (score <= 7 || res.has_mixed_languages || res.has_layout_issue) {
             bannerClass = 'eval-yellow';
             bannerText = `警告 (${score}/10)`;
@@ -1159,22 +1166,45 @@
               bannerText += ` · ${warnings.join('+')}`;
             }
             bannerTip = res.summary || '有些许翻译或排版瑕疵，请注意。';
+            if (res.has_mixed_languages) {
+              showRetranslate = true;
+            }
           }
           bannerHTML = `<div class="oc-detail-image-eval-banner ${bannerClass}" title="${escapeHtml(bannerTip)}">${escapeHtml(bannerText)}</div>`;
         } else if (status === 'failed') {
           bannerHTML = `<div class="oc-detail-image-eval-banner eval-red" title="${escapeHtml(it.eval_error || '评估失败')}">质检失败</div>`;
+          showRetranslate = true;
         } else if (status === 'running') {
           bannerHTML = `<div class="oc-detail-image-eval-banner eval-blue">质检中...</div>`;
         }
         
+        let evalBtnText = '质量检测';
+        let retranslateBtnText = '重新翻译';
+        if (showRetranslate) {
+          selectedClass += ' has-both-btns';
+          evalBtnText = '质检';
+          retranslateBtnText = '重译';
+        }
+
         evalBtnHTML = `
           <button class="oc-detail-image-eval-btn" type="button" data-detail-image-eval title="翻译质量对比检测">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
-            <span>质量检测</span>
+            <span>${escapeHtml(evalBtnText)}</span>
           </button>
         `;
+
+        if (showRetranslate) {
+          retranslateBtnHTML = `
+            <button class="oc-detail-image-retranslate-btn" type="button" data-detail-image-retranslate title="使用质检反馈修正重新翻译该图">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+              <span>${escapeHtml(retranslateBtnText)}</span>
+            </button>
+          `;
+        }
       }
 
       return `
@@ -1188,6 +1218,7 @@
           <span class="oc-detail-image-idx">${idx + 1}</span>
           <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>滻</button>
           ${evalBtnHTML}
+          ${retranslateBtnHTML}
           <button class="oc-detail-image-del" type="button" title="ɾ" aria-label="ɾ">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round">
@@ -1300,6 +1331,9 @@
         });
         targetGrid.querySelectorAll('[data-detail-image-eval]').forEach(btn => {
           btn.addEventListener('click', onDetailImageEvalClick);
+        });
+        targetGrid.querySelectorAll('[data-detail-image-retranslate]').forEach(btn => {
+          btn.addEventListener('click', onDetailImageRetranslateClick);
         });
         targetGrid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
           btn.addEventListener('click', onDelete);
@@ -1793,6 +1827,59 @@
       if (!item) return;
       
       showDetailQualityCheckModal(item);
+    }
+
+    async function onDetailImageRetranslateClick(e) {
+      e.stopPropagation();
+      const card = e.currentTarget.closest('.oc-detail-image');
+      if (!card) return;
+      const imgId = Number(card.dataset.id);
+      if (!imgId) return;
+      const item = items.find(it => it.id === imgId);
+      if (!item) return;
+
+      if (!window.confirm('确定要使用上一轮的质检反馈重新翻译这张详情图吗？\n重新翻译需要消耗大模型额度，生成的新图将自动物理覆盖原图并运行自动重新评估。')) {
+        return;
+      }
+
+      item.is_retranslating = true;
+      renderGrid();
+
+      try {
+        const pid = await ensurePid({ allowCreate: false });
+        if (!pid) {
+          item.is_retranslating = false;
+          renderGrid();
+          return;
+        }
+
+        const resp = await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}/retranslate`, {
+          method: 'POST',
+        });
+
+        item.is_retranslating = false;
+        if (resp.success && resp.detail_image) {
+          const updated = resp.detail_image;
+          Object.assign(item, updated);
+          
+          if (currentEvalItem && currentEvalItem.id === item.id) {
+            updateDetailQualityModalUI(currentEvalItem);
+          }
+          alert('重新生图与评分成功！');
+          renderGrid();
+        } else {
+          throw new Error(resp.error || '重新生图失败');
+        }
+      } catch (err) {
+        item.is_retranslating = false;
+        item.eval_status = 'failed';
+        item.eval_error = err.message || String(err);
+        if (currentEvalItem && currentEvalItem.id === item.id) {
+          updateDetailQualityModalUI(currentEvalItem);
+        }
+        alert(err.message || '重新翻译发生错误');
+        renderGrid();
+      }
     }
 
     // 质检 Modal 事件监听器
