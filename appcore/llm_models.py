@@ -66,7 +66,7 @@ def legacy_provider_to_provider_code(provider: str | None) -> str | None:
     if provider == "doubao":
         return "doubao"
     if provider.startswith("vertex_adc_"):
-        return "gemini_aistudio"
+        return "gemini_vertex"
     if provider.startswith("vertex_"):
         return "gemini_vertex"
     return "openrouter"
