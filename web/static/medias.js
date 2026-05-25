@@ -6272,15 +6272,15 @@
       return `
         <article class="oc-link-check-item">
           <div class="oc-link-check-item-preview">${preview}</div>
+          <div class="oc-link-check-item-side-badges">
+            ${replacedBadgeHtml}
+            ${scoreBadgeHtml}
+            ${edLinkCheckBadge(edLinkCheckDecisionText(decision, item.status), edLinkCheckDecisionKind(decision, item.status))}
+            ${edLinkCheckBadge(edLinkCheckReferenceText(reference), reference.status === 'matched' ? 'success' : (reference.status === 'not_matched' ? 'warning' : 'info'))}
+          </div>
           <div class="oc-link-check-item-body">
             <div class="oc-link-check-item-head">
               <div class="oc-link-check-item-title">${escapeHtml(itemLabel)} #${idx + 1}</div>
-              <div class="oc-link-check-item-badges" style="display:flex; gap: 6px; align-items:center;">
-                ${replacedBadgeHtml}
-                ${scoreBadgeHtml}
-                ${edLinkCheckBadge(edLinkCheckDecisionText(decision, item.status), edLinkCheckDecisionKind(decision, item.status))}
-                ${edLinkCheckBadge(edLinkCheckReferenceText(reference), reference.status === 'matched' ? 'success' : (reference.status === 'not_matched' ? 'warning' : 'info'))}
-              </div>
             </div>
             <div class="oc-link-check-item-url">${escapeHtml(item.source_url || '-')}</div>
             <div class="oc-link-check-item-meta">
