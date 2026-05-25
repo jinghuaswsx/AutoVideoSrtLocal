@@ -284,8 +284,8 @@ def test_medias_js_link_check_detail_preview_images_sanitize_media_src_protocols
 
     assert "const previewUrl = safeMediaSrc(ref.preview_url || '');" in link_check_modal
     assert 'src="${escapeHtml(previewUrl)}"' in link_check_modal
-    assert "const itemPreviewUrl = safeMediaSrc(item.site_preview_url);" in link_check_modal
-    assert 'src="${escapeHtml(itemPreviewUrl)}"' in link_check_modal
+    assert "const sitePreviewUrl = safeMediaSrc(item.site_preview_url);" in link_check_modal
+    assert 'src="${escapeHtml(sitePreviewUrl)}"' in link_check_modal
     assert 'src="${escapeHtml(ref.preview_url || \'\')}"' not in link_check_modal
     assert 'src="${escapeHtml(item.site_preview_url)}"' not in link_check_modal
 

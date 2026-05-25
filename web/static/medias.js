@@ -1210,21 +1210,23 @@
       return `
         <div class="oc-detail-image${selectedClass}" data-id="${imageId}">
           ${bannerHTML}
-          <img src="${escapeHtml(imageUrl)}" alt="ͼ ${idx + 1}" loading="lazy">
-          <label class="oc-detail-image-select-wrap" title="ѡͼ">
-            <input class="oc-detail-image-select" type="checkbox" aria-label="ѡͼ ${idx + 1}" ${checked}>
-            <span></span>
-          </label>
-          <span class="oc-detail-image-idx">${idx + 1}</span>
-          <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>滻</button>
-          ${evalBtnHTML}
-          ${retranslateBtnHTML}
-          <button class="oc-detail-image-del" type="button" title="ɾ" aria-label="ɾ">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-                 stroke-width="1.8" stroke-linecap="round">
-              <path d="M3 3l8 8M11 3l-8 8"></path>
-            </svg>
-          </button>
+          <div class="oc-detail-image-inner">
+            <img src="${escapeHtml(imageUrl)}" alt="ͼ ${idx + 1}" loading="lazy">
+            <label class="oc-detail-image-select-wrap" title="ѡͼ">
+              <input class="oc-detail-image-select" type="checkbox" aria-label="ѡͼ ${idx + 1}" ${checked}>
+              <span></span>
+            </label>
+            <span class="oc-detail-image-idx">${idx + 1}</span>
+            <button class="oc-detail-image-replace" type="button" data-detail-image-replace hidden>滻</button>
+            ${evalBtnHTML}
+            ${retranslateBtnHTML}
+            <button class="oc-detail-image-del" type="button" title="ɾ" aria-label="ɾ">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round">
+                <path d="M3 3l8 8M11 3l-8 8"></path>
+              </svg>
+            </button>
+          </div>
         </div>
       `;
     }
