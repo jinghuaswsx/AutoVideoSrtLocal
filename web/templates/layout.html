@@ -761,6 +761,8 @@
       or request.path.startswith('/video-creation')
       or request.path.startswith('/video-review')
       or request.path.startswith('/link-check')
+      or request.path.startswith('/ai-product-research')
+      or request.path.startswith('/ai-listing')
       or request.endpoint == 'projects.sentence_translate_page'
       or request.endpoint == 'projects.av_sync_page'
       or request.path.startswith('/order-analytics/orphan-orders')
@@ -962,11 +964,6 @@
         <span class="nav-icon">🔍</span> 选品中心
       </a>
       {% endif %}
-      {% if has_permission('ai_listing') or current_user.is_admin %}
-      <a href="/ai-listing" {% if request.path.startswith('/ai-listing') %}class="active"{% endif %}>
-        <span class="nav-icon">🛒</span> AI 自动上品
-      </a>
-      {% endif %}
       {% if has_permission('task_center') %}
       {% set task_creator_active = request.path.startswith('/task-creator') %}
       <details class="sidebar-group sidebar-taskcenter-group" {% if task_center_active or task_creator_active %}open{% endif %}>
@@ -986,11 +983,6 @@
           {% endif %}
         </div>
       </details>
-      {% endif %}
-      {% if current_user.is_admin and has_permission('lab') %}
-      <a href="/ai-product-research" {% if request.path.startswith('/ai-product-research') %}class="active"{% endif %}>
-        <span class="nav-icon">📖</span> AI产品调研
-      </a>
       {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
@@ -1070,14 +1062,27 @@
         </div>
       </details>
       {% endif %}
-      {% if has_permission('lab') %}
+      {% set has_lab_menu = has_permission('lab') or has_permission('ai_listing') or current_user.is_admin %}
+      {% set lab_default_href = "/voice-library" if has_permission('lab') else "/ai-listing" %}
+      {% if has_lab_menu %}
       <details class="sidebar-group sidebar-lab-group" {% if lab_active %}open{% endif %}>
-        <summary data-sidebar-group-summary data-default-href="/voice-library" {% if lab_active %}class="active"{% endif %}>
+        <summary data-sidebar-group-summary data-default-href="{{ lab_default_href }}" {% if lab_active %}class="active"{% endif %}>
           <span class="nav-icon">🧪</span>
           <span class="nav-label">实验室</span>
           <span class="sidebar-group-caret">⌄</span>
         </summary>
         <div class="sidebar-subnav">
+          {% if current_user.is_admin and has_permission('lab') %}
+          <a href="/ai-product-research" {% if request.path.startswith('/ai-product-research') %}class="active"{% endif %}>
+            <span class="nav-icon">📖</span> AI产品调研
+          </a>
+          {% endif %}
+          {% if has_permission('ai_listing') or current_user.is_admin %}
+          <a href="/ai-listing" {% if request.path.startswith('/ai-listing') %}class="active"{% endif %}>
+            <span class="nav-icon">🛒</span> AI 自动上品
+          </a>
+          {% endif %}
+          {% if has_permission('lab') %}
           <a href="/voice-library" {% if request.path.startswith('/voice-library') %}class="active"{% endif %}>
             <span class="nav-icon">🎙️</span> 声音仓库
           </a>
@@ -1120,6 +1125,7 @@
           <a href="{{ url_for('tos_file_management.page') }}" {% if request.path.startswith('/admin/tos-files') %}class="active"{% endif %}>
             <span class="nav-icon">🗄️</span> TOS文件管理
           </a>
+          {% endif %}
           {% endif %}
         </div>
       </details>

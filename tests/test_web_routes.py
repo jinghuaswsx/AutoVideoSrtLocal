@@ -1735,20 +1735,19 @@ def test_layout_groups_requested_sidebar_menus(authed_client_no_db):
     assert body.index("用户设置", settings_group) < body.index("浏览器监控", settings_group)
 
 
-def test_layout_places_ai_product_research_as_top_level_below_task_center(authed_client_no_db):
+def test_layout_places_ai_product_research_and_ai_listing_inside_lab_group(authed_client_no_db):
     response = authed_client_no_db.get("/subtitle-removal")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
-    task_center_group = body.index("sidebar-taskcenter-group")
-    task_center_group_end = body.index("</details>", task_center_group)
     ai_research_link = body.index('href="/ai-product-research"')
-    settings_group = body.index("sidebar-settings-group")
+    ai_listing_link = body.index('href="/ai-listing"')
     lab_group = body.index("sidebar-lab-group")
+    lab_group_end = body.index("</details>", lab_group)
 
-    assert task_center_group_end < ai_research_link < settings_group
-    assert ai_research_link < lab_group
+    assert lab_group < ai_research_link < lab_group_end
+    assert lab_group < ai_listing_link < lab_group_end
 
 
 def test_layout_hides_api_config_nav_for_normal_user(authed_user_client_no_db):
