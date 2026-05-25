@@ -6129,6 +6129,12 @@
       }
     }
 
+    const forceRecheckBtn = $('edLinkCheckForceRecheckBtn');
+    if (forceRecheckBtn) {
+      const taskId = task.task_id || task.id;
+      forceRecheckBtn.hidden = !taskId;
+    }
+
     const recheckBtn = $('edLinkCheckRecheckBtn');
     if (recheckBtn) {
       if (task && (task.status === 'queued' || task.status === 'locking_locale' || task.status === 'downloading' || task.status === 'analyzing')) {
@@ -8027,6 +8033,7 @@
     $('edCopyProductUrlBtn') && $('edCopyProductUrlBtn').addEventListener('click', (e) => edCopyLocalizedProductUrl(e.currentTarget));
     $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edHandleSimpleLinkProbe);
     $('edLinkCheckRecheckBtn') && $('edLinkCheckRecheckBtn').addEventListener('click', edTriggerRecheckFromModal);
+    $('edLinkCheckForceRecheckBtn') && $('edLinkCheckForceRecheckBtn').addEventListener('click', edTriggerRecheckFromModal);
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
     $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);
     $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);

@@ -457,9 +457,14 @@
         <div class="oc-modal oc-link-check-modal" role="dialog" aria-modal="true" aria-labelledby="edLinkCheckTitle">
           <div class="oc-modal-head">
             <h3 id="edLinkCheckTitle">链接检测结果</h3>
-            <a href="#" target="_blank" class="oc-btn ghost sm" id="edLinkCheckFullReportLink" style="margin-left: auto; margin-right: var(--oc-sp-2); text-decoration: none;" hidden>
-              <span>跳转完整结果</span>
-            </a>
+            <div class="oc-modal-head-actions" style="margin-left: auto; margin-right: var(--oc-sp-2); display: flex; gap: var(--oc-sp-2); align-items: center;">
+              <button type="button" class="oc-btn danger sm" id="edLinkCheckForceRecheckBtn" hidden>
+                <span>重新检查</span>
+              </button>
+              <a href="#" target="_blank" class="oc-btn ghost sm" id="edLinkCheckFullReportLink" style="text-decoration: none;" hidden>
+                <span>跳转完整结果</span>
+              </a>
+            </div>
             <button class="oc-icon-btn" id="edLinkCheckClose" title="关闭" aria-label="关闭">
               <svg width="16" height="16"><use href="#ic-close"/></svg>
             </button>
