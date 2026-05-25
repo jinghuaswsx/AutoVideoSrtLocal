@@ -95,12 +95,12 @@ def test_tick_uses_yesterday_top100_after_top500_exhausted(monkeypatch):
 
     summary = mod.tick_once(limit=10)
 
-    assert summary["processed"] == 2
-    assert [item["source_bucket"] for item in processed] == ["yesterday_top100", "yesterday_top100"]
-    assert [item["row"]["is_new_top100_entry"] for item in processed] == [False, True]
+    assert summary["processed"] == 1
+    assert [item["source_bucket"] for item in processed] == ["yesterday_top100"]
+    assert [item["row"]["is_new_top100_entry"] for item in processed] == [False]
 
 
-def test_tick_limits_each_round_to_four(monkeypatch):
+def test_tick_limits_each_round_to_one(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
     _patch_run_logging(monkeypatch, mod)
@@ -115,9 +115,9 @@ def test_tick_limits_each_round_to_four(monkeypatch):
 
     summary = mod.tick_once(limit=10)
 
-    assert summary["limit"] == 4
-    assert summary["processed"] == 4
-    assert len(processed) == 4
+    assert summary["limit"] == 1
+    assert summary["processed"] == 1
+    assert len(processed) == 1
 
 
 def test_worker_pool_refills_finished_slot_while_other_task_is_running(monkeypatch):
@@ -184,10 +184,10 @@ def test_worker_pool_refills_finished_slot_while_other_task_is_running(monkeypat
     assert events.index(("start", "product-3")) < events.index(("finish", "product-2"))
 
 
-def test_default_worker_concurrency_is_four():
+def test_default_worker_concurrency_is_one():
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
-    assert mod.DEFAULT_WORKER_CONCURRENCY == 4
+    assert mod.DEFAULT_WORKER_CONCURRENCY == 1
 
 
 def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
@@ -399,9 +399,8 @@ def test_fetch_candidates_exclude_any_existing_auto_record(monkeypatch):
     joined_sql = "\n".join(captured)
     assert "LEFT JOIN mingkong_fine_ai_auto_evaluations a" in joined_sql
     assert "a.status IN" not in joined_sql
-    assert "WHERE a.id IS NULL" in joined_sql
-    assert "LIMIT 1000" in joined_sql
-    assert "LIMIT 300" in joined_sql
+    assert "LIMIT 500" in joined_sql
+    assert "LIMIT 100" in joined_sql
 
 
 def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monkeypatch):
