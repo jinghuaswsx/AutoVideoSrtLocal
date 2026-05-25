@@ -1149,7 +1149,7 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     authed_user_client_no_db,
     monkeypatch,
 ):
-    calls = {"upload": [], "approve": [], "audit": []}
+    calls = {"upload": [], "approve": [], "audit": [], "mark_uploaded": []}
 
     def fake_replace_processed_video(**kwargs):
         calls["upload"].append(kwargs)
@@ -1158,9 +1158,25 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     def fake_approve_raw(**kwargs):
         calls["approve"].append(kwargs)
 
+    def fake_row(tid):
+        return {"id": tid, "status": "raw_in_progress"}
+
+    def fake_mark_uploaded(task_id, actor_user_id):
+        calls["mark_uploaded"].append((task_id, actor_user_id))
+
     monkeypatch.setattr(
         "web.routes.tasks.rvp_svc.replace_processed_video",
         fake_replace_processed_video,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc._row",
+        fake_row,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.mark_uploaded",
+        fake_mark_uploaded,
         raising=False,
     )
     monkeypatch.setattr(
@@ -1184,8 +1200,9 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     assert calls["upload"][0]["task_id"] == 44
     assert calls["upload"][0]["actor_user_id"] == 2
     assert calls["upload"][0]["uploaded_file"].filename == "fixed.mp4"
-    assert calls["upload"][0]["allowed_statuses"] == ("raw_review",)
+    assert calls["upload"][0]["allowed_statuses"] == ("raw_in_progress", "raw_review")
     assert calls["upload"][0]["mark_uploaded_after"] is False
+    assert calls["mark_uploaded"] == [(44, 2)]
     assert calls["approve"] == [
         {"task_id": 44, "actor_user_id": 2, "is_admin": False}
     ]
@@ -1483,8 +1500,8 @@ def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypat
     assert rsp.status_code == 200
     assert rsp.get_json() == {
         "languages": [
-            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)"},
-            {"code": "JA", "name_zh": "日语", "label": "日语 (JA)"},
+            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)", "existing": False},
+            {"code": "JA", "name_zh": "日语", "label": "日语 (JA)", "existing": False},
         ]
     }
     assert captured == [True]

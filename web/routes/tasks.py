@@ -513,7 +513,7 @@ def api_parent_manual_result(tid: int):
             task_id=tid,
             actor_user_id=int(current_user.id),
             uploaded_file=uploaded,
-            allowed_statuses=(tasks_svc.PARENT_RAW_REVIEW,),
+            allowed_statuses=(tasks_svc.PARENT_RAW_IN_PROGRESS, tasks_svc.PARENT_RAW_REVIEW),
             mark_uploaded_after=False,
         )
         _audit_task_action(
@@ -521,6 +521,11 @@ def api_parent_manual_result(tid: int):
             "task_parent_manual_result_uploaded",
             {"new_size": new_size},
         )
+        # Check current task status; if it is raw_in_progress, transition to raw_review first!
+        task_row = tasks_svc._row(tid) or {}
+        if task_row.get("status") == tasks_svc.PARENT_RAW_IN_PROGRESS:
+            tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
+
         tasks_svc.approve_raw(
             task_id=tid,
             actor_user_id=int(current_user.id),

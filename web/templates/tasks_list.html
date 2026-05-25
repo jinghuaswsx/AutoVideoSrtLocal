@@ -1014,7 +1014,7 @@ function tcShouldSuppressReviewAssets(eventType, suppressRawReviewAssets) {
   return ['raw_niuma_done', 'raw_uploaded'].includes(String(eventType || ''));
 }
 function tcRawSelfReviewAnchorEvent(events) {
-  const ordered = ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded'];
+  const ordered = ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded', 'raw_niuma_failed', 'raw_niuma_timeout'];
   for (let i = 0; i < ordered.length; i += 1) {
     const wanted = ordered[i];
     if ((Array.isArray(events) ? events : []).some(event => String(event && event.event_type || '') === wanted)) {
@@ -1024,7 +1024,8 @@ function tcRawSelfReviewAnchorEvent(events) {
   return '';
 }
 function tcCanReviewRawTask(task) {
-  if (!task || task.parent_task_id || task.status !== 'raw_review') return false;
+  if (!task || task.parent_task_id) return false;
+  if (task.status !== 'raw_review' && task.status !== 'raw_in_progress') return false;
   if (TC_IS_ADMIN) return true;
   return Number(task.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0);
 }
@@ -1033,6 +1034,14 @@ function tcRenderRawSelfReviewActions(task, event, anchorEventType) {
   if (String(event && event.event_type || '') !== String(anchorEventType || '')) return '';
   const id = Number(task.id || 0);
   if (!id) return '';
+  if (anchorEventType === 'raw_niuma_failed' || anchorEventType === 'raw_niuma_timeout') {
+    return '<div class="tc-raw-self-review">'
+      + '<div class="tc-raw-self-review-note">自动去字幕处理失败或超时。你可以选择重新跑（在顶部点击强制重跑），或者手动处理视频后在此提交结果直接入库。</div>'
+      + '<div class="tc-raw-self-review-actions">'
+      + '<button class="tc-btn tc-btn--primary tc-btn--large" onclick="tcOpenManualRawResult(' + id + ')">手动提交处理后的结果视频</button>'
+      + '</div>'
+      + '</div>';
+  }
   return '<div class="tc-raw-self-review">'
     + '<div class="tc-raw-self-review-note">确认结果可用后可直接入库；如果画面仍有问题，上传你手动处理后的最终视频。</div>'
     + '<div class="tc-raw-self-review-actions">'
@@ -2247,6 +2256,12 @@ function tcDetailButtons(task, isParent) {
   if (isParent) {
     if (tcCanForceRerunNiuma(task, isParent)) {
       btns.push(`<button class="tc-btn" onclick="tcForceRerunNiuma(${id})">强制重跑</button>`);
+    }
+    if (status === 'raw_in_progress') {
+      const assigneeId = Number(task.assignee_id || 0);
+      if (TC_IS_ADMIN || (assigneeId && assigneeId === Number(TC_CURRENT_USER_ID || 0))) {
+        btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcOpenManualRawResult(${id})">手动上传结果视频</button>`);
+      }
     }
     if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
