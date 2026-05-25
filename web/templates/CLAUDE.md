@@ -24,3 +24,11 @@ Jinja 模板专属规则。改本目录任何 `*.html` 前必读。
 ## CSRF / 路由守卫
 - 新模板里的 `<form>` POST 必须含 CSRF token。前端 fetch 走 `X-CSRFToken` header（从 `layout.html` `<meta name="csrf-token">` 读）。
 - 路由侧加 `@login_required + @admin_required`（layout.html 访问 `current_user.username`，未登录会 500）。
+
+## API 账单分页组件
+为 `admin_ai_billing.html` 页面添加分页组件：
+1. 包含数据总条数和总页数显示。
+2. 包含首页、末页、上一页、下一页按钮。
+3. 显示当前是第几页。
+4. 包含去第 XXX 页的跳转输入框与确定按钮。
+5. 分页组件放置在明细表格的顶部与底部，两处分页组件的状态及跳转逻辑需完全同步并保留所有筛选过滤参数。

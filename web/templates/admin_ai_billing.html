@@ -25,6 +25,69 @@
   </div>
 </div>
 {%- endmacro %}
+
+{% macro render_pagination(id_suffix) %}
+<form method="get" class="billing-pagination" id="pagination-form-{{ id_suffix }}">
+  <input type="hidden" name="from" value="{{ filters.date_from }}">
+  <input type="hidden" name="to" value="{{ filters.date_to }}">
+  {% if admin_mode and filters.user_id is not none %}
+  <input type="hidden" name="user_id" value="{{ filters.user_id }}">
+  {% endif %}
+  <input type="hidden" name="module" value="{{ filters.module }}">
+  <input type="hidden" name="use_case" value="{{ filters.use_case }}">
+  <input type="hidden" name="provider" value="{{ filters.provider }}">
+  <input type="hidden" name="model" value="{{ filters.model }}">
+  {% for value in detail_filters.modules %}
+  <input type="hidden" name="detail_module" value="{{ value }}">
+  {% endfor %}
+  {% for value in detail_filters.use_cases %}
+  <input type="hidden" name="detail_use_case" value="{{ value }}">
+  {% endfor %}
+  {% for value in detail_filters.providers %}
+  <input type="hidden" name="detail_provider" value="{{ value }}">
+  {% endfor %}
+  {% if admin_mode %}
+  {% for value in detail_filters.user_ids %}
+  <input type="hidden" name="detail_user_id" value="{{ value }}">
+  {% endfor %}
+  {% endif %}
+  <input type="hidden" name="q" value="{{ filters.q }}">
+  <input type="hidden" name="group_by" value="{{ group_by }}">
+  {% if filters.status is sameas true %}
+  <input type="hidden" name="status" value="success">
+  {% elif filters.status is sameas false %}
+  <input type="hidden" name="status" value="failed">
+  {% endif %}
+  {% for value in detail_filters.statuses %}
+  <input type="hidden" name="detail_status" value="{% if value %}success{% else %}failed{% endif %}">
+  {% endfor %}
+  <input type="hidden" name="page" id="pagination-page-{{ id_suffix }}" value="{{ page }}">
+
+  <div class="billing-pagination-container">
+    <div class="billing-pagination-info">
+      共 <strong>{{ '{:,}'.format(detail_summary.detail_total_calls|int) }}</strong> 条数据 | 共 <strong>{{ total_pages }}</strong> 页
+    </div>
+    
+    <div class="billing-page-actions">
+      <button type="submit" class="btn btn-ghost btn-sm" {% if page <= 1 %}disabled{% else %}onclick="document.getElementById('pagination-page-{{ id_suffix }}').value = '1';"{% endif %}>首页</button>
+      <button type="submit" class="btn btn-ghost btn-sm" {% if page <= 1 %}disabled{% else %}onclick="document.getElementById('pagination-page-{{ id_suffix }}').value = '{{ page - 1 }}';"{% endif %}>上一页</button>
+      
+      <span class="billing-page-current">第 <strong class="billing-mono">{{ page }}</strong> / {{ total_pages }} 页</span>
+      
+      <button type="submit" class="btn btn-ghost btn-sm" {% if page >= total_pages %}disabled{% else %}onclick="document.getElementById('pagination-page-{{ id_suffix }}').value = '{{ page + 1 }}';"{% endif %}>下一页</button>
+      <button type="submit" class="btn btn-ghost btn-sm" {% if page >= total_pages %}disabled{% else %}onclick="document.getElementById('pagination-page-{{ id_suffix }}').value = '{{ total_pages }}';"{% endif %}>末页</button>
+    </div>
+    
+    <div class="billing-page-jump">
+      <span>去第</span>
+      <input type="number" class="billing-input billing-jump-input" id="pagination-jump-{{ id_suffix }}" min="1" max="{{ total_pages }}" value="{{ page }}" onkeydown="if(event.key === 'Enter'){ event.preventDefault(); var val = parseInt(this.value); if (val >= 1 && val <= {{ total_pages }}) { document.getElementById('pagination-page-{{ id_suffix }}').value = val; document.getElementById('pagination-form-{{ id_suffix }}').submit(); } else { alert('请输入正确的页码（1-{{ total_pages }}）'); } }">
+      <span>页</span>
+      <button type="button" class="btn btn-primary btn-sm" onclick="var val = parseInt(document.getElementById('pagination-jump-{{ id_suffix }}').value); if (val >= 1 && val <= {{ total_pages }}) { document.getElementById('pagination-page-{{ id_suffix }}').value = val; document.getElementById('pagination-form-{{ id_suffix }}').submit(); } else { alert('请输入正确的页码（1-{{ total_pages }}）'); }">确定</button>
+    </div>
+  </div>
+</form>
+{% endmacro %}
+
 {% block title %}API 账单 — AutoVideoSrt{% endblock %}
 {% block page_title %}{% if admin_mode %}API 账单{% else %}我的 API 账单{% endif %}{% endblock %}
 {% block extra_style %}
@@ -927,6 +990,79 @@
   text-decoration: none;
 }
 .billing-payload-pre a:hover { text-decoration: underline; }
+
+/* ── Premium Pagination CSS ── */
+.billing-pagination {
+  background: white;
+  border-radius: 12px;
+}
+.billing-pagination-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.billing-pagination-info {
+  font-size: 13px;
+  color: var(--billing-fg-muted);
+}
+.billing-pagination-info strong {
+  color: var(--billing-fg);
+  font-weight: 700;
+}
+.billing-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.billing-page-current {
+  font-size: 13px;
+  color: var(--billing-fg);
+  margin: 0 4px;
+}
+.billing-page-jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--billing-fg-muted);
+}
+.billing-jump-input {
+  border: 1px solid var(--billing-border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  height: 28px;
+  width: 65px;
+  text-align: center;
+  background: var(--billing-bg);
+  color: var(--billing-fg);
+  outline: none;
+  transition: border-color 120ms ease;
+  font-family: inherit;
+}
+.billing-jump-input:focus {
+  border-color: var(--billing-accent);
+}
+.btn-sm {
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  height: 28px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 900px) {
+  .billing-pagination-container {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+  }
+}
+
 @media (max-width: 680px) {
   .billing-payload-modal-body { grid-template-columns: 1fr; }
   .billing-payload-section { border-right: none; border-bottom: 1px solid var(--billing-border); }
@@ -1203,6 +1339,9 @@
         <button type="submit" class="btn btn-primary">筛选明细</button>
       </div>
     </form>
+    <div style="padding: 12px 20px; border-bottom: 1px solid var(--billing-border);">
+      {{ render_pagination('top') }}
+    </div>
     <div class="billing-table-wrap">
       <table class="billing-table">
         <thead>
@@ -1338,46 +1477,10 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
     </div>
   </div>
 
-  <form method="get" class="billing-pagination">
-    <input type="hidden" name="from" value="{{ filters.date_from }}">
-    <input type="hidden" name="to" value="{{ filters.date_to }}">
-    {% if admin_mode and filters.user_id is not none %}
-    <input type="hidden" name="user_id" value="{{ filters.user_id }}">
-    {% endif %}
-    <input type="hidden" name="module" value="{{ filters.module }}">
-    <input type="hidden" name="use_case" value="{{ filters.use_case }}">
-    <input type="hidden" name="provider" value="{{ filters.provider }}">
-    <input type="hidden" name="model" value="{{ filters.model }}">
-    {% for value in detail_filters.modules %}
-    <input type="hidden" name="detail_module" value="{{ value }}">
-    {% endfor %}
-    {% for value in detail_filters.use_cases %}
-    <input type="hidden" name="detail_use_case" value="{{ value }}">
-    {% endfor %}
-    {% for value in detail_filters.providers %}
-    <input type="hidden" name="detail_provider" value="{{ value }}">
-    {% endfor %}
-    {% if admin_mode %}
-    {% for value in detail_filters.user_ids %}
-    <input type="hidden" name="detail_user_id" value="{{ value }}">
-    {% endfor %}
-    {% endif %}
-    <input type="hidden" name="q" value="{{ filters.q }}">
-    <input type="hidden" name="group_by" value="{{ group_by }}">
-    {% if filters.status is sameas true %}
-    <input type="hidden" name="status" value="success">
-    {% elif filters.status is sameas false %}
-    <input type="hidden" name="status" value="failed">
-    {% endif %}
-    {% for value in detail_filters.statuses %}
-    <input type="hidden" name="detail_status" value="{% if value %}success{% else %}failed{% endif %}">
-    {% endfor %}
-    <div class="billing-pagination-note">分页和筛选共享同一组 URL 参数，方便直接复制链接排查。</div>
-    <div class="billing-page-actions">
-      <button type="submit" name="page" value="{{ page - 1 if page > 1 else 1 }}" class="btn btn-ghost" {% if page <= 1 %}disabled{% endif %}>上一页</button>
-      <button type="submit" name="page" value="{{ page + 1 if page < total_pages else total_pages }}" class="btn btn-primary" {% if page >= total_pages %}disabled{% endif %}>下一页</button>
-    </div>
-  </form>
+  <div style="margin: 16px 20px 24px;">
+    {{ render_pagination('bottom') }}
+    <div class="billing-pagination-note" style="margin-top: 10px; text-align: right;">分页和筛选共享同一组 URL 参数，方便直接复制链接排查。</div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}
