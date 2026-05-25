@@ -24,7 +24,14 @@
         <span class="lc-project-id">{{ project.id }}</span>
       </div>
     </div>
-    <div id="linkCheckStatus" class="lc-status-text">等待初始化</div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: var(--space-3, 12px);">
+      <div id="linkCheckStatus" class="lc-status-text">等待初始化</div>
+      {% if task.product_id %}
+        <button id="standaloneRecheckBtn" class="btn btn-outline-danger" style="display: none; padding: 4px 12px; font-size: 13px;" data-product-id="{{ task.product_id }}" data-lang="{{ task.target_language }}" data-link-url="{{ task.link_url }}">
+          重新检测
+        </button>
+      {% endif %}
+    </div>
     <div id="linkCheckError" class="lc-error" hidden></div>
   </section>
 

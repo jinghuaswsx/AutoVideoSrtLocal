@@ -698,6 +698,11 @@
     }, 1500);
   }
 
+  function getCsrfToken() {
+    const el = document.querySelector("meta[name='csrf-token']");
+    return el ? el.content || el.getAttribute("content") || "" : "";
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     const page = $("linkCheckDetailPage");
     if (!page) {
@@ -713,5 +718,70 @@
 
     renderTask(task);
     startPollingIfNeeded(task);
+
+    // Bind recheck button
+    const recheckBtn = $("standaloneRecheckBtn");
+    if (recheckBtn) {
+      function updateRecheckButtonVisibility(status) {
+        if (TERMINAL_STATUSES.has(status)) {
+          recheckBtn.style.display = "inline-block";
+        } else {
+          recheckBtn.style.display = "none";
+        }
+      }
+
+      updateRecheckButtonVisibility(task.status);
+
+      // Override renderTask to also update recheckBtn visibility
+      const originalRenderTask = renderTask;
+      renderTask = function(t) {
+        originalRenderTask(t);
+        updateRecheckButtonVisibility(t.status);
+      };
+
+      recheckBtn.addEventListener("click", async function () {
+        const pid = recheckBtn.dataset.productId;
+        const lang = recheckBtn.dataset.lang;
+        const linkUrl = recheckBtn.dataset.linkUrl;
+        if (!pid || !lang || !linkUrl) {
+          alert("检测配置数据缺失，无法重新检测");
+          return;
+        }
+
+        if (!confirm("确定要重新检测该链接吗？这将会覆盖当前检测结果并重新启动审计任务。")) {
+          return;
+        }
+
+        recheckBtn.disabled = true;
+        recheckBtn.textContent = "启动中...";
+
+        try {
+          const csrfToken = getCsrfToken();
+          const headers = { "Content-Type": "application/json" };
+          if (csrfToken) {
+            headers["X-CSRFToken"] = csrfToken;
+          }
+
+          const data = await fetchJSON(`/medias/api/products/${pid}/link-check`, {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify({
+              lang: lang,
+              link_url: linkUrl
+            })
+          });
+
+          if (data && data.task_id) {
+            window.location.href = `/link-check/${encodeURIComponent(data.task_id)}`;
+          } else {
+            throw new Error("启动任务失败");
+          }
+        } catch (err) {
+          alert("启动重新检测任务失败: " + err.message);
+          recheckBtn.disabled = false;
+          recheckBtn.textContent = "重新检测";
+        }
+      });
+    }
   });
 })();

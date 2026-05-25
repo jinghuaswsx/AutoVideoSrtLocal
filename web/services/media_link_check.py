@@ -149,6 +149,7 @@ def build_product_link_check_create_response(
         },
     )
     start_runner_fn(task_id)
+    store_obj.update(task_id, product_id=product_id)
     payload = {"task_id": task_id, "status": "queued", "reference_count": len(references)}
     if storage_key != lang:
         payload.update({"domain": domain, "status_key": status_key})

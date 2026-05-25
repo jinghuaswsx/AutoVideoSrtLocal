@@ -298,6 +298,7 @@ def _serialize_link_check_task(task: dict) -> dict:
         "id": task["id"],
         "type": task["type"],
         "status": task["status"],
+        "product_id": task.get("product_id"),
         "link_url": task["link_url"],
         "domain": task.get("domain", ""),
         "status_key": task.get("status_key", ""),

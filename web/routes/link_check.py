@@ -148,6 +148,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
         "type": task["type"],
         "status": task["status"],
         "display_name": task.get("display_name", ""),
+        "product_id": task.get("product_id"),
         "link_url": task["link_url"],
         "resolved_url": task.get("resolved_url", ""),
         "page_language": task.get("page_language", ""),
