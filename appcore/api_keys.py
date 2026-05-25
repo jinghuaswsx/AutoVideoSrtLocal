@@ -14,7 +14,7 @@ import json
 from appcore.db import execute, query, query_one
 
 DEFAULT_JIANYING_PROJECT_ROOT = r"C:\Users\admin\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft"
-USER_SCOPED_SERVICES = {"jianying", "meta_hot_posts_ai_visibility"}
+USER_SCOPED_SERVICES = {"jianying", "meta_hot_posts_ai_visibility", "yesterday_top300_sort"}
 
 # 非用户级、但仍由 api_keys 表承载的"管理员级偏好"配置。这些不是模型供应商
 # 凭据，所以保留在 api_keys；通过 admin /settings 页保存。

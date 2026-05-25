@@ -664,6 +664,10 @@
 .mk-library-tabs { display:flex; align-items:center; gap:6px; width:max-content; margin:0 0 12px; padding:3px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#fff; }
 .mk-library-tab { height:30px; min-width:96px; padding:0 12px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:13px; font-weight:800; cursor:pointer; }
 .mk-library-tab.active { background:var(--oc-accent); color:#fff; }
+.mk-sort-toggle-group { display:flex; align-items:center; gap:4px; padding:2px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:#f8fafc; }
+.mk-sort-btn { height:26px; padding:0 10px; border:0; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); font-size:12px; font-weight:700; cursor:pointer; transition: all 0.2s ease; }
+.mk-sort-btn.active { background:var(--oc-accent); color:#fff; }
+.mk-sort-btn:hover:not(.active) { color:var(--oc-fg); background:rgba(15, 23, 42, 0.05); }
 .mk-library-panel[hidden] { display:none; }
 .mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
 .mk-video-library-grid { min-height:180px; }
@@ -775,6 +779,10 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
     <div class="mk-video-library-head">
       <span id="mkYesterdayTop100Status">切换到昨天消耗前300后加载本地归档</span>
+      <div class="mk-sort-toggle-group" id="yesterdaySortGroup" hidden>
+        <button type="button" class="mk-sort-btn active" id="sortNewEntryBtn" onclick="setYesterdayTop300Sort('new_entry_first')">新进在前</button>
+        <button type="button" class="mk-sort-btn" id="sortNormalBtn" onclick="setYesterdayTop300Sort('normal')">正常排序</button>
+      </div>
     </div>
     <div class="oc-pager" id="mkYesterdayTop100PagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkYesterdayTop100Grid">
@@ -1368,6 +1376,16 @@ async function loadMkYesterdayTop100(page) {
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
     const total = Number(data.total || 0);
     document.getElementById('totalCount').textContent = total + ' 条';
+    
+    // Update sort toggle visibility and active state
+    const sortGroup = document.getElementById('yesterdaySortGroup');
+    if (sortGroup) {
+      sortGroup.removeAttribute('hidden');
+      const sortOrder = data.sort_order || 'new_entry_first';
+      document.getElementById('sortNewEntryBtn').classList.toggle('active', sortOrder === 'new_entry_first');
+      document.getElementById('sortNormalBtn').classList.toggle('active', sortOrder === 'normal');
+    }
+
     const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
     const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
@@ -1382,6 +1400,34 @@ async function loadMkYesterdayTop100(page) {
   } catch (e) {
     status.textContent = '昨天消耗前300加载失败';
     grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function setYesterdayTop300Sort(sortOrder) {
+  const status = document.getElementById('mkYesterdayTop100Status');
+  const oldStatusText = status.textContent;
+  status.textContent = '正在保存排序设置...';
+  try {
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+
+    const resp = await fetch('/xuanpin/api/mk-yesterday-top300/sort', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ sort_order: sortOrder })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error || '保存失败');
+    
+    document.getElementById('sortNewEntryBtn').classList.toggle('active', sortOrder === 'new_entry_first');
+    document.getElementById('sortNormalBtn').classList.toggle('active', sortOrder === 'normal');
+    
+    await loadMkYesterdayTop100(1);
+  } catch (err) {
+    status.textContent = '保存排序设置失败: ' + err.message;
+    setTimeout(() => { status.textContent = oldStatusText; }, 3000);
   }
 }
 

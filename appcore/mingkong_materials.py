@@ -2033,6 +2033,7 @@ def list_yesterday_top100(
     keyword: str = "",
     page: int | str | None = 1,
     page_size: int | str | None = 100,
+    sort_order: str = "new_entry_first",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     identity = _latest_snapshot_identity(
@@ -2068,12 +2069,17 @@ def list_yesterday_top100(
         f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 t WHERE {where_sql}",
         tuple(base_args),
     ) or {}
+
+    order_clause = "is_new_top100_entry DESC, yesterday_spend_delta DESC"
+    if sort_order == "normal":
+        order_clause = "yesterday_spend_delta DESC"
+
     rows = query(
         f"""
         SELECT t.*
         FROM mingkong_material_daily_top100 t
         WHERE {where_sql}
-        ORDER BY is_new_top100_entry DESC, yesterday_spend_delta DESC,
+        ORDER BY {order_clause},
                  current_cumulative_90_spend DESC, video_ads_count DESC,
                  rank_position ASC, id ASC
         LIMIT %s OFFSET %s
