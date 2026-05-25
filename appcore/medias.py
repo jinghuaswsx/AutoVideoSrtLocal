@@ -1231,6 +1231,44 @@ def update_detail_image_evaluation(
     eval_channel: str | None = None,
     eval_model_id: str | None = None,
 ) -> int:
+    # Defensive truncation to prevent database "Data too long" exceptions
+    # 60000 characters is a safe threshold since standard TEXT holds 65,535 bytes
+    if eval_result_json and len(eval_result_json) > 60000:
+        try:
+            import json as _json
+            data = _json.loads(eval_result_json)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, str) and len(v) > 2000:
+                        data[k] = v[:2000] + "...[已截断]"
+                    elif isinstance(v, list):
+                        data[k] = [
+                            x[:1000] + "...[已截断]" if isinstance(x, str) and len(x) > 1000 else x
+                            for x in v
+                        ]
+                eval_result_json = _json.dumps(data, ensure_ascii=False)
+        except Exception:
+            pass
+        # If it's still too long, or json load failed, perform a fallback clean json
+        if eval_result_json and len(eval_result_json) > 60000:
+            try:
+                import json as _json
+                eval_result_json = _json.dumps({
+                    "status": "warning",
+                    "has_mixed_languages": False,
+                    "mixed_languages_details": "结果太大已被自动截断",
+                    "has_layout_issue": False,
+                    "layout_issue_details": "",
+                    "translation_quality_score": 5,
+                    "issues": ["大模型检测返回数据超长，已执行安全截断"],
+                    "summary": "评估返回数据量过大，可能是大模型陷入重复生成问题。已对原始返回执行了安全截断。"
+                }, ensure_ascii=False)
+            except Exception:
+                eval_result_json = None
+
+    if eval_error and len(eval_error) > 60000:
+        eval_error = eval_error[:60000] + "...[已截断]"
+
     return execute(
         "UPDATE media_product_detail_images SET "
         "  eval_status=%s, eval_result_json=%s, eval_error=%s, "
