@@ -1307,6 +1307,58 @@ def test_sync_marks_failed_image_child_without_starting_runner(runtime_env, monk
     assert "system_auto_retry_count" not in state["plan"][0]
 
 
+def test_sync_done_parent_still_polls_unfinished_child(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    synced = []
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", lang="ja", ref={"source_raw_id": 301}),
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["ja"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "omni-ja-1"
+    state["plan"][0]["child_task_type"] = "omni_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "done"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        mod,
+        "_load_child_snapshot",
+        lambda task_type, child_task_id: {"_project_status": "done"},
+    )
+    monkeypatch.setattr(
+        mod,
+        "_sync_child_result",
+        lambda parent_task_id, item, parent_state, child_state: synced.append(
+            (parent_task_id, item["child_task_id"], child_state["_project_status"])
+        ),
+    )
+    monkeypatch.setattr(mod, "_roll_up_cost_once_for_item", lambda *args, **kwargs: None)
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert synced == [(task_id, "omni-ja-1", "done")]
+    assert result["actions"] == ["sync_child_result", "finish_parent"]
+    state = _load_state(fake_db, task_id)
+    assert fake_db.rows[task_id]["status"] == "done"
+    assert state["plan"][0]["status"] == "done"
+    assert state["plan"][0]["result_synced"] is True
+
+
 def test_sync_does_not_auto_retry_image_child_twice(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     started = []

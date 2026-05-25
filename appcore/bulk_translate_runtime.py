@@ -475,13 +475,13 @@ def sync_task_with_children_once(
     actions: list[str] = []
 
     if current_parent_status == "done" and not any(
-        _completed_item_needs_result_sync(item) for item in plan
+        _done_parent_item_needs_child_sync(item) for item in plan
     ):
         return {"actions": [], "status": task.get("status")}
 
     for item in plan:
         item_status = _normalized_status(item.get("status"))
-        if current_parent_status == "done" and not _completed_item_needs_result_sync(item):
+        if current_parent_status == "done" and not _done_parent_item_needs_child_sync(item):
             continue
         child_task_id = (item.get("child_task_id") or "").strip()
         child_task_type = (
@@ -578,6 +578,15 @@ def _completed_item_needs_result_sync(item: dict) -> bool:
         and not bool(item.get("result_synced"))
         and bool(item.get("child_task_id") or item.get("sub_task_id"))
     )
+
+
+def _done_parent_item_needs_child_sync(item: dict) -> bool:
+    if not (item.get("child_task_id") or item.get("sub_task_id")):
+        return False
+    status = _normalized_status(item.get("status"))
+    if status == "done":
+        return not bool(item.get("result_synced"))
+    return status not in {"skipped", "cancelled"}
 
 
 def _can_sync_interrupted_item_from_child(
