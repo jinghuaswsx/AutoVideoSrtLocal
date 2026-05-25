@@ -67,6 +67,19 @@ def _running_age_seconds(row: dict[str, Any]) -> int:
     return max(0, int((_now() - started).total_seconds()))
 
 
+def is_cooldown_active() -> bool:
+    import time
+    from appcore.settings import get_setting
+    cooldown_val = get_setting("fine_ai_evaluation.cooldown_until")
+    if not cooldown_val:
+        return False
+    try:
+        cooldown_until = float(cooldown_val)
+        return time.time() < cooldown_until
+    except (TypeError, ValueError):
+        return False
+
+
 def _guard_singleton(*, stale_after_seconds: int = STALE_AFTER_SECONDS) -> dict[str, Any]:
     running = scheduled_tasks.latest_running_run(TASK_CODE)
     if not running:
@@ -377,6 +390,10 @@ def _run_candidate(
     material_key = _candidate_key(row)
     if not material_key:
         return {"status": "skipped", "reason": "missing_material_key"}
+    if is_cooldown_active():
+        if already_claimed:
+            _finish_record(material_key, status="failed", error="cooldown_active")
+        return {"status": "failed", "reason": "cooldown_active"}
     product_link = _candidate_product_link(row)
     video_path = str(row.get("video_path") or "").strip()
     if not already_claimed and not _claim_running_record(
@@ -482,6 +499,31 @@ def run_worker_pool(
             if max_processed is not None and summary["processed"] >= int(max_processed) and not active:
                 break
 
+            if is_cooldown_active():
+                if active:
+                    done, _ = wait(
+                        list(active.keys()),
+                        timeout=float(idle_sleep_seconds),
+                        return_when=FIRST_COMPLETED,
+                    )
+                    for future in done:
+                        item = active.pop(future)
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            log.exception("Mingkong fine AI worker future failed")
+                            _finish_record(
+                                str(item.get("material_key") or ""),
+                                status="failed",
+                                error=str(exc),
+                            )
+                            result = {"status": "failed", "error": str(exc)[:1000]}
+                        _record_worker_result(summary, result)
+                else:
+                    log.warning("Fine AI evaluation cooldown is active. Worker pool paused for 30 seconds.")
+                    _sleep_or_stop(stop_event, 30.0, sleeper=sleeper)
+                continue
+
             while not _stop_requested(stop_event) and len(active) < safe_workers:
                 if max_processed is not None:
                     remaining_target = int(max_processed) - summary["processed"] - len(active)
@@ -571,6 +613,13 @@ def tick_once(limit: int = MAX_BATCH_SIZE, *, stale_after_seconds: int = STALE_A
     guard_summary = _guard_singleton(stale_after_seconds=stale_after_seconds)
     if guard_summary.get("skipped"):
         return guard_summary
+
+    if is_cooldown_active():
+        log.warning("Mingkong fine AI auto evaluation skipped: Cooldown is active")
+        return {
+            "skipped": True,
+            "reason": "cooldown_active",
+        }
 
     run_id = scheduled_tasks.start_run(TASK_CODE)
     summary = _empty_summary(safe_limit)

@@ -3,6 +3,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_cooldown_inactive(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    monkeypatch.setattr(mod, "is_cooldown_active", lambda: False)
+
 
 def _candidate(index: int, *, material_key: str | None = None, is_new_top100_entry: bool = False) -> dict:
     key = material_key or f"{index:064x}"
@@ -552,3 +560,60 @@ def test_tick_once_safe_limit_fallback_serial(monkeypatch):
     assert summary["limit"] == 1
     assert summary["processed"] == 1
     assert len(processed) == 1
+
+
+def test_tick_once_skips_when_cooldown_active(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    _patch_run_logging(monkeypatch, mod)
+    monkeypatch.setattr(mod, "is_cooldown_active", lambda: True)
+
+    summary = mod.tick_once(limit=10)
+    assert summary["skipped"] is True
+    assert summary["reason"] == "cooldown_active"
+
+
+def test_run_worker_pool_pauses_when_cooldown_active(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    monkeypatch.setattr(mod, "is_cooldown_active", lambda: True)
+
+    sleeps = []
+    def fake_sleep(stop_event, seconds, sleeper):
+        sleeps.append(seconds)
+        stop_event.set()
+
+    monkeypatch.setattr(mod, "_sleep_or_stop", fake_sleep)
+
+    import threading
+    stop_event = threading.Event()
+
+    summary = mod.run_worker_pool(
+        max_workers=2,
+        stop_event=stop_event,
+        sleeper=lambda s: None
+    )
+
+    assert len(sleeps) == 1
+    assert sleeps[0] == 30.0
+    assert summary["processed"] == 0
+
+
+def test_run_candidate_fails_when_cooldown_active(monkeypatch):
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+    monkeypatch.setattr(mod, "is_cooldown_active", lambda: True)
+
+    finished = []
+    monkeypatch.setattr(mod, "_finish_record", lambda key, status, error: finished.append((key, status, error)))
+
+    row = _candidate(1)
+    result = mod._run_candidate(
+        row,
+        scheduled_run_id=None,
+        source_bucket="top1000",
+        source_rank=1,
+        already_claimed=True
+    )
+
+    assert result == {"status": "failed", "reason": "cooldown_active"}
+    assert len(finished) == 1
+    assert finished[0] == (row["material_key"], "failed", "cooldown_active")
+
