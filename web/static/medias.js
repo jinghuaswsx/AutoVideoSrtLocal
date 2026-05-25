@@ -5963,6 +5963,10 @@
             lines.push(`  - 无文字背景图忽略：${s.no_text_count ?? 0} 项`);
             lines.push(`  - 存在英语/未翻译需替换：${s.replace_count ?? 0} 项`);
             lines.push(`  - 无法确定需人工复核：${s.review_count ?? 0} 项`);
+            if (s.replaced_count !== undefined || s.total_count !== undefined) {
+              lines.push(`  - 换图覆盖完成度：已换 ${s.replaced_count ?? 0} 张 / 共 ${s.total_count ?? 0} 张`);
+              lines.push(`  - 未换或换图未到位：${s.not_replaced_count ?? 0} 张`);
+            }
             if (s.reference_matched_count) lines.push(`  - 成功匹配本地参考图：${s.reference_matched_count} 张`);
           }
           return lines.join('\n');
@@ -6048,17 +6052,33 @@
           </div>
         `;
       } else if (overall === 'done') {
+        const total = task.progress.total ?? 0;
+        const replaced = task.summary.replaced_count ?? 0;
+        const notReplaced = task.summary.not_replaced_count ?? 0;
+        let subVerdict = '';
+        if (total > 0) {
+          subVerdict = `【换图结论：共拉取到 ${total} 张图片，已 100% 成功换图（${replaced} / ${total} 张已换到位）】`;
+        }
         verdictHtml = `
-          <div class="oc-console-verdict verdict-pass">
-            <strong>🎉 审计合格：</strong>页面文案与商品图片已完全替换为目标小语种 (${escapeHtml(task.target_language_name || langDisplayName(task.target_language))})，无任何遗漏，完美通关！
+          <div class="oc-console-verdict verdict-pass" style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--oc-sp-1);">
+            <div><strong>🎉 审计合格：</strong>页面文案与商品图片已完全替换为目标小语种 (${escapeHtml(task.target_language_name || langDisplayName(task.target_language))})，无任何遗漏，完美通关！</div>
+            ${subVerdict ? `<div style="font-size: 11px; opacity: 0.9; color: #d1fae5;">${escapeHtml(subVerdict)}</div>` : ''}
           </div>
         `;
       } else if (overall === 'unfinished') {
         const replaceCount = task.summary.replace_count ?? 0;
         const reviewCount = task.summary.review_count ?? 0;
+        const total = task.progress.total ?? 0;
+        const replaced = task.summary.replaced_count ?? 0;
+        const notReplaced = task.summary.not_replaced_count ?? 0;
+        let subVerdict = '';
+        if (total > 0) {
+          subVerdict = `【换图结论：共拉取到 ${total} 张图片，其中 ${replaced} 张已成功换图，${notReplaced} 张未换或换图未到位】`;
+        }
         verdictHtml = `
-          <div class="oc-console-verdict verdict-fail">
-            <strong>⚠️ 审计未通过：</strong>网页存在未翻译的英语图片或文案（有 ${replaceCount} 张图片需要替换，${reviewCount} 项待人工复核）。请立即排查！
+          <div class="oc-console-verdict verdict-fail" style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--oc-sp-1);">
+            <div><strong>⚠️ 审计未通过：</strong>网页存在未翻译的英语图片或文案（有 ${replaceCount} 张图片需要替换，${reviewCount} 项待人工复核）。请立即排查！</div>
+            ${subVerdict ? `<div style="font-size: 11px; opacity: 0.9; color: #ffedd5;">${escapeHtml(subVerdict)}</div>` : ''}
           </div>
         `;
       } else {
@@ -6136,6 +6156,8 @@
       ['整体结论', LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || '-', false],
       ['已分析图片', `${progress.analyzed ?? 0} / ${progress.total ?? 0}`, false],
       ['参考图匹配', String(summary.reference_matched_count ?? 0), false],
+      ['已换图', summary.replaced_count !== undefined ? `${summary.replaced_count} 张` : '-', false],
+      ['未换图', summary.not_replaced_count !== undefined ? `${summary.not_replaced_count} 张` : '-', false],
       ['通过', String(summary.pass_count ?? 0), false],
       ['需替换', String(summary.replace_count ?? 0), false],
       ['待复核', String(summary.review_count ?? 0), false],
@@ -6178,6 +6200,25 @@
       const binary = item.binary_quick_check || {};
       const sameImage = item.same_image_llm || {};
       const decision = analysis.decision || '';
+      const isReplaced = item.is_replaced; // true, false, or null
+
+      let replacedBadgeHtml = '';
+      if (isReplaced === true) {
+        replacedBadgeHtml = `<span class="oc-link-check-badge success" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-success-fg);">✅ 已换图</span>`;
+      } else if (isReplaced === false) {
+        replacedBadgeHtml = `<span class="oc-link-check-badge danger" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-danger-fg);">❌ 未换图</span>`;
+      } else {
+        replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比</span>`;
+      }
+
+      const qualityScore = analysis.quality_score !== undefined ? Number(analysis.quality_score) : 0;
+      let scoreBadgeColor = 'info';
+      if (qualityScore >= 80) scoreBadgeColor = 'success';
+      else if (qualityScore >= 60) scoreBadgeColor = 'warning';
+      else if (qualityScore > 0) scoreBadgeColor = 'danger';
+
+      const scoreBadgeHtml = `<span class="oc-link-check-badge ${scoreBadgeColor}" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">⭐ 质量评分：${qualityScore}分</span>`;
+
       const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
       const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
       const itemPreviewUrl = safeMediaSrc(item.site_preview_url);
@@ -6190,7 +6231,9 @@
           <div class="oc-link-check-item-body">
             <div class="oc-link-check-item-head">
               <div class="oc-link-check-item-title">${escapeHtml(itemLabel)} #${idx + 1}</div>
-              <div class="oc-link-check-item-badges">
+              <div class="oc-link-check-item-badges" style="display:flex; gap: 6px; align-items:center;">
+                ${replacedBadgeHtml}
+                ${scoreBadgeHtml}
                 ${edLinkCheckBadge(edLinkCheckDecisionText(decision, item.status), edLinkCheckDecisionKind(decision, item.status))}
                 ${edLinkCheckBadge(edLinkCheckReferenceText(reference), reference.status === 'matched' ? 'success' : (reference.status === 'not_matched' ? 'warning' : 'info'))}
               </div>
