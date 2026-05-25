@@ -3195,3 +3195,19 @@ class ShopifyImageLocalizerApp:
         </body>
         </html>
         """
+
+    def _friendly_link_check_error(self, exc: Exception) -> str:
+        from link_check_desktop.bootstrap_api import BootstrapError
+        if isinstance(exc, BootstrapError):
+            code = (exc.payload or {}).get("error") or ""
+            mapping = {
+                "invalid api key": "OpenAPI Key 无效，请检查高级设置中的密钥。",
+                "invalid target_url": "产品页面链接无效，请检查链接格式。",
+                "language not detected": "无法从链接中识别语种。",
+                "product not found": "服务端素材库中找不到这个产品。",
+                "references not ready": "服务端素材库里该语种参考图还没就绪，请先在服务端补齐素材。",
+                "bootstrap returned non-json response": "服务端返回了异常响应，请稍后重试。",
+            }
+            return mapping.get(code, str(exc))
+        return str(exc)
+
