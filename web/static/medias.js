@@ -4348,6 +4348,7 @@
   }
 
   let edDetailImagesCtrl = null;
+  let activeBatchQualityCheckSessionId = 0;
   const NO_LOCALIZED_DETAIL_IMAGES_MESSAGE = '当前商品没有小语种商品详情图';
   let edNoLocalizedDetailImagesTypeTimer = null;
 
@@ -8266,7 +8267,7 @@
         console.error('[detail-images] start translate (header) failed:', err);
       });
     });
-    $('edDetailImagesBatchEvalBtn') && $('edDetailImagesBatchEvalBtn').addEventListener('click', async () => {
+    async function edStartBatchQualityCheck(mode = 'default') {
       const ctrl = edDetailImagesCtrl;
       const list = ctrl ? ctrl.staticItems() : [];
       if (!list.length) {
@@ -8274,7 +8275,28 @@
         return;
       }
 
-      // 1. 显示批量质检 Modal 并初始化 UI 状态
+      // 1. Increment sessionId to cancel any previous runs
+      const sessionId = ++activeBatchQualityCheckSessionId;
+
+      // 2. Adjust state based on mode
+      if (mode === 'force') {
+        list.forEach(item => {
+          item.eval_status = 'pending';
+          item.eval_result = null;
+          item.eval_error = null;
+        });
+      } else if (mode === 'failures') {
+        list.forEach(item => {
+          const status = item.eval_status || 'pending';
+          if (status === 'failed' || status === 'running' || status === 'pending') {
+            item.eval_status = 'pending';
+            item.eval_result = null;
+            item.eval_error = null;
+          }
+        });
+      }
+
+      // 3. 显示批量质检 Modal 并初始化 UI 状态
       const batchMask = $('edDetailBatchQualityCheckMask');
       if (!batchMask) return;
       batchMask.hidden = false;
@@ -8465,6 +8487,9 @@
         if (progressBar) progressBar.style.width = percent + '%';
       }
 
+      // 首次渲染后立即更新面板状态
+      updateStatsPanel();
+
       // 更新单张图状态并重绘
       function updateRowUI(item) {
         const idx = list.findIndex(it => it.id === item.id);
@@ -8483,8 +8508,23 @@
 
         async function worker() {
           while (queue.length > 0) {
+            // Check cancellation token
+            if (sessionId !== activeBatchQualityCheckSessionId) {
+              console.log('[Batch Quality Check] Session changed, aborting worker.');
+              return;
+            }
+
             const item = queue.shift();
-            if (item.eval_status === 'running') continue;
+
+            // Default mode / Failures mode should skip successfully done items
+            if (mode !== 'force' && item.eval_status === 'done') {
+              continue;
+            }
+
+            // Skip currently running in other sessions
+            if (item.eval_status === 'running' && sessionId !== activeBatchQualityCheckSessionId) {
+              continue;
+            }
 
             item.eval_status = 'running';
             updateRowUI(item);
@@ -8506,6 +8546,9 @@
         }
         await Promise.all(activePromises);
 
+        // Check session ID again before claiming completion
+        if (sessionId !== activeBatchQualityCheckSessionId) return;
+
         // 检测彻底完毕
         if (statusTitle) statusTitle.innerHTML = `<span>批量翻译质量检测已完成</span>`;
         if (statusSub) statusSub.textContent = '所有详情图已质检完成。您可以点击下方按钮查看全屏独立评估报告。';
@@ -8516,9 +8559,15 @@
           reportLink.style.display = 'inline-flex';
         }
       } catch (err) {
-        alert('批量质检执行失败：' + (err.message || err));
+        if (sessionId === activeBatchQualityCheckSessionId) {
+          alert('批量质检执行失败：' + (err.message || err));
+        }
       }
-    });
+    }
+
+    $('edDetailImagesBatchEvalBtn') && $('edDetailImagesBatchEvalBtn').addEventListener('click', () => edStartBatchQualityCheck('default'));
+    $('edDetailBatchRerunFailBtn') && $('edDetailBatchRerunFailBtn').addEventListener('click', () => edStartBatchQualityCheck('failures'));
+    $('edDetailBatchRerunAllBtn') && $('edDetailBatchRerunAllBtn').addEventListener('click', () => edStartBatchQualityCheck('force'));
 
     // 绑定批量检测弹窗的关闭动作
     const edDetailBatchCloseBtn = $('edDetailBatchCloseBtn');

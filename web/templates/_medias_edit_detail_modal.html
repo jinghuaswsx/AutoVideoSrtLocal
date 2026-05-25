@@ -635,6 +635,20 @@
   <div class="oc-modal oc-modal-wide" role="dialog" aria-modal="true" aria-labelledby="edDetailBatchQualityCheckTitle" style="max-width:1160px; width:95%;">
     <div class="oc-modal-head">
       <h3 id="edDetailBatchQualityCheckTitle">商品详情图批量翻译质量检测与多维度分析</h3>
+      <div style="margin-left: auto; margin-right: var(--oc-sp-2); display: flex; gap: var(--oc-sp-2); align-items: center;">
+        <button type="button" class="oc-btn primary ghost sm" id="edDetailBatchRerunFailBtn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span>重跑失败</span>
+        </button>
+        <button type="button" class="oc-btn danger ghost sm" id="edDetailBatchRerunAllBtn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8m0 0V2m0 6h-6M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16m0 0v6m0-6h6"/>
+          </svg>
+          <span>强制从0重跑</span>
+        </button>
+      </div>
       <button class="oc-icon-btn" id="edDetailBatchQualityCheckClose" title="关闭" aria-label="关闭">
         <svg width="16" height="16"><use href="#ic-close"/></svg>
       </button>
