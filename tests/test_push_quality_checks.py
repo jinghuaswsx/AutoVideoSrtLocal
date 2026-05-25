@@ -315,6 +315,57 @@ def test_materialize_media_rejects_local_paths_outside_media_store(monkeypatch, 
     assert outside_file.read_bytes() == b"image"
 
 
+def test_materialize_media_requires_local_file_without_tos_fallback(monkeypatch, tmp_path):
+    from appcore import push_quality_checks as qc
+
+    media_root = tmp_path / "media_store"
+    monkeypatch.setattr(qc.local_media_storage, "MEDIA_STORE_DIR", media_root)
+
+    tos_calls = []
+    monkeypatch.setattr(
+        qc.tos_clients,
+        "download_media_file",
+        lambda *args, **kwargs: tos_calls.append(args) or (_ for _ in ()).throw(
+            AssertionError("push quality should use local media only")
+        ),
+    )
+
+    with pytest.raises(FileNotFoundError, match="本地素材文件缺失"):
+        qc._materialize_media("videos/missing.mp4")
+
+    assert tos_calls == []
+
+
+def test_check_video_missing_local_file_returns_failed_result(monkeypatch, tmp_path):
+    from appcore import push_quality_checks as qc
+
+    media_root = tmp_path / "media_store"
+    monkeypatch.setattr(qc.local_media_storage, "MEDIA_STORE_DIR", media_root)
+    monkeypatch.setattr(
+        qc.tos_clients,
+        "download_media_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("push quality should use local media only")
+        ),
+    )
+    monkeypatch.setattr(
+        qc.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("missing local video should not call LLM")
+        ),
+    )
+
+    result = qc.check_video(
+        {"id": 12, "object_key": "videos/missing.mp4", "lang": "es"},
+        {"id": 3, "user_id": 7, "name": "Demo"},
+    )
+
+    assert result["status"] == "failed"
+    assert "本地视频文件缺失" in result["summary"]
+    assert result["issues"] == [result["summary"]]
+
+
 def test_push_quality_schema_requires_language_evidence_fields():
     from appcore import push_quality_checks as qc
 
