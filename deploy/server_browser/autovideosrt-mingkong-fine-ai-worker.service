@@ -7,7 +7,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/autovideosrt
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/autovideosrt/venv/bin/python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4 --idle-sleep-seconds 10
+ExecStart=/opt/autovideosrt/venv/bin/python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2 --idle-sleep-seconds 10
 Restart=always
 RestartSec=10
 TimeoutStopSec=60

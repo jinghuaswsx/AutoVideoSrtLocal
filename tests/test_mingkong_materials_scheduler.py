@@ -98,7 +98,7 @@ def test_mingkong_fine_ai_worker_systemd_unit():
     service = service_path.read_text(encoding="utf-8")
 
     assert "WorkingDirectory=/opt/autovideosrt" in service
-    assert "python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 4" in service
+    assert "python tools/mingkong_fine_ai_auto_evaluation_worker.py --workers 2" in service
     assert "Restart=always" in service
 
 

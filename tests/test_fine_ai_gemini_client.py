@@ -40,7 +40,7 @@ def test_fine_ai_prompts_require_chinese_human_readable_output():
     assert "country_name 和 country_name_zh 都输出中文国家名" in country_prompt
 
 
-def test_fine_ai_gemini_client_invokes_manual_default_aistudio_without_search_and_with_url_context(monkeypatch):
+def test_fine_ai_gemini_client_invokes_manual_default_vertex_without_search_and_with_url_context(monkeypatch):
     from appcore import fine_ai_gemini_client as mod
 
     calls = []
@@ -78,7 +78,7 @@ def test_fine_ai_gemini_client_invokes_manual_default_aistudio_without_search_an
     assert result["country_code"] == "DE"
     assert calls[0][0] == "fine_ai_evaluation.country"
     kwargs = calls[0][1]
-    assert kwargs["provider_override"] == "gemini_aistudio"
+    assert kwargs["provider_override"] == "gemini_vertex"
     assert kwargs["model_override"] == "gemini-3.5-flash"
     assert kwargs["google_search"] is False
     assert kwargs["url_context"] is True
@@ -195,12 +195,12 @@ def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
 
     trace = client.last_call_trace
     assert result["country_code"] == "DE"
-    assert trace["provider"] == "gemini_aistudio"
+    assert trace["provider"] == "gemini_vertex"
     assert trace["model_id"] == "gemini-3.5-flash"
     assert trace["use_case_code"] == "fine_ai_evaluation.country"
     assert trace["request"]["system_prompt"] == mod.COUNTRY_EVALUATION_SYSTEM_PROMPT
     assert "Sample" in trace["request"]["prompt"]
-    assert trace["request"]["payload"]["provider_override"] == "gemini_aistudio"
+    assert trace["request"]["payload"]["provider_override"] == "gemini_vertex"
     assert trace["request"]["payload"]["media"] == ["G:/tmp/card_15s_llm.mp4"]
     assert trace["response"]["summary"]["input_tokens"] == 11
     assert trace["response"]["parsed_json"]["country_code"] == "DE"

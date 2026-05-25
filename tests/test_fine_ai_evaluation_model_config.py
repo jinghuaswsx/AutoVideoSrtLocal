@@ -1,22 +1,22 @@
 import pytest
 
 
-def test_fine_ai_model_config_defaults_to_manual_aistudio_and_scheduled_adc(monkeypatch):
+def test_fine_ai_model_config_defaults_to_manual_and_scheduled_vertex(monkeypatch):
     from appcore import fine_ai_evaluation_model_config as config
 
     monkeypatch.setattr(config.settings_store, "get_setting", lambda key: None)
 
     assert config.get_profile_config("manual") == {
         "profile": "manual",
-        "provider": "gemini_aistudio",
+        "provider": "gemini_vertex",
         "model": "gemini-3.5-flash",
-        "label": "GOOGLE AI STUDIO",
+        "label": "GOOGLE VERTEX AI",
     }
     assert config.get_profile_config("scheduled") == {
         "profile": "scheduled",
-        "provider": "gemini_vertex_adc",
+        "provider": "gemini_vertex",
         "model": "gemini-3.5-flash",
-        "label": "GOOGLE VERTEX AI ADC",
+        "label": "GOOGLE VERTEX AI",
     }
 
 
@@ -77,4 +77,4 @@ def test_fine_ai_model_config_falls_back_when_stored_provider_is_invalid(monkeyp
     store = {config.SETTING_KEYS["manual"]: "doubao"}
     monkeypatch.setattr(config.settings_store, "get_setting", lambda key: store.get(key))
 
-    assert config.get_profile_config("manual")["provider"] == "gemini_aistudio"
+    assert config.get_profile_config("manual")["provider"] == "gemini_vertex"

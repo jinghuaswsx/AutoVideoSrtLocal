@@ -200,6 +200,7 @@ def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
             return {"status": "completed", "evaluation_run_id": evaluation_run_id}
 
     monkeypatch.setattr(mod, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
+    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id: 1)
     monkeypatch.setattr(mod, "_cache_card_video", lambda video_path: "mk/videos/video-1.mp4")
     monkeypatch.setattr(mod, "_resolve_product_link", lambda product_link, **kwargs: link_check)
 
@@ -230,6 +231,7 @@ def test_run_candidate_fails_before_llm_when_product_link_unavailable(monkeypatc
             raise AssertionError("LLM run should not be created when product link is unavailable")
 
     monkeypatch.setattr(mod, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
+    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id: 1)
     monkeypatch.setattr(
         mod,
         "_resolve_product_link",

@@ -32,8 +32,8 @@ PROVIDER_LABELS = {
 }
 
 DEFAULT_PROVIDERS = {
-    MANUAL_PROFILE: "gemini_aistudio",
-    SCHEDULED_PROFILE: "gemini_vertex_adc",
+    MANUAL_PROFILE: "gemini_vertex",
+    SCHEDULED_PROFILE: "gemini_vertex",
 }
 
 BASE_MODEL = "gemini-3.5-flash"
