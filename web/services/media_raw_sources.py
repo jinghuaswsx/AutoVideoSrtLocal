@@ -103,7 +103,7 @@ def build_raw_source_create_response(
     if cover_ct not in allowed_image_types:
         return RawSourceResponse({"error": f"cover mimetype not allowed: {cover_ct}"}, 400)
 
-    uploaded_filename = _client_filename_basename(getattr(video, "filename", ""))
+    uploaded_filename = _client_filename_basename(getattr(video, "filename", "")).replace(" ", "")
     details = list(validate_video_filename_no_spaces_fn(uploaded_filename))
     if details:
         return RawSourceResponse(_raw_source_filename_error_payload(uploaded_filename, details), 400)
@@ -133,7 +133,7 @@ def build_raw_source_create_response(
     display_name_raw = _form_get(form, "display_name")
     display_name = _client_filename_basename(
         display_name_raw if display_name_raw is not None and str(display_name_raw).strip() else uploaded_filename
-    )
+    ).replace(" ", "")
     details = list(validate_video_filename_no_spaces_fn(display_name))
     if details:
         return RawSourceResponse(_raw_source_filename_error_payload(display_name, details), 400)
@@ -213,7 +213,7 @@ def build_raw_source_update_response(
     fields: dict = {}
 
     if "display_name" in body:
-        display_name = _client_filename_basename(body.get("display_name"))
+        display_name = _client_filename_basename(body.get("display_name")).replace(" ", "")
         if display_name.strip():
             details = list(validate_video_filename_no_spaces_fn(display_name))
             if details:

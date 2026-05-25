@@ -68,13 +68,15 @@ def _translated_video_filename(*, product_id: int, lang: str, raw_source: dict, 
         product = {}
     product_name = str(product.get("name") or "").strip()
     if not product_name:
-        return _object_basename(fallback_object_key) or _source_material_filename(raw_source)
-    return build_translated_material_filename(
-        _source_material_filename(raw_source),
-        product_name,
-        lang,
-        _language_name_map(lang),
-    )
+        res = _object_basename(fallback_object_key) or _source_material_filename(raw_source)
+    else:
+        res = build_translated_material_filename(
+            _source_material_filename(raw_source),
+            product_name,
+            lang,
+            _language_name_map(lang),
+        )
+    return res.replace(" ", "")
 
 
 def _video_sync_lock_name(
