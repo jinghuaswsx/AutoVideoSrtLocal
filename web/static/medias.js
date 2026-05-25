@@ -6574,6 +6574,76 @@
     }
   }
 
+  async function edHandleSimpleLinkProbe() {
+    const lang = edState.activeLang;
+    const url = edCurrentLinkUrl(lang);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      alert('请先填写有效的商品链接');
+      $('edProductUrl') && $('edProductUrl').focus();
+      return;
+    }
+
+    const actionBtn = $('edLinkCheckBtn');
+    const box = $('edLinkCheckSummary');
+    const viewBtn = $('edLinkCheckViewBtn');
+    const origText = actionBtn ? actionBtn.textContent : '检查链接';
+
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.textContent = '检测中...';
+    }
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `<span class="oc-link-check-meta">正在检测中...</span>`;
+    }
+    if (viewBtn) {
+      viewBtn.hidden = true; // hide view report button for simple probe
+    }
+
+    try {
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      const csrfToken = csrfMeta ? csrfMeta.content || csrfMeta.getAttribute('content') || '' : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken;
+      }
+
+      const res = await fetchJSON('/medias/api/products/probe-link', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ url: url }),
+      });
+
+      if (box) {
+        const parts = [];
+        if (res.ok) {
+          parts.push(edLinkCheckBadge('链接正常', 'success'));
+          if (res.http_status) {
+            parts.push(edLinkCheckBadge(`HTTP ${res.http_status}`, 'success'));
+          }
+        } else {
+          parts.push(edLinkCheckBadge(res.error || '链接异常', 'danger'));
+          if (res.http_status) {
+            parts.push(edLinkCheckBadge(`HTTP ${res.http_status}`, 'danger'));
+          }
+        }
+        if (res.elapsed_ms != null) {
+          parts.push(`<span class="oc-link-check-meta">耗时 ${res.elapsed_ms}ms</span>`);
+        }
+        box.innerHTML = parts.join('');
+      }
+    } catch (e) {
+      if (box) {
+        box.innerHTML = edLinkCheckBadge('检测失败: ' + (e.message || e), 'danger');
+      }
+    } finally {
+      if (actionBtn) {
+        actionBtn.disabled = false;
+        actionBtn.textContent = origText;
+      }
+    }
+  }
+
   function edTriggerRecheckFromModal() {
     if (!confirm('确定要重新检测该链接吗？这将会覆盖当前检测结果并重新启动审计任务。')) return;
     edCloseLinkCheckModal();
@@ -6636,9 +6706,9 @@
     buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="confirm-link" ${domainAttr}>确认链接正常</button>`);
     buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="mark-link-abnormal" ${domainAttr}>标记链接异常</button>`);
     if (lang && lang !== 'en') {
-      buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="audit-one" data-lang="${escapeHtml(lang)}" ${domainAttr}>审计图片与翻译</button>`);
       buttons.push(`<button type="button" class="oc-btn primary sm oc-product-links-success-action" data-product-links-action="shopify-confirm" data-lang="${escapeHtml(lang)}" ${domainAttr}>确认图片正常</button>`);
       buttons.push(`<button type="button" class="oc-btn ghost sm" data-product-links-action="shopify-clear" data-lang="${escapeHtml(lang)}" ${domainAttr}>标记图片未替换</button>`);
+      buttons.push(`<button type="button" class="oc-btn primary sm" data-product-links-action="audit-one" data-lang="${escapeHtml(lang)}" ${domainAttr}>审计图片与翻译</button>`);
     }
     return `<div class="oc-product-links-row-actions">${buttons.join('')}</div>`;
   }
@@ -7902,7 +7972,7 @@
     }
     $('edCopyProductIdBtn') && $('edCopyProductIdBtn').addEventListener('click', (e) => edCopyProductId(e.currentTarget));
     $('edCopyProductUrlBtn') && $('edCopyProductUrlBtn').addEventListener('click', (e) => edCopyLocalizedProductUrl(e.currentTarget));
-    $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edHandleLinkCheckClick);
+    $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edHandleSimpleLinkProbe);
     $('edLinkCheckRecheckBtn') && $('edLinkCheckRecheckBtn').addEventListener('click', edTriggerRecheckFromModal);
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
     $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);

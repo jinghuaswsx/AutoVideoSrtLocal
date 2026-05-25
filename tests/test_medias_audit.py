@@ -236,3 +236,32 @@ def test_delete_media_item_records_audit(monkeypatch):
     assert calls[0]["target_label"] == "Clip Final.mp4"
     assert calls[0]["detail"]["product_id"] == 7
     assert calls[0]["detail"]["object_key"] == "5/medias/7/clip.mp4"
+
+
+def test_api_product_probe_link(monkeypatch):
+    calls = []
+
+    def mock_probe(url, **kwargs):
+        calls.append(url)
+        if "google.com" in url:
+            return {"ok": True, "http_status": 200, "error": None, "elapsed_ms": 100}
+        return {"ok": False, "http_status": 404, "error": "Not Found", "elapsed_ms": 50}
+
+    monkeypatch.setattr("appcore.link_availability.probe", mock_probe)
+
+    client = _client(monkeypatch)
+
+    # Test invalid url
+    resp = client.post("/medias/api/products/probe-link", json={"url": "invalid"})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "请输入有效的链接"
+
+    # Test valid url google.com
+    resp = client.post("/medias/api/products/probe-link", json={"url": "https://google.com/product"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["http_status"] == 200
+    assert data["elapsed_ms"] == 100
+    assert data["error"] is None
+    assert calls == ["https://google.com/product"]
