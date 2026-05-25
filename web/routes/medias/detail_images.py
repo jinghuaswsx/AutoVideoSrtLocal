@@ -1079,11 +1079,11 @@ def api_detail_images_batch_evaluation_report(pid: int):
     all_images = medias.list_detail_images(pid, lang)
     # Filter out gifs
     from ._helpers import _detail_images_is_gif
-    images = [img for img in all_images if not _detail_images_is_gif(img.get("object_key") or "")]
+    images = [img for img in all_images if not _detail_images_is_gif(img)]
 
     # We want to deserialize and attach the source (English) image for comparison
     en_images = medias.list_detail_images(pid, "en")
-    en_by_order = {img.get("sort_order", 0): img for img in en_images if not _detail_images_is_gif(img.get("object_key") or "")}
+    en_by_order = {img.get("sort_order", 0): img for img in en_images if not _detail_images_is_gif(img)}
 
     serialized_items = []
     import json
