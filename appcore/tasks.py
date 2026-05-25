@@ -2943,18 +2943,8 @@ def submit_child_step_manual_output(
         if not item or not item.get("object_key"):
             raise ValueError("target media item required before cover")
         file_info = file_items[0]
-        item_id = medias.create_item(
-            product_id,
-            int(actor_user_id),
-            str(item.get("filename") or file_info.get("filename") or "manual-cover.mp4"),
-            str(item["object_key"]),
-            display_name=str(item.get("display_name") or item.get("filename") or "manual cover"),
-            file_size=item.get("file_size"),
-            cover_object_key=str(file_info["object_key"]),
-            lang=lang,
-            task_id=int(task_id),
-        )
-        result["media_item_id"] = int(item_id)
+        medias.update_item_cover(item["id"], str(file_info["object_key"]))
+        result["media_item_id"] = int(item["id"])
         result["object_key"] = file_info["object_key"]
     elif kind == "images":
         if not file_items:
