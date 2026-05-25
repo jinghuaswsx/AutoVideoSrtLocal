@@ -64,8 +64,8 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     assert task["log_table"] == "mingkong_fine_ai_auto_evaluations"
     assert "连续后台任务池" in task["schedule"]
     assert "4 个卡片并发" in task["schedule"]
-    assert "Top1000" in task["description"]
-    assert "昨天消耗前300" in task["description"]
+    assert "Top500" in task["description"]
+    assert "昨天消耗前100" in task["description"]
     assert "2026-05-23-mingkong-fine-ai-auto-evaluation-design.md" in task["description"]
     assert enriched["control_strategy"] == "systemd"
     assert enriched["log_source"] == "db:mingkong_fine_ai_auto_evaluations"

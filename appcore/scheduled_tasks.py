@@ -187,8 +187,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_fine_ai_auto_evaluation_tick",
         "name": "明空视频卡片 AI 精细评估任务池",
         "description": (
-            "后台 worker 池持续从明空视频素材库 90 天消耗 Top1000 优先取任务；"
-            "Top1000 无可跑任务后再跑昨天消耗前300的全部 Top300。"
+            "后台 worker 池持续从明空视频素材库 90 天消耗 Top500 优先取任务；"
+            "Top500 无可跑任务后再跑昨天消耗前100。"
             "复用现有卡片精细 AI 评估结果表和弹窗。Docs-anchor: "
             "docs/superpowers/specs/2026-05-23-mingkong-fine-ai-auto-evaluation-design.md"
         ),

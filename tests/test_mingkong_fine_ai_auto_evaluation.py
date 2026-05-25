@@ -40,7 +40,7 @@ def _patch_run_logging(monkeypatch, mod, *, latest_running=None, start_id=101):
     return finish_calls
 
 
-def test_tick_prioritizes_top1000_before_yesterday_top300(monkeypatch):
+def test_tick_prioritizes_top500_before_yesterday_top100(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
     finish_calls = _patch_run_logging(monkeypatch, mod)
@@ -48,7 +48,7 @@ def test_tick_prioritizes_top1000_before_yesterday_top300(monkeypatch):
     monkeypatch.setattr(mod, "_fetch_top500_candidates", lambda limit: [_candidate(1)])
 
     def fail_top100(limit):
-        raise AssertionError("top300 should not be queried while top1000 has runnable candidates")
+        raise AssertionError("top100 should not be queried while top500 has runnable candidates")
 
     monkeypatch.setattr(mod, "_fetch_yesterday_top100_candidates", fail_top100)
     monkeypatch.setattr(
@@ -60,12 +60,12 @@ def test_tick_prioritizes_top1000_before_yesterday_top300(monkeypatch):
     summary = mod.tick_once(limit=10)
 
     assert summary["processed"] == 1
-    assert processed[0]["source_bucket"] == "top1000_90d_spend"
+    assert processed[0]["source_bucket"] == "top500_90d_spend"
     assert processed[0]["source_rank"] == 1
     assert finish_calls[-1]["status"] == "success"
 
 
-def test_tick_uses_all_yesterday_top300_after_top1000_exhausted(monkeypatch):
+def test_tick_uses_yesterday_top100_after_top500_exhausted(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
     _patch_run_logging(monkeypatch, mod)
@@ -88,7 +88,7 @@ def test_tick_uses_all_yesterday_top300_after_top1000_exhausted(monkeypatch):
     summary = mod.tick_once(limit=10)
 
     assert summary["processed"] == 2
-    assert [item["source_bucket"] for item in processed] == ["yesterday_top300", "yesterday_top300"]
+    assert [item["source_bucket"] for item in processed] == ["yesterday_top100", "yesterday_top100"]
     assert [item["row"]["is_new_top100_entry"] for item in processed] == [False, True]
 
 
@@ -200,7 +200,7 @@ def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
             return {"status": "completed", "evaluation_run_id": evaluation_run_id}
 
     monkeypatch.setattr(mod, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
-    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id: 1)
+    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id=None: 1)
     monkeypatch.setattr(mod, "_cache_card_video", lambda video_path: "mk/videos/video-1.mp4")
     monkeypatch.setattr(mod, "_resolve_product_link", lambda product_link, **kwargs: link_check)
 
@@ -231,7 +231,7 @@ def test_run_candidate_fails_before_llm_when_product_link_unavailable(monkeypatc
             raise AssertionError("LLM run should not be created when product link is unavailable")
 
     monkeypatch.setattr(mod, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
-    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id: 1)
+    monkeypatch.setattr(mod, "resolve_billing_user_id", lambda explicit_user_id=None: 1)
     monkeypatch.setattr(
         mod,
         "_resolve_product_link",
@@ -386,8 +386,8 @@ def test_fetch_candidates_exclude_any_existing_auto_record(monkeypatch):
     assert "LEFT JOIN mingkong_fine_ai_auto_evaluations a" in joined_sql
     assert "a.status IN" not in joined_sql
     assert "WHERE a.id IS NULL" in joined_sql
-    assert "LIMIT 1000" in joined_sql
-    assert "LIMIT 300" in joined_sql
+    assert "LIMIT 500" in joined_sql
+    assert "LIMIT 100" in joined_sql
 
 
 def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monkeypatch):

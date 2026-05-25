@@ -12,14 +12,14 @@ from appcore.fine_ai_evaluation_service import get_service as get_fine_ai_evalua
 
 
 TASK_CODE = "mingkong_fine_ai_auto_evaluation_tick"
-SOURCE_TOP1000 = "top1000_90d_spend"
-SOURCE_YESTERDAY_TOP300 = "yesterday_top300"
-# Keep legacy constant/function names stable for older scheduler code and tests.
-SOURCE_TOP500 = SOURCE_TOP1000
-SOURCE_YESTERDAY_TOP100 = SOURCE_YESTERDAY_TOP300
+SOURCE_TOP500 = "top500_90d_spend"
+SOURCE_YESTERDAY_TOP100 = "yesterday_top100"
+# Keep temporary expanded-scope constant names stable for older scheduler code and tests.
+SOURCE_TOP1000 = SOURCE_TOP500
+SOURCE_YESTERDAY_TOP300 = SOURCE_YESTERDAY_TOP100
 TERMINAL_RECORD_STATUSES = {"completed", "partially_completed", "failed", "skipped"}
-TOP_SPEND_CANDIDATE_LIMIT = 1000
-YESTERDAY_SPEND_CANDIDATE_LIMIT = 300
+TOP_SPEND_CANDIDATE_LIMIT = 500
+YESTERDAY_SPEND_CANDIDATE_LIMIT = 100
 MAX_BATCH_SIZE = 2
 DEFAULT_WORKER_CONCURRENCY = 2
 WORKER_IDLE_SLEEP_SECONDS = 10
@@ -160,7 +160,7 @@ def _source_rank(row: dict[str, Any], index: int) -> int:
 def _fetch_top500_candidates(limit: int) -> list[dict[str, Any]]:
     rows = query(
         """
-        SELECT top1000.*
+        SELECT top500.*
         FROM (
           SELECT s.*
           FROM mingkong_material_daily_snapshots s
@@ -171,14 +171,14 @@ def _fetch_top500_candidates(limit: int) -> list[dict[str, Any]]:
               FROM mingkong_material_daily_snapshots s2
               JOIN mingkong_material_sync_runs r2 ON r2.id = s2.run_id
               WHERE r2.status = 'success'
-            )
+          )
           ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
-          LIMIT 1000
-        ) top1000
+          LIMIT 500
+        ) top500
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
-          ON a.material_key = top1000.material_key
+          ON a.material_key = top500.material_key
         WHERE a.id IS NULL
-        ORDER BY top1000.cumulative_90_spend DESC, top1000.video_ads_count DESC, top1000.id ASC
+        ORDER BY top500.cumulative_90_spend DESC, top500.video_ads_count DESC, top500.id ASC
         LIMIT %s
         """,
         (int(limit),),
@@ -189,7 +189,7 @@ def _fetch_top500_candidates(limit: int) -> list[dict[str, Any]]:
 def _fetch_yesterday_top100_candidates(limit: int) -> list[dict[str, Any]]:
     rows = query(
         """
-        SELECT top300.*
+        SELECT top100.*
         FROM (
           SELECT t.*
           FROM mingkong_material_daily_top100 t
@@ -198,12 +198,12 @@ def _fetch_yesterday_top100_candidates(limit: int) -> list[dict[str, Any]]:
             FROM mingkong_material_daily_top100
           )
           ORDER BY t.display_position ASC, t.rank_position ASC, t.id ASC
-          LIMIT 300
-        ) top300
+          LIMIT 100
+        ) top100
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
-          ON a.material_key = top300.material_key
+          ON a.material_key = top100.material_key
         WHERE a.id IS NULL
-        ORDER BY top300.display_position ASC, top300.rank_position ASC, top300.id ASC
+        ORDER BY top100.display_position ASC, top100.rank_position ASC, top100.id ASC
         LIMIT %s
         """,
         (int(limit),),
