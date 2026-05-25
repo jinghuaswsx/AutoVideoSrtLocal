@@ -2393,7 +2393,7 @@ async function tcSubmitManualRawResult() {
       throw new Error(body.error || body.detail || rsp.statusText);
     }
     TC_MANUAL_RAW_SUBMITTED = true;
-    tcSetManualRawResultStatus('已提交并入库，文件大小 ' + tcFormatBytes(body.new_size || file.size) + '。关闭弹窗后会刷新抽屉里的结果视频。', 'success');
+    tcSetManualRawResultStatus('已上传成功，文件大小 ' + tcFormatBytes(body.new_size || file.size) + '。关闭本弹窗后将刷新页面，请在审核流程中预览并点击『确认』通过审核入库。', 'success');
   } catch (e) {
     if (submit) submit.disabled = false;
     tcSetManualRawResultStatus('提交失败：' + (e.message || 'unknown'), 'error');

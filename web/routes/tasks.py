@@ -526,19 +526,13 @@ def api_parent_manual_result(tid: int):
         if task_row.get("status") == tasks_svc.PARENT_RAW_IN_PROGRESS:
             tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
 
-        tasks_svc.approve_raw(
-            task_id=tid,
-            actor_user_id=int(current_user.id),
-            is_admin=_is_admin(),
-        )
     except rvp_svc.PermissionDenied as e:
         return _json_response({"error": str(e)}, 403)
     except PermissionError as e:
         return _json_response({"error": str(e)}, 403)
     except (rvp_svc.StateError, tasks_svc.StateError) as e:
         return _json_response({"error": str(e)}, 400)
-    _audit_task_action(tid, "task_parent_approved", {"source": "manual_result"})
-    return _json_response({"ok": True, "new_size": new_size, "approved": True})
+    return _json_response({"ok": True, "new_size": new_size})
 
 
 @bp.route("/api/parent/<int:tid>/reject", methods=["POST"])

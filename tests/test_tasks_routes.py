@@ -1196,19 +1196,16 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     )
 
     assert rsp.status_code == 200
-    assert rsp.get_json() == {"ok": True, "new_size": 12, "approved": True}
+    assert rsp.get_json() == {"ok": True, "new_size": 12}
     assert calls["upload"][0]["task_id"] == 44
     assert calls["upload"][0]["actor_user_id"] == 2
     assert calls["upload"][0]["uploaded_file"].filename == "fixed.mp4"
     assert calls["upload"][0]["allowed_statuses"] == ("raw_in_progress", "raw_review")
     assert calls["upload"][0]["mark_uploaded_after"] is False
     assert calls["mark_uploaded"] == [(44, 2)]
-    assert calls["approve"] == [
-        {"task_id": 44, "actor_user_id": 2, "is_admin": False}
-    ]
+    assert calls["approve"] == []
     assert calls["audit"] == [
         (44, "task_parent_manual_result_uploaded", {"new_size": 12}),
-        (44, "task_parent_approved", {"source": "manual_result"}),
     ]
 
 
