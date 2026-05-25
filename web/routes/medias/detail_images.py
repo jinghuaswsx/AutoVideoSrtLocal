@@ -626,6 +626,8 @@ def api_detail_image_quality_check(pid: int, image_id: int):
     source_detail_image_id = target_image.get("source_detail_image_id")
     if source_detail_image_id:
         source_image = medias.get_detail_image(source_detail_image_id)
+        if source_image and source_image.get("deleted_at") is not None:
+            source_image = None
 
     if not source_image:
         # 回退：按同 sort_order 找 en 语种图
@@ -748,6 +750,8 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
     source_detail_image_id = target_image.get("source_detail_image_id")
     if source_detail_image_id:
         source_image = medias.get_detail_image(source_detail_image_id)
+        if source_image and source_image.get("deleted_at") is not None:
+            source_image = None
 
     if not source_image:
         sort_order = target_image.get("sort_order") or 0

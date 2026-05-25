@@ -350,6 +350,8 @@ def _serialize_detail_image(row: dict) -> dict:
             source_detail_image_id = row.get("source_detail_image_id")
             if source_detail_image_id:
                 source_img = medias.get_detail_image(source_detail_image_id)
+                if source_img and source_img.get("deleted_at") is not None:
+                    source_img = None
             if not source_img:
                 # 回退：按同 sort_order 找 en 语种图
                 sort_order = row.get("sort_order") or 0
