@@ -43,6 +43,24 @@ COUNTRY_EVALUATION_LLM_TIMEOUT_SECONDS = 60.0
 JSON_REPAIR_LLM_TIMEOUT_SECONDS = 40.0
 
 
+def _is_rate_limit_error(error_msg: str | None) -> bool:
+    if not error_msg:
+        return False
+    normalized = error_msg.lower()
+    return "429" in normalized or "resourceexhausted" in normalized or "rate limit" in normalized
+
+
+def _trigger_cooldown(seconds: int = 600) -> None:
+    import time
+    from appcore import settings as settings_store
+    cooldown_until = time.time() + seconds
+    try:
+        settings_store.set_setting("fine_ai_evaluation.cooldown_until", str(cooldown_until))
+        log.warning("Rate limit 429 hit! Fine AI evaluation cooldown triggered until %s", time.ctime(cooldown_until))
+    except Exception:
+        log.exception("Failed to set rate limit cooldown setting")
+
+
 class FineAiGeminiClient:
     def __init__(
         self,
@@ -234,6 +252,8 @@ class FineAiGeminiClient:
                     thinking_level=thinking_level,
                     error=exc,
                 )
+                if _is_rate_limit_error(str(exc)):
+                    _trigger_cooldown(10 * 60)
                 raise
             metadata = _response_metadata(
                 result,
@@ -331,31 +351,36 @@ class FineAiGeminiClient:
     ) -> dict:
         metadata["json_repair_attempted"] = True
         repair_timeout_seconds = JSON_REPAIR_LLM_TIMEOUT_SECONDS
-        repair_result = llm_client.invoke_generate(
-            use_case_code,
-            prompt=build_json_repair_prompt(raw_response=raw_response, parse_error=parse_error),
-            user_id=self.user_id,
-            system=JSON_REPAIR_SYSTEM_PROMPT,
-            media=None,
-            response_schema=schema,
-            max_output_tokens=12288,
-            provider_override=self.provider,
-            model_override=self.model,
-            google_search=False,
-            url_context=False,
-            project_id=f"{project_id}-json-repair" if project_id else None,
-            billing_extra={
-                "provider": self.provider,
-                "model": self.model,
-                "thinking_level": thinking_level,
-                "google_search": False,
-                "url_context": False,
-                "tools": [],
-                "json_repair": True,
-                "timeout_seconds": repair_timeout_seconds,
-            },
-            timeout_seconds=repair_timeout_seconds,
-        )
+        try:
+            repair_result = llm_client.invoke_generate(
+                use_case_code,
+                prompt=build_json_repair_prompt(raw_response=raw_response, parse_error=parse_error),
+                user_id=self.user_id,
+                system=JSON_REPAIR_SYSTEM_PROMPT,
+                media=None,
+                response_schema=schema,
+                max_output_tokens=12288,
+                provider_override=self.provider,
+                model_override=self.model,
+                google_search=False,
+                url_context=False,
+                project_id=f"{project_id}-json-repair" if project_id else None,
+                billing_extra={
+                    "provider": self.provider,
+                    "model": self.model,
+                    "thinking_level": thinking_level,
+                    "google_search": False,
+                    "url_context": False,
+                    "tools": [],
+                    "json_repair": True,
+                    "timeout_seconds": repair_timeout_seconds,
+                },
+                timeout_seconds=repair_timeout_seconds,
+            )
+        except Exception as exc:
+            if _is_rate_limit_error(str(exc)):
+                _trigger_cooldown(10 * 60)
+            raise
         repair_metadata = _response_metadata(
             repair_result,
             thinking_level=thinking_level,
