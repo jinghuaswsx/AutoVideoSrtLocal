@@ -32,8 +32,8 @@ PROVIDER_LABELS = {
 }
 
 DEFAULT_PROVIDERS = {
-    MANUAL_PROFILE: "gemini_vertex",
-    SCHEDULED_PROFILE: "gemini_vertex",
+    MANUAL_PROFILE: "openrouter",
+    SCHEDULED_PROFILE: "openrouter",
 }
 
 BASE_MODEL = "gemini-3.5-flash"
