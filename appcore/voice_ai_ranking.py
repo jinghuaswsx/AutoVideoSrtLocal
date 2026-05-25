@@ -22,10 +22,10 @@ log = logging.getLogger(__name__)
 VOICE_AI_USE_CASE = "voice_selection.assess"
 VOICE_AI_MODEL = "google/gemini-3.5-flash"
 VOICE_AI_PROVIDER = "openrouter"
-VOICE_AI_ALLOWED_PROVIDERS = ("openrouter", "gemini_vertex_adc", "gemini_aistudio")
+VOICE_AI_ALLOWED_PROVIDERS = ("openrouter", "gemini_vertex", "gemini_aistudio")
 VOICE_AI_PROVIDER_DEFAULT_MODELS = {
     "openrouter": VOICE_AI_MODEL,
-    "gemini_vertex_adc": "gemini-3.5-flash",
+    "gemini_vertex": "gemini-3.5-flash",
     "gemini_aistudio": "gemini-3.5-flash",
 }
 MAX_VOICE_AI_CANDIDATES = 10
