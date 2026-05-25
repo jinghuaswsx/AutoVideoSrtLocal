@@ -413,3 +413,35 @@ def test_fetch_page_attaches_locale_evidence_on_error(monkeypatch):
     assert exc.locale_evidence["target_language"] == "de"
     assert len(exc.locale_evidence["attempts"]) == 1
     assert exc.locale_evidence["attempts"][0]["locked"] is False
+
+
+def test_extract_images_from_html_swaps_localized_carousel_images():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    html = """
+    <html lang="de">
+      <body>
+        <!-- English Carousel image -->
+        <div class="t4s-product__media-item" data-media-id="123">
+          <img data-src="https://img.example.com/cdn/files/a3d946f0cd5c705ecf8f7c583dafd3f3.jpg?width=720">
+        </div>
+        
+        <!-- Localized image inside Description -->
+        <div class="product__description">
+          <img src="https://img.example.com/cdn/files/loc_from_url_en_00_a3d946f0cd5c705ecf8f7c583dafd3f3.webp?width=800">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/de/products/demo")
+
+    assert len(items) == 2
+    # The first item should be kind "carousel" but with the swapped localized German URL
+    assert items[0]["kind"] == "carousel"
+    assert items[0]["source_url"] == "https://img.example.com/cdn/files/loc_from_url_en_00_a3d946f0cd5c705ecf8f7c583dafd3f3.webp?width=800"
+    
+    # The second item should be the detail image from description
+    assert items[1]["kind"] == "detail"
+    assert items[1]["source_url"] == "https://img.example.com/cdn/files/loc_from_url_en_00_a3d946f0cd5c705ecf8f7c583dafd3f3.webp?width=800"
+

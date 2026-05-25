@@ -266,6 +266,39 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             absolute = _absolute_image_url(src, base_url)
             _append_image(items, seen, source_url=absolute, kind="detail")
 
+    # Swapping matching English carousel URLs with localized URLs
+    # 1. Compile a pool of all img URLs found on the page
+    all_urls = []
+    for node in soup.find_all("img"):
+        for attr in ("src", "data-src", "data-master"):
+            val = node.get(attr)
+            if val:
+                all_urls.append(_absolute_image_url(val, base_url))
+
+    # 2. Map tokens to their corresponding localized image URLs
+    # Naming convention: loc_from_url_en_XX_{token}.jpg
+    import re
+    token_to_localized = {}
+    loc_pattern = re.compile(r"from_url_en_\d+_(?P<token>[a-f0-9]{28,})", re.I)
+    for url in all_urls:
+        match = loc_pattern.search(url)
+        if match:
+            token = match.group("token").lower()
+            token_to_localized[token] = url
+
+    # 3. Swap English carousel URLs with matching localized URLs
+    carousel_token_re = re.compile(r"([a-f0-9]{28,})", re.I)
+    for item in items:
+        if item["kind"] == "carousel":
+            url = item["source_url"]
+            if loc_pattern.search(url):
+                continue
+            token_match = carousel_token_re.search(url.lower())
+            if token_match:
+                token = token_match.group(1).lower()
+                if token in token_to_localized:
+                    item["source_url"] = token_to_localized[token]
+
     return items
 
 
