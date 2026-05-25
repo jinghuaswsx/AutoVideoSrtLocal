@@ -277,7 +277,7 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         changed = _mark_inflight_steps_as_interrupted(recovered)
         if changed and recovered.get("current_review_step"):
             recovered["current_review_step"] = ""
-        if recovered.get("status") == "running":
+        if recovered.get("status") in {"running", "composing_done"}:
             changed = True
         if not changed:
             return False, recovered, None
@@ -364,7 +364,7 @@ def recover_all_interrupted_tasks() -> int:
             f"(type = 'link_check' AND status IN ({link_check_statuses})) "
             f"OR (type = 'image_translate' AND status IN ({image_translate_statuses})) "
             f"OR (type = 'subtitle_removal' AND status IN ({subtitle_removal_statuses})) "
-            f"OR (status = 'running' AND type IN ({placeholders}))"
+            f"OR (status IN ('running', 'composing_done') AND type IN ({placeholders}))"
             f")",
             generic_types,
         )

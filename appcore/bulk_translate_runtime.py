@@ -341,7 +341,22 @@ def resume_task(task_id: str, user_id: int) -> None:
     state = task["state"]
     for item in state.get("plan") or []:
         if _normalized_status(item.get("status")) == "interrupted":
-            _reset_item_for_retry(item)
+            reused = False
+            child_task_id = item.get("child_task_id")
+            child_task_type = item.get("child_task_type")
+            if child_task_id and child_task_type:
+                try:
+                    child_state = _load_child_snapshot(child_task_type, child_task_id)
+                    child_status = _normalized_status(child_state.get("_project_status"))
+                    if child_status in {"done", "composing_done"}:
+                        item["status"] = "running"
+                        item["error"] = None
+                        item["result_synced"] = False
+                        reused = True
+                except Exception:
+                    pass
+            if not reused:
+                _reset_item_for_retry(item)
     state["cancel_requested"] = False
     state["scheduler_anchor_ts"] = None
     _append_audit(state, user_id, "resume")
@@ -357,6 +372,23 @@ def retry_failed_items(task_id: str, user_id: int) -> None:
     for item in state.get("plan") or []:
         if _normalized_status(item.get("status")) in {"failed", "interrupted"}:
             if _retry_existing_image_child_if_possible(task_id, item, state, user_id):
+                reset_count += 1
+                continue
+            child_task_id = item.get("child_task_id")
+            child_task_type = item.get("child_task_type")
+            reused = False
+            if child_task_id and child_task_type:
+                try:
+                    child_state = _load_child_snapshot(child_task_type, child_task_id)
+                    child_status = _normalized_status(child_state.get("_project_status"))
+                    if child_status in {"done", "composing_done"}:
+                        item["status"] = "running"
+                        item["error"] = None
+                        item["result_synced"] = False
+                        reused = True
+                except Exception:
+                    pass
+            if reused:
                 reset_count += 1
                 continue
             _reset_item_for_retry(item)
@@ -375,13 +407,31 @@ def retry_item(task_id: str, idx: int, user_id: int) -> None:
     plan = state.get("plan") or []
     if idx < 0 or idx >= len(plan):
         raise ValueError(f"Invalid idx={idx}, plan has {len(plan)} items")
-    item_status = _normalized_status(plan[idx].get("status"))
+    item = plan[idx]
+    item_status = _normalized_status(item.get("status"))
     reused_image_child = (
         item_status in {"failed", "interrupted"}
-        and _retry_existing_image_child_if_possible(task_id, plan[idx], state, user_id)
+        and _retry_existing_image_child_if_possible(task_id, item, state, user_id)
     )
-    if not reused_image_child:
-        _reset_item_for_retry(plan[idx])
+    if reused_image_child:
+        pass
+    else:
+        child_task_id = item.get("child_task_id")
+        child_task_type = item.get("child_task_type")
+        reused = False
+        if child_task_id and child_task_type:
+            try:
+                child_state = _load_child_snapshot(child_task_type, child_task_id)
+                child_status = _normalized_status(child_state.get("_project_status"))
+                if child_status in {"done", "composing_done"}:
+                    item["status"] = "running"
+                    item["error"] = None
+                    item["result_synced"] = False
+                    reused = True
+            except Exception:
+                pass
+        if not reused:
+            _reset_item_for_retry(item)
     state["cancel_requested"] = False
     state["scheduler_anchor_ts"] = None
     _append_audit(state, user_id, "retry_item", {"idx": idx})
@@ -523,7 +573,7 @@ def sync_task_with_children_once(
             continue
 
         if (
-            child_project_status == "done"
+            child_project_status in {"done", "composing_done"}
             and (
                 _normalized_status(item.get("status")) != "done"
                 or _completed_item_needs_result_sync(item)
@@ -594,11 +644,14 @@ def _can_sync_interrupted_item_from_child(
     child_task_type: str,
     child_project_status: str,
 ) -> bool:
-    return (
-        (item.get("kind") or "").strip() == "detail_images"
-        and (child_task_type or "").strip() == "image_translate"
-        and child_project_status == "done"
-    )
+    if (child_task_type or "").strip() == "image_translate":
+        return (
+            (item.get("kind") or "").strip() == "detail_images"
+            and child_project_status == "done"
+        )
+    if (child_task_type or "").strip() in {"omni_translate", "av_translate", "multi_translate", "translate_lab"}:
+        return child_project_status in {"done", "composing_done"}
+    return False
 
 
 def _poll_active_item(
@@ -640,7 +693,7 @@ def _apply_child_snapshot(
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
         return
 
-    if child_status == "done":
+    if child_status in {"done", "composing_done"}:
         completed_child_error = _get_completed_child_error(item, child_state)
         if completed_child_error:
             item["status"] = "failed"
