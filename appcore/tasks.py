@@ -2903,7 +2903,7 @@ def submit_child_step_manual_output(
         raise StateError("child task not found")
     if row["assignee_id"] != int(actor_user_id) and not is_admin:
         raise PermissionError("forbidden")
-    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE):
         raise StateError("child not editable")
 
     product_id = int(row["media_product_id"])
@@ -2924,18 +2924,72 @@ def submit_child_step_manual_output(
         if len(file_items) != 1:
             raise ValueError("one video file required")
         file_info = file_items[0]
-        item_id = medias.create_item(
-            product_id,
-            int(actor_user_id),
-            str(file_info.get("filename") or "manual-video.mp4"),
-            str(file_info["object_key"]),
-            display_name=str(file_info.get("filename") or "manual-video.mp4"),
-            file_size=file_info.get("file_size"),
-            lang=lang,
-            task_id=int(task_id),
+        filename = str(file_info.get("filename") or "manual-video.mp4")
+        object_key = str(file_info["object_key"])
+        display_name = filename
+
+        # 查找是否存在同 product_id + 同 lang 的 media_item（即使被软删除了也取最新的一条，将其重新复用）
+        existing_item = query_one(
+            "SELECT * FROM media_items WHERE product_id=%s AND lang=%s ORDER BY id DESC LIMIT 1",
+            (product_id, lang),
         )
+        if existing_item:
+            item_id = int(existing_item["id"])
+            medias._ensure_video_filename_no_spaces(filename)
+            medias._ensure_video_filename_no_spaces(object_key)
+            medias._ensure_video_filename_no_spaces(display_name)
+            execute(
+                "UPDATE media_items SET "
+                "filename=%s, display_name=%s, object_key=%s, file_size=%s, "
+                "user_id=%s, task_id=%s, deleted_at=NULL, updated_at=NOW() "
+                "WHERE id=%s",
+                (
+                    filename,
+                    display_name,
+                    object_key,
+                    file_info.get("file_size"),
+                    int(actor_user_id),
+                    int(task_id),
+                    item_id,
+                ),
+            )
+        else:
+            item_id = medias.create_item(
+                product_id,
+                int(actor_user_id),
+                filename,
+                object_key,
+                display_name=display_name,
+                file_size=file_info.get("file_size"),
+                lang=lang,
+                task_id=int(task_id),
+            )
         result["media_item_id"] = int(item_id)
-        result["object_key"] = file_info["object_key"]
+        result["object_key"] = object_key
+
+        # 异步启动后台任务以同步最新的视频状态 (提取 duration, 制作缩略图，并刷新推送状态缓存)
+        import threading
+        from web.services.media_items import build_item_thumbnail
+        from web.services import media_object_storage
+        from appcore.pushes import _refresh_push_status_cache_for_item_safely
+
+        def refresh_bg():
+            try:
+                build_item_thumbnail(
+                    item_id=int(item_id),
+                    product_id=product_id,
+                    filename=filename,
+                    object_key=object_key,
+                    download_media_object_fn=media_object_storage.download_media_object,
+                )
+            except Exception:
+                pass
+            try:
+                _refresh_push_status_cache_for_item_safely(int(item_id))
+            except Exception:
+                pass
+
+        threading.Thread(target=refresh_bg, daemon=True).start()
     elif kind == "image":
         if len(file_items) != 1:
             raise ValueError("one image file required")
@@ -2946,6 +3000,14 @@ def submit_child_step_manual_output(
         medias.update_item_cover(item["id"], str(file_info["object_key"]))
         result["media_item_id"] = int(item["id"])
         result["object_key"] = file_info["object_key"]
+
+        # 异步刷新推送状态缓存
+        import threading
+        from appcore.pushes import _refresh_push_status_cache_for_item_safely
+        threading.Thread(
+            target=lambda: _refresh_push_status_cache_for_item_safely(int(item["id"])),
+            daemon=True,
+        ).start()
     elif kind == "images":
         if not file_items:
             raise ValueError("image files required")

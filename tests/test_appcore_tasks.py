@@ -1123,17 +1123,17 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     from appcore import medias, tasks
 
     events = []
-    monkeypatch.setattr(
-        tasks,
-        "query_one",
-        lambda sql, args=(): {
+    def fake_query_one(sql, args=()):
+        if "media_items" in sql:
+            return None
+        return {
             "id": 44,
             "assignee_id": 2,
             "status": tasks.CHILD_ASSIGNED,
             "media_product_id": 9,
             "country_code": "DE",
-        },
-    )
+        }
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
     monkeypatch.setattr(
         medias,
         "create_item",
@@ -1160,6 +1160,82 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     assert result["media_item_id"] == 301
     assert result["completion"] == {"completed": True, "missing": []}
     assert events[-1] == ("complete", {"task_id": 44, "actor_user_id": 2})
+
+
+def test_submit_child_step_manual_output_allows_done_status_and_updates_item(monkeypatch):
+    from appcore import medias, tasks
+
+    events = []
+    
+    # 模拟 query_one 寻找 existing_item 或者是任务详情
+    # 查找已有 item (假设之前有一条 id=301 的旧 item 记录)
+    def fake_query_one(sql, args=()):
+        if "media_items" in sql:
+            return {
+                "id": 301,
+                "product_id": 9,
+                "lang": "de",
+                "filename": "old-manual.mp4",
+                "object_key": "1/medias/old-manual.mp4",
+            }
+        return {
+            "id": 44,
+            "assignee_id": 2,
+            "status": tasks.CHILD_DONE,
+            "media_product_id": 9,
+            "country_code": "DE",
+        }
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+
+    # 拦截 execute，记录是否被 UPDATE 了，并且检查 `deleted_at=NULL` 和 `id=301` 传参
+    monkeypatch.setattr(
+        tasks,
+        "execute",
+        lambda sql, args=(): events.append(("execute", sql, args)) or 1,
+    )
+    
+    # 拦截后台构建缩略图和推送状态刷新的调用，避免跑多线程里的真正网络下载和 db 变动
+    monkeypatch.setattr(
+        "web.services.media_items.build_item_thumbnail",
+        lambda *args, **kwargs: events.append(("build_thumbnail", args)),
+    )
+    monkeypatch.setattr(
+        "appcore.pushes._refresh_push_status_cache_for_item_safely",
+        lambda item_id: events.append(("refresh_cache", item_id)),
+    )
+
+    monkeypatch.setattr(
+        tasks,
+        "_record_manual_output_event",
+        lambda **kwargs: events.append(("event", kwargs)),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_child_if_ready",
+        lambda **kwargs: events.append(("complete", kwargs)) or {"completed": True, "missing": []},
+    )
+
+    # 调用重传逻辑，测试用例应当正常执行通过！
+    result = tasks.submit_child_step_manual_output(
+        task_id=44,
+        step_key="translated_video",
+        actor_user_id=2,
+        files=[{"filename": "new-manual.mp4", "object_key": "1/medias/new-manual.mp4", "file_size": 456}],
+    )
+
+    # 验证返回值
+    assert result["media_item_id"] == 301 # 正确地被复用了已有的 ID！
+    assert result["object_key"] == "1/medias/new-manual.mp4"
+    
+    # 检查数据库是否执行了 UPDATE 覆盖更新和 un-soft-delete 动作
+    updates = [ev for ev in events if ev[0] == "execute" and "UPDATE media_items SET" in ev[1]]
+    assert len(updates) == 1
+    sql_stmt, sql_args = updates[0][1], updates[0][2]
+    assert "deleted_at=NULL" in sql_stmt
+    assert sql_args[0] == "new-manual.mp4" # 新文件名
+    assert sql_args[2] == "1/medias/new-manual.mp4" # 新 object_key
+    assert sql_args[3] == 456 # 新大小
+    assert sql_args[6] == 301 # 旧 item id
 
 
 def test_submit_child_marks_done_when_readiness_ready(monkeypatch):
