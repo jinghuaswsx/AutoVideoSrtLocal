@@ -308,6 +308,8 @@ def _serialize_link_check_task(task: dict) -> dict:
         "target_language_name": task["target_language_name"],
         "progress": dict(task.get("progress") or {}),
         "summary": dict(task.get("summary") or {}),
+        "steps": dict(task.get("steps") or {}),
+        "step_messages": dict(task.get("step_messages") or {}),
         "error": task.get("error", ""),
         "reference_images": [
             {

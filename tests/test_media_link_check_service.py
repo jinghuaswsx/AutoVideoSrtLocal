@@ -50,6 +50,10 @@ def test_link_check_create_response_collects_references_and_starts_runner(monkey
             created.update({"task_id": task_id, "task_dir": task_dir, **kwargs})
             return {"id": task_id, "type": "link_check", "_user_id": 2}
 
+        @staticmethod
+        def update(task_id, **kwargs):
+            pass
+
     def fake_download(object_key, target_path):
         downloads.append((object_key, Path(target_path).name))
 
@@ -104,6 +108,10 @@ def test_link_check_create_response_persists_domain_language_key(monkeypatch, tm
         def create_link_check(task_id, task_dir, **kwargs):
             created.update(kwargs)
             return {"id": task_id, "type": "link_check", "_user_id": 2}
+
+        @staticmethod
+        def update(task_id, **kwargs):
+            pass
 
     result = media_link_check.build_product_link_check_create_response(
         product_id=7,

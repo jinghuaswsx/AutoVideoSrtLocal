@@ -189,6 +189,8 @@ def build_product_link_check_summary_response(
         "checked_at": meta.get("checked_at", ""),
         "summary": dict(task.get("summary") or meta.get("summary") or {}),
         "progress": dict(task.get("progress") or {}),
+        "steps": dict(task.get("steps") or {}),
+        "step_messages": dict(task.get("step_messages") or {}),
         "has_detail": True,
         "resolved_url": task.get("resolved_url", ""),
         "page_language": task.get("page_language", ""),
