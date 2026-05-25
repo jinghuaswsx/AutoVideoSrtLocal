@@ -329,6 +329,7 @@ def _serialize_link_check_task(task: dict) -> dict:
                 "reference_match": dict(item.get("reference_match") or {}),
                 "binary_quick_check": dict(item.get("binary_quick_check") or {}),
                 "same_image_llm": dict(item.get("same_image_llm") or {}),
+                "is_replaced": item.get("is_replaced"),
                 "status": item.get("status") or "pending",
                 "error": item.get("error") or "",
             }
