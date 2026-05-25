@@ -37,7 +37,7 @@ def validate_material_filename(
     languages: Mapping[str, str] | Sequence[Mapping[str, Any]] | None = None,
 ) -> MaterialFilenameValidation:
     """Validate edit-page material filename rules."""
-    filename = _basename(filename)
+    filename = _basename(filename).replace(" ", "")
     product_name = (product_name or "").strip()
     lang_map = _normalize_languages(languages)
     effective_lang = resolve_material_filename_lang(filename, lang_code, lang_map)
@@ -73,7 +73,7 @@ def validate_initial_material_filename(
     languages: Mapping[str, str] | Sequence[Mapping[str, Any]] | None = None,
 ) -> MaterialFilenameValidation:
     """Validate the add-product first-screen rule: YYYY.MM.DD-产品名-xxxxx.mp4."""
-    filename = _basename(filename)
+    filename = _basename(filename).replace(" ", "")
     product_name = (product_name or "").strip()
     lang_map = _normalize_languages(languages)
     effective_lang = resolve_material_filename_lang(filename, lang_code, lang_map)
@@ -131,10 +131,10 @@ def build_suggested_material_filename(
     date_part = _valid_date_prefix(filename[:10]) or date.today().strftime("%Y.%m.%d")
 
     if lang == "en":
-        return f"{date_part}-{product_name}-素材.mp4"
+        return f"{date_part}-{product_name}-素材.mp4".replace(" ", "")
 
     lang_zh = lang_map.get(lang) or lang
-    return f"{date_part}-{product_name}-原素材-补充素材({lang_zh})-指派-蔡靖华.mp4"
+    return f"{date_part}-{product_name}-原素材-补充素材({lang_zh})-指派-蔡靖华.mp4".replace(" ", "")
 
 
 def build_translated_material_filename(
@@ -153,14 +153,14 @@ def build_translated_material_filename(
     lang_zh = lang_map.get(lang) or lang
     today_part = date.today().strftime("%Y.%m.%d")
     source_token = _source_assignment_token(filename)
-    return f"{today_part}-{product_name}-原素材-小语种翻译素材({lang_zh})-{source_token}-蔡靖华.mp4"
+    return f"{today_part}-{product_name}-原素材-小语种翻译素材({lang_zh})-{source_token}-蔡靖华.mp4".replace(" ", "")
 
 
 def build_initial_suggested_material_filename(filename: str, product_name: str) -> str:
     filename = _basename(filename)
     product_name = (product_name or "").strip() or "{产品名}"
     date_part = _valid_date_prefix(filename[:10]) or date.today().strftime("%Y.%m.%d")
-    return f"{date_part}-{product_name}-素材.mp4"
+    return f"{date_part}-{product_name}-素材.mp4".replace(" ", "")
 
 
 def _validate_simple_filename(filename: str, product_name: str) -> list[str]:

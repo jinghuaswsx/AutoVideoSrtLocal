@@ -151,7 +151,7 @@ def test_build_raw_source_update_response_rejects_invalid_display_name_before_wr
         "error": "raw_source_filename_invalid",
         "message": "\u6587\u4ef6\u540d\u4e0d\u80fd\u5305\u542b\u7a7a\u683c",
         "details": ["no spaces"],
-        "uploaded_filename": "bad name.mp4",
+        "uploaded_filename": "badname.mp4",
     }
     assert updated == []
 

@@ -125,7 +125,7 @@ def test_initial_material_filename_requires_only_date_product_tail_and_mp4():
     ).ok
 
 
-def test_material_filename_rejects_spaces_anywhere():
+def test_material_filename_accepts_spaces_by_stripping_them():
     languages = {"en": "英语", "fr": "法语"}
 
     for filename in (
@@ -134,8 +134,8 @@ def test_material_filename_rejects_spaces_anywhere():
         "2026.04.17-窗帘挂钩-原素材.mp4 ",
     ):
         result = validate_initial_material_filename(filename, "窗帘挂钩", "en", languages)
-        assert not result.ok
-        assert result.errors == ("文件名不能包含空格",)
+        assert result.ok
+        assert result.errors == ()
 
     result = validate_material_filename(
         "2026.04.17-窗帘挂钩-原素材-补充素材 B(法语)-指派-蔡靖华.mp4",
@@ -143,8 +143,8 @@ def test_material_filename_rejects_spaces_anywhere():
         "fr",
         languages,
     )
-    assert not result.ok
-    assert result.errors == ("文件名不能包含空格",)
+    assert result.ok
+    assert result.errors == ()
 
     result = validate_material_filename(
         "2026.05.22-窗帘挂钩-原素材-小语种翻译素材(法语)-20260417 张三-蔡靖华.mp4",
@@ -152,5 +152,5 @@ def test_material_filename_rejects_spaces_anywhere():
         "fr",
         languages,
     )
-    assert not result.ok
-    assert result.errors == ("文件名不能包含空格",)
+    assert result.ok
+    assert result.errors == ()
