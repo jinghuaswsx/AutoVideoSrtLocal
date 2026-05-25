@@ -1838,8 +1838,11 @@
       const item = items.find(it => it.id === imgId);
       if (!item) return;
 
-      if (!window.confirm('确定要使用上一轮的质检反馈重新翻译这张详情图吗？\n系统将生成新版译图并进行 AI 评估，然后展示三列对比视图供您做最终决策。')) {
-        return;
+      const hasDraft = !!item.has_retranslate_draft;
+      if (!hasDraft) {
+        if (!window.confirm('确定要使用上一轮的质检反馈重新翻译这张详情图吗？\n系统将生成新版译图并进行 AI 评估，然后展示三列对比视图供您做最终决策。')) {
+          return;
+        }
       }
 
       const rCompareMask = $('edDetailRetranslateCompareMask');
@@ -1936,6 +1939,9 @@
             item
           };
 
+          // 标记内存中该项为已包含草稿
+          item.has_retranslate_draft = true;
+
           $('edDetailRetranslateCompareDiscardBtn').disabled = false;
           $('edDetailRetranslateCompareAdoptBtn').disabled = false;
         } else {
@@ -1989,6 +1995,9 @@
             } catch (err) {
               console.warn('[detail-images] discard draft failed:', err);
             }
+          }
+          if (draft.item) {
+            draft.item.has_retranslate_draft = false;
           }
           window.__retranslateDraft = null;
         }

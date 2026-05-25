@@ -344,7 +344,19 @@ def _serialize_detail_image(row: dict) -> dict:
             pass
 
     source_image_thumbnail_url = None
+    has_retranslate_draft = False
     if row.get("lang") != "en":
+        from appcore import local_media_storage
+        try:
+            draft_metadata_key = f"drafts/{row['product_id']}/retranslate_draft_{row['id']}.json"
+            draft_img_key = f"drafts/{row['product_id']}/retranslate_draft_{row['id']}.png"
+            has_retranslate_draft = bool(
+                local_media_storage.exists(draft_metadata_key) and 
+                local_media_storage.exists(draft_img_key)
+            )
+        except Exception:
+            pass
+
         try:
             source_img = None
             source_detail_image_id = row.get("source_detail_image_id")
@@ -352,6 +364,19 @@ def _serialize_detail_image(row: dict) -> dict:
                 source_img = medias.get_detail_image(source_detail_image_id)
                 if source_img and source_img.get("deleted_at") is not None:
                     source_img = None
+            if not source_img:
+                try:
+                    lang_images = medias.list_detail_images(row["product_id"], row["lang"])
+                    target_idx = -1
+                    for idx, img in enumerate(lang_images):
+                        if img.get("id") == row["id"]:
+                            target_idx = idx
+                            break
+                    en_images = medias.list_detail_images(row["product_id"], "en")
+                    if 0 <= target_idx < len(en_images):
+                        source_img = en_images[target_idx]
+                except Exception:
+                    pass
             if not source_img:
                 # 回退：按同 sort_order 找 en 语种图
                 sort_order = row.get("sort_order") or 0
@@ -388,4 +413,5 @@ def _serialize_detail_image(row: dict) -> dict:
         "eval_channel": row.get("eval_channel") or "",
         "eval_model_id": row.get("eval_model_id") or "",
         "eval_updated_at": row["eval_updated_at"].isoformat() if row.get("eval_updated_at") else None,
+        "has_retranslate_draft": has_retranslate_draft,
     }

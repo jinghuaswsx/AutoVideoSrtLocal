@@ -630,6 +630,19 @@ def api_detail_image_quality_check(pid: int, image_id: int):
             source_image = None
 
     if not source_image:
+        try:
+            lang_images = medias.list_detail_images(pid, target_image["lang"])
+            target_idx = -1
+            for idx, img in enumerate(lang_images):
+                if img.get("id") == image_id:
+                    target_idx = idx
+                    break
+            en_images = medias.list_detail_images(pid, "en")
+            if 0 <= target_idx < len(en_images):
+                source_image = en_images[target_idx]
+        except Exception:
+            pass
+    if not source_image:
         # 回退：按同 sort_order 找 en 语种图
         sort_order = target_image.get("sort_order") or 0
         en_images = medias.list_detail_images(pid, "en")
@@ -754,6 +767,19 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
             source_image = None
 
     if not source_image:
+        try:
+            lang_images = medias.list_detail_images(pid, target_image["lang"])
+            target_idx = -1
+            for idx, img in enumerate(lang_images):
+                if img.get("id") == image_id:
+                    target_idx = idx
+                    break
+            en_images = medias.list_detail_images(pid, "en")
+            if 0 <= target_idx < len(en_images):
+                source_image = en_images[target_idx]
+        except Exception:
+            pass
+    if not source_image:
         sort_order = target_image.get("sort_order") or 0
         en_images = medias.list_detail_images(pid, "en")
         for img in en_images:
@@ -764,23 +790,48 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
     if not source_image:
         return jsonify({"error": "未找到对比的英文原图，请先上传英文原图并保持相同的排序"}), 400
 
-    # 2. 定位物理路径
+    # 2. 草稿缓存拦截逻辑
     from appcore import local_media_storage, llm_bindings, llm_client
     import os
     import json
     import logging
     import uuid
     from datetime import datetime
-
+    
     logger = logging.getLogger("app.web.detail_images")
+    draft_filename = f"retranslate_draft_{image_id}.png"
+    draft_metadata_key = f"drafts/{pid}/retranslate_draft_{image_id}.json"
+    draft_img_key = f"drafts/{pid}/{draft_filename}"
 
+    if local_media_storage.exists(draft_metadata_key) and local_media_storage.exists(draft_img_key):
+        try:
+            meta_bytes = local_media_storage.read_bytes(draft_metadata_key)
+            meta = json.loads(meta_bytes.decode("utf-8"))
+            if isinstance(meta, dict) and "eval_result" in meta:
+                logger.info(f"命中本地重新翻译草稿缓存：{draft_img_key}")
+                return jsonify({
+                    "success": True,
+                    "source_image": _serialize_detail_image(source_image),
+                    "current_image": _serialize_detail_image(target_image),
+                    "new_image": {
+                        "draft_filename": draft_filename,
+                        "url": f"/medias/api/products/{pid}/detail-images/draft/{draft_filename}",
+                        "eval_result": meta["eval_result"],
+                        "eval_channel": meta.get("eval_channel", "openrouter"),
+                        "eval_model_id": meta.get("eval_model_id", "google/gemini-3.1-flash-lite")
+                    }
+                }), 200
+        except Exception as e:
+            logger.warning(f"读取草稿缓存失败，将重新生成: {e}")
+
+    # 3. 定位物理路径
     src_key = source_image["object_key"]
     src_path = str(local_media_storage.safe_local_path_for(src_key))
 
     if not os.path.exists(src_path):
         return jsonify({"error": f"英文原图本地物理文件不存在: {src_key}"}), 400
 
-    # 3. 构造优化提示词
+    # 4. 构造优化提示词
     target_lang = target_image["lang"]
     prompt_template = str((its.get_prompts_for_lang(target_lang).get("detail") or "")).strip()
     if not prompt_template:
@@ -824,7 +875,7 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
         )
         optimized_prompt = f"{baseline_prompt}\n{correction_block}"
 
-    # 4. 调用大模型重新生图并保存为草稿/预览
+    # 5. 调用大模型重新生图并保存为草稿/预览
     from appcore import gemini_image
     
     binding = llm_bindings.resolve("image_translate.generate")
@@ -849,12 +900,12 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
         )
 
         # 写入草稿文件
-        draft_filename = f"retranslate_{image_id}_{uuid.uuid4().hex}.png"
+        draft_filename = f"retranslate_draft_{image_id}.png"
         draft_key = f"drafts/{pid}/{draft_filename}"
         draft_path = local_media_storage.write_bytes(draft_key, out_bytes)
         logger.info(f"重新翻译生成草稿文件：{draft_path}")
 
-        # 5. 重新执行质检，获取新的评分和结果
+        # 6. 重新执行质检，获取新的评分和结果
         from appcore.image_translate_runtime import _EVAL_PROMPT, _EVAL_SCHEMA
         
         eval_binding = llm_bindings.resolve("image_translate.eval")
@@ -884,6 +935,17 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
         if not isinstance(eval_data, dict):
             raise ValueError("重新翻译后的质检未返回符合 Schema 的 JSON 数据")
             
+        # 写入元数据草稿文件
+        meta_data = {
+            "draft_filename": draft_filename,
+            "eval_result": eval_data,
+            "eval_channel": eval_channel,
+            "eval_model_id": eval_model_id
+        }
+        draft_metadata_key = f"drafts/{pid}/retranslate_draft_{image_id}.json"
+        local_media_storage.write_bytes(draft_metadata_key, json.dumps(meta_data, ensure_ascii=False).encode("utf-8"))
+        logger.info(f"写入重新翻译草稿评估元数据成功：{draft_metadata_key}")
+
         return jsonify({
             "success": True,
             "source_image": _serialize_detail_image(source_image),
@@ -1013,7 +1075,27 @@ def api_detail_image_retranslate_confirm(pid: int, image_id: int):
 
     # 4. 清理草稿文件
     try:
-        os.remove(str(draft_path))
+        meta_key = f"drafts/{pid}/retranslate_draft_{image_id}.json"
+        meta_path = local_media_storage.safe_local_path_for(meta_key)
+        if os.path.exists(str(meta_path)):
+            os.remove(str(meta_path))
+            logger.info(f"确认采用：清理元数据草稿成功 {meta_path}")
+    except Exception as exc:
+        logger.warning(f"清理元数据草稿失败: {exc}")
+
+    try:
+        fixed_draft_key = f"drafts/{pid}/retranslate_draft_{image_id}.png"
+        fixed_draft_path = local_media_storage.safe_local_path_for(fixed_draft_key)
+        if os.path.exists(str(fixed_draft_path)):
+            os.remove(str(fixed_draft_path))
+            logger.info(f"确认采用：清理固定草稿图成功 {fixed_draft_path}")
+    except Exception as exc:
+        logger.warning(f"清理固定草稿图失败: {exc}")
+
+    try:
+        if os.path.exists(str(draft_path)):
+            os.remove(str(draft_path))
+            logger.info(f"确认采用：清理传入的草稿图成功 {draft_path}")
     except Exception:
         pass
 
@@ -1034,13 +1116,34 @@ def api_detail_image_retranslate_discard(pid: int, image_id: int):
     data = request.get_json() or {}
     draft_filename = data.get("draft_filename")
 
-    if draft_filename:
-        from appcore import local_media_storage
-        from werkzeug.utils import secure_filename
-        import os
-        import logging
-        logger = logging.getLogger("app.web.detail_images")
+    from appcore import local_media_storage
+    from werkzeug.utils import secure_filename
+    import os
+    import logging
+    logger = logging.getLogger("app.web.detail_images")
 
+    # 1. 清理元数据草稿 JSON
+    try:
+        meta_key = f"drafts/{pid}/retranslate_draft_{image_id}.json"
+        meta_path = local_media_storage.safe_local_path_for(meta_key)
+        if os.path.exists(str(meta_path)):
+            os.remove(str(meta_path))
+            logger.info(f"放弃修改：清理元数据草稿成功 {meta_path}")
+    except Exception as exc:
+        logger.warning(f"清理元数据草稿失败: {exc}")
+
+    # 2. 清理固定命名的草稿图
+    try:
+        fixed_draft_key = f"drafts/{pid}/retranslate_draft_{image_id}.png"
+        fixed_draft_path = local_media_storage.safe_local_path_for(fixed_draft_key)
+        if os.path.exists(str(fixed_draft_path)):
+            os.remove(str(fixed_draft_path))
+            logger.info(f"放弃修改：清理固定草稿图成功 {fixed_draft_path}")
+    except Exception as exc:
+        logger.warning(f"清理固定草稿图失败: {exc}")
+
+    # 3. 清理传入的 draft_filename
+    if draft_filename:
         clean_filename = secure_filename(draft_filename)
         draft_key = f"drafts/{pid}/{clean_filename}"
         draft_path = local_media_storage.safe_local_path_for(draft_key)
@@ -1048,9 +1151,9 @@ def api_detail_image_retranslate_discard(pid: int, image_id: int):
         try:
             if os.path.exists(str(draft_path)):
                 os.remove(str(draft_path))
-                logger.info(f"清理放弃的草稿文件成功：{draft_path}")
+                logger.info(f"放弃修改：清理传入的草稿文件成功：{draft_path}")
         except Exception as exc:
-            logger.warning(f"清理草稿文件失败: {exc}")
+            logger.warning(f"清理传入草稿文件失败: {exc}")
 
     return jsonify({"success": True}), 200
 
