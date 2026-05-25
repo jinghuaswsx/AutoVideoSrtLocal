@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -241,9 +242,80 @@ class FineAiEvaluationService:
                 "user_id": user_id,
             },
             "progress": progress,
-            "created_at": now,
-            "updated_at": now,
         }
+        # Copy logic to reuse successfully completed steps and countries
+        try:
+            from appcore.db import query as db_query, execute as db_execute
+            rows = db_query(
+                "SELECT evaluation_run_id, product_snapshot_json, metadata_json, product_facts_json "
+                "FROM ai_evaluation_runs "
+                "WHERE product_id = '0' "
+                "ORDER BY id DESC LIMIT 2000"
+            )
+            prev_run = None
+            for r in rows:
+                try:
+                    snapshot = json.loads(r["product_snapshot_json"]) if isinstance(r["product_snapshot_json"], str) else r["product_snapshot_json"]
+                    meta = json.loads(r["metadata_json"]) if isinstance(r["metadata_json"], str) else r["metadata_json"]
+                    if snapshot.get("product_url") == product_url:
+                        path = meta.get("external_card_video", {}).get("path")
+                        if path == card_video["path"]:
+                            prev_run = r
+                            break
+                except Exception:
+                    continue
+
+            if prev_run:
+                try:
+                    facts = json.loads(prev_run["product_facts_json"]) if isinstance(prev_run["product_facts_json"], str) else prev_run["product_facts_json"]
+                    if isinstance(facts, dict) and facts:
+                        run["product_facts"] = facts
+                except Exception:
+                    pass
+
+                prev_run_id = prev_run["evaluation_run_id"]
+                country_rows = db_query(
+                    "SELECT country_code, product_id, country_name, status, scores_json, decision_json, "
+                    "full_result_json, sources_json, raw_response_json, metadata_json, error_message "
+                    "FROM ai_country_evaluations WHERE evaluation_run_id = %s AND status = 'completed'",
+                    (prev_run_id,)
+                )
+                for cr in country_rows:
+                    db_execute(
+                        "INSERT INTO ai_country_evaluations "
+                        "(evaluation_run_id, product_id, country_code, country_name, status, "
+                        " scores_json, decision_json, full_result_json, sources_json, raw_response_json, "
+                        " metadata_json, error_message, created_at, updated_at, completed_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW(),NOW()) "
+                        "ON DUPLICATE KEY UPDATE "
+                        " country_name=VALUES(country_name), status=VALUES(status), scores_json=VALUES(scores_json), "
+                        " decision_json=VALUES(decision_json), full_result_json=VALUES(full_result_json), "
+                        " sources_json=VALUES(sources_json), raw_response_json=VALUES(raw_response_json), "
+                        " metadata_json=VALUES(metadata_json), error_message=VALUES(error_message), "
+                        " updated_at=NOW(), completed_at=VALUES(completed_at)",
+                        (
+                            evaluation_run_id,
+                            cr["product_id"],
+                            cr["country_code"],
+                            cr["country_name"],
+                            cr["status"],
+                            cr["scores_json"],
+                            cr["decision_json"],
+                            cr["full_result_json"],
+                            cr["sources_json"],
+                            cr["raw_response_json"],
+                            cr["metadata_json"],
+                            cr["error_message"],
+                        )
+                    )
+                    if cr["country_code"] not in run["metadata"]["countries_completed"]:
+                        run["metadata"]["countries_completed"].append(cr["country_code"])
+                log.info("fine AI run=%s successfully reused historical evaluations from prev_run_id=%s", evaluation_run_id, prev_run_id)
+            else:
+                log.info("fine AI run=%s has no previous completed evaluation results found for product_url=%s", evaluation_run_id, product_url)
+        except Exception:
+            log.exception("Failed to copy completed countries from previous run")
+
         self.repository.create_run(run)
         return {
             "evaluation_run_id": evaluation_run_id,
@@ -395,51 +467,67 @@ class FineAiEvaluationService:
         gemini_client = self._gemini_client_for_metadata(metadata)
 
         try:
-            progress = _mark_progress_step(
-                progress,
-                "product_fact_extraction",
-                "running",
-                "开始请求大模型整理商品事实",
-                debug=_llm_debug(metadata, {
-                    "Product URL": product_snapshot.get("product_url") or product_snapshot.get("landing_page_url") or "",
-                    "Country Count": len(country_codes),
-                }),
-                provider=metadata.get("provider") or PROVIDER,
-                model_id=metadata.get("model") or MODEL,
-            )
-            self.repository.update_run(
-                evaluation_run_id,
-                status="running",
-                started_at=_now_iso(),
-                progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
-            )
-            product_facts = gemini_client.generate_product_facts(
-                product_snapshot=product_snapshot,
-                countries=country_configs(country_codes),
-            )
-            call_trace = self._call_trace(product_facts)
-            validate_json_schema(product_facts, PRODUCT_FACTS_SCHEMA)
-            metadata = self._merge_call_metadata(metadata, "product_facts")
-            progress = _mark_progress_step(
-                progress,
-                "product_fact_extraction",
-                "completed",
-                "商品事实整理完成",
-                debug=[
-                    *_llm_debug(metadata, {
-                        "Category": product_facts.get("category_detected") or "-",
-                        "Missing Data": len(product_facts.get("missing_data") or []),
+            existing_facts = run.get("product_facts")
+            if isinstance(existing_facts, dict) and existing_facts:
+                log.info("fine AI product facts already exist for run=%s; reusing", evaluation_run_id)
+                product_facts = existing_facts
+                progress = _mark_progress_step(
+                    progress,
+                    "product_fact_extraction",
+                    "completed",
+                    "商品事实已整理完成 (已使用历史缓存结果)",
+                )
+                self.repository.update_run(
+                    evaluation_run_id,
+                    status="running",
+                    progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
+                )
+            else:
+                progress = _mark_progress_step(
+                    progress,
+                    "product_fact_extraction",
+                    "running",
+                    "开始请求大模型整理商品事实",
+                    debug=_llm_debug(metadata, {
+                        "Product URL": product_snapshot.get("product_url") or product_snapshot.get("landing_page_url") or "",
+                        "Country Count": len(country_codes),
                     }),
-                    *_usage_debug(self._call_metadata()),
-                ],
-                llm_trace=call_trace,
-            )
-            self.repository.update_run(
-                evaluation_run_id,
-                product_facts=product_facts,
-                metadata=metadata,
-                progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
-            )
+                    provider=metadata.get("provider") or PROVIDER,
+                    model_id=metadata.get("model") or MODEL,
+                )
+                self.repository.update_run(
+                    evaluation_run_id,
+                    status="running",
+                    started_at=_now_iso(),
+                    progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
+                )
+                product_facts = gemini_client.generate_product_facts(
+                    product_snapshot=product_snapshot,
+                    countries=country_configs(country_codes),
+                )
+                call_trace = self._call_trace(product_facts)
+                validate_json_schema(product_facts, PRODUCT_FACTS_SCHEMA)
+                metadata = self._merge_call_metadata(metadata, "product_facts")
+                progress = _mark_progress_step(
+                    progress,
+                    "product_fact_extraction",
+                    "completed",
+                    "商品事实整理完成",
+                    debug=[
+                        *_llm_debug(metadata, {
+                            "Category": product_facts.get("category_detected") or "-",
+                            "Missing Data": len(product_facts.get("missing_data") or []),
+                        }),
+                        *_usage_debug(self._call_metadata()),
+                    ],
+                    llm_trace=call_trace,
+                )
+                self.repository.update_run(
+                    evaluation_run_id,
+                    product_facts=product_facts,
+                    metadata=metadata,
+                    progress=_progress(country_codes, "product_fact_extraction", base_progress=progress),
+                )
         except Exception as exc:
             log.exception("fine AI product fact extraction failed: run=%s", evaluation_run_id)
             run_errors.append({"stage": "product_fact_extraction", "message": str(exc)[:500]})
@@ -464,6 +552,7 @@ class FineAiEvaluationService:
             return self.get_result(product_id, evaluation_run_id)
 
         product_facts = self._require_run(evaluation_run_id).get("product_facts") or {}
+        existing_evals = self.repository.list_countries(evaluation_run_id) or {}
         parallel_mode = fine_ai_model_config.get_parallel_mode()
         configured_country_concurrency = fine_ai_model_config.get_country_concurrency()
         country_execution_mode = (
@@ -499,6 +588,19 @@ class FineAiEvaluationService:
             def evaluate_single_country(code: str):
                 country = get_country_config(code)
                 step_key = _country_step_key(code)
+
+                if code in existing_evals and existing_evals[code].get("status") == "completed":
+                    with db_lock:
+                        shared_state["completed_codes"].append(code)
+                        countries[code] = existing_evals[code]
+                        progress_step = _mark_progress_step(
+                            shared_state["progress"],
+                            step_key,
+                            "completed",
+                            f"{code} 评估已跳过 (已使用历史缓存结果)：{(existing_evals[code].get('decision') or {}).get('final_decision') or '-'} / {((existing_evals[code].get('scores') or {}).get('overall_score'))}",
+                        )
+                        shared_state["progress"] = progress_step
+                    return
                 thread_gemini_client = FineAiGeminiClient(
                     profile=metadata.get("model_profile"),
                     provider=metadata.get("provider"),
@@ -717,6 +819,29 @@ class FineAiEvaluationService:
             for index, code in enumerate(country_codes):
                 country = get_country_config(code)
                 step_key = _country_step_key(code)
+                if code in existing_evals and existing_evals[code].get("status") == "completed":
+                    completed_codes.append(code)
+                    countries[code] = existing_evals[code]
+                    progress = _mark_progress_step(
+                        progress,
+                        step_key,
+                        "completed",
+                        f"{code} 评估已跳过 (已使用历史缓存结果)：{(existing_evals[code].get('decision') or {}).get('final_decision') or '-'} / {((existing_evals[code].get('scores') or {}).get('overall_score'))}",
+                    )
+                    self.repository.update_run(
+                        evaluation_run_id,
+                        status="running",
+                        progress=_progress(
+                            country_codes,
+                            f"country_evaluation_done_{code}",
+                            completed_steps=_completed_step_count(progress),
+                            completed_countries=completed_codes,
+                            failed_countries=failed_codes,
+                            base_progress=progress,
+                        ),
+                    )
+                    continue
+
                 if index > 0 and self.country_request_interval_seconds > 0:
                     wait_label = _format_seconds(self.country_request_interval_seconds)
                     progress = _mark_progress_step(
