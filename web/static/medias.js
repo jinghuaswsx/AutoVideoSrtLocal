@@ -6163,8 +6163,8 @@
       ['整体结论', LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || '-', false],
       ['已分析图片', `${progress.analyzed ?? 0} / ${progress.total ?? 0}`, false],
       ['参考图匹配', String(summary.reference_matched_count ?? 0), false],
-      ['已换图', summary.replaced_count !== undefined ? `${summary.replaced_count} 张` : '-', false],
-      ['未换图', summary.not_replaced_count !== undefined ? `${summary.not_replaced_count} 张` : '-', false],
+      ['已替换', summary.replaced_count !== undefined ? `${summary.replaced_count} 张` : '-', false],
+      ['未替换', summary.not_replaced_count !== undefined ? `${summary.not_replaced_count} 张` : '-', false],
       ['通过', String(summary.pass_count ?? 0), false],
       ['需替换', String(summary.replace_count ?? 0), false],
       ['待复核', String(summary.review_count ?? 0), false],
@@ -6211,11 +6211,11 @@
 
       let replacedBadgeHtml = '';
       if (isReplaced === true) {
-        replacedBadgeHtml = `<span class="oc-link-check-badge success" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-success-fg);">✅ 已换图</span>`;
+        replacedBadgeHtml = `<span class="oc-link-check-badge success" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-success-fg);">✅ 已替换</span>`;
       } else if (isReplaced === false) {
-        replacedBadgeHtml = `<span class="oc-link-check-badge danger" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-danger-fg);">❌ 未换图</span>`;
+        replacedBadgeHtml = `<span class="oc-link-check-badge danger" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-danger-fg);">❌ 未替换</span>`;
       } else {
-        replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比</span>`;
+        replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比(无参考图)</span>`;
       }
 
       const qualityScore = analysis.quality_score !== undefined ? Number(analysis.quality_score) : 0;
@@ -6228,10 +6228,31 @@
 
       const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
       const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
-      const itemPreviewUrl = safeMediaSrc(item.site_preview_url);
-      const preview = itemPreviewUrl
-        ? `<img src="${escapeHtml(itemPreviewUrl)}" alt="${escapeHtml(itemLabel)}" loading="lazy">`
-        : `<div class="oc-detail-images-empty" style="height:100%;margin:0;">暂无预览</div>`;
+      const sitePreviewUrl = safeMediaSrc(item.site_preview_url);
+      const refPreviewUrl = reference.reference_id 
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/reference/${reference.reference_id}`)
+        : '';
+
+      const leftImg = sitePreviewUrl
+        ? `<img src="${escapeHtml(sitePreviewUrl)}" alt="实际原图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; font-size:11px;">无实际图</div>`;
+
+      const rightImg = refPreviewUrl
+        ? `<img src="${escapeHtml(refPreviewUrl)}" alt="翻译结果图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:var(--oc-bg-subtle); font-size:11px; color:var(--oc-text-mute);">${reference.status === 'not_matched' ? '未匹配到参考图' : '无对比参考图'}</div>`;
+
+      const preview = `
+        <div class="oc-link-check-item-comparison" style="display:flex; width:100%; height:100%;">
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-right:1px solid var(--oc-border);">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">实际原图</div>
+            ${leftImg}
+          </div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%;">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">翻译结果图</div>
+            ${rightImg}
+          </div>
+        </div>
+      `;
       return `
         <article class="oc-link-check-item">
           <div class="oc-link-check-item-preview">${preview}</div>
@@ -6501,9 +6522,9 @@
       });
   }
 
-  function edOpenLinkCheckModal() {
-    const lang = edState.activeLang;
-    const domain = edActiveLinkCheckDomain(lang);
+  function edOpenLinkCheckModal(langArg, domainArg) {
+    const lang = langArg || edState.activeLang;
+    const domain = domainArg || edActiveLinkCheckDomain(lang);
     const task = edGetLinkCheckTask(lang, domain);
     if (!task || !task.task_id) return;
     edState.linkCheckModalLang = lang;
@@ -6705,8 +6726,18 @@
 
   function edTriggerRecheckFromModal() {
     if (!confirm('确定要重新检测该链接吗？这将会覆盖当前检测结果并重新启动审计任务。')) return;
+    const lang = edState.linkCheckModalLang || edState.activeLang;
+    const domain = edState.linkCheckModalDomain || edActiveLinkCheckDomain(lang);
+    const task = edGetLinkCheckTask(lang, domain);
+    const url = (task && task.link_url) || edCurrentLinkUrl(lang);
+    
+    if (!url || !/^https?:\/\//i.test(url)) {
+      alert('请先填写有效的商品链接');
+      return;
+    }
+    
     edCloseLinkCheckModal();
-    edStartLinkCheck();
+    edTriggerLinkCheckAudit(lang, domain, url);
   }
 
   // ============================================================
@@ -7044,6 +7075,10 @@
       if (!url || !/^https?:\/\//i.test(url)) {
         alert('该域名的链接无效');
         return;
+      }
+      const task = edGetLinkCheckTask(lang, domain);
+      if (task && task.task_id) {
+        return edOpenLinkCheckModal(lang, domain);
       }
       return edTriggerLinkCheckAudit(lang, domain, url);
     }
