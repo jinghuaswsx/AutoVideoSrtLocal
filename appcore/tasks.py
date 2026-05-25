@@ -2941,7 +2941,7 @@ def submit_child_step_manual_output(
             execute(
                 "UPDATE media_items SET "
                 "filename=%s, display_name=%s, object_key=%s, file_size=%s, "
-                "user_id=%s, task_id=%s, deleted_at=NULL, updated_at=NOW() "
+                "user_id=%s, task_id=%s, deleted_at=NULL "
                 "WHERE id=%s",
                 (
                     filename,
