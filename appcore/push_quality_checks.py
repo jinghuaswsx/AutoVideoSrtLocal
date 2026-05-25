@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS media_push_quality_checks (
 """
 
 
+class LocalMediaFileMissingError(FileNotFoundError):
+    def __init__(self, object_key: str) -> None:
+        self.object_key = object_key
+        super().__init__(f"本地素材文件缺失，请重新上传或重新生成：{object_key}")
+
+
 @dataclass(frozen=True)
 class QualityFingerprints:
     copy_fingerprint: str
@@ -427,6 +433,20 @@ def _check_error_result(label: str, exc: Exception) -> dict[str, Any]:
     }
 
 
+def _missing_local_media_result(label: str, exc: LocalMediaFileMissingError) -> dict[str, Any]:
+    summary = f"本地{label}文件缺失，请重新上传或重新生成：{exc.object_key}"
+    return {
+        "status": "failed",
+        "is_clean": False,
+        "summary": summary,
+        "issues": [summary],
+        "checked_at": datetime.now(UTC).isoformat(),
+        "provider": PROVIDER,
+        "model": MODEL,
+        "label": label,
+    }
+
+
 def run_three_checks(
     item: dict,
     product: dict,
@@ -636,28 +656,22 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
 
 
 def _materialize_media(object_key: str) -> Path:
+    # Docs-anchor: docs/superpowers/specs/2026-04-29-push-quality-check-design.md
     key = str(object_key or "").strip()
     if not key:
         raise ValueError("object_key required")
     local_path = local_media_storage.safe_local_path_for(key)
     if local_path.is_file():
         return local_path
-    if local_media_storage.exists(key):
+    try:
         local_media_storage.download_to(key, local_path)
         if local_path.is_file():
             return local_path
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        tos_clients.download_media_file(key, str(local_path))
-        if local_path.is_file():
-            return local_path
+    except FileNotFoundError:
+        pass
     except Exception:
-        log.debug("download media object to cache failed: %s", key, exc_info=True)
-    fallback_dir = Path(tempfile.gettempdir()) / "autovideosrt_push_quality"
-    fallback_dir.mkdir(parents=True, exist_ok=True)
-    fallback = fallback_dir / f"{uuid.uuid4().hex}{Path(key).suffix or '.bin'}"
-    tos_clients.download_media_file(key, str(fallback))
-    return fallback
+        log.debug("restore local media cache failed: %s", key, exc_info=True)
+    raise LocalMediaFileMissingError(key)
 
 
 def _mime_for_path(path: Path) -> str:
@@ -707,7 +721,10 @@ def check_cover(item: dict, product: dict) -> dict[str, Any]:
             "provider": PROVIDER,
             "model": MODEL,
         }
-    path = _materialize_media(object_key)
+    try:
+        path = _materialize_media(object_key)
+    except LocalMediaFileMissingError as exc:
+        return _missing_local_media_result("封面图", exc)
     response = llm_client.invoke_generate(
         USE_CASE_CODE,
         prompt=_visual_prompt("封面图", item, product),
@@ -762,7 +779,10 @@ def check_video(item: dict, product: dict) -> dict[str, Any]:
             "provider": PROVIDER,
             "model": MODEL,
         }
-    source = _materialize_media(object_key)
+    try:
+        source = _materialize_media(object_key)
+    except LocalMediaFileMissingError as exc:
+        return _missing_local_media_result("视频", exc)
     clip = _make_video_clip_5s(source, item_id=int(item.get("id") or 0))
     # Docs-anchor:
     # docs/superpowers/specs/2026-05-14-llm-video-upload-optimization-design.md
