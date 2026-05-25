@@ -1550,12 +1550,20 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-link-check-item {
   display:grid;
-  grid-template-columns:320px minmax(0, 1fr);
+  grid-template-columns:320px 140px minmax(0, 1fr);
   gap:var(--oc-sp-4);
   padding:var(--oc-sp-4);
   border:1px solid var(--oc-border);
   border-radius:var(--oc-r-lg);
   background:var(--oc-bg);
+}
+.oc-link-check-item-side-badges {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-2);
+  justify-content:center;
+  align-items:flex-start;
+  flex-shrink:0;
 }
 .oc-link-check-item-preview {
   overflow:hidden;
