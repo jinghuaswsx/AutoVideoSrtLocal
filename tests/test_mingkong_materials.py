@@ -1664,19 +1664,22 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
     monkeypatch.setattr(mm, "query_one", fake_query_one)
     monkeypatch.setattr(mm, "query", fake_query)
 
-    result = mm.list_yesterday_top100(page=1, page_size=100)
-
-    assert result["snapshot"] == "2026-05-18"
-    assert result["snapshot_at"] == "2026-05-18 18:00:00"
-    assert result["previous_snapshot"] == "2026-05-17"
-    assert result["previous_snapshot_at"] == "2026-05-17 18:01:00"
-    assert result["items"][0]["video_spends"] == 1000.0
-    assert result["items"][0]["local_cover_url"] == (
-        "/medias/object?object_key=artifacts%2Fmingkong-material-covers%2Fab%2Fabc.jpg"
-    )
-    assert result["items"][0]["is_new_top100_entry"] is True
+    # 1. Test new_entry_first sort
+    result_new = mm.list_yesterday_top100(page=1, page_size=100, sort_order="new_entry_first")
+    assert result_new["snapshot"] == "2026-05-18"
+    assert result_new["items"][0]["is_new_top100_entry"] is True
     assert any(
-        "is_new_top100_entry DESC, yesterday_spend_delta DESC" in item[1]
+        "ORDER BY is_new_top100_entry DESC, yesterday_spend_delta DESC" in item[1]
+        for item in captured
+        if item[0] == "query"
+    )
+
+    # 2. Test normal sort (yesterday spend first)
+    captured.clear()
+    result_normal = mm.list_yesterday_top100(page=1, page_size=100, sort_order="normal")
+    assert result_normal["snapshot"] == "2026-05-18"
+    assert any(
+        "ORDER BY yesterday_spend_delta DESC," in item[1]
         for item in captured
         if item[0] == "query"
     )

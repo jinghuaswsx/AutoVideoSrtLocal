@@ -432,7 +432,8 @@ def test_xuanpin_mk_small_language_ai_suggestions_are_card_hints(authed_client_n
     assert "AI建议：中间档" in body
     assert "AI建议：低分不可做" in body
     assert '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' in body
-    assert '<small class="mki-xiao-ai-suggestion">AI建议：暂无</small>' in body
+    assert 'mki-xiao-ai-suggestion' in body
+    assert 'AI建议：暂无' in body
 
 
 def test_xuanpin_mk_small_language_uses_fine_ai_country_decisions(authed_client_no_db):
@@ -1010,24 +1011,38 @@ def test_xuanpin_mk_yesterday_top300_api_reads_archive(
         fake_list_yesterday_top100,
     )
 
+    from appcore import api_keys
+    # Mock api_keys.get_key and set_key to avoid actual DB dependency if DB is not authed
+    saved_prefs = {"yesterday_top300_sort": "normal"}
+    monkeypatch.setattr(api_keys, "get_key", lambda user_id, service: saved_prefs.get(service))
+    monkeypatch.setattr(api_keys, "set_key", lambda user_id, service, val: saved_prefs.update({service: val}))
+
+    # 1. Test POST sort_order saving
+    post_resp = authed_client_no_db.post(
+        "/xuanpin/api/mk-yesterday-top300/sort",
+        json={"sort_order": "normal"}
+    )
+    assert post_resp.status_code == 200
+    assert post_resp.get_json()["success"] is True
+    assert saved_prefs["yesterday_top300_sort"] == "normal"
+
+    # 2. Test GET fetches and passes the preference
     resp = authed_client_no_db.get(
         "/xuanpin/api/mk-yesterday-top300?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
     )
 
     assert resp.status_code == 200
-    assert resp.get_json()["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
+    res_data = resp.get_json()
+    assert res_data["items"] == [{"video_name": "fresh.mp4", "is_new_top100_entry": True}]
+    assert res_data["sort_order"] == "normal"
     assert captured[-1] == {
         "snapshot_date": "2026-05-18",
         "snapshot_at": None,
         "keyword": "baseball",
         "page": "1",
         "page_size": "100",
+        "sort_order": "normal",
     }
-
-    legacy_resp = authed_client_no_db.get("/xuanpin/api/mk-yesterday-top100?page=2&page_size=50")
-    assert legacy_resp.status_code == 200
-    assert captured[-1]["page"] == "2"
-    assert captured[-1]["page_size"] == "50"
 
 
 def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):

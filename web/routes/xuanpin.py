@@ -327,14 +327,32 @@ def api_mk_material_library():
 def api_mk_yesterday_top300():
     if not _is_admin():
         return jsonify({"error": "forbidden"}), 403
+    from appcore import api_keys
+    sort_order = api_keys.get_key(current_user.id, "yesterday_top300_sort") or "new_entry_first"
     result = _mingkong_materials().list_yesterday_top100(
         snapshot_date=(request.args.get("snapshot") or "").strip() or None,
         snapshot_at=(request.args.get("snapshot_at") or "").strip() or None,
         keyword=(request.args.get("keyword") or "").strip(),
         page=request.args.get("page") or 1,
         page_size=request.args.get("page_size") or 100,
+        sort_order=sort_order,
     )
+    result["sort_order"] = sort_order
     return jsonify(result)
+
+
+@bp.route("/api/mk-yesterday-top300/sort", methods=["POST"])
+@login_required
+def api_mk_yesterday_top300_save_sort():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    sort_order = payload.get("sort_order")
+    if sort_order not in ("new_entry_first", "normal"):
+        return jsonify({"success": False, "error": "invalid_sort_order"}), 400
+    from appcore import api_keys
+    api_keys.set_key(current_user.id, "yesterday_top300_sort", sort_order)
+    return jsonify({"success": True, "sort_order": sort_order})
 
 
 @bp.route("/api/mk-media", methods=["GET"])
