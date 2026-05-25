@@ -631,13 +631,21 @@ def api_detail_image_quality_check(pid: int, image_id: int):
 
     if not source_image:
         try:
-            lang_images = medias.list_detail_images(pid, target_image["lang"])
+            from ._helpers import _detail_images_is_gif
+            is_gif = _detail_images_is_gif(target_image)
+
+            all_lang_images = medias.list_detail_images(pid, target_image["lang"])
+            lang_images = [img for img in all_lang_images if _detail_images_is_gif(img) == is_gif]
+
             target_idx = -1
             for idx, img in enumerate(lang_images):
                 if img.get("id") == image_id:
                     target_idx = idx
                     break
-            en_images = medias.list_detail_images(pid, "en")
+
+            all_en_images = medias.list_detail_images(pid, "en")
+            en_images = [img for img in all_en_images if _detail_images_is_gif(img) == is_gif]
+
             if 0 <= target_idx < len(en_images):
                 source_image = en_images[target_idx]
         except Exception:
@@ -768,13 +776,21 @@ def api_detail_image_retranslate_preview(pid: int, image_id: int):
 
     if not source_image:
         try:
-            lang_images = medias.list_detail_images(pid, target_image["lang"])
+            from ._helpers import _detail_images_is_gif
+            is_gif = _detail_images_is_gif(target_image)
+
+            all_lang_images = medias.list_detail_images(pid, target_image["lang"])
+            lang_images = [img for img in all_lang_images if _detail_images_is_gif(img) == is_gif]
+
             target_idx = -1
             for idx, img in enumerate(lang_images):
                 if img.get("id") == image_id:
                     target_idx = idx
                     break
-            en_images = medias.list_detail_images(pid, "en")
+
+            all_en_images = medias.list_detail_images(pid, "en")
+            en_images = [img for img in all_en_images if _detail_images_is_gif(img) == is_gif]
+
             if 0 <= target_idx < len(en_images):
                 source_image = en_images[target_idx]
         except Exception:
@@ -1057,12 +1073,52 @@ def api_detail_image_retranslate_confirm(pid: int, image_id: int):
     except Exception:
         pass
 
+    # 3. 查找本次匹配对应的英文原图，并进行持久化绑定
+    source_image = None
+    source_detail_image_id = target_image.get("source_detail_image_id")
+    if source_detail_image_id:
+        source_image = medias.get_detail_image(source_detail_image_id)
+        if source_image and source_image.get("deleted_at") is not None:
+            source_image = None
+
+    if not source_image:
+        try:
+            from ._helpers import _detail_images_is_gif
+            is_gif = _detail_images_is_gif(target_image)
+
+            all_lang_images = medias.list_detail_images(pid, target_image["lang"])
+            lang_images = [img for img in all_lang_images if _detail_images_is_gif(img) == is_gif]
+
+            target_idx = -1
+            for idx, img in enumerate(lang_images):
+                if img.get("id") == image_id:
+                    target_idx = idx
+                    break
+
+            all_en_images = medias.list_detail_images(pid, "en")
+            en_images = [img for img in all_en_images if _detail_images_is_gif(img) == is_gif]
+
+            if 0 <= target_idx < len(en_images):
+                source_image = en_images[target_idx]
+        except Exception:
+            pass
+
+    source_id_to_update = source_image["id"] if source_image else None
+
     medias.execute(
         "UPDATE media_product_detail_images "
         "SET file_size=%s, width=%s, height=%s "
         "WHERE id=%s AND deleted_at IS NULL",
         (file_size, width, height, image_id),
     )
+
+    if source_id_to_update is not None:
+        medias.execute(
+            "UPDATE media_product_detail_images "
+            "SET source_detail_image_id=%s "
+            "WHERE id=%s AND deleted_at IS NULL",
+            (source_id_to_update, image_id),
+        )
 
     # 3. 写入质检评估结果
     medias.update_detail_image_evaluation(

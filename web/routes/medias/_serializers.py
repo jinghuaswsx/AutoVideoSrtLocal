@@ -366,13 +366,21 @@ def _serialize_detail_image(row: dict) -> dict:
                     source_img = None
             if not source_img:
                 try:
-                    lang_images = medias.list_detail_images(row["product_id"], row["lang"])
+                    from ._helpers import _detail_images_is_gif
+                    is_gif = _detail_images_is_gif(row)
+
+                    all_lang_images = medias.list_detail_images(row["product_id"], row["lang"])
+                    lang_images = [img for img in all_lang_images if _detail_images_is_gif(img) == is_gif]
+
                     target_idx = -1
                     for idx, img in enumerate(lang_images):
                         if img.get("id") == row["id"]:
                             target_idx = idx
                             break
-                    en_images = medias.list_detail_images(row["product_id"], "en")
+
+                    all_en_images = medias.list_detail_images(row["product_id"], "en")
+                    en_images = [img for img in all_en_images if _detail_images_is_gif(img) == is_gif]
+
                     if 0 <= target_idx < len(en_images):
                         source_img = en_images[target_idx]
                 except Exception:
