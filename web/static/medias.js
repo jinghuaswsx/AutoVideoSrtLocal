@@ -5447,7 +5447,7 @@
   function edGetLinkCheckTask(lang, domain) {
     if (!lang) return null;
     const tasks = edLinkCheckTasks();
-    const key = edStatusKey(lang, domain || '');
+    const key = (domain && domain !== edDefaultLinkDomain()) ? edStatusKey(lang, domain) : lang;
     return tasks[key] || tasks[lang] || null;
   }
 
@@ -5455,7 +5455,7 @@
     if (!lang || !task || !edState.productData || !edState.productData.product) return null;
     const tasks = edLinkCheckTasks();
     const domain = task.domain || edDomainFromUrl(task.link_url || '');
-    const key = task.status_key || edStatusKey(lang, domain);
+    const key = (domain && domain !== edDefaultLinkDomain()) ? (task.status_key || edStatusKey(lang, domain)) : lang;
     tasks[key] = { ...(tasks[key] || {}), ...task, status_key: key, domain };
     return tasks[key];
   }

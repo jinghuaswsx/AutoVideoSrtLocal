@@ -76,7 +76,7 @@ def _link_check_domain_metadata(link_url: str, lang: str) -> tuple[str, str, str
 
 def _task_key(lang: str, domain: str | None) -> str:
     normalized_domain = product_link_domains.domain_from_url(domain or "")
-    if normalized_domain:
+    if normalized_domain and normalized_domain != product_link_domains.DEFAULT_LINK_DOMAINS[0]:
         return product_link_domains.domain_lang_key(normalized_domain, lang)
     return lang
 
