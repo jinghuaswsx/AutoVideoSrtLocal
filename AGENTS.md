@@ -71,7 +71,6 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 '
 ```
 验收：`active` + HTTP 200/302；404/500/000 = 失败。
-
 ## Don't
 - 不在主工作目录改代码（除非明确 hotfix）；不调 `deploy/publish.sh`、不用 SSH 跳板、不 `gh auth login`
 - 不在 Playwright `wait_for_*` 处替换为 `time.sleep` / `cancellable_sleep`（EZ/CDP 等待事故）
