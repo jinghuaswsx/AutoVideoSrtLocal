@@ -2528,49 +2528,192 @@ class ShopifyImageLocalizerApp:
 
     def run_single_link_check_gui(self, item: dict, parent_dialog: tk.Toplevel, on_finish_cb) -> tk.Toplevel:
         console_win = tk.Toplevel(parent_dialog)
-        console_win.title(f"链接检测控制台 - {item['url']}")
-        console_win.geometry("850x550")
+        console_win.title(f"链接检测 - {item['url']}")
+        console_win.geometry("960x650")
+        console_win.minsize(850, 500)
         console_win.transient(parent_dialog)
         console_win.grab_set()
 
-        # Console Header Info
-        header_frame = tk.Frame(console_win, bg="#1e293b", padx=12, pady=10)
+        # Style setup
+        style = ttk.Style(console_win)
+        # Custom Treeview styling for premium look
+        style.configure("LinkCheck.Treeview", rowheight=28, font=("TkDefaultFont", 10))
+        style.configure("LinkCheck.Treeview.Heading", font=("TkDefaultFont", 10, "bold"))
+
+        # 1. Header Frame (Ocean Blue Premium)
+        header_frame = tk.Frame(console_win, bg="#0f4c81", padx=16, pady=12)
         header_frame.pack(fill="x")
 
         lang_label = self._language_label_for_code(item["lang"])
-        info_text = f"检测目标: {lang_label} | {item['domain']}\n链接: {item['url']}"
+        tk.Label(
+            header_frame,
+            text="Shopify 小语种前台商品链接自动审计与检测",
+            fg="white",
+            bg="#0f4c81",
+            font=("TkDefaultFont", 13, "bold"),
+            anchor="w"
+        ).pack(fill="x", pady=(0, 4))
+
+        info_text = f"检测目标: {lang_label} ({item['lang']})  |  店铺域名: {item['domain']}\n前台链接: {item['url']}"
         tk.Label(
             header_frame,
             text=info_text,
-            fg="#cbd5e1",
-            bg="#1e293b",
+            fg="#e0f2fe",
+            bg="#0f4c81",
             justify="left",
             anchor="w",
-            font=("TkDefaultFont", 10, "bold")
+            font=("TkDefaultFont", 9)
+        ).pack(fill="x")
+
+        # 2. Main Content Frame
+        main_content_frame = tk.Frame(console_win, bg="white")
+        main_content_frame.pack(fill="both", expand=True, padx=16, pady=12)
+
+        # 2a. Running Status Container (visible while auditing)
+        running_container = tk.Frame(main_content_frame, bg="white")
+        running_container.pack(fill="both", expand=True, pady=40)
+
+        status_icon_label = tk.Label(
+            running_container,
+            text="🔍",
+            font=("TkDefaultFont", 36),
+            bg="white",
+            fg="#0f4c81"
+        )
+        status_icon_label.pack(pady=(20, 10))
+
+        large_status_label = tk.Label(
+            running_container,
+            text="正在进行小语种链接智能检测与审计，请稍候...",
+            font=("TkDefaultFont", 12, "bold"),
+            bg="white",
+            fg="#1e293b"
+        )
+        large_status_label.pack(pady=5)
+
+        live_status_label = tk.Label(
+            running_container,
+            text="正在初始化分析引擎...",
+            font=("TkDefaultFont", 10),
+            bg="white",
+            fg="#64748b"
+        )
+        live_status_label.pack(pady=5)
+
+        # A beautiful modern progressbar
+        progress_bar = ttk.Progressbar(running_container, mode="indeterminate", length=400)
+        progress_bar.pack(pady=20)
+        progress_bar.start(10)
+
+        # 2b. Visual Results Container (initially hidden, packed upon completion)
+        results_container = tk.Frame(main_content_frame, bg="white")
+
+        results_title_frame = tk.Frame(results_container, bg="white")
+        results_title_frame.pack(fill="x", pady=(0, 8))
+
+        tk.Label(
+            results_title_frame,
+            text="📋 自动审计报告明细",
+            font=("TkDefaultFont", 11, "bold"),
+            bg="white",
+            fg="#0f4c81"
         ).pack(side="left")
 
-        # Scrolling terminal console styled beautifully
-        term_frame = tk.Frame(console_win)
-        term_frame.pack(fill="both", expand=True, padx=12, pady=12)
+        overall_decision_var = tk.StringVar(value="整体审计结论：审核中")
+        overall_decision_label = tk.Label(
+            results_title_frame,
+            textvariable=overall_decision_var,
+            font=("TkDefaultFont", 10, "bold"),
+            bg="#f1f5f9",
+            fg="#334155",
+            padx=10,
+            pady=4
+        )
+        overall_decision_label.pack(side="right")
+
+        # Treeview to display audited images cleanly
+        tree_frame = tk.Frame(results_container, bg="white")
+        tree_frame.pack(fill="both", expand=True)
+
+        tree = ttk.Treeview(
+            tree_frame,
+            columns=("index", "kind", "replacement", "score", "lang", "reason"),
+            show="headings",
+            selectmode="browse",
+            style="LinkCheck.Treeview"
+        )
+        tree.heading("index", text="图片")
+        tree.heading("kind", text="图片类型")
+        tree.heading("replacement", text="替换状态")
+        tree.heading("score", text="质量评分")
+        tree.heading("lang", text="识别语言")
+        tree.heading("reason", text="评估结论与原因")
+
+        tree.column("index", width=85, anchor="center", stretch=False)
+        tree.column("kind", width=105, anchor="w", stretch=False)
+        tree.column("replacement", width=105, anchor="center", stretch=False)
+        tree.column("score", width=95, anchor="center", stretch=False)
+        tree.column("lang", width=95, anchor="center", stretch=False)
+        tree.column("reason", width=420, anchor="w", stretch=True)
+
+        # Configure tags for beautiful colored rows
+        tree.tag_configure("replaced", foreground="#2e7d32", font=("TkDefaultFont", 10, "bold"))
+        tree.tag_configure("not_replaced", foreground="#c62828", font=("TkDefaultFont", 10, "bold"))
+        tree.tag_configure("review", foreground="#ed6c02", font=("TkDefaultFont", 10, "bold"))
+
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=tree_scroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        tree_scroll.pack(side="right", fill="y")
+
+        # 3. Log Tray (Clean scrolling log at the bottom)
+        log_frame = tk.LabelFrame(console_win, text=" 运行日志 ", padx=8, pady=4, bg="#f8fafc", fg="#64748b")
+        log_frame.pack(fill="x", padx=16, pady=(0, 8))
 
         term_text = tk.Text(
-            term_frame,
-            bg="#0f172a",
-            fg="#cbd5e1",
-            selectbackground="#334155",
-            font=("Consolas", 10),
-            insertbackground="#ffffff",
+            log_frame,
+            bg="#f1f5f9",
+            fg="#334155",
+            selectbackground="#cbd5e1",
+            font=("Consolas", 9),
             wrap="word",
-            state="disabled"
+            height=5,
+            state="disabled",
+            bd=0,
+            highlightthickness=0
         )
-        term_scroll = ttk.Scrollbar(term_frame, orient="vertical", command=term_text.yview)
+        term_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=term_text.yview)
         term_text.configure(yscrollcommand=term_scroll.set)
         term_text.pack(side="left", fill="both", expand=True)
         term_scroll.pack(side="right", fill="y")
 
-        # Status footer
-        footer_frame = tk.Frame(console_win, padx=12, pady=8)
+        # 4. Footer Frame
+        footer_frame = tk.Frame(console_win, padx=16, pady=8)
         footer_frame.pack(fill="x", side="bottom")
+
+        # Global variable for web report
+        self._current_report_html_path = None
+
+        def view_web_report():
+            if self._current_report_html_path:
+                from link_check_desktop import report as link_check_report
+                try:
+                    link_check_report.open_report(self._current_report_html_path)
+                except Exception as r_exc:
+                    append_log(f"[!] 无法打开网页报告: {r_exc}", "error")
+
+        view_report_btn = tk.Button(
+            footer_frame,
+            text="🌐 打开网页详细报告",
+            command=view_web_report,
+            width=22,
+            state="disabled",
+            bg="#0f4c81",
+            fg="white",
+            activebackground="#0b3a63",
+            activeforeground="white"
+        )
+        view_report_btn.pack(side="left")
 
         close_btn = tk.Button(footer_frame, text="关闭", command=console_win.destroy, width=12, state="disabled")
         close_btn.pack(side="right")
@@ -2579,11 +2722,11 @@ class ShopifyImageLocalizerApp:
             term_text.configure(state="normal")
             if tag:
                 if tag == "error":
-                    term_text.tag_config("error", foreground="#ef4444")
+                    term_text.tag_config("error", foreground="#ef4444", font=("Consolas", 9, "bold"))
                 elif tag == "success":
-                    term_text.tag_config("success", foreground="#10b981", font=("Consolas", 10, "bold"))
+                    term_text.tag_config("success", foreground="#10b981", font=("Consolas", 9, "bold"))
                 elif tag == "info":
-                    term_text.tag_config("info", foreground="#60a5fa")
+                    term_text.tag_config("info", foreground="#2563eb")
                 
                 term_text.insert("end", f"{msg}\n", tag)
             else:
@@ -2604,6 +2747,7 @@ class ShopifyImageLocalizerApp:
             
             def thread_status_cb(msg):
                 self._ui_after(0, append_log, f"[*] {msg}")
+                self._ui_after(0, live_status_label.configure, {"text": f"当前步骤: {msg}..."})
 
             try:
                 result = link_check_controller.run_link_check(
@@ -2616,6 +2760,7 @@ class ShopifyImageLocalizerApp:
                 summary = result.get("analysis", {}).get("summary", {})
                 decision = str(summary.get("overall_decision", "Review")).strip()
                 report_html_path = result.get("report_html_path") or ""
+                self._current_report_html_path = report_html_path
                 
                 status_mapping = {
                     "Pass": "正常",
@@ -2624,29 +2769,104 @@ class ShopifyImageLocalizerApp:
                 }
                 final_status = status_mapping.get(decision, "复核")
 
-                self._ui_after(0, append_log, "\n=============================================", "success")
-                self._ui_after(0, append_log, f"[SUCCESS] 链接审计成功完成！", "success")
-                self._ui_after(0, append_log, f"[+] 产品 ID: {result.get('product', {}).get('id', '')}")
-                self._ui_after(0, append_log, f"[+] 目标语言: {result.get('target_language_name', '')} ({result.get('target_language', '')})")
-                self._ui_after(0, append_log, f"[+] 整体审计结果: {decision}", "success" if decision == "Pass" else "info")
-                self._ui_after(0, append_log, f"[+] 通过判定数: {summary.get('pass_count', 0)}")
-                self._ui_after(0, append_log, f"[+] 需替换数: {summary.get('replace_count', 0)}")
-                self._ui_after(0, append_log, f"[+] 需复核数: {summary.get('review_count', 0)}")
-                self._ui_after(0, append_log, f"[+] 结果报告: {report_html_path}")
-                self._ui_after(0, append_log, "=============================================\n", "success")
-                
-                self._ui_after(0, on_finish_cb, item, final_status, result)
+                # Parse items
+                items = result.get("analysis", {}).get("items") or []
 
-                if report_html_path:
-                    try:
-                        link_check_report.open_report(report_html_path)
-                    except Exception as r_exc:
-                        self._ui_after(0, append_log, f"[!] 自动打开报告失败: {r_exc}", "error")
+                def update_ui_on_success():
+                    # Stop progress bar and swap views
+                    progress_bar.stop()
+                    running_container.pack_forget()
+                    results_container.pack(fill="both", expand=True)
+
+                    # Update overall badge
+                    decision_labels = {
+                        "Pass": "合格 (Pass)",
+                        "Replace": "需替换 (Replace)",
+                        "Review": "待复核 (Review)",
+                    }
+                    decision_text = decision_labels.get(decision, f"待复核 ({decision})")
+                    overall_decision_var.set(f"整体审计结论：{decision_text}")
+                    if decision == "Pass":
+                        overall_decision_label.configure(bg="#e8f7ee", fg="#166534")
+                    elif decision == "Replace":
+                        overall_decision_label.configure(bg="#fdecec", fg="#b42318")
+                    else:
+                        overall_decision_label.configure(bg="#fff6dd", fg="#9a6700")
+
+                    # Populate Trees
+                    _KIND_LABELS = {
+                        "detail": "详情图",
+                        "carousel": "轮播图",
+                        "cover": "主图",
+                        "page_image": "页面图",
+                    }
+                    for idx, img_item in enumerate(items):
+                        kind = img_item.get("kind", "page_image")
+                        kind_label = _KIND_LABELS.get(kind, "其它图片")
+                        
+                        img_analysis = img_item.get("analysis") or {}
+                        needs_replacement = img_analysis.get("needs_replacement", False)
+                        
+                        # 替换状态
+                        replacement_status = "未替换" if needs_replacement else "已替换"
+                        row_tag = "not_replaced" if needs_replacement else "replaced"
+                        
+                        # 质量评分
+                        quality_score = img_analysis.get("quality_score")
+                        quality_score_label = f"{quality_score}分" if quality_score is not None else "-"
+                        
+                        # 识别语言
+                        detected_lang = img_analysis.get("detected_language") or "-"
+                        detected_lang_label = self._language_label_for_code(detected_lang) if detected_lang != "-" else "-"
+                        
+                        # 详细评估理由
+                        reason = img_analysis.get("quality_reason") or img_item.get("error") or "正常匹配通过"
+
+                        tree.insert(
+                            "",
+                            "end",
+                            values=(f"图片 #{idx+1}", kind_label, replacement_status, quality_score_label, detected_lang_label, reason),
+                            tags=(row_tag,)
+                        )
+
+                    # Unlock buttons
+                    if report_html_path:
+                        view_report_btn.configure(state="normal")
+                    close_btn.configure(state="normal")
+
+                    append_log(f"\n=============================================", "success")
+                    append_log(f"[SUCCESS] 链接审计成功完成！", "success")
+                    append_log(f"[+] 产品 ID: {result.get('product', {}).get('id', '')}")
+                    append_log(f"[+] 目标语言: {result.get('target_language_name', '')} ({result.get('target_language', '')})")
+                    append_log(f"[+] 整体审计结果: {decision}", "success" if decision == "Pass" else "info")
+                    append_log(f"[+] 结果报告: {report_html_path}")
+                    append_log("=============================================\n", "success")
+
+                self._ui_after(0, update_ui_on_success)
+                self._ui_after(0, on_finish_cb, item, final_status, result)
 
             except Exception as exc:
                 friendly = self._friendly_link_check_error(exc)
-                self._ui_after(0, append_log, f"\n[ERROR] 链接审计执行失败！", "error")
-                self._ui_after(0, append_log, f"[Reason] {friendly}", "error")
+                
+                def update_ui_on_error():
+                    progress_bar.stop()
+                    running_container.pack_forget()
+                    results_container.pack(fill="both", expand=True)
+                    overall_decision_var.set("整体审计结论：检测异常")
+                    overall_decision_label.configure(bg="#fdecec", fg="#b42318")
+
+                    tree.insert(
+                        "",
+                        "end",
+                        values=("异常", "链接检测", "失败", "-", "-", friendly),
+                        tags=("not_replaced",)
+                    )
+                    close_btn.configure(state="normal")
+
+                    append_log(f"\n[ERROR] 链接审计执行失败！", "error")
+                    append_log(f"[Reason] {friendly}", "error")
+
+                self._ui_after(0, update_ui_on_error)
                 self._ui_after(0, on_finish_cb, item, "异常", None)
             finally:
                 self._ui_after(0, close_btn.configure, {"state": "normal"})
