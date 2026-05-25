@@ -53,6 +53,9 @@ def _build_summary(items: list[dict]) -> dict:
         "same_image_llm_done_count": 0,
         "same_image_llm_yes_count": 0,
         "overall_decision": "done",
+        "replaced_count": 0,
+        "not_replaced_count": 0,
+        "total_count": len(items),
     }
 
     for item in items:
@@ -60,6 +63,12 @@ def _build_summary(items: list[dict]) -> dict:
             summary["review_count"] += 1
             summary["overall_decision"] = "unfinished"
             continue
+
+        is_replaced = item.get("is_replaced")
+        if is_replaced is True:
+            summary["replaced_count"] += 1
+        elif is_replaced is False:
+            summary["not_replaced_count"] += 1
 
         decision = item.get("analysis", {}).get("decision")
         if decision == "pass":
@@ -230,6 +239,7 @@ class LinkCheckRuntime:
             "reference_match": {"status": "not_provided", "score": 0.0},
             "binary_quick_check": _skipped_binary(waiting_binary),
             "same_image_llm": _skipped_same_image(waiting_same),
+            "is_replaced": None,
             "status": "running",
             "error": "",
         }
@@ -266,6 +276,7 @@ class LinkCheckRuntime:
 
             # 1. 换图检测部分（Part 1）：判断真实页面的图跟后台翻译结果图是不是一张图（有没有换到位）
             is_replaced = (binary_status == "pass" or same_image_ans == "是")
+            result["is_replaced"] = is_replaced
 
             if not is_replaced:
                 # 换图未换到位（与后台翻译参考图不一致，或是没有被翻译的原图/错误图）
@@ -299,9 +310,11 @@ class LinkCheckRuntime:
         if reference_paths:
             result["binary_quick_check"] = _skipped_binary("未匹配到参考图，跳过二值快检")
             result["same_image_llm"] = _skipped_same_image("未匹配到参考图，跳过同图判断")
+            result["is_replaced"] = False  # references existed but couldn't match this page image, so not replaced
         else:
             result["binary_quick_check"] = _skipped_binary("未提供参考图，跳过二值快检")
             result["same_image_llm"] = _skipped_same_image("未提供参考图，跳过同图判断")
+            result["is_replaced"] = None
 
         result["analysis"] = analyze_image(
             item["local_path"],

@@ -889,3 +889,178 @@ def test_runtime_continues_after_item_failure_and_persists_full_results(monkeypa
     assert saved["summary"]["review_count"] == 1
     assert saved["summary"]["overall_decision"] == "unfinished"
     assert "失败项" in saved["step_messages"]["analyze"]
+
+
+def test_runtime_sets_is_replaced_correctly_when_matched(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    ref_path = task_dir / "ref.jpg"
+    ref_path.write_bytes(b"ref")
+    site_path = task_dir / "site.jpg"
+    site_path.write_bytes(b"site")
+
+    task_state.create_link_check(
+        "lc-replaced-matched",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[{"id": "ref-1", "filename": "ref.jpg", "local_path": str(ref_path)}],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site.jpg",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.find_best_reference",
+        lambda *args, **kwargs: {
+            "status": "matched",
+            "score": 0.93,
+            "reference_path": str(ref_path),
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.run_binary_quick_check",
+        lambda *args, **kwargs: {
+            "status": "pass",
+            "binary_similarity": 0.94,
+            "foreground_overlap": 0.91,
+            "threshold": 0.90,
+            "reason": "ok",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.judge_same_image",
+        lambda *args, **kwargs: {
+            "status": "done",
+            "answer": "是",
+            "channel": "cloud",
+            "channel_label": "Google Cloud",
+            "model": "gemini-3.1-flash",
+            "reason": "",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.analyze_image",
+        lambda *args, **kwargs: {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "ok",
+            "quality_score": 95,
+            "quality_reason": "ok",
+            "needs_replacement": False,
+        },
+    )
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-replaced-matched")
+
+    saved = task_state.get("lc-replaced-matched")
+    item = saved["items"][0]
+    assert item["is_replaced"] is True
+    assert saved["summary"]["replaced_count"] == 1
+    assert saved["summary"]["not_replaced_count"] == 0
+    assert saved["summary"]["total_count"] == 1
+
+
+def test_runtime_sets_is_replaced_correctly_when_not_matched_and_no_reference(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    site_path = task_dir / "site.jpg"
+    site_path.write_bytes(b"site")
+
+    task_state.create_link_check(
+        "lc-replaced-not-matched",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site.jpg",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.analyze_image",
+        lambda *args, **kwargs: {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "ok",
+            "quality_score": 90,
+            "quality_reason": "ok",
+            "needs_replacement": False,
+        },
+    )
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-replaced-not-matched")
+
+    saved = task_state.get("lc-replaced-not-matched")
+    item = saved["items"][0]
+    assert item["is_replaced"] is None
+    assert saved["summary"]["replaced_count"] == 0
+    assert saved["summary"]["not_replaced_count"] == 0
+    assert saved["summary"]["total_count"] == 1
