@@ -177,6 +177,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
                 "binary_quick_check": dict(item.get("binary_quick_check") or {}),
                 "same_image_llm": dict(item.get("same_image_llm") or {}),
                 "download_evidence": dict(item.get("download_evidence") or {}),
+                "is_replaced": item.get("is_replaced"),
                 "status": item.get("status") or "pending",
                 "error": item.get("error") or "",
             }

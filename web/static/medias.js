@@ -6209,13 +6209,27 @@
       const decision = analysis.decision || '';
       const isReplaced = item.is_replaced; // true, false, or null
 
+      // Smart fallback for isReplaced
+      let finalReplaced = isReplaced;
+      if (finalReplaced === null || finalReplaced === undefined) {
+        if (decision === 'pass') {
+          finalReplaced = true;
+        } else if (decision === 'replace') {
+          finalReplaced = false;
+        }
+      }
+
       let replacedBadgeHtml = '';
-      if (isReplaced === true) {
+      if (finalReplaced === true) {
         replacedBadgeHtml = `<span class="oc-link-check-badge success" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-success-fg);">✅ 已替换</span>`;
-      } else if (isReplaced === false) {
+      } else if (finalReplaced === false) {
         replacedBadgeHtml = `<span class="oc-link-check-badge danger" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-danger-fg);">❌ 未替换</span>`;
       } else {
-        replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比(无参考图)</span>`;
+        if (reference.status === 'matched') {
+          replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比</span>`;
+        } else {
+          replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比(无参考图)</span>`;
+        }
       }
 
       const qualityScore = analysis.quality_score !== undefined ? Number(analysis.quality_score) : 0;
