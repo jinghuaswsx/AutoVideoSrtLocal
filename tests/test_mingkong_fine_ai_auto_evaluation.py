@@ -100,7 +100,7 @@ def test_tick_uses_yesterday_top100_after_top500_exhausted(monkeypatch):
     assert [item["row"]["is_new_top100_entry"] for item in processed] == [False, True]
 
 
-def test_tick_limits_each_round_to_two(monkeypatch):
+def test_tick_limits_each_round_to_four(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
     _patch_run_logging(monkeypatch, mod)
@@ -115,9 +115,9 @@ def test_tick_limits_each_round_to_two(monkeypatch):
 
     summary = mod.tick_once(limit=10)
 
-    assert summary["limit"] == 2
-    assert summary["processed"] == 2
-    assert len(processed) == 2
+    assert summary["limit"] == 4
+    assert summary["processed"] == 4
+    assert len(processed) == 4
 
 
 def test_worker_pool_refills_finished_slot_while_other_task_is_running(monkeypatch):
@@ -400,8 +400,8 @@ def test_fetch_candidates_exclude_any_existing_auto_record(monkeypatch):
     assert "LEFT JOIN mingkong_fine_ai_auto_evaluations a" in joined_sql
     assert "a.status IN" not in joined_sql
     assert "WHERE a.id IS NULL" in joined_sql
-    assert "LIMIT 500" in joined_sql
-    assert "LIMIT 100" in joined_sql
+    assert "LIMIT 1000" in joined_sql
+    assert "LIMIT 300" in joined_sql
 
 
 def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monkeypatch):
