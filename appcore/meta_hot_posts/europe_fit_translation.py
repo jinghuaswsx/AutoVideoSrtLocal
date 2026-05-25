@@ -11,7 +11,7 @@ from appcore.meta_hot_posts import store
 from appcore.meta_hot_posts.video_copyability_translation import is_rate_limited_error
 
 TRANSLATE_USE_CASE = "meta_hot_posts.europe_fit_translate"
-TRANSLATE_PROVIDER = "gemini_vertex_adc"
+TRANSLATE_PROVIDER = "gemini_vertex"
 TRANSLATE_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_BATCH_LIMIT = 120
 DEFAULT_DELAY_SECONDS = 2

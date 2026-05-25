@@ -21,14 +21,12 @@ ALLOWED_PROVIDERS = (
     "openrouter",
     "gemini_aistudio",
     "gemini_vertex",
-    "gemini_vertex_adc",
 )
 
 PROVIDER_LABELS = {
     "openrouter": "OPENROUTER",
     "gemini_aistudio": "GOOGLE AI STUDIO",
     "gemini_vertex": "GOOGLE VERTEX AI",
-    "gemini_vertex_adc": "GOOGLE VERTEX AI ADC",
 }
 
 DEFAULT_PROVIDERS = {
@@ -68,7 +66,10 @@ def get_profile_config(profile: str) -> dict[str, str]:
         stored_provider = str(settings_store.get_setting(SETTING_KEYS[normalized_profile]) or "").strip()
     except Exception:
         stored_provider = ""
-    provider = stored_provider if stored_provider in ALLOWED_PROVIDERS else default_provider
+    if stored_provider == "gemini_vertex_adc":
+        provider = "gemini_vertex"
+    else:
+        provider = stored_provider if stored_provider in ALLOWED_PROVIDERS else default_provider
     return _config(normalized_profile, provider)
 
 

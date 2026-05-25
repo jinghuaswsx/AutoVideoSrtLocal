@@ -52,6 +52,8 @@ def _normalize_language_code(code: str) -> str:
 
 def _normalize_channel(value: str | None) -> str:
     normalized = (value or "").strip().lower()
+    if normalized == "cloud_adc":
+        return "cloud"
     return normalized if normalized in CHANNELS else _DEFAULT_CHANNEL
 
 
