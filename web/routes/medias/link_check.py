@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import abort, request
+from flask import abort, request, jsonify
 from flask_login import current_user, login_required
 
 from appcore import medias
@@ -111,3 +111,24 @@ def api_product_link_availability_run(pid: int, lang: str):
         body=body,
     )
     return routes._media_link_check_flask_response(result)
+
+
+@bp.route("/api/products/probe-link", methods=["POST"])
+@login_required
+def api_product_probe_link():
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "请输入有效的链接"}), 400
+
+    from appcore.link_availability import probe
+    try:
+        res = probe(url)
+        return jsonify({
+            "ok": res.get("ok", False),
+            "http_status": res.get("http_status"),
+            "error": res.get("error"),
+            "elapsed_ms": res.get("elapsed_ms")
+        }), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
