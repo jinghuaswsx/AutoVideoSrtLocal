@@ -176,6 +176,12 @@ def test_worker_pool_refills_finished_slot_while_other_task_is_running(monkeypat
     assert events.index(("start", "product-3")) < events.index(("finish", "product-2"))
 
 
+def test_default_worker_concurrency_is_four():
+    from appcore import mingkong_fine_ai_auto_evaluation as mod
+
+    assert mod.DEFAULT_WORKER_CONCURRENCY == 4
+
+
 def test_run_candidate_reuses_manual_link_check_contract(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation as mod
 
