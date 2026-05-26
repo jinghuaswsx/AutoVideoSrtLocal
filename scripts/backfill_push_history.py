@@ -14,15 +14,15 @@ from appcore.pushes import build_item_payload
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 def backfill():
-    # 查找所有 pushed_at IS NOT NULL 并且没有成功 push_log 的 items
+    # 查找所有 pushed_at IS NOT NULL 并且没有成功 push_log 或者成功 push_log 为空壳的 items
     items = query(
         "SELECT i.id, i.product_id, i.pushed_at, i.display_name, i.filename, i.file_size, i.object_key, i.cover_object_key, i.lang "
         "FROM media_items i "
         "LEFT JOIN media_push_logs l ON l.item_id = i.id AND l.status = 'success' "
-        "WHERE i.pushed_at IS NOT NULL AND l.id IS NULL AND i.deleted_at IS NULL"
+        "WHERE i.pushed_at IS NOT NULL AND (l.id IS NULL OR CHAR_LENGTH(l.request_payload) < 50) AND i.deleted_at IS NULL"
     )
     
-    logging.info(f"Found {len(items)} items to backfill push logs.")
+    logging.info(f"Found {len(items)} items to backfill or fix hollow push logs.")
     
     success_count = 0
     for item in items:
@@ -65,25 +65,41 @@ def backfill():
                 "tags": [],
             }
             
-        # 插入成功快照，指定 created_at 为 pushed_at
+        # 检查是否已存在空壳成功记录
+        existing_log = query_one(
+            "SELECT id FROM media_push_logs WHERE item_id = %s AND status = 'success' LIMIT 1",
+            (item_id,)
+        )
+        
         try:
-            log_id = execute(
-                "INSERT INTO media_push_logs "
-                "(item_id, operator_user_id, status, request_payload, response_body, created_at) "
-                "VALUES (%s, %s, 'success', %s, %s, %s)",
-                (item_id, 1, json.dumps(payload, ensure_ascii=False), "Backfilled from historic pushed_at", pushed_at),
-            )
-            # 更新最新 push_id
+            if existing_log:
+                log_id = existing_log["id"]
+                execute(
+                    "UPDATE media_push_logs "
+                    "SET request_payload = %s, response_body = %s, created_at = %s "
+                    "WHERE id = %s",
+                    (json.dumps(payload, ensure_ascii=False), "Restored and fixed hollow payload", pushed_at, log_id),
+                )
+                logging.info(f"Successfully fixed hollow push log for item {item_id}, log_id={log_id}")
+            else:
+                log_id = execute(
+                    "INSERT INTO media_push_logs "
+                    "(item_id, operator_user_id, status, request_payload, response_body, created_at) "
+                    "VALUES (%s, %s, 'success', %s, %s, %s)",
+                    (item_id, 1, json.dumps(payload, ensure_ascii=False), "Backfilled from historic pushed_at", pushed_at),
+                )
+                logging.info(f"Successfully backfilled push log for item {item_id}, log_id={log_id}")
+                
+            # 统一级联更新最新 push_id
             execute(
                 "UPDATE media_items SET latest_push_id = %s WHERE id = %s",
                 (log_id, item_id)
             )
             success_count += 1
-            logging.info(f"Successfully backfilled push log for item {item_id}, log_id={log_id}")
         except Exception as e:
-            logging.error(f"Failed to insert push log for item {item_id}: {e}")
+            logging.error(f"Failed to write push log for item {item_id}: {e}")
             
-    logging.info(f"Backfill finished. Total backfilled: {success_count}/{len(items)}")
+    logging.info(f"Backfill finished. Total backfilled/fixed: {success_count}/{len(items)}")
 
 if __name__ == "__main__":
     backfill()
