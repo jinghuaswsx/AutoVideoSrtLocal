@@ -2087,10 +2087,13 @@ function mkiFineAiButtonLabel(result) {
 function mkiFineAiDetectChannel(result) {
   const normalized = mkiFineAiNormalizeResult(result);
   if (!normalized) return '';
+  const runId = String(normalized.evaluation_run_id || normalized.run_id || '');
+  // 1. run_id prefix is the most reliable signal
+  if (runId.startsWith('eval_antigravity_')) return 'antigravity';
+  // 2. metadata fields (available in detail API, not in list API)
   const metadata = normalized.metadata || {};
   const evaluator = String(metadata.evaluator || '').toLowerCase();
-  const runId = String(normalized.evaluation_run_id || normalized.run_id || '');
-  if (evaluator.includes('antigravity') || runId.startsWith('eval_antigravity_')) return 'antigravity';
+  if (evaluator.includes('antigravity')) return 'antigravity';
   const channel = String(metadata.channel || '').toLowerCase();
   if (channel === 'antigravity') return 'antigravity';
   if (channel === 'adc') return 'adc';
@@ -2098,6 +2101,8 @@ function mkiFineAiDetectChannel(result) {
   const model = String(metadata.model || '').toLowerCase();
   if (provider || model) return 'adc';
   if (channel) return channel;
+  // 3. If we have a run_id but no metadata, it's from the list API — default to ADC
+  if (runId) return 'adc';
   return '';
 }
 
