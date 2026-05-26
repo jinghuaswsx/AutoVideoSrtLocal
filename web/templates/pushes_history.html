@@ -61,7 +61,7 @@
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px;">视频快照</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 150px;">视频文件名</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 120px;">商品中文名</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px;">产品Code</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; min-width: 300px;">产品Code</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 120px;">投放语种</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 50%; min-width: 150px; max-width: 450px;">文案快照</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 160px;">投放链接</th>
@@ -569,7 +569,7 @@
             <td style="padding:12px; vertical-align: top; min-width: 120px;">
               <div style="font-weight:600; font-size:14px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
             </td>
-            <td style="padding:12px; vertical-align: top; width: 300px;">
+            <td style="padding:12px; vertical-align: top; width: 300px; min-width: 300px;">
               <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
                 <code style="background: var(--oc-bg-subtle, #f3f4f6); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 500; word-break: break-all;">${escapeHtml(it.product_code)}</code>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center;" title="复制商品Code">
