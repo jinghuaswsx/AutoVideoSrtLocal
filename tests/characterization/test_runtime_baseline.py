@@ -130,13 +130,15 @@ def test_join_utterance_text_shape():
     assert _join_utterance_text([{"text": "  hello  "}, {"text": "world"}]) == "hello world"
 
 
-def test_resolve_original_video_passthrough_short():
+def test_resolve_original_video_passthrough_nonempty_asr_continues_translation():
     from appcore.runtime import _resolve_original_video_passthrough
 
     result = _resolve_original_video_passthrough([{"text": "tiny"}])
     assert isinstance(result, dict)
     assert {"enabled", "reason", "source_full_text", "source_chars"}.issubset(result.keys())
-    assert result["enabled"] is True
+    assert result["enabled"] is False
+    assert result["reason"] == ""
+    assert result["source_chars"] == 4
 
 
 def test_resolve_original_video_passthrough_long():
@@ -152,6 +154,16 @@ def test_is_original_video_passthrough_shape():
 
     assert _is_original_video_passthrough(None) is False
     assert _is_original_video_passthrough({"media_passthrough_mode": "original_video"}) is True
+    assert _is_original_video_passthrough({
+        "media_passthrough_mode": "original_video",
+        "media_passthrough_reason": "no_asr",
+        "media_passthrough_source_chars": 0,
+    }) is True
+    assert _is_original_video_passthrough({
+        "media_passthrough_mode": "original_video",
+        "media_passthrough_reason": "short_asr",
+        "media_passthrough_source_chars": 37,
+    }) is False
     assert _is_original_video_passthrough({"media_passthrough_mode": "normal"}) is False
 
 

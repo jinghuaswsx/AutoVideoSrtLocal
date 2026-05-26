@@ -759,13 +759,13 @@ def test_multi_ja_subtitle_uses_timed_japanese_chunks(tmp_path, monkeypatch):
     assert captured["srt_content"].endswith(ja_text + "\n")
 
 
-def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):
+def test_step_tts_skips_dubbing_when_no_asr_passthrough_enabled(tmp_path, monkeypatch):
     from appcore import task_state
 
     monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
     monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
 
-    task_id = "multi-es-short-asr"
+    task_id = "multi-es-no-asr"
     video_path = tmp_path / "source.mp4"
     video_path.write_bytes(b"fake-video")
 
@@ -774,10 +774,10 @@ def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypat
         task_id,
         target_lang="es",
         source_language="en",
-        source_full_text_zh="This source text is intentionally long enough to avoid the legacy short-ASR branch.",
+        source_full_text_zh="",
         media_passthrough_mode="original_video",
-        media_passthrough_reason="short_asr",
-        media_passthrough_source_chars=14,
+        media_passthrough_reason="no_asr",
+        media_passthrough_source_chars=0,
         selected_voice_id="voice-es",
         selected_voice_name="Spanish Voice",
         script_segments=[
@@ -827,7 +827,7 @@ def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypat
 
     updated = task_state.get(task_id)
     assert updated["tts_duration_status"] == "source_video_passthrough"
-    assert updated["tts_skip_reason"] == "short_asr"
+    assert updated["tts_skip_reason"] == "no_asr"
     assert updated["steps"]["tts"] == "done"
     assert "跳过西班牙语配音" in updated["step_messages"]["tts"]
 

@@ -433,7 +433,7 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
     assert billing_calls[0]["request_units"] == 13
 
 
-def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_path, monkeypatch):
+def test_step_asr_continues_translation_when_transcript_is_short_but_nonempty(tmp_path, monkeypatch):
     from appcore import task_state
 
     monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
@@ -461,15 +461,15 @@ def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_
     runner._step_asr("task-asr-short-passthrough", str(tmp_path))
 
     saved = store.get("task-asr-short-passthrough")
-    assert saved["media_passthrough_mode"] == "original_video"
-    assert saved["media_passthrough_reason"] == "short_asr"
-    assert saved["media_passthrough_source_chars"] < 50
+    assert saved["media_passthrough_mode"] is None
+    assert saved["media_passthrough_reason"] is None
+    assert saved["media_passthrough_source_chars"] is None
     assert saved["steps"]["asr"] == "done"
-    assert saved["status"] == "done"
+    assert saved["status"] == "uploaded"
     for step in ("alignment", "translate", "tts", "subtitle", "compose", "export"):
-        assert saved["steps"][step] == "done"
-    assert saved["result"]["hard_video"].endswith("_hard.normal.mp4")
-    assert (tmp_path / "source_hard.normal.mp4").read_bytes() == b"original-video"
+        assert saved["steps"][step] == "pending"
+    assert saved["result"] == {}
+    assert not (tmp_path / "source_hard.normal.mp4").exists()
 
 
 def test_step_asr_completes_original_video_passthrough_when_transcript_is_empty(tmp_path, monkeypatch):
@@ -910,8 +910,8 @@ def test_step_compose_copies_original_video_when_passthrough_enabled(tmp_path, m
     source_video.write_bytes(b"original-video")
     task["video_path"] = str(source_video)
     task["media_passthrough_mode"] = "original_video"
-    task["media_passthrough_reason"] = "short_asr"
-    task["media_passthrough_source_chars"] = 12
+    task["media_passthrough_reason"] = "no_asr"
+    task["media_passthrough_source_chars"] = 0
 
     monkeypatch.setattr(
         "pipeline.compose.compose_video",
@@ -942,8 +942,8 @@ def test_step_export_skips_capcut_when_passthrough_enabled(tmp_path, monkeypatch
     hard_video.write_bytes(b"original-video")
     task["video_path"] = str(source_video)
     task["media_passthrough_mode"] = "original_video"
-    task["media_passthrough_reason"] = "short_asr"
-    task["media_passthrough_source_chars"] = 12
+    task["media_passthrough_reason"] = "no_asr"
+    task["media_passthrough_source_chars"] = 0
     task["variants"]["normal"]["result"] = {
         "hard_video": str(hard_video),
         "soft_video": str(hard_video),

@@ -97,11 +97,11 @@ def test_step_voice_match_skips_when_original_video_passthrough_enabled():
     task = {
         "task_dir": "/tmp/x",
         "target_lang": "de",
-        "utterances": [{"start_time": 0, "end_time": 10, "text": "hi"}],
+        "utterances": [],
         "video_path": "/tmp/x/src.mp4",
         "media_passthrough_mode": "original_video",
-        "media_passthrough_reason": "short_asr",
-        "media_passthrough_source_chars": 12,
+        "media_passthrough_reason": "no_asr",
+        "media_passthrough_source_chars": 0,
     }
     with patch("appcore.task_state.get", return_value=task), \
          patch("appcore.task_state.update") as m_update, \
