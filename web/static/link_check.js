@@ -8,57 +8,49 @@
   const MAX_POLL_FAILURES = 3;
   const TERMINAL_STATUSES = new Set(["done", "failed", "review_ready", "deleted"]);
 
-  const taskStatusLabels = {
-    queued: "排队中",
-    locking_locale: "锁定目标语言页面",
-    downloading: "下载图片中",
-    analyzing: "分析图片中",
-    review_ready: "待复核",
-    done: "已完成",
-    failed: "失败",
-    deleted: "已删除",
+  const LINK_CHECK_STATUS_LABELS = {
+    queued: '排队中',
+    locking_locale: '锁定目标语种页面',
+    downloading: '下载图片中',
+    analyzing: '分析图片中',
+    review_ready: '待复核',
+    done: '已完成',
+    failed: '失败',
+    deleted: '已删除',
   };
 
-  const overallDecisionLabels = {
-    running: "检查中",
-    done: "已完成",
-    unfinished: "未完成",
-    pass: "通过",
-    review: "待复核",
-    replace: "需替换",
+  const LINK_CHECK_OVERALL_LABELS = {
+    running: '检测中',
+    done: '通过',
+    unfinished: '需复核',
   };
 
-  const decisionLabels = {
-    pass: "通过",
-    review: "待复核",
-    replace: "需替换",
-    no_text: "无文字",
-    failed: "处理失败",
+  const LINK_CHECK_DECISION_LABELS = {
+    pass: '通过',
+    replace: '需替换',
+    review: '待复核',
+    no_text: '无文字',
+    failed: '失败',
   };
 
-  const referenceStatusLabels = {
-    matched: "已匹配",
-    weak_match: "弱匹配",
-    not_matched: "未匹配",
-    not_provided: "未提供",
+  const LINK_CHECK_REFERENCE_LABELS = {
+    matched: '已匹配参考图',
+    weak_match: '弱匹配',
+    not_matched: '未匹配',
+    not_provided: '未提供参考图',
   };
 
-  const binaryStatusLabels = {
-    pass: "通过",
-    fail: "未通过",
-    skipped: "未执行",
-    error: "执行失败",
+  const LINK_CHECK_BINARY_LABELS = {
+    pass: '快检通过',
+    fail: '快检不通过',
+    skipped: '未执行快检',
+    error: '快检失败',
   };
 
-  const sameImageStatusLabels = {
-    done: "已完成",
-    skipped: "未执行",
-    error: "执行失败",
-  };
-
-  const decisionSourceLabels = {
-    binary_quick_check: "二值快检",
-    gemini_language_check: "语言 Gemini",
+  const LINK_CHECK_SAME_IMAGE_LABELS = {
+    done: '已完成同图判断',
+    skipped: '未执行同图判断',
+    error: '同图判断失败',
   };
 
   function $(id) {
@@ -72,10 +64,6 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
-  }
-
-  function escapeAttr(value) {
-    return escapeHtml(value).replaceAll("`", "&#96;");
   }
 
   function safeMediaSrc(url) {
@@ -152,513 +140,478 @@
     return value;
   }
 
-  function summaryCard(label, value) {
-    return `
-      <div class="lc-summary-card">
-        <strong>${escapeHtml(label)}</strong>
-        <span>${escapeHtml(formatValue(value))}</span>
-      </div>
-    `;
+  let LANGUAGES = [];
+  async function ensureLanguages() {
+    if (LANGUAGES.length) return LANGUAGES;
+    try {
+      const data = await fetchJSON('/medias/api/languages');
+      LANGUAGES = data.items || [];
+    } catch (e) {
+      console.warn("Failed to load languages:", e);
+      LANGUAGES = [];
+    }
+    return LANGUAGES;
   }
 
-  function badge(label, kind) {
-    return `<span class="lc-badge${kind ? ` ${kind}` : ""}">${escapeHtml(label)}</span>`;
+  function langDisplayName(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    if (!normalized) return '';
+    const l = (LANGUAGES || []).find(x => x && x.code === normalized);
+    const upper = normalized.toUpperCase();
+    if (l && l.name_zh) return `${l.name_zh} (${upper})`;
+    return upper || raw;
   }
 
-  function isNonPassDecision(decision) {
-    return ["review", "replace", "no_text", "failed"].includes(decision);
-  }
-
-  function isLowQuality(score) {
-    return typeof score === "number" && score < 60;
-  }
-
-  function isForegroundOverlapBelowThreshold(binary) {
-    return (
-      typeof binary.foreground_overlap === "number" &&
-      typeof binary.threshold === "number" &&
-      binary.foreground_overlap < binary.threshold
-    );
-  }
-
-  function isBinaryCheckError(binary) {
-    return binary.status === "error";
-  }
-
-  function isSameImageRejected(sameImage) {
-    if (sameImage.status !== "done") {
-      return false;
-    }
-    const answer = String(sameImage.answer || "").trim().toLowerCase();
-    return ["不是", "否", "no", "false", "different"].includes(answer);
-  }
-
-  function isSameImageError(sameImage) {
-    return sameImage.status === "error";
-  }
-
-  function collectIssueSummary(item, task) {
-    const issues = [];
-    const analysis = item.analysis || {};
-    const binary = item.binary_quick_check || {};
-    const sameImage = item.same_image_llm || {};
-
-    if (item.status === "failed" || analysis.decision === "failed") {
-      issues.push("图片处理失败");
-    }
-    if (analysis.decision === "review") {
-      issues.push("最终判定待复核");
-    }
-    if (analysis.decision === "no_text") {
-      issues.push("未识别到有效文字");
-    }
-    if (analysis.decision === "replace") {
-      issues.push("最终判定需替换");
-    }
-    if (analysis.language_match === false) {
-      issues.push("识别语言与目标语言不匹配");
-    } else if (
-      analysis.detected_language &&
-      task &&
-      task.target_language &&
-      analysis.detected_language !== task.target_language
-    ) {
-      issues.push("识别语言与目标语言不匹配");
-    }
-    if (isLowQuality(analysis.quality_score)) {
-      issues.push("质量分过低");
-    }
-    if (binary.status === "fail") {
-      issues.push("二值快检未通过");
-    }
-    if (isBinaryCheckError(binary)) {
-      issues.push("二值快检执行失败");
-    }
-    if (isForegroundOverlapBelowThreshold(binary)) {
-      issues.push("前景重合度低于阈值");
-    }
-    if (isSameImageRejected(sameImage)) {
-      issues.push("大模型判定不是同图");
-    }
-    if (isSameImageError(sameImage)) {
-      issues.push("大模型同图判断执行失败");
-    }
-
-    return issues;
-  }
-
-  function buildMetaField(label, value, options) {
-    const settings = options || {};
-    const cardClasses = ["lc-meta-card"];
-    const valueClasses = ["lc-meta-value"];
-
-    if (settings.isAlert) {
-      cardClasses.push("lc-meta-card--alert");
-      valueClasses.push("lc-meta-value--alert");
-    }
-    if (settings.mono) {
-      valueClasses.push("lc-mono");
-    }
-    if (settings.clamp !== false) {
-      valueClasses.push("lc-clamp-2");
-    }
-
-    return `
-      <div class="${cardClasses.join(" ")}">
-        <strong class="lc-meta-label">${escapeHtml(label)}</strong>
-        <span class="${valueClasses.join(" ")}">${escapeHtml(formatValue(value))}</span>
-      </div>
-    `;
-  }
-
-  function getDecisionClass(decision, itemStatus) {
-    if (decision === "pass") {
-      return "is-success";
-    }
-    if (decision === "review" || decision === "no_text") {
-      return "is-warning";
-    }
-    if (decision === "replace" || decision === "failed" || itemStatus === "failed") {
-      return "is-danger";
-    }
-    return "";
-  }
-
-  function getSameImageValue(sameImage) {
-    return sameImage.status === "done"
-      ? formatValue(sameImage.answer)
-      : (sameImageStatusLabels[sameImage.status] || sameImage.status || "-");
-  }
-
-  function resolveSitePreviewUrl(task, item) {
-    if (item.site_preview_url) {
-      return item.site_preview_url;
-    }
-    if (task && task.id && item.id) {
-      return `/api/link-check/tasks/${task.id}/images/site/${item.id}`;
-    }
-    return "";
-  }
-
-  function resolveReferencePreviewUrl(task, reference) {
-    if (reference.preview_url) {
-      return reference.preview_url;
-    }
-    if (task && task.id && reference.reference_id) {
-      return `/api/link-check/tasks/${task.id}/images/reference/${reference.reference_id}`;
-    }
-    if (task && task.id && reference.id) {
-      return `/api/link-check/tasks/${task.id}/images/reference/${reference.id}`;
-    }
-    return "";
-  }
-
-  function shouldShowReferencePreview(reference, previewUrl) {
-    return reference.status === "matched" && Boolean(previewUrl);
-  }
-
-  function getReferenceMatchValue(reference) {
-    const scoreSuffix = reference.score != null ? `（分数 ${reference.score}）` : "";
-    if (reference.status === "matched") {
-      return `${reference.reference_filename || reference.filename || "-"}${scoreSuffix}`;
-    }
-    if (reference.status === "weak_match") {
-      return `存在弱匹配候选${scoreSuffix}`;
-    }
-    if (reference.status === "not_matched") {
-      return "未匹配到参考图";
-    }
-    if (reference.status === "not_provided") {
-      return "未提供参考图";
-    }
-    return referenceStatusLabels[reference.status] || "-";
-  }
-
-  function renderPreviewPanel(title, imageUrl, emptyText) {
-    const safeImageUrl = safeMediaSrc(imageUrl);
-    return `
-      <div class="lc-preview-panel">
-        <div class="lc-preview-label">${escapeHtml(title)}</div>
-        <div class="lc-preview-frame">
-          ${safeImageUrl
-            ? `<img src="${escapeAttr(safeImageUrl)}" alt="${escapeHtml(title)}">`
-            : `<div class="lc-preview-empty">${escapeHtml(emptyText)}</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function buildPreviewStack(task, item) {
-    const reference = item.reference_match || {};
-    const referencePreview = resolveReferencePreviewUrl(task, reference);
-    const panels = [
-      renderPreviewPanel("网站抓取图", resolveSitePreviewUrl(task, item), "暂未生成网站抓取图"),
-    ];
-
-    if (shouldShowReferencePreview(reference, referencePreview)) {
-      panels.push(renderPreviewPanel("参考图", referencePreview, "未提供参考图"));
-    }
-
-    const stackClass = panels.length === 1
-      ? "lc-preview-stack lc-preview-stack--single"
-      : "lc-preview-stack";
-
-    return `<div class="${stackClass}">${panels.join("")}</div>`;
-  }
-
-  function formatEvidenceBoolean(value) {
-    if (value === true) {
-      return "是";
-    }
-    if (value === false) {
-      return "否";
-    }
-    return "-";
-  }
-
-  function hasLocaleEvidence(task) {
-    const evidence = task && typeof task.locale_evidence === "object" ? task.locale_evidence : null;
-    if (!evidence) {
-      return false;
-    }
-
-    const attempts = Array.isArray(evidence.attempts) ? evidence.attempts : [];
-    return Boolean(
-      attempts.length
-      || evidence.lock_source
-      || evidence.failure_reason
-      || evidence.locked === true
-    );
-  }
-
-  function renderLocaleAttemptRow(attempt) {
-    const lockResult = attempt.locked === true
-      ? badge("已锁定", "is-success")
-      : (attempt.locked === false ? badge("未锁定", "is-warning") : "-");
-
-    return `
-      <tr>
-        <td>${escapeHtml(String(attempt.attempt_index || "-"))}</td>
-        <td>${escapeHtml(formatValue(attempt.phase))}</td>
-        <td>${escapeHtml(formatValue(attempt.wait_seconds_before_request))}</td>
-        <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.requested_url))}</td>
-        <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.resolved_url))}</td>
-        <td>${escapeHtml(formatValue(attempt.page_language))}</td>
-        <td>${lockResult}</td>
-      </tr>
-    `;
-  }
-
-  function renderLocaleEvidence(task) {
-    const evidence = task.locale_evidence || {};
-    const attempts = Array.isArray(evidence.attempts) ? evidence.attempts : [];
-    const hasEvidence = hasLocaleEvidence(task);
-    const lockResult = hasEvidence
-      ? (evidence.locked === true ? "已锁定" : (evidence.locked === false ? "未锁定" : "-"))
-      : "-";
-    const failureReason = hasEvidence ? (evidence.failure_reason || "-") : "暂无证据";
-    const emptyText = hasEvidence ? "暂无页面锁定尝试记录" : "暂无证据";
-
-    return `
-      <section class="lc-evidence-block">
-        <div class="lc-panel-head">
-          <span class="lc-kicker">Locale Evidence</span>
-          <h3>页面锁定证据</h3>
-          <p>只有锁定到目标语言页面后，系统才会继续下载并检查图片。</p>
-        </div>
-        <div class="lc-evidence-grid">
-          ${summaryCard("锁定来源", evidence.lock_source || "-")}
-          ${summaryCard("目标语言", evidence.target_language || task.target_language || "-")}
-          ${summaryCard("锁定结果", lockResult)}
-          ${summaryCard("失败原因", failureReason)}
-        </div>
-        <div class="lc-attempt-table-wrap">
-          <table class="lc-attempt-table">
-            <thead>
-              <tr>
-                <th>尝试</th>
-                <th>阶段</th>
-                <th>等待秒数</th>
-                <th>请求 URL</th>
-                <th>最终 URL</th>
-                <th>页面语言</th>
-                <th>结果</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${attempts.length
-                ? attempts.map(renderLocaleAttemptRow).join("")
-                : `
-                  <tr>
-                    <td colspan="7" class="lc-attempt-table__empty">${escapeHtml(emptyText)}</td>
-                  </tr>
-                `}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    `;
-  }
-
-  function renderDownloadEvidence(item) {
-    const evidence = item.download_evidence || {};
-
-    return [
-      { label: "原始图片 URL", value: evidence.requested_source_url || "-", mono: true },
-      { label: "最终下载 URL", value: evidence.resolved_source_url || "-", mono: true },
-      {
-        label: "是否保持同一资源",
-        value: formatEvidenceBoolean(evidence.redirect_preserved_asset),
-        isAlert: evidence.redirect_preserved_asset === false,
-      },
-      {
-        label: "是否来自当前 Variant",
-        value: formatEvidenceBoolean(evidence.variant_selected),
-      },
-      {
-        label: "下载结果",
-        value: evidence.evidence_status || "-",
-        isAlert: evidence.evidence_status === "mismatch",
-      },
-      { label: "下载说明", value: evidence.evidence_reason || "-" },
-    ];
-  }
-
-  function getItemMetaEntries(item, task) {
-    const analysis = item.analysis || {};
-    const reference = item.reference_match || {};
-    const binary = item.binary_quick_check || {};
-    const sameImage = item.same_image_llm || {};
-    const decision = analysis.decision || item.status || "-";
-    const languageMismatch = analysis.language_match === false
-      || (
-        analysis.detected_language &&
-        task &&
-        task.target_language &&
-        analysis.detected_language !== task.target_language
-      );
-
-    return [
-      { label: "图片来源", value: item.source_url || "-", mono: true },
-      {
-        label: "最终判定",
-        value: decisionLabels[decision] || decision,
-        isAlert: isNonPassDecision(decision),
-      },
-      {
-        label: "最终判定来源",
-        value: decisionSourceLabels[analysis.decision_source] || analysis.decision_source || "-",
-        isAlert: isNonPassDecision(decision),
-      },
-      {
-        label: "识别语言",
-        value: analysis.detected_language || "-",
-        isAlert: languageMismatch,
-      },
-      { label: "提取文字", value: analysis.text_summary || "-" },
-      {
-        label: "质量分",
-        value: analysis.quality_score ?? "-",
-        isAlert: isLowQuality(analysis.quality_score),
-      },
-      { label: "模型说明", value: analysis.quality_reason || item.error || "-" },
-      { label: "参考图匹配", value: getReferenceMatchValue(reference) },
-      {
-        label: "二值快检结果",
-        value: binaryStatusLabels[binary.status] || binary.status || "-",
-        isAlert: binary.status === "fail" || isBinaryCheckError(binary),
-      },
-      { label: "二值相似度", value: formatPercent(binary.binary_similarity) },
-      {
-        label: "前景重合度",
-        value: formatPercent(binary.foreground_overlap),
-        isAlert: isForegroundOverlapBelowThreshold(binary),
-      },
-      {
-        label: "当前阈值",
-        value: formatPercent(binary.threshold),
-        isAlert: isForegroundOverlapBelowThreshold(binary),
-      },
-      {
-        label: "二值快检说明",
-        value: binary.reason || "-",
-        isAlert: binary.status === "fail" || isBinaryCheckError(binary),
-      },
-      {
-        label: "大模型同图判断",
-        value: getSameImageValue(sameImage),
-        isAlert: isSameImageRejected(sameImage) || isSameImageError(sameImage),
-      },
-      { label: "大模型判断通道", value: sameImage.channel_label || "-" },
-      { label: "大模型模型", value: sameImage.model || "-" },
-      ...renderDownloadEvidence(item),
-    ];
-  }
-
-  function renderSummary(task) {
+  function edLinkCheckStatusText(task) {
+    if (!task) return '未检测';
     const summary = task.summary || {};
-    const progress = task.progress || {};
-    $("linkCheckSummary").innerHTML = `
-      <div class="lc-panel-head">
-        <span class="lc-kicker">Summary</span>
-        <h2>任务摘要</h2>
-        <p>详情页直接使用已保存任务状态渲染，并在任务仍活跃时继续轮询。</p>
-      </div>
-      <div class="lc-summary-grid">
-        ${summaryCard("抓取图片", progress.total ?? 0)}
-        ${summaryCard("已分析", progress.analyzed ?? 0)}
-        ${summaryCard("参考图比对", progress.compared ?? 0)}
-        ${summaryCard("二值快检", progress.binary_checked ?? 0)}
-        ${summaryCard("同图大模型", progress.same_image_llm_done ?? 0)}
-        ${summaryCard("整体结论", overallDecisionLabels[summary.overall_decision] || taskStatusLabels[task.status] || "-")}
-      </div>
-      <div class="lc-summary-meta">
-        <div class="lc-meta-chip"><strong>目标语言</strong><span>${escapeHtml(formatValue(task.target_language_name || task.target_language))}</span></div>
-        <div class="lc-meta-chip"><strong>页面语言</strong><span>${escapeHtml(formatValue(task.page_language))}</span></div>
-        <div class="lc-meta-chip"><strong>任务状态</strong><span>${escapeHtml(taskStatusLabels[task.status] || task.status || "-")}</span></div>
-        <div class="lc-meta-chip lc-meta-chip--wide"><strong>链接</strong><span class="lc-clamp-2 lc-mono">${escapeHtml(formatValue(task.resolved_url || task.link_url))}</span></div>
-      </div>
-      ${renderLocaleEvidence(task)}
-    `;
-  }
-
-  function renderItem(item, task, index) {
-    const analysis = item.analysis || {};
-    const reference = item.reference_match || {};
-    const decision = analysis.decision || item.status || "-";
-    const decisionClass = getDecisionClass(decision, item.status);
-    const issues = collectIssueSummary(item, task);
-    const cardClasses = ["lc-result-card"];
-    const metaEntries = getItemMetaEntries(item, task);
-
-    if (issues.length) {
-      cardClasses.push("lc-result-card--alert");
+    if (task.status === 'done' && summary.overall_decision) {
+      return LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || LINK_CHECK_STATUS_LABELS[task.status] || task.status;
     }
-
-    return `
-      <article class="${cardClasses.join(" ")}" data-item-index="${index}">
-        <div class="lc-result-head">
-          <div class="lc-badges">
-            ${badge(item.kind === "detail" ? "详情图" : "轮播图")}
-            ${badge(`最终判定：${decisionLabels[decision] || decision}`, decisionClass)}
-            ${badge(`参考图：${referenceStatusLabels[reference.status] || reference.status || "未提供"}`)}
-          </div>
-        </div>
-        ${issues.length ? `
-          <div class="lc-issue-summary" aria-label="问题摘要">
-            ${issues.map((issue) => `<span class="lc-issue-pill">${escapeHtml(issue)}</span>`).join("")}
-          </div>
-        ` : ""}
-        <div class="lc-result-layout">
-          ${buildPreviewStack(task, item)}
-          <div class="lc-result-side">
-            <div class="lc-meta-grid">
-              ${metaEntries.map((entry) => buildMetaField(entry.label, entry.value, entry)).join("")}
-            </div>
-          </div>
-        </div>
-      </article>
-    `;
+    return LINK_CHECK_STATUS_LABELS[task.status] || LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || task.status || '未检测';
   }
 
-  function renderResults(task) {
-    const items = task.items || [];
-    const container = $("linkCheckResults");
+  function edLinkCheckDecisionText(decision, status) {
+    if (status === 'failed') return LINK_CHECK_DECISION_LABELS.failed;
+    return LINK_CHECK_DECISION_LABELS[decision] || '待复核';
+  }
 
-    if (!items.length) {
-      container.innerHTML = `
-        <div class="lc-panel-head">
-          <span class="lc-kicker">Results</span>
-          <h2>图片结果</h2>
-          <p>任务已保存，但目前还没有可展示的图片结果。</p>
-        </div>
-        <div class="lc-empty lc-empty--panel">
-          <strong>还没有图片结果</strong>
-          <span>系统会在抓取和分析完成后持续更新这里。</span>
-        </div>
-      `;
+  function edLinkCheckDecisionKind(decision, status) {
+    if (status === 'failed' || decision === 'replace') return 'danger';
+    if (decision === 'pass' || decision === 'no_text') return 'success';
+    return 'warning';
+  }
+
+  function edLinkCheckReferenceText(reference) {
+    const status = (reference || {}).status || 'not_provided';
+    if (status === 'matched' && reference.reference_filename) {
+      return reference.reference_filename;
+    }
+    return LINK_CHECK_REFERENCE_LABELS[status] || status;
+  }
+
+  function edLinkCheckBinaryText(binary) {
+    const status = (binary || {}).status || 'skipped';
+    return LINK_CHECK_BINARY_LABELS[status] || status;
+  }
+
+  function edLinkCheckSameImageText(sameImage) {
+    const status = (sameImage || {}).status || 'skipped';
+    if (status === 'done' && sameImage.answer) return sameImage.answer;
+    return LINK_CHECK_SAME_IMAGE_LABELS[status] || status;
+  }
+
+  function edLinkCheckBadge(label, kind) {
+    return `<span class="oc-link-check-badge ${kind || 'info'}">${escapeHtml(label)}</span>`;
+  }
+
+  function edLinkCheckPercent(task) {
+    const progress = (task && task.progress) || {};
+    const total = progress.total || 0;
+    if (total > 0) {
+      const finished = Math.max(progress.analyzed || 0, progress.downloaded || 0);
+      return Math.max(8, Math.min(100, Math.round((finished / total) * 100)));
+    }
+    if (!task) return 0;
+    if (task.status === 'queued') return 5;
+    if (task.status === 'locking_locale') return 12;
+    if (task.status === 'downloading') return 35;
+    if (task.status === 'analyzing') return 72;
+    if (task.status === 'review_ready' || task.status === 'done') return 100;
+    return 0;
+  }
+
+  function edRenderLinkCheckConsole(task) {
+    const consoleBox = $('linkCheckConsole');
+    if (!consoleBox) return;
+
+    if (!task || (!task.task_id && !task.id)) {
+      consoleBox.innerHTML = '';
       return;
     }
 
-    container.innerHTML = `
-      <div class="lc-panel-head">
-        <span class="lc-kicker">Results</span>
-        <h2>图片结果</h2>
-        <p>失败项会以红色告警卡片和字段强调，方便直接定位问题依据。</p>
-      </div>
-      <div class="lc-result-list">
-        ${items.map((item, index) => renderItem(item, task, index)).join("")}
-      </div>
+    const steps = [
+      {
+        key: 'lock_locale',
+        name: '语言区域锁定 (Language / Locale Lock)',
+        icon: '🔒',
+        getDetails: (t) => {
+          const ev = t.locale_evidence || {};
+          const lines = [];
+          if (t.target_language) lines.push(`目标语种：${t.target_language_name || langDisplayName(t.target_language)}`);
+          if (ev.requested_url) lines.push(`请求 URL：${ev.requested_url}`);
+          if (t.resolved_url) lines.push(`最终指向：${t.resolved_url}`);
+          if (ev.lock_source) lines.push(`锁定方式：${ev.lock_source}`);
+          if (ev.locked) {
+            lines.push(`状态：成功锁定 [OK]`);
+          } else if (ev.failure_reason) {
+            lines.push(`锁定失败原因：${ev.failure_reason}`);
+          }
+          if (ev.attempts && ev.attempts.length) {
+            lines.push(`尝试记录：`);
+            ev.attempts.forEach((att, idx) => {
+              lines.push(`  [${idx + 1}] URL: ${att.url || '-'} | HTTP: ${att.http_code || '-'} | Lang: ${att.lang || '-'}`);
+            });
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'download',
+        name: '图片资源下载提取 (Shopify Image Extraction)',
+        icon: '📥',
+        getDetails: (t) => {
+          const lines = [];
+          if (t.progress && typeof t.progress.total === 'number') {
+            lines.push(`检测到 Shopify 图片总量：${t.progress.total} 张`);
+            lines.push(`已成功拉取图片：${t.progress.downloaded ?? 0} / ${t.progress.total} 张`);
+          }
+          if (t.page_language) {
+            lines.push(`网页 HTML 文本语言：${t.page_language} (${langDisplayName(t.page_language)})`);
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'analyze',
+        name: '小语种图片与翻译审计 (Visual Contrast Audit)',
+        icon: '🔍',
+        getDetails: (t) => {
+          const lines = [];
+          const progress = t.progress || {};
+          const summary = t.summary || {};
+          if (typeof progress.total === 'number') {
+            lines.push(`二值快速匹配 (Fast Match)：${progress.binary_checked ?? 0} 张已比对`);
+            if (summary.binary_direct_pass_count) lines.push(`  - 快检直接通过 (Pass)：${summary.binary_direct_pass_count} 张`);
+            if (summary.binary_direct_replace_count) lines.push(`  - 快检直接不通过 (Replace)：${summary.binary_direct_replace_count} 张`);
+            lines.push(`大模型同图辅助分析 (Same Image LLM)：${progress.same_image_llm_done ?? 0} 张已判定`);
+            if (summary.same_image_llm_yes_count) lines.push(`  - 同图判定一致：${summary.same_image_llm_yes_count} 张`);
+            lines.push(`Gemini 多模态文本审计 (Gemini OCR)：${progress.analyzed ?? 0} / ${progress.total} 张完成`);
+          }
+          return lines.join('\n');
+        }
+      },
+      {
+        key: 'summarize',
+        name: '最终质量结论裁决 (Final Quality Verdict)',
+        icon: '⚖️',
+        getDetails: (t) => {
+          const s = t.summary || {};
+          const lines = [];
+          if (t.status === 'done' || t.status === 'review_ready') {
+            lines.push(`审计结果汇总：`);
+            lines.push(`  - 翻译合格直接通过：${s.pass_count ?? 0} 项`);
+            lines.push(`  - 无文字背景图忽略：${s.no_text_count ?? 0} 项`);
+            lines.push(`  - 存在英语/未翻译需替换：${s.replace_count ?? 0} 项`);
+            lines.push(`  - 无法确定需人工复核：${s.review_count ?? 0} 项`);
+            if (s.replaced_count !== undefined || s.total_count !== undefined) {
+              lines.push(`  - 换图覆盖完成度：已换 ${s.replaced_count ?? 0} 张 / 共 ${s.total_count ?? 0} 张`);
+              lines.push(`  - 未换或换图未到位：${s.not_replaced_count ?? 0} 张`);
+            }
+            if (s.reference_matched_count) lines.push(`  - 成功匹配本地参考图：${s.reference_matched_count} 张`);
+          }
+          return lines.join('\n');
+        }
+      }
+    ];
+
+    let html = `
+      <div class="oc-console-wrapper" style="margin-bottom: 20px;">
+        <div class="oc-console-header">
+          <span>🖥️ 实时链接审计台 (Audit Console)</span>
+          <span class="oc-console-task-id">Task: ${escapeHtml(task.task_id || task.id || '')}</span>
+        </div>
+        <div class="oc-console-steps">
     `;
+
+    steps.forEach((step, idx) => {
+      const stepState = (task.steps && task.steps[step.key]) || ''; 
+      const stepMsg = (task.step_messages && task.step_messages[step.key]) || '';
+      
+      let badgeClass = 'queued';
+      let badgeLabel = '排队中';
+      let statusIcon = '●';
+
+      if (stepState === 'running') {
+        badgeClass = 'running';
+        badgeLabel = '执行中';
+        statusIcon = '<span class="oc-spinner-sm"></span>';
+      } else if (stepState === 'done') {
+        badgeClass = 'done';
+        badgeLabel = '已完成';
+        statusIcon = '✓';
+      } else if (stepState === 'error') {
+        badgeClass = 'error';
+        badgeLabel = '失败';
+        statusIcon = '✗';
+      } else {
+        if (task.status === 'failed') {
+          badgeClass = 'queued';
+          badgeLabel = '已停止';
+        } else if (task.status === 'queued') {
+          badgeClass = 'queued';
+          badgeLabel = '排队中';
+        } else {
+          const prevStep = steps[idx - 1];
+          if (prevStep && task.steps && task.steps[prevStep.key] === 'done') {
+            badgeClass = 'running';
+            badgeLabel = '等待中';
+          }
+        }
+      }
+
+      const details = step.getDetails(task);
+      const detailsBlock = details
+        ? `<pre class="oc-console-step-logs">${escapeHtml(details)}</pre>`
+        : '';
+
+      html += `
+        <div class="oc-console-step-item">
+          <div class="oc-console-step-row">
+            <span class="oc-console-step-status ${badgeClass}">${statusIcon}</span>
+            <span class="oc-console-step-name">${step.icon} ${escapeHtml(step.name)}</span>
+            <span class="oc-console-step-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+            ${stepMsg ? `<span class="oc-console-step-msg">${escapeHtml(stepMsg)}</span>` : ''}
+          </div>
+          ${detailsBlock}
+        </div>
+      `;
+    });
+
+    let verdictHtml = '';
+    const isFinished = ['done', 'review_ready', 'failed'].includes(task.status);
+    const overall = (task.summary && task.summary.overall_decision) || '';
+    
+    if (isFinished) {
+      if (task.status === 'failed') {
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-error">
+            <strong>❌ 审计故障：</strong>检测任务在执行过程中出错，原因：${escapeHtml(task.error || '未知错误')}。请检查网络或稍后重试。
+          </div>
+        `;
+      } else if (overall === 'done') {
+        const total = task.progress.total ?? 0;
+        const replaced = task.summary.replaced_count ?? 0;
+        let subVerdict = '';
+        if (total > 0) {
+          subVerdict = `【换图结论：共拉取到 ${total} 张图片，已 100% 成功换图（${replaced} / ${total} 张已换到位）】`;
+        }
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-pass" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+            <div><strong>🎉 审计合格：</strong>页面文案与商品图片已完全替换为目标小语种 (${escapeHtml(task.target_language_name || langDisplayName(task.target_language))})，无任何遗漏，完美通关！</div>
+            ${subVerdict ? `<div style="font-size: 11px; opacity: 0.9; color: #d1fae5;">${escapeHtml(subVerdict)}</div>` : ''}
+          </div>
+        `;
+      } else if (overall === 'unfinished') {
+        const replaceCount = task.summary.replace_count ?? 0;
+        const reviewCount = task.summary.review_count ?? 0;
+        const total = task.progress.total ?? 0;
+        const replaced = task.summary.replaced_count ?? 0;
+        const notReplaced = task.summary.not_replaced_count ?? 0;
+        let subVerdict = '';
+        if (total > 0) {
+          subVerdict = `【换图结论：共拉取到 ${total} 张图片，其中 ${replaced} 张已成功换图，${notReplaced} 张未换或换图未到位】`;
+        }
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-fail" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+            <div><strong>⚠️ 审计未通过：</strong>网页存在未翻译的英语图片或文案（有 ${replaceCount} 张图片需要替换，${reviewCount} 项待人工复核）。请立即排查！</div>
+            ${subVerdict ? `<div style="font-size: 11px; opacity: 0.9; color: #ffedd5;">${escapeHtml(subVerdict)}</div>` : ''}
+          </div>
+        `;
+      } else {
+        verdictHtml = `
+          <div class="oc-console-verdict verdict-fail">
+            <strong>⚠️ 审计未就绪：</strong>未获取到明确的审计结论。请人工检查或重新发起检测。
+          </div>
+        `;
+      }
+    } else {
+      verdictHtml = `
+        <div class="oc-console-verdict verdict-running">
+          <span class="oc-spinner-sm"></span>
+          <strong>🤖 正在进行小语种合规性审计...</strong> 预计需要 1-3 分钟，请稍候。
+        </div>
+      `;
+    }
+
+    html += `
+      </div>
+      ${verdictHtml}
+    </div>
+    `;
+
+    consoleBox.innerHTML = html;
   }
 
   function renderTask(task) {
     state.currentTask = task;
     state.consecutivePollFailures = 0;
-    renderSummary(task);
-    renderResults(task);
     showError(task.error || "");
-    setStatus(`当前状态：${taskStatusLabels[task.status] || task.status || "-"}`);
+    setStatus(`当前状态：${LINK_CHECK_STATUS_LABELS[task.status] || task.status || "-"}`);
+
+    const summaryBox = $('linkCheckModalSummary');
+    const refsBox = $('linkCheckRefs');
+    const itemsBox = $('linkCheckItems');
+    if (!summaryBox || !refsBox || !itemsBox) return;
+
+    edRenderLinkCheckConsole(task);
+
+    const summary = task.summary || {};
+    const progress = task.progress || {};
+    const summaryCards = [
+      ['当前状态', edLinkCheckStatusText(task), false],
+      ['整体结论', LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || '-', false],
+      ['已分析图片', `${progress.analyzed ?? 0} / ${progress.total ?? 0}`, false],
+      ['参考图匹配', String(summary.reference_matched_count ?? 0), false],
+      ['已替换', summary.replaced_count !== undefined ? `${summary.replaced_count} 张` : '-', false],
+      ['未替换', summary.not_replaced_count !== undefined ? `${summary.not_replaced_count} 张` : '-', false],
+      ['通过', String(summary.pass_count ?? 0), false],
+      ['需替换', String(summary.replace_count ?? 0), false],
+      ['待复核', String(summary.review_count ?? 0), false],
+      ['最终链接', task.resolved_url || task.link_url || '-', true],
+    ];
+    summaryBox.innerHTML = summaryCards.map(([label, value, mono]) => `
+      <div class="oc-link-check-card">
+        <span class="oc-link-check-card-title">${escapeHtml(label)}</span>
+        <span class="oc-link-check-card-value${mono ? ' mono' : ''}">${escapeHtml(value)}</span>
+      </div>
+    `).join('');
+
+    const references = Array.isArray(task.reference_images) ? task.reference_images : [];
+    $('linkCheckRefsBadge').textContent = String(references.length);
+    refsBox.innerHTML = references.length
+      ? references.map(ref => {
+          const previewUrl = safeMediaSrc(ref.preview_url || '');
+          return `
+          <div class="oc-link-check-ref">
+            <img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(ref.filename || '参考图')}" loading="lazy">
+            <span title="${escapeHtml(ref.filename || '')}">${escapeHtml(ref.filename || '')}</span>
+          </div>
+        `;
+        }).join('')
+      : '<div class="oc-detail-images-empty">暂无参考图</div>';
+
+    const items = Array.isArray(task.items) ? task.items : [];
+    $('linkCheckItemsBadge').textContent = String(items.length);
+    if (!items.length) {
+      const placeholder = !TERMINAL_STATUSES.has(task.status)
+        ? `链接检测进行中，当前进度 ${edLinkCheckPercent(task)}%`
+        : '还没有检测结果';
+      itemsBox.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(placeholder)}</div>`;
+      return;
+    }
+
+    itemsBox.innerHTML = items.map((item, idx) => {
+      const analysis = item.analysis || {};
+      const reference = item.reference_match || {};
+      const binary = item.binary_quick_check || {};
+      const sameImage = item.same_image_llm || {};
+      const decision = analysis.decision || '';
+      const isReplaced = item.is_replaced; 
+
+      let finalReplaced = isReplaced;
+      if (finalReplaced === null || finalReplaced === undefined) {
+        if (decision === 'pass') {
+          finalReplaced = true;
+        } else if (decision === 'replace') {
+          finalReplaced = false;
+        }
+      }
+
+      let replacedBadgeHtml = '';
+      if (finalReplaced === true) {
+        replacedBadgeHtml = `<span class="oc-link-check-badge success" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-success-fg);">✅ 已替换</span>`;
+      } else if (finalReplaced === false) {
+        replacedBadgeHtml = `<span class="oc-link-check-badge danger" style="font-size: 11px; padding: 2px 8px; font-weight: bold; border: 1px solid var(--oc-danger-fg);">❌ 未替换</span>`;
+      } else {
+        if (reference.status === 'matched') {
+          replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比</span>`;
+        } else {
+          replacedBadgeHtml = `<span class="oc-link-check-badge info" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">❔ 未对比(无参考图)</span>`;
+        }
+      }
+
+      const qualityScore = analysis.quality_score !== undefined ? Number(analysis.quality_score) : 0;
+      let scoreBadgeColor = 'info';
+      if (qualityScore >= 80) scoreBadgeColor = 'success';
+      else if (qualityScore >= 60) scoreBadgeColor = 'warning';
+      else if (qualityScore > 0) scoreBadgeColor = 'danger';
+
+      const scoreBadgeHtml = `<span class="oc-link-check-badge ${scoreBadgeColor}" style="font-size: 11px; padding: 2px 8px; font-weight: bold;">⭐ 质量评分：${qualityScore}分</span>`;
+
+      const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
+      const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
+      const sitePreviewUrl = safeMediaSrc(item.site_preview_url);
+      const refPreviewUrl = reference.reference_id 
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/reference/${reference.reference_id}`)
+        : '';
+
+      const original = item.original_match || {};
+      const origPreviewUrl = original.original_id
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/original/${original.original_id}`)
+        : '';
+
+      const origImg = origPreviewUrl
+        ? `<img src="${escapeHtml(origPreviewUrl)}" alt="英语原图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:var(--oc-bg-subtle); font-size:11px; color:var(--oc-text-mute);">${original.status === 'not_matched' ? '未匹配到原图' : '无对照原图'}</div>`;
+
+      const leftImg = sitePreviewUrl
+        ? `<img src="${escapeHtml(sitePreviewUrl)}" alt="网页实际图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; font-size:11px;">无实际图</div>`;
+
+      const rightImg = refPreviewUrl
+        ? `<img src="${escapeHtml(refPreviewUrl)}" alt="系统翻译图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:var(--oc-bg-subtle); font-size:11px; color:var(--oc-text-mute);">${reference.status === 'not_matched' ? '未匹配到参考图' : '无对比参考图'}</div>`;
+
+      let borderStyle = 'border-right:1px solid var(--oc-border); border-left:1px solid var(--oc-border);';
+      if (finalReplaced === true) {
+        borderStyle = 'border:2px solid var(--oc-success-fg); box-shadow:0 0 8px rgba(16, 185, 129, 0.2);';
+      } else if (finalReplaced === false) {
+        borderStyle = 'border:2px solid var(--oc-danger-fg); box-shadow:0 0 8px rgba(239, 68, 68, 0.2);';
+      }
+
+      const preview = `
+        <div class="oc-link-check-item-comparison" style="display:flex; width:100%; height:100%;">
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-right:1px solid var(--oc-border); background:var(--oc-bg-subtle);">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">英语原图</div>
+            ${origImg}
+          </div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; ${borderStyle} z-index:1;">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">网页实际图</div>
+            ${leftImg}
+          </div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-left:1px solid var(--oc-border); background:var(--oc-bg-subtle);">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">系统翻译图</div>
+            ${rightImg}
+          </div>
+        </div>
+      `;
+      return `
+        <article class="oc-link-check-item">
+          <div class="oc-link-check-item-preview">${preview}</div>
+          <div class="oc-link-check-item-side-badges">
+            ${replacedBadgeHtml}
+            ${scoreBadgeHtml}
+            ${edLinkCheckBadge(edLinkCheckDecisionText(decision, item.status), edLinkCheckDecisionKind(decision, item.status))}
+            ${edLinkCheckBadge(edLinkCheckReferenceText(reference), reference.status === 'matched' ? 'success' : (reference.status === 'not_matched' ? 'warning' : 'info'))}
+          </div>
+          <div class="oc-link-check-item-body">
+            <div class="oc-link-check-item-head">
+              <div class="oc-link-check-item-title">${escapeHtml(itemLabel)} #${idx + 1}</div>
+            </div>
+            <div class="oc-link-check-item-url">${escapeHtml(item.source_url || '-')}</div>
+            <div class="oc-link-check-item-meta">
+              <span><strong>识别语种：</strong>${escapeHtml(langDisplayName(analysis.detected_language || '-'))}</span>
+              <span><strong>页面语种：</strong>${escapeHtml(langDisplayName(task.page_language || '-'))}</span>
+              <span><strong>二值快检：</strong>${escapeHtml(edLinkCheckBinaryText(binary))}</span>
+              <span><strong>同图判断：</strong>${escapeHtml(edLinkCheckSameImageText(sameImage))}</span>
+            </div>
+            <div class="oc-link-check-item-text">${escapeHtml(reason)}</div>
+          </div>
+        </article>
+      `;
+    }).join('');
   }
 
   function stopPolling() {
@@ -703,11 +656,13 @@
     return el ? el.content || el.getAttribute("content") || "" : "";
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  document.addEventListener("DOMContentLoaded", async function () {
     const page = $("linkCheckDetailPage");
     if (!page) {
       return;
     }
+
+    await ensureLanguages();
 
     const task = getBootstrappedTask();
     if (!task || !task.id) {
@@ -718,6 +673,24 @@
 
     renderTask(task);
     startPollingIfNeeded(task);
+
+    // Bind refresh button
+    const refreshBtn = $("standaloneRefreshBtn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async function () {
+        const origText = refreshBtn.textContent;
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "刷新中...";
+        try {
+          await pollTask(task.id);
+        } catch (err) {
+          showError("刷新失败: " + err.message);
+        } finally {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = origText;
+        }
+      });
+    }
 
     // Bind recheck button
     const recheckBtn = $("standaloneRecheckBtn");
@@ -732,7 +705,6 @@
 
       updateRecheckButtonVisibility(task.status);
 
-      // Override renderTask to also update recheckBtn visibility
       const originalRenderTask = renderTask;
       renderTask = function(t) {
         originalRenderTask(t);

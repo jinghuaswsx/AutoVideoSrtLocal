@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}{{ project.display_name or project.id }} - 链接检查{% endblock %}
+{% block title %}{{ project.display_name or project.id }} - 链接检查详情{% endblock %}
 {% block page_title %}{{ project.display_name or project.id }}{% endblock %}
 {% block extra_head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='link_check.css') }}">
@@ -7,38 +7,68 @@
 {% block content %}
 <div
   id="linkCheckDetailPage"
-  class="lc-shell lc-shell--detail"
+  class="oc-link-check-container"
   data-task-id="{{ project.id }}"
 >
-  <a class="back-link lc-back-link" href="{{ url_for('link_check.page') }}">返回链接检查列表</a>
-
-  <section class="lc-panel lc-page-head">
-    <div class="lc-panel-head lc-panel-head--split">
-      <div>
-        <span class="lc-kicker">Detail</span>
-        <h2>{{ project.display_name or project.id }}</h2>
-        <p>查看持久化详情、处理进度和失败原因。页面刷新后仍会基于已保存任务状态继续渲染。</p>
-      </div>
-      <div class="lc-panel-tip">
-        <strong>任务 ID</strong>
-        <span class="lc-project-id">{{ project.id }}</span>
-      </div>
+  <!-- Header Card with actions -->
+  <header class="oc-link-check-header">
+    <div class="oc-link-check-header-info">
+      <a class="oc-link-check-back-link" href="{{ url_for('link_check.page') }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 2px;">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>返回链接检查项目列表</span>
+      </a>
+      <h2>{{ project.display_name or project.id }}</h2>
+      <p id="linkCheckStatus">当前状态：等待初始化...</p>
     </div>
-    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: var(--space-3, 12px);">
-      <div id="linkCheckStatus" class="lc-status-text">等待初始化</div>
+    <div class="oc-link-check-header-actions">
       {% if task.product_id %}
-        <button id="standaloneRecheckBtn" class="btn btn-outline-danger" style="display: none; padding: 4px 12px; font-size: 13px;" data-product-id="{{ task.product_id }}" data-lang="{{ task.target_language }}" data-link-url="{{ task.link_url }}">
+        <button id="standaloneRecheckBtn" class="btn btn-outline-danger sm" style="display: none;"
+                data-product-id="{{ task.product_id }}" data-lang="{{ task.target_language }}" data-link-url="{{ task.link_url }}">
           重新检测
         </button>
       {% endif %}
+      <button id="standaloneRefreshBtn" class="btn btn-ghost sm">
+        刷新状态
+      </button>
     </div>
-    <div id="linkCheckError" class="lc-error" hidden></div>
+  </header>
+
+  <!-- Error display container -->
+  <div id="linkCheckError" class="lc-error" hidden></div>
+
+  <!-- Realtime Audit Console -->
+  <div id="linkCheckConsole"></div>
+
+  <!-- Summary Dashboard Grid -->
+  <div id="linkCheckModalSummary" class="oc-link-check-modal-grid"></div>
+
+  <!-- Reference Images Section -->
+  <section class="oc-section">
+    <div class="oc-section-title">
+      <span>参考图片</span>
+      <span class="count" id="linkCheckRefsBadge">0</span>
+    </div>
+    <div id="linkCheckRefs" class="oc-link-check-ref-grid">
+      <div class="oc-detail-images-empty">暂无参考图</div>
+    </div>
   </section>
 
-  <section id="linkCheckSummary" class="lc-panel lc-panel--summary" aria-live="polite"></section>
-  <section id="linkCheckResults" class="lc-panel" aria-live="polite"></section>
+  <!-- Results Comparative List -->
+  <section class="oc-section">
+    <div class="oc-section-title">
+      <span>返回结果</span>
+      <span class="count" id="linkCheckItemsBadge">0</span>
+    </div>
+    <div id="linkCheckItems" class="oc-link-check-results">
+      <div class="oc-detail-images-empty">还没有检测结果</div>
+    </div>
+  </section>
 </div>
 
+<!-- Initial task JSON payloads -->
 <script id="linkCheckInitialTask" type="application/json">{{ initial_task|tojson }}</script>
 <script>
   window.__LINK_CHECK_TASK__ = {{ initial_task|tojson }};
