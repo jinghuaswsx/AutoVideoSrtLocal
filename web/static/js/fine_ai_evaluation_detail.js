@@ -656,6 +656,29 @@
     </div>`;
   }
 
+  function detectChannel(result) {
+    const metadata = (result || {}).metadata || {};
+    const evaluator = String(metadata.evaluator || '').toLowerCase();
+    const runId = String((result || {}).evaluation_run_id || '');
+    if (evaluator.includes('antigravity') || runId.startsWith('eval_antigravity_')) return 'antigravity';
+    const channel = String(metadata.channel || '').toLowerCase();
+    if (channel === 'antigravity') return 'antigravity';
+    if (channel === 'adc' || channel) return channel || 'adc';
+    const provider = String(metadata.provider || '').toLowerCase();
+    const model = String(metadata.model || '').toLowerCase();
+    if (provider || model) return 'adc';
+    return '';
+  }
+
+  function channelBadge(result) {
+    const ch = detectChannel(result);
+    if (!ch) return '';
+    const labels = { adc: 'ADC', antigravity: 'Antigravity' };
+    const cls = ch === 'antigravity' ? 'is-antigravity' : (ch === 'adc' ? 'is-adc' : 'is-unknown');
+    const label = labels[ch] || ch.toUpperCase();
+    return `<span class="fine-ai-channel-badge ${cls}" title="评估渠道：${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+  }
+
   function renderStructuredResultOverview(result) {
     const matrix = renderResultCountryMatrix(result);
     if (!matrix) return '';
@@ -665,7 +688,7 @@
     return `<section class="fine-ai-result-overview" aria-label="AI 精细评估结果总览">
       <div class="fine-ai-result-overview-head">
         <div>
-          <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览</h4>
+          <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览${channelBadge(result)}</h4>
           <p class="fine-ai-result-overview-subtitle">按国家横向对比评分、投放结论、核心风险和下一步动作。</p>
         </div>
         <div class="fine-ai-result-metrics">

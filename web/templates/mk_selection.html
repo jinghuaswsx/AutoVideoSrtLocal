@@ -237,8 +237,11 @@
 .mki-btn--xiao:hover:not(:disabled) { background: oklch(50% 0.14 155); }
 .mki-ai-btn { background: oklch(58% 0.14 255); border-color: oklch(52% 0.13 255); color: #fff; }
 .mki-ai-btn:hover:not(:disabled) { background: oklch(48% 0.14 255); }
-.mki-fine-ai-btn { background: oklch(56% 0.14 285); border-color: oklch(50% 0.13 285); color:#fff; }
+.mki-fine-ai-btn { background: oklch(56% 0.14 285); border-color: oklch(50% 0.13 285); color:#fff; display:inline-flex; align-items:center; gap:5px; }
 .mki-fine-ai-btn:hover:not(:disabled) { background: oklch(46% 0.14 285); }
+.mki-fine-ai-ch { display:inline-flex; align-items:center; min-height:16px; padding:0 5px; border-radius:999px; font-size:9px; font-weight:800; line-height:1; letter-spacing:.3px; flex:0 0 auto; }
+.mki-fine-ai-ch.is-adc { background:rgba(255,255,255,.25); color:#fff; }
+.mki-fine-ai-ch.is-anti { background:rgba(255,255,255,.25); color:#fff; }
 .mki-fine-ai-progress-shell { display:grid; gap:14px; margin-bottom:16px; }
 .mki-fine-ai-progress-header { display:grid; gap:12px; padding:18px; border:1px solid var(--oc-border); border-radius:8px; background:oklch(98% 0.006 230); }
 .mki-fine-ai-progress-top { display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
@@ -2080,6 +2083,31 @@ function mkiFineAiButtonLabel(result) {
   return mkiFineAiHasUsableResult(result) ? 'AI精细评估结果' : '精细AI评估';
 }
 
+function mkiFineAiDetectChannel(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  if (!normalized) return '';
+  const metadata = normalized.metadata || {};
+  const evaluator = String(metadata.evaluator || '').toLowerCase();
+  const runId = String(normalized.evaluation_run_id || normalized.run_id || '');
+  if (evaluator.includes('antigravity') || runId.startsWith('eval_antigravity_')) return 'antigravity';
+  const channel = String(metadata.channel || '').toLowerCase();
+  if (channel === 'antigravity') return 'antigravity';
+  if (channel === 'adc') return 'adc';
+  const provider = String(metadata.provider || '').toLowerCase();
+  const model = String(metadata.model || '').toLowerCase();
+  if (provider || model) return 'adc';
+  if (channel) return channel;
+  return '';
+}
+
+function mkiFineAiChannelBadgeHtml(result) {
+  const ch = mkiFineAiDetectChannel(result);
+  if (!ch) return '';
+  if (ch === 'antigravity') return '<span class="mki-fine-ai-ch is-anti" title="Antigravity">Anti</span>';
+  if (ch === 'adc') return '<span class="mki-fine-ai-ch is-adc" title="ADC">ADC</span>';
+  return '<span class="mki-fine-ai-ch is-adc" title="' + escapeHtml(ch) + '">' + escapeHtml(ch.toUpperCase()) + '</span>';
+}
+
 function mkiFineAiStoreResultOnElement(el, result) {
   if (!el) return;
   const normalized = mkiFineAiCacheResult(result);
@@ -2087,6 +2115,7 @@ function mkiFineAiStoreResultOnElement(el, result) {
   const hasResult = mkiFineAiHasUsableResult(normalized);
   el.dataset.mkiFineAiHasResult = hasResult ? '1' : '';
   el.dataset.mkiFineAiRunId = runId;
+  el.dataset.mkiFineAiChannel = mkiFineAiDetectChannel(normalized);
 }
 
 function mkiFineAiResultFromElement(el) {
@@ -2116,7 +2145,9 @@ function mkiFineAiUpdateCardButtonLabels(card) {
   if (!card) return;
   card.querySelectorAll('.mki-fine-ai-btn').forEach(btn => {
     const label = mkiFineAiButtonLabelFromElement(btn);
-    btn.textContent = label;
+    const result = mkiFineAiResultFromButton(btn);
+    const badge = mkiFineAiHasUsableResult(result) ? mkiFineAiChannelBadgeHtml(result) : '';
+    btn.innerHTML = escapeHtml(label) + badge;
     if (label === 'AI精细评估结果') {
       btn.title = '查看 AI 精细评估结果，必要时可重新评估';
     }
@@ -2126,7 +2157,10 @@ function mkiFineAiUpdateCardButtonLabels(card) {
 function mkiFineAiRestoreButtonLabel(btn, original) {
   if (!btn) return;
   const resultLabel = mkiFineAiButtonLabelFromElement(btn);
-  btn.textContent = resultLabel === 'AI精细评估结果' ? resultLabel : (original || resultLabel);
+  const result = mkiFineAiResultFromButton(btn);
+  const badge = mkiFineAiHasUsableResult(result) ? mkiFineAiChannelBadgeHtml(result) : '';
+  const label = resultLabel === 'AI精细评估结果' ? resultLabel : (original || resultLabel);
+  btn.innerHTML = escapeHtml(label) + badge;
 }
 
 function mkiFineAiImportGateMessage() {
@@ -2480,7 +2514,7 @@ function mkiFineAiRenderStructuredResultOverview(result) {
   return `<section class="fine-ai-result-overview" aria-label="AI 精细评估结果总览">
     <div class="fine-ai-result-overview-head">
       <div>
-        <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览</h4>
+        <h4 class="fine-ai-result-overview-title">AI 精细评估结果总览${mkiFineAiChannelBadgeHtml(normalized)}</h4>
         <p class="fine-ai-result-overview-subtitle">按国家横向对比评分、投放结论、核心风险和下一步动作。</p>
       </div>
       <div class="fine-ai-result-metrics">
