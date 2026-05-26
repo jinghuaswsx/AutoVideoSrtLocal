@@ -218,11 +218,14 @@ def fine_ai_evaluation_detail_page(evaluation_run_id: str):
     admin_error = _require_fine_ai_admin()
     if admin_error:
         return admin_error
+    service = get_fine_ai_evaluation_service()
+    run = service.repository.get_run(evaluation_run_id)
+    pid_str = str(run.get("product_id") or "0") if run else "0"
     return render_template(
         "fine_ai_evaluation_detail.html",
         page_config={
             "mode": "external",
-            "product_id": "0",
+            "product_id": pid_str,
             "evaluation_run_id": str(evaluation_run_id or ""),
             "status_url": url_for("xuanpin.api_fine_ai_external_status", evaluation_run_id=evaluation_run_id),
             "result_url": url_for("xuanpin.api_fine_ai_external_result", evaluation_run_id=evaluation_run_id),
@@ -450,7 +453,10 @@ def api_fine_ai_external_status(evaluation_run_id: str):
     if admin_error:
         return admin_error
     try:
-        return _fine_ai_ok(get_fine_ai_evaluation_service().get_status(0, evaluation_run_id))
+        service = get_fine_ai_evaluation_service()
+        run = service.repository.get_run(evaluation_run_id)
+        pid = int(run.get("product_id") or 0) if run else 0
+        return _fine_ai_ok(service.get_status(pid, evaluation_run_id))
     except FineAiEvaluationNotFound as exc:
         return _fine_ai_err(exc.code, "Evaluation run not found", 404)
 
@@ -462,7 +468,10 @@ def api_fine_ai_external_result(evaluation_run_id: str):
     if admin_error:
         return admin_error
     try:
-        return _fine_ai_ok(get_fine_ai_evaluation_service().get_result(0, evaluation_run_id))
+        service = get_fine_ai_evaluation_service()
+        run = service.repository.get_run(evaluation_run_id)
+        pid = int(run.get("product_id") or 0) if run else 0
+        return _fine_ai_ok(service.get_result(pid, evaluation_run_id))
     except FineAiEvaluationNotFound as exc:
         return _fine_ai_err(exc.code, "Evaluation run not found", 404)
 
@@ -475,8 +484,11 @@ def api_fine_ai_external_country_rerun(evaluation_run_id: str, country_code: str
         return admin_error
     payload = _fine_ai_payload()
     try:
-        data = get_fine_ai_evaluation_service().rerun_country(
-            0,
+        service = get_fine_ai_evaluation_service()
+        run = service.repository.get_run(evaluation_run_id)
+        pid = int(run.get("product_id") or 0) if run else 0
+        data = service.rerun_country(
+            pid,
             evaluation_run_id,
             country_code,
             force_refresh=bool(payload.get("force_refresh", True)),
