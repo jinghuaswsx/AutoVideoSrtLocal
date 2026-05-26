@@ -994,6 +994,14 @@ _LANG_TO_COUNTRY = {
     "en": "US",
 }
 
+def _normalize_push_media_url(url: str | None) -> str:
+    if not url:
+        return ""
+    if url.startswith(("http://", "https://")) and "/medias/obj/" in url:
+        idx = url.find("/medias/obj/")
+        return url[idx:]
+    return url
+
 
 def _country_for_lang(lang: str | None) -> str:
     if not lang:
@@ -1153,8 +1161,8 @@ def api_history():
             "file_size": r["file_size"] or 0,
             "pushed_at": r["pushed_at"].isoformat() if r.get("pushed_at") else None,
             "operator_username": r["operator_username"] or "System",
-            "video_url": video_snap.get("url") or "",
-            "cover_url": video_snap.get("image_url") or "",
+            "video_url": _normalize_push_media_url(video_snap.get("url")),
+            "cover_url": _normalize_push_media_url(video_snap.get("image_url")),
             "texts": texts_snap,
             "product_links": _filter_links_by_lang(links_snap, r["lang"]),
             "has_ad_plan": campaign_count > 0,
@@ -1265,6 +1273,10 @@ def material_ads_detail(item_id: int):
         })
 
     video_snap = payload.get("videos", [{}])[0] if payload.get("videos") else {}
+    if "url" in video_snap:
+        video_snap["url"] = _normalize_push_media_url(video_snap.get("url"))
+    if "image_url" in video_snap:
+        video_snap["image_url"] = _normalize_push_media_url(video_snap.get("image_url"))
 
     return render_template(
         "pushes_material_ads.html",
