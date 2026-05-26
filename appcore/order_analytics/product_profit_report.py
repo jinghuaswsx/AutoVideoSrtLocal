@@ -483,6 +483,9 @@ def generate_report(
     site_code: str | None = None,
 ) -> dict[str, Any]:
     """返回完整报表字典：{orders, daily, by_country, by_site, total, meta}。"""
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
+
     normalized_site = _normalize_site_code(site_code)
     lines = _load_order_lines(
         product_id, date_from, date_to, country=country, site_code=normalized_site,

@@ -246,6 +246,9 @@ def generate_ads_report(
                          "spend_usd": float}, ...]
         }
     """
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
+
     rows = _load_campaign_metrics(product_id, date_from, date_to, country)
     if not rows:
         return {"accounts": [], "campaigns": [], "daily": [], "unmatched": []}
