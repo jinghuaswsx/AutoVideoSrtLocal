@@ -12,6 +12,7 @@ from typing import Any
 class Workspace:
     root: Path
     reference_dir: Path
+    original_dir: Path
     site_dir: Path
     compare_dir: Path
 
@@ -26,16 +27,19 @@ def create_workspace(product_id: int, *, now: datetime | None = None) -> Workspa
     current = now or datetime.now()
     root = executable_root() / "img" / f"{product_id}-{current:%Y%m%d%H%M%S}"
     reference_dir = root / "reference"
+    original_dir = root / "original"
     site_dir = root / "site"
     compare_dir = root / "compare"
 
     reference_dir.mkdir(parents=True, exist_ok=False)
+    original_dir.mkdir(parents=True, exist_ok=True)
     site_dir.mkdir(parents=True, exist_ok=True)
     compare_dir.mkdir(parents=True, exist_ok=True)
 
     return Workspace(
         root=root,
         reference_dir=reference_dir,
+        original_dir=original_dir,
         site_dir=site_dir,
         compare_dir=compare_dir,
     )

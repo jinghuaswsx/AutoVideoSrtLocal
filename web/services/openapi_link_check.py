@@ -92,6 +92,14 @@ def build_link_check_bootstrap_response(
     if not reference_images:
         raise LinkCheckBootstrapError("references not ready", 409)
 
+    original_images = []
+    if target_language != "en":
+        raw_original_images = list_reference_images_fn(int(product["id"]), "en")
+        original_images = _serialize_reference_images(
+            raw_original_images,
+            media_download_url_fn=media_download_url_fn,
+        )
+
     domain = product.get("_matched_domain") or product_link_domains.domain_from_url(target_url)
     status_key = (
         product.get("_matched_status_key")
@@ -110,4 +118,5 @@ def build_link_check_bootstrap_response(
         "status_key": status_key,
         "normalized_url": normalize_target_url(target_url),
         "reference_images": reference_images,
+        "original_images": original_images,
     }

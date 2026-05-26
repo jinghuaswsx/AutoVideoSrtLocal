@@ -89,11 +89,16 @@ def analyze_downloaded_images(
     *,
     downloaded_images: list[dict[str, Any]],
     reference_images: list[dict[str, Any]],
+    original_images: list[dict[str, Any]] = None,
     target_language: str,
     target_language_name: str,
 ) -> dict[str, Any]:
     reference_paths = [item["local_path"] for item in reference_images if item.get("local_path")]
     reference_index = {item["local_path"]: item for item in reference_images if item.get("local_path")}
+
+    original_images = original_images or []
+    original_paths = [item["local_path"] for item in original_images if item.get("local_path")]
+    original_index = {item["local_path"]: item for item in original_images if item.get("local_path")}
 
     output_items: list[dict[str, Any]] = []
 
@@ -101,6 +106,7 @@ def analyze_downloaded_images(
         result = {
             **item,
             "reference_match": {"status": "not_provided", "score": 0.0, "reference_path": ""},
+            "original_match": {"status": "not_provided", "score": 0.0, "reference_path": ""},
             "binary_quick_check": _skipped_binary("等待参考图匹配结果"),
             "same_image_llm": _skipped_same_image("等待参考图匹配结果"),
             "analysis": {},
@@ -117,33 +123,45 @@ def analyze_downloaded_images(
                     "reference_filename": reference_meta.get("filename", ""),
                 }
 
+            if original_paths:
+                best_original = find_best_reference(item["local_path"], original_paths)
+                original_meta = original_index.get(best_original.get("reference_path", ""), {})
+                result["original_match"] = {
+                    **best_original,
+                    "original_id": original_meta.get("id", ""),
+                    "original_filename": original_meta.get("filename", ""),
+                }
+
             if result["reference_match"].get("status") == "matched":
                 reference_path = result["reference_match"].get("reference_path", "")
                 result["binary_quick_check"] = run_binary_quick_check(item["local_path"], reference_path)
                 result["same_image_llm"] = judge_same_image(item["local_path"], reference_path)
 
-                if result["binary_quick_check"].get("status") == "pass":
-                    result["analysis"] = {
-                        "decision": "pass",
-                        "decision_source": "binary_quick_check",
-                        "has_text": True,
-                        "detected_language": target_language,
-                        "language_match": True,
-                        "text_summary": "",
-                        "quality_score": 100,
-                        "quality_reason": "参考图已匹配且二值快检通过，直接判定通过",
-                        "needs_replacement": False,
-                    }
-                elif result["binary_quick_check"].get("status") == "fail":
+                binary_status = result["binary_quick_check"].get("status")
+                same_image_ans = result["same_image_llm"].get("answer")
+
+                is_replaced = (binary_status == "pass" or same_image_ans == "是")
+
+                s_target = result["reference_match"].get("score", 0.0)
+                s_en = result["original_match"].get("score", 0.0)
+                if original_paths and s_en > s_target and s_en >= 0.95:
+                    is_replaced = False
+
+                result["is_replaced"] = is_replaced
+
+                if not is_replaced:
+                    reason = "检测到页面图片与后台翻译的参考图不一致，换图未换到位"
+                    if original_paths and s_en > s_target and s_en >= 0.95:
+                        reason = f"检测到页面实际图与英语原图视觉相似度极高 ({s_en:.3f} > {s_target:.3f})，确认尚未替换为翻译后的参考图"
                     result["analysis"] = {
                         "decision": "replace",
-                        "decision_source": "binary_quick_check",
+                        "decision_source": "same_image_llm_check",
                         "has_text": True,
                         "detected_language": "",
                         "language_match": False,
                         "text_summary": "",
                         "quality_score": 0,
-                        "quality_reason": "参考图已匹配，但二值快检未通过，判定需要替换",
+                        "quality_reason": reason,
                         "needs_replacement": True,
                     }
                 else:
@@ -152,7 +170,10 @@ def analyze_downloaded_images(
                         target_language=target_language,
                         target_language_name=target_language_name,
                     )
-                    result["analysis"]["decision_source"] = "gemini_language_check"
+                    result["analysis"]["decision_source"] = "gemini_quality_audit"
+                    quality_reason = result["analysis"].get("quality_reason") or ""
+                    if result["analysis"]["decision"] == "pass":
+                        result["analysis"]["quality_reason"] = f"换图检测已换到位。文案质量与语言审计合格：{quality_reason}"
             else:
                 if reference_paths:
                     result["binary_quick_check"] = _skipped_binary("未匹配到参考图，跳过二值快检")

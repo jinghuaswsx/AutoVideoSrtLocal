@@ -23,15 +23,15 @@ def _noop(_message: str) -> None:
     return None
 
 
-def _download_references(reference_images: list[dict[str, Any]], workspace, status_cb) -> list[dict[str, Any]]:
+def _download_images(images: list[dict[str, Any]], target_dir, prefix: str, status_cb) -> list[dict[str, Any]]:
     downloaded: list[dict[str, Any]] = []
-    for index, item in enumerate(reference_images, start=1):
-        status_cb(f"正在下载参考图 {index}/{len(reference_images)}")
+    for index, item in enumerate(images, start=1):
+        status_cb(f"正在下载图片 {index}/{len(images)}")
         response = requests.get(item["download_url"], timeout=30)
         response.raise_for_status()
 
-        filename = item.get("filename") or f"reference-{index:03d}.jpg"
-        output_path = workspace.reference_dir / filename
+        filename = item.get("filename") or f"{prefix}-{index:03d}.jpg"
+        output_path = target_dir / filename
         output_path.write_bytes(response.content)
 
         downloaded.append({
@@ -39,6 +39,14 @@ def _download_references(reference_images: list[dict[str, Any]], workspace, stat
             "local_path": str(output_path),
         })
     return downloaded
+
+
+def _download_references(reference_images: list[dict[str, Any]], workspace, status_cb) -> list[dict[str, Any]]:
+    return _download_images(reference_images, workspace.reference_dir, "reference", status_cb)
+
+
+def _download_original_images(original_images: list[dict[str, Any]], workspace, status_cb) -> list[dict[str, Any]]:
+    return _download_images(original_images, workspace.original_dir, "original", status_cb)
 
 
 def run_link_check(
@@ -60,6 +68,12 @@ def run_link_check(
         reporter,
     )
 
+    original_images = _download_original_images(
+        bootstrap.get("original_images") or [],
+        workspace,
+        reporter,
+    )
+
     reporter("正在通过浏览器锁定目标页")
     page_result = browser_worker.capture_page(
         target_url=target_url,
@@ -74,6 +88,7 @@ def run_link_check(
     analyzed = analysis.analyze_downloaded_images(
         downloaded_images=page_result.get("downloaded_images") or [],
         reference_images=reference_images,
+        original_images=original_images,
         target_language=bootstrap["target_language"],
         target_language_name=bootstrap["target_language_name"],
     )
@@ -86,6 +101,7 @@ def run_link_check(
         "normalized_url": bootstrap.get("normalized_url") or target_url,
         "workspace_root": str(workspace.root),
         "reference_images": reference_images,
+        "original_images": original_images,
         "page": page_result,
         "analysis": analyzed,
     }
