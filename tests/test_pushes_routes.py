@@ -2568,25 +2568,11 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
         db_calls.append((sql, args))
         if "media_push_logs" in sql:
             return rows
-        elif "meta_ad_daily_campaign_metrics" in sql:
+        elif "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql:
             return [
                 {
-                    "product_id": 317,
-                    "campaign_name": "glow-go-insect-set",
-                    "market_country": None,
-                    "total_spend": Decimal("100.00")
-                },
-                {
-                    "product_id": 317,
-                    "campaign_name": "glow-go-insect-set-jp",
-                    "market_country": "JP",
-                    "total_spend": Decimal("200.00")
-                },
-                {
-                    "product_id": 317,
-                    "campaign_name": "glow-go-insect-set-de",
-                    "market_country": "DE",
-                    "total_spend": Decimal("300.00")
+                    "total_spend": 300.0,
+                    "campaign_count": 2
                 }
             ]
         return []
@@ -2660,7 +2646,7 @@ def test_pushes_material_ads_detail_robust_matching(authed_client_no_db, monkeyp
     )
     
     def fake_db_query(sql, args=()):
-        if "meta_ad_daily_campaign_metrics" in sql:
+        if "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql:
             return [
                 {
                     "ad_account_name": "Acc1",

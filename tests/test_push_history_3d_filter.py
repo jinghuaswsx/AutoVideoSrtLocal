@@ -63,15 +63,24 @@ def test_api_history_none_3d_filtration(monkeypatch, authed_client_no_db):
     # 模拟 db_query
     def mock_query(sql, args=()):
         if "media_push_logs" in sql:
+            if "INTERVAL 3 DAY" in sql:
+                return [mock_db_rows[0]]
             return mock_db_rows
         # 对于广告统计数据查询，仅 203 存在一条广告记录
-        if "meta_ad_daily_campaign_metrics" in sql:
+        if "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql:
+            if args and args[0] == 203:
+                return [
+                    {
+                        "product_id": 203,
+                        "market_country": "DE",
+                        "total_spend": 150.0,
+                        "campaign_count": 2
+                    }
+                ]
             return [
                 {
-                    "product_id": 203,
-                    "market_country": "DE",
-                    "total_spend": 150.0,
-                    "campaign_count": 2
+                    "total_spend": 0.0,
+                    "campaign_count": 0
                 }
             ]
         return []
