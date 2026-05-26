@@ -198,44 +198,79 @@ def _load_account_daily_spend(
     Key: (business_date, ad_account_id) → spend_usd. 下游会忽略账户归属，只按
     business_date 合计 product_id 维度 spend，与产品列表 Tab 保持一致。
     """
+    from datetime import timedelta
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
     market_country = normalize_market_country(country)
     account_ids = _ad_account_ids_for_site(site_code)
     if _normalize_site_code(site_code) and not account_ids:
         return {}
-    account_sql = ""
-    account_params: list[Any] = []
-    if account_ids:
-        placeholders = ",".join(["%s"] * len(account_ids))
-        account_sql = f"  AND ad_account_id IN ({placeholders}) "
-        account_params.extend(account_ids)
-    if is_single_market_country(market_country):
-        rows = query(
-            "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
-            "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
-            "FROM meta_ad_daily_ad_metrics "
-            "WHERE product_id = %s "
-            "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            "  AND market_country = %s "
-            f"{account_sql}"
-            "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
-            (product_id, date_from, date_to, market_country, *account_params),
-        )
-    else:
-        rows = query(
-            "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
-            "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE product_id = %s "
-            "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-            f"{account_sql}"
-            "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
-            (product_id, date_from, date_to, *account_params),
-        )
+
+    closed_through = completed_meta_business_date()
+
+    daily_from = date_from
+    daily_to = date_to
+    open_dates: list[date] = []
+
+    cur = date_from
+    while cur <= date_to:
+        if cur > closed_through:
+            open_dates.append(cur)
+        cur += timedelta(days=1)
+
+    if open_dates:
+        daily_to = min(open_dates) - timedelta(days=1)
+
+    rows = []
+    if daily_to >= daily_from:
+        account_sql = ""
+        account_params: list[Any] = []
+        if account_ids:
+            placeholders = ",".join(["%s"] * len(account_ids))
+            account_sql = f"  AND ad_account_id IN ({placeholders}) "
+            account_params.extend(account_ids)
+        if is_single_market_country(market_country):
+            rows = query(
+                "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
+                "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+                "FROM meta_ad_daily_ad_metrics "
+                "WHERE product_id = %s "
+                "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+                "  AND market_country = %s "
+                f"{account_sql}"
+                "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
+                (product_id, daily_from, daily_to, market_country, *account_params),
+            )
+        else:
+            rows = query(
+                "SELECT COALESCE(meta_business_date, report_date) AS report_date, "
+                "       ad_account_id, COALESCE(SUM(spend_usd), 0) AS spend "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE product_id = %s "
+                "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+                f"{account_sql}"
+                "GROUP BY COALESCE(meta_business_date, report_date), ad_account_id",
+                (product_id, daily_from, daily_to, *account_params),
+            )
+
     out: dict[tuple[date, str], float] = {}
     for r in rows:
         d = r["report_date"]
         acc = r.get("ad_account_id") or ""
         out[(d, acc)] = float(r["spend"] or 0)
+
+    if open_dates and not is_single_market_country(market_country):
+        from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+
+        rt = _load_realtime_ad_snapshot_fallback(
+            date_from=min(open_dates),
+            date_to=max(open_dates),
+            product_id=product_id,
+        )
+        for (business_date, pid), spend in rt.get("spend_by_product", {}).items():
+            if int(pid) == int(product_id):
+                out[(business_date, "realtime")] = out.get((business_date, "realtime"), 0.0) + float(spend)
+
     return out
 
 
