@@ -965,6 +965,7 @@
     if (activeGender) params.set("gender", activeGender);
     const q = currentVoiceSearch();
     if (q) params.set("q", q);
+    params.set("_t", Date.now().toString());
     const resp = await fetch(`${apiBase}/${taskId}/voice-library?${params.toString()}`);
     if (!resp.ok) {
       const detail = escapeHtml(await resp.text());
