@@ -1,0 +1,328 @@
+{% extends "layout.html" %}
+{% block title %}推送历史记录{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🚀 推送历史记录</h1>
+</div>
+
+{% include "_pushes_tabs.html" with context %}
+
+<div class="push-toolbar" style="margin-bottom: 24px;">
+  <div class="filter-group filter-group-keyword">
+    <label for="f-keyword">搜索商品/素材</label>
+    <input id="f-keyword" type="text" placeholder="商品名、Code、素材文件名" />
+  </div>
+  <div class="filter-group filter-group-lang">
+    <label for="f-lang">投放语种</label>
+    <select id="f-lang">
+      <option value="">全部语种</option>
+    </select>
+  </div>
+  <div class="filter-group" style="min-width: 280px;">
+    <label>广告投放计划筛选</label>
+    <div class="ad-plan-capsules" style="display: flex; gap: 6px; background: var(--oc-bg-subtle, #f3f4f6); padding: 4px; border-radius: 9999px; border: 1px solid var(--oc-border, #e5e7eb); width: fit-content;">
+      <button type="button" class="plan-capsule active" data-value="all" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: var(--oc-accent, #3b82f6); color: #fff;">全部</button>
+      <button type="button" class="plan-capsule" data-value="has" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--oc-fg-muted, #4b5563);">已有广告计划</button>
+      <button type="button" class="plan-capsule" data-value="none" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--oc-fg-muted, #4b5563);">无广告计划</button>
+    </div>
+  </div>
+  <div class="filter-group filter-group-range">
+    <label>推送日期区间</label>
+    <div class="date-range">
+      <input id="f-date-from" type="date" aria-label="起始日期" />
+      <span class="range-sep">至</span>
+      <input id="f-date-to" type="date" aria-label="截止日期" />
+    </div>
+  </div>
+  <div class="filter-actions" style="align-self: flex-end; margin-bottom: 0;">
+    <button id="btn-apply" type="button" style="height: 32px; padding: 0 16px; border-radius: var(--oc-r, 6px); background: var(--oc-accent, #3b82f6); color: #fff; border: none; font-size: 13px; font-weight: 500; cursor: pointer;">筛选</button>
+    <button id="btn-reset" type="button" style="height: 32px; padding: 0 16px; border-radius: var(--oc-r, 6px); background: var(--oc-bg, #fff); color: var(--oc-fg-muted, #4b5563); border: 1px solid var(--oc-border-strong, #d1d5db); font-size: 13px; font-weight: 500; cursor: pointer; margin-left: 8px;">重置</button>
+  </div>
+</div>
+
+<div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
+  <table class="push-table mobile-no-scroll" style="width: 100%; border-collapse: collapse; text-align: left;">
+    <thead>
+      <tr style="background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb);">
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">视频快照</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">商品与Code</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 80px;">投放语种</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); min-width: 260px;">文案快照</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 140px;">投放广告状态</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 130px; text-align: right;">消耗广告费</th>
+        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 120px; text-align: center;">操作</th>
+      </tr>
+    </thead>
+    <tbody id="history-tbody">
+      <tr>
+        <td colspan="7" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af);">加载中…</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="pagination" id="history-pagination" style="margin-top: 20px; text-align: center;"></div>
+
+<style>
+  .ad-plan-capsules button.active {
+    background: var(--oc-accent, #3b82f6) !important;
+    color: #fff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  .ad-plan-capsules button:not(.active):hover {
+    background: rgba(0, 0, 0, 0.04) !important;
+    color: var(--oc-fg, #111827) !important;
+  }
+  .history-row {
+    border-bottom: 1px solid var(--oc-border, #e5e7eb);
+    transition: background 0.15s ease;
+  }
+  .history-row:hover {
+    background: var(--oc-bg-subtle, #f9fafb);
+  }
+  .history-row:last-child {
+    border-bottom: none;
+  }
+  .badge-ad-plan {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .badge-ad-plan.has {
+    background: var(--oc-success-bg, #ecfdf5);
+    color: var(--oc-success-fg, #059669);
+  }
+  .badge-ad-plan.none {
+    background: var(--oc-bg-muted, #f3f4f6);
+    color: var(--oc-fg-subtle, #6b7280);
+    border: 1px dashed var(--oc-border-strong, #d1d5db);
+  }
+  .history-video-thumb {
+    position: relative;
+    width: 64px;
+    height: 114px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--oc-border-strong, #d1d5db);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .history-video-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .history-video-thumb .play-btn {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--oc-fg, #111827);
+    font-size: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    cursor: pointer;
+  }
+</style>
+
+<link rel="stylesheet" href="/static/pushes.css">
+
+<script>
+(function() {
+  let selectedAdPlan = 'all';
+  const state = { page: 1, pageSize: 20, total: 0, items: [] };
+
+  function formatLanguageLabel(code) {
+    const raw = String(code || '').trim().toUpperCase();
+    return raw;
+  }
+
+  function renderStatusBadge(hasAd, count) {
+    if (hasAd) {
+      return `<span class="badge-ad-plan has">✓ ${count}个计划</span>`;
+    }
+    return `<span class="badge-ad-plan none">无 ad 计划</span>`;
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  // Pre-load languages from endpoint
+  async function loadLanguages() {
+    try {
+      const resp = await fetch('/medias/api/languages');
+      const data = await resp.json();
+      const sel = document.getElementById('f-lang');
+      (data.languages || []).forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.code;
+        opt.textContent = `${l.name_zh || l.code.toUpperCase()} (${l.code.toUpperCase()})`;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.warn('load languages failed', e);
+    }
+  }
+
+  function buildQuery() {
+    const params = new URLSearchParams();
+    params.set('keyword', document.getElementById('f-keyword').value.trim());
+    params.set('lang', document.getElementById('f-lang').value);
+    params.set('date_from', document.getElementById('f-date-from').value);
+    params.set('date_to', document.getElementById('f-date-to').value);
+    params.set('ad_plan', selectedAdPlan);
+    params.set('page', String(state.page));
+    return params.toString();
+  }
+
+  async function load() {
+    const tbody = document.getElementById('history-tbody');
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-fg-subtle, #9ca3af);">加载中…</td></tr>`;
+    try {
+      const resp = await fetch('/pushes/api/history?' + buildQuery());
+      const data = await resp.json();
+      state.total = data.total;
+      state.pageSize = data.page_size || state.pageSize;
+      state.items = data.items || [];
+      if (!state.items.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-fg-subtle, #9ca3af);">无推送历史记录</td></tr>`;
+      } else {
+        tbody.innerHTML = state.items.map(it => {
+          const thumb = it.cover_url
+            ? `<div class="history-video-thumb"><img src="${escapeHtml(it.cover_url)}"><a href="${escapeHtml(it.video_url)}" target="_blank" class="plan-play play-btn">▶</a></div>`
+            : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
+            
+          const textsHtml = (it.texts || []).map(t => {
+            return `<div style="margin-bottom:6px; font-size:12px; line-height:1.45; border-left:2px solid var(--oc-accent, #3b82f6); padding-left:8px;">
+                      <strong>[${escapeHtml(t.lang)}] ${escapeHtml(t.title)}</strong>
+                      <div style="color:var(--oc-fg-muted, #4b5563); margin-top:2px;">${escapeHtml(t.message)}</div>
+                    </div>`;
+          }).join('') || '<span style="color:#9ca3af; font-size:12px;">(无文案快照)</span>';
+
+          const linksHtml = (it.product_links || []).map(link => {
+            return `<div style="font-size:10px; word-break:break-all; margin-top:4px;"><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:var(--oc-accent, #3b82f6); text-decoration:none;">${escapeHtml(link)}</a></div>`;
+          }).join('');
+
+          const adSpendText = it.ad_spend_total > 0
+            ? `<strong style="color:var(--oc-success-fg, #059669); font-size:14px;">$${it.ad_spend_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`
+            : `<span style="color:#9ca3af; font-size:13px;">$0.00</span>`;
+
+          const pushedDate = it.pushed_at ? it.pushed_at.replace('T', ' ').slice(0, 16) : '-';
+
+          return `<tr class="history-row">
+            <td style="padding:12px 16px;">${thumb}</td>
+            <td style="padding:12px 16px;">
+              <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
+              <div style="font-size:11px; color:#9ca3af; margin-top:3px;">
+                <code>${escapeHtml(it.product_code)}</code>
+              </div>
+              <div style="font-size:11px; color:#9ca3af; margin-top:4px;">
+                <span>推送于 ${escapeHtml(pushedDate)}</span> · <span>操作人: ${escapeHtml(it.operator_username)}</span>
+              </div>
+            </td>
+            <td style="padding:12px 16px;"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
+            <td style="padding:12px 16px;">
+              ${textsHtml}
+              <div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--oc-border, #e5e7eb);">
+                <strong>投放链接:</strong> ${linksHtml || '<span style="color:#9ca3af; font-size:10px;">(无链接)</span>'}
+              </div>
+            </td>
+            <td style="padding:12px 16px; vertical-align:middle;">${renderStatusBadge(it.has_ad_plan, it.ad_campaign_count)}</td>
+            <td style="padding:12px 16px; text-align:right; font-variant-numeric:tabular-nums; vertical-align:middle;">${adSpendText}</td>
+            <td style="padding:12px 16px; text-align:center; vertical-align:middle;">
+              <a class="btn-mini" href="/pushes/material-ads/${it.item_id}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:4px 10px; height:28px;">分析广告</a>
+            </td>
+          </tr>`;
+        }).join('');
+      }
+      renderPagination();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444);">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  function renderPagination() {
+    const box = document.getElementById('history-pagination');
+    const totalPages = Math.ceil(state.total / state.pageSize) || 1;
+    const parts = [`共 ${state.total} 条`];
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === state.page) parts.push(`<strong>${p}</strong>`);
+      else parts.push(`<a href="#" data-page="${p}">${p}</a>`);
+    }
+    box.innerHTML = parts.join(' ');
+    box.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', ev => {
+        ev.preventDefault();
+        state.page = Number(ev.target.getAttribute('data-page'));
+        load();
+      });
+    });
+  }
+
+  // Bind capsules buttons
+  document.querySelectorAll('.plan-capsule').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.plan-capsule').forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'transparent';
+        b.style.color = 'var(--oc-fg-muted, #4b5563)';
+      });
+      btn.classList.add('active');
+      btn.style.background = 'var(--oc-accent, #3b82f6)';
+      btn.style.color = '#fff';
+      selectedAdPlan = btn.dataset.value;
+      state.page = 1;
+      load();
+    });
+  });
+
+  document.getElementById('btn-apply').addEventListener('click', () => {
+    state.page = 1;
+    load();
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    document.getElementById('f-keyword').value = '';
+    document.getElementById('f-lang').value = '';
+    document.getElementById('f-date-from').value = '';
+    document.getElementById('f-date-to').value = '';
+    
+    // reset capsules
+    document.querySelectorAll('.plan-capsule').forEach(b => {
+      b.classList.remove('active');
+      b.style.background = 'transparent';
+      b.style.color = 'var(--oc-fg-muted, #4b5563)';
+    });
+    const first = document.querySelector('.plan-capsule[data-value="all"]');
+    first.classList.add('active');
+    first.style.background = 'var(--oc-accent, #3b82f6)';
+    first.style.color = '#fff';
+    selectedAdPlan = 'all';
+
+    state.page = 1;
+    load();
+  });
+
+  // Init
+  loadLanguages();
+  load();
+})();
+</script>
+{% endblock %}

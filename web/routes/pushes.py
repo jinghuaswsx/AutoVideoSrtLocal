@@ -974,3 +974,257 @@ def api_set_push_credentials():
         },
     )
     return _json_response({"ok": True, "updated": updated})
+
+
+# ================================================================
+# 推送历史记录 & 素材广告详情（独立路由）
+# ================================================================
+
+import json
+from datetime import date, datetime
+
+_LANG_TO_COUNTRY = {
+    "de": "DE",
+    "fr": "FR",
+    "ja": "JP",
+    "es": "ES",
+    "it": "IT",
+    "pt": "PT",
+    "nl": "NL",
+    "en": "US",
+}
+
+
+def _country_for_lang(lang: str | None) -> str:
+    if not lang:
+        return "US"
+    return _LANG_TO_COUNTRY.get(str(lang).strip().lower(), "US")
+
+
+@bp.route("/history")
+@login_required
+@permission_required("pushes")
+def history():
+    return render_template(
+        "pushes_history.html",
+        is_admin=_is_admin(),
+        active="history",
+    )
+
+
+@bp.route("/api/history", methods=["GET"])
+@login_required
+@permission_required("pushes")
+def api_history():
+    langs = [l for l in request.args.getlist("lang") if l]
+    keyword = (request.args.get("keyword") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
+    ad_plan = (request.args.get("ad_plan") or "all").strip().lower()  # all / has / none
+    page = max(1, int(request.args.get("page") or 1))
+    limit = _PAGE_SIZE_DEFAULT
+
+    where = ["l.status = 'success'", "i.deleted_at IS NULL", "p.deleted_at IS NULL"]
+    args = []
+
+    if langs:
+        placeholders = ",".join(["%s"] * len(langs))
+        where.append(f"i.lang IN ({placeholders})")
+        args.extend(langs)
+    if keyword:
+        where.append("(i.display_name LIKE %s OR i.filename LIKE %s OR p.name LIKE %s OR p.product_code LIKE %s)")
+        like = f"%{keyword}%"
+        args.extend([like, like, like, like])
+    if date_from:
+        where.append("l.created_at >= %s")
+        args.append(date_from)
+    if date_to:
+        where.append("l.created_at <= %s")
+        args.append(date_to)
+
+    where_sql = " AND ".join(where)
+    from appcore.db import query as db_query
+
+    rows = db_query(
+        "SELECT l.id AS log_id, l.item_id, l.operator_user_id, l.status, l.request_payload, l.response_body, l.created_at AS pushed_at, "
+        "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, "
+        "       p.name AS product_name, p.product_code, u.username AS operator_username "
+        "FROM media_push_logs l "
+        "JOIN media_items i ON i.id = l.item_id "
+        "JOIN media_products p ON p.id = i.product_id "
+        "LEFT JOIN users u ON u.id = l.operator_user_id "
+        f"WHERE {where_sql} "
+        "ORDER BY l.created_at DESC, l.id DESC",
+        tuple(args)
+    )
+
+    product_ids = sorted(list({int(r["product_id"]) for r in rows if r.get("product_id")}))
+
+    stats_map = {}
+    if product_ids:
+        placeholders = ",".join(["%s"] * len(product_ids))
+        ad_stats = db_query(
+            "SELECT product_id, market_country, "
+            "       COALESCE(SUM(spend_usd), 0) AS total_spend, "
+            "       COUNT(DISTINCT campaign_name) AS campaign_count "
+            "FROM meta_ad_daily_campaign_metrics "
+            f"WHERE product_id IN ({placeholders}) "
+            "GROUP BY product_id, market_country",
+            tuple(product_ids)
+        )
+        for stat in ad_stats:
+            p_id = int(stat["product_id"])
+            m_country = str(stat["market_country"] or "").strip().upper()
+            stats_map[(p_id, m_country)] = {
+                "total_spend": float(stat["total_spend"] or 0),
+                "campaign_count": int(stat["campaign_count"] or 0)
+            }
+
+    history_items = []
+    for r in rows:
+        payload = {}
+        try:
+            payload = json.loads(r["request_payload"]) if r.get("request_payload") else {}
+        except Exception:
+            pass
+
+        video_snap = payload.get("videos", [{}])[0] if payload.get("videos") else {}
+        texts_snap = payload.get("texts", [])
+        links_snap = payload.get("product_links", [])
+
+        p_id = int(r["product_id"])
+        country = _country_for_lang(r["lang"])
+
+        ad_info = stats_map.get((p_id, country), {"total_spend": 0.0, "campaign_count": 0})
+
+        history_item = {
+            "log_id": r["log_id"],
+            "item_id": r["item_id"],
+            "product_id": p_id,
+            "product_name": r["product_name"],
+            "product_code": r["product_code"],
+            "lang": r["lang"],
+            "display_name": r["display_name"] or r["filename"],
+            "filename": r["filename"],
+            "pushed_at": r["pushed_at"].isoformat() if r.get("pushed_at") else None,
+            "operator_username": r["operator_username"] or "System",
+            "video_url": video_snap.get("url") or "",
+            "cover_url": video_snap.get("image_url") or "",
+            "texts": texts_snap,
+            "product_links": links_snap,
+            "has_ad_plan": ad_info["campaign_count"] > 0,
+            "ad_campaign_count": ad_info["campaign_count"],
+            "ad_spend_total": ad_info["total_spend"],
+        }
+
+        if ad_plan == "has" and not history_item["has_ad_plan"]:
+            continue
+        if ad_plan == "none" and history_item["has_ad_plan"]:
+            continue
+
+        history_items.append(history_item)
+
+    total = len(history_items)
+    start = (page - 1) * limit
+    page_items = history_items[start:start + limit]
+
+    return _json_response({
+        "items": page_items,
+        "total": total,
+        "page": page,
+        "page_size": limit,
+    })
+
+
+@bp.route("/material-ads/<int:item_id>")
+@login_required
+@permission_required("pushes")
+def material_ads_detail(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return render_template("errors/404.html", message="素材未找到"), 404
+
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return render_template("errors/404.html", message="商品未找到"), 404
+
+    from appcore.db import query as db_query
+    push_log = query_one(
+        "SELECT * FROM media_push_logs "
+        "WHERE item_id = %s AND status = 'success' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (item_id,)
+    )
+
+    payload = {}
+    if push_log and push_log.get("request_payload"):
+        try:
+            payload = json.loads(push_log["request_payload"])
+        except Exception:
+            pass
+
+    country = _country_for_lang(item["lang"])
+
+    campaign_daily_metrics = db_query(
+        "SELECT ad_account_name, campaign_name, spend_usd, purchase_value_usd, result_count, report_date "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE product_id = %s AND market_country = %s "
+        "ORDER BY report_date DESC, spend_usd DESC",
+        (item["product_id"], country)
+    )
+
+    campaigns_summary = {}
+    for m in campaign_daily_metrics:
+        c_name = m["campaign_name"]
+        if c_name not in campaigns_summary:
+            campaigns_summary[c_name] = {
+                "campaign_name": c_name,
+                "ad_account_name": m["ad_account_name"] or "Unknown",
+                "spend_total": 0.0,
+                "purchase_value_total": 0.0,
+                "result_count_total": 0,
+                "min_date": m["report_date"],
+                "max_date": m["report_date"],
+            }
+        sum_row = campaigns_summary[c_name]
+        sum_row["spend_total"] += float(m["spend_usd"] or 0)
+        sum_row["purchase_value_total"] += float(m["purchase_value_usd"] or 0)
+        sum_row["result_count_total"] += int(m["result_count"] or 0)
+        if m["report_date"] < sum_row["min_date"]:
+            sum_row["min_date"] = m["report_date"]
+        if m["report_date"] > sum_row["max_date"]:
+            sum_row["max_date"] = m["report_date"]
+
+    for c_name, s in campaigns_summary.items():
+        s["roas"] = s["purchase_value_total"] / s["spend_total"] if s["spend_total"] > 0 else 0.0
+        s["min_date"] = s["min_date"].strftime("%Y-%m-%d") if isinstance(s["min_date"], (date, datetime)) else str(s["min_date"])
+        s["max_date"] = s["max_date"].strftime("%Y-%m-%d") if isinstance(s["max_date"], (date, datetime)) else str(s["max_date"])
+
+    daily_rows_formatted = []
+    for m in campaign_daily_metrics:
+        spend = float(m["spend_usd"] or 0)
+        p_val = float(m["purchase_value_usd"] or 0)
+        daily_rows_formatted.append({
+            "report_date": m["report_date"].strftime("%Y-%m-%d") if isinstance(m["report_date"], (date, datetime)) else str(m["report_date"]),
+            "campaign_name": m["campaign_name"],
+            "ad_account_name": m["ad_account_name"] or "Unknown",
+            "spend_usd": spend,
+            "result_count": int(m["result_count"] or 0),
+            "roas": p_val / spend if spend > 0 else 0.0,
+        })
+
+    video_snap = payload.get("videos", [{}])[0] if payload.get("videos") else {}
+
+    return render_template(
+        "pushes_material_ads.html",
+        is_admin=_is_admin(),
+        item=item,
+        product=product,
+        push_log=push_log,
+        payload=payload,
+        video_snap=video_snap,
+        campaigns_summary=list(campaigns_summary.values()),
+        daily_rows=daily_rows_formatted,
+        country=country,
+    )
+

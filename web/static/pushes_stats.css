@@ -1,29 +1,36 @@
 /* ===== Tabs（被 pushes_list / pushes_stats 共用） ===== */
 .pushes-tabs {
   display: flex;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  border-bottom: none;
   margin: var(--space-4) 0 var(--space-6);
+  background: var(--bg-subtle);
+  padding: 6px;
+  border-radius: 9999px;
+  align-self: flex-start;
+  width: fit-content;
+  border: 1px solid var(--border);
 }
 .pushes-tab {
-  padding: var(--space-3) var(--space-4);
+  padding: 8px 20px;
   color: var(--fg-muted);
   text-decoration: none;
   font-size: var(--text-base);
-  border-bottom: 2px solid transparent;
-  transition: color var(--duration-fast) var(--ease),
-              border-color var(--duration-fast) var(--ease),
-              background-color var(--duration-fast) var(--ease);
-  border-radius: var(--radius) var(--radius) 0 0;
+  font-weight: 500;
+  border-bottom: none;
+  border-radius: 9999px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .pushes-tab:hover {
   color: var(--fg);
-  background: var(--bg-muted);
+  background: rgba(0, 0, 0, 0.04);
 }
 .pushes-tab.is-active {
-  color: var(--fg);
-  border-bottom-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
 }
+
 
 /* ===== Stats Toolbar ===== */
 .stats-toolbar {
