@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from appcore import task_state
-from appcore.link_check_compare import find_best_reference, run_binary_quick_check
+from appcore.link_check_compare import find_best_reference, run_binary_quick_check, is_same_shopify_image_url
 from appcore.link_check_fetcher import LinkCheckFetcher
 from appcore.link_check_gemini import analyze_image
 from appcore.link_check_same_image import judge_same_image
@@ -267,6 +267,55 @@ class LinkCheckRuntime:
         original_paths: list[str],
         original_index: dict[str, dict],
     ) -> None:
+        matched_ref = None
+        if reference_index:
+            for ref in reference_index.values():
+                ref_cdn = ref.get("shopify_cdn_url")
+                if ref_cdn and is_same_shopify_image_url(item["source_url"], ref_cdn):
+                    matched_ref = ref
+                    break
+
+        if matched_ref:
+            result["reference_match"] = {
+                "status": "matched",
+                "score": 1.0,
+                "reference_path": matched_ref["local_path"],
+                "reference_id": matched_ref.get("id", ""),
+                "reference_filename": matched_ref.get("filename", ""),
+            }
+            task["progress"]["compared"] += 1
+            result["binary_quick_check"] = {
+                "status": "pass",
+                "binary_similarity": 1.0,
+                "foreground_overlap": 1.0,
+                "threshold": 0.90,
+                "reason": "Shopify CDN URL 精确匹配，自动通过二值快检",
+            }
+            task["progress"]["binary_checked"] += 1
+            result["same_image_llm"] = {
+                "status": "done",
+                "answer": "是",
+                "channel": "shopify_cdn_url_match",
+                "channel_label": "Shopify CDN URL 匹配",
+                "model": "short_circuit",
+                "reason": "Shopify CDN URL 精确匹配，自动判断为相同图片",
+            }
+            task["progress"]["same_image_llm_done"] += 1
+            result["is_replaced"] = True
+
+            result["analysis"] = analyze_image(
+                item["local_path"],
+                target_language=task["target_language"],
+                target_language_name=task["target_language_name"],
+            )
+            result["analysis"]["decision_source"] = "shopify_cdn_url_match"
+            quality_reason = result["analysis"].get("quality_reason") or ""
+            if result["analysis"]["decision"] == "pass":
+                result["analysis"]["quality_reason"] = f"换图检测已通过（Shopify CDN URL 匹配）。文案质量与语言审计合格：{quality_reason}"
+            else:
+                result["analysis"]["quality_reason"] = f"换图检测已通过（Shopify CDN URL 匹配），但图片质量/语言文案审计未通过：{quality_reason}"
+            return
+
         if reference_paths:
             best_reference = find_best_reference(item["local_path"], reference_paths)
             reference_meta = reference_index.get(best_reference.get("reference_path", ""), {})

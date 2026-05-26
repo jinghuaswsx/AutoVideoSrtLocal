@@ -227,3 +227,21 @@ def find_best_reference(candidate_path: str | Path, reference_paths: Iterable[st
         **best_result,
         "reference_path": best_reference_path or "",
     }
+
+
+def is_same_shopify_image_url(url1: str, url2: str) -> bool:
+    if not url1 or not url2:
+        return False
+
+    def clean_url(u: str) -> str:
+        u = u.split("?", 1)[0].lower()
+        if u.startswith("https:"):
+            u = u[6:]
+        elif u.startswith("http:"):
+            u = u[5:]
+        u = u.lstrip("/")
+        import re
+        u = re.sub(r'_(?:[0-9]+x[0-9]*|[0-9]*x[0-9]+|master|crop_[a-z]+)\.(jpg|jpeg|png|webp|gif)', r'.\1', u)
+        return u
+
+    return clean_url(url1) == clean_url(url2)

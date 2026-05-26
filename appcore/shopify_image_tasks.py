@@ -403,6 +403,39 @@ def summarize_result(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _save_uploaded_images_from_result(product_id: int, lang: str, result: dict[str, Any]) -> None:
+    domain_results = result.get("domain_results") or []
+    if not isinstance(domain_results, list) or not domain_results:
+        domain = result.get("shopify_domain") or ""
+        if domain:
+            domain_results = [{"domain": domain, "result": result}]
+    
+    for row in domain_results:
+        if not isinstance(row, dict):
+            continue
+        domain = str(row.get("domain") or "").strip().lower()
+        if not domain:
+            continue
+        sub_res = row.get("result") or {}
+        detail = sub_res.get("detail") or {}
+        replacements = detail.get("replacements") or []
+        for rep in replacements:
+            if not isinstance(rep, dict):
+                continue
+            new_url = str(rep.get("new") or "").strip()
+            candidate = rep.get("candidate") or {}
+            image_id = str(candidate.get("id") or "").strip()
+            kind = str(candidate.get("kind") or "detail").strip()
+            if new_url and image_id:
+                execute(
+                    "INSERT INTO media_product_shopify_uploaded_images "
+                    "(product_id, lang, domain, image_kind, image_id, shopify_cdn_url) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE shopify_cdn_url=VALUES(shopify_cdn_url)",
+                    (product_id, lang, domain, kind, image_id, new_url)
+                )
+
+
 def complete_task(task_id: int, result: dict[str, Any]) -> dict[str, Any]:
     task = get_task(task_id)
     if not task:
@@ -415,6 +448,13 @@ def complete_task(task_id: int, result: dict[str, Any]) -> dict[str, Any]:
         "WHERE id=%s",
         (payload, task_id),
     )
+
+    try:
+        _save_uploaded_images_from_result(int(task["product_id"]), task["lang"], result)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Failed to save uploaded shopify images to DB: %s", e)
+
     return update_enabled_domain_statuses(
         int(task["product_id"]),
         task["lang"],

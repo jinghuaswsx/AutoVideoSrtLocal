@@ -28,37 +28,80 @@ def _collect_link_check_reference_images(
     lang: str,
     task_dir: Path,
     *,
+    domain: str | None = None,
     download_media_object_fn: Callable[[str, Path], Any],
 ) -> list[dict]:
+    import requests
+    import logging
+    from appcore.db import query_one
+
     references: list[dict] = []
     ref_dir = task_dir / "reference"
     ref_dir.mkdir(parents=True, exist_ok=True)
+
+    def download_with_fallback(object_key: str, local_path: Path, image_kind: str, image_id: str) -> str | None:
+        cdn_url = None
+        if domain:
+            try:
+                row = query_one(
+                    "SELECT shopify_cdn_url FROM media_product_shopify_uploaded_images "
+                    "WHERE product_id=%s AND lang=%s AND domain=%s AND image_kind=%s AND image_id=%s "
+                    "ORDER BY id DESC LIMIT 1",
+                    (product_id, lang, domain, image_kind, image_id)
+                )
+                if row and row.get("shopify_cdn_url"):
+                    cdn_url = str(row["shopify_cdn_url"]).strip()
+            except Exception as e:
+                logging.getLogger(__name__).warning("Error querying shopify_cdn_url: %s", e)
+
+        downloaded_from_cdn = False
+        if cdn_url:
+            try:
+                response = requests.get(cdn_url, timeout=10)
+                if response.status_code == 200:
+                    local_path.write_bytes(response.content)
+                    downloaded_from_cdn = True
+                else:
+                    logging.getLogger(__name__).warning(
+                        "Failed to download reference from Shopify CDN %s: HTTP %s", cdn_url, response.status_code
+                    )
+            except Exception as e:
+                logging.getLogger(__name__).warning("Error downloading from Shopify CDN %s: %s", cdn_url, e)
+
+        if not downloaded_from_cdn:
+            download_media_object_fn(object_key, local_path)
+
+        return cdn_url
 
     cover_key = medias.get_product_covers(product_id).get(lang)
     if cover_key:
         cover_suffix = Path(cover_key).suffix or ".jpg"
         cover_local = ref_dir / f"cover_{lang}{cover_suffix}"
-        download_media_object_fn(cover_key, cover_local)
-        references.append(
-            {
-                "id": f"cover-{lang}",
-                "filename": f"cover_{lang}{cover_suffix}",
-                "local_path": str(cover_local),
-            }
-        )
+        cover_id = f"cover-{lang}"
+        cdn_url = download_with_fallback(cover_key, cover_local, "cover", cover_id)
+        ref_item = {
+            "id": cover_id,
+            "filename": f"cover_{lang}{cover_suffix}",
+            "local_path": str(cover_local),
+        }
+        if cdn_url:
+            ref_item["shopify_cdn_url"] = cdn_url
+        references.append(ref_item)
 
     for idx, row in enumerate(medias.list_detail_images(product_id, lang), start=1):
         object_key = row.get("object_key") or ""
         detail_suffix = Path(object_key).suffix or ".jpg"
         detail_local = ref_dir / f"detail_{idx:03d}{detail_suffix}"
-        download_media_object_fn(object_key, detail_local)
-        references.append(
-            {
-                "id": f"detail-{row['id']}",
-                "filename": f"detail_{idx:03d}{detail_suffix}",
-                "local_path": str(detail_local),
-            }
-        )
+        detail_id = f"detail-{row['id']}"
+        cdn_url = download_with_fallback(object_key, detail_local, "detail", detail_id)
+        ref_item = {
+            "id": detail_id,
+            "filename": f"detail_{idx:03d}{detail_suffix}",
+            "local_path": str(detail_local),
+        }
+        if cdn_url:
+            ref_item["shopify_cdn_url"] = cdn_url
+        references.append(ref_item)
 
     return references
 
@@ -154,6 +197,7 @@ def build_product_link_check_create_response(
         product_id,
         lang,
         task_dir,
+        domain=domain,
         download_media_object_fn=download_media_object_fn,
     )
     if not references:

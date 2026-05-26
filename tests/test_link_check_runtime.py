@@ -1064,3 +1064,97 @@ def test_runtime_sets_is_replaced_correctly_when_not_matched_and_no_reference(mo
     assert saved["summary"]["replaced_count"] == 0
     assert saved["summary"]["not_replaced_count"] == 0
     assert saved["summary"]["total_count"] == 1
+
+
+def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    ref_path = task_dir / "ref.jpg"
+    ref_path.write_bytes(b"ref")
+    site_path = task_dir / "site.jpg"
+    site_path.write_bytes(b"site")
+
+    task_state.create_link_check(
+        "lc-cdn-match",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[{
+            "id": "ref-1",
+            "filename": "ref.jpg",
+            "local_path": str(ref_path),
+            "shopify_cdn_url": "https://cdn.shopify.com/s/files/1/0000/0000/files/localized_detail.png?v=123"
+        }],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://cdn.shopify.com/s/files/1/0000/0000/files/localized_detail_master.png?v=456",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    analyze_calls = []
+    def _mock_analyze(image_path, *, target_language, target_language_name):
+        analyze_calls.append((image_path, target_language))
+        return {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "German text",
+            "quality_score": 95,
+            "quality_reason": "excellent copy",
+            "needs_replacement": False,
+        }
+
+    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
+
+    # Note: we do NOT mock find_best_reference, run_binary_quick_check, or judge_same_image
+    # to guarantee they are completely bypassed when the URL matches!
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-cdn-match")
+
+    saved = task_state.get("lc-cdn-match")
+    item = saved["items"][0]
+    assert len(analyze_calls) == 1
+    assert item["is_replaced"] is True
+    assert item["reference_match"]["status"] == "matched"
+    assert item["reference_match"]["reference_id"] == "ref-1"
+    assert item["binary_quick_check"]["status"] == "pass"
+    assert "精确匹配" in item["binary_quick_check"]["reason"]
+    assert item["same_image_llm"]["answer"] == "是"
+    assert item["same_image_llm"]["channel"] == "shopify_cdn_url_match"
+    assert item["analysis"]["decision"] == "pass"
+    assert item["analysis"]["decision_source"] == "shopify_cdn_url_match"
+    assert "Shopify CDN URL 匹配" in item["analysis"]["quality_reason"]
+    assert saved["summary"]["replaced_count"] == 1
+    assert saved["summary"]["pass_count"] == 1
+
