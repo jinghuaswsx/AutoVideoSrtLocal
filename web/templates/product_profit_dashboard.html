@@ -753,6 +753,33 @@
   }
   .ppd-table { font-size: 12px; }
 }
+
+/* 复制按钮样式 */
+.ppd-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: 6px;
+  color: var(--text-user-badge);
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.1s;
+  vertical-align: middle;
+}
+.ppd-copy-btn:hover {
+  opacity: 0.9;
+  color: var(--primary-color);
+}
+.ppd-copy-btn:active {
+  transform: scale(0.85);
+}
+.ppd-copy-btn svg {
+  display: block;
+}
+@keyframes ppd-pop {
+  0% { transform: scale(0.6); }
+  100% { transform: scale(1); }
+}
 </style>
 {% endblock %}
 
@@ -1184,6 +1211,27 @@
   'use strict';
 
   var $ = function(id) { return document.getElementById(id); };
+
+  window.copyText = function(event, element) {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    var text = element.getAttribute('data-copy-text');
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(function() {
+      var originalHTML = element.innerHTML;
+      element.innerHTML = '<svg class="ppd-copy-success" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; display: inline-block; animation: ppd-pop 0.2s;"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      element.style.pointerEvents = 'none';
+      setTimeout(function() {
+        element.innerHTML = originalHTML;
+        element.style.pointerEvents = '';
+      }, 1200);
+    }).catch(function(err) {
+      console.error('复制失败', err);
+    });
+  };
+
   var productInput = $('ppd-product');
   var productModal = $('ppd-product-modal');
   var productSearchInput = $('ppd-product-search');
@@ -1725,10 +1773,13 @@
         ? '<span class="ppd-badge-complete">✓ 完备</span>'
         : '<span class="ppd-badge-incomplete">⚠ 不完备</span>';
 
+      var nameCopyBtn = r.name ? '<span class="ppd-copy-btn" data-copy-text="' + escHtml(r.name) + '" onclick="copyText(event, this)" title="复制产品名称"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span>' : '';
+      var codeCopyBtn = r.product_code ? '<span class="ppd-copy-btn" data-copy-text="' + escHtml(r.product_code) + '" onclick="copyText(event, this)" title="复制产品Code"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span>' : '';
+
       return '<tr class="' + rowCls + '" data-product-id="' + escHtml(String(r.product_id)) + '">'
         + '<td class="ppd-list-table-product">'
-        +   '<div class="ppd-list-name">' + escHtml(r.name || '(未命名)') + '</div>'
-        +   '<div class="ppd-list-code">' + escHtml(r.product_code || '') + '</div>'
+        +   '<div class="ppd-list-name">' + escHtml(r.name || '(未命名)') + nameCopyBtn + '</div>'
+        +   '<div class="ppd-list-code">' + escHtml(r.product_code || '') + codeCopyBtn + '</div>'
         + '</td>'
         + '<td class="ppd-num">' + (r.order_count || 0).toLocaleString() + '</td>'
         + '<td class="ppd-num">' + money(r.revenue_usd) + '</td>'
@@ -2023,10 +2074,13 @@
         ? '<span class="ppd-badge-complete">完备</span>'
         : '<span class="ppd-badge-incomplete">不完备</span>';
 
+      var nameCopyBtn = r.name ? '<span class="ppd-copy-btn" data-copy-text="' + escHtml(r.name) + '" onclick="copyText(event, this)" title="复制产品名称"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span>' : '';
+      var codeCopyBtn = r.product_code ? '<span class="ppd-copy-btn" data-copy-text="' + escHtml(r.product_code) + '" onclick="copyText(event, this)" title="复制产品Code"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span>' : '';
+
       return '<tr class="' + rowCls + '" data-product-id="' + escHtml(String(r.product_id)) + '">'
         + '<td class="ppd-list-table-product">'
-        +   '<div class="ppd-list-name">' + escHtml(r.name || '(未命名)') + '</div>'
-        +   '<div class="ppd-list-code">' + escHtml(r.product_code || '') + '</div>'
+        +   '<div class="ppd-list-name">' + escHtml(r.name || '(未命名)') + nameCopyBtn + '</div>'
+        +   '<div class="ppd-list-code">' + escHtml(r.product_code || '') + codeCopyBtn + '</div>'
         + '</td>'
         + '<td class="ppd-num">' + (r.order_count || 0).toLocaleString() + '</td>'
         + '<td class="ppd-num">' + money(r.revenue_usd) + '</td>'
