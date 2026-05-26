@@ -256,7 +256,7 @@ def _load_ad_candidates_for_materials(product_ids: list[int]) -> list[dict[str, 
     placeholders = ",".join(["%s"] * len(product_ids))
     return query(
         "SELECT m.product_id, m.normalized_ad_code, m.ad_name, "
-        "       m.normalized_campaign_code, m.campaign_name, "
+        "       m.product_code AS normalized_campaign_code, m.product_code AS campaign_name, "
         "       m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
         "       m.spend_usd, m.id "
