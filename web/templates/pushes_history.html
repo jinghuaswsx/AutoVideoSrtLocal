@@ -41,6 +41,8 @@
   </div>
 </div>
 
+<div class="oc-pager" id="history-pagination-top" style="margin-bottom: 16px; justify-content: flex-end;"></div>
+
 <div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
   <table class="push-table mobile-no-scroll" style="width: 100%; border-collapse: collapse; text-align: left;">
     <thead>
@@ -62,7 +64,7 @@
   </table>
 </div>
 
-<div class="pagination" id="history-pagination" style="margin-top: 20px; text-align: center;"></div>
+<div class="oc-pager" id="history-pagination" style="margin-top: 20px;"></div>
 
 <style>
   .ad-plan-capsules button.active {
@@ -133,6 +135,82 @@
     font-size: 10px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     cursor: pointer;
+  }
+
+  /* ────────── Pager (Ocean Blue & Modern) ────────── */
+  .oc-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 0;
+  }
+  .oc-pager button {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--oc-border-strong, #d1d5db);
+    border-radius: var(--oc-r, 6px);
+    background: var(--oc-bg, #ffffff);
+    color: var(--oc-fg, #111827);
+    font-size: 13px;
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .oc-pager button:hover:not(:disabled) {
+    border-color: var(--oc-accent, #3b82f6);
+    color: var(--oc-accent, #3b82f6);
+  }
+  .oc-pager button.active {
+    background: var(--oc-accent, #3b82f6);
+    border-color: var(--oc-accent, #3b82f6);
+    color: #fff;
+  }
+  .oc-pager button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: var(--oc-bg-muted, #f3f4f6);
+    border-color: var(--oc-border, #e5e7eb);
+    color: var(--oc-fg-subtle, #9ca3af);
+  }
+  .oc-vm-page-summary {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 8px;
+    color: var(--oc-fg-muted, #4b5563);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .oc-vm-page-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 32px;
+    margin-left: 8px;
+    color: var(--oc-fg-muted, #4b5563);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .oc-vm-page-jump input {
+    width: 60px;
+    height: 32px;
+    padding: 0 8px;
+    text-align: center;
+    border: 1px solid var(--oc-border-strong, #d1d5db);
+    border-radius: var(--oc-r, 6px);
+    background: var(--oc-bg, #ffffff);
+    color: var(--oc-fg, #111827);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+  .oc-vm-page-jump input:focus {
+    outline: 2px solid var(--oc-accent-ring, rgba(59, 130, 246, 0.2));
+    border-color: var(--oc-accent, #3b82f6);
   }
 </style>
 
@@ -300,20 +378,71 @@
   }
 
   function renderPagination() {
-    const box = document.getElementById('history-pagination');
+    const pagers = [document.getElementById('history-pagination-top'), document.getElementById('history-pagination')].filter(Boolean);
+    if (!pagers.length) return;
+
     const totalPages = Math.ceil(state.total / state.pageSize) || 1;
-    const parts = [`共 ${state.total} 条`];
-    for (let p = 1; p <= totalPages; p++) {
-      if (p === state.page) parts.push(`<strong>${p}</strong>`);
-      else parts.push(`<a href="#" data-page="${p}">${p}</a>`);
-    }
-    box.innerHTML = parts.join(' ');
-    box.querySelectorAll('a').forEach(a => {
-      a.addEventListener('click', ev => {
-        ev.preventDefault();
-        state.page = Number(ev.target.getAttribute('data-page'));
-        load();
+    const page = state.page;
+
+    if (totalPages <= 1) {
+      pagers.forEach(pager => {
+        pager.innerHTML = '';
+        pager.style.display = 'none';
       });
+      return;
+    }
+
+    const firstDisabled = page <= 1 ? ' disabled aria-disabled="true"' : '';
+    const lastDisabled = page >= totalPages ? ' disabled aria-disabled="true"' : '';
+
+    const buttons = [
+      `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 共 ${totalPages} 页</span>`,
+      `<button type="button" data-page="${Math.max(1, page - 1)}"${firstDisabled}>上一页</button>`
+    ];
+
+    for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+      buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-page="${p}">${p}</button>`);
+    }
+
+    buttons.push(`<button type="button" data-page="${Math.min(totalPages, page + 1)}"${lastDisabled}>下一页</button>`);
+    buttons.push(`
+      <label class="oc-vm-page-jump">
+        <span>去</span>
+        <input type="number" min="1" max="${totalPages}" value="${page}" inputmode="numeric" pattern="[0-9]*" data-page-jump aria-label="跳转到指定页">
+        <span>页</span>
+      </label>
+    `);
+
+    pagers.forEach(pager => {
+      pager.style.display = 'flex';
+      pager.innerHTML = buttons.join('');
+
+      pager.querySelectorAll('button[data-page]').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.preventDefault();
+          state.page = Number(btn.getAttribute('data-page'));
+          load();
+        });
+      });
+
+      const jumpInput = pager.querySelector('input[data-page-jump]');
+      if (jumpInput) {
+        jumpInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const requested = parseInt(jumpInput.value, 10);
+            if (!Number.isFinite(requested)) {
+              jumpInput.value = String(page);
+              return;
+            }
+            const target = Math.min(totalPages, Math.max(1, requested));
+            jumpInput.value = String(target);
+            if (target === state.page) return;
+            state.page = target;
+            load();
+          }
+        });
+      }
     });
   }
 
