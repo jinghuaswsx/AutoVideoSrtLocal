@@ -649,7 +649,7 @@
     const lastDisabled = page >= totalPages ? ' disabled aria-disabled="true"' : '';
 
     const buttons = [
-      `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 共 ${totalPages} 页</span>`,
+      `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 每页 ${state.pageSize} 条 · 共 ${state.total} 条数据</span>`,
       `<button type="button" data-page="${Math.max(1, page - 1)}"${firstDisabled}>上一页</button>`
     ];
 
