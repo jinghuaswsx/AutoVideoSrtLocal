@@ -1091,25 +1091,30 @@ def api_history():
 
     product_ids = sorted(list({int(r["product_id"]) for r in rows if r.get("product_id")}))
 
-    stats_map = {}
+    product_campaigns = {}
     if product_ids:
         placeholders = ",".join(["%s"] * len(product_ids))
         ad_stats = db_query(
-            "SELECT product_id, market_country, "
-            "       COALESCE(SUM(spend_usd), 0) AS total_spend, "
-            "       COUNT(DISTINCT campaign_name) AS campaign_count "
+            "SELECT product_id, campaign_name, market_country, "
+            "       COALESCE(SUM(spend_usd), 0) AS total_spend "
             "FROM meta_ad_daily_campaign_metrics "
             f"WHERE product_id IN ({placeholders}) "
-            "GROUP BY product_id, market_country",
+            "GROUP BY product_id, campaign_name, market_country",
             tuple(product_ids)
         )
         for stat in ad_stats:
             p_id = int(stat["product_id"])
             m_country = str(stat["market_country"] or "").strip().upper()
-            stats_map[(p_id, m_country)] = {
-                "total_spend": float(stat["total_spend"] or 0),
-                "campaign_count": int(stat["campaign_count"] or 0)
-            }
+            campaign_name = stat["campaign_name"]
+            spend = float(stat["total_spend"] or 0)
+            
+            if p_id not in product_campaigns:
+                product_campaigns[p_id] = []
+            product_campaigns[p_id].append({
+                "campaign_name": campaign_name,
+                "market_country": m_country,
+                "spend": spend
+            })
 
     history_items = []
     for r in rows:
@@ -1126,7 +1131,13 @@ def api_history():
         p_id = int(r["product_id"])
         country = _country_for_lang(r["lang"])
 
-        ad_info = stats_map.get((p_id, country), {"total_spend": 0.0, "campaign_count": 0})
+        campaign_set = set()
+        spend_total = 0.0
+        for camp in product_campaigns.get(p_id, []):
+            m_country = camp["market_country"]
+            if m_country == country or m_country in ("", "MULTI"):
+                campaign_set.add(camp["campaign_name"])
+                spend_total += camp["spend"]
 
         history_item = {
             "log_id": r["log_id"],
@@ -1144,9 +1155,9 @@ def api_history():
             "cover_url": video_snap.get("image_url") or "",
             "texts": texts_snap,
             "product_links": _filter_links_by_lang(links_snap, r["lang"]),
-            "has_ad_plan": ad_info["campaign_count"] > 0,
-            "ad_campaign_count": ad_info["campaign_count"],
-            "ad_spend_total": ad_info["total_spend"],
+            "has_ad_plan": len(campaign_set) > 0,
+            "ad_campaign_count": len(campaign_set),
+            "ad_spend_total": spend_total,
         }
 
         if ad_plan == "has" and not history_item["has_ad_plan"]:
@@ -1209,15 +1220,21 @@ def material_ads_detail(item_id: int):
     country = _country_for_lang(item["lang"])
 
     campaign_daily_metrics = db_query(
-        "SELECT ad_account_name, campaign_name, spend_usd, purchase_value_usd, result_count, report_date "
+        "SELECT ad_account_name, campaign_name, spend_usd, purchase_value_usd, result_count, report_date, market_country "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id = %s AND market_country = %s "
+        "WHERE product_id = %s "
         "ORDER BY report_date DESC, spend_usd DESC",
-        (item["product_id"], country)
+        (item["product_id"],)
     )
 
-    campaigns_summary = {}
+    filtered_metrics = []
     for m in campaign_daily_metrics:
+        m_country = str(m.get("market_country") or "").strip().upper()
+        if m_country == country or m_country in ("", "MULTI"):
+            filtered_metrics.append(m)
+
+    campaigns_summary = {}
+    for m in filtered_metrics:
         c_name = m["campaign_name"]
         if c_name not in campaigns_summary:
             campaigns_summary[c_name] = {
@@ -1244,7 +1261,7 @@ def material_ads_detail(item_id: int):
         s["max_date"] = s["max_date"].strftime("%Y-%m-%d") if isinstance(s["max_date"], (date, datetime)) else str(s["max_date"])
 
     daily_rows_formatted = []
-    for m in campaign_daily_metrics:
+    for m in filtered_metrics:
         spend = float(m["spend_usd"] or 0)
         p_val = float(m["purchase_value_usd"] or 0)
         daily_rows_formatted.append({
