@@ -1001,6 +1001,37 @@ def _country_for_lang(lang: str | None) -> str:
     return _LANG_TO_COUNTRY.get(str(lang).strip().lower(), "US")
 
 
+def _filter_links_by_lang(links: list[str], lang: str) -> list[str]:
+    """根据素材的语种过滤投放推广链接，只保留契合该语种的链接。"""
+    if not links:
+        return []
+    lang_str = str(lang or "").strip().lower()
+    if not lang_str:
+        return links
+
+    small_langs = ["de", "fr", "ja", "es", "it", "pt", "nl"]
+    filtered = []
+    
+    for link in links:
+        link_lower = link.lower()
+        if lang_str == "en":
+            # 英语链接：不包含任何其他小语种的路径前缀
+            has_other_lang = False
+            for sl in small_langs:
+                if f"/{sl}/" in link_lower or f"/{sl}/products/" in link_lower:
+                    has_other_lang = True
+                    break
+            if not has_other_lang:
+                filtered.append(link)
+        else:
+            # 小语种链接：链接路径中必须包含对应语种前缀
+            if f"/{lang_str}/" in link_lower or f"/{lang_str}/products/" in link_lower:
+                filtered.append(link)
+
+    # 兜底返回，如果完全没有匹配的，则返回原列表防呆
+    return filtered if filtered else links
+
+
 @bp.route("/history")
 @login_required
 @permission_required("pushes")
@@ -1111,7 +1142,7 @@ def api_history():
             "video_url": video_snap.get("url") or "",
             "cover_url": video_snap.get("image_url") or "",
             "texts": texts_snap,
-            "product_links": links_snap,
+            "product_links": _filter_links_by_lang(links_snap, r["lang"]),
             "has_ad_plan": ad_info["campaign_count"] > 0,
             "ad_campaign_count": ad_info["campaign_count"],
             "ad_spend_total": ad_info["total_spend"],
@@ -1162,6 +1193,9 @@ def material_ads_detail(item_id: int):
             payload = json.loads(push_log["request_payload"])
         except Exception:
             pass
+
+    if payload and "product_links" in payload:
+        payload["product_links"] = _filter_links_by_lang(payload["product_links"], item["lang"])
 
     country = _country_for_lang(item["lang"])
 
