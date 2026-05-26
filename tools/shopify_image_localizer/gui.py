@@ -2742,8 +2742,19 @@ class ShopifyImageLocalizerApp:
         append_log("[INFO] 正在启动链接检查 background thread...", "info")
 
         def worker():
-            from link_check_desktop import controller as link_check_controller
-            from link_check_desktop import report as link_check_report
+            import traceback
+            try:
+                from link_check_desktop import controller as link_check_controller
+                from link_check_desktop import report as link_check_report
+            except BaseException as import_exc:
+                self._ui_after(
+                    0,
+                    append_log,
+                    f"\n[FATAL ERROR] 引擎模块加载失败，请确认是否依赖缺失！\n{import_exc}\n{traceback.format_exc()}",
+                    "error"
+                )
+                self._ui_after(0, live_status_label.configure, {"text": "分析引擎加载失败"})
+                return
             
             def thread_status_cb(msg):
                 self._ui_after(0, append_log, f"[*] {msg}")

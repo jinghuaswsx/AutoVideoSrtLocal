@@ -18,6 +18,7 @@ else:
 hiddenimports = sorted(set(
     collect_submodules("playwright")
     + collect_submodules("link_check_desktop")
+    + collect_submodules("google.genai")
     + [
         "websocket",
         "websocket._abnf",
