@@ -55,21 +55,26 @@
 <div class="oc-pager" id="history-pagination-top" style="margin-bottom: 16px; justify-content: flex-end;"></div>
 
 <div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
-  <table class="push-table mobile-no-scroll" style="width: 100%; border-collapse: collapse; text-align: left;">
+  <table class="push-table mobile-no-scroll" style="width: 100%; border-collapse: collapse; text-align: left; table-layout: auto;">
     <thead>
       <tr style="background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb);">
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">视频快照</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">商品与Code</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 80px;">投放语种</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); min-width: 260px;">文案快照</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 140px;">投放广告状态</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 130px; text-align: right;">消耗广告费</th>
-        <th style="padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563); width: 120px; text-align: center;">操作</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px;">视频快照</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 150px;">视频文件名</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 120px;">商品中文名</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px;">产品Code</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 120px;">投放语种</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 200px;">文案快照</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 160px;">投放链接</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 130px;">推送时间</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px;">操作账号</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 110px;">广告状态</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 110px; text-align: right;">消耗广告费</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px; text-align: center;">操作</th>
       </tr>
     </thead>
     <tbody id="history-tbody">
       <tr>
-        <td colspan="7" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af);">加载中…</td>
+        <td colspan="12" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 14px;">加载中…</td>
       </tr>
     </tbody>
   </table>
@@ -252,6 +257,7 @@
 (function() {
   let selectedAdPlan = 'all';
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
+  const languageNameMap = {};
 
   function getTodayString() {
     const d = new Date();
@@ -352,8 +358,8 @@
     navigator.clipboard.writeText(text).then(() => {
       const originalHtml = element.innerHTML;
       const svgEl = element.querySelector('svg');
-      const w = svgEl ? svgEl.getAttribute('width') : '11';
-      const h = svgEl ? svgEl.getAttribute('height') : '11';
+      const w = svgEl ? svgEl.getAttribute('width') : '12';
+      const h = svgEl ? svgEl.getAttribute('height') : '12';
       element.innerHTML = `<svg viewBox="0 0 24 24" width="${w}" height="${h}" stroke="#10b981" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="transition: all 0.2s;"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
       setTimeout(() => {
         element.innerHTML = originalHtml;
@@ -364,8 +370,8 @@
   }
 
   function formatLanguageLabel(code) {
-    const raw = String(code || '').trim().toUpperCase();
-    return raw;
+    const raw = String(code || '').trim().toLowerCase();
+    return languageNameMap[raw] || raw.toUpperCase();
   }
 
   function renderStatusBadge(hasAd, count) {
@@ -394,8 +400,10 @@
       (data.languages || []).forEach(l => {
         const opt = document.createElement('option');
         opt.value = l.code;
-        opt.textContent = `${l.name_zh || l.code.toUpperCase()} (${l.code.toUpperCase()})`;
+        const displayName = `${l.name_zh || l.code.toUpperCase()} (${l.code.toUpperCase()})`;
+        opt.textContent = displayName;
         sel.appendChild(opt);
+        languageNameMap[l.code.toLowerCase()] = displayName;
       });
     } catch (e) {
       console.warn('load languages failed', e);
@@ -415,7 +423,7 @@
 
   async function load() {
     const tbody = document.getElementById('history-tbody');
-    tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-fg-subtle, #9ca3af);">加载中…</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">加载中…</td></tr>`;
     try {
       const resp = await fetch('/pushes/api/history?' + buildQuery());
       const data = await resp.json();
@@ -423,7 +431,7 @@
       state.pageSize = data.page_size || state.pageSize;
       state.items = data.items || [];
       if (!state.items.length) {
-        tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-fg-subtle, #9ca3af);">无推送历史记录</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
       } else {
         tbody.innerHTML = state.items.map(it => {
           const thumb = it.cover_url
@@ -431,57 +439,77 @@
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
             
           const textsHtml = (it.texts || []).map(t => {
-            return `<div style="margin-bottom:6px; font-size:12px; line-height:1.45; border-left:2px solid var(--oc-accent, #3b82f6); padding-left:8px;">
-                      <strong>[${escapeHtml(t.lang)}] ${escapeHtml(t.title)}</strong>
-                      <div style="color:var(--oc-fg-muted, #4b5563); margin-top:2px;">${escapeHtml(t.message)}</div>
+            return `<div style="margin-bottom:8px; font-size:13px; line-height:1.5; border-left:3px solid var(--oc-accent, #3b82f6); padding-left:8px;">
+                      <strong style="color:var(--oc-fg, #111827); font-size:13px;">[${escapeHtml(t.lang)}] ${escapeHtml(t.title)}</strong>
+                      <div style="color:var(--oc-fg, #111827); margin-top:3px; font-weight:400; line-height:1.45;">${escapeHtml(t.message)}</div>
                     </div>`;
-          }).join('') || '<span style="color:#9ca3af; font-size:12px;">(无文案快照)</span>';
+          }).join('') || '<span style="color:#4b5563; font-size:13px;">(无文案快照)</span>';
 
           const linksHtml = (it.product_links || []).map(link => {
-            return `<div style="font-size:10px; word-break:break-all; margin-top:4px;"><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:var(--oc-accent, #3b82f6); text-decoration:none;">${escapeHtml(link)}</a></div>`;
-          }).join('');
+            return `<div style="font-size:12px; margin-bottom:6px; display:flex; align-items:center; gap:6px; line-height:1.4;">
+                      <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:var(--oc-accent, #3b82f6); text-decoration:none; word-break:break-all; flex:1;">${escapeHtml(link)}</a>
+                      <button class="btn-copy-action" data-text="${escapeHtml(link)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center;" title="复制投放链接">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      </button>
+                    </div>`;
+          }).join('') || '<span style="color:#4b5563; font-size:12px;">(无链接)</span>';
 
           const adSpendText = it.ad_spend_total > 0
             ? `<strong style="color:var(--oc-success-fg, #059669); font-size:14px;">$${it.ad_spend_total.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`
-            : `<span style="color:#9ca3af; font-size:13px;">$0.00</span>`;
+            : `<span style="color:var(--oc-fg-muted, #4b5563); font-size:13px;">$0.00</span>`;
 
           const pushedDate = it.pushed_at ? it.pushed_at.replace('T', ' ').slice(0, 16) : '-';
 
           return `<tr class="history-row">
-            <td style="padding:12px 16px; min-width: 140px; vertical-align: top;">
+            <td style="padding:12px; vertical-align: top; width: 80px;">
               ${thumb}
-              <div style="font-size:11px; color:var(--oc-fg-muted, #4b5563); word-break:break-all; margin-top:8px; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:4px;">
+            </td>
+            <td style="padding:12px; vertical-align: top; min-width: 150px;">
+              <div style="font-size:13px; color:var(--oc-fg, #111827); word-break:break-all; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:6px;">
                 <span style="flex:1;">${escapeHtml(it.filename)}</span>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top: 2px;" title="复制视频文件名">
-                  <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
               </div>
-              <div style="font-size:10px; color:var(--oc-fg-subtle, #9ca3af); margin-top:4px;">
+              <div style="font-size:11px; color:var(--oc-fg-subtle, #4b5563); margin-top:4px;">
                 ${(it.file_size / (1024 * 1024)).toFixed(1)} M
               </div>
             </td>
-            <td style="padding:12px 16px; vertical-align: top;">
-              <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
-              <div style="font-size:11px; color:#9ca3af; margin-top:5px; display:flex; align-items:center; gap:6px;">
-                <code>${escapeHtml(it.product_code)}</code>
+            <td style="padding:12px; vertical-align: top; min-width: 120px;">
+              <div style="font-weight:600; font-size:14px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
+            </td>
+            <td style="padding:12px; vertical-align: top; width: 100px;">
+              <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px;">
+                <code style="background: var(--oc-bg-subtle, #f3f4f6); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 500;">${escapeHtml(it.product_code)}</code>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center;" title="复制商品Code">
-                  <svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
               </div>
-              <div style="font-size:11px; color:#9ca3af; margin-top:5px;">
-                <span>推送于 ${escapeHtml(pushedDate)}</span> · <span>操作人: ${escapeHtml(it.operator_username)}</span>
-              </div>
             </td>
-            <td style="padding:12px 16px; vertical-align: top;"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
-            <td style="padding:12px 16px; vertical-align: top;">
+            <td style="padding:12px; vertical-align: top; width: 120px;">
+              <span style="display: inline-block; background: var(--oc-accent-subtle, #eff6ff); color: var(--oc-accent-hover, #1d4ed8); padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap;">
+                ${formatLanguageLabel(it.lang)}
+              </span>
+            </td>
+            <td style="padding:12px; vertical-align: top; min-width: 200px;">
               ${textsHtml}
-              <div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--oc-border, #e5e7eb);">
-                <strong>投放链接:</strong> ${linksHtml || '<span style="color:#9ca3af; font-size:10px;">(无链接)</span>'}
-              </div>
             </td>
-            <td style="padding:12px 16px; vertical-align:middle;">${renderStatusBadge(it.has_ad_plan, it.ad_campaign_count)}</td>
-            <td style="padding:12px 16px; text-align:right; font-variant-numeric:tabular-nums; vertical-align:middle;">${adSpendText}</td>
-            <td style="padding:12px 16px; text-align:center; vertical-align:middle;">
+            <td style="padding:12px; vertical-align: top; min-width: 160px;">
+              ${linksHtml}
+            </td>
+            <td style="padding:12px; vertical-align: top; width: 130px;">
+              <span style="font-size:13px; color:var(--oc-fg, #111827); font-variant-numeric:tabular-nums; font-weight:500;">${escapeHtml(pushedDate)}</span>
+            </td>
+            <td style="padding:12px; vertical-align: top; width: 100px;">
+              <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.operator_username)}</span>
+            </td>
+            <td style="padding:12px; vertical-align:middle; width: 110px;">
+              ${renderStatusBadge(it.has_ad_plan, it.ad_campaign_count)}
+            </td>
+            <td style="padding:12px; text-align:right; font-variant-numeric:tabular-nums; vertical-align:middle; width: 110px;">
+              ${adSpendText}
+            </td>
+            <td style="padding:12px; text-align:center; vertical-align:middle; width: 100px;">
               <a class="btn-mini" href="/pushes/material-ads/${it.item_id}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:4px 10px; height:28px;">分析广告</a>
             </td>
           </tr>`;
@@ -499,7 +527,7 @@
 
       renderPagination();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444);">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444); font-size:14px;">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
