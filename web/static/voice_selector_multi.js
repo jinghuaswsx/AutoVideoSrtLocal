@@ -1552,7 +1552,7 @@
       };
       const resp = await fetch(`${apiBase}/${taskId}/confirm-voice`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
         body: JSON.stringify(body),
       });
       if (!resp.ok) {
