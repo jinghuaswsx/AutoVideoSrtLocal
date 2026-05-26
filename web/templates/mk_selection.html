@@ -2431,8 +2431,8 @@ function mkiFineAiNextActionForResult(row) {
     ...(Array.isArray(recommendations.ad_test_angles) ? recommendations.ad_test_angles : []),
     ...(Array.isArray(recommendations.audience_suggestions) ? recommendations.audience_suggestions : []),
   ]);
-  if (decision === 'FAILED') return '重跑 AI 评估；若仍失败，先补齐落地页、素材或履约数据。';
-  if (decision === 'GO') return action || '准备首轮投放素材、落地页和预算，可以进入执行。';
+  if (decision === 'FAILED') return '重跑 AI 评估；若仍失败，先补齐素材或产品数据。';
+  if (decision === 'GO') return action || '素材适配好，可以准备首轮投放。';
   if (decision === 'TEST') return action || '先小预算测试，重点观察点击、转化、履约和合规反馈。';
   if (decision === 'HOLD') return action || mkiFineAiTopRiskForResult(row) || '暂不投入，先处理阻塞风险或补齐关键信息。';
   return action || '结合详情页复核后再决定下一步。';
@@ -3438,10 +3438,10 @@ function mkiFineAiRenderCountryTabs(countries, runId, productId) {
         <h5>市场适配分析</h5>
         <p>${escapeHtml(((c.market_fit || {}).demand_analysis || {}).summary || (c.market_fit || {}).local_positioning || '')}</p>
         <h5>机会</h5>${mkiFineAiEscapeList((c.decision || {}).why || (c.recommendations || {}).ad_test_angles)}
-        <h5>风险</h5>${mkiFineAiEscapeList([...(c.risks?.claim_risks || []), ...(c.risks?.compliance_risks || []), ...(c.risks?.operational_risks || []), ...(c.risks?.trust_risks || []), ...(c.risks?.localization_risks || [])])}
+        <h5>风险</h5>${mkiFineAiEscapeList([...(c.risks?.claim_risks || []), ...(c.risks?.compliance_risks || []), ...(c.risks?.cultural_risks || []), ...(c.risks?.trust_risks || []), ...(c.risks?.aesthetic_risks || []), ...(c.risks?.operational_risks || []), ...(c.risks?.localization_risks || [])])}
         <h5>素材审计</h5>${mkiFineAiEscapeList([...(c.creative_fit?.cover_image_audit?.issues || []), ...(c.creative_fit?.product_image_audit?.issues || []), ...(c.creative_fit?.video_audit?.proof_gaps || [])])}
-        <h5>落地页建议</h5>${mkiFineAiEscapeList((c.recommendations || {}).landing_page_actions)}
-        <h5>30 天测试计划</h5>${mkiFineAiEscapeList(((c.recommendations || {}).first_30_day_test_plan || {}).success_metrics)}
+        <h5>文化适配</h5>${mkiFineAiEscapeList(((c.cultural_analysis || c.landing_page_localization || {}).concerns || (c.cultural_analysis || c.landing_page_localization || {}).actions || []))}
+        <h5>下一步建议</h5>${mkiFineAiEscapeList((c.recommendations || {}).creative_actions || (c.recommendations || {}).ad_test_angles)}
         <h5>来源</h5>${mkiFineAiEscapeList((c.sources || []).map(s => s.url || s.title || '').filter(Boolean))}
         <h5>待补充数据</h5>${mkiFineAiEscapeList(c.missing_data || [])}
       </section>`).join('')}`;

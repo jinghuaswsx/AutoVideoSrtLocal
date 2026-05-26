@@ -35,9 +35,6 @@ def _count_visible_chars(text: str) -> int:
     return sum(1 for ch in str(text or "") if not ch.isspace())
 
 
-_SHORT_ASR_PASSTHROUGH_CHAR_THRESHOLD = 50
-
-
 def _join_utterance_text(utterances: list[dict]) -> str:
     return " ".join(
         str(item.get("text") or "").strip()
@@ -49,17 +46,10 @@ def _join_utterance_text(utterances: list[dict]) -> str:
 def _resolve_original_video_passthrough(utterances: list[dict]) -> dict:
     source_full_text = _join_utterance_text(utterances)
     source_chars = _count_visible_chars(source_full_text)
-    if not utterances:
+    if not source_full_text:
         return {
             "enabled": True,
             "reason": "no_asr",
-            "source_full_text": source_full_text,
-            "source_chars": source_chars,
-        }
-    if source_chars < _SHORT_ASR_PASSTHROUGH_CHAR_THRESHOLD:
-        return {
-            "enabled": True,
-            "reason": "short_asr",
             "source_full_text": source_full_text,
             "source_chars": source_chars,
         }
@@ -72,7 +62,19 @@ def _resolve_original_video_passthrough(utterances: list[dict]) -> dict:
 
 
 def _is_original_video_passthrough(task: dict | None) -> bool:
-    return str((task or {}).get("media_passthrough_mode") or "") == "original_video"
+    task = task or {}
+    if str(task.get("media_passthrough_mode") or "") != "original_video":
+        return False
+    reason = str(task.get("media_passthrough_reason") or "").strip()
+    if reason == "short_asr":
+        return False
+    if reason == "no_asr":
+        return True
+    try:
+        source_chars = int(task.get("media_passthrough_source_chars") or 0)
+    except (TypeError, ValueError):
+        source_chars = 0
+    return source_chars <= 0
 
 
 def _build_review_segments(script_segments: list[dict], localized_translation: dict) -> list[dict]:

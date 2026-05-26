@@ -1,0 +1,204 @@
+{% extends "layout.html" %}
+{% block title %}视频素材广告数据分析{% endblock %}
+{% block content %}
+<div class="page-header" style="margin-bottom: 16px;">
+  <div style="font-size: 13px; color: var(--oc-fg-subtle, #9ca3af); margin-bottom: 6px;">
+    <a href="/pushes/history" style="color: var(--oc-fg-subtle, #9ca3af); text-decoration: none;">🚀 推送历史记录</a>
+    <span style="margin: 0 6px;">/</span>
+    <span style="color: var(--oc-fg, #111827); font-weight: 500;">视频素材广告数据分析</span>
+  </div>
+  <h1>📊 视频素材广告数据分析</h1>
+</div>
+
+<!-- 素材快照面板 -->
+<div class="material-snapshot-card" style="display: grid; grid-template-columns: 180px 1fr; gap: 24px; padding: 24px; background: #fff; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 24px; align-items: start;">
+  <!-- 视频预览 -->
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+    {% if video_snap.url %}
+    <div class="snapshot-video-container" style="position: relative; width: 100%; height: 320px; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--oc-border-strong, #d1d5db); display: flex; align-items: center; justify-content: center;">
+      {% if video_snap.image_url %}
+      <img src="{{ video_snap.image_url }}" style="width: 100%; height: 100%; object-fit: cover;" alt="cover">
+      {% endif %}
+      <a href="{{ video_snap.url }}" target="_blank" style="position: absolute; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--oc-fg, #111827); font-size: 18px; font-weight: bold; text-decoration: none; box-shadow: 0 4px 8px rgba(0,0,0,0.25); cursor: pointer;">▶</a>
+    </div>
+    {% else %}
+    <div style="width: 100%; height: 320px; background: var(--oc-bg-subtle, #f3f4f6); border-radius: 8px; border: 1px dashed var(--oc-border-strong, #d1d5db); display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 48px;">🎞</div>
+    {% endif %}
+    <span style="font-size: 11px; color: var(--oc-fg-subtle, #9ca3af); word-break: break-all; text-align: center;">{{ item.filename }}</span>
+  </div>
+
+  <!-- 素材属性快照 -->
+  <div style="display: flex; flex-direction: column; gap: 16px;">
+    <div style="border-bottom: 1px solid var(--oc-border, #e5e7eb); padding-bottom: 12px;">
+      <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: var(--oc-fg, #111827);">{{ product.name }}</h3>
+      <div style="font-size: 13px; color: var(--oc-fg-muted, #4b5563); margin-top: 6px; display: flex; gap: 16px;">
+        <span>商品编码: <code>{{ product.product_code }}</code></span>
+        <span>投放语种: <span class="lang-pill" style="font-size: 11px;">{{ item.lang | upper }}</span></span>
+        <span>归属国家: <span class="lang-pill" style="font-size: 11px; background: var(--oc-accent-subtle, #eff6ff); color: var(--oc-accent, #3b82f6); font-weight: bold;">{{ country }}</span></span>
+      </div>
+    </div>
+
+    <!-- 文本快照 -->
+    <div>
+      <h4 style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">📝 文案推送快照</h4>
+      <div style="display: grid; gap: 10px;">
+        {% if payload.texts %}
+          {% for t in payload.texts %}
+          <div style="background: var(--oc-bg-subtle, #f9fafb); padding: 12px; border-radius: 6px; border: 1px solid var(--oc-border, #e5e7eb); font-size: 12px; line-height: 1.5;">
+            <div style="font-weight: 600; color: var(--oc-fg, #111827); border-bottom: 1px dashed var(--oc-border, #e5e7eb); padding-bottom: 4px; margin-bottom: 6px;">
+              [{{ t.lang }}] {{ t.title }}
+            </div>
+            <div style="color: var(--oc-fg-muted, #4b5563); white-space: pre-line;">{{ t.message }}</div>
+            {% if t.description %}
+            <div style="color: #9ca3af; font-size: 11px; margin-top: 4px; font-style: italic;">{{ t.description }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <span style="color: #9ca3af; font-size: 12px;">(无文案快照)</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 投放页面链接 -->
+    <div>
+      <h4 style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--oc-fg-muted, #4b5563);">🔗 投放推广链接</h4>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        {% if payload.product_links %}
+          {% for link in payload.product_links %}
+          <div style="font-size: 11px; font-family: monospace; word-break: break-all;">
+            <a href="{{ link }}" target="_blank" rel="noopener noreferrer" style="color: var(--oc-accent, #3b82f6); text-decoration: none; border-bottom: 1px dotted var(--oc-accent, #3b82f6);">{{ link }}</a>
+          </div>
+          {% endfor %}
+        {% else %}
+          <span style="color: #9ca3af; font-size: 12px;">(无链接)</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 数据大盘汇总卡片 -->
+{% set total_spend = 0.0 %}
+{% set total_purchase = 0.0 %}
+{% set total_results = 0 %}
+{% for s in campaigns_summary %}
+  {% set total_spend = total_spend + s.spend_total %}
+  {% set total_purchase = total_purchase + s.purchase_value_total %}
+  {% set total_results = total_results + s.result_count_total %}
+{% endfor %}
+{% set total_roas = total_purchase / total_spend if total_spend > 0 else 0.0 %}
+
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+  <!-- 卡片 1 -->
+  <div style="background: #fff; padding: 18px 24px; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+    <div style="font-size: 12px; color: var(--oc-fg-subtle, #9ca3af); font-weight: 500;">累计广告消耗</div>
+    <div style="font-size: 24px; font-weight: 700; color: var(--oc-fg, #111827); margin-top: 6px; font-variant-numeric: tabular-nums;">
+      ${{ total_spend | round(2) }}
+    </div>
+  </div>
+  <!-- 卡片 2 -->
+  <div style="background: #fff; padding: 18px 24px; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+    <div style="font-size: 12px; color: var(--oc-fg-subtle, #9ca3af); font-weight: 500;">计划个数</div>
+    <div style="font-size: 24px; font-weight: 700; color: var(--oc-fg, #111827); margin-top: 6px;">
+      {{ campaigns_summary | length }} 个计划
+    </div>
+  </div>
+  <!-- 卡片 3 -->
+  <div style="background: #fff; padding: 18px 24px; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+    <div style="font-size: 12px; color: var(--oc-fg-subtle, #9ca3af); font-weight: 500;">产生转化订单 (成效)</div>
+    <div style="font-size: 24px; font-weight: 700; color: var(--oc-fg, #111827); margin-top: 6px; font-variant-numeric: tabular-nums;">
+      {{ total_results }} 单
+    </div>
+  </div>
+  <!-- 卡片 4 -->
+  <div style="background: #fff; padding: 18px 24px; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+    <div style="font-size: 12px; color: var(--oc-fg-subtle, #9ca3af); font-weight: 500;">综合 ROAS</div>
+    <div style="font-size: 24px; font-weight: 700; color: {% if total_roas >= 1.6 %}var(--oc-success-fg, #059669){% else %}var(--oc-fg, #111827){% endif %}; margin-top: 6px; font-variant-numeric: tabular-nums;">
+      {{ total_roas | round(2) }}
+    </div>
+  </div>
+</div>
+
+<!-- 广告计划汇总数据 -->
+<div style="background: #fff; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 24px;">
+  <div style="padding: 16px 20px; background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb); font-weight: 700; font-size: 14px; color: var(--oc-fg, #111827);">
+    📂 广告计划 (Campaigns) 关联消耗汇总
+  </div>
+  <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--oc-border, #e5e7eb); background: rgba(0,0,0,0.01);">
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600;">Meta 广告系列计划名称</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600;">广告账户</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 140px;">累计消耗 (USD)</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 120px;">转化单数</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 120px;">ROAS</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: center; width: 220px;">广告活动周期</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if campaigns_summary %}
+        {% for c in campaigns_summary %}
+        <tr style="border-bottom: 1px solid var(--oc-border, #e5e7eb);">
+          <td style="padding: 12px 20px; font-weight: 600; color: var(--oc-fg, #111827);">{{ c.campaign_name }}</td>
+          <td style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563);">{{ c.ad_account_name }}</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--oc-fg, #111827);">${{ c.spend_total | round(2) }}</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums;">{{ c.result_count_total }} 单</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: {% if c.roas >= 1.6 %}var(--oc-success-fg, #059669){% else %}var(--oc-fg, #111827){% endif %};">{{ c.roas | round(2) }}</td>
+          <td style="padding: 12px 20px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 11px;">
+            <code>{{ c.min_date }}</code> 至 <code>{{ c.max_date }}</code>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6" style="padding: 24px; text-align: center; color: var(--oc-fg-subtle, #9ca3af);">该语种在此商品下暂无已同步的广告计划数据</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 每日消耗明细历史 -->
+<div style="background: #fff; border-radius: 12px; border: 1px solid var(--oc-border, #e5e7eb); overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.03);">
+  <div style="padding: 16px 20px; background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb); font-weight: 700; font-size: 14px; color: var(--oc-fg, #111827);">
+    📈 每日广告消耗明细历史 (Daily Metrics History)
+  </div>
+  <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--oc-border, #e5e7eb); background: rgba(0,0,0,0.01);">
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; width: 120px;">报告日期</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600;">Meta 广告系列计划名称</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600;">广告账户</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 140px;">单日消耗 (USD)</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 120px;">单日成效</th>
+        <th style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563); font-weight: 600; text-align: right; width: 120px;">单日 ROAS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if daily_rows %}
+        {% for d in daily_rows %}
+        <tr style="border-bottom: 1px solid var(--oc-border, #e5e7eb);">
+          <td style="padding: 12px 20px; font-family: monospace; color: var(--oc-fg, #111827);">{{ d.report_date }}</td>
+          <td style="padding: 12px 20px; color: var(--oc-fg-muted, #4b5563);">{{ d.campaign_name }}</td>
+          <td style="padding: 12px 20px; color: var(--oc-fg-subtle, #9ca3af);">{{ d.ad_account_name }}</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--oc-fg, #111827);">${{ d.spend_usd | round(2) }}</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums;">{{ d.result_count }} 单</td>
+          <td style="padding: 12px 20px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: {% if d.roas >= 1.6 %}var(--oc-success-fg, #059669){% else %}var(--oc-fg, #111827){% endif %};">{{ d.roas | round(2) }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6" style="padding: 24px; text-align: center; color: var(--oc-fg-subtle, #9ca3af);">无每日消耗细节明细数据</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 32px; display: flex; justify-content: center; padding-bottom: 48px;">
+  <a href="/pushes/history" style="height: 38px; padding: 0 24px; border-radius: 9999px; background: var(--oc-bg-muted, #f3f4f6); color: var(--oc-fg-muted, #4b5563); border: 1px solid var(--oc-border-strong, #d1d5db); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+    ← 返回推送历史记录
+  </a>
+</div>
+{% endblock %}

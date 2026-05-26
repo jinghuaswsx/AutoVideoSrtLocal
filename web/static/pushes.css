@@ -1792,3 +1792,37 @@
   font-weight: bold;
 }
 
+/* ===== Modern Capsule Subtabs ===== */
+.pushes-tabs {
+  display: flex;
+  gap: 12px;
+  border-bottom: none;
+  margin: var(--oc-sp-4, 16px) 0 var(--oc-sp-6, 24px);
+  background: var(--oc-bg-subtle, #f3f4f6);
+  padding: 6px;
+  border-radius: 9999px;
+  align-self: flex-start;
+  width: fit-content;
+  border: 1px solid var(--oc-border, #e5e7eb);
+}
+.pushes-tab {
+  padding: 8px 20px;
+  color: var(--oc-fg-muted, #4b5563);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: none;
+  border-radius: 9999px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pushes-tab:hover {
+  color: var(--oc-fg, #111827);
+  background: rgba(0, 0, 0, 0.04);
+}
+.pushes-tab.is-active {
+  color: #fff;
+  background: var(--oc-accent, #3b82f6);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+}
+
+

@@ -2011,7 +2011,7 @@ def _normalize_country_result(
 
 
 def _normalize_scores(scores: dict[str, Any]) -> dict[str, int]:
-    from appcore.fine_ai_evaluation_schemas import SCORE_KEYS
+    from appcore.fine_ai_evaluation_schemas import SCORE_KEYS, LEGACY_SCORE_KEYS
 
     out = {}
     for key in SCORE_KEYS:
@@ -2020,6 +2020,14 @@ def _normalize_scores(scores: dict[str, Any]) -> dict[str, int]:
         except (TypeError, ValueError):
             value = 0
         out[key] = max(0, min(100, value))
+    # Preserve legacy keys if present (backward compat with older evaluations).
+    for key in LEGACY_SCORE_KEYS:
+        if key in scores:
+            try:
+                value = int(round(float(scores[key])))
+            except (TypeError, ValueError):
+                value = 0
+            out[key] = max(0, min(100, value))
     return out
 
 

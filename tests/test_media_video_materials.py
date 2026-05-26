@@ -49,11 +49,13 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
 
     def fake_query(sql, args=()):
         calls.append(("query", sql, args))
-        if "FROM meta_ad_daily_campaign_metrics" in sql:
+        if "FROM meta_ad_daily_ad_metrics m WHERE" in sql:
             return [{
                 "product_id": 7,
-                "normalized_campaign_code": "widget-rjc-campaign",
+                "normalized_ad_code": "widget-ad-code",
+                "ad_name": "ad-name(2026.05.13-widget-demo.mp4)",
                 "campaign_name": "Widget Campaign",
+                "normalized_campaign_code": "widget-rjc-campaign",
                 "ad_account_id": "act_1253003326160754",
                 "ad_account_name": "Omurio",
                 "activity_date": "2026-05-13",
@@ -88,20 +90,17 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert "i.filename LIKE %s" in list_sql
     assert "p.product_code LIKE %s" in list_sql
     assert "p.mk_id=%s" in list_sql
-    assert "meta_ad_daily_campaign_metrics" not in list_sql
+    assert "meta_ad_daily_ad_metrics" in list_sql
     assert "i.lang=%s" in list_sql
-    assert "media_push_logs" in list_sql
     assert list_args[-2:] == (25, 25)
     assert "en" in list_args
     assert 123 in list_args
 
     ad_sql = calls[2][1]
     ad_args = calls[2][2]
-    assert "FROM meta_ad_daily_campaign_metrics" in ad_sql
+    assert "FROM meta_ad_daily_ad_metrics" in ad_sql
     assert "m.product_id IN" in ad_sql
-    assert "m.normalized_campaign_code IN" in ad_sql
     assert 7 in ad_args
-    assert "widget-rjc" in ad_args
 
 
 def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypatch):
@@ -113,10 +112,12 @@ def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypat
 
     def fake_query(sql, args=()):
         calls.append(("query", sql, args))
-        if "FROM meta_ad_daily_campaign_metrics" in sql:
+        if "FROM meta_ad_daily_ad_metrics m WHERE" in sql:
             return [
                 {
                     "product_id": 8,
+                    "normalized_ad_code": "fallback-ad-code",
+                    "ad_name": "ad-name(another.mp4)",
                     "normalized_campaign_code": "fallback-code-rjc",
                     "campaign_name": "Campaign by Code",
                     "ad_account_id": "act_999",
@@ -127,6 +128,8 @@ def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypat
                 },
                 {
                     "product_id": 7,
+                    "normalized_ad_code": "widget-ad-code",
+                    "ad_name": "ad-name(2026.05.13-widget-demo.mp4)",
                     "normalized_campaign_code": "widget-rjc-campaign",
                     "campaign_name": "Widget Campaign",
                     "ad_account_id": "act_1253003326160754",
@@ -138,7 +141,7 @@ def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypat
             ]
         return [
             _video_row(product_id=7, product_code="widget-rjc", push_success_count=1),
-            _video_row(id=12, product_id=8, product_code="fallback-code-rjc", push_success_count=1),
+            _video_row(id=12, product_id=8, filename="another.mp4", product_code="fallback-code-rjc", push_success_count=1),
         ]
 
     monkeypatch.setattr(mvm, "query_one", fake_query_one)
@@ -152,7 +155,7 @@ def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypat
     ]
     assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
     assert payload["items"][1]["ad_plan_detail"]["ad_account_id"] == "999"
-    assert len([call for call in calls if call[0] == "query" and "FROM meta_ad_daily_campaign_metrics" in call[1]]) == 1
+    assert len([call for call in calls if call[0] == "query" and "FROM meta_ad_daily_ad_metrics m WHERE" in call[1]]) == 1
 
 
 def test_serialize_video_material_includes_campaign_detail_link():
@@ -174,7 +177,7 @@ def test_serialize_video_material_includes_campaign_detail_link():
     )
 
 
-def test_serialize_video_material_falls_back_to_product_code_for_ad_plan_link():
+def test_serialize_video_material_without_ad_campaign_code_returns_no_link():
     item = mvm.serialize_video_material(_video_row(
         product_code="fallback-product-rjc",
         product_name="Fallback Product",
@@ -184,9 +187,8 @@ def test_serialize_video_material_falls_back_to_product_code_for_ad_plan_link():
         push_success_count=1,
     ))
 
-    assert item["ad_plan_detail"]["code"] == "fallback-product-rjc"
-    assert "ads_code=fallback-product-rjc" in item["ad_plan_detail"]["url"]
-    assert "ads_name=Fallback+Product" in item["ad_plan_detail"]["url"]
+    assert item["ad_plan_detail"] is None
+    assert item["has_ad_plan"] is False
 
 
 def test_list_video_materials_defaults_to_page_size_100(monkeypatch):

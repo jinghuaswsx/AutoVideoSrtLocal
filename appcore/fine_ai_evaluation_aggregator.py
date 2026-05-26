@@ -102,9 +102,9 @@ def _risk_items(items: list[dict[str, Any]], *, limit: int) -> list[str]:
         for group in (
             "claim_risks",
             "compliance_risks",
-            "operational_risks",
+            "cultural_risks",
             "trust_risks",
-            "localization_risks",
+            "aesthetic_risks",
         ):
             for value in risks.get(group) or []:
                 text = str(value or "").strip()
@@ -134,6 +134,6 @@ def _build_next_actions(
         decision = (item.get("decision") or {}).get("final_decision")
         if decision in {"GO", "TEST"}:
             country = item.get("country_name_zh") or item.get("country_code")
-            actions.append(f"按 {country} 的 30 天测试计划准备首轮素材和落地页")
+            actions.append(f"按 {country} 的建议准备首轮广告素材")
             break
     return actions[:6]

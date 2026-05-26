@@ -331,7 +331,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
             },
         )
 
-        # === passthrough handling (music videos with empty/sparse ASR) ===
+        # === passthrough handling (music videos with empty ASR) ===
         if passthrough["enabled"]:
             task_state.update(
                 task_id,
@@ -340,16 +340,13 @@ class OmniTranslateRunner(MultiTranslateRunner):
                 media_passthrough_reason=passthrough["reason"],
                 media_passthrough_source_chars=passthrough["source_chars"],
             )
-            if passthrough["reason"] == "no_asr":
-                message = "未检测到有效语音，已按音乐视频直通处理"
-            else:
-                message = "识别结果少于 50 个字符，已按音乐视频直通处理"
+            message = "未检测到有效语音，已按音乐视频直通处理"
             self._set_step(task_id, "asr", "done", message)
             self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
             self._complete_original_video_passthrough(task_id, task["video_path"], task_dir)
             return
 
-        # 这一轮 ASR 不再触发 passthrough（utterances 够长），清掉之前留下的
+        # 这一轮 ASR 不再触发 passthrough（存在有效文本），清掉之前留下的
         # passthrough flag。否则下游 voice_match / translate / tts / subtitle
         # 仍按"音乐视频直通"短路，整个翻译流程跑空。
         task_state.update(

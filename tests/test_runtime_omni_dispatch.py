@@ -71,6 +71,29 @@ def _step_names(runner):
     return [name for name, _fn in runner._get_pipeline_steps("t", "/tmp/v.mp4", "/tmp")]
 
 
+class _FakeAsrAdapter:
+    display_name = "Doubao ASR"
+    model_id = "big-model"
+    provider_code = "doubao_asr"
+
+
+def _patch_asr_router(monkeypatch, utterances):
+    monkeypatch.setattr(
+        "appcore.asr_router.resolve_adapter",
+        lambda stage, source_language: (_FakeAsrAdapter(), None),
+    )
+    monkeypatch.setattr(
+        "appcore.asr_router.transcribe",
+        lambda audio_path, source_language=None, stage="asr_main": {
+            "utterances": utterances,
+            "provider_code": "doubao_asr",
+            "model_id": "big-model",
+            "display_name": "Doubao ASR",
+            "stage": stage,
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # _get_pipeline_steps 各 preset 跑出来的 step list
 # ---------------------------------------------------------------------------
@@ -85,6 +108,45 @@ def test_pipeline_steps_for_omni_current(monkeypatch, omni_runner):
         "translate", "tts", "loudness_match", "subtitle",
         "compose", "export",
     ]
+
+
+def test_omni_step_asr_continues_translation_when_transcript_is_short_but_nonempty(
+    monkeypatch, tmp_path, omni_runner,
+):
+    import appcore.task_state as task_state
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    task_id = "omni-short-asr-continues"
+    source_video = tmp_path / "source.mp4"
+    audio_path = tmp_path / "audio.wav"
+    source_video.write_bytes(b"original-video")
+    audio_path.write_bytes(b"audio")
+    task_state.create(task_id, str(source_video), str(tmp_path), user_id=1)
+    task_state.update(task_id, audio_path=str(audio_path), source_language="en")
+    _patch_asr_router(
+        monkeypatch,
+        [{"start_time": 0.0, "end_time": 2.0, "text": "Yeah, yeah Yeah."}],
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 2.0)
+    monkeypatch.setattr("appcore.ai_billing.log_request", lambda **kwargs: None)
+    monkeypatch.setattr(
+        omni_runner,
+        "_complete_original_video_passthrough",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("short nonempty ASR must not passthrough")
+        ),
+    )
+
+    omni_runner._step_asr(task_id, str(tmp_path))
+
+    saved = task_state.get(task_id)
+    assert saved["steps"]["asr"] == "done"
+    assert saved["status"] == "uploaded"
+    assert saved["media_passthrough_mode"] is None
+    assert saved["media_passthrough_reason"] is None
+    assert saved["media_passthrough_source_chars"] is None
 
 
 def test_pipeline_steps_for_multi_like(monkeypatch, omni_runner):

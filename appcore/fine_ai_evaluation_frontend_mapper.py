@@ -42,9 +42,9 @@ def build_frontend(summary: dict[str, Any], countries: dict[str, dict[str, Any]]
             "country_code": code,
             "product_market_fit_score": int(scores.get("product_market_fit_score") or 0),
             "creative_fit_score": int(scores.get("creative_fit_score") or 0),
-            "pricing_score": int(scores.get("pricing_score") or 0),
-            "landing_page_fit_score": int(scores.get("landing_page_fit_score") or 0),
-            "operational_fit_score": int(scores.get("operational_fit_score") or 0),
+            "aesthetic_fit_score": int(scores.get("aesthetic_fit_score") or scores.get("pricing_score") or 0),
+            "cultural_fit_score": int(scores.get("cultural_fit_score") or scores.get("landing_page_fit_score") or 0),
+            "compliance_risk_score": int(scores.get("compliance_risk_score") or 0),
         })
         overview.append({
             "country_code": code,
@@ -120,7 +120,8 @@ def _decision_severity(decision: str | None) -> str:
 
 def _first_risk(item: dict[str, Any]) -> str:
     risks = item.get("risks") or {}
-    for group in ("claim_risks", "compliance_risks", "operational_risks", "trust_risks", "localization_risks"):
+    for group in ("claim_risks", "compliance_risks", "cultural_risks", "trust_risks", "aesthetic_risks",
+                  "operational_risks", "localization_risks"):
         values = risks.get(group) or []
         if values:
             return str(values[0])
@@ -166,6 +167,7 @@ def _action(priority: str, country_code: str, type_: str, title: str, descriptio
 def _risk_values(item: dict[str, Any]) -> list[str]:
     values: list[str] = []
     risks = item.get("risks") or {}
-    for group in ("claim_risks", "compliance_risks", "operational_risks", "trust_risks", "localization_risks"):
+    for group in ("claim_risks", "compliance_risks", "cultural_risks", "trust_risks", "aesthetic_risks",
+                  "operational_risks", "localization_risks"):
         values.extend(str(value) for value in risks.get(group) or [] if str(value or "").strip())
     return values

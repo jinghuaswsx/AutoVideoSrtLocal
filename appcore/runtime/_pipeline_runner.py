@@ -2398,8 +2398,8 @@ class PipelineRunner:
             return False
 
         source_chars = int(task.get("media_passthrough_source_chars") or 0)
-        reason = str(task.get("media_passthrough_reason") or "short_asr")
-        source_hint = f"源 ASR {source_chars} 字符" if source_chars else "源 ASR 过短"
+        reason = str(task.get("media_passthrough_reason") or "no_asr")
+        source_hint = f"源 ASR {source_chars} 字符" if source_chars else "未检测到有效 ASR"
         lang_prefix = f"{lang_display}配音" if lang_display else "配音"
         message_map = {
             "alignment": f"{source_hint}，已跳过分段处理并保留原视频",
@@ -2449,11 +2449,17 @@ class PipelineRunner:
         if not _is_original_video_passthrough(task):
             return {}
 
-        skip_steps = ["alignment", "translate", "tts", "av_sync_audit", "subtitle"]
-        if self.project_type in {"multi_translate", "ja_translate"} or "voice_match" in (task.get("steps") or {}):
-            skip_steps.insert(1, "voice_match")
-        if self.include_analysis_in_main_flow:
-            skip_steps.append("analysis")
+        # Dynamically resolve all pipeline step names for this task, and skip all intermediate ones
+        if hasattr(self, "pipeline_step_names_for_task"):
+            all_steps = self.pipeline_step_names_for_task(task_id, include_analysis=True)
+        else:
+            try:
+                all_steps = [name for name, _ in self._get_pipeline_steps(task_id, video_path, task_dir)]
+                if self.include_analysis_in_main_flow and "analysis" not in all_steps:
+                    all_steps.append("analysis")
+            except Exception:
+                all_steps = list(_ALL_STEP_NAMES)
+        skip_steps = [s for s in all_steps if s not in {"extract", "asr", "compose", "export"}]
         for step_name in skip_steps:
             self._skip_original_video_passthrough_step(task_id, step_name, task=task_state.get(task_id) or task)
 
@@ -3160,16 +3166,13 @@ class PipelineRunner:
                 media_passthrough_reason=passthrough["reason"],
                 media_passthrough_source_chars=passthrough["source_chars"],
             )
-            if passthrough["reason"] == "no_asr":
-                message = "未检测到有效语音，已按音乐视频直通处理"
-            else:
-                message = "识别结果少于 50 个字符，已按音乐视频直通处理"
+            message = "未检测到有效语音，已按音乐视频直通处理"
             self._set_step(task_id, "asr", "done", message)
             self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
             self._complete_original_video_passthrough(task_id, task["video_path"], task_dir)
             return
 
-        # 这一轮 ASR 不再触发 passthrough（utterances 够长），清掉之前留下的
+        # 这一轮 ASR 不再触发 passthrough（存在有效文本），清掉之前留下的
         # passthrough flag。否则下游 voice_match / translate / tts / subtitle
         # 仍按"音乐视频直通"短路，整个翻译流程跑空。
         task_state.update(
