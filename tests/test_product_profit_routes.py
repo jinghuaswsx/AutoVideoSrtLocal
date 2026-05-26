@@ -278,7 +278,7 @@ def test_report_json_passes_country_param(authed_client_no_db, monkeypatch):
     """country 参数透传给 generate_report；空串 → None。"""
     seen: dict = {}
 
-    def fake_generate_report(*, product_id, date_from, date_to, country=None):
+    def fake_generate_report(*, product_id, date_from, date_to, country=None, **kwargs):
         seen["product_id"] = product_id
         seen["country"] = country
         return {
@@ -418,7 +418,7 @@ def test_ads_json_passes_country(authed_client_no_db, monkeypatch):
     """country 参数透传给 generate_ads_report；空串 → None。"""
     seen: dict = {}
 
-    def fake_generate_ads_report(*, product_id, date_from, date_to, country=None):
+    def fake_generate_ads_report(*, product_id, date_from, date_to, country=None, **kwargs):
         seen["country"] = country
         return _fake_ads_report()
 
