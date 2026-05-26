@@ -2539,3 +2539,160 @@ def test_pending_filter_excludes_skipped(authed_client_no_db, monkeypatch):
     assert resp.status_code == 200
     ids = [it["id"] for it in resp.get_json()["items"]]
     assert ids == [302]
+
+
+def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
+    rows = [
+        {
+            "log_id": 1,
+            "item_id": 1001,
+            "operator_user_id": 1,
+            "status": "success",
+            "request_payload": '{"videos": [{"url": "a.mp4"}], "texts": [], "product_links": []}',
+            "response_body": "",
+            "pushed_at": datetime(2026, 5, 26, 12, 0, 0),
+            "lang": "ja",
+            "display_name": "ja-demo.mp4",
+            "filename": "ja-demo.mp4",
+            "duration_seconds": 10.0,
+            "file_size": 1000,
+            "product_id": 317,
+            "product_name": "Insects Set",
+            "product_code": "glow-go-insect-set-rjc",
+            "operator_username": "admin"
+        }
+    ]
+    
+    db_calls = []
+    def fake_db_query(sql, args=()):
+        db_calls.append((sql, args))
+        if "media_push_logs" in sql:
+            return rows
+        elif "meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "product_id": 317,
+                    "campaign_name": "glow-go-insect-set",
+                    "market_country": None,
+                    "total_spend": Decimal("100.00")
+                },
+                {
+                    "product_id": 317,
+                    "campaign_name": "glow-go-insect-set-jp",
+                    "market_country": "JP",
+                    "total_spend": Decimal("200.00")
+                },
+                {
+                    "product_id": 317,
+                    "campaign_name": "glow-go-insect-set-de",
+                    "market_country": "DE",
+                    "total_spend": Decimal("300.00")
+                }
+            ]
+        return []
+        
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+    
+    resp = authed_client_no_db.get("/pushes/api/history?page=1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    
+    assert item["has_ad_plan"] is True
+    assert item["ad_campaign_count"] == 2
+    assert item["ad_spend_total"] == 300.0
+
+
+def test_pushes_material_ads_detail_robust_matching(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": 1001,
+            "product_id": 317,
+            "lang": "ja",
+            "filename": "ja-demo.mp4",
+            "display_name": "ja-demo.mp4"
+        }
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {
+            "id": 317,
+            "name": "Insects Set",
+            "product_code": "glow-go-insect-set-rjc"
+        }
+    )
+    
+    monkeypatch.setattr(
+        "web.routes.pushes.query_one",
+        lambda sql, args=(): {
+            "id": 1,
+            "item_id": 1001,
+            "status": "success",
+            "request_payload": '{"videos": [{"url": "a.mp4"}], "texts": [], "product_links": []}',
+            "response_body": "",
+            "created_at": datetime(2026, 5, 26, 12, 0, 0)
+        }
+    )
+    
+    def fake_db_query(sql, args=()):
+        if "meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "ad_account_name": "Acc1",
+                    "campaign_name": "glow-go-insect-set",
+                    "spend_usd": Decimal("100.00"),
+                    "purchase_value_usd": Decimal("150.00"),
+                    "result_count": 5,
+                    "report_date": datetime(2026, 5, 26),
+                    "market_country": None
+                },
+                {
+                    "ad_account_name": "Acc1",
+                    "campaign_name": "glow-go-insect-set-jp",
+                    "spend_usd": Decimal("200.00"),
+                    "purchase_value_usd": Decimal("300.00"),
+                    "result_count": 10,
+                    "report_date": datetime(2026, 5, 26),
+                    "market_country": "JP"
+                },
+                {
+                    "ad_account_name": "Acc1",
+                    "campaign_name": "glow-go-insect-set-de",
+                    "spend_usd": Decimal("300.00"),
+                    "purchase_value_usd": Decimal("450.00"),
+                    "result_count": 15,
+                    "report_date": datetime(2026, 5, 26),
+                    "market_country": "DE"
+                }
+            ]
+        return []
+        
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+    
+    captured = {}
+    def fake_render_template(template_name, **context):
+        captured["template_name"] = template_name
+        captured["context"] = context
+        return "rendered html"
+        
+    monkeypatch.setattr("web.routes.pushes.render_template", fake_render_template)
+    
+    resp = authed_client_no_db.get("/pushes/material-ads/1001")
+    assert resp.status_code == 200
+    assert captured["template_name"] == "pushes_material_ads.html"
+    
+    context = captured["context"]
+    campaigns_summary = context["campaigns_summary"]
+    daily_rows = context["daily_rows"]
+    
+    campaign_names = {c["campaign_name"] for c in campaigns_summary}
+    assert campaign_names == {"glow-go-insect-set", "glow-go-insect-set-jp"}
+    
+    total_spend = sum(c["spend_total"] for c in campaigns_summary)
+    assert total_spend == 300.0
+    
+    assert len(daily_rows) == 2
+    daily_campaign_names = {d["campaign_name"] for d in daily_rows}
+    assert daily_campaign_names == {"glow-go-insect-set", "glow-go-insect-set-jp"}
