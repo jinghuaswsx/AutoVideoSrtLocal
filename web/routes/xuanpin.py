@@ -408,6 +408,7 @@ def api_fine_ai_external_create():
             countries=payload.get("countries") or None,
             force_refresh=bool(payload.get("force_refresh", True)),
             locale=str(payload.get("locale") or "zh-CN"),
+            channel=str(payload.get("channel") or "adc"),
         )
         service.start_run_async(run["evaluation_run_id"])
         return _fine_ai_ok(run, 202)

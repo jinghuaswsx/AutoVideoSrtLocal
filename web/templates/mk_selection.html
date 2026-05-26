@@ -2087,6 +2087,8 @@ function mkiFineAiButtonLabel(result) {
 function mkiFineAiDetectChannel(result) {
   const normalized = mkiFineAiNormalizeResult(result);
   if (!normalized) return '';
+  const directChannel = String(normalized.channel || '').toLowerCase();
+  if (directChannel && directChannel !== 'undefined') return directChannel;
   const runId = String(normalized.evaluation_run_id || normalized.run_id || '');
   // 1. run_id prefix is the most reliable signal
   if (runId.startsWith('eval_antigravity_')) return 'antigravity';
@@ -2096,6 +2098,7 @@ function mkiFineAiDetectChannel(result) {
   if (evaluator.includes('antigravity')) return 'antigravity';
   const channel = String(metadata.channel || '').toLowerCase();
   if (channel === 'antigravity') return 'antigravity';
+  if (channel === 'skill') return 'skill';
   if (channel === 'adc') return 'adc';
   const provider = String(metadata.provider || '').toLowerCase();
   const model = String(metadata.model || '').toLowerCase();
@@ -2110,6 +2113,8 @@ function mkiFineAiChannelBadgeHtml(result) {
   const ch = mkiFineAiDetectChannel(result);
   if (!ch) return '';
   if (ch === 'antigravity') return '<span class="mki-fine-ai-ch is-anti" title="Antigravity">Anti</span>';
+  if (ch === 'skill') return '<span class="mki-fine-ai-ch is-skill" title="SKILL">SKILL</span>';
+  if (ch === 'scheduled') return '<span class="mki-fine-ai-ch is-scheduled" title="Auto">Auto</span>';
   if (ch === 'adc') return '<span class="mki-fine-ai-ch is-adc" title="ADC">ADC</span>';
   return '<span class="mki-fine-ai-ch is-adc" title="' + escapeHtml(ch) + '">' + escapeHtml(ch.toUpperCase()) + '</span>';
 }

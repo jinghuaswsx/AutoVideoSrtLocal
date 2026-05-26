@@ -95,6 +95,7 @@ class FineAiEvaluationService:
         product_url_override: str | None = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
         user_id: int | None = None,
+        channel: str = "adc",
     ) -> dict[str, Any]:
         country_codes = normalize_country_codes(countries)
         model_config = fine_ai_model_config.get_profile_config(model_profile)
@@ -123,6 +124,7 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
+                "channel": str(channel or "adc"),
                 "model_profile": model_config["profile"],
                 "model": model_config["model"],
                 "provider": model_config["provider"],
@@ -169,6 +171,7 @@ class FineAiEvaluationService:
         card_video_duration_seconds: Any = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
         user_id: int | None = None,
+        channel: str = "adc",
     ) -> dict[str, Any]:
         product_url = str(product_link or "").strip()
         if not product_url:
@@ -221,6 +224,7 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
+                "channel": str(channel or "adc"),
                 "model_profile": model_config["profile"],
                 "model": model_config["model"],
                 "provider": model_config["provider"],
@@ -1086,6 +1090,8 @@ class FineAiEvaluationService:
                 base_progress=progress,
             ),
         )
+        # Writeback legacy fields to media_products for unified pipeline
+        _writeback_legacy_fields(product_id, evaluation_run_id, self)
         return self.get_result(product_id, evaluation_run_id)
 
     def get_status(self, product_id: int | str, evaluation_run_id: str) -> dict[str, Any]:
@@ -2132,11 +2138,13 @@ def _failed_country_result(country: dict[str, Any], message: str) -> dict[str, A
 
 
 def _build_result_payload(run: dict[str, Any], countries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    metadata = run.get("metadata") or {}
     return {
         "schema_version": "1.0",
         "evaluation_run_id": run["evaluation_run_id"],
         "product_id": str(run.get("product_id") or ""),
         "status": run.get("status") or "queued",
+        "channel": str(metadata.get("channel") or "adc"),
         "created_at": run.get("created_at"),
         "updated_at": run.get("updated_at"),
         "completed_at": run.get("completed_at"),
@@ -2145,7 +2153,7 @@ def _build_result_payload(run: dict[str, Any], countries: dict[str, dict[str, An
         "summary": run.get("summary") or {},
         "countries": countries or {},
         "frontend": run.get("frontend") or {},
-        "metadata": run.get("metadata") or {},
+        "metadata": metadata,
         "progress": run.get("progress") or _initial_progress(run.get("countries") or DEFAULT_COUNTRY_CODES),
     }
 
@@ -2175,3 +2183,50 @@ def _dedupe(values: list[Any]) -> list[str]:
         if text and text not in out:
             out.append(text)
     return out
+
+
+def _writeback_legacy_fields(
+    product_id: int | str,
+    evaluation_run_id: str,
+    service: FineAiEvaluationService,
+) -> None:
+    """Writeback fine AI evaluation result to media_products legacy fields."""
+    pid = int(product_id or 0)
+    if pid <= 0:
+        return
+    try:
+        from appcore.material_evaluation_compat import fine_ai_result_to_legacy_json
+
+        result = service.get_result(pid, evaluation_run_id)
+        status = str(result.get("status") or "").lower()
+        if status not in {"completed", "partially_completed"}:
+            return
+        legacy = fine_ai_result_to_legacy_json(result, product_id=pid)
+        from appcore.db import execute as db_execute
+
+        db_execute(
+            "UPDATE media_products "
+            "SET ai_score = ?, ai_evaluation_result = ?, ai_evaluation_detail = ?, "
+            "    updated_at = datetime('now') "
+            "WHERE id = ?",
+            [
+                legacy.get("ai_score"),
+                legacy.get("ai_evaluation_result"),
+                legacy.get("ai_evaluation_detail"),
+                pid,
+            ],
+        )
+        log.info(
+            "fine AI legacy writeback: product=%s run=%s score=%s result=%s",
+            pid,
+            evaluation_run_id,
+            legacy.get("ai_score"),
+            legacy.get("ai_evaluation_result"),
+        )
+    except Exception:
+        log.warning(
+            "fine AI legacy writeback failed: product=%s run=%s",
+            product_id,
+            evaluation_run_id,
+            exc_info=True,
+        )

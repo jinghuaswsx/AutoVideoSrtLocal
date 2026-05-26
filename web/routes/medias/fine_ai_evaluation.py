@@ -92,6 +92,7 @@ def api_product_fine_ai_evaluation_create(pid: int):
             locale=str(payload.get("locale") or "zh-CN"),
             product_url_override=payload.get("product_link") or payload.get("product_url_override"),
             user_id=user_id,
+            channel=str(payload.get("channel") or "adc"),
         )
         service.start_run_async(run["evaluation_run_id"])
         return _ok(run, 202)
