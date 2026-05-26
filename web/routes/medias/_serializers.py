@@ -319,6 +319,14 @@ def _serialize_link_check_task(task: dict) -> dict:
             }
             for ref in task.get("reference_images", [])
         ],
+        "original_images": [
+            {
+                "id": orig["id"],
+                "filename": orig["filename"],
+                "preview_url": f"/api/link-check/tasks/{task['id']}/images/original/{orig['id']}",
+            }
+            for orig in task.get("original_images", [])
+        ],
         "items": [
             {
                 "id": item["id"],
@@ -327,6 +335,7 @@ def _serialize_link_check_task(task: dict) -> dict:
                 "site_preview_url": f"/api/link-check/tasks/{task['id']}/images/site/{item['id']}",
                 "analysis": dict(item.get("analysis") or {}),
                 "reference_match": dict(item.get("reference_match") or {}),
+                "original_match": dict(item.get("original_match") or {}),
                 "binary_quick_check": dict(item.get("binary_quick_check") or {}),
                 "same_image_llm": dict(item.get("same_image_llm") or {}),
                 "is_replaced": item.get("is_replaced"),

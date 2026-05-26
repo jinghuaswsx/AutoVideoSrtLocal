@@ -6249,22 +6249,42 @@
         ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/reference/${reference.reference_id}`)
         : '';
 
+      const original = item.original_match || {};
+      const origPreviewUrl = original.original_id
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/original/${original.original_id}`)
+        : '';
+
+      const origImg = origPreviewUrl
+        ? `<img src="${escapeHtml(origPreviewUrl)}" alt="英语原图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:var(--oc-bg-subtle); font-size:11px; color:var(--oc-text-mute);">${original.status === 'not_matched' ? '未匹配到原图' : '无对照原图'}</div>`;
+
       const leftImg = sitePreviewUrl
-        ? `<img src="${escapeHtml(sitePreviewUrl)}" alt="实际原图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        ? `<img src="${escapeHtml(sitePreviewUrl)}" alt="网页实际图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
         : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; font-size:11px;">无实际图</div>`;
 
       const rightImg = refPreviewUrl
-        ? `<img src="${escapeHtml(refPreviewUrl)}" alt="翻译结果图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
+        ? `<img src="${escapeHtml(refPreviewUrl)}" alt="系统翻译图" loading="lazy" style="width:100%; height:100%; object-fit:cover; display:block;">`
         : `<div class="oc-detail-images-empty" style="height:100%; margin:0; display:flex; align-items:center; justify-content:center; background:var(--oc-bg-subtle); font-size:11px; color:var(--oc-text-mute);">${reference.status === 'not_matched' ? '未匹配到参考图' : '无对比参考图'}</div>`;
+
+      let borderStyle = 'border-right:1px solid var(--oc-border); border-left:1px solid var(--oc-border);';
+      if (finalReplaced === true) {
+        borderStyle = 'border:2px solid var(--oc-success-fg); box-shadow:0 0 8px rgba(16, 185, 129, 0.2);';
+      } else if (finalReplaced === false) {
+        borderStyle = 'border:2px solid var(--oc-danger-fg); box-shadow:0 0 8px rgba(239, 68, 68, 0.2);';
+      }
 
       const preview = `
         <div class="oc-link-check-item-comparison" style="display:flex; width:100%; height:100%;">
-          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-right:1px solid var(--oc-border);">
-            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">实际原图</div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-right:1px solid var(--oc-border); background:var(--oc-bg-subtle);">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">英语原图</div>
+            ${origImg}
+          </div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; ${borderStyle} z-index:1;">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">网页实际图</div>
             ${leftImg}
           </div>
-          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%;">
-            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">翻译结果图</div>
+          <div class="oc-comparison-side" style="flex:1; position:relative; height:100%; border-left:1px solid var(--oc-border); background:var(--oc-bg-subtle);">
+            <div style="position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.6); color:#fff; padding:2px 6px; font-size:10px; border-radius:4px; z-index:2; pointer-events:none;">系统翻译图</div>
             ${rightImg}
           </div>
         </div>
@@ -6538,7 +6558,9 @@
       });
   }
 
-  function edOpenLinkCheckModal(langArg, domainArg) {
+  function edOpenLinkCheckModal() {
+    const langArg = arguments[0];
+    const domainArg = arguments[1];
     const lang = langArg || edState.activeLang;
     const domain = domainArg || edActiveLinkCheckDomain(lang);
     const task = edGetLinkCheckTask(lang, domain);

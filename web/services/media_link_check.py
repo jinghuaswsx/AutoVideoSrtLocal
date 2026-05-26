@@ -63,6 +63,46 @@ def _collect_link_check_reference_images(
     return references
 
 
+def _collect_link_check_original_images(
+    product_id: int,
+    task_dir: Path,
+    *,
+    download_media_object_fn: Callable[[str, Path], Any],
+) -> list[dict]:
+    originals: list[dict] = []
+    orig_dir = task_dir / "original"
+    orig_dir.mkdir(parents=True, exist_ok=True)
+
+    cover_key = medias.get_product_covers(product_id).get("en")
+    if cover_key:
+        cover_suffix = Path(cover_key).suffix or ".jpg"
+        cover_local = orig_dir / f"cover_en{cover_suffix}"
+        download_media_object_fn(cover_key, cover_local)
+        originals.append(
+            {
+                "id": "cover-en",
+                "filename": f"cover_en{cover_suffix}",
+                "local_path": str(cover_local),
+            }
+        )
+
+    for idx, row in enumerate(medias.list_detail_images(product_id, "en"), start=1):
+        object_key = row.get("object_key") or ""
+        detail_suffix = Path(object_key).suffix or ".jpg"
+        detail_local = orig_dir / f"detail_{idx:03d}{detail_suffix}"
+        download_media_object_fn(object_key, detail_local)
+        originals.append(
+            {
+                "id": f"detail-{row['id']}",
+                "filename": f"detail_{idx:03d}{detail_suffix}",
+                "local_path": str(detail_local),
+            }
+        )
+
+    return originals
+
+
+
 def _link_check_domain_metadata(link_url: str, lang: str) -> tuple[str, str, str]:
     domain = product_link_domains.domain_from_url(link_url)
     status_key = product_link_domains.domain_lang_key(domain, lang) if domain else lang
@@ -119,6 +159,18 @@ def build_product_link_check_create_response(
     if not references:
         return MediaLinkCheckResponse({"error": "当前语种缺少参考图"}, 400)
 
+    original_images = []
+    if lang != "en":
+        # 仅当产品确实配置了 en 主图或 en 详情图时才提取英文原图比较参考
+        has_en_content = bool(medias.get_product_covers(product_id).get("en")) or \
+                         any(row.get("lang") == "en" for row in medias.list_detail_images(product_id, "en"))
+        if has_en_content:
+            original_images = _collect_link_check_original_images(
+                product_id,
+                task_dir,
+                download_media_object_fn=download_media_object_fn,
+            )
+
     store_obj.create_link_check(
         task_id,
         str(task_dir),
@@ -130,6 +182,8 @@ def build_product_link_check_create_response(
         status_key=status_key,
         reference_images=references,
     )
+    if original_images and hasattr(store_obj, "update"):
+        store_obj.update(task_id, original_images=original_images)
     medias.set_product_link_check_task(
         product_id,
         storage_key,
@@ -149,7 +203,8 @@ def build_product_link_check_create_response(
         },
     )
     start_runner_fn(task_id)
-    store_obj.update(task_id, product_id=product_id)
+    if hasattr(store_obj, "update"):
+        store_obj.update(task_id, product_id=product_id)
     payload = {"task_id": task_id, "status": "queued", "reference_count": len(references)}
     if storage_key != lang:
         payload.update({"domain": domain, "status_key": status_key})

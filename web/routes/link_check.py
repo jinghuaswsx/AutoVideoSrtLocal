@@ -166,6 +166,14 @@ def _serialize_task(task_id: str, task: dict) -> dict:
             }
             for ref in task.get("reference_images", [])
         ],
+        "original_images": [
+            {
+                "id": orig["id"],
+                "filename": orig["filename"],
+                "preview_url": f"/api/link-check/tasks/{task_id}/images/original/{orig['id']}",
+            }
+            for orig in task.get("original_images", [])
+        ],
         "items": [
             {
                 "id": item["id"],
@@ -174,6 +182,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
                 "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
                 "analysis": dict(item.get("analysis") or {}),
                 "reference_match": dict(item.get("reference_match") or {}),
+                "original_match": dict(item.get("original_match") or {}),
                 "binary_quick_check": dict(item.get("binary_quick_check") or {}),
                 "same_image_llm": dict(item.get("same_image_llm") or {}),
                 "download_evidence": dict(item.get("download_evidence") or {}),
@@ -346,3 +355,13 @@ def get_reference_image(task_id: str, reference_id: str):
     if not ref:
         abort(404)
     return safe_task_file_response(task, ref.get("local_path"), not_found_message="Not Found")
+
+
+@bp.route("/api/link-check/tasks/<task_id>/images/original/<original_id>")
+@login_required
+def get_original_image(task_id: str, original_id: str):
+    _row, task = _get_task(task_id)
+    orig = next((it for it in task.get("original_images", []) if it["id"] == original_id), None)
+    if not orig:
+        abort(404)
+    return safe_task_file_response(task, orig.get("local_path"), not_found_message="Not Found")

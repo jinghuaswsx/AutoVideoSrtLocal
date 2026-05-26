@@ -183,11 +183,23 @@ class LinkCheckRuntime:
             reference_paths = [ref["local_path"] for ref in references]
             reference_index = {ref["local_path"]: ref for ref in references}
 
+            originals = task.get("original_images") or []
+            original_paths = [orig["local_path"] for orig in originals]
+            original_index = {orig["local_path"]: orig for orig in originals}
+
             analyze_failed = False
             for item in downloaded:
-                result = self._build_item_result(item, reference_paths)
+                result = self._build_item_result(item, reference_paths, original_paths)
                 try:
-                    self._analyze_one(task, result, item, reference_paths, reference_index)
+                    self._analyze_one(
+                        task,
+                        result,
+                        item,
+                        reference_paths,
+                        reference_index,
+                        original_paths,
+                        original_index,
+                    )
                     task["progress"]["analyzed"] += 1
                     result["status"] = "done"
                 except Exception as exc:
@@ -226,7 +238,7 @@ class LinkCheckRuntime:
             self._fail_current_step(task_id, task, str(exc))
             task_state.set_expires_at(task_id, "link_check")
 
-    def _build_item_result(self, item: dict, reference_paths: list[str]) -> dict:
+    def _build_item_result(self, item: dict, reference_paths: list[str], original_paths: list[str]) -> dict:
         waiting_binary = "等待参考图匹配结果" if reference_paths else "未提供参考图，跳过二值快检"
         waiting_same = "等待参考图匹配结果" if reference_paths else "未提供参考图，跳过同图判断"
         return {
@@ -237,6 +249,7 @@ class LinkCheckRuntime:
             "download_evidence": dict(item.get("download_evidence") or {}),
             "analysis": {},
             "reference_match": {"status": "not_provided", "score": 0.0},
+            "original_match": {"status": "not_provided", "score": 0.0},
             "binary_quick_check": _skipped_binary(waiting_binary),
             "same_image_llm": _skipped_same_image(waiting_same),
             "is_replaced": None,
@@ -251,6 +264,8 @@ class LinkCheckRuntime:
         item: dict,
         reference_paths: list[str],
         reference_index: dict[str, dict],
+        original_paths: list[str],
+        original_index: dict[str, dict],
     ) -> None:
         if reference_paths:
             best_reference = find_best_reference(item["local_path"], reference_paths)
@@ -261,6 +276,15 @@ class LinkCheckRuntime:
                 "reference_filename": reference_meta.get("filename", ""),
             }
             task["progress"]["compared"] += 1
+
+        if original_paths:
+            best_original = find_best_reference(item["local_path"], original_paths)
+            original_meta = original_index.get(best_original.get("reference_path", ""), {})
+            result["original_match"] = {
+                **best_original,
+                "original_id": original_meta.get("id", ""),
+                "original_filename": original_meta.get("filename", ""),
+            }
 
         reference_status = result["reference_match"].get("status")
         if reference_status == "matched":
@@ -276,10 +300,20 @@ class LinkCheckRuntime:
 
             # 1. 换图检测部分（Part 1）：判断真实页面的图跟后台翻译结果图是不是一张图（有没有换到位）
             is_replaced = (binary_status == "pass" or same_image_ans == "是")
+
+            # 双参考图判定 heuristic
+            s_target = result["reference_match"].get("score", 0.0)
+            s_en = result["original_match"].get("score", 0.0)
+            if original_paths and s_en > s_target and s_en >= 0.95:
+                is_replaced = False
+
             result["is_replaced"] = is_replaced
 
             if not is_replaced:
                 # 换图未换到位（与后台翻译参考图不一致，或是没有被翻译的原图/错误图）
+                reason = "检测到页面图片与后台翻译的参考图不一致，换图未换到位"
+                if original_paths and s_en > s_target and s_en >= 0.95:
+                    reason = f"检测到页面实际图与英语原图视觉相似度极高 ({s_en:.3f} > {s_target:.3f})，确认尚未替换为翻译后的参考图"
                 result["analysis"] = {
                     "decision": "replace",
                     "decision_source": "same_image_llm_check",
@@ -288,7 +322,7 @@ class LinkCheckRuntime:
                     "language_match": False,
                     "text_summary": "",
                     "quality_score": 0,
-                    "quality_reason": "检测到页面图片与后台翻译的参考图不一致，换图未换到位",
+                    "quality_reason": reason,
                     "needs_replacement": True,
                 }
                 return
