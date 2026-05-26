@@ -2907,22 +2907,20 @@ function mkiFineAiExternalEndpoint(suffix) {
 }
 
 function mkiFineAiEndpoint(context, suffix) {
-  if (context && context.externalProductLink && !context.productId) {
-    return mkiFineAiExternalEndpoint(suffix);
-  }
-  return mkiFineAiProductEndpoint(context.productId, suffix);
+  // Always use the external/video-card endpoints to decouple from media products
+  return mkiFineAiExternalEndpoint(suffix);
 }
 
 function mkiFineAiLatestEndpoint(context) {
-  if (context && context.externalProductLink && !context.productId) {
-    const params = new URLSearchParams();
-    params.set('product_link', context.externalProductLink || context.productLink || '');
+  // Always query latest evaluation by link and card video properties to achieve card-level independence
+  const params = new URLSearchParams();
+  params.set('product_link', (context && (context.externalProductLink || context.productLink)) || '');
+  if (context) {
     if (context.cardVideoPath) params.set('card_video_path', context.cardVideoPath);
     if (context.cardVideoUrl) params.set('card_video_url', context.cardVideoUrl);
     if (context.cardVideoName) params.set('card_video_name', context.cardVideoName);
-    return `${mkiFineAiExternalEndpoint('/latest')}?${params.toString()}`;
   }
-  return mkiFineAiEndpoint(context, '/latest');
+  return `${mkiFineAiExternalEndpoint('/latest')}?${params.toString()}`;
 }
 
 function mkiFineAiContextSource(context, payload) {
@@ -3695,16 +3693,14 @@ async function mkiFineAiStartRun(context) {
         include_assets: true,
         include_videos: true,
         locale: 'zh-CN',
-        ...(context.productLink ? {product_link: context.productLink} : {}),
-        ...(context.externalProductLink ? {
-          product_name: context.productName || '',
-          product_code: context.productCode || '',
-          mk_product_id: context.mkProductId || '',
-          card_video_path: context.cardVideoPath || '',
-          card_video_url: context.cardVideoUrl || '',
-          card_video_name: context.cardVideoName || '',
-          card_video_duration_seconds: context.cardVideoDuration || '',
-        } : {}),
+        product_link: context.productLink || context.externalProductLink || '',
+        product_name: context.productName || '',
+        product_code: context.productCode || '',
+        mk_product_id: context.mkProductId || '',
+        card_video_path: context.cardVideoPath || '',
+        card_video_url: context.cardVideoUrl || '',
+        card_video_name: context.cardVideoName || '',
+        card_video_duration_seconds: context.cardVideoDuration || '',
       }),
     });
     mkiFineAiApplyResolvedProductLink(context, resp.data && resp.data.link_check);
@@ -3796,7 +3792,7 @@ function mkiFineAiBindModalEvents(context) {
 async function mkiFineAiEvaluateFromCard(btn) {
   const productId = Number(btn?.dataset.mkiFineAiProductId || btn?.dataset.mkiAiProductId || btn?.dataset.mkiLocalProductId || 0);
   const productLink = String(btn?.dataset.mkiProductLink || '').trim();
-  const externalProductLink = productId ? '' : String(btn?.dataset.mkiFineAiExternalLink || productLink).trim();
+  const externalProductLink = String(btn?.dataset.mkiFineAiExternalLink || btn?.dataset.mkiProductLink || productLink || '').trim();
   const cardVideoPath = String(btn?.dataset.mkiFineAiVideoPath || btn?.dataset.mkiVideoPath || '').trim();
   const cardVideoUrl = String(btn?.dataset.mkiFineAiVideoUrl || btn?.dataset.mkiMp4Url || '').trim();
   const cardVideoName = String(btn?.dataset.mkiFineAiVideoName || btn?.dataset.mkiFilename || '').trim();
