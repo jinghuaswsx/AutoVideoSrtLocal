@@ -1073,6 +1073,25 @@ def api_history():
         where.append("l.created_at <= %s")
         args.append(date_to)
 
+    has_ad_plan_clause = (
+        "EXISTS ("
+        "SELECT 1 FROM meta_ad_daily_ad_metrics madm "
+        "WHERE madm.product_id = i.product_id "
+        "AND COALESCE(madm.spend_usd, 0) > 0 "
+        "AND ("
+        "madm.ad_name LIKE CONCAT('%%', i.filename, '%%') "
+        "OR madm.ad_name LIKE CONCAT('%%', i.display_name, '%%')"
+        ")"
+        ")"
+    )
+    if ad_plan == "has":
+        where.append(has_ad_plan_clause)
+    elif ad_plan == "none":
+        where.append(f"NOT {has_ad_plan_clause}")
+    elif ad_plan == "none_3d":
+        where.append(f"NOT {has_ad_plan_clause}")
+        where.append("l.created_at <= DATE_SUB(NOW(), INTERVAL 3 DAY)")
+
     where_sql = " AND ".join(where)
     from appcore.db import query as db_query
 
@@ -1089,35 +1108,12 @@ def api_history():
         tuple(args)
     )
 
-    product_ids = sorted(list({int(r["product_id"]) for r in rows if r.get("product_id")}))
-
-    product_campaigns = {}
-    if product_ids:
-        placeholders = ",".join(["%s"] * len(product_ids))
-        ad_stats = db_query(
-            "SELECT product_id, campaign_name, market_country, "
-            "       COALESCE(SUM(spend_usd), 0) AS total_spend "
-            "FROM meta_ad_daily_campaign_metrics "
-            f"WHERE product_id IN ({placeholders}) "
-            "GROUP BY product_id, campaign_name, market_country",
-            tuple(product_ids)
-        )
-        for stat in ad_stats:
-            p_id = int(stat["product_id"])
-            m_country = str(stat["market_country"] or "").strip().upper()
-            campaign_name = stat["campaign_name"]
-            spend = float(stat["total_spend"] or 0)
-            
-            if p_id not in product_campaigns:
-                product_campaigns[p_id] = []
-            product_campaigns[p_id].append({
-                "campaign_name": campaign_name,
-                "market_country": m_country,
-                "spend": spend
-            })
+    total = len(rows)
+    start = (page - 1) * limit
+    page_rows = rows[start:start + limit]
 
     history_items = []
-    for r in rows:
+    for r in page_rows:
         payload = {}
         try:
             payload = json.loads(r["request_payload"]) if r.get("request_payload") else {}
@@ -1129,15 +1125,21 @@ def api_history():
         links_snap = payload.get("product_links", [])
 
         p_id = int(r["product_id"])
-        country = _country_for_lang(r["lang"])
 
-        campaign_set = set()
-        spend_total = 0.0
-        for camp in product_campaigns.get(p_id, []):
-            m_country = camp["market_country"]
-            if m_country == country or m_country in ("", "MULTI"):
-                campaign_set.add(camp["campaign_name"])
-                spend_total += camp["spend"]
+        ad_info = db_query(
+            "SELECT COALESCE(SUM(spend_usd), 0) AS total_spend, "
+            "       COUNT(DISTINCT ad_name) AS campaign_count "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0 "
+            "AND ("
+            "ad_name LIKE CONCAT('%%', %s, '%%') "
+            "OR ad_name LIKE CONCAT('%%', %s, '%%')"
+            ")",
+            (p_id, r["filename"], r["display_name"])
+        )[0]
+
+        campaign_count = int(ad_info["campaign_count"] or 0)
+        spend_total = float(ad_info["total_spend"] or 0)
 
         history_item = {
             "log_id": r["log_id"],
@@ -1155,32 +1157,14 @@ def api_history():
             "cover_url": video_snap.get("image_url") or "",
             "texts": texts_snap,
             "product_links": _filter_links_by_lang(links_snap, r["lang"]),
-            "has_ad_plan": len(campaign_set) > 0,
-            "ad_campaign_count": len(campaign_set),
+            "has_ad_plan": campaign_count > 0,
+            "ad_campaign_count": campaign_count,
             "ad_spend_total": spend_total,
         }
-
-        if ad_plan == "has" and not history_item["has_ad_plan"]:
-            continue
-        if ad_plan == "none" and history_item["has_ad_plan"]:
-            continue
-        if ad_plan == "none_3d":
-            pushed_at_dt = r["pushed_at"]
-            if not pushed_at_dt:
-                continue
-            pushed_date = pushed_at_dt.date() if hasattr(pushed_at_dt, "date") else pushed_at_dt
-            diff_days = (date.today() - pushed_date).days
-            if history_item["has_ad_plan"] or diff_days < 3:
-                continue
-
         history_items.append(history_item)
 
-    total = len(history_items)
-    start = (page - 1) * limit
-    page_items = history_items[start:start + limit]
-
     return _json_response({
-        "items": page_items,
+        "items": history_items,
         "total": total,
         "page": page,
         "page_size": limit,
@@ -1220,11 +1204,15 @@ def material_ads_detail(item_id: int):
     country = _country_for_lang(item["lang"])
 
     campaign_daily_metrics = db_query(
-        "SELECT ad_account_name, campaign_name, spend_usd, purchase_value_usd, result_count, report_date, market_country "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id = %s "
+        "SELECT ad_account_name, ad_name AS campaign_name, spend_usd, purchase_value_usd, result_count, report_date, market_country "
+        "FROM meta_ad_daily_ad_metrics "
+        "WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0 "
+        "AND ("
+        "ad_name LIKE CONCAT('%%', %s, '%%') "
+        "OR ad_name LIKE CONCAT('%%', %s, '%%')"
+        ") "
         "ORDER BY report_date DESC, spend_usd DESC",
-        (item["product_id"],)
+        (item["product_id"], item["filename"], item["display_name"])
     )
 
     filtered_metrics = []
@@ -1232,6 +1220,9 @@ def material_ads_detail(item_id: int):
         m_country = str(m.get("market_country") or "").strip().upper()
         if m_country == country or m_country in ("", "MULTI"):
             filtered_metrics.append(m)
+
+    if not filtered_metrics and campaign_daily_metrics:
+        filtered_metrics = campaign_daily_metrics
 
     campaigns_summary = {}
     for m in filtered_metrics:
