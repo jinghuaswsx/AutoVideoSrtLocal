@@ -1153,6 +1153,14 @@ def api_history():
             continue
         if ad_plan == "none" and history_item["has_ad_plan"]:
             continue
+        if ad_plan == "none_3d":
+            pushed_at_dt = r["pushed_at"]
+            if not pushed_at_dt:
+                continue
+            pushed_date = pushed_at_dt.date() if hasattr(pushed_at_dt, "date") else pushed_at_dt
+            diff_days = (date.today() - pushed_date).days
+            if history_item["has_ad_plan"] or diff_days < 3:
+                continue
 
         history_items.append(history_item)
 
