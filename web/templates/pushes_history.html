@@ -27,12 +27,23 @@
       <button type="button" class="plan-capsule" data-value="none_3d" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--oc-fg-muted, #4b5563);">超过3天无广告计划</button>
     </div>
   </div>
-  <div class="filter-group filter-group-range">
+  <div class="filter-group filter-group-range" style="min-width: 480px;">
     <label>推送日期区间</label>
-    <div class="date-range">
-      <input id="f-date-from" type="date" aria-label="起始日期" />
-      <span class="range-sep">至</span>
-      <input id="f-date-to" type="date" aria-label="截止日期" />
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="date-range">
+        <input id="f-date-from" type="date" aria-label="起始日期" />
+        <span class="range-sep">至</span>
+        <input id="f-date-to" type="date" aria-label="截止日期" />
+      </div>
+      <div class="date-shortcuts" style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button type="button" class="date-shortcut-btn active" data-type="today">今天</button>
+        <button type="button" class="date-shortcut-btn" data-type="yesterday">昨天</button>
+        <button type="button" class="date-shortcut-btn" data-type="this-week">本周</button>
+        <button type="button" class="date-shortcut-btn" data-type="last-week">上周</button>
+        <button type="button" class="date-shortcut-btn" data-type="this-month">本月</button>
+        <button type="button" class="date-shortcut-btn" data-type="last-month">上月</button>
+        <button type="button" class="date-shortcut-btn" data-type="all">全部</button>
+      </div>
     </div>
   </div>
   <div class="filter-actions" style="align-self: flex-end; margin-bottom: 0;">
@@ -67,6 +78,27 @@
 <div class="oc-pager" id="history-pagination" style="margin-top: 20px;"></div>
 
 <style>
+  .date-shortcut-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--oc-border-strong, #d1d5db);
+    border-radius: var(--oc-r, 6px);
+    background: var(--oc-bg, #fff);
+    color: var(--oc-fg-muted, #4b5563);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .date-shortcut-btn:hover {
+    background: var(--oc-bg-muted, #f3f4f6);
+    border-color: var(--oc-accent, #3b82f6);
+    color: var(--oc-accent, #3b82f6);
+  }
+  .date-shortcut-btn.active {
+    background: var(--oc-accent, #3b82f6);
+    border-color: var(--oc-accent, #3b82f6);
+    color: #fff;
+  }
   .ad-plan-capsules button.active {
     background: var(--oc-accent, #3b82f6) !important;
     color: #fff !important;
@@ -220,6 +252,100 @@
 (function() {
   let selectedAdPlan = 'all';
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
+
+  function getTodayString() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function getShortcutDates(type) {
+    const today = new Date();
+    
+    const formatDate = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    let fromDate, toDate;
+
+    switch (type) {
+      case 'today':
+        fromDate = formatDate(today);
+        toDate = formatDate(today);
+        break;
+      case 'yesterday': {
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        fromDate = formatDate(yesterday);
+        toDate = formatDate(yesterday);
+        break;
+      }
+      case 'this-week': {
+        const day = today.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + diffToMonday);
+        
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        
+        fromDate = formatDate(monday);
+        toDate = formatDate(sunday);
+        break;
+      }
+      case 'last-week': {
+        const day = today.getDay();
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        const thisMonday = new Date(today);
+        thisMonday.setDate(today.getDate() + diffToMonday);
+        
+        const lastMonday = new Date(thisMonday);
+        lastMonday.setDate(thisMonday.getDate() - 7);
+        
+        const lastSunday = new Date(lastMonday);
+        lastSunday.setDate(lastMonday.getDate() + 6);
+        
+        fromDate = formatDate(lastMonday);
+        toDate = formatDate(lastSunday);
+        break;
+      }
+      case 'this-month': {
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        fromDate = formatDate(firstDay);
+        toDate = formatDate(lastDay);
+        break;
+      }
+      case 'last-month': {
+        const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+        fromDate = formatDate(firstDay);
+        toDate = formatDate(lastDay);
+        break;
+      }
+      case 'all':
+      default:
+        fromDate = '';
+        toDate = '';
+        break;
+    }
+    return { fromDate, toDate };
+  }
+
+  function updateShortcutActiveState(type) {
+    document.querySelectorAll('.date-shortcut-btn').forEach(btn => {
+      if (btn.dataset.type === type) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
 
   function copyTextToClipboard(text, element) {
     if (!text) return;
@@ -471,8 +597,11 @@
   document.getElementById('btn-reset').addEventListener('click', () => {
     document.getElementById('f-keyword').value = '';
     document.getElementById('f-lang').value = '';
-    document.getElementById('f-date-from').value = '';
-    document.getElementById('f-date-to').value = '';
+    
+    const todayStr = getTodayString();
+    document.getElementById('f-date-from').value = todayStr;
+    document.getElementById('f-date-to').value = todayStr;
+    updateShortcutActiveState('today');
     
     // reset capsules
     document.querySelectorAll('.plan-capsule').forEach(b => {
@@ -490,7 +619,33 @@
     load();
   });
 
+  // Bind date shortcuts
+  document.querySelectorAll('.date-shortcut-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      const { fromDate, toDate } = getShortcutDates(type);
+      document.getElementById('f-date-from').value = fromDate;
+      document.getElementById('f-date-to').value = toDate;
+      updateShortcutActiveState(type);
+      state.page = 1;
+      load();
+    });
+  });
+
+  // Clear shortcuts active state when manually changing dates
+  document.getElementById('f-date-from').addEventListener('change', () => {
+    updateShortcutActiveState('');
+  });
+  document.getElementById('f-date-to').addEventListener('change', () => {
+    updateShortcutActiveState('');
+  });
+
   // Init
+  const todayStr = getTodayString();
+  document.getElementById('f-date-from').value = todayStr;
+  document.getElementById('f-date-to').value = todayStr;
+  updateShortcutActiveState('today');
+
   loadLanguages();
   load();
 })();

@@ -1722,11 +1722,19 @@ def list_items_for_push(
         where.append("p.ai_evaluation_result = %s")
         args.append(audit_result)
     if date_from:
+        if len(date_from) == 10:
+            date_from_dt = f"{date_from} 00:00:00"
+        else:
+            date_from_dt = date_from
         where.append("i.created_at >= %s")
-        args.append(date_from)
+        args.append(date_from_dt)
     if date_to:
+        if len(date_to) == 10:
+            date_to_dt = f"{date_to} 23:59:59"
+        else:
+            date_to_dt = date_to
         where.append("i.created_at <= %s")
-        args.append(date_to)
+        args.append(date_to_dt)
 
     where_sql = " AND ".join(where)
 

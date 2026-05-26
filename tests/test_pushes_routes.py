@@ -2604,6 +2604,29 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
     assert item["ad_spend_total"] == 300.0
 
 
+def test_pushes_api_history_date_range_normalization(authed_client_no_db, monkeypatch):
+    db_calls = []
+    def fake_db_query(sql, args=()):
+        db_calls.append((sql, args))
+        if "media_push_logs" in sql:
+            return []
+        return []
+        
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+    
+    resp = authed_client_no_db.get("/pushes/api/history?page=1&date_from=2026-05-26&date_to=2026-05-26")
+    assert resp.status_code == 200
+    
+    found = False
+    for sql, args in db_calls:
+        if "media_push_logs" in sql:
+            assert "2026-05-26 00:00:00" in args
+            assert "2026-05-26 23:59:59" in args
+            found = True
+            break
+    assert found is True
+
+
 def test_pushes_material_ads_detail_robust_matching(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.pushes.medias.get_item",
