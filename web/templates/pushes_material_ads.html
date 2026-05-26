@@ -46,12 +46,10 @@
           {% for t in payload.texts %}
           <div style="background: var(--oc-bg-subtle, #f9fafb); padding: 12px; border-radius: 6px; border: 1px solid var(--oc-border, #e5e7eb); font-size: 12px; line-height: 1.5;">
             <div style="font-weight: 600; color: var(--oc-fg, #111827); border-bottom: 1px dashed var(--oc-border, #e5e7eb); padding-bottom: 4px; margin-bottom: 6px;">
-              [{{ t.lang }}] {{ t.title }}
+              标题：[{{ t.lang or '英语 EN' }}] {{ t.title }}
             </div>
-            <div style="color: var(--oc-fg-muted, #4b5563); white-space: pre-line;">{{ t.message }}</div>
-            {% if t.description %}
-            <div style="color: #9ca3af; font-size: 11px; margin-top: 4px; font-style: italic;">{{ t.description }}</div>
-            {% endif %}
+            <div style="color: var(--oc-fg-muted, #4b5563); white-space: pre-line; margin-bottom: 6px;">文案：{{ t.message }}</div>
+            <div style="color: var(--oc-fg-subtle, #9ca3af); font-size: 11px;">描述：{{ t.description or '' }}</div>
           </div>
           {% endfor %}
         {% else %}

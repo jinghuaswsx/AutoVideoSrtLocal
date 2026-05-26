@@ -1100,7 +1100,7 @@ def test_resolve_push_texts_returns_parsed(product_with_item):
     body = "标题: Ready\n文案: Do it\n描述: Go"
     medias.replace_copywritings(pid, [{"body": body}], lang="en")
     texts = pushes.resolve_push_texts(pid)
-    assert texts == [{"title": "Ready", "message": "Do it", "description": "Go"}]
+    assert texts == [{"title": "Ready", "message": "Do it", "description": "Go", "lang": "英语 EN"}]
 
 
 def test_resolve_push_texts_missing_raises(product_with_item):
@@ -1134,6 +1134,7 @@ def test_build_item_payload_uses_real_texts(product_with_item):
             "title": "Ready. Aim. LAUNCH!",
             "message": "Experience the thrill.",
             "description": "Fly High Today",
+            "lang": "英语 EN",
         }
     ]
 
