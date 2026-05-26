@@ -1484,6 +1484,7 @@ function renderMkVideoMaterialCard(r) {
   const hasFineAiEvaluationResult = mkiFineAiHasUsableResult(fineAiResult);
   const fineAiRunId = mkiFineAiResultKey(fineAiResult);
   const fineAiButtonLabel = mkiFineAiButtonLabel(fineAiResult);
+  const fineAiChannelBadge = hasFineAiEvaluationResult ? mkiFineAiChannelBadgeHtml(fineAiResult) : '';
   const materialImportTitle = isMaterialImported
     ? '已入库'
     : (hasFineAiEvaluationResult ? '加入素材库' : mkiFineAiImportGateMessage());
@@ -1621,7 +1622,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         onclick="mkiFineAiEvaluateFromCard(this)">
-      ${fineAiButtonLabel}
+      ${escapeHtml(fineAiButtonLabel)}${fineAiChannelBadge}
     </button>
   </div>`;
 }
