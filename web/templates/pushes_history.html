@@ -439,9 +439,12 @@
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
             
           const textsHtml = (it.texts || []).map(t => {
+            const langName = t.lang || '英语 EN';
+            const langPrefix = `[${escapeHtml(langName)}] `;
             return `<div style="margin-bottom:8px; font-size:13px; line-height:1.5; border-left:3px solid var(--oc-accent, #3b82f6); padding-left:8px;">
-                      <strong style="color:var(--oc-fg, #111827); font-size:13px;">[${escapeHtml(t.lang)}] ${escapeHtml(t.title)}</strong>
-                      <div style="color:var(--oc-fg, #111827); margin-top:3px; font-weight:400; line-height:1.45;">${escapeHtml(t.message)}</div>
+                      <div style="color:var(--oc-fg, #111827); font-weight:500;">标题：${langPrefix}${escapeHtml(t.title || '')}</div>
+                      <div style="color:var(--oc-fg, #111827); margin-top:3px; font-weight:400; line-height:1.45;">文案：${escapeHtml(t.message || '')}</div>
+                      <div style="color:var(--oc-fg-muted, #4b5563); margin-top:3px; font-weight:400; line-height:1.45; font-size:12px;">描述：${escapeHtml(t.description || '')}</div>
                     </div>`;
           }).join('') || '<span style="color:#4b5563; font-size:13px;">(无文案快照)</span>';
 

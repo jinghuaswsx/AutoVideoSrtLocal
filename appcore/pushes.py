@@ -295,6 +295,7 @@ def resolve_push_texts(product_id: int) -> list[dict[str, str]]:
     if not row:
         raise CopywritingMissingError(f"产品 {product_id} 缺少英文 idx=1 文案")
     parsed = parse_copywriting_body(row.get("body") or "")
+    parsed["lang"] = "英语 EN"
     return [parsed]
 
 
