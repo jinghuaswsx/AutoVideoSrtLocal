@@ -138,3 +138,17 @@ def test_order_profit_mobile_tables_keep_shared_header_and_body_layout():
     ]
     for snippet in expected_snippets:
         assert snippet in TEMPLATE, f"missing mobile table layout override: {snippet}"
+
+
+def test_order_profit_dashboard_has_campaign_matching_jump():
+    """测试是否存在未分摊广告费 Campaign 跳转的相关 HTML 属性及 JS 回调函数。"""
+    expected_snippets = [
+        'id="opUnallocatedCard"',
+        'onclick="goToCampaignMatching()"',
+        'class="op-link-btn"',
+        "function goToCampaignMatching()",
+        "scrollIntoView",
+        "unallocatedCard.addEventListener",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in TEMPLATE, f"missing matching jump snippet: {snippet}"

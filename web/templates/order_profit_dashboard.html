@@ -155,6 +155,23 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
   display: block; margin-top: 2px; color: var(--fg-subtle);
   font-size: 12px; line-height: 1.4;
 }
+.op-link-btn {
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  transition: background-color var(--duration-fast) var(--ease);
+}
+.op-link-btn:hover {
+  background: var(--accent-hover);
+}
 
 .op-section { background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-6); margin-bottom: var(--space-6); }
 .op-section h2 { font-size: 16px; font-weight: 600; margin: 0 0 var(--space-4); }
@@ -557,10 +574,10 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
         不完备 SKU 行 <strong id="opIncomplete">-</strong>
         <small>点击查看明细</small>
       </button>
-      <span class="op-aux-chip">
+      <button type="button" class="op-aux-chip" id="opUnallocatedCard" style="display: inline-flex;">
         未分摊广告 <strong id="opUnallocated">-</strong>
-        <small id="opUnallocatedSub">未匹配 product 或无可分摊订单，已扣入总利润</small>
-      </span>
+        <small id="opUnallocatedSub">未匹配 product 或无可分摊订单，点击去配对</small>
+      </button>
       <span class="op-aux-chip">
         估算项 <strong id="opEstimatedData">-</strong>
         <small id="opEstimatedDataSub">明细见下方估算标记</small>
@@ -928,7 +945,16 @@ async function refreshSummary() {
 
   // ---- 辅助 chips ----
   document.getElementById('opUnallocated').textContent = fmtUSD(unallocated);
-  document.getElementById('opUnallocatedSub').textContent = `${data.date_from || f} 至 ${data.date_to || t} 未匹配 product 或无可分摊订单`;
+  const unallocatedCard = document.getElementById('opUnallocatedCard');
+  if (unallocatedCard) {
+    if (unallocated > 0) {
+      unallocatedCard.classList.add('warn');
+      document.getElementById('opUnallocatedSub').textContent = '点击前往 Campaign 配对';
+    } else {
+      unallocatedCard.classList.remove('warn');
+      document.getElementById('opUnallocatedSub').textContent = `${data.date_from || f} 至 ${data.date_to || t} 未匹配 product 或无可分摊订单`;
+    }
+  }
   document.getElementById('opIncomplete').textContent = `${fmtInt(inc.lines || 0)} 行`;
   const activeEstimateCount = Object.values(marks).filter(mark =>
     mark && mark.estimated && (Number(mark.amount_usd || 0) > 0 || Number(mark.lines || 0) > 0)
@@ -952,7 +978,11 @@ async function refreshSummary() {
   const tbody = document.getElementById('opCostBreakdownBody');
   tbody.innerHTML = items.map(([name, val, note]) => {
     const pct = rev > 0 ? (100 * val / rev).toFixed(2) + '%' : '-';
-    return `<tr><td>${name}${note || ''}</td><td class="num">${fmtUSD(val)}</td><td class="num">${pct}</td></tr>`;
+    let btnHtml = '';
+    if (name === '未分摊广告费' && val > 0) {
+      btnHtml = ` <button type="button" class="op-link-btn" onclick="goToCampaignMatching()" title="跳转至 Campaign 配对">去配对 →</button>`;
+    }
+    return `<tr><td>${name}${note || ''}${btnHtml}</td><td class="num">${fmtUSD(val)}</td><td class="num">${pct}</td></tr>`;
   }).join('');
   renderEstimateMarks(marks);
 
@@ -1444,6 +1474,17 @@ async function refreshOverrides() {
   });
 }
 
+function goToCampaignMatching() {
+  const matchingTabBtn = document.querySelector('[data-op-tab="matching"]');
+  if (matchingTabBtn) {
+    matchingTabBtn.click();
+    const targetSection = document.querySelector('[data-op-panel="matching"]');
+    if (targetSection) {
+      targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+}
+
 function refreshAll() {
   refreshSummary();
   refreshOrders();
@@ -1489,6 +1530,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         openIncompleteProductsModal();
+      }
+    });
+  }
+  const unallocatedCard = document.getElementById('opUnallocatedCard');
+  if (unallocatedCard) {
+    unallocatedCard.addEventListener('click', goToCampaignMatching);
+    unallocatedCard.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        goToCampaignMatching();
       }
     });
   }
