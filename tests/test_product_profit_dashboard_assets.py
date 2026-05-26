@@ -93,8 +93,8 @@ def test_product_profit_tabs_are_pills_above_tab_specific_filters():
     assert 'data-filter-control="site"' in TEMPLATE
     assert 'data-filter-control="orders-download"' in TEMPLATE
     assert "function setFilterControlsForTab(tabName)" in TEMPLATE
-    assert "orders: ['product', 'site', 'country', 'from', 'to', 'reload', 'orders-download']" in TEMPLATE
-    assert "product-country: ['product', 'from', 'to', 'reload']" in TEMPLATE
+    assert "orders: ['product', 'site', 'country', 'from', 'to', 'quick-date', 'reload', 'orders-download']" in TEMPLATE
+    assert "product-country: ['product', 'from', 'to', 'quick-date', 'reload']" in TEMPLATE
 
 
 def test_product_profit_orders_tab_has_store_filter_and_roas_card():

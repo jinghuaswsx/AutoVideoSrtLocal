@@ -753,6 +753,7 @@
   }
   .ppd-table { font-size: 12px; }
 }
+<<<<<<< HEAD
 
 /* 复制按钮样式 */
 .ppd-copy-btn {
@@ -779,6 +780,48 @@
 @keyframes ppd-pop {
   0% { transform: scale(0.6); }
   100% { transform: scale(1); }
+=======
+/* 快速日期按钮组样式 */
+.ppd-quick-dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ppd-quick-label {
+  font-size: 12px;
+  color: var(--text-user-badge);
+  font-weight: 600;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.ppd-quick-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-main);
+  background: #fff;
+  color: var(--text-user-badge);
+  transition: all .15s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+.ppd-quick-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(59, 130, 246, .04);
+}
+.ppd-quick-btn:active {
+  transform: scale(0.95);
+}
+.ppd-quick-btn.active {
+  background: var(--primary-color);
+  color: #fff;
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, .16);
+>>>>>>> origin/master
 }
 </style>
 {% endblock %}
@@ -827,6 +870,15 @@
       <span>结束日期（Meta业务日）</span>
       <input type="date" id="ppd-to">
     </label>
+    <div class="ppd-quick-dates" data-filter-control="quick-date">
+      <span class="ppd-quick-label">快速选择：</span>
+      <button type="button" class="ppd-quick-btn" data-range="today">今天</button>
+      <button type="button" class="ppd-quick-btn" data-range="yesterday">昨天</button>
+      <button type="button" class="ppd-quick-btn" data-range="this-week">本周</button>
+      <button type="button" class="ppd-quick-btn" data-range="last-week">上周</button>
+      <button type="button" class="ppd-quick-btn" data-range="this-month">本月</button>
+      <button type="button" class="ppd-quick-btn" data-range="last-month">上月</button>
+    </div>
     <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload" data-filter-control="reload">查询</button>
     <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener noreferrer" data-filter-control="orders-download">下载 Excel</a>
   </section>
@@ -1300,10 +1352,135 @@
   }
   (function setDefaultDates() {
     var today = currentMetaBusinessDate();
-    var from = new Date(today.getTime() - 30 * 86400000);
-    dateFromInput.value = fmt(from);
+    dateFromInput.value = fmt(today);
     dateToInput.value = fmt(today);
   })();
+
+  // ── 快速日期选择处理与双向智能绑定 ─────────────────────
+  function handleQuickDate(range) {
+    var today = currentMetaBusinessDate();
+    var fromDate, toDate;
+    
+    switch (range) {
+      case 'today':
+        fromDate = today;
+        toDate = today;
+        break;
+      case 'yesterday':
+        var yest = new Date(today.getTime() - 86400000);
+        fromDate = yest;
+        toDate = yest;
+        break;
+      case 'this-week':
+        var day = today.getDay();
+        var diffToMonday = day === 0 ? 6 : day - 1;
+        fromDate = new Date(today.getTime() - diffToMonday * 86400000);
+        toDate = today;
+        break;
+      case 'last-week':
+        var day = today.getDay();
+        var diffToMonday = day === 0 ? 6 : day - 1;
+        var thisMonday = new Date(today.getTime() - diffToMonday * 86400000);
+        fromDate = new Date(thisMonday.getTime() - 7 * 86400000);
+        toDate = new Date(thisMonday.getTime() - 86400000);
+        break;
+      case 'this-month':
+        fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        toDate = today;
+        break;
+      case 'last-month':
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        toDate = new Date(today.getFullYear(), today.getMonth(), 0);
+        break;
+      default:
+        return;
+    }
+    
+    dateFromInput.value = fmt(fromDate);
+    dateToInput.value = fmt(toDate);
+    
+    // 更新高亮
+    updateQuickDateButtons(range);
+    
+    // 同步 URL 参数（以便刷新时还原高亮）
+    syncUrlState();
+    
+    // 立即触发自动查询
+    reloadBtn.click();
+  }
+  
+  function updateQuickDateButtons(activeRange) {
+    document.querySelectorAll('.ppd-quick-btn').forEach(function(btn) {
+      if (btn.dataset.range === activeRange) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  function resetQuickDateButtons() {
+    document.querySelectorAll('.ppd-quick-btn').forEach(function(btn) {
+      btn.classList.remove('active');
+    });
+  }
+
+  function detectAndHighlightActiveQuickDate() {
+    var fromVal = dateFromInput.value;
+    var toVal = dateToInput.value;
+    var today = currentMetaBusinessDate();
+    var fmtToday = fmt(today);
+    
+    resetQuickDateButtons();
+    
+    if (fromVal === fmtToday && toVal === fmtToday) {
+      updateQuickDateButtons('today');
+      return;
+    }
+    
+    var yest = new Date(today.getTime() - 86400000);
+    var fmtYest = fmt(yest);
+    if (fromVal === fmtYest && toVal === fmtYest) {
+      updateQuickDateButtons('yesterday');
+      return;
+    }
+    
+    var day = today.getDay();
+    var diffToMonday = day === 0 ? 6 : day - 1;
+    var monday = new Date(today.getTime() - diffToMonday * 86400000);
+    if (fromVal === fmt(monday) && toVal === fmtToday) {
+      updateQuickDateButtons('this-week');
+      return;
+    }
+    
+    var thisMonday = new Date(today.getTime() - diffToMonday * 86400000);
+    var lastMonday = new Date(thisMonday.getTime() - 7 * 86400000);
+    var lastSunday = new Date(thisMonday.getTime() - 86400000);
+    if (fromVal === fmt(lastMonday) && toVal === fmt(lastSunday)) {
+      updateQuickDateButtons('last-week');
+      return;
+    }
+    
+    var firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (fromVal === fmt(firstDayOfMonth) && toVal === fmtToday) {
+      updateQuickDateButtons('this-month');
+      return;
+    }
+    
+    var firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    var lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    if (fromVal === fmt(firstDayOfLastMonth) && toVal === fmt(lastDayOfLastMonth)) {
+      updateQuickDateButtons('last-month');
+      return;
+    }
+  }
+
+  // 绑定快速日期按钮事件
+  document.querySelectorAll('.ppd-quick-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      handleQuickDate(btn.dataset.range);
+    });
+  });
 
   function currentActiveTab() {
     var activeBtn = document.querySelector('.ppd-tab.active');
@@ -1311,13 +1488,13 @@
   }
 
   var TAB_FILTER_CONTROLS = {
-    list: ['country', 'from', 'to', 'reload'],
-    orders: ['product', 'site', 'country', 'from', 'to', 'reload', 'orders-download'],
-    country: ['product', 'from', 'to', 'reload'],
-    ads: ['product', 'country', 'from', 'to', 'reload'],
+    list: ['country', 'from', 'to', 'quick-date', 'reload'],
+    orders: ['product', 'site', 'country', 'from', 'to', 'quick-date', 'reload', 'orders-download'],
+    country: ['product', 'from', 'to', 'quick-date', 'reload'],
+    ads: ['product', 'country', 'from', 'to', 'quick-date', 'reload'],
   };
-  // product-country: ['product', 'from', 'to', 'reload']
-  TAB_FILTER_CONTROLS['product-country'] = ['product', 'from', 'to', 'reload'];
+  TAB_FILTER_CONTROLS['product-country'] = ['product', 'from', 'to', 'quick-date', 'reload'];
+  // product-country: ['product', 'from', 'to', 'quick-date', 'reload']
 
   function setFilterControlsForTab(tabName) {
     var controls = TAB_FILTER_CONTROLS[tabName] || TAB_FILTER_CONTROLS.list;
@@ -2971,9 +3148,15 @@
     var active = currentActiveTab();
     if (window.switchTab) window.switchTab(active);
   });
-  // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验）
-  dateFromInput.addEventListener('change', syncUrlState);
-  dateToInput.addEventListener('change', syncUrlState);
+  // 日期 change：仅同步 URL，不触发 reload（保留原有"改完点查询"的体验），并进行高亮逆向识别
+  dateFromInput.addEventListener('change', function() {
+    syncUrlState();
+    detectAndHighlightActiveQuickDate();
+  });
+  dateToInput.addEventListener('change', function() {
+    syncUrlState();
+    detectAndHighlightActiveQuickDate();
+  });
 
   // 初始化产品选择器和国家胶囊，再走 switchTab 触发当前 Tab 的 load 函数
   Promise.all([loadProducts(), loadCountryPills()]).then(function() {
@@ -3006,6 +3189,9 @@
     if (wantSite === 'newjoy' || wantSite === 'omurio') {
       siteSelect.value = wantSite;
     }
+
+    // 智能高亮检测
+    detectAndHighlightActiveQuickDate();
 
     var initialTab = urlParams.get('tab') || 'list';
     if (window.switchTab) window.switchTab(initialTab);
