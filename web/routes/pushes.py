@@ -1137,6 +1137,7 @@ def api_history():
             "lang": r["lang"],
             "display_name": r["display_name"] or r["filename"],
             "filename": r["filename"],
+            "file_size": r["file_size"] or 0,
             "pushed_at": r["pushed_at"].isoformat() if r.get("pushed_at") else None,
             "operator_username": r["operator_username"] or "System",
             "video_url": video_snap.get("url") or "",

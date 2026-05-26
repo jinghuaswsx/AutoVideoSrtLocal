@@ -142,6 +142,22 @@
   let selectedAdPlan = 'all';
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
 
+  function copyTextToClipboard(text, element) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      const originalHtml = element.innerHTML;
+      const svgEl = element.querySelector('svg');
+      const w = svgEl ? svgEl.getAttribute('width') : '11';
+      const h = svgEl ? svgEl.getAttribute('height') : '11';
+      element.innerHTML = `<svg viewBox="0 0 24 24" width="${w}" height="${h}" stroke="#10b981" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="transition: all 0.2s;"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      setTimeout(() => {
+        element.innerHTML = originalHtml;
+      }, 1500);
+    }).catch(err => {
+      console.error('Copy failed', err);
+    });
+  }
+
   function formatLanguageLabel(code) {
     const raw = String(code || '').trim().toUpperCase();
     return raw;
@@ -227,18 +243,32 @@
           const pushedDate = it.pushed_at ? it.pushed_at.replace('T', ' ').slice(0, 16) : '-';
 
           return `<tr class="history-row">
-            <td style="padding:12px 16px;">${thumb}</td>
-            <td style="padding:12px 16px;">
-              <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
-              <div style="font-size:11px; color:#9ca3af; margin-top:3px;">
-                <code>${escapeHtml(it.product_code)}</code>
+            <td style="padding:12px 16px; min-width: 140px; vertical-align: top;">
+              ${thumb}
+              <div style="font-size:11px; color:var(--oc-fg-muted, #4b5563); word-break:break-all; margin-top:8px; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:4px;">
+                <span style="flex:1;">${escapeHtml(it.filename)}</span>
+                <button class="btn-copy-action" data-text="${escapeHtml(it.filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top: 2px;" title="复制视频文件名">
+                  <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
               </div>
-              <div style="font-size:11px; color:#9ca3af; margin-top:4px;">
+              <div style="font-size:10px; color:var(--oc-fg-subtle, #9ca3af); margin-top:4px;">
+                ${(it.file_size / (1024 * 1024)).toFixed(1)} M
+              </div>
+            </td>
+            <td style="padding:12px 16px; vertical-align: top;">
+              <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
+              <div style="font-size:11px; color:#9ca3af; margin-top:5px; display:flex; align-items:center; gap:6px;">
+                <code>${escapeHtml(it.product_code)}</code>
+                <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center;" title="复制商品Code">
+                  <svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+              </div>
+              <div style="font-size:11px; color:#9ca3af; margin-top:5px;">
                 <span>推送于 ${escapeHtml(pushedDate)}</span> · <span>操作人: ${escapeHtml(it.operator_username)}</span>
               </div>
             </td>
-            <td style="padding:12px 16px;"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
-            <td style="padding:12px 16px;">
+            <td style="padding:12px 16px; vertical-align: top;"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
+            <td style="padding:12px 16px; vertical-align: top;">
               ${textsHtml}
               <div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--oc-border, #e5e7eb);">
                 <strong>投放链接:</strong> ${linksHtml || '<span style="color:#9ca3af; font-size:10px;">(无链接)</span>'}
@@ -252,6 +282,16 @@
           </tr>`;
         }).join('');
       }
+      
+      // 绑定复制按钮事件
+      tbody.querySelectorAll('.btn-copy-action').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          copyTextToClipboard(btn.dataset.text, btn);
+        });
+      });
+
       renderPagination();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444);">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
