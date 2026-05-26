@@ -10,6 +10,7 @@ def test_run_link_check_builds_workspace_and_result(monkeypatch, tmp_path):
     workspace = SimpleNamespace(
         root=workspace_root,
         reference_dir=workspace_root / "reference",
+        original_dir=workspace_root / "original",
         site_dir=workspace_root / "site",
         compare_dir=workspace_root / "compare",
     )
@@ -27,6 +28,7 @@ def test_run_link_check_builds_workspace_and_result(monkeypatch, tmp_path):
         "normalized_url": "https://newjoyloo.com/de/products/demo-rjc",
     })
     monkeypatch.setattr(controller, "_download_references", lambda *args, **kwargs: [])
+    monkeypatch.setattr(controller, "_download_original_images", lambda *args, **kwargs: [])
     monkeypatch.setattr(controller.browser_worker, "capture_page", lambda **kwargs: {
         "requested_url": "https://newjoyloo.com/de/products/demo-rjc",
         "final_url": "https://newjoyloo.com/de/products/demo-rjc",
