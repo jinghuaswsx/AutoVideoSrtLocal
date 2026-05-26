@@ -16,11 +16,17 @@ SCORE_KEYS = (
     "product_market_fit_score",
     "demand_score",
     "competition_score",
-    "pricing_score",
+    "aesthetic_fit_score",
     "creative_fit_score",
+    "cultural_fit_score",
+    "compliance_risk_score",
+)
+
+# Legacy keys kept for backward compatibility with older evaluation data.
+LEGACY_SCORE_KEYS = (
+    "pricing_score",
     "landing_page_fit_score",
     "operational_fit_score",
-    "compliance_risk_score",
 )
 
 
@@ -100,9 +106,9 @@ COUNTRY_EVALUATION_SCHEMA: dict[str, Any] = {
         "decision",
         "market_fit",
         "competitor_analysis",
-        "pricing_analysis",
+        "aesthetic_analysis",
         "creative_fit",
-        "landing_page_localization",
+        "cultural_analysis",
         "risks",
         "recommendations",
         "sources",
@@ -130,7 +136,7 @@ COUNTRY_EVALUATION_SCHEMA: dict[str, Any] = {
         },
         "market_fit": {"type": "object"},
         "competitor_analysis": {"type": "object"},
-        "pricing_analysis": {"type": "object"},
+        "aesthetic_analysis": {"type": "object"},
         "creative_fit": {
             "type": "object",
             "properties": {
@@ -139,7 +145,6 @@ COUNTRY_EVALUATION_SCHEMA: dict[str, Any] = {
                     "type": "string",
                     "enum": [
                         "USE_AS_IS",
-                        "LOCALIZE_BEFORE_TEST",
                         "RESHOOT_PARTIALLY",
                         "DO_NOT_USE",
                         "NO_CREATIVE_PROVIDED",
@@ -147,7 +152,7 @@ COUNTRY_EVALUATION_SCHEMA: dict[str, Any] = {
                 },
             },
         },
-        "landing_page_localization": {"type": "object"},
+        "cultural_analysis": {"type": "object"},
         "risks": {"type": "object"},
         "recommendations": {"type": "object"},
         "sources": _array({"type": "object"}),
