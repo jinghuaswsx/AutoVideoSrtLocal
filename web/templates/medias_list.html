@@ -1984,12 +1984,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   background:var(--oc-accent); color:#fff;
   font-size:11px; font-weight:600;
   cursor:pointer;
-  transition:background var(--oc-dur-fast) var(--oc-ease);
+  z-index:3;
+  transition:background var(--oc-dur-fast) var(--oc-ease),
+             bottom var(--oc-dur-fast) var(--oc-ease);
 }
 .oc-detail-image-replace[hidden] { display:none; }
 .oc-detail-image-replace:hover { background:var(--oc-accent-hover); }
 .oc-detail-image-replace:focus-visible {
   outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
+.oc-detail-image:hover:has(.oc-detail-image-eval-btn, .oc-detail-image-retranslate-btn) .oc-detail-image-replace {
+  bottom:38px;
 }
 .oc-detail-image-del {
   position:absolute; top:6px; right:6px;
