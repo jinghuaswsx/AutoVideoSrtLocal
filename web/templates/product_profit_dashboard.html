@@ -1953,8 +1953,8 @@
 
       return '<tr class="' + rowCls + '" data-product-id="' + escHtml(String(r.product_id)) + '">'
         + '<td class="ppd-list-table-product">'
-        +   '<div class="ppd-list-name" style="display: inline-flex; align-items: center; white-space: nowrap;">' + escHtml(r.name || '(未命名)') + '&nbsp;&nbsp;&nbsp;' + nameCopyBtn + '</div>'
-        +   '<div class="ppd-list-code" style="display: inline-flex; align-items: center; white-space: nowrap;">' + escHtml(r.product_code || '') + '&nbsp;&nbsp;&nbsp;' + codeCopyBtn + '</div>'
+        +   '<div class="ppd-list-name" style="display: flex; align-items: center; line-height: 1.4;"><span>' + escHtml(r.name || '(未命名)') + '</span>&nbsp;&nbsp;&nbsp;' + nameCopyBtn + '</div>'
+        +   '<div class="ppd-list-code" style="display: flex; align-items: center; line-height: 1.4; margin-top: 6px;"><span>' + escHtml(r.product_code || '') + '</span>&nbsp;&nbsp;&nbsp;' + codeCopyBtn + '</div>'
         + '</td>'
         + '<td class="ppd-num">' + (r.order_count || 0).toLocaleString() + '</td>'
         + '<td class="ppd-num">' + money(r.revenue_usd) + '</td>'
@@ -2254,8 +2254,8 @@
 
       return '<tr class="' + rowCls + '" data-product-id="' + escHtml(String(r.product_id)) + '">'
         + '<td class="ppd-list-table-product">'
-        +   '<div class="ppd-list-name" style="display: inline-flex; align-items: center; white-space: nowrap;">' + escHtml(r.name || '(未命名)') + '&nbsp;&nbsp;&nbsp;' + nameCopyBtn + '</div>'
-        +   '<div class="ppd-list-code" style="display: inline-flex; align-items: center; white-space: nowrap;">' + escHtml(r.product_code || '') + '&nbsp;&nbsp;&nbsp;' + codeCopyBtn + '</div>'
+        +   '<div class="ppd-list-name" style="display: flex; align-items: center; line-height: 1.4;"><span>' + escHtml(r.name || '(未命名)') + '</span>&nbsp;&nbsp;&nbsp;' + nameCopyBtn + '</div>'
+        +   '<div class="ppd-list-code" style="display: flex; align-items: center; line-height: 1.4; margin-top: 6px;"><span>' + escHtml(r.product_code || '') + '</span>&nbsp;&nbsp;&nbsp;' + codeCopyBtn + '</div>'
         + '</td>'
         + '<td class="ppd-num">' + (r.order_count || 0).toLocaleString() + '</td>'
         + '<td class="ppd-num">' + money(r.revenue_usd) + '</td>'
