@@ -68,6 +68,14 @@ def test_admin_can_open_other_users_bulk_translate_detail(monkeypatch, authed_cl
     assert resp.get_json()["user_id"] == 99
 
 
+def test_admin_direct_bulk_translate_detail_uses_admin_scope(authed_client_no_db):
+    resp = authed_client_no_db.get("/tasks/bt-other-user")
+
+    assert resp.status_code == 200
+    assert 'data-task-id="bt-other-user"' in resp.get_data(as_text=True)
+    assert 'data-admin-scope="1"' in resp.get_data(as_text=True)
+
+
 def test_admin_bulk_translate_projection_sorts_intervention_first(monkeypatch):
     from appcore import bulk_translate_projection as mod
 

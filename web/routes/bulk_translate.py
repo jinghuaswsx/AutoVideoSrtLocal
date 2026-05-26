@@ -72,7 +72,7 @@ def tasks_list_page():
 @pages_bp.get("/tasks/<task_id>")
 @login_required
 def tasks_detail_page(task_id):
-    admin_scope = getattr(current_user, "is_admin", False) and request.args.get("scope") == "admin"
+    admin_scope = getattr(current_user, "is_admin", False)
     return render_template("bulk_translate_detail.html", task_id=task_id, admin_scope=admin_scope)
 
 
