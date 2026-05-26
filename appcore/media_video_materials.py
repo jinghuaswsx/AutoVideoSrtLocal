@@ -115,16 +115,21 @@ def _where_for_video_materials(
     status = str(ad_plan_status or AD_PLAN_ALL).strip().lower()
     if status not in AD_PLAN_FILTERS:
         status = AD_PLAN_ALL
-    pushed_clause = (
-        "(i.pushed_at IS NOT NULL OR EXISTS ("
-        "SELECT 1 FROM media_push_logs mpl "
-        "WHERE mpl.item_id=i.id AND mpl.status='success'"
-        "))"
+    has_ad_plan_clause = (
+        "EXISTS ("
+        "SELECT 1 FROM meta_ad_daily_ad_metrics madm "
+        "WHERE madm.product_id = i.product_id "
+        "AND COALESCE(madm.spend_usd, 0) > 0 "
+        "AND ("
+        "madm.ad_name LIKE CONCAT('%%', i.filename, '%%') "
+        "OR madm.ad_name LIKE CONCAT('%%', i.display_name, '%%')"
+        ")"
+        ")"
     )
     if status == AD_PLAN_HAS:
-        where.append(pushed_clause)
+        where.append(has_ad_plan_clause)
     elif status == AD_PLAN_NONE:
-        where.append(f"NOT {pushed_clause}")
+        where.append(f"NOT {has_ad_plan_clause}")
     return where, args
 
 
@@ -186,73 +191,79 @@ def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
         for row in rows
         if _int_value(row.get("product_id")) > 0
     })
-    campaign_codes = sorted({
-        str(row.get("product_code") or "").strip().lower()
-        for row in rows
-        if str(row.get("product_code") or "").strip()
-    })
-    candidates = _load_ad_plan_candidates(product_ids=product_ids, campaign_codes=campaign_codes)
-    if not candidates:
+    if not product_ids:
         return
 
-    by_product_id: dict[int, dict[str, Any]] = {}
-    by_campaign_code: dict[str, dict[str, Any]] = {}
-    for idx, candidate in enumerate(candidates):
-        candidate["_ad_plan_rank"] = idx
-        product_id = _int_value(candidate.get("product_id"))
-        code = str(candidate.get("normalized_campaign_code") or "").strip().lower()
-        if product_id > 0:
-            by_product_id.setdefault(product_id, candidate)
-        if code:
-            by_campaign_code.setdefault(code, candidate)
+    ad_candidates = _load_ad_candidates_for_materials(product_ids)
+    if not ad_candidates:
+        return
+
+    ads_by_product: dict[int, list[dict[str, Any]]] = {}
+    for candidate in ad_candidates:
+        pid = _int_value(candidate.get("product_id"))
+        if pid > 0:
+            ads_by_product.setdefault(pid, []).append(candidate)
 
     for row in rows:
         product_id = _int_value(row.get("product_id"))
-        code = str(row.get("product_code") or "").strip().lower()
-        matches = [
-            candidate
-            for candidate in (by_product_id.get(product_id), by_campaign_code.get(code))
-            if candidate
-        ]
-        if not matches:
+        if product_id not in ads_by_product:
             continue
-        detail = min(matches, key=lambda item: int(item.get("_ad_plan_rank") or 0))
-        row["ad_campaign_code"] = detail.get("normalized_campaign_code")
-        row["ad_campaign_name"] = detail.get("campaign_name")
-        row["ad_account_id"] = detail.get("ad_account_id")
-        row["ad_account_name"] = detail.get("ad_account_name")
+
+        filename = str(row.get("filename") or "").strip().lower()
+        display_name = str(row.get("display_name") or "").strip().lower()
+
+        filename_norm = normalize_material_name(filename)
+        display_name_norm = normalize_material_name(display_name)
+
+        filename_no_ext = filename_norm.rsplit(".", 1)[0] if "." in filename_norm else filename_norm
+        display_name_no_ext = display_name_norm.rsplit(".", 1)[0] if "." in display_name_norm else display_name_norm
+
+        candidates = ads_by_product[product_id]
+        matched_ad = None
+        for candidate in candidates:
+            ad_name_lower = str(candidate.get("ad_name") or "").strip().lower()
+            ad_code_lower = str(candidate.get("normalized_ad_code") or "").strip().lower()
+
+            matches = False
+            if filename and (filename in ad_name_lower or filename in ad_code_lower):
+                matches = True
+            elif display_name and (display_name in ad_name_lower or display_name in ad_code_lower):
+                matches = True
+            elif filename_norm and (filename_norm in ad_name_lower or filename_norm in ad_code_lower):
+                matches = True
+            elif display_name_norm and (display_name_norm in ad_name_lower or display_name_norm in ad_code_lower):
+                matches = True
+            elif filename_no_ext and len(filename_no_ext) > 5 and (filename_no_ext in ad_name_lower or filename_no_ext in ad_code_lower):
+                matches = True
+            elif display_name_no_ext and len(display_name_no_ext) > 5 and (display_name_no_ext in ad_name_lower or display_name_no_ext in ad_code_lower):
+                matches = True
+
+            if matches:
+                matched_ad = candidate
+                break
+
+        if matched_ad:
+            row["ad_campaign_code"] = matched_ad.get("normalized_campaign_code")
+            row["ad_campaign_name"] = matched_ad.get("campaign_name")
+            row["ad_account_id"] = matched_ad.get("ad_account_id")
+            row["ad_account_name"] = matched_ad.get("ad_account_name")
+            row["ad_plan_activity_date"] = matched_ad.get("activity_date")
 
 
-def _load_ad_plan_candidates(
-    *,
-    product_ids: list[int],
-    campaign_codes: list[str],
-) -> list[dict[str, Any]]:
-    parts: list[str] = []
-    args: list[Any] = []
-    select_sql = (
-        "SELECT m.product_id, m.normalized_campaign_code, m.campaign_name, "
+def _load_ad_candidates_for_materials(product_ids: list[int]) -> list[dict[str, Any]]:
+    if not product_ids:
+        return []
+    placeholders = ",".join(["%s"] * len(product_ids))
+    return query(
+        "SELECT m.product_id, m.normalized_ad_code, m.ad_name, "
+        "       m.normalized_campaign_code, m.campaign_name, "
         "       m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
         "       m.spend_usd, m.id "
-        "FROM meta_ad_daily_campaign_metrics m "
-        "WHERE COALESCE(m.spend_usd, 0) > 0 AND "
-    )
-    if product_ids:
-        placeholders = ",".join(["%s"] * len(product_ids))
-        parts.append(select_sql + f"m.product_id IN ({placeholders})")
-        args.extend(product_ids)
-    if campaign_codes:
-        placeholders = ",".join(["%s"] * len(campaign_codes))
-        parts.append(select_sql + f"m.normalized_campaign_code IN ({placeholders})")
-        args.extend(campaign_codes)
-    if not parts:
-        return []
-    union_sql = " UNION ALL ".join(parts)
-    return query(
-        f"{union_sql} "
+        "FROM meta_ad_daily_ad_metrics m "
+        f"WHERE m.product_id IN ({placeholders}) AND COALESCE(m.spend_usd, 0) > 0 "
         "ORDER BY activity_date DESC, COALESCE(spend_usd, 0) DESC, id DESC",
-        tuple(args),
+        tuple(product_ids),
     )
 
 
@@ -273,7 +284,8 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
             "bound_by": item.get("bound_by"),
             "bound_at": _iso(item.get("bound_at")),
         }
-    has_ad_plan = bool(item.get("pushed_at") or push_success_count)
+    has_ad_plan = bool(item.get("ad_campaign_code"))
+    pushed_at_val = item.get("ad_plan_activity_date") if has_ad_plan else None
     return {
         "id": int(item["id"]),
         "product_id": int(item["product_id"]),
@@ -291,7 +303,7 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         "file_size": item.get("file_size"),
         "owner_username": item.get("owner_username") or "",
         "created_at": _iso(item.get("created_at")),
-        "pushed_at": _iso(item.get("pushed_at")),
+        "pushed_at": _iso(pushed_at_val),
         "latest_push_id": item.get("latest_push_id"),
         "push_success_count": push_success_count,
         "has_ad_plan": has_ad_plan,
@@ -374,10 +386,10 @@ def _normalize_ad_account_id(value: Any) -> str:
 def _ad_plan_detail(item: dict[str, Any], has_ad_plan: bool) -> dict[str, Any] | None:
     if not has_ad_plan:
         return None
-    code = str(item.get("ad_campaign_code") or item.get("product_code") or "").strip().lower()
+    code = str(item.get("ad_campaign_code") or "").strip().lower()
     if not code:
         return None
-    name = str(item.get("ad_campaign_name") or item.get("product_name") or code).strip()
+    name = str(item.get("ad_campaign_name") or code).strip()
     account_id = _normalize_ad_account_id(item.get("ad_account_id"))
     params = {
         "tab": "ads",
