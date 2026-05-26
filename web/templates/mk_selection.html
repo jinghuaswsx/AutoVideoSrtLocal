@@ -242,6 +242,11 @@
 .mki-fine-ai-ch { position:absolute; top:-8px; right:-4px; display:inline-flex; align-items:center; height:16px; padding:0 5px; border-radius:999px; font-size:9px; font-weight:800; line-height:1; letter-spacing:.3px; z-index:1; box-shadow:0 1px 3px rgba(0,0,0,.15); }
 .mki-fine-ai-ch.is-adc { background:#2563eb; color:#fff; }
 .mki-fine-ai-ch.is-anti { background:#ea580c; color:#fff; }
+.mki-legacy-banner { display:flex; align-items:center; gap:10px; padding:12px 16px; margin-bottom:14px; border-radius:8px; background:oklch(93% 0.08 80); border:1px solid oklch(82% 0.12 80); }
+.mki-legacy-banner-icon { font-size:20px; flex-shrink:0; }
+.mki-legacy-banner-text { flex:1; font-size:13px; color:oklch(35% 0.1 60); font-weight:600; }
+.mki-legacy-rerun-btn { flex-shrink:0; padding:6px 14px; border-radius:6px; border:none; background:oklch(50% 0.14 250); color:#fff; font-size:12px; font-weight:700; cursor:pointer; }
+.mki-legacy-rerun-btn:hover { background:oklch(42% 0.14 250); }
 .mki-fine-ai-progress-shell { display:grid; gap:14px; margin-bottom:16px; }
 .mki-fine-ai-progress-header { display:grid; gap:12px; padding:18px; border:1px solid var(--oc-border); border-radius:8px; background:oklch(98% 0.006 230); }
 .mki-fine-ai-progress-top { display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
@@ -2080,8 +2085,34 @@ function mkiFineAiHasUsableResult(result) {
   return (status === 'completed' || status === 'partially_completed') && mkiFineAiCountryCount(normalized) > 0;
 }
 
+function mkiFineAiIsLegacyResult(result) {
+  const normalized = mkiFineAiNormalizeResult(result);
+  if (!normalized) return false;
+  const countries = normalized.countries;
+  if (!countries || typeof countries !== 'object') return false;
+  const entries = Array.isArray(countries) ? countries : Object.values(countries);
+  for (const c of entries) {
+    const scores = (c && c.scores) || {};
+    if ('pricing_score' in scores || 'landing_page_fit_score' in scores || 'operational_fit_score' in scores) return true;
+    if ('aesthetic_fit_score' in scores || 'cultural_fit_score' in scores) return false;
+  }
+  // If no country has scores, check summary-level or fall back to has_result for list API data
+  const summary = normalized.summary || {};
+  if (summary.overall_recommendation && !('aesthetic_fit_score' in (normalized.scores || {}))) {
+    // List API doesn't have per-country scores; check evaluation_run_id date pattern
+    // Runs created before the schema change are legacy
+    const runId = String(normalized.evaluation_run_id || '').trim();
+    if (runId && normalized.has_result && !runId.startsWith('eval_antigravity_')) {
+      // Cannot reliably detect from list API, so we don't mark as legacy
+      return false;
+    }
+  }
+  return false;
+}
+
 function mkiFineAiButtonLabel(result) {
-  return mkiFineAiHasUsableResult(result) ? 'AI精细评估结果' : '精细AI评估';
+  if (!mkiFineAiHasUsableResult(result)) return '精细AI评估';
+  return mkiFineAiIsLegacyResult(result) ? 'AI精细评估结果(旧)' : 'AI精细评估结果';
 }
 
 function mkiFineAiDetectChannel(result) {
@@ -2148,7 +2179,10 @@ function mkiFineAiResultFromButton(btn) {
 }
 
 function mkiFineAiButtonLabelFromElement(btn) {
-  if (btn && btn.dataset.mkiFineAiHasResult === '1') return 'AI精细评估结果';
+  if (btn && btn.dataset.mkiFineAiHasResult === '1') {
+    const result = mkiFineAiResultFromButton(btn);
+    return mkiFineAiIsLegacyResult(result) ? 'AI精细评估结果(旧)' : 'AI精细评估结果';
+  }
   return mkiFineAiButtonLabel(mkiFineAiResultFromButton(btn));
 }
 
@@ -3458,12 +3492,23 @@ function mkiFineAiRenderActions(frontend) {
   </details>`;
 }
 
+function mkiFineAiRenderLegacyBanner(result, context) {
+  if (!mkiFineAiIsLegacyResult(result)) return '';
+  return `<div class="mki-legacy-banner">
+    <span class="mki-legacy-banner-icon">📋</span>
+    <span class="mki-legacy-banner-text">这是旧版评估逻辑的存档结果（含成本/物流/落地页分析），仅供参考。</span>
+    <button type="button" class="mki-legacy-rerun-btn" onclick="mkiFineAiStartRun(window._mkiFineAiActiveContext)">用新逻辑重新评估</button>
+  </div>`;
+}
+
 function mkiFineAiRenderResult(data, context) {
   const result = data || {};
   mkiFineAiRememberPayload(context, result);
+  window._mkiFineAiActiveContext = context;
   const frontend = result.frontend || {};
   const summary = result.summary || {};
   return `
+    ${mkiFineAiRenderLegacyBanner(result, context)}
     ${mkiFineAiRenderContextCopyPanel(mkiFineAiContextSource(context, result))}
     ${mkiFineAiRenderStructuredResultOverview(result)}
     ${mkiFineAiRenderProgress(result.progress || {}, result.status || '')}
