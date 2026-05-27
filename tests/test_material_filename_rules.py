@@ -202,23 +202,23 @@ def test_translated_material_filename_extracts_author_from_legacy_and_custom_nam
 
     monkeypatch.setattr(rules, "date", FixedDate)
 
-    # 1. 经典的老式原素材 "-补充素材-E-谢心仪.mp4" 格式，提取出 "E-谢心仪"
+    # 1. 经典的老式原素材 "-补充素材-E-谢心仪.mp4" 格式，提取出最后一个横杠后的 "谢心仪"
     res1 = build_translated_material_filename(
         "2026.02.28-轮胎压力传感器-原素材-补充素材-E-谢心仪.mp4",
         "轮胎压力传感器",
         "de",
         {"en": "英语", "de": "德语"},
     )
-    assert res1 == "2026.05.27-轮胎压力传感器-原素材-小语种翻译素材(德语)-20260228E-谢心仪-蔡靖华.mp4"
+    assert res1 == "2026.05.27-轮胎压力传感器-原素材-小语种翻译素材(德语)-20260228谢心仪-蔡靖华.mp4"
 
-    # 2. 已被指派的多负责人格式，但无 "-指派-"，如 "补充素材(法语)-顾倩multi-蔡靖华.mp4"，提取出 "顾倩multi"
+    # 2. 多负责人格式，提取出最后一个横杠后的 "蔡靖华"
     res2 = build_translated_material_filename(
         "2026.05.13-手机屏幕放大器-原素材-补充素材(法语)-顾倩multi-蔡靖华.mp4",
         "手机屏幕放大器",
         "de",
         {"en": "英语", "de": "德语"},
     )
-    assert res2 == "2026.05.27-手机屏幕放大器-原素材-小语种翻译素材(德语)-20260513顾倩multi-蔡靖华.mp4"
+    assert res2 == "2026.05.27-手机屏幕放大器-原素材-小语种翻译素材(德语)-20260513蔡靖华-蔡靖华.mp4"
 
     # 3. 极简的原素材文件名 "2026.04.01-煮蛋器-素材.mp4"，提取出 "素材"
     res3 = build_translated_material_filename(

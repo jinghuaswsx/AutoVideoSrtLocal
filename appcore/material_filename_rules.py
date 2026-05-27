@@ -324,42 +324,11 @@ def _source_assignment_token(filename: str) -> str:
     if base.lower().endswith(".mp4"):
         base = base[:-4]
         
-    assignee = ""
+    # 作者名就是文件名里最后一个横杠后面的名字
+    parts = base.split("-")
+    assignee = parts[-1].strip() if parts else "未知"
     
-    # 1. 尝试匹配 "-指派-([^-.\s]+)"
-    match = _SOURCE_ASSIGNEE_RE.search(base)
-    if match:
-        assignee = match.group(1).strip()
-    
-    # 2. 如果不含 "-指派-" 但以 "-蔡靖华" 结尾（通常是 "-原素材-补充素材(xxx)-原负责人-蔡靖华"）
-    if not assignee and base.endswith("-蔡靖华"):
-        remain = base[:-4]  # 去掉 "-蔡靖华"
-        last_dash = remain.rfind("-")
-        if last_dash >= 0:
-            assignee = remain[last_dash+1:].strip()
-            
-    # 3. 针对非标准原素材格式的宽容匹配，例如：
-    # 2026.02.28-轮胎压力传感器-原素材-补充素材-E-谢心仪.mp4
-    # 2026.05.13-手机屏幕放大器-原素材-补充素材(法语)-顾倩multi.mp4
-    if not assignee:
-        for marker in ["-补充素材-", "-补充素材", "-原素材-", "-原素材"]:
-            idx = base.rfind(marker)
-            if idx >= 0:
-                after = base[idx + len(marker):].strip()
-                # 剔除可能的语种和前缀，如 B(法语)- 或 (法语)- 或 E-
-                after = re.sub(r"^[a-zA-Z]?\(.*?\)-?", "", after)
-                after = after.lstrip("-")
-                if after:
-                    assignee = after
-                    break
-                    
-    # 4. 兜底策略：如果仍然没有提取出来，取最后一个横杠后面的部分
-    if not assignee:
-        last_dash = base.rfind("-")
-        if last_dash >= 0:
-            assignee = base[last_dash+1:].strip()
-            
-    # 清理非空白字符
+    # 清理空白字符
     assignee = re.sub(r"\s+", "", assignee) or "未知"
     return f"{compact_date}{assignee}"
 
