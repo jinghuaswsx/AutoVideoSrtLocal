@@ -548,6 +548,24 @@
 }
 .ppd-list-summary .ppd-summary-value.is-positive { color: #15803d; }
 .ppd-list-summary .ppd-summary-value.is-negative { color: #b91c1c; }
+.ppd-unmatched-ad-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #b91c1c;
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ppd-unmatched-ad-link:hover {
+  color: var(--primary-color);
+}
+.ppd-unmatched-ad-link:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
 
 /* 占比 chip */
 .ppd-pct-chip {
@@ -1213,7 +1231,12 @@
               <tr>
                 <th>Campaign code</th>
                 <th>Campaign name</th>
+                <th>账户</th>
                 <th class="ppd-num">花费<span class="col-unit">USD</span></th>
+                <th class="ppd-num">结果</th>
+                <th class="ppd-num">购买价值<span class="col-unit">USD</span></th>
+                <th class="ppd-num">Meta ROAS</th>
+                <th>最后日期</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -1337,6 +1360,7 @@
   var productPickerItems = [];
   var countryPills = [];
   var activeCountry = '';
+  var globalUnmatchedAdsMode = false;
 
   // 产品选择器用 modal 实现搜索：
   //   - input.value 是用户看到的字符串："product_code — 产品中文名"
@@ -1672,6 +1696,11 @@
       url.searchParams.set('date_to', dateToInput.value || '');
       var activeBtn = document.querySelector('.ppd-tab.active');
       if (activeBtn) url.searchParams.set('tab', activeBtn.dataset.tab);
+      if (activeBtn && activeBtn.dataset.tab === 'ads' && globalUnmatchedAdsMode) {
+        url.searchParams.set('ads_scope', 'unmatched');
+      } else {
+        url.searchParams.delete('ads_scope');
+      }
       history.replaceState(null, '', url.toString());
     } catch (e) { /* IE 等老浏览器忽略 */ }
   }
@@ -1821,6 +1850,9 @@
     var activeTab = currentActiveTab();
     productInput.value = label;
     closeProductModal();
+    if (selectedProductId !== '0') {
+      globalUnmatchedAdsMode = false;
+    }
     if (selectedProductId === '0') {
       if (activeTab === 'country' || activeTab === 'ads' || activeTab === 'product-country') {
         if (window.switchTab) window.switchTab(activeTab);
@@ -1942,6 +1974,10 @@
     // summary 区
     var profitVal = summary.total_profit_usd;
     var profitCls = profitVal == null ? '' : (profitVal >= 0 ? 'is-positive' : 'is-negative');
+    var unallocatedAd = Number(summary.unallocated_ad_spend_usd) || 0;
+    var unmatchedAdHtml = unallocatedAd > 0
+      ? '<button type="button" class="ppd-summary-value ppd-unmatched-ad-link" onclick="showGlobalUnmatchedAds()" title="查看未匹配广告明细">' + money(unallocatedAd) + '</button>'
+      : '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span>';
     listSummary.innerHTML = ''
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">产品数</span>'
       + '<span class="ppd-summary-value">' + (summary.product_count || 0) + '</span></span>'
@@ -1952,7 +1988,7 @@
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总广告费</span>'
       + '<span class="ppd-summary-value">' + money(summary.total_ad_spend_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">未匹配广告</span>'
-      + '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span></span>'
+      + unmatchedAdHtml + '</span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
       + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">整体 ROAS</span>'
@@ -2416,6 +2452,12 @@
   }
 
   // ── Tab ④ 广告明细（Task 9）────────────────────────
+  function showGlobalUnmatchedAds() {
+    globalUnmatchedAdsMode = true;
+    if (window.switchTab) window.switchTab('ads');
+  }
+  window.showGlobalUnmatchedAds = showGlobalUnmatchedAds;
+
   function loadAdsTab() {
     var pid = getSelectedProductId();
     var df = dateFromInput.value;
@@ -2429,15 +2471,6 @@
 
     errorEl.style.display = 'none';
 
-    // 必选具体产品（id=0 / '' / 'ALL' 都视为未选）
-    if (!pid || pid === '0' || pid === 'ALL') {
-      emptyEl.textContent = '请在顶部选择具体产品后查看广告明细。';
-      emptyEl.style.display = 'block';
-      contentEl.style.display = 'none';
-      loadingEl.style.display = 'none';
-      return;
-    }
-
     if (!df || !dt || df > dt) {
       emptyEl.style.display = 'none';
       contentEl.style.display = 'flex';
@@ -2447,13 +2480,26 @@
       return;
     }
 
+    // 单产品模式必选具体产品；summary 入口进入全局未匹配模式时不要求 product_id。
+    if (!globalUnmatchedAdsMode && (!pid || pid === '0' || pid === 'ALL')) {
+      emptyEl.textContent = '请在顶部选择具体产品后查看广告明细。';
+      emptyEl.style.display = 'block';
+      contentEl.style.display = 'none';
+      loadingEl.style.display = 'none';
+      return;
+    }
+
     emptyEl.style.display = 'none';
     contentEl.style.display = 'none';
     loadingEl.style.display = 'block';
 
-    var url = '/order-analytics/product-profit/ads.json?'
-      + 'product_id=' + encodeURIComponent(pid)
-      + '&date_from=' + encodeURIComponent(df)
+    var url = '/order-analytics/product-profit/ads.json?';
+    if (globalUnmatchedAdsMode) {
+      url += 'ads_scope=unmatched&';
+    } else {
+      url += 'product_id=' + encodeURIComponent(pid) + '&';
+    }
+    url += 'date_from=' + encodeURIComponent(df)
       + '&date_to=' + encodeURIComponent(dt);
     if (country) url += '&country=' + encodeURIComponent(country);
 
@@ -2468,6 +2514,9 @@
         loadingEl.style.display = 'none';
         contentEl.style.display = 'flex';
         renderAds(data);
+        if (globalUnmatchedAdsMode && $('ppd-ads-unmatched-details')) {
+          $('ppd-ads-unmatched-details').open = true;
+        }
       })
       .catch(function(err) {
         loadingEl.style.display = 'none';
@@ -2759,20 +2808,32 @@
     unmatched.forEach(function(u) {
       var tr = document.createElement('tr');
       var code = u.normalized_campaign_code || '';
+      var roasText = u.roas_meta == null ? '—' : Number(u.roas_meta).toFixed(2);
+      var accountText = u.ad_account_name || u.ad_account_id || '';
+      var canMatchToCurrentProduct = !globalUnmatchedAdsMode && getSelectedProductId() && getSelectedProductId() !== '0' && getSelectedProductId() !== 'ALL';
       tr.innerHTML =
           '<td style="text-align:left; font-family:var(--font-sans, sans-serif);">' + escHtml(code) + '</td>'
         + '<td style="text-align:left; max-width:300px; white-space:normal;">' + escHtml(u.campaign_name || '') + '</td>'
+        + '<td style="text-align:left;">' + escHtml(accountText) + '</td>'
         + '<td class="ppd-num">' + money(u.spend_usd) + '</td>'
+        + '<td class="ppd-num">' + (u.result_count || 0).toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + money(u.purchase_value_usd) + '</td>'
+        + '<td class="ppd-num">' + roasText + '</td>'
+        + '<td>' + escHtml(u.last_seen || '') + '</td>'
         + '<td></td>';
       var actionTd = tr.lastElementChild;
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ppd-btn';
-      btn.textContent = '配对到本产品';
-      btn.addEventListener('click', function() {
-        manualMatchCampaign(code, btn);
-      });
-      actionTd.appendChild(btn);
+      if (canMatchToCurrentProduct) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ppd-btn';
+        btn.textContent = '配对到本产品';
+        btn.addEventListener('click', function() {
+          manualMatchCampaign(code, btn);
+        });
+        actionTd.appendChild(btn);
+      } else {
+        actionTd.innerHTML = '<span style="color:var(--text-user-badge);">先选产品后配对</span>';
+      }
       tbody.appendChild(tr);
     });
   }
@@ -3219,6 +3280,9 @@
     detectAndHighlightActiveQuickDate();
 
     var initialTab = urlParams.get('tab') || 'list';
+    if (initialTab === 'ads' && urlParams.get('ads_scope') === 'unmatched') {
+      globalUnmatchedAdsMode = true;
+    }
     if (window.switchTab) window.switchTab(initialTab);
   });
 
@@ -3246,7 +3310,10 @@
   window.switchTab = switchTab;
 
   document.querySelectorAll('.ppd-tab').forEach(function(btn) {
-    btn.addEventListener('click', function() { switchTab(btn.dataset.tab); });
+    btn.addEventListener('click', function() {
+      globalUnmatchedAdsMode = false;
+      switchTab(btn.dataset.tab);
+    });
   });
 
   // Task 5 的末尾初始化已挪到上方 Promise.all(...) 内，

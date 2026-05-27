@@ -147,3 +147,11 @@ def test_product_profit_mobile_tables_keep_shared_header_and_body_layout():
     ]
     for snippet in expected_snippets:
         assert snippet in TEMPLATE, f"missing mobile table layout override: {snippet}"
+
+
+def test_product_profit_unmatched_summary_links_to_global_ads_scope():
+    assert "ppd-unmatched-ad-link" in TEMPLATE
+    assert "function showGlobalUnmatchedAds()" in TEMPLATE
+    assert "var globalUnmatchedAdsMode = false;" in TEMPLATE
+    assert "ads_scope=unmatched" in TEMPLATE
+    assert "ppd-ads-unmatched-details" in TEMPLATE

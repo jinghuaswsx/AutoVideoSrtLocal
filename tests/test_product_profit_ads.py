@@ -207,6 +207,107 @@ def test_generate_ads_report_unmatched_goes_to_unmatched_bucket():
     assert u["spend_usd"] == 5.0
 
 
+def test_load_unmatched_campaign_metrics_uses_campaign_table_by_default():
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppa, "query", side_effect=fake_query):
+        ppa._load_unmatched_campaign_metrics(
+            date(2026, 5, 1),
+            date(2026, 5, 7),
+        )
+
+    assert "FROM meta_ad_daily_campaign_metrics m" in captured["sql"]
+    assert "COALESCE(m.meta_business_date, m.report_date) AS report_date" in captured["sql"]
+    assert "COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s" in captured["sql"]
+    assert "m.product_id IS NULL" in captured["sql"]
+    assert "m.market_country = %s" not in captured["sql"]
+    assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
+
+
+def test_load_unmatched_campaign_metrics_with_country_uses_ad_table_filter():
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    with patch.object(ppa, "query", side_effect=fake_query):
+        ppa._load_unmatched_campaign_metrics(
+            date(2026, 5, 1),
+            date(2026, 5, 7),
+            country="vn",
+        )
+
+    assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
+    assert "m.normalized_ad_code AS normalized_campaign_code" in captured["sql"]
+    assert "m.ad_name AS campaign_name" in captured["sql"]
+    assert "m.market_country = %s" in captured["sql"]
+    assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7), "VN")
+
+
+def test_generate_unmatched_ads_report_aggregates_and_excludes_resolved_codes():
+    fake_rows = [
+        {
+            "report_date": date(2026, 5, 5),
+            "ad_account_id": "act_1",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "mystery",
+            "campaign_name": "Mystery 1",
+            "spend_usd": Decimal("5.00"),
+            "result_count": 1,
+            "purchase_value_usd": Decimal("8.00"),
+        },
+        {
+            "report_date": date(2026, 5, 6),
+            "ad_account_id": "act_1",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "mystery",
+            "campaign_name": "Mystery 2",
+            "spend_usd": Decimal("2.00"),
+            "result_count": 2,
+            "purchase_value_usd": Decimal("6.00"),
+        },
+        {
+            "report_date": date(2026, 5, 5),
+            "ad_account_id": "act_2",
+            "ad_account_name": "omurio",
+            "normalized_campaign_code": "known-rjc",
+            "campaign_name": "Known Product",
+            "spend_usd": Decimal("9.00"),
+            "result_count": 3,
+            "purchase_value_usd": Decimal("18.00"),
+        },
+    ]
+
+    with patch.object(ppa, "_load_unmatched_campaign_metrics", return_value=fake_rows), \
+         patch.object(ppa, "_load_match_map", return_value={"mystery": None, "known-rjc": 200}):
+        result = ppa.generate_unmatched_ads_report(
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 7),
+        )
+
+    assert result["accounts"] == []
+    assert result["campaigns"] == []
+    assert result["daily"] == []
+    assert len(result["unmatched"]) == 1
+    row = result["unmatched"][0]
+    assert row["normalized_campaign_code"] == "mystery"
+    assert row["campaign_name"] == "Mystery 2"
+    assert row["ad_account_id"] == "act_1"
+    assert row["ad_account_name"] == "newjoyloo"
+    assert row["spend_usd"] == 7.0
+    assert row["result_count"] == 3
+    assert row["purchase_value_usd"] == 14.0
+    assert row["roas_meta"] == 2.0
+    assert row["last_seen"] == "2026-05-06"
+
+
 def test_generate_ads_report_resolve_recovers_unmatched_to_current_product():
     """campaign product_id=NULL 但 resolve_ad_product_match 命中当前产品 → 仍归当前产品。"""
     fake_metrics = [
