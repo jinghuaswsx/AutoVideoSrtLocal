@@ -118,6 +118,9 @@
 button.mh-link-btn { cursor:pointer; }
 .mh-ai-link { border-color:#99f6e4; color:#0f766e; font-weight:800; }
 .mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-analysis-clickable { display:block; text-decoration:none; color:inherit; transition:all 0.2s ease; cursor:pointer; }
+.mh-analysis-clickable:hover { border-color:var(--mh-accent); background:var(--mh-soft); transform:translateY(-1px); box-shadow:0 4px 12px rgba(15,118,110,0.08); }
+.mh-analysis-clickable:active { transform:translateY(0); }
 .mh-europe-panel, .mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
 .mh-ai-card--pass { border-color:#bbf7d0; background:#f0fdf4; }
 .mh-ai-card--warn { border-color:#fde68a; background:#fffbeb; }
@@ -1283,13 +1286,23 @@ function renderCard(row) {
       ${cardMedia(row)}
       ${renderMessageBlock(row)}
       ${copyabilityBlock(row)}
-      <div class="mh-analysis">
-        <div class="mh-product">${productImg}<div>
-          <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
-          <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
-          <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
-        </div></div>
-      </div>
+      ${row.product_url ? `
+        <a class="mh-analysis mh-analysis-clickable" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">
+          <div class="mh-product">${productImg}<div>
+            <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
+            <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+            <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
+          </div></div>
+        </a>
+      ` : `
+        <div class="mh-analysis">
+          <div class="mh-product">${productImg}<div>
+            <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
+            <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+            <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
+          </div></div>
+        </div>
+      `}
       ${renderEuropeFitPanel(row)}
     </div>
     <div class="mh-links">
