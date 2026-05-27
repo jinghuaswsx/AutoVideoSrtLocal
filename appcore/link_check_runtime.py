@@ -3,7 +3,6 @@ from __future__ import annotations
 from appcore import task_state
 from appcore.link_check_compare import find_best_reference, run_binary_quick_check, is_same_shopify_image_url
 from appcore.link_check_fetcher import LinkCheckFetcher
-from appcore.link_check_gemini import analyze_image
 from appcore.link_check_same_image import judge_same_image
 
 
@@ -495,17 +494,32 @@ class LinkCheckRuntime:
             result["binary_quick_check"] = _skipped_binary("未匹配到参考图，跳过二值快检")
             result["same_image_llm"] = _skipped_same_image("未匹配到参考图，跳过同图判断")
             result["is_replaced"] = False  # references existed but couldn't match this page image, so not replaced
+            result["analysis"] = {
+                "decision": "replace",
+                "decision_source": "no_reference_match",
+                "has_text": True,
+                "detected_language": "",
+                "language_match": False,
+                "text_summary": "",
+                "quality_score": 0,
+                "quality_reason": "线上图片未匹配到任何后台已翻译的参考图，判定替换未到位。",
+                "needs_replacement": True,
+            }
         else:
             result["binary_quick_check"] = _skipped_binary("未提供参考图，跳过二值快检")
             result["same_image_llm"] = _skipped_same_image("未提供参考图，跳过同图判断")
             result["is_replaced"] = None
-
-        result["analysis"] = analyze_image(
-            item["local_path"],
-            target_language=task["target_language"],
-            target_language_name=task["target_language_name"],
-        )
-        result["analysis"]["decision_source"] = "gemini_language_check"
+            result["analysis"] = {
+                "decision": "pass",
+                "decision_source": "no_references_provided",
+                "has_text": False,
+                "detected_language": "",
+                "language_match": True,
+                "text_summary": "未提供任何后台翻译参考图，自动跳过检查。",
+                "quality_score": 100,
+                "quality_reason": "后台未配置任何用于比对的翻译参考图，自动跳过该图替换把关。",
+                "needs_replacement": False,
+            }
 
     def _enter_step(self, task_id: str, task: dict, *, step: str, status: str, message: str) -> None:
         task["status"] = status
