@@ -59,12 +59,12 @@
     <thead>
       <tr style="background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb);">
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px;">视频快照</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 150px;">视频文件名</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 120px;">商品中文名</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 25%; min-width: 280px;">视频文件名</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 150px;">商品中文名</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; min-width: 300px;">产品Code</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 120px;">投放语种</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 50%; min-width: 150px; max-width: 450px;">文案快照</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 160px;">投放链接</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 200px; min-width: 180px; max-width: 220px;">文案快照</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 25%; min-width: 280px;">投放链接</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 130px;">推送时间</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px;">操作账号</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 110px;">广告状态</th>
@@ -555,7 +555,7 @@
             <td style="padding:12px; vertical-align: top; width: 80px;">
               ${thumb}
             </td>
-            <td style="padding:12px; vertical-align: top; min-width: 150px;">
+            <td style="padding:12px; vertical-align: top; width: 25%; min-width: 280px; overflow: hidden;">
               <div style="font-size:13px; color:var(--oc-fg, #111827); word-break:break-all; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:6px;">
                 <span style="flex:1;">${escapeHtml(it.filename)}</span>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top: 2px;" title="复制视频文件名">
@@ -566,7 +566,7 @@
                 ${(it.file_size / (1024 * 1024)).toFixed(1)} M
               </div>
             </td>
-            <td style="padding:12px; vertical-align: top; min-width: 120px;">
+            <td style="padding:12px; vertical-align: top; min-width: 150px;">
               <div style="font-weight:600; font-size:14px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
             </td>
             <td style="padding:12px; vertical-align: top; width: 300px; min-width: 300px;">
@@ -582,10 +582,10 @@
                 ${formatLanguageLabel(it.lang)}
               </span>
             </td>
-            <td style="padding:12px; vertical-align: top; width: 50%; min-width: 150px; max-width: 450px; overflow: hidden;">
+            <td style="padding:12px; vertical-align: top; width: 200px; min-width: 180px; max-width: 220px; overflow: hidden;">
               ${textsHtml}
             </td>
-            <td style="padding:12px; vertical-align: top; min-width: 160px;">
+            <td style="padding:12px; vertical-align: top; width: 25%; min-width: 280px; overflow: hidden;">
               ${linksHtml}
             </td>
             <td style="padding:12px; vertical-align: top; width: 130px;">
