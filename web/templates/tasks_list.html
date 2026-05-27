@@ -145,6 +145,53 @@
 .tc-detail-ident-label { flex:0 0 92px; color:var(--tc-fg-muted); font-weight:600; }
 .tc-detail-ident-value { flex:0 1 auto; min-width:0; max-width:min(62ch, 100%); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tc-fg); }
 .tc-copy-btn { flex:0 0 auto; height:24px; padding:0 8px; font-size:12px; }
+.tc-icon-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-r);
+  background: var(--tc-bg);
+  color: var(--tc-fg-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: all 0.2s ease;
+}
+.tc-icon-copy-btn:hover {
+  background: var(--tc-bg-muted);
+  border-color: var(--tc-accent);
+  color: var(--tc-accent);
+}
+.tc-icon-copy-btn svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
+}
+.tc-icon-copy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tc-task-name-copy {
+  width: 24px;
+  height: 24px;
+}
+.tc-task-name-copy svg {
+  width: 13px;
+  height: 13px;
+}
+.tc-task-code-copy {
+  width: 20px;
+  height: 20px;
+}
+.tc-task-code-copy svg {
+  width: 11px;
+  height: 11px;
+}
 .tc-process-timeline { position:relative; padding-left:20px; }
 .tc-process-timeline::before { content:""; position:absolute; left:7px; top:4px; bottom:4px; width:2px; background:var(--tc-border); }
 .tc-event { position:relative; margin:0 0 12px; padding:12px 14px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
@@ -497,6 +544,87 @@ function tcFormHeaders() {
 }
 function tcInlineArg(s) {
   return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
+}
+function tcCopyIconSvg() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+}
+function tcCheckIconSvg() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+}
+function tcCopyIconButton(value, label, extraClass) {
+  const text = String(value || '').trim();
+  const disabled = text ? '' : ' disabled';
+  const data = text ? ` data-copy="${tcAttr(text)}" onclick="tcCopyIconText(this.dataset.copy, this)"` : '';
+  const cls = ['tc-icon-copy-btn', extraClass].filter(Boolean).join(' ');
+  return `<button type="button" class="${cls}" title="${tcAttr(label || '复制')}"${disabled}${data}>${tcCopyIconSvg()}</button>`;
+}
+async function tcCopyIconText(text, btn) {
+  const value = String(text || '').trim();
+  if (!value) return;
+  const originalHtml = btn ? (btn.dataset.copyHtml || btn.innerHTML) : '';
+  const originalLabel = btn ? (btn.getAttribute('aria-label') || btn.title || '复制') : '复制';
+  const markCopied = () => {
+    if (!btn) return;
+    if (!btn.dataset.copyHtml) btn.dataset.copyHtml = originalHtml;
+    btn.innerHTML = tcCheckIconSvg();
+    btn.disabled = true;
+    btn.setAttribute('aria-label', '已复制');
+    btn.title = '已复制';
+    window.setTimeout(() => {
+      btn.innerHTML = btn.dataset.copyHtml || originalHtml;
+      btn.disabled = false;
+      btn.setAttribute('aria-label', originalLabel);
+      btn.title = originalLabel;
+    }, 900);
+  };
+  const markFailed = () => {
+    if (!btn) return;
+    if (!btn.dataset.copyHtml) btn.dataset.copyHtml = originalHtml;
+    btn.innerHTML = `<span style="font-size:10px;color:var(--tc-danger-fg)">×</span>`;
+    btn.disabled = true;
+    btn.setAttribute('aria-label', '复制失败');
+    btn.title = '复制失败';
+    window.setTimeout(() => {
+      btn.innerHTML = btn.dataset.copyHtml || originalHtml;
+      btn.disabled = false;
+      btn.setAttribute('aria-label', originalLabel);
+      btn.title = originalLabel;
+    }, 1200);
+  };
+  const copyWithTextarea = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.left = '-9999px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    try {
+      return document.execCommand('copy');
+    } catch (e) {
+      return false;
+    } finally {
+      textarea.remove();
+    }
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+    } else if (!copyWithTextarea()) {
+      throw new Error('copy failed');
+    }
+    markCopied();
+  } catch (e) {
+    if (copyWithTextarea()) {
+      markCopied();
+    } else {
+      markFailed();
+    }
+  }
 }
 function tcCopyButton(value, label) {
   const text = String(value || '').trim();
@@ -1819,7 +1947,16 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     const kind = tcTaskTypeLabel(it);
     const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
     return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
-      <td><div class="tc-task-name" title="${tcAttr(it.product_name || '')}">${tcEsc(it.product_name)}</div><div class="tc-task-meta">#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</div></td>
+      <td>
+        <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
+          <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
+          ${tcCopyIconButton(it.product_name, '复制产品中文名', 'tc-task-name-copy')}
+        </div>
+        <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+          <span>#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</span>
+          ${it.product_code ? tcCopyIconButton(it.product_code, '复制产品Code', 'tc-task-code-copy') : ''}
+        </div>
+      </td>
       <td>${tcEsc(kind)}</td>
       <td>${country}</td>
       <td>${tcTaskStatusCell(it)}</td>
