@@ -485,3 +485,24 @@ def test_add_cache_buster_shopify_cdn():
     assert query_norm["width"] == "640"
 
 
+def test_extract_images_from_html_prefers_non_placeholder_src():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    # Both src and data-master are present. src has a valid translated image, data-master has old English image.
+    html = """
+    <html lang="it">
+      <body>
+        <div class="t4s-product__media-item" data-media-id="123">
+          <img src="https://img.example.com/loc_from_url_en_01_abc.webp" data-master="https://img.example.com/english_image.jpg">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/it/products/demo")
+    assert len(items) == 1
+    assert items[0]["kind"] == "carousel"
+    assert items[0]["source_url"] == "https://img.example.com/loc_from_url_en_01_abc.webp"
+
+
+

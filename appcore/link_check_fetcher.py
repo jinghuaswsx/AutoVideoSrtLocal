@@ -124,6 +124,12 @@ def _is_placeholder_src(src: str) -> bool:
 
 
 def _image_source(node) -> str | None:
+    # 1. Prefer 'src' if it is present and NOT a placeholder (e.g. populated after lazy load or browser execution)
+    src_val = node.get("src")
+    if src_val and not _is_placeholder_src(src_val):
+        return src_val
+
+    # 2. Otherwise fall back to lazy-loading attributes or placeholder 'src'
     for attr in ("data-master", "data-src", "src"):
         value = node.get(attr)
         if value and not (attr == "src" and _is_placeholder_src(value)):
