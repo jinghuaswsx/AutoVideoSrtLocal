@@ -349,6 +349,7 @@
     var compareOriginalPanel = document.getElementById("srCompareOriginalPanel");
     var compareResultPanel = document.getElementById("srCompareResultPanel");
     var resumeButton = document.getElementById("srResumeSubtitleRemoval");
+    var taskCenterRerunButton = document.getElementById("srTaskCenterRerunNiuma");
     var resubmitButton = document.getElementById("srResubmitSubtitleRemoval");
     var deleteButton = document.getElementById("srDeleteSubtitleRemoval");
     var submitButton = document.getElementById("srSubmitSubtitleRemoval");
@@ -565,6 +566,11 @@
           taskStatus === "submitted"
         );
         resumeButton.hidden = !canResume;
+      }
+      if (taskCenterRerunButton) {
+        var canTaskCenterRerun = !!(state && state.task_center_force_rerun_url) && taskStatus !== "deleted";
+        taskCenterRerunButton.hidden = !canTaskCenterRerun;
+        taskCenterRerunButton.disabled = !canTaskCenterRerun;
       }
       if (deleteButton) {
         deleteButton.hidden = taskStatus === "deleted";
@@ -988,6 +994,36 @@
           })
           .catch(function (error) {
             window.alert(error.message || "继续轮询失败");
+          });
+      });
+    }
+
+    if (taskCenterRerunButton) {
+      taskCenterRerunButton.addEventListener("click", function () {
+        var url = (bootstrap.task_center_force_rerun_url || "");
+        if (!url) {
+          window.alert("当前任务没有可重跑的任务中心入口");
+          return;
+        }
+        if (!window.confirm("确认重跑牛马去字幕？系统会保留旧记录，并重新提交一条新的去字幕任务。")) {
+          return;
+        }
+        var previousText = taskCenterRerunButton.textContent;
+        taskCenterRerunButton.disabled = true;
+        taskCenterRerunButton.textContent = "重跑中...";
+        postJson(url, null)
+          .then(function (data) {
+            var nextTaskId = data && data.raw_processing && data.raw_processing.subtitle_task_id;
+            if (nextTaskId) {
+              window.location.href = "/subtitle-removal/" + encodeURIComponent(nextTaskId);
+              return null;
+            }
+            return refreshSubtitleRemovalState();
+          })
+          .catch(function (error) {
+            taskCenterRerunButton.disabled = false;
+            taskCenterRerunButton.textContent = previousText;
+            window.alert(error.message || "重跑失败");
           });
       });
     }
