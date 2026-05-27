@@ -143,6 +143,28 @@ def _attach_realtime_data_quality(result):
             })
             if result["data_quality"].get("status") == dq.STATUS_OK:
                 result["data_quality"]["status"] = dq.STATUS_WARNING
+        launch_scope = scope.get("product_launch_scope")
+        if launch_scope:
+            launch_check = {
+                "code": "product_launch_scope",
+                "status": dq.STATUS_WARNING if launch_scope == "unmatched" else dq.STATUS_OK,
+                "message": (
+                    "未匹配产品广告无法归因到订单，订单与利润指标为空"
+                    if launch_scope == "unmatched"
+                    else "已按产品上广告时间限定产品范围"
+                ),
+                "product_count": scope.get("product_launch_product_count", 0),
+            }
+            result["data_quality"]["product_launch_scope"] = launch_scope
+            result["data_quality"].setdefault("checks", []).append(launch_check)
+            if launch_scope == "unmatched":
+                result["data_quality"].setdefault("warnings", []).append({
+                    "code": launch_check["code"],
+                    "status": launch_check["status"],
+                    "message": launch_check["message"],
+                })
+                if result["data_quality"].get("status") == dq.STATUS_OK:
+                    result["data_quality"]["status"] = dq.STATUS_WARNING
     except Exception as exc:  # noqa: BLE001
         log.warning("attach realtime data_quality failed: %s", exc)
         result.setdefault(
@@ -632,6 +654,14 @@ def realtime_overview():
                 ),
             ), 400
         kwargs["site_codes"] = [site_code_text]
+    product_launch_scope = (request.args.get("product_launch_scope") or "").strip().lower()
+    if product_launch_scope:
+        if product_launch_scope not in ("new", "old", "unmatched"):
+            return _json_response(
+                error="invalid_param",
+                detail="product_launch_scope must be one of new, old, unmatched",
+            ), 400
+        kwargs["product_launch_scope"] = product_launch_scope
     if "page" in request.args:
         page = request.args.get("page", type=int)
         if not page or page <= 0:

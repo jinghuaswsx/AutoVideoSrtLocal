@@ -27,6 +27,7 @@ from .order_profit_aggregation import (
     _load_realtime_ad_cost_adjustments,
     get_order_profit_status_summary,
 )
+from .product_ad_launch import normalize_product_launch_scope
 from .shopify_fee import split_shopify_fee_for_order
 
 ORDER_DETAIL_PAGE_SIZE = 30
@@ -196,10 +197,28 @@ def _normalize_positive_int(value: Any, default: int, *, max_value: int | None =
     return number
 
 
-def _product_filter_sql(column: str, product_id: int | None) -> tuple[str, list[Any]]:
-    if not product_id:
-        return "", []
-    return f"AND {column} = %s ", [int(product_id)]
+def _product_filter_sql(
+    column: str,
+    product_id: int | None,
+    *,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched: bool = False,
+    empty_matches_none: bool = False,
+) -> tuple[str, list[Any]]:
+    if unmatched:
+        return f"AND {column} IS NULL ", []
+    if product_id:
+        if product_ids is not None and int(product_id) not in set(product_ids):
+            return "AND 1=0 ", []
+        return f"AND {column} = %s ", [int(product_id)]
+    if product_ids is not None:
+        if not product_ids:
+            return "AND 1=0 ", []
+        placeholders = ", ".join(["%s"] * len(product_ids))
+        return f"AND {column} IN ({placeholders}) ", list(product_ids)
+    if empty_matches_none:
+        return "AND 1=0 ", []
+    return "", []
 
 
 def _global_break_even_roas(summary: dict[str, Any]) -> float | None:
@@ -459,12 +478,20 @@ def _get_realtime_order_details(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     page: int | None = None,
     page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    if unmatched_ads:
+        return []
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
@@ -527,10 +554,18 @@ def _count_realtime_order_details(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> int:
+    if unmatched_ads:
+        return 0
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(*) AS total FROM ("
@@ -553,12 +588,20 @@ def _get_realtime_order_details_for_range(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     page: int | None = None,
     page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    if unmatched_ads:
+        return []
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
@@ -623,10 +666,18 @@ def _count_realtime_order_details_for_range(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> int:
+    if unmatched_ads:
+        return 0
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(*) AS total FROM ("
@@ -717,12 +768,20 @@ def _get_realtime_order_profit_details(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     page: int | None = None,
     page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    if unmatched_ads:
+        return []
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
@@ -771,12 +830,13 @@ def _get_realtime_order_profit_details(
         tuple([target, data_until] + product_args + limit_args),
     )
     details = _format_realtime_order_profit_rows(rows, day_start)
-    _apply_realtime_ad_cost_adjustments(
-        details,
-        date_from=target,
-        date_to=target,
-        product_id=product_id,
-    )
+    if product_ids is None:
+        _apply_realtime_ad_cost_adjustments(
+            details,
+            date_from=target,
+            date_to=target,
+            product_id=product_id,
+        )
     return details
 
 
@@ -785,12 +845,20 @@ def _get_realtime_order_profit_details_for_range(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     page: int | None = None,
     page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    if unmatched_ads:
+        return []
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     limit_sql = ""
     limit_args: list[Any] = []
@@ -846,12 +914,13 @@ def _get_realtime_order_profit_details_for_range(
         for detail in _format_realtime_order_profit_rows([row], day_start):
             detail["meta_business_date"] = business_date
             details.append(detail)
-    _apply_realtime_ad_cost_adjustments(
-        details,
-        date_from=start,
-        date_to=end,
-        product_id=product_id,
-    )
+    if product_ids is None:
+        _apply_realtime_ad_cost_adjustments(
+            details,
+            date_from=start,
+            date_to=end,
+            product_id=product_id,
+        )
     return details
 
 
@@ -860,10 +929,18 @@ def _count_realtime_order_profit_details(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> int:
+    if unmatched_ads:
+        return 0
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(*) AS total FROM ("
@@ -886,10 +963,18 @@ def _count_realtime_order_profit_details_for_range(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> int:
+    if unmatched_ads:
+        return 0
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(*) AS total FROM ("
@@ -1099,19 +1184,36 @@ def _filter_realtime_campaign_rows_for_product(
     rows: list[dict[str, Any]],
     product_id: int | None,
 ) -> list[dict[str, Any]]:
-    if not product_id:
+    return _filter_realtime_campaign_rows_for_launch_scope(
+        rows,
+        product_ids=(int(product_id),) if product_id else None,
+    )
+
+
+def _filter_realtime_campaign_rows_for_launch_scope(
+    rows: list[dict[str, Any]],
+    *,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+) -> list[dict[str, Any]]:
+    if product_ids is None and not unmatched_ads:
         return rows
-    target_product_id = int(product_id)
+    allowed = set(product_ids or ())
     cache: dict[str, int | None] = {}
     filtered: list[dict[str, Any]] = []
     for row in rows:
-        code = str(row.get("normalized_campaign_code") or row.get("campaign_name") or "").strip().lower()
+        code = _campaign_code(row)
         if not code:
+            if unmatched_ads:
+                filtered.append(row)
             continue
         if code not in cache:
             match = resolve_ad_product_match(code)
             cache[code] = int(match["id"]) if match and match.get("id") is not None else None
-        if cache[code] == target_product_id:
+        matched_pid = cache[code]
+        if unmatched_ads and matched_pid is None:
+            filtered.append(row)
+        elif product_ids is not None and matched_pid in allowed:
             filtered.append(row)
     return filtered
 
@@ -1172,6 +1274,8 @@ def _daily_campaign_purchase_rows(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch daily campaign rows for Meta purchase-value correction.
@@ -1184,7 +1288,12 @@ def _daily_campaign_purchase_rows(
     allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
     if allowed_account_ids is not None and not allowed_account_ids:
         return []
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "product_id",
+        product_id,
+        product_ids=product_ids,
+        unmatched=unmatched_ads,
+    )
     account_sql = ""
     account_args: list[Any] = []
     if allowed_account_ids is not None:
@@ -1268,12 +1377,16 @@ def _summarize_daily_campaign_purchase_rows(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any] | None:
     rows = _daily_campaign_purchase_rows(
         start,
         end,
         product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
         site_codes=site_codes,
     )
     if not rows:
@@ -1301,12 +1414,16 @@ def _summarize_daily_campaign_purchase_rows_by_day(
     end: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows = _daily_campaign_purchase_rows(
         start,
         end,
         product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
         site_codes=site_codes,
     )
     fallback_stats = _apply_daily_purchase_order_fallback(rows, start=start, end=end)
@@ -1477,6 +1594,8 @@ def _get_realtime_campaign_details(
     snapshot_at: datetime | None,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """实时大盘 campaign 明细：按 (business_date, ad_account_id) 各自取最新 snapshot
@@ -1529,8 +1648,20 @@ def _get_realtime_campaign_details(
             )
         rows.extend(account_rows or [])
     rows.sort(key=lambda r: (-float(r.get("spend_usd") or 0), str(r.get("campaign_name") or "")))
+    filter_product_ids = product_ids
+    if product_id and not unmatched_ads:
+        pid = int(product_id)
+        if filter_product_ids is None:
+            filter_product_ids = (pid,)
+        elif pid not in set(filter_product_ids):
+            filter_product_ids = ()
+    filtered_rows = _filter_realtime_campaign_rows_for_launch_scope(
+        rows,
+        product_ids=filter_product_ids,
+        unmatched_ads=unmatched_ads,
+    )
     return _format_realtime_campaign_details(
-        _filter_realtime_campaign_rows_for_product(rows, product_id)
+        filtered_rows
     )
 
 
@@ -1539,12 +1670,16 @@ def _get_realtime_ad_summary_from_campaigns(
     snapshot_at: datetime | None,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any] | None:
     campaign_details = _get_realtime_campaign_details(
         target,
         snapshot_at,
         product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
         site_codes=site_codes,
     )
     if not campaign_details:
@@ -1594,6 +1729,8 @@ def _get_realtime_ad_summary_for_business_date(
     snapshot_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any] | None:
     """Range-mode realtime ad totals for one BJ business date.
@@ -1606,6 +1743,8 @@ def _get_realtime_ad_summary_for_business_date(
         target,
         snapshot_until,
         product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
         site_codes=site_codes,
     )
     if not campaign_summary:
@@ -1629,15 +1768,135 @@ def _get_realtime_ad_summary_for_business_date(
     }
 
 
+def _build_roas_points_from_nodes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    roas_nodes_by_hour = {
+        int(row["node_hour"]): row
+        for row in rows
+        if row.get("node_hour") is not None
+    }
+    points: list[dict[str, Any]] = []
+    for hour in range(24):
+        row = roas_nodes_by_hour.get(hour) or {}
+        points.append({
+            "hour": hour,
+            "node_at": row.get("node_at"),
+            "order_count": int(row.get("order_count") or 0),
+            "units": int(row.get("units") or 0),
+            "order_revenue": _money(row.get("order_revenue_usd")),
+            "shipping_revenue": _money(row.get("shipping_revenue_usd")),
+            "ad_spend": _money(row.get("ad_spend_usd")),
+            "true_roas": (
+                round(float(row.get("true_roas")), 4)
+                if row.get("true_roas") is not None
+                else None
+            ),
+            "order_data_status": row.get("order_data_status"),
+            "ad_data_status": row.get("ad_data_status"),
+        })
+    return points
+
+
+def _build_scoped_roas_points(
+    *,
+    target: date,
+    day_start: datetime,
+    data_until: datetime,
+    orders_by_hour: dict[int, dict[str, Any]],
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    cumulative = {
+        "order_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "shipping_revenue": 0.0,
+    }
+    for hour in range(24):
+        row = orders_by_hour.get(hour) or {}
+        cumulative["order_count"] += int(row.get("order_count") or 0)
+        cumulative["units"] += int(row.get("units") or 0)
+        cumulative["order_revenue"] = round(
+            cumulative["order_revenue"] + _money(row.get("order_revenue")),
+            2,
+        )
+        cumulative["shipping_revenue"] = round(
+            cumulative["shipping_revenue"] + _money(row.get("shipping_revenue")),
+            2,
+        )
+        node_at = day_start + timedelta(hours=hour + 1)
+        if node_at > data_until:
+            points.append({
+                "hour": hour,
+                "node_at": None,
+                "order_count": cumulative["order_count"],
+                "units": cumulative["units"],
+                "order_revenue": cumulative["order_revenue"],
+                "shipping_revenue": cumulative["shipping_revenue"],
+                "ad_spend": 0.0,
+                "true_roas": None,
+                "order_data_status": None,
+                "ad_data_status": None,
+            })
+            continue
+        campaign_details = _get_realtime_campaign_details(
+            target,
+            node_at,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+            site_codes=site_codes,
+        )
+        ad_spend = round(sum(row["spend_usd"] for row in campaign_details), 2)
+        revenue_with_shipping = _revenue_with_shipping(
+            cumulative["order_revenue"],
+            cumulative["shipping_revenue"],
+        )
+        points.append({
+            "hour": hour,
+            "node_at": node_at,
+            "order_count": cumulative["order_count"],
+            "units": cumulative["units"],
+            "order_revenue": cumulative["order_revenue"],
+            "shipping_revenue": cumulative["shipping_revenue"],
+            "ad_spend": ad_spend,
+            "true_roas": None if unmatched_ads else _roas(revenue_with_shipping, ad_spend),
+            "order_data_status": "ok",
+            "ad_data_status": "ok" if campaign_details else None,
+        })
+    return points
+
+
 def _get_realtime_order_summary(
     target: date,
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
+    if unmatched_ads:
+        return {
+            "order_count": 0,
+            "line_count": 0,
+            "units": 0,
+            "order_revenue": 0.0,
+            "line_revenue": 0.0,
+            "shipping_revenue": 0.0,
+            "revenue_with_shipping": 0.0,
+            "first_order_at": None,
+            "last_order_at": None,
+            "last_order_updated_at": None,
+        }
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+    )
     sites = _normalize_site_codes(site_codes)
     rows = query(
         "SELECT COUNT(DISTINCT d.dxm_package_id) AS order_count, "
@@ -1707,14 +1966,24 @@ def _get_realtime_product_sales_stats(
     data_until: datetime,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
+    if unmatched_ads:
+        return []
     sites = _normalize_site_codes(site_codes)
+    if product_ids is not None:
+        selected_product_ids = list(product_ids)
+    elif product_id:
+        selected_product_ids = [product_id]
+    else:
+        selected_product_ids = None
     rows = get_dianxiaomi_product_sales_stats(
         target,
         target,
         site_codes=list(sites),
-        product_ids=[product_id] if product_id else None,
+        product_ids=selected_product_ids,
         data_until=data_until,
     )
     return [
@@ -1736,10 +2005,17 @@ def _get_daily_campaigns(
     target: date,
     *,
     product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     site_codes: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """从 Meta 日级最终报表按 campaign 聚合，字段对齐实时表的 campaign_details。"""
-    product_sql, product_args = _product_filter_sql("product_id", product_id)
+    product_sql, product_args = _product_filter_sql(
+        "product_id",
+        product_id,
+        product_ids=product_ids,
+        unmatched=unmatched_ads,
+    )
     sites = _normalize_site_codes(site_codes)
     allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
     account_sql = ""
@@ -1906,6 +2182,9 @@ def _build_realtime_overview_for_range(
     include_details: bool = False,
     include_profit_summary: bool = False,
     product_id: int | None = None,
+    product_launch_scope: str | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
     order_page: int = 1,
     order_page_size: int = ORDER_DETAIL_PAGE_SIZE,
     page: int = 1,
@@ -1919,26 +2198,38 @@ def _build_realtime_overview_for_range(
     """
     sites = _normalize_site_codes(site_codes)
     allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
-    product_sql, product_args = _product_filter_sql("d.product_id", product_id)
-    order_rows = query(
-        "SELECT d.meta_business_date, "
-        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
-        "COUNT(*) AS line_count, "
-        "SUM(COALESCE(d.quantity, 0)) AS units, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
-        "MAX(COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)) AS last_order_at, "
-        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines d "
-        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
-        "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
-        + product_sql +
-        "GROUP BY d.meta_business_date",
-        tuple([start, end] + product_args),
+    if unmatched_ads:
+        order_rows = []
+    else:
+        product_sql, product_args = _product_filter_sql(
+            "d.product_id",
+            product_id,
+            product_ids=product_ids,
+        )
+        order_rows = query(
+            "SELECT d.meta_business_date, "
+            "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
+            "COUNT(*) AS line_count, "
+            "SUM(COALESCE(d.quantity, 0)) AS units, "
+            "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+            "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+            "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+            "MAX(COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)) AS last_order_at, "
+            "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+            "FROM dianxiaomi_order_lines d "
+            "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+            "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+            "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
+            + product_sql +
+            "GROUP BY d.meta_business_date",
+            tuple([start, end] + product_args),
+        )
+    ad_product_sql, ad_product_args = _product_filter_sql(
+        "product_id",
+        product_id,
+        product_ids=product_ids,
+        unmatched=unmatched_ads,
     )
-    ad_product_sql, ad_product_args = _product_filter_sql("product_id", product_id)
     ad_account_sql = ""
     ad_account_args: list[Any] = []
     if allowed_account_ids is not None:
@@ -1978,6 +2269,8 @@ def _build_realtime_overview_for_range(
         start,
         end,
         product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
         site_codes=sites,
     )
     if corrected_ad_rows:
@@ -2039,6 +2332,8 @@ def _build_realtime_overview_for_range(
                 business_day,
                 snapshot_until,
                 product_id=product_id,
+                product_ids=product_ids,
+                unmatched_ads=unmatched_ads,
                 site_codes=sites,
             )
 
@@ -2061,7 +2356,7 @@ def _build_realtime_overview_for_range(
         summary[key] = round(summary[key], 2)
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
-    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    summary["true_roas"] = None if unmatched_ads else _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     summary["order_data_status"] = "ok"
     summary["ad_data_status"] = "ok"
@@ -2075,6 +2370,8 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
             site_codes=sites,
         )
         if include_details else 0
@@ -2084,6 +2381,8 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
             site_codes=sites,
         )
         if include_details else 0
@@ -2094,6 +2393,8 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
             site_codes=sites,
         )
         if include_profit else []
@@ -2103,6 +2404,8 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
             page=page,
             page_size=page_size,
             site_codes=sites,
@@ -2113,7 +2416,13 @@ def _build_realtime_overview_for_range(
         order_profit_all,
         total_ad_spend_usd=summary["ad_spend"],
     )
-    if include_profit and product_id is None and _site_codes_use_default(sites):
+    if (
+        include_profit
+        and product_id is None
+        and product_ids is None
+        and not unmatched_ads
+        and _site_codes_use_default(sites)
+    ):
         try:
             status_profit_summary = get_order_profit_status_summary(
                 date_from=start,
@@ -2153,6 +2462,8 @@ def _build_realtime_overview_for_range(
         "scope": {
             "stores": list(sites),
             "product_id": product_id,
+            "product_launch_scope": product_launch_scope,
+            "product_launch_product_count": len(product_ids or ()),
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
             "ad_source": ad_source,
@@ -2173,6 +2484,8 @@ def _build_realtime_overview_for_range(
             start,
             end,
             product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
             page=order_page,
             page_size=order_page_size,
             site_codes=sites,
@@ -2188,7 +2501,12 @@ def _build_realtime_overview_for_range(
             start,
             end,
             site_codes=list(sites),
-            product_ids=[product_id] if product_id else None,
+            product_ids=(
+                []
+                if unmatched_ads
+                else list(product_ids) if product_ids is not None
+                else [product_id] if product_id else None
+            ),
         ) if include_details else [],
     }
 
@@ -2207,10 +2525,16 @@ def get_realtime_roas_overview(
     page: int = 1,
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
     site_codes: list[str] | tuple[str, ...] | None = None,
+    product_launch_scope: str | None = None,
 ) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
     normalized_product_id = int(product_id) if product_id else None
     normalized_site_codes = _normalize_site_codes(site_codes)
+    normalized_launch_scope = normalize_product_launch_scope(product_launch_scope)
+    launch_product_ids: tuple[int, ...] | None = None
+    launch_scope_unmatched = normalized_launch_scope == "unmatched"
+    if normalized_launch_scope in {"new", "old"}:
+        launch_product_ids = _facade().get_product_ids_for_launch_scope(normalized_launch_scope)
     site_filter_active = not _site_codes_use_default(normalized_site_codes)
     allowed_account_ids = _resolve_ad_account_ids_for_sites(normalized_site_codes)
     normalized_page = _normalize_positive_int(page, 1)
@@ -2240,6 +2564,9 @@ def get_realtime_roas_overview(
                 include_details=include_details,
                 include_profit_summary=include_profit_summary,
                 product_id=normalized_product_id,
+                product_launch_scope=normalized_launch_scope,
+                product_ids=launch_product_ids,
+                unmatched_ads=launch_scope_unmatched,
                 order_page=normalized_order_page,
                 order_page_size=normalized_order_page_size,
                 page=normalized_page,
@@ -2262,8 +2589,8 @@ def get_realtime_roas_overview(
         data_until = day_start
         complete_hour_until = day_start
 
-    # 单店筛选下 roi_daily_roas_nodes 没有对应 store_scope 行 → 直接返回空 ROAS 节点列表
-    if site_filter_active:
+    # 单店/launch scope 下没有可复用的全量预聚合节点，避免展示全量大盘走势。
+    if site_filter_active or normalized_launch_scope:
         roas_node_rows: list[dict[str, Any]] = []
     else:
         roas_node_rows = query(
@@ -2275,26 +2602,7 @@ def get_realtime_roas_overview(
             "ORDER BY node_hour",
             (target, data_until),
         )
-    roas_nodes_by_hour = {int(row["node_hour"]): row for row in roas_node_rows if row.get("node_hour") is not None}
-    roas_points = [
-        {
-            "hour": hour,
-            "node_at": (roas_nodes_by_hour.get(hour) or {}).get("node_at"),
-            "order_count": int((roas_nodes_by_hour.get(hour) or {}).get("order_count") or 0),
-            "units": int((roas_nodes_by_hour.get(hour) or {}).get("units") or 0),
-            "order_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("order_revenue_usd")),
-            "shipping_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("shipping_revenue_usd")),
-            "ad_spend": _money((roas_nodes_by_hour.get(hour) or {}).get("ad_spend_usd")),
-            "true_roas": (
-                round(float((roas_nodes_by_hour.get(hour) or {}).get("true_roas")), 4)
-                if (roas_nodes_by_hour.get(hour) or {}).get("true_roas") is not None
-                else None
-            ),
-            "order_data_status": (roas_nodes_by_hour.get(hour) or {}).get("order_data_status"),
-            "ad_data_status": (roas_nodes_by_hour.get(hour) or {}).get("ad_data_status"),
-        }
-        for hour in range(24)
-    ]
+    roas_points = _build_roas_points_from_nodes(roas_node_rows)
 
     # 历史日期默认走主路径（日级最终报表 + dxm 订单日表），避免被实时 partial 截胡且数据已过期。
     # 刚过 16:00 时，上一 Meta 业务日可能已关闭但日终广告表尚未生成；此时用最后一个实时快照兜底。
@@ -2304,7 +2612,7 @@ def get_realtime_roas_overview(
         current_business_date,
         product_id=normalized_product_id,
         site_codes=normalized_site_codes,
-    )
+    ) if not normalized_launch_scope else False
     # Cap snapshot_at at "now" so a stale daily-final row (snapshot_at =
     # day_end, i.e., next-day BJ 16:00) cannot eclipse the freshest
     # realtime partial when target == current_business_date. For a
@@ -2415,6 +2723,8 @@ def get_realtime_roas_overview(
                 "scope": {
                     "stores": list(normalized_site_codes),
                     "product_id": normalized_product_id,
+                    "product_launch_scope": normalized_launch_scope,
+                    "product_launch_product_count": len(launch_product_ids or ()),
                     "ad_platforms": ["meta"],
                     "order_source": "dianxiaomi",
                     "ad_source": "meta_ad_realtime_daily_campaign_metrics",
@@ -2557,6 +2867,8 @@ def get_realtime_roas_overview(
             "scope": {
                 "stores": list(normalized_site_codes),
                 "product_id": normalized_product_id,
+                "product_launch_scope": normalized_launch_scope,
+                "product_launch_product_count": len(launch_product_ids or ()),
                 "ad_platforms": ["meta"],
                 "order_source": "dianxiaomi",
                 "ad_source": "roi_realtime_daily_snapshots",
@@ -2611,37 +2923,51 @@ def get_realtime_roas_overview(
         }
 
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql("d.product_id", normalized_product_id)
-    order_rows = query(
-        "SELECT HOUR(" + order_time_expr + ") AS hour, "
-        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
-        "COUNT(*) AS line_count, "
-        "SUM(COALESCE(d.quantity, 0)) AS units, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
-        "MIN(" + order_time_expr + ") AS first_order_at, "
-        "MAX(" + order_time_expr + ") AS last_order_at, "
-        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines d "
-        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE " + _site_codes_in_sql(normalized_site_codes, "d.site_code") +
-        "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
-        + product_sql +
-        "GROUP BY HOUR(" + order_time_expr + ") "
-        "ORDER BY hour",
-        tuple([day_start, day_end] + product_args),
-    )
+    if launch_scope_unmatched:
+        order_rows = []
+    else:
+        product_sql, product_args = _product_filter_sql(
+            "d.product_id",
+            normalized_product_id,
+            product_ids=launch_product_ids,
+        )
+        order_rows = query(
+            "SELECT HOUR(" + order_time_expr + ") AS hour, "
+            "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
+            "COUNT(*) AS line_count, "
+            "SUM(COALESCE(d.quantity, 0)) AS units, "
+            "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+            "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+            "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+            "MIN(" + order_time_expr + ") AS first_order_at, "
+            "MAX(" + order_time_expr + ") AS last_order_at, "
+            "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+            "FROM dianxiaomi_order_lines d "
+            "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+            "WHERE " + _site_codes_in_sql(normalized_site_codes, "d.site_code") +
+            "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+            + product_sql +
+            "GROUP BY HOUR(" + order_time_expr + ") "
+            "ORDER BY hour",
+            tuple([day_start, day_end] + product_args),
+        )
     realtime_ad_summary = None
-    if site_filter_active and target >= current_business_date:
+    if (site_filter_active or normalized_launch_scope) and target >= current_business_date:
         realtime_ad_summary = _get_realtime_ad_summary_from_campaigns(
             target,
             data_until,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
 
-    ad_product_sql, ad_product_args = _product_filter_sql("product_id", normalized_product_id)
+    ad_product_sql, ad_product_args = _product_filter_sql(
+        "product_id",
+        normalized_product_id,
+        product_ids=launch_product_ids,
+        unmatched=launch_scope_unmatched,
+    )
     ad_account_sql_live = ""
     ad_account_args_live: list[Any] = []
     if realtime_ad_summary is not None:
@@ -2692,6 +3018,8 @@ def get_realtime_roas_overview(
             target,
             target,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
         if corrected_ad:
@@ -2699,6 +3027,17 @@ def get_realtime_roas_overview(
             ad_rows = [corrected_ad]
 
     orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
+    if normalized_launch_scope:
+        roas_points = _build_scoped_roas_points(
+            target=target,
+            day_start=day_start,
+            data_until=data_until,
+            orders_by_hour=orders_by_hour,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            site_codes=normalized_site_codes,
+        )
     ad = ad_rows[0] if ad_rows else {}
     summary = {
         "order_count": 0,
@@ -2746,7 +3085,7 @@ def get_realtime_roas_overview(
             last_order_updated_at = row["last_order_updated_at"]
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
-    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    summary["true_roas"] = None if launch_scope_unmatched else _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
     order_detail_total = (
@@ -2754,6 +3093,8 @@ def get_realtime_roas_overview(
             target,
             data_until,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
         if include_details else 0
@@ -2763,6 +3104,8 @@ def get_realtime_roas_overview(
             target,
             data_until,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
         if include_details else 0
@@ -2772,6 +3115,8 @@ def get_realtime_roas_overview(
         day_start,
         data_until,
         product_id=normalized_product_id,
+        product_ids=launch_product_ids,
+        unmatched_ads=launch_scope_unmatched,
         site_codes=normalized_site_codes,
     ) if include_profit_summary else []
     order_profit_details = _get_realtime_order_profit_details(
@@ -2779,6 +3124,8 @@ def get_realtime_roas_overview(
         day_start,
         data_until,
         product_id=normalized_product_id,
+        product_ids=launch_product_ids,
+        unmatched_ads=launch_scope_unmatched,
         page=normalized_page,
         page_size=normalized_page_size,
         site_codes=normalized_site_codes,
@@ -2789,6 +3136,8 @@ def get_realtime_roas_overview(
         else _get_daily_campaigns(
             target,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
     ) if include_details else []
@@ -2812,6 +3161,8 @@ def get_realtime_roas_overview(
         "scope": {
             "stores": list(normalized_site_codes),
             "product_id": normalized_product_id,
+            "product_launch_scope": normalized_launch_scope,
+            "product_launch_product_count": len(launch_product_ids or ()),
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",
             "ad_source": ad_source,
@@ -2832,6 +3183,8 @@ def get_realtime_roas_overview(
             day_start,
             data_until,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             page=normalized_order_page,
             page_size=normalized_order_page_size,
             site_codes=normalized_site_codes,
@@ -2858,6 +3211,8 @@ def get_realtime_roas_overview(
             target,
             data_until,
             product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         ) if include_details else [],
     }
