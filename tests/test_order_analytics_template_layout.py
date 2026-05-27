@@ -182,6 +182,24 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
     assert "product_id 为空订单同口径核算" in load_block
 
 
+def test_realtime_scope_cards_use_compact_tablet_and_mobile_columns():
+    template = _template_source()
+    tablet_block = template[
+        template.index("@media (min-width: 769px) and (max-width: 1180px)"):
+        template.index(".ppr-dialog", template.index("@media (min-width: 769px) and (max-width: 1180px)"))
+    ]
+    mobile_block = template[
+        template.index("@media (max-width: 768px)"):
+        template.index("@media (max-width: 480px)")
+    ]
+
+    assert ".oar-scope-card-grid" in tablet_block
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in tablet_block
+    assert ".oar-scope-card" in tablet_block
+    assert "padding: var(--space-3);" in tablet_block
+    assert "grid-template-columns: 1fr;" in mobile_block
+
+
 def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
     template = _template_source()
