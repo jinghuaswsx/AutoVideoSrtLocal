@@ -145,6 +145,19 @@ from .dashboard import (
     _load_products,
     _summarize_dashboard,
 )
+from .product_ad_launch import (
+    AD_MATCH_SOURCE,
+    FALLBACK_SOURCE,
+    NEW_PRODUCT_WINDOW_DAYS,
+    VALID_PRODUCT_LAUNCH_SCOPES,
+    backfill_product_ad_launch_dates,
+    beijing_today,
+    classify_launch_date,
+    get_product_ids_for_launch_scope,
+    normalize_product_launch_scope,
+    refresh_ad_match_launch_dates_for_products,
+    seed_missing_fallback_launch_dates,
+)
 
 
 def get_orphan_orders(*, limit: int = 200, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
@@ -169,5 +182,4 @@ def get_orphan_orders(*, limit: int = 200, offset: int = 0) -> tuple[list[dict[s
     )
     rows = query(rows_sql, (int(limit), int(offset)))
     return list(rows), total
-
 
