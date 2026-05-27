@@ -157,16 +157,34 @@ class LinkCheckRuntime:
             )
             downloaded = self.fetcher.download_images(page.images, task["task_dir"])
 
-            task["items"] = []
+            existing_items = {
+                it["id"]: it for it in (task.get("items") or [])
+                if it.get("status") in {"done", "failed"}
+            }
+
+            analyzed_count = sum(1 for it in existing_items.values() if it.get("status") == "done")
+            failed_count = sum(1 for it in existing_items.values() if it.get("status") == "failed")
+            compared_count = 0
+            binary_checked_count = 0
+            same_image_llm_done_count = 0
+            for it in existing_items.values():
+                if it.get("reference_match", {}).get("status") in {"matched", "not_matched"}:
+                    compared_count += 1
+                if it.get("binary_quick_check", {}).get("status") in {"pass", "fail"}:
+                    binary_checked_count += 1
+                if it.get("same_image_llm", {}).get("status") == "done":
+                    same_image_llm_done_count += 1
+
             task["progress"] = {
                 "total": len(downloaded),
                 "downloaded": len(downloaded),
-                "analyzed": 0,
-                "compared": 0,
-                "binary_checked": 0,
-                "same_image_llm_done": 0,
-                "failed": 0,
+                "analyzed": analyzed_count,
+                "compared": compared_count,
+                "binary_checked": binary_checked_count,
+                "same_image_llm_done": same_image_llm_done_count,
+                "failed": failed_count,
             }
+            task["items"] = []
             task["summary"] = _build_summary(task["items"])
 
             self._transition_to_step(
@@ -187,28 +205,36 @@ class LinkCheckRuntime:
             original_paths = [orig["local_path"] for orig in originals]
             original_index = {orig["local_path"]: orig for orig in originals}
 
+            new_items = []
             analyze_failed = False
             for item in downloaded:
-                result = self._build_item_result(item, reference_paths, original_paths)
-                try:
-                    self._analyze_one(
-                        task,
-                        result,
-                        item,
-                        reference_paths,
-                        reference_index,
-                        original_paths,
-                        original_index,
-                    )
-                    task["progress"]["analyzed"] += 1
-                    result["status"] = "done"
-                except Exception as exc:
-                    task["progress"]["failed"] += 1
-                    result["status"] = "failed"
-                    result["error"] = str(exc)
-                    analyze_failed = True
+                item_id = item["id"]
+                if item_id in existing_items:
+                    result = existing_items[item_id]
+                    if result.get("status") == "failed":
+                        analyze_failed = True
+                else:
+                    result = self._build_item_result(item, reference_paths, original_paths)
+                    try:
+                        self._analyze_one(
+                            task,
+                            result,
+                            item,
+                            reference_paths,
+                            reference_index,
+                            original_paths,
+                            original_index,
+                        )
+                        task["progress"]["analyzed"] += 1
+                        result["status"] = "done"
+                    except Exception as exc:
+                        task["progress"]["failed"] += 1
+                        result["status"] = "failed"
+                        result["error"] = str(exc)
+                        analyze_failed = True
 
-                task["items"].append(result)
+                new_items.append(result)
+                task["items"] = new_items
                 task["summary"] = _build_summary(task["items"])
                 self._persist(task_id, task)
 

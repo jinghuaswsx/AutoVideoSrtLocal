@@ -219,7 +219,7 @@ def test_persist_project_recovery_uses_project_state_helper(monkeypatch):
     assert direct_updates == []
 
 
-def test_recover_project_state_marks_orphaned_link_check_as_failed():
+def test_recover_project_state_heals_orphaned_link_check_to_running():
     from appcore import task_recovery
 
     changed, recovered, status = task_recovery.recover_project_state(
@@ -239,13 +239,13 @@ def test_recover_project_state_marks_orphaned_link_check_as_failed():
     )
 
     assert changed is True
-    assert status == "failed"
+    assert status == "running"
     assert recovered["items"][0]["id"] == "site-1"
-    assert recovered["steps"]["analyze"] == "error"
-    assert "服务重启" in recovered["error"]
+    assert recovered["steps"]["analyze"] == "queued"
+    assert recovered["error"] == ""
 
 
-def test_recover_project_state_marks_running_link_check_summary_unfinished():
+def test_recover_project_state_heals_running_link_check_summary():
     from appcore import task_recovery
 
     changed, recovered, status = task_recovery.recover_project_state(
@@ -260,7 +260,7 @@ def test_recover_project_state_marks_running_link_check_summary_unfinished():
     )
 
     assert changed is True
-    assert status == "failed"
+    assert status == "running"
     assert recovered["summary"]["overall_decision"] == "unfinished"
 
 
@@ -327,8 +327,9 @@ def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     assert writes[0][1][2] == "vc-orphan"
 
 
-def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypatch):
+def test_recover_all_interrupted_tasks_resumes_running_link_check_rows(monkeypatch):
     from appcore import task_recovery
+    from appcore import runner_dispatch
 
     row = {
         "id": "lc-boot",
@@ -344,9 +345,10 @@ def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypat
         ),
     }
     persisted = []
+    resumed = []
 
     def fake_db_query(sql, args=()):
-        if "'link_check'" in sql and "'analyzing'" in sql:
+        if "'link_check'" in sql:
             return [row]
         return []
 
@@ -358,12 +360,21 @@ def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypat
         lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
     )
 
-    recovered = task_recovery.recover_all_interrupted_tasks()
+    original_link_check_start = runner_dispatch._link_check_start
+    try:
+        runner_dispatch.register_link_check_runner(
+            start=lambda task_id: resumed.append(task_id) or True
+        )
 
-    assert recovered == 1
-    assert persisted[0][0] == "lc-boot"
-    assert persisted[0][2] == "failed"
-    assert persisted[0][1]["steps"]["analyze"] == "error"
+        recovered = task_recovery.recover_all_interrupted_tasks()
+
+        assert recovered == 1
+        assert persisted[0][0] == "lc-boot"
+        assert persisted[0][2] == "running"
+        assert persisted[0][1]["steps"]["analyze"] == "queued"
+        assert resumed == ["lc-boot"]
+    finally:
+        runner_dispatch._link_check_start = original_link_check_start
 
 
 def test_recover_all_interrupted_tasks_skips_active_link_check_rows(monkeypatch):

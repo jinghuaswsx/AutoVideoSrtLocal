@@ -179,13 +179,18 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         recovered["review_started_at"] = None
         changed = True
     elif project_type == "link_check" and recovered.get("status") in LINK_CHECK_RUNNING_STATUSES:
-        changed = _mark_running_steps_as_error(recovered) or changed
-        recovered["status"] = "failed"
-        recovered["error"] = RECOVERY_ERROR_MESSAGE
+        steps = recovered.setdefault("steps", {})
+        step_messages = recovered.setdefault("step_messages", {})
+        for s in ["lock_locale", "download", "analyze", "summarize"]:
+            if steps.get(s) in {"running", "error"}:
+                steps[s] = "queued"
+                step_messages[s] = "准备恢复执行..."
+        recovered["status"] = "running"
+        recovered["error"] = ""
         summary = recovered.setdefault("summary", {})
         if summary.get("overall_decision") == "running":
             summary["overall_decision"] = "unfinished"
-        return True, recovered, "failed"
+        return True, recovered, "running"
     elif project_type == "image_translate" and recovered.get("status") in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES:
         # image_translate recovers by item status:
         #   A. all items terminal -> heal the task-level status;
@@ -411,22 +416,36 @@ def recover_all_interrupted_tasks() -> int:
 def _auto_resume_after_recovery(task_id: str, project_type: str, recovered: dict, status: str) -> None:
     """某些项目类型在恢复后需要立即拉起 worker 继续跑（如 image_translate 的 APIMART
     异步任务，要继续轮询上游结果）。单独抽出便于测试/失败隔离。"""
-    if project_type != "image_translate" or status != "running":
+    if status != "running":
         return
-    user_id = recovered.get("_user_id")
-    try:
-        user_id = int(user_id) if user_id is not None else None
-    except (TypeError, ValueError):
-        user_id = None
-    try:
-        from appcore.runner_dispatch import start_image_translate_runner
-        started = start_image_translate_runner(task_id, user_id)
-        log.warning(
-            "[task_recovery] auto-resumed image_translate task %s (started=%s)",
-            task_id, started,
-        )
-    except Exception:
-        log.warning(
-            "[task_recovery] failed to auto-resume image_translate task %s",
-            task_id, exc_info=True,
-        )
+    if project_type == "image_translate":
+        user_id = recovered.get("_user_id")
+        try:
+            user_id = int(user_id) if user_id is not None else None
+        except (TypeError, ValueError):
+            user_id = None
+        try:
+            from appcore.runner_dispatch import start_image_translate_runner
+            started = start_image_translate_runner(task_id, user_id)
+            log.warning(
+                "[task_recovery] auto-resumed image_translate task %s (started=%s)",
+                task_id, started,
+            )
+        except Exception:
+            log.warning(
+                "[task_recovery] failed to auto-resume image_translate task %s",
+                task_id, exc_info=True,
+            )
+    elif project_type == "link_check":
+        try:
+            from appcore.runner_dispatch import start_link_check_runner
+            started = start_link_check_runner(task_id)
+            log.warning(
+                "[task_recovery] auto-resumed link_check task %s (started=%s)",
+                task_id, started,
+            )
+        except Exception:
+            log.warning(
+                "[task_recovery] failed to auto-resume link_check task %s",
+                task_id, exc_info=True,
+            )

@@ -10,6 +10,7 @@ OmniStartFunc = Callable[[str, int | None], object]
 OmniResumeFunc = Callable[[str, str, int | None], object]
 JaStartFunc = Callable[[str, int | None], object]
 JaResumeFunc = Callable[[str, str, int | None], object]
+LinkCheckStartFunc = Callable[[str], bool]
 
 _image_translate_start: ImageStartFunc | None = None
 _image_translate_is_running: ImageRunningFunc | None = None
@@ -21,6 +22,7 @@ _omni_translate_v2_start: OmniStartFunc | None = None
 _omni_translate_v2_resume: OmniResumeFunc | None = None
 _ja_translate_start: JaStartFunc | None = None
 _ja_translate_resume: JaResumeFunc | None = None
+_link_check_start: LinkCheckStartFunc | None = None
 
 
 def clear_runner_registry() -> None:
@@ -29,6 +31,7 @@ def clear_runner_registry() -> None:
     global _omni_translate_start, _omni_translate_resume
     global _omni_translate_v2_start, _omni_translate_v2_resume
     global _ja_translate_start, _ja_translate_resume
+    global _link_check_start
     _image_translate_start = None
     _image_translate_is_running = None
     _multi_translate_start = None
@@ -39,6 +42,7 @@ def clear_runner_registry() -> None:
     _omni_translate_v2_resume = None
     _ja_translate_start = None
     _ja_translate_resume = None
+    _link_check_start = None
 
 
 def register_image_translate_runner(
@@ -165,3 +169,14 @@ def resume_ja_translate_runner(
     if _ja_translate_resume is None:
         raise RuntimeError("ja_translate resume runner is not registered")
     return _ja_translate_resume(task_id, start_step, user_id)
+
+
+def register_link_check_runner(*, start: LinkCheckStartFunc) -> None:
+    global _link_check_start
+    _link_check_start = start
+
+
+def start_link_check_runner(task_id: str) -> bool:
+    if _link_check_start is None:
+        raise RuntimeError("link_check runner is not registered")
+    return bool(_link_check_start(task_id))

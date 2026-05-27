@@ -1158,3 +1158,130 @@ def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
     assert saved["summary"]["replaced_count"] == 1
     assert saved["summary"]["pass_count"] == 1
 
+
+def test_link_check_resumption(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    first_path = task_dir / "site-1.jpg"
+    first_path.write_bytes(b"first")
+    second_path = task_dir / "site-2.jpg"
+    second_path.write_bytes(b"second")
+
+    task = task_state.create_link_check(
+        "lc-resumption",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    # Pre-populate items: one already completed ("done"), one not started.
+    task["items"] = [
+        {
+            "id": "site-1",
+            "kind": "carousel",
+            "source_url": "https://img/site-1.jpg",
+            "_local_path": str(first_path),
+            "download_evidence": {},
+            "analysis": {
+                "decision": "pass",
+                "decision_source": "gemini_quality_audit",
+                "quality_score": 90,
+                "quality_reason": "already done previously",
+            },
+            "reference_match": {"status": "matched", "reference_path": "some-ref-path"},
+            "original_match": {"status": "not_provided", "score": 0.0},
+            "binary_quick_check": {"status": "pass", "reason": "already done"},
+            "same_image_llm": {"status": "done", "answer": "是"},
+            "is_replaced": True,
+            "status": "done",
+            "error": "",
+        }
+    ]
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site-1.jpg",
+                            "local_path": str(first_path),
+                        },
+                        {
+                            "id": "site-2",
+                            "kind": "carousel",
+                            "source_url": "https://img/site-2.jpg",
+                            "local_path": str(second_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    analyze_calls = []
+    def _mock_analyze(image_path, *, target_language, target_language_name):
+        analyze_calls.append((image_path, target_language))
+        return {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "Second image text",
+            "quality_score": 85,
+            "quality_reason": "freshly evaluated",
+            "needs_replacement": False,
+        }
+
+    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-resumption")
+
+    saved = task_state.get("lc-resumption")
+    assert saved["status"] == "done"
+    assert len(saved["items"]) == 2
+
+    # Check that first item is preserved exactly
+    item1 = saved["items"][0]
+    assert item1["id"] == "site-1"
+    assert item1["status"] == "done"
+    assert item1["analysis"]["quality_reason"] == "already done previously"
+
+    # Check that second item is processed
+    item2 = saved["items"][1]
+    assert item2["id"] == "site-2"
+    assert item2["status"] == "done"
+    assert item2["analysis"]["quality_reason"] == "freshly evaluated"
+
+    # Check that analyze was only called for site-2, not site-1!
+    assert len(analyze_calls) == 1
+    assert analyze_calls[0][0] == str(second_path)
+
+    # Check progress stats (accumulated)
+    assert saved["progress"]["total"] == 2
+    assert saved["progress"]["downloaded"] == 2
+    assert saved["progress"]["analyzed"] == 2
+    assert saved["progress"]["compared"] == 1  # 1 from pre-populated matched reference
+    assert saved["progress"]["binary_checked"] == 1
+    assert saved["progress"]["same_image_llm_done"] == 1
+
