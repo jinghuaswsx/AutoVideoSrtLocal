@@ -444,9 +444,34 @@
     }
   }
 
+  const langZhMap = {
+    'en': '英语',
+    'de': '德语',
+    'es': '西班牙语',
+    'fr': '法语',
+    'it': '意大利语',
+    'ja': '日语',
+    'ko': '韩语',
+    'pt': '葡萄牙语',
+    'ru': '俄语',
+    'zh': '中文'
+  };
+
   function formatLanguageLabel(code) {
     const raw = String(code || '').trim().toLowerCase();
-    return languageNameMap[raw] || raw.toUpperCase();
+    const zhName = langZhMap[raw];
+    if (zhName) {
+      return `${zhName}${raw.toUpperCase()}`;
+    }
+    const apiName = languageNameMap[raw];
+    if (apiName) {
+      const match = apiName.match(/^([^(（\s]+)/);
+      if (match) {
+        return `${match[1]}${raw.toUpperCase()}`;
+      }
+      return apiName;
+    }
+    return raw.toUpperCase();
   }
 
   function renderStatusBadge(hasAd, count) {
@@ -514,17 +539,14 @@
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
             
           const textsHtml = (it.texts || []).map(t => {
-            const langName = t.lang || '英语 EN';
-            const langPrefix = `[${escapeHtml(langName)}] `;
-            
             // 全量拼接文案
-            const fullCopyText = `标题：${langPrefix}${t.title || ''}\n文案：${t.message || ''}\n描述：${t.description || ''}`;
-            const titleFull = `标题：${langPrefix}${t.title || ''}`;
+            const fullCopyText = `标题：${t.title || ''}\n文案：${t.message || ''}\n描述：${t.description || ''}`;
+            const titleFull = `标题：${t.title || ''}`;
             const messageFull = `文案：${t.message || ''}`;
             const descFull = `描述：${t.description || ''}`;
 
             return `<div style="margin-bottom:8px; font-size:13px; line-height:1.5; border-left:3px solid var(--oc-accent, #3b82f6); padding-left:8px; max-width: 100%; overflow: hidden;">
-                      <div title="${escapeHtml(titleFull)}" style="color:var(--oc-fg, #111827); font-weight:500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">标题：${langPrefix}${escapeHtml(t.title || '')}</div>
+                      <div title="${escapeHtml(titleFull)}" style="color:var(--oc-fg, #111827); font-weight:500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">标题：${escapeHtml(t.title || '')}</div>
                       <div title="${escapeHtml(messageFull)}" style="color:var(--oc-fg, #111827); margin-top:3px; font-weight:400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">文案：${escapeHtml(t.message || '')}</div>
                       <div title="${escapeHtml(descFull)}" style="color:var(--oc-fg-muted, #4b5563); margin-top:3px; font-weight:400; font-size:12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">描述：${escapeHtml(t.description || '')}</div>
                       <div style="margin-top:6px;">
