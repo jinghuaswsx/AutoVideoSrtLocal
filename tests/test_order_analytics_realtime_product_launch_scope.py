@@ -4,7 +4,7 @@ Docs-anchor: docs/superpowers/specs/2026-05-27-new-product-launch-analysis-desig
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import Flask
 
@@ -60,10 +60,11 @@ def test_new_launch_scope_roas_points_use_scoped_realtime_campaigns(monkeypatch)
             "FROM meta_ad_realtime_daily_campaign_metrics" in sql
             and "campaign_id, campaign_name" in sql
         ):
-            return [
-                {
-                    "ad_account_id": "act_1",
-                    "ad_account_name": "Meta",
+                return [
+                    {
+                        "snapshot_at": datetime(2026, 5, 10, 10, 0),
+                        "ad_account_id": "act_1",
+                        "ad_account_name": "Meta",
                     "campaign_id": "cmp_1",
                     "campaign_name": "SKU-101 launch",
                     "normalized_campaign_code": "sku-101",
@@ -72,10 +73,11 @@ def test_new_launch_scope_roas_points_use_scoped_realtime_campaigns(monkeypatch)
                     "purchase_value_usd": 20,
                     "impressions": 100,
                     "clicks": 5,
-                },
-                {
-                    "ad_account_id": "act_1",
-                    "ad_account_name": "Meta",
+                    },
+                    {
+                        "snapshot_at": datetime(2026, 5, 10, 10, 0),
+                        "ad_account_id": "act_1",
+                        "ad_account_name": "Meta",
                     "campaign_id": "cmp_2",
                     "campaign_name": "other",
                     "normalized_campaign_code": "other",
@@ -114,15 +116,17 @@ def test_unmatched_launch_scope_returns_empty_order_side_and_unmatched_ads(monke
                 "last_ad_updated_at": datetime(2026, 5, 10, 16, 30),
             }]
         if "FROM meta_ad_daily_campaign_metrics" in sql and "campaign_name" in sql:
-            return [{
-                "ad_account_id": "act_1",
-                "ad_account_name": "Meta",
-                "campaign_name": "unmatched-campaign",
-                "normalized_campaign_code": "unmatched-campaign",
-                "result_count": 0,
-                "spend": 25.5,
-                "purchase_value": 0,
-            }]
+                return [{
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Meta",
+                    "campaign_name": "unmatched-campaign",
+                    "normalized_campaign_code": "unmatched-campaign",
+                    "result_count": 0,
+                    "spend": 25.5,
+                    "spend_usd": 25.5,
+                    "purchase_value": 0,
+                    "purchase_value_usd": 0,
+                }]
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
@@ -176,6 +180,125 @@ def test_product_id_and_launch_scope_take_intersection(monkeypatch):
     assert result["scope"]["product_id"] == 999
     assert result["scope"]["product_launch_scope"] == "new"
     assert any("1=0" in sql for sql in calls)
+
+
+def test_product_sales_stats_uses_product_id_and_scope_intersection(monkeypatch):
+    captured: list[list[int] | None] = []
+
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101, 102))
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [])
+    monkeypatch.setattr(
+        realtime_oa,
+        "get_dianxiaomi_product_sales_stats",
+        lambda *args, **kwargs: captured.append(kwargs.get("product_ids")) or [],
+    )
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-09",
+        now=datetime(2026, 5, 10, 12, 0),
+        include_details=True,
+        product_id=999,
+        product_launch_scope="new",
+    )
+
+    assert result["product_sales_stats"] == []
+    assert captured[-1] == []
+
+
+def test_unmatched_daily_purchase_rows_exclude_resolvable_campaign(monkeypatch):
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 101, "product_code": "matched"} if code == "matched" else None,
+    )
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 9),
+                    "ad_account_id": "act_1",
+                    "campaign_name": "matched campaign",
+                    "normalized_campaign_code": "matched",
+                    "matched_product_code": None,
+                    "product_id": None,
+                    "spend_usd": 100,
+                    "purchase_value_usd": 200,
+                    "result_count": 2,
+                    "updated_at": datetime(2026, 5, 10, 10, 0),
+                },
+                {
+                    "meta_business_date": date(2026, 5, 9),
+                    "ad_account_id": "act_1",
+                    "campaign_name": "unmatched campaign",
+                    "normalized_campaign_code": "unmatched",
+                    "matched_product_code": None,
+                    "product_id": None,
+                    "spend_usd": 5,
+                    "purchase_value_usd": 0,
+                    "result_count": 1,
+                    "updated_at": datetime(2026, 5, 10, 11, 0),
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = realtime_oa._summarize_daily_campaign_purchase_rows(
+        date(2026, 5, 9),
+        date(2026, 5, 9),
+        unmatched_ads=True,
+    )
+
+    assert summary["ad_spend"] == 5
+    assert summary["meta_purchases"] == 1
+
+
+def test_scoped_roas_points_read_realtime_campaign_rows_once(monkeypatch):
+    day_start = datetime(2026, 5, 9, 16, 0)
+    query_counts = {"campaign_rows": 0}
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 101, "product_code": "sku-101"} if code == "sku-101" else None,
+    )
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "campaign_id, campaign_name" in sql:
+            query_counts["campaign_rows"] += 1
+            return [
+                {
+                    "snapshot_at": day_start + timedelta(hours=1),
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Meta",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "SKU-101 launch",
+                    "normalized_campaign_code": "sku-101",
+                    "result_count": 1,
+                    "spend_usd": 12.5,
+                    "purchase_value_usd": 20,
+                    "impressions": 100,
+                    "clicks": 5,
+                }
+            ]
+        if "SELECT ad_account_id, MAX(snapshot_at) AS latest_at" in sql:
+            return [{"ad_account_id": "act_1", "latest_at": day_start + timedelta(hours=1)}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    points = realtime_oa._build_scoped_roas_points(
+        target=date(2026, 5, 9),
+        day_start=day_start,
+        data_until=day_start + timedelta(hours=2),
+        orders_by_hour={},
+        product_ids=(101,),
+        site_codes=("newjoy", "omurio"),
+    )
+
+    assert query_counts["campaign_rows"] == 1
+    assert any(point["ad_spend"] == 12.5 for point in points)
 
 
 def test_range_launch_scope_applies_product_filters(monkeypatch):
