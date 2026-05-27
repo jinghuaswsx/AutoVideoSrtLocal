@@ -281,6 +281,16 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
     if biz_date:
         where.append("s.biz_date = %s")
         params.append(biz_date)
+    else:
+        # Deduplicate: only keep the latest snapshot per item_id
+        where.append(
+            """s.id = (
+                SELECT s2.id FROM tabcut_goods_snapshots s2
+                WHERE s2.item_id = s.item_id AND s2.region = s.region
+                ORDER BY s2.biz_date DESC, s2.id DESC
+                LIMIT 1
+            )"""
+        )
 
     source_category = goods_category_source(_text_arg(args, "source_category"))
     if source_category:
