@@ -507,12 +507,22 @@ class LinkCheckFetcher:
             try:
                 page.goto(nocache_url, wait_until="load", timeout=30000)
                 
-                # Safe natural scrolling to trigger lazyloading
+                # Safe natural scrolling and cycle carousel slides to trigger lazyload translations
                 try:
-                    page.evaluate("""
+                    page.evaluate("""async () => {
                         window.scrollTo(0, 300);
                         window.dispatchEvent(new Event('scroll'));
-                    """)
+                        await new Promise(r => setTimeout(r, 500));
+                        
+                        // Find next slide button and click it to cycle slides and trigger lazyload
+                        let nextBtns = document.querySelectorAll('.flickityt4s-button.next, .slick-next, .t4s-slider-btn-next, [class*="next-button"], [class*="slider-btn-next"]');
+                        for (let btn of nextBtns) {
+                            for (let i = 0; i < 12; i++) {
+                                btn.click();
+                                await new Promise(r => setTimeout(r, 150));
+                            }
+                        }
+                    }""")
                 except Exception:
                     pass
                 
@@ -541,10 +551,19 @@ class LinkCheckFetcher:
                         page.goto(retry_url, wait_until="load", timeout=30000)
                         
                         try:
-                            page.evaluate("""
+                            page.evaluate("""async () => {
                                 window.scrollTo(0, 300);
                                 window.dispatchEvent(new Event('scroll'));
-                            """)
+                                await new Promise(r => setTimeout(r, 500));
+                                
+                                let nextBtns = document.querySelectorAll('.flickityt4s-button.next, .slick-next, .t4s-slider-btn-next, [class*="next-button"], [class*="slider-btn-next"]');
+                                for (let btn of nextBtns) {
+                                    for (let i = 0; i < 12; i++) {
+                                        btn.click();
+                                        await new Promise(r => setTimeout(r, 150));
+                                    }
+                                }
+                            }""")
                         except Exception:
                             pass
                             
