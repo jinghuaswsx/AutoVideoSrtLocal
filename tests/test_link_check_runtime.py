@@ -285,11 +285,11 @@ def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
 
     saved = task_state.get("lc-binary-pass")
     item = saved["items"][0]
-    assert len(analyze_calls) == 1
+    assert len(analyze_calls) == 0
     assert item["binary_quick_check"]["status"] == "pass"
     assert item["same_image_llm"]["answer"] == "是"
     assert item["analysis"]["decision"] == "pass"
-    assert item["analysis"]["decision_source"] == "gemini_quality_audit"
+    assert item["analysis"]["decision_source"] == "green_pass"
     assert "换图检测已换到位" in item["analysis"]["quality_reason"]
     assert saved["summary"]["binary_checked_count"] == 1
     assert saved["summary"]["same_image_llm_done_count"] == 1
@@ -1144,7 +1144,7 @@ def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
 
     saved = task_state.get("lc-cdn-match")
     item = saved["items"][0]
-    assert len(analyze_calls) == 1
+    assert len(analyze_calls) == 0
     assert item["is_replaced"] is True
     assert item["reference_match"]["status"] == "matched"
     assert item["reference_match"]["reference_id"] == "ref-1"
@@ -1153,10 +1153,78 @@ def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
     assert item["same_image_llm"]["answer"] == "是"
     assert item["same_image_llm"]["channel"] == "shopify_cdn_url_match"
     assert item["analysis"]["decision"] == "pass"
-    assert item["analysis"]["decision_source"] == "shopify_cdn_url_match"
+    assert item["analysis"]["decision_source"] == "green_pass"
     assert "Shopify CDN URL 匹配" in item["analysis"]["quality_reason"]
     assert saved["summary"]["replaced_count"] == 1
     assert saved["summary"]["pass_count"] == 1
+
+
+def test_runtime_bypasses_small_images_by_size(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+    from PIL import Image
+
+    task_dir = _workspace_tmp()
+    # 创建一个极小的 50x50 图片来模拟小 Icon 杂图
+    site_path = task_dir / "small_icon.jpg"
+    img = Image.new("RGB", (50, 50), "white")
+    img.save(site_path)
+
+    task_state.create_link_check(
+        "lc-small-size",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/small_icon.jpg",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    analyze_calls = []
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.analyze_image",
+        lambda *args, **kwargs: analyze_calls.append(args),
+    )
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-small-size")
+
+    saved = task_state.get("lc-small-size")
+    item = saved["items"][0]
+    assert len(analyze_calls) == 0
+    assert item["is_replaced"] is None
+    assert item["analysis"]["decision"] == "pass"
+    assert item["analysis"]["decision_source"] == "size_threshold_bypass"
+    assert "图片尺寸过小" in item["analysis"]["text_summary"]
 
 
 def test_link_check_resumption(monkeypatch):
@@ -1284,4 +1352,3 @@ def test_link_check_resumption(monkeypatch):
     assert saved["progress"]["compared"] == 1  # 1 from pre-populated matched reference
     assert saved["progress"]["binary_checked"] == 1
     assert saved["progress"]["same_image_llm_done"] == 1
-
