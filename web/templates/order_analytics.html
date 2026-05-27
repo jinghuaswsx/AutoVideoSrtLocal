@@ -2976,6 +2976,14 @@
             <option value="">全部广告户</option>
           </select>
         </label>
+        <div class="oad-range-presets" role="group" aria-label="{{ label }} 快捷日期">
+          <button type="button" class="oad-seg is-active" data-ads-level-range="today" data-ads-level="{{ level }}" aria-pressed="true">今天</button>
+          <button type="button" class="oad-seg" data-ads-level-range="yesterday" data-ads-level="{{ level }}" aria-pressed="false">昨天</button>
+          <button type="button" class="oad-seg" data-ads-level-range="thisWeek" data-ads-level="{{ level }}" aria-pressed="false">本周</button>
+          <button type="button" class="oad-seg" data-ads-level-range="lastWeek" data-ads-level="{{ level }}" aria-pressed="false">上周</button>
+          <button type="button" class="oad-seg" data-ads-level-range="thisMonth" data-ads-level="{{ level }}" aria-pressed="false">本月</button>
+          <button type="button" class="oad-seg" data-ads-level-range="lastMonth" data-ads-level="{{ level }}" aria-pressed="false">上月</button>
+        </div>
         <div class="oad-date-range-field" role="group" aria-label="{{ label }} 日期范围">
           <input type="date" data-ads-list-start="{{ level }}" aria-label="开始日期">
           <span class="oad-date-range-sep">至</span>
@@ -6690,6 +6698,38 @@
     if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso();
   }
 
+  function adsSetLevelRange(level, range) {
+    var bounds = resolveCountryRange(range || 'today');
+    var startEl = document.querySelector('[data-ads-list-start="' + level + '"]');
+    var endEl = document.querySelector('[data-ads-list-end="' + level + '"]');
+    if (startEl) startEl.value = formatDateInput(bounds.start);
+    if (endEl) endEl.value = formatDateInput(bounds.end);
+    adsSyncLevelRangeSelection(level);
+    adsLevelState[level].listPage = 1;
+    adsLoadList(level);
+  }
+
+  function adsSyncLevelRangeSelection(level) {
+    var startEl = document.querySelector('[data-ads-list-start="' + level + '"]');
+    var endEl = document.querySelector('[data-ads-list-end="' + level + '"]');
+    var currentStart = startEl ? startEl.value : '';
+    var currentEnd = endEl ? endEl.value : '';
+    var matchedRange = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+      var bounds = resolveCountryRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matchedRange = range;
+        return true;
+      }
+      return false;
+    });
+    document.querySelectorAll('[data-ads-level-range][data-ads-level="' + level + '"]').forEach(function(btn) {
+      var isActive = btn.dataset.adsLevelRange === matchedRange;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
   function adsApplyDeepLinkDateRange(level) {
     var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
@@ -6983,6 +7023,17 @@
     ADS_LEVELS.forEach(function(level) {
       adsInitDateInputs(level);
       adsBindSearch(level);
+      // Quick date preset buttons for each level
+      document.querySelectorAll('[data-ads-level-range][data-ads-level="' + level + '"]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          adsSetLevelRange(level, btn.dataset.adsLevelRange);
+        });
+      });
+      // Sync highlight when date inputs change manually
+      var startListEl = document.querySelector('[data-ads-list-start="' + level + '"]');
+      var endListEl = document.querySelector('[data-ads-list-end="' + level + '"]');
+      if (startListEl) startListEl.addEventListener('change', function() { adsSyncLevelRangeSelection(level); });
+      if (endListEl) endListEl.addEventListener('change', function() { adsSyncLevelRangeSelection(level); });
       var refreshBtn = document.querySelector('[data-ads-list-refresh="' + level + '"]');
       if (refreshBtn) refreshBtn.addEventListener('click', function() {
         adsLevelState[level].listPage = 1;
