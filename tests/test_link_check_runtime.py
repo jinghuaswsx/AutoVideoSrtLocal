@@ -161,20 +161,6 @@ def test_runtime_records_best_reference_match(monkeypatch):
             "reason": "",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Hallo",
-            "quality_score": 95,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        },
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-2")
 
@@ -263,29 +249,11 @@ def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
         },
     )
 
-    analyze_calls = []
-
-    def _mock_analyze(image_path, *, target_language, target_language_name):
-        analyze_calls.append((image_path, target_language))
-        return {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "German text",
-            "quality_score": 95,
-            "quality_reason": "文案与排版优秀",
-            "needs_replacement": False,
-        }
-
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-binary-pass")
 
     saved = task_state.get("lc-binary-pass")
     item = saved["items"][0]
-    assert len(analyze_calls) == 0
     assert item["binary_quick_check"]["status"] == "pass"
     assert item["same_image_llm"]["answer"] == "是"
     assert item["analysis"]["decision"] == "pass"
@@ -296,7 +264,7 @@ def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
     assert saved["summary"]["same_image_llm_yes_count"] == 1
 
 
-def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypatch):
+def test_runtime_intercepts_unmatched_reference_without_gemini_ocr(monkeypatch):
     from appcore.link_check_runtime import LinkCheckRuntime
 
     task_dir = _workspace_tmp()
@@ -353,19 +321,6 @@ def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypat
             "reference_path": "",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "replace",
-            "has_text": True,
-            "detected_language": "en",
-            "language_match": False,
-            "text_summary": "English text",
-            "quality_score": 12,
-            "quality_reason": "wrong language",
-            "needs_replacement": True,
-        },
-    )
 
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-unmatched")
@@ -375,7 +330,7 @@ def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypat
     assert item["binary_quick_check"]["status"] == "skipped"
     assert item["same_image_llm"]["status"] == "skipped"
     assert item["analysis"]["decision"] == "replace"
-    assert item["analysis"]["decision_source"] == "gemini_language_check"
+    assert item["analysis"]["decision_source"] == "no_reference_match"
     assert saved["summary"]["reference_unmatched_count"] == 1
     assert saved["summary"]["binary_checked_count"] == 0
 
@@ -518,20 +473,6 @@ def test_runtime_persists_step_flow_and_summary_during_success(monkeypatch):
 
         def download_images(self, images, task_dir):
             return images
-
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Hallo",
-            "quality_score": 96,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        },
-    )
 
     updates = []
     original_update = task_state.update
@@ -696,20 +637,6 @@ def test_runtime_persists_locale_evidence_and_download_evidence(monkeypatch):
         def download_images(self, images, task_dir):
             return [{**images[0], "download_evidence": download_evidence}]
 
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Hallo",
-            "quality_score": 96,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        },
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-evidence")
 
@@ -763,12 +690,6 @@ def test_runtime_fails_before_download_when_page_not_locked(monkeypatch):
             download_calls.append((images, task_dir))
             return images
 
-    analyze_calls = []
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: analyze_calls.append((args, kwargs)),
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-not-locked")
 
@@ -788,7 +709,6 @@ def test_runtime_fails_before_download_when_page_not_locked(monkeypatch):
     assert saved["items"] == []
     assert saved["progress"]["downloaded"] == 0
     assert download_calls == []
-    assert analyze_calls == []
 
 
 def test_runtime_continues_after_item_failure_and_persists_full_results(monkeypatch):
@@ -849,21 +769,13 @@ def test_runtime_continues_after_item_failure_and_persists_full_results(monkeypa
         def download_images(self, images, task_dir):
             return images
 
-    def fake_analyze(local_path, **kwargs):
-        if local_path == str(first_path):
+    original_analyze_one = LinkCheckRuntime._analyze_one
+    def fake_analyze_one(self, task, result, item, *args, **kwargs):
+        if item["local_path"] == str(first_path):
             raise RuntimeError("gemini exploded")
-        return {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Hallo",
-            "quality_score": 92,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        }
+        original_analyze_one(self, task, result, item, *args, **kwargs)
 
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", fake_analyze)
+    monkeypatch.setattr(LinkCheckRuntime, "_analyze_one", fake_analyze_one)
 
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-failure-persist")
@@ -969,20 +881,6 @@ def test_runtime_sets_is_replaced_correctly_when_matched(monkeypatch):
             "reason": "",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "ok",
-            "quality_score": 95,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        },
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-replaced-matched")
 
@@ -1033,27 +931,13 @@ def test_runtime_sets_is_replaced_correctly_when_not_matched_and_no_reference(mo
                             "kind": "carousel",
                             "source_url": "https://img/site.jpg",
                             "local_path": str(site_path),
-                        }
+                        },
                     ],
                 },
             )()
 
         def download_images(self, images, task_dir):
             return images
-
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "ok",
-            "quality_score": 90,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-        },
-    )
 
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-replaced-not-matched")
@@ -1120,22 +1004,6 @@ def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
         def download_images(self, images, task_dir):
             return images
 
-    analyze_calls = []
-    def _mock_analyze(image_path, *, target_language, target_language_name):
-        analyze_calls.append((image_path, target_language))
-        return {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "German text",
-            "quality_score": 95,
-            "quality_reason": "excellent copy",
-            "needs_replacement": False,
-        }
-
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
-
     # Note: we do NOT mock find_best_reference, run_binary_quick_check, or judge_same_image
     # to guarantee they are completely bypassed when the URL matches!
 
@@ -1144,7 +1012,6 @@ def test_runtime_short_circuits_on_shopify_cdn_url_match(monkeypatch):
 
     saved = task_state.get("lc-cdn-match")
     item = saved["items"][0]
-    assert len(analyze_calls) == 0
     assert item["is_replaced"] is True
     assert item["reference_match"]["status"] == "matched"
     assert item["reference_match"]["reference_id"] == "ref-1"
@@ -1209,18 +1076,11 @@ def test_runtime_bypasses_small_images_by_size(monkeypatch):
         def download_images(self, images, task_dir):
             return images
 
-    analyze_calls = []
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.analyze_image",
-        lambda *args, **kwargs: analyze_calls.append(args),
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-small-size")
 
     saved = task_state.get("lc-small-size")
     item = saved["items"][0]
-    assert len(analyze_calls) == 0
     assert item["is_replaced"] is None
     assert item["analysis"]["decision"] == "pass"
     assert item["analysis"]["decision_source"] == "size_threshold_bypass"
@@ -1306,22 +1166,6 @@ def test_link_check_resumption(monkeypatch):
         def download_images(self, images, task_dir):
             return images
 
-    analyze_calls = []
-    def _mock_analyze(image_path, *, target_language, target_language_name):
-        analyze_calls.append((image_path, target_language))
-        return {
-            "decision": "pass",
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Second image text",
-            "quality_score": 85,
-            "quality_reason": "freshly evaluated",
-            "needs_replacement": False,
-        }
-
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", _mock_analyze)
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-resumption")
 
@@ -1339,11 +1183,8 @@ def test_link_check_resumption(monkeypatch):
     item2 = saved["items"][1]
     assert item2["id"] == "site-2"
     assert item2["status"] == "done"
-    assert item2["analysis"]["quality_reason"] == "freshly evaluated"
-
-    # Check that analyze was only called for site-2, not site-1!
-    assert len(analyze_calls) == 1
-    assert analyze_calls[0][0] == str(second_path)
+    assert item2["analysis"]["decision_source"] == "no_references_provided"
+    assert "自动跳过" in item2["analysis"]["quality_reason"]
 
     # Check progress stats (accumulated)
     assert saved["progress"]["total"] == 2
