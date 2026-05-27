@@ -204,9 +204,9 @@ def test_meta_hot_posts_europe_fit_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.europe_fit"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
 
@@ -214,33 +214,33 @@ def test_meta_hot_posts_video_copyability_use_case_is_registered_for_billing():
     uc = USE_CASES["meta_hot_posts.video_copyability"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3-flash-preview"
-    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
 
-def test_meta_hot_posts_video_copyability_translate_uses_adc_flash_lite():
+def test_meta_hot_posts_video_copyability_translate_uses_openrouter_flash_lite():
     uc = USE_CASES["meta_hot_posts.video_copyability_translate"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3.1-flash-lite"
-    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
 
-def test_meta_hot_posts_europe_fit_translate_uses_adc_flash_lite():
+def test_meta_hot_posts_europe_fit_translate_uses_openrouter_flash_lite():
     uc = USE_CASES["meta_hot_posts.europe_fit_translate"]
 
     assert uc["module"] == "xuanpin"
-    assert uc["default_provider"] == "gemini_vertex_adc"
-    assert uc["default_model"] == "gemini-3.1-flash-lite"
-    assert uc["usage_log_service"] == "gemini_vertex_adc"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 
 
-def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
+def test_meta_hot_posts_do_not_default_to_vertex_adc():
     adc_defaults = {
         code
         for code, uc in USE_CASES.items()
@@ -248,14 +248,18 @@ def test_only_meta_hot_post_video_analysis_defaults_to_vertex_adc():
         or uc["usage_log_service"] == "gemini_vertex_adc"
     }
 
-    assert adc_defaults == {
-        "meta_hot_posts.europe_fit",
-        "meta_hot_posts.europe_fit_translate",
-        "meta_hot_posts.video_copyability",
-        "meta_hot_posts.video_copyability_translate",
-        "fine_ai_evaluation.product_facts",
-        "fine_ai_evaluation.country",
+    assert adc_defaults == set()
+
+    meta_defaults = {
+        code
+        for code, uc in USE_CASES.items()
+        if code.startswith("meta_hot_posts.")
+        and (
+            uc["default_provider"] == "gemini_vertex_adc"
+            or uc["usage_log_service"] == "gemini_vertex_adc"
+        )
     }
+    assert meta_defaults == set()
 
 
 def test_copywriting_translate_audit_uses_gemini_flash_lite():

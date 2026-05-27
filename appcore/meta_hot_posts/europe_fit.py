@@ -17,8 +17,8 @@ from appcore.meta_hot_posts import video_localization
 
 
 USE_CASE_CODE = "meta_hot_posts.europe_fit"
-EUROPE_FIT_PROVIDER = "gemini_vertex"
-EUROPE_FIT_MODEL = "gemini-3-flash-preview"
+EUROPE_FIT_PROVIDER = "openrouter"
+EUROPE_FIT_MODEL = "google/gemini-3-flash-preview"
 EUROPE_FIT_TIMEOUT_SECONDS = 40
 TARGET_MARKETS = ("Germany", "France", "Italy", "Spain")
 TARGET_LANGUAGE_MARKETS = (

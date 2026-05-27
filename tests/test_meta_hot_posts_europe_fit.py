@@ -105,8 +105,8 @@ def test_normalize_response_clamps_score_and_maps_recommendation():
                 "required_changes": ["translate captions"],
                 "reasoning": "Strong product-market fit.",
             },
-            "provider": "gemini_vertex_adc",
-            "model": "gemini-3-flash-preview",
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
         }
     )
 
@@ -114,8 +114,8 @@ def test_normalize_response_clamps_score_and_maps_recommendation():
     assert result["recommendation"] == "direct_reuse"
     assert result["direct_reuse"] is True
     assert result["best_countries"] == ["DE", "FR"]
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3-flash-preview"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3-flash-preview"
 
 
 def test_normalize_response_preserves_translation_localization_fields():
@@ -148,8 +148,8 @@ def test_normalize_response_preserves_translation_localization_fields():
                 "required_changes": ["Replace screen text"],
                 "reasoning": "Good once localized.",
             },
-            "provider": "gemini_vertex_adc",
-            "model": "gemini-3-flash-preview",
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
         }
     )
 
@@ -208,8 +208,8 @@ def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):
                 "required_changes": ["localize overlay text"],
                 "reasoning": "Useful, but text needs localization.",
             },
-            "provider": "gemini_vertex_adc",
-            "model": "gemini-3-flash-preview",
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
         }
 
     monkeypatch.setattr(europe_fit, "prepare_video_for_llm", fake_prepare)
@@ -231,8 +231,8 @@ def test_assess_material_uses_optimized_video_and_llm(monkeypatch, tmp_path):
     assert calls["invoke"][0] == "meta_hot_posts.europe_fit"
     assert calls["invoke"][1]["media"] == [str(output_video)]
     assert calls["invoke"][1]["user_id"] == 7
-    assert calls["invoke"][1]["provider_override"] == "gemini_vertex_adc"
-    assert calls["invoke"][1]["model_override"] == "gemini-3-flash-preview"
+    assert calls["invoke"][1]["provider_override"] == "openrouter"
+    assert calls["invoke"][1]["model_override"] == "google/gemini-3-flash-preview"
     assert result["suitability_score"] == 87
     assert result["video_optimization"]["optimized"] is True
     assert cleaned == [str(output_video)]

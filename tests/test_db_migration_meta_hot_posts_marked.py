@@ -239,6 +239,28 @@ def test_meta_hot_posts_vertex_adc_pro_to_flash_migration_updates_queue_use_case
     assert "ON DUPLICATE KEY UPDATE" in body
 
 
+def test_meta_hot_posts_openrouter_binding_migration_updates_all_llm_use_cases():
+    body = Path("db/migrations/2026_05_27_meta_hot_posts_openrouter_bindings.sql").read_text(
+        encoding="utf-8"
+    )
+
+    for use_case in (
+        "meta_hot_posts.categorize",
+        "meta_hot_posts.translate_message",
+        "meta_hot_posts.translate_product_title",
+        "meta_hot_posts.europe_fit",
+        "meta_hot_posts.europe_fit_translate",
+        "meta_hot_posts.video_copyability",
+        "meta_hot_posts.video_copyability_translate",
+    ):
+        assert f"'{use_case}'" in body
+    assert "'openrouter'" in body
+    assert "'google/gemini-3-flash-preview'" in body
+    assert "'google/gemini-3.1-flash-lite'" in body
+    assert "'gemini_vertex_adc'" not in body
+    assert "ON DUPLICATE KEY UPDATE" in body
+
+
 def test_gemini_31_pro_to_35_flash_migration_updates_bindings_prefs_and_pricing():
     body = Path("db/migrations/2026_05_20_gemini_31_pro_to_35_flash.sql").read_text(
         encoding="utf-8"

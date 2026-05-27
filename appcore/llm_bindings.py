@@ -16,11 +16,6 @@ from appcore.db import execute, query, query_one
 from appcore.llm_use_cases import USE_CASES, get_use_case
 
 VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
-    "meta_hot_posts.translate_message",
-    "meta_hot_posts.europe_fit",
-    "meta_hot_posts.europe_fit_translate",
-    "meta_hot_posts.video_copyability",
-    "meta_hot_posts.video_copyability_translate",
     "video_score.run",
     "video_csk.analyze",
     "voice_selection.assess",
@@ -28,14 +23,43 @@ VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
     "fine_ai_evaluation.country",
 })
 
+META_HOT_POSTS_OPENROUTER_USE_CASES = frozenset({
+    "meta_hot_posts.categorize",
+    "meta_hot_posts.translate_message",
+    "meta_hot_posts.translate_product_title",
+    "meta_hot_posts.europe_fit",
+    "meta_hot_posts.europe_fit_translate",
+    "meta_hot_posts.video_copyability",
+    "meta_hot_posts.video_copyability_translate",
+})
+
+
+def _strip_google_prefix(model: str) -> str:
+    if model.startswith("google/"):
+        return model.split("/", 1)[1]
+    return model
+
+
+def _to_openrouter_google_model(model: str) -> str:
+    if not model or "/" in model:
+        return model
+    if model.startswith("gemini-"):
+        return f"google/{model}"
+    return model
+
 
 def _normalize_binding_provider(use_case_code: str, provider: str, model: str) -> tuple[str, str]:
     provider = (provider or "").strip()
     model = (model or "").strip()
+    if use_case_code in META_HOT_POSTS_OPENROUTER_USE_CASES:
+        if provider in {"gemini_vertex_adc", "gemini_vertex", "gemini_aistudio", "openrouter"}:
+            return "openrouter", _to_openrouter_google_model(model)
     if provider == "gemini_vertex_adc":
-        provider = "gemini_vertex"
-        if model.startswith("google/"):
-            model = model.split("/", 1)[1]
+        if use_case_code in VERTEX_ADC_ALLOWED_USE_CASES:
+            provider = "gemini_vertex_adc"
+        else:
+            provider = "gemini_aistudio"
+        model = _strip_google_prefix(model)
     return provider, model
 
 

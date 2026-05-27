@@ -1,7 +1,7 @@
 from appcore.meta_hot_posts import europe_fit_translation
 
 
-def test_translate_europe_fit_invokes_google_adc_flash_lite_and_parses_json():
+def test_translate_europe_fit_invokes_openrouter_flash_lite_and_parses_json():
     calls = []
 
     def fake_invoke(use_case_code, **kwargs):
@@ -29,8 +29,8 @@ def test_translate_europe_fit_invokes_google_adc_flash_lite_and_parses_json():
 
     use_case_code, kwargs = calls[0]
     assert use_case_code == "meta_hot_posts.europe_fit_translate"
-    assert kwargs["provider_override"] == "gemini_vertex_adc"
-    assert kwargs["model_override"] == "gemini-3.1-flash-lite"
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite"
     assert kwargs["user_id"] == 7
     assert kwargs["temperature"] == 0.0
     assert kwargs["max_tokens"] == 700

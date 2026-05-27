@@ -10,8 +10,8 @@ from appcore.db import query_one
 from appcore.meta_hot_posts import store
 
 TRANSLATE_USE_CASE = "meta_hot_posts.video_copyability_translate"
-TRANSLATE_PROVIDER = "gemini_vertex"
-TRANSLATE_MODEL = "gemini-3.1-flash-lite"
+TRANSLATE_PROVIDER = "openrouter"
+TRANSLATE_MODEL = "google/gemini-3.1-flash-lite"
 DEFAULT_BATCH_LIMIT = 120
 DEFAULT_DELAY_SECONDS = 0
 DEFAULT_MAX_ATTEMPTS = 3

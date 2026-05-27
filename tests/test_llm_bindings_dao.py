@@ -53,7 +53,7 @@ def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
     assert not m_exec.called
 
 
-def test_resolve_keeps_meta_video_analysis_adc_binding():
+def test_resolve_maps_meta_video_analysis_adc_binding_to_openrouter():
     row = {
         "provider_code": "gemini_vertex_adc",
         "model_id": "gemini-3.5-flash",
@@ -62,8 +62,8 @@ def test_resolve_keeps_meta_video_analysis_adc_binding():
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("meta_hot_posts.video_copyability")
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.5-flash"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3.5-flash"
 
 
 def test_resolve_keeps_voice_selection_adc_binding():
@@ -93,7 +93,7 @@ def test_resolve_keeps_video_analysis_adc_binding(use_case):
     assert result["model"] == "gemini-3.5-flash"
 
 
-def test_resolve_keeps_meta_message_translation_adc_binding():
+def test_resolve_maps_meta_message_translation_adc_binding_to_openrouter():
     row = {
         "provider_code": "gemini_vertex_adc",
         "model_id": "gemini-3-flash-preview",
@@ -102,11 +102,11 @@ def test_resolve_keeps_meta_message_translation_adc_binding():
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("meta_hot_posts.translate_message")
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3-flash-preview"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3-flash-preview"
 
 
-def test_resolve_keeps_meta_video_copyability_translate_adc_binding():
+def test_resolve_maps_meta_video_copyability_translate_adc_binding_to_openrouter():
     row = {
         "provider_code": "gemini_vertex_adc",
         "model_id": "gemini-3.1-flash-lite",
@@ -115,11 +115,11 @@ def test_resolve_keeps_meta_video_copyability_translate_adc_binding():
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("meta_hot_posts.video_copyability_translate")
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-flash-lite"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3.1-flash-lite"
 
 
-def test_resolve_keeps_meta_europe_fit_translate_adc_binding():
+def test_resolve_maps_meta_europe_fit_translate_adc_binding_to_openrouter():
     row = {
         "provider_code": "gemini_vertex_adc",
         "model_id": "gemini-3.1-flash-lite",
@@ -128,8 +128,8 @@ def test_resolve_keeps_meta_europe_fit_translate_adc_binding():
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("meta_hot_posts.europe_fit_translate")
-    assert result["provider"] == "gemini_vertex_adc"
-    assert result["model"] == "gemini-3.1-flash-lite"
+    assert result["provider"] == "openrouter"
+    assert result["model"] == "google/gemini-3.1-flash-lite"
 
 
 def test_resolve_disabled_falls_back_to_default_without_reseeding():
@@ -212,7 +212,7 @@ def test_upsert_normalizes_non_meta_video_adc_binding_to_aistudio():
     assert args[2] == "gemini-3.5-flash"
 
 
-def test_upsert_keeps_meta_message_translation_adc_binding():
+def test_upsert_maps_meta_message_translation_adc_binding_to_openrouter():
     with patch("appcore.llm_bindings.execute") as m_exec:
         llm_bindings.upsert(
             "meta_hot_posts.translate_message",
@@ -221,8 +221,8 @@ def test_upsert_keeps_meta_message_translation_adc_binding():
             updated_by=7,
         )
     args = m_exec.call_args[0][1]
-    assert args[1] == "gemini_vertex_adc"
-    assert args[2] == "gemini-3-flash-preview"
+    assert args[1] == "openrouter"
+    assert args[2] == "google/gemini-3-flash-preview"
 
 
 def test_upsert_keeps_voice_selection_adc_binding():

@@ -205,7 +205,6 @@ def _is_global_category_provider_error(exc: Exception) -> bool:
             "resource_exhausted",
             "resource exhausted",
             "缺少供应商配置",
-            "gemini_vertex_adc_text",
         )
     )
 

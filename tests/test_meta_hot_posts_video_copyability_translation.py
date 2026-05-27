@@ -1,7 +1,7 @@
 from appcore.meta_hot_posts import video_copyability_translation
 
 
-def test_translate_summary_invokes_google_adc_flash_lite():
+def test_translate_summary_invokes_openrouter_flash_lite():
     calls = []
 
     def fake_invoke(use_case_code, **kwargs):
@@ -22,8 +22,8 @@ def test_translate_summary_invokes_google_adc_flash_lite():
     use_case_code, kwargs = calls[0]
     assert translated == "强钩子，清楚展示了产品效果。"
     assert use_case_code == "meta_hot_posts.video_copyability_translate"
-    assert kwargs["provider_override"] == "gemini_vertex_adc"
-    assert kwargs["model_override"] == "gemini-3.1-flash-lite"
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite"
     assert kwargs["user_id"] == 7
     assert kwargs["temperature"] == 0.0
     assert kwargs["max_tokens"] == 512

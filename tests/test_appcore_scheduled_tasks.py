@@ -624,8 +624,9 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "40-second hard per-item timeout" in queue_task["description"]
     assert "first rate-limit" in queue_task["description"]
     assert "rate-limit" in queue_task["description"]
-    assert "Vertex ADC" in queue_task["description"]
-    assert "gemini-3-flash-preview" in queue_task["description"]
+    assert "Vertex ADC" not in queue_task["description"]
+    assert "OpenRouter" in queue_task["description"]
+    assert "google/gemini-3-flash-preview" in queue_task["description"]
     assert "2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md" in queue_task["description"]
 
     translation_task = definitions["meta_hot_posts_translate_messages_tick"]

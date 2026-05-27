@@ -425,8 +425,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
             "the first timeout stops the round after counting one failed attempt; "
             "the first rate-limit response stops the current round early without changing that row's saved status and pauses automatic retries until a manual run clears it; "
             "task_type=us_copyability runs before task_type=europe_fit, and Europe starts only after "
-            "US copyability has no remaining capacity in the round. Both modes use Vertex ADC "
-            "gemini-3-flash-preview. A new round takes over any previous running queue run and resets "
+            "US copyability has no remaining capacity in the round. Both modes use OpenRouter "
+            "google/gemini-3-flash-preview. A new round takes over any previous running queue run and resets "
             "running US/Europe rows. Docs-anchor: "
             "docs/superpowers/specs/2026-05-15-meta-hot-posts-unified-video-analysis-queue-design.md"
         ),
