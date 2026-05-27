@@ -61,3 +61,17 @@ def test_order_analytics_sub_routes_authenticated_200(authed_client_no_db):
             html = resp.data.decode("utf-8")
             # 验证 HTML 中注入的 active_tab 值是正确的
             assert f'var initialTab = "{expected_tab}";' in html
+
+
+def test_ads_view_initializes_after_ads_state_and_subtab_hook(authed_client_no_db):
+    """直接打开广告分析路由时，不能在广告状态变量初始化前调用 initAds。"""
+    with patch("appcore.meta_ad_accounts.get_all_accounts", return_value=[]), \
+         patch("appcore.meta_ad_accounts.AVAILABLE_STORE_CODES", {"newjoy", "omurio"}):
+        resp = authed_client_no_db.get("/order-analytics/ads-view")
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    init_call = html.index("initActiveOrderAnalyticsTab();")
+    assert html.index('var initialTab = "ads";') < init_call
+    assert html.index("var metaAdAccountsState =") < init_call
+    assert html.index("var __origInitAds =") < init_call

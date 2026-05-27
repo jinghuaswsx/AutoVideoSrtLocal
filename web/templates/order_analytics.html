@@ -2514,9 +2514,12 @@
         hint = document.createElement('div');
         hint.id = key + 'BjHint';
         hint.style.cssText = 'color: var(--fg-muted); font-size: 12px; margin: 4px 0 0; flex-basis: 100%;';
-        var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');
-        var insertAfter = realtimeActions || anchor;
-        anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);
+        var parent = anchor.parentElement;
+        var realtimeActions = parent ? parent.querySelector('.oar-realtime-actions') : null;
+        var insertAfter = realtimeActions && realtimeActions.parentElement === parent
+          ? realtimeActions
+          : anchor;
+        if (parent) parent.insertBefore(hint, insertAfter.nextSibling);
       }
       hint.textContent = describeBjWindow(pair.start.value, pair.end.value);
     });
@@ -4118,29 +4121,31 @@
       setNewProductLaunchSubtab(btn.dataset.nplSubtab);
     });
   });
-  setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
-  setNewProductLaunchRange('today', true);
   var initialTab = "{{ active_tab }}";
-  if (initialTab === 'analytics') {
-    initAnalytics();
-  } else if (initialTab === 'ads') {
-    initAds();
-  } else if (initialTab === 'adAccounts') {
-    initMetaAdAccounts();
-  } else if (initialTab === 'trueRoas') {
-    initTrueRoas();
-  } else if (initialTab === 'weeklyRoas') {
-    initWeeklyRoas();
-  } else if (initialTab === 'realtime') {
-    loadRealtimeOverview();
-  } else if (initialTab === 'newProductLaunch') {
-    initNewProductLaunch();
-  } else if (initialTab === 'countryDashboard') {
-    initCountryDashboard();
-  } else if (initialTab === 'dxmOrders') {
-    initDxmOrders();
-  } else {
-    loadRealtimeOverview();
+  function initActiveOrderAnalyticsTab() {
+    setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
+    setNewProductLaunchRange('today', true);
+    if (initialTab === 'analytics') {
+      initAnalytics();
+    } else if (initialTab === 'ads') {
+      initAds();
+    } else if (initialTab === 'adAccounts') {
+      initMetaAdAccounts();
+    } else if (initialTab === 'trueRoas') {
+      initTrueRoas();
+    } else if (initialTab === 'weeklyRoas') {
+      initWeeklyRoas();
+    } else if (initialTab === 'realtime') {
+      loadRealtimeOverview();
+    } else if (initialTab === 'newProductLaunch') {
+      initNewProductLaunch();
+    } else if (initialTab === 'countryDashboard') {
+      initCountryDashboard();
+    } else if (initialTab === 'dxmOrders') {
+      initDxmOrders();
+    } else {
+      loadRealtimeOverview();
+    }
   }
 
   function localDateString(value) {
@@ -7848,6 +7853,7 @@
   } else {
     adsApplyDeepLinkFromQuery();
   }
+  initActiveOrderAnalyticsTab();
 })();
 
   // ──────────────────────────────────────────────────────

@@ -119,9 +119,10 @@ def test_realtime_bj_hint_is_inserted_after_query_button():
     """北京时间提示不能插入到日期范围和查询按钮之间。"""
     template = _template_source()
 
-    assert "var realtimeActions = anchor.parentElement.querySelector('.oar-realtime-actions');" in template
-    assert "var insertAfter = realtimeActions || anchor;" in template
-    assert "anchor.parentElement.insertBefore(hint, insertAfter.nextSibling);" in template
+    assert "var parent = anchor.parentElement;" in template
+    assert "var realtimeActions = parent ? parent.querySelector('.oar-realtime-actions') : null;" in template
+    assert "realtimeActions && realtimeActions.parentElement === parent" in template
+    assert "if (parent) parent.insertBefore(hint, insertAfter.nextSibling);" in template
 
 
 def test_realtime_roas_trend_copy_matches_hourly_node_contract():
