@@ -7539,6 +7539,12 @@
       bar.textContent = '';
       return;
     }
+    if (dq.status === 'realtime_not_supported') {
+      bar.hidden = false;
+      bar.className = 'oa-warning-banner';
+      bar.textContent = dq.message || '当前查询包含今天。受限于 Meta 自动化抓取限制，今日的 Ad Set 与 Ad 级数据将在次日凌晨最终表同步后展现。';
+      return;
+    }
     if (dq.status === 'fallback_used') {
       var pv = (dq.purchase_value || {});
       bar.hidden = false;

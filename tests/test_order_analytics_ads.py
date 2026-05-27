@@ -2163,3 +2163,42 @@ def test_get_ads_level_list_includes_realtime_today_for_campaign(monkeypatch):
     union_query = next(q for q in captured_queries if "UNION ALL" in q["sql"])
     assert "meta_ad_realtime_daily_campaign_metrics" in union_query["sql"]
     assert "meta_ad_daily_campaign_metrics" in union_query["sql"]
+
+
+def test_get_ads_level_list_adset_today_data_quality_realtime_not_supported(monkeypatch):
+    today = oa.current_meta_business_date()
+
+    def fake_query_one(sql, args=()):
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    # 包含今日的 adset 级查询
+    result = oa.get_ads_level_list(
+        "adset", 
+        start_date=today.isoformat(), 
+        end_date=today.isoformat()
+    )
+
+    assert result["level"] == "adset"
+    dq = result["data_quality"]
+    assert dq["status"] == "realtime_not_supported"
+    assert "当前查询范围包含今天" in dq["message"]
+    assert "Ad Set" in dq["message"]
+
+    # 包含今日的 ad 级查询
+    result_ad = oa.get_ads_level_list(
+        "ad", 
+        start_date=today.isoformat(), 
+        end_date=today.isoformat()
+    )
+
+    assert result_ad["level"] == "ad"
+    dq_ad = result_ad["data_quality"]
+    assert dq_ad["status"] == "realtime_not_supported"
+    assert "当前查询范围包含今天" in dq_ad["message"]
+    assert "Ad 级别" in dq_ad["message"] or "Ad 级" in dq_ad["message"]

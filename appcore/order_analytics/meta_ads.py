@@ -1348,6 +1348,17 @@ def get_ads_level_list(
         end_date=end,
     )
 
+    dq_result = _ads_purchase_data_quality(fallback_stats)
+    if level in ("adset", "ad") and end >= today:
+        level_label = "Ad Set" if level == "adset" else "Ad"
+        dq_result = {
+            "status": "realtime_not_supported",
+            "message": (
+                f"当前查询范围包含今天。受限于 Meta 自动化抓取维度，"
+                f"今日的 {level_label} 级别消耗与成效数据将在次日凌晨日终报表同步后展现。"
+            ),
+        }
+
     return {
         "level": level,
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1356,7 +1367,7 @@ def get_ads_level_list(
         "page_size": page_size,
         "total": total,
         "has_more": (page * page_size) < total,
-        "data_quality": _ads_purchase_data_quality(fallback_stats),
+        "data_quality": dq_result,
     }
 
 
