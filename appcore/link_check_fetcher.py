@@ -542,29 +542,19 @@ class LinkCheckFetcher:
             page = context.new_page()
             
             try:
-                page.goto(nocache_url, wait_until="load", timeout=30000)
+                page.goto(nocache_url, wait_until="domcontentloaded", timeout=30000)
                 
-                # Safe natural scrolling and cycle carousel slides to trigger lazyload translations
+                # Simple scroll to trigger standard storefront scripts
                 try:
-                    page.evaluate("""(async () => {
+                    page.evaluate("""() => {
                         window.scrollTo(0, 300);
                         window.dispatchEvent(new Event('scroll'));
-                        await new Promise(r => setTimeout(r, 500));
-                        
-                        // Find next slide button and click it to cycle slides and trigger lazyload
-                        let nextBtns = document.querySelectorAll('.flickityt4s-button.next, .slick-next, .t4s-slider-btn-next, [class*="next-button"], [class*="slider-btn-next"]');
-                        for (let btn of nextBtns) {
-                            for (let i = 0; i < 12; i++) {
-                                btn.click();
-                                await new Promise(r => setTimeout(r, 150));
-                            }
-                        }
-                    })()""")
+                    }""")
                 except Exception:
                     pass
                 
-                # Wait for Slick/Flickity and EZ Product Image Translate to run
-                page.wait_for_timeout(6000)
+                # Settle timeout
+                page.wait_for_timeout(1000)
                 
                 resolved_url = page.url
                 html = page.content()
@@ -585,26 +575,17 @@ class LinkCheckFetcher:
                         target_language=target_language,
                     )
                     if retry_url and _normalized_page_url(retry_url) != _normalized_page_url(resolved_url):
-                        page.goto(retry_url, wait_until="load", timeout=30000)
+                        page.goto(retry_url, wait_until="domcontentloaded", timeout=30000)
                         
                         try:
-                            page.evaluate("""(async () => {
+                            page.evaluate("""() => {
                                 window.scrollTo(0, 300);
                                 window.dispatchEvent(new Event('scroll'));
-                                await new Promise(r => setTimeout(r, 500));
-                                
-                                let nextBtns = document.querySelectorAll('.flickityt4s-button.next, .slick-next, .t4s-slider-btn-next, [class*="next-button"], [class*="slider-btn-next"]');
-                                for (let btn of nextBtns) {
-                                    for (let i = 0; i < 12; i++) {
-                                        btn.click();
-                                        await new Promise(r => setTimeout(r, 150));
-                                    }
-                                }
-                            })()""")
+                            }""")
                         except Exception:
                             pass
                             
-                        page.wait_for_timeout(6000)
+                        page.wait_for_timeout(1000)
                         resolved_url = page.url
                         html = page.content()
                         soup = BeautifulSoup(html, "html.parser")
