@@ -369,39 +369,40 @@ def extract_images_from_html(html: str, *, base_url: str, target_language: str =
             token = match.group("token").lower()
             token_to_localized[token] = url
 
-    # 3. Swap English carousel URLs with matching localized URLs
+    # 3. Swap English URLs with matching localized URLs (both carousel and detail kinds)
     carousel_token_re = re.compile(r"([a-f0-9]{28,})", re.I)
     for item in items:
-        if item["kind"] == "carousel":
-            url = item["source_url"]
-            if loc_pattern.search(url):
-                continue
-            token_match = carousel_token_re.search(url.lower())
-            if token_match:
-                token = token_match.group(1).lower()
-                if token in token_to_localized:
-                    item["source_url"] = token_to_localized[token]
+        url = item["source_url"]
+        if loc_pattern.search(url):
+            continue
+        token_match = carousel_token_re.search(url.lower())
+        if token_match:
+            token = token_match.group(1).lower()
+            if token in token_to_localized:
+                item["source_url"] = token_to_localized[token]
 
-    # 4. Deduplicate items by token to prevent having both English and localized versions of the same image slot
-    token_to_item = {}
+    # 4. Deduplicate items by (token, kind) to prevent having both English and localized versions of the same image slot
+    token_kind_to_item = {}
     other_items = []
     for item in items:
         url = item["source_url"]
         token_match = carousel_token_re.search(url.lower())
-        if token_match and item["kind"] == "carousel":
+        if token_match:
             token = token_match.group(1).lower()
+            kind = item["kind"]
+            key = (token, kind)
             is_localized = bool(loc_pattern.search(url))
-            if token not in token_to_item:
-                token_to_item[token] = item
+            if key not in token_kind_to_item:
+                token_kind_to_item[key] = item
             else:
-                existing_item = token_to_item[token]
+                existing_item = token_kind_to_item[key]
                 existing_is_localized = bool(loc_pattern.search(existing_item["source_url"]))
                 if is_localized and not existing_is_localized:
-                    token_to_item[token] = item
+                    token_kind_to_item[key] = item
         else:
             other_items.append(item)
             
-    items = list(token_to_item.values()) + other_items
+    items = list(token_kind_to_item.values()) + other_items
     return items
 
 
