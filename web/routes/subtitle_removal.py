@@ -379,6 +379,17 @@ def _task_needs_resume(task: dict) -> bool:
     return False
 
 
+def _task_center_parent_task_id_from_subtitle_task(task_id: str) -> int | None:
+    parts = str(task_id or "").split("-", 2)
+    if len(parts) != 3 or parts[0] != "tcraw":
+        return None
+    try:
+        parent_task_id = int(parts[1])
+    except (TypeError, ValueError):
+        return None
+    return parent_task_id if parent_task_id > 0 else None
+
+
 def resume_inflight_tasks() -> list[str]:
     restored: list[str] = []
     try:
@@ -543,6 +554,10 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
     thumbnail_path = _ensure_source_thumbnail(task_id, task)
     video_path = (task.get("video_path") or "").strip()
     source_tos_key = (task.get("source_tos_key") or "").strip()
+    task_center_parent_task_id = _task_center_parent_task_id_from_subtitle_task(task_id)
+    task_center_force_rerun_url = ""
+    if task_center_parent_task_id and (task.get("subtitle_backend") or "").strip().lower() == "niuma":
+        task_center_force_rerun_url = f"/tasks/api/parent/{task_center_parent_task_id}/force_niuma_rerun"
     payload = {
         "id": task_id,
         "type": task.get("type") or "subtitle_removal",
@@ -578,6 +593,8 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "result_download_url": url_for("subtitle_removal.download_result", task_id=task_id),
         "resume_poll_url": url_for("subtitle_removal.resume_poll", task_id=task_id),
         "resubmit_url": url_for("subtitle_removal.resubmit", task_id=task_id),
+        "task_center_parent_task_id": task_center_parent_task_id,
+        "task_center_force_rerun_url": task_center_force_rerun_url,
         "delete_url": url_for("subtitle_removal.delete_task", task_id=task_id),
         "detail_url": url_for("subtitle_removal.detail_page", task_id=task_id),
         "state_api_url": url_for("subtitle_removal.get_state", task_id=task_id),

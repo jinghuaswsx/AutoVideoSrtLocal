@@ -21,6 +21,8 @@
 
 前端在父任务详情按钮区增加“强制重跑”按钮。按钮仅在当前任务是父任务、状态为 `raw_in_progress`，且当前用户是负责人或管理员时显示。点击前弹出确认；成功后刷新列表和当前抽屉。
 
+2026-05-27 补充：任务中心创建的字幕移除任务 ID 形如 `tcraw-<父任务ID>-<随机串>`。字幕移除详情页在识别到该来源且后端为 `niuma` 时，也展示红色“重跑”按钮；点击后复用 `POST /tasks/api/parent/<id>/force_niuma_rerun`，成功后跳转到新创建的字幕移除任务详情页。旧任务不被删除，仍作为历史排查记录保留。
+
 ## 验证
 
 1. `pytest tests/test_task_raw_video_processing.py tests/test_tasks_routes.py -q`

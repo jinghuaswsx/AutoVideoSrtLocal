@@ -371,6 +371,17 @@ def test_subtitle_removal_detail_resubmit_is_staged_before_posting():
     assert "postJson(url, getActionPayload())" in scripts
 
 
+def test_subtitle_removal_detail_task_center_rerun_posts_and_redirects():
+    scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'var taskCenterRerunButton = document.getElementById("srTaskCenterRerunNiuma");' in scripts
+    assert 'var url = (bootstrap.task_center_force_rerun_url || "");' in scripts
+    assert "确认重跑牛马去字幕" in scripts
+    assert "postJson(url, null)" in scripts
+    assert "data.raw_processing && data.raw_processing.subtitle_task_id" in scripts
+    assert 'window.location.href = "/subtitle-removal/" + encodeURIComponent(nextTaskId);' in scripts
+
+
 def test_misc_upload_redirects_encode_dynamic_task_ids():
     root = Path(__file__).resolve().parents[1]
     expectations = {
@@ -1491,6 +1502,39 @@ def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client
     assert '<button id="srDeleteSubtitleRemoval" type="button" class="btn btn-danger">删除</button>' in body
     assert "artifact/result" in body
     assert "download/result" in body
+
+
+def test_subtitle_removal_detail_exposes_task_center_rerun_for_tcraw_niuma(authed_client_no_db, monkeypatch):
+    task_id = "tcraw-120-7adfa023"
+    state = {
+        "id": task_id,
+        "type": "subtitle_removal",
+        "status": "running",
+        "subtitle_backend": "niuma",
+        "original_filename": "demo.mp4",
+        "media_info": {"width": 1080, "height": 1920, "resolution": "1080x1920", "duration": 20},
+        "provider_task_id": "provider-task-1",
+    }
+    row = {
+        "id": task_id,
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "running",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(state, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get(f"/subtitle-removal/{task_id}")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '<button id="srTaskCenterRerunNiuma" type="button" class="btn btn-danger">重跑</button>' in body
+    assert '"/tasks/api/parent/120/force_niuma_rerun"' in body
+    assert '"task_center_parent_task_id": 120' in body
 
 
 def test_subtitle_removal_detail_shell_shows_result_actions_for_local_result_only(authed_client_no_db, monkeypatch):
