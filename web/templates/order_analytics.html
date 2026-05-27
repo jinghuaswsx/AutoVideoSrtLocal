@@ -1469,20 +1469,23 @@
     display: none !important;
   }
   
-  /* 2. 强行让顶栏的 title 块（内含“数据分析”标题和胶囊 Tab 组）可见且保持弹性布局 */
+  /* 2. 强行让顶栏的 title 块可见、保持弹性布局，且【物理禁止折行】 */
   .topbar > .topbar-title {
     display: inline-flex !important;
     align-items: center !important;
     gap: var(--space-4) !important;
+    flex-wrap: nowrap !important; /* 物理禁止折行，防止标题与 Tab 分裂换行 */
   }
   
-  /* 3. 确保“数据分析”主标题和胶囊 Tab 组始终是可见的，绝不隐藏 */
+  /* 3. 确保“数据分析”主标题和胶囊 Tab 组始终可见，且一行横向排列 */
   .oa-page-heading {
     display: inline-block !important;
+    white-space: nowrap !important; /* 标题禁止换行 */
   }
   .oa-tabs-topbar {
     display: inline-flex !important;
     max-width: 60vw !important; /* 限制大胶囊最大宽度，避免挤占右侧操作区 */
+    flex-shrink: 1 !important; /* 允许在空间不足时收缩并触发内部横滚 */
   }
   
   /* 4. 物理隐藏可能在 layout 里面由于媒体查询误触发而显现的移动端品牌标志 */
