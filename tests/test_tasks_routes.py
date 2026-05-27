@@ -1700,3 +1700,14 @@ def test_child_step_manual_output_route_rejects_status_only_step(authed_client_n
 
     assert rsp.status_code == 400
     assert rsp.get_json() == {"error": "step does not accept manual output"}
+
+
+def test_manual_output_upload_filename_preserves_chinese_material_name():
+    from web.routes import tasks
+
+    filename = (
+        "2026.05.26-多功能复古编织手工草帽-原素材-小语种翻译素材(德语)"
+        "-20260421蔡靖华-蔡靖华.mp4"
+    )
+
+    assert tasks._manual_upload_filename(filename) == filename
