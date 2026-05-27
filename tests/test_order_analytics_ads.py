@@ -1017,8 +1017,8 @@ def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
     assert '/order-analytics/ad-summary?start_date=' in body
 
 
-def test_ads_default_date_range_uses_meta_business_today(authed_client_no_db):
-    """广告分析默认日期范围选择 Meta 广告日「今天」。
+def test_ads_default_date_range_uses_meta_business_today_for_campaign(authed_client_no_db):
+    """广告分析 Campaign 默认日期范围选择 Meta 广告日「今天」。
 
     Meta 今天由 Beijing 16:00 cutover 决定，例如 2026-05-18 16:00 前是
     2026-05-17。
@@ -1027,16 +1027,37 @@ def test_ads_default_date_range_uses_meta_business_today(authed_client_no_db):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "function adsDefaultStartIso()" in body
+    assert "function adsDefaultStartIso(level)" in body
+    assert "function adsDefaultEndIso(level)" in body
     assert "return formatDateInput(d);" in body
     assert "setAdRange('today', true);" in body
     assert "setInputValue('adStartDate', adsDefaultStartIso());" not in body
     assert "return year + '-03-01';" not in body
     assert "return year + '-05-03';" not in body
-    assert "startListEl.value = adsDefaultStartIso();" in body
-    assert "startDetailEl.value = adsDefaultStartIso();" in body
-    assert ".value || adsDefaultStartIso();" in body
+    assert "startListEl.value = adsDefaultStartIso(level);" in body
+    assert "startDetailEl.value = adsDefaultStartIso(level);" in body
+    assert ".value || adsDefaultStartIso(level);" in body
     assert "adsDaysAgoIso" not in body
+
+
+def test_ads_adset_and_ad_default_to_latest_closed_business_day(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "docs/superpowers/specs/2026-05-28-ads-non-realtime-default-closed-day.md" in body
+    assert "function adsLevelUsesRealtime(level)" in body
+    assert "return level === 'campaign';" in body
+    assert "if (!adsLevelUsesRealtime(level))" in body
+    assert "window.orderAnalyticsMetaCalendar.addDays(d, -1)" in body
+    assert "endListEl.value = adsDefaultEndIso(level);" in body
+    assert "endDetailEl.value = adsDefaultEndIso(level);" in body
+    assert ".value || adsDefaultEndIso(level);" in body
+    init_block = body[
+        body.index("ADS_LEVELS.forEach(function(level) {"):
+        body.index("adsBindSearch(level);")
+    ]
+    assert "adsSyncLevelRangeSelection(level);" in init_block
 
 
 def test_ads_analysis_page_has_ad_account_filter_controls(authed_client_no_db):

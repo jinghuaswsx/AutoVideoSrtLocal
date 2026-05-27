@@ -7359,17 +7359,23 @@
 
   function adsTodayIso() { return new Date().toISOString().slice(0, 10); }
   // Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
-  function adsDefaultStartIso() {
+  // Docs-anchor: docs/superpowers/specs/2026-05-28-ads-non-realtime-default-closed-day.md
+  function adsLevelUsesRealtime(level) {
+    return level === 'campaign';
+  }
+  function adsDefaultEndIso(level) {
     var d = window.orderAnalyticsMetaCalendar
       ? window.orderAnalyticsMetaCalendar.today()
       : new Date();
+    if (!adsLevelUsesRealtime(level)) {
+      d = window.orderAnalyticsMetaCalendar
+        ? window.orderAnalyticsMetaCalendar.addDays(d, -1)
+        : new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+    }
     return formatDateInput(d);
   }
-  function adsDefaultEndIso() {
-    var d = window.orderAnalyticsMetaCalendar
-      ? window.orderAnalyticsMetaCalendar.today()
-      : new Date();
-    return formatDateInput(d);
+  function adsDefaultStartIso(level) {
+    return adsDefaultEndIso(level);
   }
   // Docs-anchor: docs/superpowers/specs/2026-05-20-media-video-material-ad-plan-detail-link.md
   function adsRecentMonthStartIso() {
@@ -7440,10 +7446,10 @@
     var endListEl = document.querySelector('[data-ads-list-end="' + level + '"]');
     var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
-    if (startListEl && !startListEl.value) startListEl.value = adsDefaultStartIso();
-    if (endListEl && !endListEl.value) endListEl.value = adsDefaultEndIso();
-    if (startDetailEl && !startDetailEl.value) startDetailEl.value = adsDefaultStartIso();
-    if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso();
+    if (startListEl && !startListEl.value) startListEl.value = adsDefaultStartIso(level);
+    if (endListEl && !endListEl.value) endListEl.value = adsDefaultEndIso(level);
+    if (startDetailEl && !startDetailEl.value) startDetailEl.value = adsDefaultStartIso(level);
+    if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso(level);
   }
 
   function adsSetLevelRange(level, range) {
@@ -7482,12 +7488,12 @@
     var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
     if (startDetailEl) startDetailEl.value = adsRecentMonthStartIso();
-    if (endDetailEl) endDetailEl.value = adsDefaultEndIso();
+    if (endDetailEl) endDetailEl.value = adsDefaultEndIso(level);
   }
 
   function adsLoadList(level) {
-    var start = (document.querySelector('[data-ads-list-start="' + level + '"]') || {}).value || adsDefaultStartIso();
-    var end = (document.querySelector('[data-ads-list-end="' + level + '"]') || {}).value || adsDefaultEndIso();
+    var start = (document.querySelector('[data-ads-list-start="' + level + '"]') || {}).value || adsDefaultStartIso(level);
+    var end = (document.querySelector('[data-ads-list-end="' + level + '"]') || {}).value || adsDefaultEndIso(level);
     var searchInput = document.querySelector('[data-ads-search-input="' + level + '"]');
     var query = '';
     if (searchInput) query = searchInput.value.trim();
@@ -7684,8 +7690,8 @@
   function adsLoadDetail(level) {
     var code = adsLevelState[level].code;
     if (!code) return;
-    var start = (document.querySelector('[data-ads-detail-start="' + level + '"]') || {}).value || adsDefaultStartIso();
-    var end = (document.querySelector('[data-ads-detail-end="' + level + '"]') || {}).value || adsDefaultEndIso();
+    var start = (document.querySelector('[data-ads-detail-start="' + level + '"]') || {}).value || adsDefaultStartIso(level);
+    var end = (document.querySelector('[data-ads-detail-end="' + level + '"]') || {}).value || adsDefaultEndIso(level);
     var accountSelect = document.querySelector('[data-ads-detail-account="' + level + '"]');
     var accountId = accountSelect
       ? getSelectedAdsAccountId(accountSelect)
@@ -7776,6 +7782,7 @@
     }
     ADS_LEVELS.forEach(function(level) {
       adsInitDateInputs(level);
+      adsSyncLevelRangeSelection(level);
       adsBindSearch(level);
       // Quick date preset buttons for each level
       document.querySelectorAll('[data-ads-level-range][data-ads-level="' + level + '"]').forEach(function(btn) {
@@ -7884,8 +7891,13 @@
         partial: { cls: 'ams-status-partial', label: '●部分sync' },
         manual:  { cls: 'ams-status-manual',  label: '○手动兜底' }
       };
-      var x = map[status] || { cls: '', label: escHtml(status) };
+      var x = map[status] || { cls: '', label: amsEscHtml(status) };
       return '<span class="' + x.cls + '">' + x.label + '</span>';
+    }
+    function amsEscHtml(s) {
+      var div = document.createElement('div');
+      div.textContent = s == null ? '' : String(s);
+      return div.innerHTML;
     }
 
     function amsLoadList() {
@@ -7934,8 +7946,8 @@
         rows.forEach(function(row) {
           var tr = document.createElement('tr');
           tr.dataset.businessDate = row.business_date;
-          var businessDateHtml = escHtml(row.business_date);
-          var businessDateAttr = escHtml(row.business_date);
+          var businessDateHtml = amsEscHtml(row.business_date);
+          var businessDateAttr = amsEscHtml(row.business_date);
           var html = '<td>' + businessDateHtml + '</td>';
           amsCachedAccounts.forEach(function(acc) {
             var e = (row.entries && row.entries[acc.code]) || {};
@@ -7954,7 +7966,7 @@
             return row.entries && row.entries[a.code] && row.entries[a.code].effective === 'manual';
           });
           var updatedBy = anyManualAcct ? (row.entries[anyManualAcct.code].updated_by || '—') : '—';
-          var updatedByHtml = escHtml(updatedBy);
+          var updatedByHtml = amsEscHtml(updatedBy);
           html += '<td>' + updatedByHtml + '</td>';
           html += '<td>'
             + '<button type="button" class="ams-edit" data-date="' + businessDateAttr + '">编辑</button>'
@@ -8042,10 +8054,10 @@
         wrap.className = 'ams-acct-field';
         var status = (acc.enabled === false) ? ' (已停用)' : '';
         var prefillVal = (prefill[acc.code] !== undefined) ? String(prefill[acc.code]) : '';
-        var accountLabelHtml = escHtml(acc.label || acc.code || '');
-        var accountIdHtml = escHtml(acc.account_id || '');
-        var accountCodeAttr = escHtml(acc.code || '');
-        var prefillAttr = escHtml(prefillVal);
+        var accountLabelHtml = amsEscHtml(acc.label || acc.code || '');
+        var accountIdHtml = amsEscHtml(acc.account_id || '');
+        var accountCodeAttr = amsEscHtml(acc.code || '');
+        var prefillAttr = amsEscHtml(prefillVal);
         wrap.innerHTML = accountLabelHtml + ' (' + accountIdHtml + ')' + status + '<br>'
           + '$ <input type="number" step="0.01" min="0" data-acct-code="' + accountCodeAttr + '" '
           + 'value="' + prefillAttr + '" placeholder="留空=不录">';

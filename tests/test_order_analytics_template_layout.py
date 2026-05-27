@@ -265,7 +265,7 @@ def test_ads_deep_link_defaults_detail_range_to_recent_month():
     assert "function adsRecentMonthStartIso()" in template
     assert "function adsApplyDeepLinkDateRange(level)" in template
     assert "startDetailEl.value = adsRecentMonthStartIso();" in template
-    assert "endDetailEl.value = adsDefaultEndIso();" in template
+    assert "endDetailEl.value = adsDefaultEndIso(level);" in template
     assert "new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()" in template
 
     deep_link = template[
@@ -333,13 +333,14 @@ def test_manual_ad_spend_rendering_escapes_server_controlled_values():
 
     manual_block = template[template.index("function amsStatusBadge"): template.index("function amsSaveModal")]
 
-    assert "label: escHtml(status)" in manual_block
-    assert "var businessDateHtml = escHtml(row.business_date);" in manual_block
-    assert "var businessDateAttr = escHtml(row.business_date);" in manual_block
-    assert "var updatedByHtml = escHtml(updatedBy);" in manual_block
-    assert "var accountLabelHtml = escHtml(acc.label || acc.code || '');" in manual_block
-    assert "var accountIdHtml = escHtml(acc.account_id || '');" in manual_block
-    assert "var accountCodeAttr = escHtml(acc.code || '');" in manual_block
-    assert "var prefillAttr = escHtml(prefillVal);" in manual_block
+    assert "function amsEscHtml" in manual_block
+    assert "label: amsEscHtml(status)" in manual_block
+    assert "var businessDateHtml = amsEscHtml(row.business_date);" in manual_block
+    assert "var businessDateAttr = amsEscHtml(row.business_date);" in manual_block
+    assert "var updatedByHtml = amsEscHtml(updatedBy);" in manual_block
+    assert "var accountLabelHtml = amsEscHtml(acc.label || acc.code || '');" in manual_block
+    assert "var accountIdHtml = amsEscHtml(acc.account_id || '');" in manual_block
+    assert "var accountCodeAttr = amsEscHtml(acc.code || '');" in manual_block
+    assert "var prefillAttr = amsEscHtml(prefillVal);" in manual_block
     assert "var html = '<td>' + row.business_date + '</td>';" not in manual_block
     assert "wrap.innerHTML = (acc.label || acc.code)" not in manual_block
