@@ -1796,12 +1796,26 @@
         <select id="nplSiteFilter" aria-label="新品投放分析店铺筛选">
           <option value="">全部店铺</option>
           {% for option in realtime_store_options or [] %}
-          <option value="{{ option.value }}">{{ option.label }}</option>
+          <option value="{{ option.code }}">{{ option.label }}</option>
           {% endfor %}
         </select>
       </div>
     </div>
   </div>
+
+  <section class="dq-bar" data-npl-dq-bar hidden aria-live="polite">
+    <div class="dq-bar__shell is-unknown" data-npl-dq-shell>
+      <span class="dq-bar__icon" aria-hidden="true">●</span>
+      <div class="dq-bar__body">
+        <div class="dq-bar__title">
+          <span data-npl-dq-status-label>数据质量</span>
+          <span class="dq-bar__chip" data-npl-dq-source>—</span>
+          <span class="dq-bar__chip" data-npl-dq-range hidden></span>
+        </div>
+        <div class="dq-bar__sub" data-npl-dq-sub></div>
+      </div>
+    </div>
+  </section>
 
   <div class="oar-subtabs" role="tablist" aria-label="新品投放分析范围">
     <button type="button" class="oar-subtab is-active" data-new-product-scope="new" aria-pressed="true">新品分析</button>
@@ -4204,7 +4218,66 @@
     if (body) body.innerHTML = '<tr><td colspan="' + colspan + '">' + escapeHtml(text || '暂无数据') + '</td></tr>';
   }
 
+  function renderNewProductLaunchDataQualityBar(payload) {
+    var root = document.querySelector('[data-npl-dq-bar]');
+    if (!root) return;
+    var shell = root.querySelector('[data-npl-dq-shell]');
+    var statusLabel = root.querySelector('[data-npl-dq-status-label]');
+    var sourceChip = root.querySelector('[data-npl-dq-source]');
+    var rangeChip = root.querySelector('[data-npl-dq-range]');
+    var sub = root.querySelector('[data-npl-dq-sub]');
+    var dq = payload && typeof payload === 'object'
+      ? payload
+      : { status: 'unknown', source_mode: 'unknown' };
+    var statusLabels = {
+      ok: '数据已校验',
+      warning: '数据已展示（带未分摊或实时兜底）',
+      stale: '派生数据滞后',
+      mismatch: '跨表对账失败',
+      error: '校验异常',
+      unknown: '数据质量未知'
+    };
+    var sourceLabels = {
+      daily_final: '日终广告表',
+      realtime_snapshot: '实时快照兜底',
+      mixed: '混合（部分日终 / 部分实时）',
+      derived_cache: '派生缓存（已新鲜度校验）',
+      unknown: '数据源未知'
+    };
+    var status = statusLabels[dq.status] ? dq.status : 'unknown';
+    root.hidden = false;
+    if (shell) {
+      shell.classList.remove('is-ok', 'is-warning', 'is-stale', 'is-mismatch', 'is-error', 'is-unknown');
+      shell.classList.add('is-' + status);
+    }
+    if (statusLabel) statusLabel.textContent = statusLabels[status];
+    if (sourceChip) sourceChip.textContent = sourceLabels[dq.source_mode] || sourceLabels.unknown;
+    if (rangeChip) {
+      if (dq.business_date_from && dq.business_date_to) {
+        rangeChip.hidden = false;
+        rangeChip.textContent = dq.business_date_from === dq.business_date_to
+          ? '业务日 ' + dq.business_date_from
+          : '业务日 ' + dq.business_date_from + ' ~ ' + dq.business_date_to;
+      } else {
+        rangeChip.hidden = true;
+      }
+    }
+    if (sub) {
+      var parts = [];
+      if (Array.isArray(dq.errors)) {
+        dq.errors.slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
+      }
+      if (!parts.length && Array.isArray(dq.warnings)) {
+        dq.warnings.slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
+      }
+      sub.textContent = parts.length
+        ? parts.join('；')
+        : '检验完成于 ' + (dq.generated_at ? String(dq.generated_at).replace('T', ' ').slice(0, 19) : '—');
+    }
+  }
+
   function renderNewProductLaunchOverview(data) {
+    renderNewProductLaunchDataQualityBar(data && data.data_quality);
     var s = data.summary || {};
     var revenueWithShipping = Number(s.revenue_with_shipping);
     if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {

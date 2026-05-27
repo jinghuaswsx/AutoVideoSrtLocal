@@ -75,6 +75,31 @@ def test_new_product_launch_panel_has_three_scope_tabs_and_request_param():
     assert "loadNewProductLaunchOverview" in template
 
 
+def test_new_product_launch_store_filter_uses_realtime_option_code():
+    panel = _new_product_launch_panel_source()
+    store_filter = panel[
+        panel.index('id="nplSiteFilter"'):
+        panel.index("</select>", panel.index('id="nplSiteFilter"'))
+    ]
+
+    assert 'value="{{ option.code }}"' in store_filter
+    assert 'value="{{ option.value }}"' not in store_filter
+
+
+def test_new_product_launch_renders_data_quality_without_realtime_dom_conflict():
+    template = _template_source()
+    panel = _new_product_launch_panel_source()
+    render_block = template[
+        template.index("function renderNewProductLaunchOverview"):
+        template.index("function renderNewProductLaunchOrders")
+    ]
+
+    assert 'data-npl-dq-bar' in panel
+    assert "function renderNewProductLaunchDataQualityBar" in template
+    assert "renderNewProductLaunchDataQualityBar(data && data.data_quality);" in render_block
+    assert "window.renderDataQualityBar(data && data.data_quality);" not in render_block
+
+
 def test_realtime_bj_hint_is_inserted_after_query_button():
     """北京时间提示不能插入到日期范围和查询按钮之间。"""
     template = _template_source()
