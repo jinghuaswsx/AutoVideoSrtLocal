@@ -100,6 +100,17 @@ def test_new_product_launch_renders_data_quality_without_realtime_dom_conflict()
     assert "window.renderDataQualityBar(data && data.data_quality);" not in render_block
 
 
+def test_new_product_launch_roas_prefers_scoped_roas_points():
+    template = _template_source()
+    render_block = template[
+        template.index("function renderNewProductLaunchRoas"):
+        template.index("// ── 入口：同步刷新顶部卡片 + 子 tab", template.index("function renderNewProductLaunchRoas"))
+    ]
+
+    assert "var rows = data.roas_points || [];" in render_block
+    assert "var rows = data.hourly || [];" not in render_block
+
+
 def test_realtime_bj_hint_is_inserted_after_query_button():
     """北京时间提示不能插入到日期范围和查询按钮之间。"""
     template = _template_source()

@@ -130,8 +130,10 @@ def test_refresh_ad_match_launch_dates_keeps_existing_ad_match_locked(monkeypatc
     assert args[2] == "ad_match"
 
 
-def test_refresh_ad_match_launch_dates_does_not_count_locked_ad_match_as_updated(monkeypatch):
+def test_refresh_ad_match_launch_dates_updates_locked_ad_match_when_new_match_is_earlier(monkeypatch):
     from appcore.order_analytics import product_ad_launch as pal
+
+    executed: list[tuple[str, tuple]] = []
 
     def fake_query(sql, args=()):
         if "FROM (" in sql and "meta_ad_daily_campaign_metrics" in sql:
@@ -145,11 +147,38 @@ def test_refresh_ad_match_launch_dates_does_not_count_locked_ad_match_as_updated
                 }
             ]
         if "FROM product_ad_launch_dates" in sql:
-            return [{"product_id": 101, "source": "ad_match"}]
+            return [{"product_id": 101, "source": "ad_match", "ad_launch_date": date(2026, 5, 23)}]
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
-    monkeypatch.setattr(oa, "execute", lambda sql, args=(): pytest.fail("locked ad_match should not update"))
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append((sql, args)) or 9001)
+
+    result = pal.refresh_ad_match_launch_dates_for_products([101])
+
+    assert result == {"matched_products": 1, "updated_rows": 1}
+    assert executed[0][1][1] == date(2026, 5, 21)
+
+
+def test_refresh_ad_match_launch_dates_does_not_count_later_locked_ad_match_as_updated(monkeypatch):
+    from appcore.order_analytics import product_ad_launch as pal
+
+    def fake_query(sql, args=()):
+        if "FROM (" in sql and "meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "product_id": 101,
+                    "ad_launch_date": date(2026, 5, 25),
+                    "source_level": "campaign",
+                    "source_table": "meta_ad_daily_campaign_metrics",
+                    "source_row_id": 11,
+                }
+            ]
+        if "FROM product_ad_launch_dates" in sql:
+            return [{"product_id": 101, "source": "ad_match", "ad_launch_date": date(2026, 5, 23)}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): pytest.fail("later ad_match should not update"))
 
     result = pal.refresh_ad_match_launch_dates_for_products([101])
 

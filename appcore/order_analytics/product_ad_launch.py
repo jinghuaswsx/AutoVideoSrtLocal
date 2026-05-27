@@ -141,47 +141,54 @@ def _earliest_ad_matches_for_products(product_ids: tuple[int, ...]) -> list[dict
     return list(earliest.values())
 
 
-def _launch_sources_for_products(product_ids: tuple[int, ...]) -> dict[int, str]:
+def _launch_records_for_products(product_ids: tuple[int, ...]) -> dict[int, dict[str, Any]]:
     if not product_ids:
         return {}
     placeholders = ", ".join(["%s"] * len(product_ids))
     rows = query(
-        f"SELECT product_id, source FROM product_ad_launch_dates WHERE product_id IN ({placeholders})",
+        f"SELECT product_id, ad_launch_date, source FROM product_ad_launch_dates WHERE product_id IN ({placeholders})",
         product_ids,
     ) or []
-    sources: dict[int, str] = {}
+    records: dict[int, dict[str, Any]] = {}
     for row in rows:
         try:
             pid = int(row.get("product_id") or 0)
         except (TypeError, ValueError):
             continue
         if pid > 0:
-            sources[pid] = str(row.get("source") or "")
-    return sources
+            records[pid] = dict(row)
+    return records
 
 
 def refresh_ad_match_launch_dates_for_products(
     product_ids: list[Any] | tuple[Any, ...],
 ) -> dict[str, int]:
     rows = _earliest_ad_matches_for_products(_normalize_product_ids(product_ids))
-    existing_sources = _launch_sources_for_products(
+    existing_records = _launch_records_for_products(
         tuple(int(row["product_id"]) for row in rows if row.get("product_id") is not None)
     )
     updated_rows = 0
     for row in rows:
         pid = int(row["product_id"])
-        if existing_sources.get(pid) not in (None, "", FALLBACK_SOURCE):
+        existing = existing_records.get(pid) or {}
+        existing_source = str(existing.get("source") or "")
+        existing_date = existing.get("ad_launch_date")
+        if (
+            existing_source not in (None, "", FALLBACK_SOURCE)
+            and existing_date is not None
+            and existing_date <= row["ad_launch_date"]
+        ):
             continue
         execute(
             "INSERT INTO product_ad_launch_dates "
             "(product_id, ad_launch_date, source, source_level, source_table, source_row_id) "
             "VALUES (%s, %s, %s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE "
-            "ad_launch_date = IF(product_ad_launch_dates.source = 'created_at_fallback', VALUES(ad_launch_date), product_ad_launch_dates.ad_launch_date), "
-            "source_level = IF(product_ad_launch_dates.source = 'created_at_fallback', VALUES(source_level), product_ad_launch_dates.source_level), "
-            "source_table = IF(product_ad_launch_dates.source = 'created_at_fallback', VALUES(source_table), product_ad_launch_dates.source_table), "
-            "source_row_id = IF(product_ad_launch_dates.source = 'created_at_fallback', VALUES(source_row_id), product_ad_launch_dates.source_row_id), "
-            "source = IF(product_ad_launch_dates.source = 'created_at_fallback', VALUES(source), product_ad_launch_dates.source)",
+            "ad_launch_date = IF(product_ad_launch_dates.source = 'created_at_fallback' OR product_ad_launch_dates.ad_launch_date > VALUES(ad_launch_date), VALUES(ad_launch_date), product_ad_launch_dates.ad_launch_date), "
+            "source_level = IF(product_ad_launch_dates.source = 'created_at_fallback' OR product_ad_launch_dates.ad_launch_date > VALUES(ad_launch_date), VALUES(source_level), product_ad_launch_dates.source_level), "
+            "source_table = IF(product_ad_launch_dates.source = 'created_at_fallback' OR product_ad_launch_dates.ad_launch_date > VALUES(ad_launch_date), VALUES(source_table), product_ad_launch_dates.source_table), "
+            "source_row_id = IF(product_ad_launch_dates.source = 'created_at_fallback' OR product_ad_launch_dates.ad_launch_date > VALUES(ad_launch_date), VALUES(source_row_id), product_ad_launch_dates.source_row_id), "
+            "source = IF(product_ad_launch_dates.source = 'created_at_fallback' OR product_ad_launch_dates.ad_launch_date > VALUES(ad_launch_date), VALUES(source), product_ad_launch_dates.source)",
             (
                 pid,
                 row["ad_launch_date"],

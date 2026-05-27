@@ -4410,12 +4410,7 @@
   function renderNewProductLaunchRoas(data) {
     var chart = document.getElementById('nplRoasChart');
     var body = document.getElementById('nplHourlyBody');
-    var rows = data.hourly || [];
-    if (!rows.length && (data.roas_points || []).length) {
-      rows = (data.roas_points || []).map(function(point) {
-        return { hour: point.hour, true_roas: point.true_roas };
-      });
-    }
+    var rows = data.roas_points || [];
     if (chart) {
       chart.innerHTML = rows.length
         ? '<div class="oar-note">已加载 ' + fmtInt(rows.length) + ' 个新品投放范围 ROAS 节点。</div>'

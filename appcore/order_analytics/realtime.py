@@ -2080,8 +2080,9 @@ def _get_realtime_product_sales_stats(
     ]
 
 
-def _get_daily_campaigns(
-    target: date,
+def _get_daily_campaigns_for_range(
+    start: date,
+    end: date,
     *,
     product_id: int | None = None,
     product_ids: tuple[int, ...] | None = None,
@@ -2111,11 +2112,11 @@ def _get_daily_campaigns(
         "SUM(spend_usd) AS spend, "
         "SUM(" + _canonical_meta_purchase_value_sql() + ") AS purchase_value "
         "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date=%s "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
         + product_sql + account_sql +
         "GROUP BY ad_account_id, ad_account_name, campaign_name, normalized_campaign_code "
         "ORDER BY spend DESC, campaign_name",
-        tuple([target] + product_args + account_args),
+        tuple([start, end] + product_args + account_args),
     )
     if unmatched_ads:
         rows = _filter_realtime_campaign_rows_for_launch_scope(
@@ -2140,6 +2141,25 @@ def _get_daily_campaigns(
             "clicks": 0,
         })
     return out
+
+
+def _get_daily_campaigns(
+    target: date,
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """从 Meta 日级最终报表按 campaign 聚合，字段对齐实时表的 campaign_details。"""
+    return _get_daily_campaigns_for_range(
+        target,
+        target,
+        product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
+        site_codes=site_codes,
+    )
 
 
 def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | None:
@@ -2532,6 +2552,17 @@ def _build_realtime_overview_for_range(
     else:
         ad_source = "meta_ad_daily_campaign_metrics"
         ad_granularity = "daily"
+    campaign_details = (
+        _get_daily_campaigns_for_range(
+            start,
+            end,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+            site_codes=sites,
+        )
+        if include_details else []
+    )
 
     return {
         "period": {
@@ -2580,7 +2611,7 @@ def _build_realtime_overview_for_range(
         "order_profit_details": order_profit_details,
         "order_profit_details_page": _order_profit_page_info(order_profit_total, page, page_size),
         "order_profit_summary": profit_summary,
-        "campaigns": [],
+        "campaigns": campaign_details,
         "unallocated_campaigns": [],
         "unallocated_campaign_summary": {"count": 0, "spend_usd": 0.0},
         "product_sales_stats": get_dianxiaomi_product_sales_stats(

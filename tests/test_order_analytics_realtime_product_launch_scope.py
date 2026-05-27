@@ -320,6 +320,61 @@ def test_range_launch_scope_applies_product_filters(monkeypatch):
     assert any("product_id IN" in sql and 101 in args for sql, args in calls)
 
 
+def test_range_unmatched_scope_returns_campaign_details(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "SUM(spend_usd)" in sql:
+            if "GROUP BY ad_account_id" in sql:
+                return [
+                    {
+                        "ad_account_id": "act_1",
+                        "ad_account_name": "Meta",
+                        "campaign_name": "unmatched-campaign",
+                        "normalized_campaign_code": "unmatched-campaign",
+                        "result_count": 1,
+                        "spend": 25.5,
+                        "purchase_value": 0,
+                    }
+                ]
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 9),
+                    "ad_spend": 25.5,
+                    "meta_purchase_value": 0,
+                    "meta_purchases": 1,
+                        "last_ad_updated_at": datetime(2026, 5, 10, 10, 0),
+                    }
+                ]
+        if "SELECT meta_business_date, ad_account_id, matched_product_code" in sql:
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 9),
+                    "ad_account_id": "act_1",
+                    "campaign_name": "unmatched-campaign",
+                    "normalized_campaign_code": "unmatched-campaign",
+                    "matched_product_code": None,
+                    "product_id": None,
+                    "spend_usd": 25.5,
+                    "purchase_value_usd": 0,
+                    "result_count": 1,
+                    "updated_at": datetime(2026, 5, 10, 10, 0),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        now=datetime(2026, 5, 10, 12, 0),
+        start_date="2026-05-08",
+        end_date="2026-05-09",
+        include_details=True,
+        product_launch_scope="unmatched",
+    )
+
+    assert result["summary"]["ad_spend"] == 25.5
+    assert result["campaigns"][0]["normalized_campaign_code"] == "unmatched-campaign"
+
+
 def test_route_rejects_invalid_product_launch_scope():
     response, status = _call_realtime_overview("?product_launch_scope=maybe")
 
