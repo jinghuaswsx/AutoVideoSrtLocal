@@ -607,6 +607,10 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
 
     matched: dict[str, dict[str, Any]] = {}
     run_ids: list[str] = []
+    
+    # 1. First, retrieve auto-evaluation runs from mingkong_fine_ai_auto_evaluations
+    auto_run_ids = set()
+    run_to_material: dict[str, str] = {}
     auto_lookup = {material_key.lower(): material_key for material_key in card_index}
     auto_keys = list(auto_lookup)
     if auto_keys:
@@ -624,64 +628,83 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
                 """,
                 tuple(auto_keys),
             )
+            for row in auto_rows or []:
+                material_key = auto_lookup.get(str(row.get("material_key") or "").strip().lower())
+                run_id = str(row.get("evaluation_run_id") or "").strip()
+                if material_key and run_id:
+                    auto_run_ids.add(run_id)
+                    run_to_material[run_id] = material_key
         except Exception:
             logger.exception("failed to load Mingkong fine AI auto evaluation links")
-            auto_rows = []
 
-        run_to_material: dict[str, str] = {}
-        for row in auto_rows or []:
-            material_key = auto_lookup.get(str(row.get("material_key") or "").strip().lower())
-            run_id = str(row.get("evaluation_run_id") or "").strip()
-            if material_key and run_id and material_key not in matched:
-                run_to_material[run_id] = material_key
-
-        if run_to_material:
-            run_placeholders = ",".join(["%s"] * len(run_to_material))
-            try:
-                auto_run_rows = query(
-                    f"""
-                    SELECT id, evaluation_run_id, product_id, status,
-                           summary_json, frontend_json, progress_json, metadata_json,
-                           created_at, updated_at, completed_at, failed_at
-                    FROM ai_evaluation_runs
-                    WHERE evaluation_run_id IN ({run_placeholders})
-                      AND status IN ('completed', 'partially_completed')
-                    ORDER BY created_at DESC, id DESC
-                    """,
-                    tuple(run_to_material),
+    # 2. Extract card video paths for manual/external runs
+    video_paths = {
+        normalize_mk_media_path(str(item.get("video_path") or ""))
+        for item in items or []
+        if str(item.get("video_path") or "").strip()
+    }
+    
+    run_rows = []
+    if video_paths:
+        placeholders = ",".join(["%s"] * len(video_paths))
+        try:
+            # Retrieve runs matching any card video path, regardless of product_id
+            run_rows = query(
+                f"""
+                SELECT id, evaluation_run_id, product_id, status,
+                       summary_json, frontend_json, progress_json, metadata_json,
+                       created_at, updated_at, completed_at, failed_at
+                FROM ai_evaluation_runs
+                WHERE (
+                  JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.card_video_path')) IN ({placeholders})
+                  OR JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.external_card_video.path')) IN ({placeholders})
+                  OR JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.video_path')) IN ({placeholders})
                 )
-            except Exception:
-                logger.exception("failed to load external fine AI runs from auto evaluation links")
-                auto_run_rows = []
-            for row in auto_run_rows or []:
-                run_id = str(row.get("evaluation_run_id") or "").strip()
-                material_key = run_to_material.get(run_id)
-                if material_key and material_key not in matched:
-                    matched[material_key] = row
-                    run_ids.append(run_id)
+                  AND status IN ('completed', 'partially_completed')
+                ORDER BY created_at DESC, id DESC
+                """,
+                tuple(list(video_paths) * 3)
+            )
+        except Exception:
+            logger.exception("failed to load real-time fine AI evaluation runs by video paths")
 
-    try:
-        rows = query(
-            """
-            SELECT id, evaluation_run_id, product_id, status,
-                   summary_json, frontend_json, progress_json, metadata_json,
-                   created_at, updated_at, completed_at, failed_at
-            FROM ai_evaluation_runs
-            WHERE product_id = 0
-              AND status IN ('completed', 'partially_completed')
-              AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_type')) = 'external_product_link'
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1000
-            """
-        )
-    except Exception:
-        logger.exception("failed to load external fine AI evaluation runs for mingkong cards")
-        rows = []
+    # Fetch any missing auto-runs that were not returned by video path search
+    fetched_run_ids = {str(row.get("evaluation_run_id")) for row in run_rows if row.get("evaluation_run_id")}
+    missing_auto_run_ids = auto_run_ids - fetched_run_ids
+    if missing_auto_run_ids:
+        placeholders = ",".join(["%s"] * len(missing_auto_run_ids))
+        try:
+            auto_run_rows = query(
+                f"""
+                SELECT id, evaluation_run_id, product_id, status,
+                       summary_json, frontend_json, progress_json, metadata_json,
+                       created_at, updated_at, completed_at, failed_at
+                FROM ai_evaluation_runs
+                WHERE evaluation_run_id IN ({placeholders})
+                  AND status IN ('completed', 'partially_completed')
+                ORDER BY created_at DESC, id DESC
+                """,
+                tuple(missing_auto_run_ids),
+            )
+            run_rows.extend(auto_run_rows)
+        except Exception:
+            logger.exception("failed to load missing auto evaluation runs")
 
-    for row in rows or []:
+    # Map by material_key first (100% robust for auto-evaluations)
+    for row in run_rows:
         run_id = str(row.get("evaluation_run_id") or "").strip()
+        material_key = run_to_material.get(run_id)
+        if material_key and material_key not in matched:
+            matched[material_key] = row
+            run_ids.append(run_id)
+
+    # For any remaining cards, match by video_path and product link (for manual/external runs)
+    for row in run_rows:
+        run_id = str(row.get("evaluation_run_id") or "").strip()
+        if run_id in [matched_row.get("evaluation_run_id") for matched_row in matched.values()]:
+            continue
         metadata = _json_loads(row.get("metadata_json"), {}) or {}
-        if not run_id or not isinstance(metadata, dict):
+        if not isinstance(metadata, dict):
             continue
         run_links = _fine_ai_run_links(metadata)
         run_video_path = _fine_ai_external_card_video_path(metadata)
@@ -795,9 +818,10 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         product_id = _as_int(product_status.get("media_product_id"))
         if product_id in ai_status_by_product_id:
             product_status.update(ai_status_by_product_id[product_id])
+        # Prioritize card-specific fine AI evaluation over product-level fallback
         product_status["fine_ai_evaluation"] = (
-            fine_ai_status_by_product_id.get(product_id)
-            or fine_ai_status_by_material_key.get(str(item.get("material_key") or "").strip())
+            fine_ai_status_by_material_key.get(str(item.get("material_key") or "").strip())
+            or fine_ai_status_by_product_id.get(product_id)
         )
         if not material_status["has_local_match"]:
             legacy_status = _legacy_material_status_for_item(
