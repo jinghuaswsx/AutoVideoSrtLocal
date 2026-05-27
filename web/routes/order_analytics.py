@@ -228,12 +228,43 @@ def _realtime_store_options() -> list[dict[str, str]]:
 
 
 @bp.route("/order-analytics")
+@bp.route("/order-analytics/realtime")
+@bp.route("/order-analytics/new-product-launch")
+@bp.route("/order-analytics/dxm-orders-view")
+@bp.route("/order-analytics/ads-view")
+@bp.route("/order-analytics/ad-accounts-view")
+@bp.route("/order-analytics/product-dashboard-view")
+@bp.route("/order-analytics/country-dashboard-view")
+@bp.route("/order-analytics/true-roas-view")
+@bp.route("/order-analytics/weekly-roas-view")
+@bp.route("/order-analytics/import-view")
+@bp.route("/order-analytics/shopify-analytics-view")
 @login_required
 @permission_required("data_analytics")
 def page():
+    path = request.path.rstrip('/')
+    if path == "/order-analytics":
+        active_tab = "realtime"
+    else:
+        mapping = {
+            "/order-analytics/realtime": "realtime",
+            "/order-analytics/new-product-launch": "newProductLaunch",
+            "/order-analytics/dxm-orders-view": "dxmOrders",
+            "/order-analytics/ads-view": "ads",
+            "/order-analytics/ad-accounts-view": "adAccounts",
+            "/order-analytics/product-dashboard-view": "dashboard",
+            "/order-analytics/country-dashboard-view": "countryDashboard",
+            "/order-analytics/true-roas-view": "trueRoas",
+            "/order-analytics/weekly-roas-view": "weeklyRoas",
+            "/order-analytics/import-view": "import",
+            "/order-analytics/shopify-analytics-view": "analytics",
+        }
+        active_tab = mapping.get(path, "realtime")
+
     resp = make_response(render_template(
         "order_analytics.html",
         realtime_store_options=_realtime_store_options(),
+        active_tab=active_tab,
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp

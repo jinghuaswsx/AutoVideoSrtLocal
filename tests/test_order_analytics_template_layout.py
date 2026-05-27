@@ -10,21 +10,25 @@ def _template_source() -> str:
 
 def _realtime_panel_source() -> str:
     template = _template_source()
-    panel_start = template.index('<section class="oa-panel active" id="panelRealtime">')
+    panel_start = template.index('id="panelRealtime"')
+    # 回退到 section 标签起始
+    panel_start = template.rindex("<section", 0, panel_start)
     panel_end = template.index("<!-- ═══════ Tab 0: 产品看板 ═══════ -->", panel_start)
     return template[panel_start:panel_end]
 
 
 def _ads_panel_source() -> str:
     template = _template_source()
-    panel_start = template.index('<div class="oa-panel" id="panelAds">')
+    panel_start = template.index('id="panelAds"')
+    panel_start = template.rindex("<div", 0, panel_start)
     panel_end = template.index("<!-- ═══════ Tab: 广告账户 ═══════ -->", panel_start)
     return template[panel_start:panel_end]
 
 
 def _new_product_launch_panel_source() -> str:
     template = _template_source()
-    panel_start = template.index('<section class="oa-panel" id="panelNewProductLaunch">')
+    panel_start = template.index('id="panelNewProductLaunch"')
+    panel_start = template.rindex("<section", 0, panel_start)
     panel_end = template.index("<!-- ═══════ Tab 0: 产品看板 ═══════ -->", panel_start)
     return template[panel_start:panel_end]
 
