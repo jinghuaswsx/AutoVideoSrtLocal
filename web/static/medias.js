@@ -6367,9 +6367,53 @@
     const items = Array.isArray(task.items) ? task.items : [];
     $('edLinkCheckItemsBadge').textContent = String(items.length);
     if (!items.length) {
+      if (task.status === 'failed' || task.error) {
+        itemsBox.innerHTML = `
+          <div class="oc-link-check-error-banner" style="padding: 16px 20px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; color: #b91c1c; display: flex; flex-direction: column; gap: 4px; margin-top: var(--oc-sp-2);">
+            <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 16px;">❌</span> 链接审计执行失败 (Audit Failed)
+            </div>
+            <div style="font-size: 12px; opacity: 0.95; line-height: 1.6; word-break: break-all; font-family: var(--font-mono, monospace);">${escapeHtml(task.error || '未知任务错误')}</div>
+          </div>
+        `;
+        return;
+      }
+      if (edState.linkCheckDetailError) {
+        itemsBox.innerHTML = `
+          <div class="oc-link-check-error-banner" style="padding: 16px 20px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; color: #b91c1c; display: flex; flex-direction: column; gap: 4px; margin-top: var(--oc-sp-2);">
+            <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 16px;">❌</span> 检测详情加载失败
+            </div>
+            <div style="font-size: 12px; opacity: 0.95; line-height: 1.6; word-break: break-all; font-family: var(--font-mono, monospace);">${escapeHtml(edState.linkCheckDetailError)}</div>
+          </div>
+        `;
+        return;
+      }
+      if (task.status === 'queued' || task.status === 'locking_locale' || task.status === 'downloading' || task.status === 'analyzing') {
+        const percent = edLinkCheckPercent(task);
+        itemsBox.innerHTML = `
+          <div class="oc-loading-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 40px var(--oc-sp-5); flex: 1;">
+            <div class="oc-spinner" style="border-top-color: var(--oc-accent, #2563eb);"></div>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <div style="font-size: 14px; font-weight: 700; color: var(--oc-accent, #2563eb);">智能链接与多模态图片审计中...</div>
+              <div style="font-size: 12px; color: var(--oc-fg-muted, #64748b);">当前进度：${percent}% (正在分析页面图片资源)</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      if (edState.linkCheckDetailTask === null && !task.task_id) {
+        itemsBox.innerHTML = `
+          <div class="oc-loading-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 40px var(--oc-sp-5); flex: 1;">
+            <div class="oc-spinner" style="border-top-color: var(--oc-accent, #2563eb);"></div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--oc-accent, #2563eb);">正在创建链接审计项目，请稍候...</div>
+          </div>
+        `;
+        return;
+      }
       const placeholder = edLinkCheckNeedsPolling(summaryTask)
         ? `链接检测进行中，当前进度 ${edLinkCheckPercent(summaryTask)}%`
-        : (edState.linkCheckDetailError || '还没有检测结果');
+        : '还没有检测结果';
       itemsBox.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(placeholder)}</div>`;
       return;
     }
@@ -7275,6 +7319,7 @@
       edPollLinkCheck(lang, domain);
     } catch (e) {
       alert('链接审计启动失败：' + (e.message || e));
+      edCloseLinkCheckModal();
     }
   }
 
