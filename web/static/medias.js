@@ -5627,6 +5627,165 @@
     return `<span class="oc-link-check-badge ${kind || 'info'}">${escapeHtml(label)}</span>`;
   }
 
+  function edLinkCheckWorkflowHtml(item, task) {
+    const analysis = item.analysis || {};
+    const ref = item.reference_match || {};
+    const binary = item.binary_quick_check || {};
+    const sameImage = item.same_image_llm || {};
+    const decision = analysis.decision || '';
+
+    // Step 1: Reference Match
+    let s1 = { color: 'var(--oc-text-mute)', status: '⏭️ 跳过匹配', detail: '未提供或无备选详情图，默认流向大模型OCR审计' };
+    if (ref.status === 'matched') {
+      const scorePct = typeof ref.score === 'number' ? Math.round(ref.score * 100) : 0;
+      s1 = {
+        color: 'var(--oc-success-fg)',
+        status: '✅ 匹配成功',
+        detail: `与黄金图相似度达 ${scorePct}%` + (ref.ssim ? ` (SSIM: ${ref.ssim})` : '')
+      };
+    } else if (ref.status === 'weak_match') {
+      const scorePct = typeof ref.score === 'number' ? Math.round(ref.score * 100) : 0;
+      s1 = {
+        color: 'var(--oc-warning-fg)',
+        status: '⚠️ 疑似度较低',
+        detail: `与黄金图相似度 ${scorePct}% (低于 80% 阈值)`
+      };
+    } else if (ref.status === 'not_matched') {
+      const scorePct = typeof ref.score === 'number' ? Math.round(ref.score * 100) : 0;
+      s1 = {
+        color: 'var(--oc-danger-fg)',
+        status: '❌ 特征不匹配',
+        detail: `最高相似度仅 ${scorePct}% (低于限度，判定未替换，后续步骤跳过)`
+      };
+    }
+
+    // Step 2: Binary Fast Match
+    let s2 = { color: 'var(--oc-text-mute)', status: '⏭️ 跳过快检', detail: binary.reason || '无可用匹配黄金图' };
+    if (binary.status === 'pass') {
+      const simPct = typeof binary.binary_similarity === 'number' ? Math.round(binary.binary_similarity * 100) : 0;
+      const overlapPct = typeof binary.foreground_overlap === 'number' ? Math.round(binary.foreground_overlap * 100) : 0;
+      s2 = {
+        color: 'var(--oc-success-fg)',
+        status: '✅ 快检通过',
+        detail: `二值相似度 ${simPct}%，前景重合 ${overlapPct}%`
+      };
+    } else if (binary.status === 'fail') {
+      const overlapPct = typeof binary.foreground_overlap === 'number' ? Math.round(binary.foreground_overlap * 100) : 0;
+      s2 = {
+        color: 'var(--oc-danger-fg)',
+        status: '❌ 快检未通过',
+        detail: `前景重合 ${overlapPct}% 低于阈值 (90%)`
+      };
+    } else if (binary.status === 'error') {
+      s2 = {
+        color: 'var(--oc-warning-fg)',
+        status: '⚠️ 快检异常',
+        detail: binary.reason || '快检执行失败'
+      };
+    }
+
+    // Step 3: Same Image LLM
+    let s3 = { color: 'var(--oc-text-mute)', status: '⏭️ 跳过判定', detail: sameImage.reason || '无需判定' };
+    if (sameImage.status === 'done') {
+      const isSame = sameImage.answer === '是';
+      s3 = {
+        color: isSame ? 'var(--oc-success-fg)' : 'var(--oc-danger-fg)',
+        status: isSame ? '✅ 判定一致' : '❌ 判定不一致',
+        detail: isSame ? '底图判定为同一张图' : '底图判定为不同图片'
+      };
+    } else if (sameImage.status === 'error') {
+      s3 = {
+        color: 'var(--oc-warning-fg)',
+        status: '⚠️ 判定异常',
+        detail: sameImage.reason || '大模型比对异常'
+      };
+    }
+
+    // Step 4: Final Verdict
+    let s4 = { color: 'var(--oc-text-mute)', status: '⚖️ 综合研判', detail: '等待判定结论' };
+    const src = analysis.decision_source;
+    if (src === 'green_pass') {
+      s4 = {
+        color: 'var(--oc-success-fg)',
+        status: '✅ 绿色免检放行',
+        detail: '网页图片与后台翻译的黄金参考图一致，免除大模型重复审计'
+      };
+    } else if (src === 'size_threshold_bypass') {
+      s4 = {
+        color: 'var(--oc-success-fg)',
+        status: '✅ 尺寸免检放行',
+        detail: '检测为网页边角挂饰或小图标，直接免检通过'
+      };
+    } else if (src === 'same_image_llm_check') {
+      s4 = {
+        color: 'var(--oc-danger-fg)',
+        status: '❌ 判定需替换',
+        detail: '对比判定：网页图片与翻译图特征不一致，尚未替换到位'
+      };
+    } else if (src === 'gemini_language_check') {
+      const isPass = decision === 'pass';
+      const isNoText = decision === 'no_text';
+      let decLabel = '待人工复核';
+      let decColor = 'var(--oc-warning-fg)';
+      if (isPass) {
+        decLabel = '✅ 大模型审核通过';
+        decColor = 'var(--oc-success-fg)';
+      } else if (isNoText) {
+        decLabel = '✅ 无文字放行';
+        decColor = 'var(--oc-success-fg)';
+      } else if (decision === 'replace') {
+        decLabel = '❌ 大模型判定需替换';
+        decColor = 'var(--oc-danger-fg)';
+      }
+
+      const langText = analysis.detected_language ? `Detected: ${langDisplayName(analysis.detected_language)}` : '';
+      const summaryText = analysis.text_summary ? ` | ${analysis.text_summary}` : '';
+      s4 = {
+        color: decColor,
+        status: decLabel,
+        detail: `Gemini OCR 审计。${langText}${summaryText}`
+      };
+    } else if (decision) {
+      const isGood = decision === 'pass' || decision === 'no_text';
+      s4 = {
+        color: isGood ? 'var(--oc-success-fg)' : (decision === 'replace' ? 'var(--oc-danger-fg)' : 'var(--oc-warning-fg)'),
+        status: `⚖️ 综合裁决: ${LINK_CHECK_DECISION_LABELS[decision] || decision}`,
+        detail: analysis.quality_reason || '暂无详细说明'
+      };
+    }
+
+    return `
+      <div class="oc-audit-flow-box" style="margin-top: 12px; padding: 10px 12px; background: rgba(0,0,0,0.18); border-radius: 6px; font-size: 11px; line-height: 1.6; border: 1px solid var(--oc-border);">
+        <div style="font-weight: bold; margin-bottom: 8px; color: var(--oc-text-normal); display: flex; align-items: center; gap: 6px;">
+          <span>📋</span> 链路审计诊断明细 (Audit Diagnostic Flow)
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+          <div style="border-left: 2px solid ${s1.color}; padding-left: 8px;">
+            <div style="color: var(--oc-text-mute); font-weight: bold; margin-bottom: 2px;">Step 1: 视觉特征检索</div>
+            <div>状态: <strong style="color: ${s1.color};">${escapeHtml(s1.status)}</strong></div>
+            <div style="color: var(--oc-text-normal); font-size: 10px; margin-top: 2px;">${escapeHtml(s1.detail)}</div>
+          </div>
+          <div style="border-left: 2px solid ${s2.color}; padding-left: 8px;">
+            <div style="color: var(--oc-text-mute); font-weight: bold; margin-bottom: 2px;">Step 2: 文字二值快检</div>
+            <div>状态: <strong style="color: ${s2.color};">${escapeHtml(s2.status)}</strong></div>
+            <div style="color: var(--oc-text-normal); font-size: 10px; margin-top: 2px;">${escapeHtml(s2.detail)}</div>
+          </div>
+          <div style="border-left: 2px solid ${s3.color}; padding-left: 8px;">
+            <div style="color: var(--oc-text-mute); font-weight: bold; margin-bottom: 2px;">Step 3: 同图LLM辅助判定</div>
+            <div>状态: <strong style="color: ${s3.color};">${escapeHtml(s3.status)}</strong></div>
+            <div style="color: var(--oc-text-normal); font-size: 10px; margin-top: 2px;">${escapeHtml(s3.detail)}</div>
+          </div>
+          <div style="border-left: 2px solid ${s4.color}; padding-left: 8px;">
+            <div style="color: var(--oc-text-mute); font-weight: bold; margin-bottom: 2px;">Step 4: 最终审计裁决</div>
+            <div>决策: <strong style="color: ${s4.color};">${escapeHtml(s4.status)}</strong></div>
+            <div style="color: var(--oc-text-normal); font-size: 10px; margin-top: 2px;">${escapeHtml(s4.detail)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+
   const SHOPIFY_IMAGE_REPLACE_LABELS = {
     none: '未替换',
     confirmed: '图片正常',
@@ -6310,10 +6469,12 @@
               <span><strong>同图判断：</strong>${escapeHtml(edLinkCheckSameImageText(sameImage))}</span>
             </div>
             <div class="oc-link-check-item-text">${escapeHtml(reason)}</div>
+            ${edLinkCheckWorkflowHtml(item, task)}
           </div>
         </article>
       `;
     }).join('');
+
   }
 
   function edRenderDetailTranslateState(lang, tasks, detailItems) {
