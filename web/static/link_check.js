@@ -713,14 +713,15 @@
 
       const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
       const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
-      const sitePreviewUrl = safeMediaSrc(item.site_preview_url);
+      const t = Date.now();
+      const sitePreviewUrl = item.site_preview_url ? safeMediaSrc(`${item.site_preview_url}?t=${t}`) : '';
       const refPreviewUrl = reference.reference_id 
-        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/reference/${reference.reference_id}`)
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/reference/${reference.reference_id}?t=${t}`)
         : '';
 
       const original = item.original_match || {};
       const origPreviewUrl = original.original_id
-        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/original/${original.original_id}`)
+        ? safeMediaSrc(`/api/link-check/tasks/${task.task_id || task.id}/images/original/${original.original_id}?t=${t}`)
         : '';
 
       const origImg = origPreviewUrl
