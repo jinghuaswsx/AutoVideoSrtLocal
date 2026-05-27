@@ -143,6 +143,45 @@ def test_realtime_global_break_even_roas_js_uses_three_decimals():
     assert "realtimeGlobalBreakEvenRoas" in template
 
 
+def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
+    panel = _realtime_panel_source()
+
+    assert 'data-realtime-scope-card="global"' in panel
+    assert 'data-realtime-scope-card="new"' in panel
+    assert 'data-realtime-scope-card="old"' in panel
+    assert 'data-realtime-scope-card="unmatched"' in panel
+    assert "全局数据" in panel
+    assert "新品数据" in panel
+    assert "老品数据" in panel
+    assert "未匹配广告和订单" in panel
+    assert "未匹配广告和订单同口径核算" in panel
+    assert "无新品/老品过滤" in panel
+    assert "product_launch_scope=new" in panel
+    assert "product_launch_scope=old" in panel
+    assert "product_launch_scope=unmatched" in panel
+    assert 'id="realtimeNewRevenue"' in panel
+    assert 'id="realtimeOldRevenue"' in panel
+    assert 'id="realtimeUnmatchedSpend"' in panel
+
+
+def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
+    template = _template_source()
+    load_block = template[
+        template.index("function loadRealtimeTopCards"):
+        template.index("function renderRealtimeOrders")
+    ]
+
+    assert "fetchRealtimeScopeSummary(baseParams, 'global')" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'new')" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'old')" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched')" in load_block
+    assert "params.set('product_launch_scope', scope);" in load_block
+    assert "renderRealtimeScopeSummary('new'" in load_block
+    assert "renderRealtimeScopeSummary('old'" in load_block
+    assert "renderRealtimeScopeSummary('unmatched'" in load_block
+    assert "product_id 为空订单同口径核算" in load_block
+
+
 def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     """移动端表格不能把 thead/tbody 拆成两张表，否则表头和数据列会错位。"""
     template = _template_source()
