@@ -365,6 +365,45 @@ def test_ads_json_missing_product_id_400(authed_client_no_db):
     assert resp.status_code == 400
 
 
+def test_ads_json_unmatched_scope_allows_missing_product_id(authed_client_no_db, monkeypatch):
+    """全局未匹配广告明细不依赖具体 product_id。"""
+    captured: dict = {}
+
+    def fake_generate_unmatched_ads_report(*, date_from, date_to, country=None):
+        captured["date_from"] = date_from
+        captured["date_to"] = date_to
+        captured["country"] = country
+        return {
+            "accounts": [],
+            "campaigns": [],
+            "daily": [],
+            "unmatched": [
+                {
+                    "normalized_campaign_code": "mystery",
+                    "campaign_name": "Mystery",
+                    "spend_usd": 12.34,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.ppa.generate_unmatched_ads_report",
+        fake_generate_unmatched_ads_report,
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/ads.json"
+        "?ads_scope=unmatched&date_from=2026-05-01&date_to=2026-05-07&country=VN"
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["unmatched"][0]["normalized_campaign_code"] == "mystery"
+    assert captured["date_from"] == date(2026, 5, 1)
+    assert captured["date_to"] == date(2026, 5, 7)
+    assert captured["country"] == "VN"
+
+
 def test_ads_json_invalid_product_id_400(authed_client_no_db):
     """非整数 product_id → 400。"""
     resp = authed_client_no_db.get(

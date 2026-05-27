@@ -98,6 +98,40 @@ def _load_campaign_metrics(
     )
 
 
+def _load_unmatched_campaign_metrics(
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
+    """拉日期范围内仍未匹配 product_id 的广告行，供全局排查入口使用。"""
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        return query(
+            "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
+            "       m.ad_account_id, m.ad_account_name, "
+            "       m.normalized_ad_code AS normalized_campaign_code, "
+            "       m.ad_name AS campaign_name, "
+            "       m.spend_usd, m.result_count, m.purchase_value_usd "
+            "FROM meta_ad_daily_ad_metrics m "
+            "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
+            "  AND m.product_id IS NULL "
+            "  AND m.market_country = %s "
+            "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
+            (date_from, date_to, market_country),
+        )
+    return query(
+        "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
+        "       m.ad_account_id, m.ad_account_name, "
+        "       m.normalized_campaign_code, m.campaign_name, "
+        "       m.spend_usd, m.result_count, m.purchase_value_usd "
+        "FROM meta_ad_daily_campaign_metrics m "
+        "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
+        "  AND m.product_id IS NULL "
+        "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
+        (date_from, date_to),
+    )
+
+
 def _load_campaign_perf(
     normalized_codes: set[str], date_from: date, date_to: date
 ) -> dict[str, dict[str, int]]:
@@ -457,4 +491,86 @@ def generate_ads_report(
         "campaigns": campaigns,
         "daily": daily,
         "unmatched": unmatched_list,
+    }
+
+
+def generate_unmatched_ads_report(
+    *,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> dict[str, Any]:
+    """生成全局未匹配广告列表，给 Tab ④ 的 summary 跳转入口使用。"""
+    from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+    ensure_open_day_profit_lines_fresh(date_from, date_to)
+    rows = _load_unmatched_campaign_metrics(date_from, date_to, country)
+    if not rows:
+        return {"accounts": [], "campaigns": [], "daily": [], "unmatched": []}
+
+    codes: set[str] = {
+        (r.get("normalized_campaign_code") or "").strip()
+        for r in rows
+        if (r.get("normalized_campaign_code") or "").strip()
+    }
+    match_map = _load_match_map(codes) if codes else {}
+
+    unmatched: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "normalized_campaign_code": "",
+            "campaign_name": "",
+            "ad_account_id": "",
+            "ad_account_name": "",
+            "spend": Decimal("0"),
+            "result_count": 0,
+            "purchase_value": Decimal("0"),
+            "last_seen": None,
+        }
+    )
+
+    for r in rows:
+        norm = (r.get("normalized_campaign_code") or "").strip()
+        if not norm or match_map.get(norm) is not None:
+            continue
+        spend = Decimal(str(r.get("spend_usd") or 0))
+        bucket = unmatched[norm]
+        bucket["normalized_campaign_code"] = norm
+        bucket["campaign_name"] = (r.get("campaign_name") or "").strip()
+        bucket["ad_account_id"] = r.get("ad_account_id") or ""
+        bucket["ad_account_name"] = r.get("ad_account_name") or ""
+        bucket["spend"] += spend
+        bucket["result_count"] += int(r.get("result_count") or 0)
+        bucket["purchase_value"] += Decimal(str(r.get("purchase_value_usd") or 0))
+        report_date = r.get("report_date")
+        if report_date is not None and (
+            bucket["last_seen"] is None or report_date > bucket["last_seen"]
+        ):
+            bucket["last_seen"] = report_date
+
+    unmatched_list = []
+    for norm, item in unmatched.items():
+        spend = item["spend"]
+        purchase_value = item["purchase_value"]
+        last_seen = item["last_seen"]
+        unmatched_list.append({
+            "normalized_campaign_code": norm,
+            "campaign_name": item["campaign_name"],
+            "ad_account_id": item["ad_account_id"],
+            "ad_account_name": item["ad_account_name"],
+            "spend_usd": float(spend),
+            "result_count": item["result_count"],
+            "purchase_value_usd": float(purchase_value),
+            "roas_meta": float(purchase_value / spend) if spend > 0 and purchase_value > 0 else None,
+            "last_seen": last_seen.isoformat() if hasattr(last_seen, "isoformat") else last_seen,
+        })
+    unmatched_list.sort(key=lambda x: -x["spend_usd"])
+    total_unmatched_spend = sum(float(item["spend_usd"] or 0) for item in unmatched_list)
+
+    return {
+        "accounts": [],
+        "campaigns": [],
+        "daily": [],
+        "unmatched": unmatched_list,
+        "allocated_ad_spend_usd": 0.0,
+        "unallocated_ad_spend_usd": total_unmatched_spend,
     }

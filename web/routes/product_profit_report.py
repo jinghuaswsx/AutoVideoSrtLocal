@@ -493,14 +493,49 @@ def api_list_xlsx():
 @login_required
 @permission_required("product_profit")
 def api_ads_json():
-    """单产品广告明细（Tab ④ 数据源）。
+    """单产品广告明细 / 全局未匹配广告明细（Tab ④ 数据源）。
 
     Query:
-      product_id (int, required)
+      product_id (int, single-product mode required)
+      ads_scope=unmatched (optional; global unmatched mode, no product_id required)
       date_from (YYYY-MM-DD, default = today - 30d)
       date_to   (YYYY-MM-DD, default = today)
       country   (大写国家代码，可选；空 / "all" = 全部)
     """
+    today = _default_business_today()
+    date_to = _parse_date(request.args.get("date_to"), today)
+    date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
+    if date_from > date_to:
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("date_from > date_to", 400)
+        )
+
+    country = (request.args.get("country") or "").strip() or None
+    ads_scope = (request.args.get("ads_scope") or "").strip().lower()
+    if ads_scope == "unmatched":
+        try:
+            report = ppa.generate_unmatched_ads_report(
+                date_from=date_from,
+                date_to=date_to,
+                country=country,
+            )
+        except Exception as exc:  # noqa: BLE001 - bubble structured error to UI
+            log.exception("generate_unmatched_ads_report failed")
+            return product_profit_report_flask_response(
+                build_product_profit_report_error_response(f"{type(exc).__name__}: {exc}", 500)
+            )
+        if isinstance(report, dict):
+            report["data_quality"] = dq.build_for_product_profit(
+                date_from=date_from,
+                date_to=date_to,
+                allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
+                unallocated_ad_spend_usd=_extract_unallocated_ad_spend(report),
+                country=country,
+            )
+        return product_profit_report_flask_response(
+            build_product_profit_report_payload_response(report)
+        )
+
     try:
         product_id = int(request.args.get("product_id", "0"))
     except ValueError:
@@ -512,15 +547,6 @@ def api_ads_json():
             build_product_profit_report_error_response("missing product_id", 400)
         )
 
-    today = _default_business_today()
-    date_to = _parse_date(request.args.get("date_to"), today)
-    date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
-    if date_from > date_to:
-        return product_profit_report_flask_response(
-            build_product_profit_report_error_response("date_from > date_to", 400)
-        )
-
-    country = (request.args.get("country") or "").strip() or None
     try:
         report = ppa.generate_ads_report(
             product_id=product_id,
