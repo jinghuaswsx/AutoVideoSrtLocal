@@ -22,6 +22,13 @@ def _ads_panel_source() -> str:
     return template[panel_start:panel_end]
 
 
+def _new_product_launch_panel_source() -> str:
+    template = _template_source()
+    panel_start = template.index('<section class="oa-panel" id="panelNewProductLaunch">')
+    panel_end = template.index("<!-- ═══════ Tab 0: 产品看板 ═══════ -->", panel_start)
+    return template[panel_start:panel_end]
+
+
 def test_realtime_query_button_is_in_date_toolbar_target_area():
     """查询按钮应紧跟自定义日期范围，产品搜索不占用日期工具栏目标位。"""
     panel = _realtime_panel_source()
@@ -34,6 +41,38 @@ def test_realtime_query_button_is_in_date_toolbar_target_area():
     assert 'id="realtimeProductSearchInput"' not in toolbar_row
     assert panel.index('id="realtimeRefresh"') < panel.index('id="realtimeRangeNote"')
     assert panel.index('id="realtimeRangeNote"') < panel.index('id="realtimeProductSearchInput"')
+
+
+def test_new_product_launch_analysis_tab_is_next_to_realtime():
+    template = _template_source()
+    topbar_start = template.index('<span class="oa-tabs oa-tabs-topbar"')
+    topbar_end = template.index("</span>", topbar_start)
+    topbar = template[topbar_start:topbar_end]
+    mobile_start = template.index('<nav class="oa-mobile-tabs"')
+    mobile_end = template.index("</nav>", mobile_start)
+    mobile = template[mobile_start:mobile_end]
+
+    assert topbar.index('data-tab="realtime"') < topbar.index('data-tab="newProductLaunch"')
+    assert mobile.index('data-tab="realtime"') < mobile.index('data-tab="newProductLaunch"')
+    assert "新品投放分析" in topbar
+    assert "新品投放分析" in mobile
+
+
+def test_new_product_launch_panel_has_three_scope_tabs_and_request_param():
+    template = _template_source()
+    panel = _new_product_launch_panel_source()
+
+    assert 'id="panelNewProductLaunch"' in panel
+    assert 'data-new-product-scope="new"' in panel
+    assert 'data-new-product-scope="old"' in panel
+    assert 'data-new-product-scope="unmatched"' in panel
+    assert "新品分析" in panel
+    assert "老品数据" in panel
+    assert "未匹配产品" in panel
+    assert "var newProductLaunchState" in template
+    assert "scope: 'new'" in template
+    assert "product_launch_scope" in template
+    assert "loadNewProductLaunchOverview" in template
 
 
 def test_realtime_bj_hint_is_inserted_after_query_button():

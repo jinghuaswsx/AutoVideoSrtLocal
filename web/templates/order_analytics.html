@@ -4,6 +4,7 @@
 <span class="oa-page-heading">数据分析</span>
 <span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
   <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
+  <button type="button" class="oa-tab" data-tab="newProductLaunch" role="tab" aria-selected="false">新品投放分析</button>
   <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
   <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
   <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
@@ -1424,6 +1425,7 @@
 
 <nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
   <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
+  <button type="button" class="oa-tab" data-tab="newProductLaunch" role="tab" aria-selected="false">新品投放分析</button>
   <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
   <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
   <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
@@ -1763,6 +1765,108 @@
           <tbody id="realtimeHourlyBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="oa-panel" id="panelNewProductLaunch">
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row oar-realtime-toolbar-row">
+      <div class="oad-segmented">
+        <button type="button" class="oad-seg is-active" data-npl-range="today" aria-pressed="true">今天</button>
+        <button type="button" class="oad-seg" data-npl-range="yesterday" aria-pressed="false">昨天</button>
+        <button type="button" class="oad-seg" data-npl-range="thisWeek" aria-pressed="false">本周</button>
+        <button type="button" class="oad-seg" data-npl-range="lastWeek" aria-pressed="false">上周</button>
+        <button type="button" class="oad-seg" data-npl-range="thisMonth" aria-pressed="false">本月</button>
+        <button type="button" class="oad-seg" data-npl-range="lastMonth" aria-pressed="false">上月</button>
+      </div>
+      <div class="oad-date-range">
+        <input type="date" id="nplStartDate" aria-label="新品投放分析开始日期">
+        <span>至</span>
+        <input type="date" id="nplEndDate" aria-label="新品投放分析结束日期">
+      </div>
+      <div class="oar-realtime-actions">
+        <button type="button" class="oad-btn-primary" id="nplRefresh">查询</button>
+      </div>
+    </div>
+    <div class="oar-note" id="nplRangeNote">新品投放分析 · 沿用实时大盘 Meta 广告系统日口径</div>
+    <div class="oar-filter-row">
+      <div class="oar-site-filter">
+        <label class="oar-site-filter-label" for="nplSiteFilter">店铺：</label>
+        <select id="nplSiteFilter" aria-label="新品投放分析店铺筛选">
+          <option value="">全部店铺</option>
+          {% for option in realtime_store_options or [] %}
+          <option value="{{ option.value }}">{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subtabs" role="tablist" aria-label="新品投放分析范围">
+    <button type="button" class="oar-subtab is-active" data-new-product-scope="new" aria-pressed="true">新品分析</button>
+    <button type="button" class="oar-subtab" data-new-product-scope="old" aria-pressed="false">老品数据</button>
+    <button type="button" class="oar-subtab" data-new-product-scope="unmatched" aria-pressed="false">未匹配产品</button>
+  </div>
+
+  <div class="oa-stats oar-summary-stats" id="nplSummary">
+    <div class="oar-summary-row oar-summary-row-main">
+      <div class="oa-stat-card"><div class="oa-stat-label">商品销售额</div><div class="oa-stat-value" id="nplRevenue">$0.00</div><div class="oa-stat-sub" id="nplRevenueSub">订单 0 单</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">运费收入</div><div class="oa-stat-value" id="nplShipping">$0.00</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="nplRevenueWithShipping">$0.00</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">广告费</div><div class="oa-stat-value" id="nplSpend">$0.00</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="nplRoas">-</div><div class="oa-stat-sub" id="nplWindow">总销售额 / 广告费</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="nplMetaRoas">-</div><div class="oa-stat-sub" id="nplMetaRoasSub">Meta 后台成效口径</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="nplGlobalBreakEvenRoas">-</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="nplOrderCount">0</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">销量</div><div class="oa-stat-value" id="nplUnits">0</div></div>
+    </div>
+    <div class="oar-summary-row oar-summary-row-time">
+      <div class="oa-stat-card"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="nplProfit">$0.00</div><div class="oa-stat-sub" id="nplProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="nplProfitMargin">利润率 -</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">订单最新时间</div><div class="oa-stat-value" id="nplFreshness">-</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">订单更新时间</div><div class="oa-stat-value" id="nplOrderDataUpdatedAt">-</div></div>
+      <div class="oa-stat-card"><div class="oa-stat-label">广告更新时间</div><div class="oa-stat-value" id="nplAdFreshness">-</div></div>
+    </div>
+  </div>
+
+  <div class="oar-subtabs">
+    <button type="button" class="oar-subtab is-active" data-npl-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab" data-npl-subtab="profitDetails">订单盈亏明细</button>
+    <button type="button" class="oar-subtab" data-npl-subtab="products">产品销量</button>
+    <button type="button" class="oar-subtab" data-npl-subtab="campaigns">广告计划</button>
+    <button type="button" class="oar-subtab" data-npl-subtab="trend">ROAS 走势</button>
+  </div>
+
+  <div class="oar-subpanel is-active" id="nplSubOrders">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header"><div class="oa-table-title">订单明细 <span class="oar-page-info" id="nplOrderPageInfo">加载中...</span></div></div>
+      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
+    </div>
+  </div>
+  <div class="oar-subpanel" id="nplSubProfitDetails">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header"><div class="oa-table-title">订单盈亏明细 <span class="oar-page-info" id="nplProfitPageInfo">加载中...</span></div></div>
+      <div class="oa-table-scroll" id="nplProfitScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>产品</th><th>数量</th><th>总销售额</th><th>退款</th><th>采购</th><th>物流</th><th>Shopify 固定费</th><th>国际卡费</th><th>汇兑费</th><th>手续费合计</th><th>广告费</th><th>订单利润</th><th>状态</th></tr></thead><tbody id="nplOrderProfitBody"></tbody></table></div>
+    </div>
+  </div>
+  <div class="oar-subpanel" id="nplSubProducts">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+    </div>
+  </div>
+  <div class="oar-subpanel" id="nplSubCampaigns">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header"><div class="oa-table-title">广告计划数据</div></div>
+      <div class="oa-table-scroll"><table class="oa-table oar-compact-table oar-campaign-table"><thead><tr><th>Campaign</th><th>广告账户</th><th>花费</th><th>结果</th><th>购买金额</th><th>Meta ROAS</th><th>展示</th><th>点击</th><th>分摊状态</th><th>Campaign ID</th></tr></thead><tbody id="nplCampaignBody"></tbody></table></div>
+    </div>
+  </div>
+  <div class="oar-subpanel" id="nplSubTrend">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header"><div class="oa-table-title">ROAS 走势</div></div>
+      <div id="nplRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>小时</th><th>订单数</th><th>商品销售额</th><th>销量</th><th>运费</th><th>总销售额</th><th>广告费</th><th>ROAS</th></tr></thead><tbody id="nplHourlyBody"></tbody></table></div>
+      <div class="oar-note" id="nplGranularity">按新品投放范围展示同口径 ROAS 节点</div>
     </div>
   </div>
 </section>
@@ -3224,6 +3328,8 @@
         initWeeklyRoas();
       } else if (tab.dataset.tab === 'realtime') {
         loadRealtimeOverview();
+      } else if (tab.dataset.tab === 'newProductLaunch') {
+        initNewProductLaunch();
       } else if (tab.dataset.tab === 'countryDashboard') {
         initCountryDashboard();
       } else if (tab.dataset.tab === 'dxmOrders') {
@@ -3767,6 +3873,12 @@
   };
   var realtimeProductSearchTimer = null;
   var realtimeLastCampaignRows = [];
+  var newProductLaunchInited = false;
+  var newProductLaunchState = {
+    range: 'today',
+    scope: 'new',
+    siteCode: ''
+  };
 
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
@@ -3831,7 +3943,47 @@
       setRealtimeSubtab(btn.dataset.realtimeSubtab);
     });
   });
+  var nplRefresh = document.getElementById('nplRefresh');
+  if (nplRefresh) {
+    nplRefresh.addEventListener('click', function() {
+      if (newProductLaunchState.range && newProductLaunchState.range !== 'custom') {
+        setNewProductLaunchRange(newProductLaunchState.range, true);
+      }
+      loadNewProductLaunchOverview();
+    });
+  }
+  document.querySelectorAll('[data-npl-range]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setNewProductLaunchRange(btn.dataset.nplRange);
+    });
+  });
+  ['nplStartDate', 'nplEndDate'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', function() {
+      syncNewProductLaunchRangeSelection();
+      loadNewProductLaunchOverview();
+    });
+  });
+  var nplSiteFilter = document.getElementById('nplSiteFilter');
+  if (nplSiteFilter) {
+    nplSiteFilter.addEventListener('change', function() {
+      newProductLaunchState.siteCode = nplSiteFilter.value || '';
+      loadNewProductLaunchOverview();
+    });
+  }
+  document.querySelectorAll('[data-new-product-scope]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setNewProductLaunchScope(btn.dataset.newProductScope);
+      loadNewProductLaunchOverview();
+    });
+  });
+  document.querySelectorAll('[data-npl-subtab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setNewProductLaunchSubtab(btn.dataset.nplSubtab);
+    });
+  });
   setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
+  setNewProductLaunchRange('today', true);
   loadRealtimeOverview();
 
   function localDateString(value) {
@@ -3922,6 +4074,295 @@
     if (!s || !e) return null;
     if (e < s) throw new Error('结束日期不能早于开始日期');
     return { start: s, end: e };
+  }
+
+  function initNewProductLaunch() {
+    var realtimeSite = document.getElementById('realtimeSiteFilter');
+    var nplSite = document.getElementById('nplSiteFilter');
+    if (!newProductLaunchInited) {
+      setInputValue('nplStartDate', (document.getElementById('realtimeStartDate') || {}).value || '');
+      setInputValue('nplEndDate', (document.getElementById('realtimeEndDate') || {}).value || '');
+      newProductLaunchState.range = realtimeState.range || 'today';
+      if (nplSite && realtimeSite) {
+        nplSite.value = realtimeSite.value || '';
+        newProductLaunchState.siteCode = nplSite.value || '';
+      }
+      syncNewProductLaunchRangeSelection();
+      newProductLaunchInited = true;
+    }
+    loadNewProductLaunchOverview();
+  }
+
+  function getNewProductLaunchDateRange() {
+    var s = (document.getElementById('nplStartDate') || {}).value || '';
+    var e = (document.getElementById('nplEndDate') || {}).value || '';
+    if (!s || !e) return null;
+    if (e < s) throw new Error('结束日期不能早于开始日期');
+    return { start: s, end: e };
+  }
+
+  function setNewProductLaunchRange(range, skipLoad) {
+    var bounds = resolveRealtimeRange(range || 'today');
+    newProductLaunchState.range = range || 'today';
+    setInputValue('nplStartDate', formatDateInput(bounds.start));
+    setInputValue('nplEndDate', formatDateInput(bounds.end));
+    syncNewProductLaunchRangeSelection();
+    if (!skipLoad) loadNewProductLaunchOverview();
+  }
+
+  function syncNewProductLaunchRangeSelection() {
+    var startEl = document.getElementById('nplStartDate');
+    var endEl = document.getElementById('nplEndDate');
+    var currentStart = startEl ? startEl.value : '';
+    var currentEnd = endEl ? endEl.value : '';
+    var matched = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+      var bounds = resolveRealtimeRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matched = range;
+        return true;
+      }
+      return false;
+    });
+    newProductLaunchState.range = matched || 'custom';
+    document.querySelectorAll('[data-npl-range]').forEach(function(btn) {
+      var isActive = btn.dataset.nplRange === matched;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function setNewProductLaunchScope(scope) {
+    newProductLaunchState.scope = scope || 'new';
+    document.querySelectorAll('[data-new-product-scope]').forEach(function(btn) {
+      var isActive = btn.dataset.newProductScope === newProductLaunchState.scope;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function setNewProductLaunchSubtab(name) {
+    document.querySelectorAll('[data-npl-subtab]').forEach(function(item) {
+      item.classList.toggle('is-active', item.dataset.nplSubtab === name);
+    });
+    document.querySelectorAll('#panelNewProductLaunch .oar-subpanel').forEach(function(panel) {
+      panel.classList.toggle('is-active', panel.id === 'nplSub' + capitalize(name));
+    });
+  }
+
+  function loadNewProductLaunchOverview() {
+    var range;
+    try {
+      range = getNewProductLaunchDateRange();
+    } catch (err) {
+      var note = document.getElementById('nplRangeNote');
+      if (note) note.textContent = err.message;
+      return;
+    }
+    if (!range) return;
+    var params = new URLSearchParams();
+    params.set('start_date', range.start);
+    params.set('end_date', range.end);
+    params.set('include_details', '1');
+    params.set('include_profit_summary', '1');
+    params.set('product_launch_scope', newProductLaunchState.scope || 'new');
+    if (newProductLaunchState.siteCode) params.set('site_code', newProductLaunchState.siteCode);
+    setNewProductLaunchLoading();
+    fetch('/order-analytics/realtime-overview?' + params.toString())
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        renderNewProductLaunchOverview(data || {});
+      })
+      .catch(function(err) {
+        setNewProductLaunchError(err.message);
+      });
+  }
+
+  function setNewProductLaunchLoading() {
+    setNewProductLaunchTable('nplOrderBody', 10, '加载中...');
+    setNewProductLaunchTable('nplOrderProfitBody', 18, '加载中...');
+    setNewProductLaunchTable('nplProductSalesBody', 6, '加载中...');
+    setNewProductLaunchTable('nplCampaignBody', 10, '加载中...');
+    setNewProductLaunchTable('nplHourlyBody', 8, '加载中...');
+  }
+
+  function setNewProductLaunchError(message) {
+    setNewProductLaunchTable('nplOrderBody', 10, message);
+    setNewProductLaunchTable('nplOrderProfitBody', 18, message);
+    setNewProductLaunchTable('nplProductSalesBody', 6, message);
+    setNewProductLaunchTable('nplCampaignBody', 10, message);
+    setNewProductLaunchTable('nplHourlyBody', 8, message);
+    var note = document.getElementById('nplRangeNote');
+    if (note) note.textContent = '加载失败：' + message;
+  }
+
+  function setNewProductLaunchTable(id, colspan, text) {
+    var body = document.getElementById(id);
+    if (body) body.innerHTML = '<tr><td colspan="' + colspan + '">' + escapeHtml(text || '暂无数据') + '</td></tr>';
+  }
+
+  function renderNewProductLaunchOverview(data) {
+    var s = data.summary || {};
+    var revenueWithShipping = Number(s.revenue_with_shipping);
+    if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {
+      revenueWithShipping = Number(s.order_revenue || 0) + Number(s.shipping_revenue || 0);
+    }
+    setRealtimeProfitText('nplRevenue', fmtMoney(s.order_revenue));
+    setRealtimeProfitText('nplSpend', fmtMoney(s.ad_spend));
+    setRealtimeProfitText('nplRoas', fmtRoasValue(s.true_roas));
+    var metaSpend = Number(s.ad_spend);
+    var metaPurchase = Number(s.meta_purchase_value);
+    var metaRoas = (Number.isFinite(metaSpend) && metaSpend > 0 && Number.isFinite(metaPurchase)) ? metaPurchase / metaSpend : null;
+    setRealtimeProfitText('nplMetaRoas', fmtRoasValue(metaRoas));
+    setRealtimeProfitText('nplRevenueSub', '订单 ' + fmtInt(s.order_count || 0) + ' 单');
+    setRealtimeProfitText('nplOrderCount', fmtInt(s.order_count || 0));
+    setRealtimeProfitText('nplUnits', s.units || 0);
+    setRealtimeProfitText('nplShipping', fmtMoney(s.shipping_revenue));
+    setRealtimeProfitText('nplRevenueWithShipping', fmtMoney(revenueWithShipping));
+    var profitSummary = data.order_profit_summary || {};
+    var breakEven = Number(profitSummary.global_break_even_roas);
+    setRealtimeProfitText('nplGlobalBreakEvenRoas', Number.isFinite(breakEven) ? breakEven.toFixed(3) : '-');
+    var profitValue = Number(profitSummary.profit_with_estimate_usd);
+    setRealtimeProfitText('nplProfit', Number.isFinite(profitValue) ? fmtMoney(profitValue) : '-');
+    setRealtimeProfitText('nplProfitSub', (Number(profitSummary.order_count || 0) > 0) ? '利润口径 ' + fmtInt(profitSummary.order_count) + ' 单' : '暂无利润数据');
+    var marginPct = profitSummary.profit_with_estimate_margin_pct;
+    setRealtimeProfitText('nplProfitMargin', (typeof marginPct === 'number' && isFinite(marginPct)) ? '利润率 ' + Number(marginPct).toFixed(2) + '%' : '利润率 -');
+    setRealtimeProfitText('nplFreshness', formatShortDateTime((data.freshness || {}).last_order_at));
+    setRealtimeProfitText('nplOrderDataUpdatedAt', formatShortDateTime((data.freshness || {}).last_order_updated_at));
+    setRealtimeProfitText('nplAdFreshness', formatShortDateTime((data.freshness || {}).last_ad_updated_at));
+    setRealtimeProfitText('nplWindow', '截止 ' + formatShortDateTime((data.period || {}).data_until_at));
+    var note = document.getElementById('nplRangeNote');
+    if (note) note.textContent = '新品投放分析 · 当前范围：' + newProductLaunchState.scope;
+    renderNewProductLaunchOrders(data.order_details || []);
+    renderNewProductLaunchOrderProfitDetails(data.order_profit_details || []);
+    renderNewProductLaunchProductSales(data.product_sales_stats || []);
+    renderNewProductLaunchCampaigns(data.campaigns || []);
+    renderNewProductLaunchRoas(data);
+  }
+
+  function renderNewProductLaunchOrders(rows) {
+    var body = document.getElementById('nplOrderBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, formatShortDateTime(row.order_time));
+      addTextCell(tr, row.business_hour === null || row.business_hour === undefined ? '-' : String(row.business_hour).padStart(2, '0') + ':00');
+      addTextCell(tr, row.site_code || '-');
+      addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
+      addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.units || 0));
+      addTextCell(tr, fmtMoney(row.product_revenue));
+      addTextCell(tr, fmtMoney(row.shipping_revenue));
+      addTextCell(tr, fmtMoney(row.total_revenue));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 10, '暂无订单数据');
+    setRealtimeProfitText('nplOrderPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
+  }
+
+  function renderNewProductLaunchOrderProfitDetails(rows) {
+    var body = document.getElementById('nplOrderProfitBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      var profit = Number(row.order_profit_usd || 0);
+      addTextCell(tr, formatShortDateTime(row.order_time));
+      addTextCell(tr, row.business_hour === null || row.business_hour === undefined || row.business_hour === '' ? '-' : String(row.business_hour).padStart(2, '0') + ':00');
+      addTextCell(tr, row.site_code || '-');
+      addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
+      addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.units || 0));
+      addTextCell(tr, fmtMoney(row.total_revenue));
+      addTextCell(tr, fmtMoney(row.refund_deduction_usd));
+      addTextCell(tr, fmtMoney(row.purchase_cost_usd));
+      addTextCell(tr, fmtMoney(row.logistics_cost_usd));
+      addTextCell(tr, fmtMoney(row.shopify_platform_fee_usd));
+      addTextCell(tr, fmtMoney(row.international_card_fee_usd));
+      addTextCell(tr, fmtMoney(row.currency_conversion_fee_usd));
+      addTextCell(tr, fmtMoney(row.shopify_fee_total_usd));
+      addTextCell(tr, fmtMoney(row.ad_cost_usd));
+      addTextCell(tr, fmtMoney(row.order_profit_usd), profit < 0 ? 'oar-profit-loss' : 'oar-profit-ok');
+      addTextCell(tr, row.status_label || row.profit_status || '-', 'oar-status-cell');
+      body.appendChild(tr);
+    });
+    if (!body.children.length) setNewProductLaunchTable('nplOrderProfitBody', 18, '暂无订单盈亏数据');
+    setRealtimeProfitText('nplProfitPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
+  }
+
+  function renderNewProductLaunchProductSales(rows) {
+    var body = document.getElementById('nplProductSalesBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, (row.product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : ''), 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.order_count));
+      addTextCell(tr, fmtInt(row.units));
+      addTextCell(tr, fmtMoney(row.product_net_sales));
+      addTextCell(tr, fmtMoney(row.shipping));
+      addTextCell(tr, fmtMoney(row.total_sales));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 6, '暂无产品销量数据');
+  }
+
+  function renderNewProductLaunchCampaigns(rows) {
+    var body = document.getElementById('nplCampaignBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
+      addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
+      addTextCell(tr, fmtMoney(row.spend_usd));
+      addTextCell(tr, fmtInt(row.result_count || 0));
+      addTextCell(tr, fmtMoney(row.purchase_value_usd));
+      addTextCell(tr, fmtRoasValue(row.platform_roas));
+      addTextCell(tr, fmtInt(row.impressions || 0));
+      addTextCell(tr, fmtInt(row.clicks || 0));
+      addTextCell(tr, formatCampaignAllocationStatus(row), 'oar-status-cell');
+      addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
+      body.appendChild(tr);
+    });
+    if (!body.children.length) setNewProductLaunchTable('nplCampaignBody', 10, '暂无广告计划数据');
+  }
+
+  function renderNewProductLaunchRoas(data) {
+    var chart = document.getElementById('nplRoasChart');
+    var body = document.getElementById('nplHourlyBody');
+    var rows = data.hourly || [];
+    if (!rows.length && (data.roas_points || []).length) {
+      rows = (data.roas_points || []).map(function(point) {
+        return { hour: point.hour, true_roas: point.true_roas };
+      });
+    }
+    if (chart) {
+      chart.innerHTML = rows.length
+        ? '<div class="oar-note">已加载 ' + fmtInt(rows.length) + ' 个新品投放范围 ROAS 节点。</div>'
+        : '<div class="oar-note">暂无可绘制的 ROAS 节点。</div>';
+    }
+    if (!body) return;
+    body.innerHTML = '';
+    rows.forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, typeof row.hour === 'number' ? String(row.hour).padStart(2, '0') + ':00' : row.hour);
+      addTextCell(tr, row.order_count || 0);
+      addTextCell(tr, fmtMoney(row.order_revenue));
+      addTextCell(tr, row.units || 0);
+      addTextCell(tr, fmtMoney(row.shipping_revenue));
+      addTextCell(tr, fmtMoney(row.revenue_with_shipping || (Number(row.order_revenue || 0) + Number(row.shipping_revenue || 0))));
+      addTextCell(tr, row.ad_spend == null ? '-' : fmtMoney(row.ad_spend));
+      addTextCell(tr, fmtRoasValue(row.true_roas));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) setNewProductLaunchTable('nplHourlyBody', 8, '暂无 ROAS 走势数据');
   }
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
