@@ -301,6 +301,18 @@
         status: '❌ 判定需替换',
         detail: '对比判定：网页图片与翻译图特征不一致，尚未替换到位'
       };
+    } else if (src === 'no_reference_match') {
+      s4 = {
+        color: 'var(--oc-danger-fg)',
+        status: '❌ 未匹配到黄金图',
+        detail: '本地检索失败：网页实际图与后台已翻译参考图均不吻合，判定替换未到位。'
+      };
+    } else if (src === 'no_references_provided') {
+      s4 = {
+        color: 'var(--oc-success-fg)',
+        status: '✅ 免检 (后台无参考图)',
+        detail: '本地跳过：后台未配置任何对比黄金图，跳过该图替换把关。'
+      };
     } else if (src === 'gemini_language_check') {
       const isPass = decision === 'pass';
       const isNoText = decision === 'no_text';
@@ -446,7 +458,7 @@
             if (summary.binary_direct_replace_count) lines.push(`  - 快检直接不通过 (Replace)：${summary.binary_direct_replace_count} 张`);
             lines.push(`大模型同图辅助分析 (Same Image LLM)：${progress.same_image_llm_done ?? 0} 张已判定`);
             if (summary.same_image_llm_yes_count) lines.push(`  - 同图判定一致：${summary.same_image_llm_yes_count} 张`);
-            lines.push(`Gemini 多模态文本审计 (Gemini OCR)：${progress.analyzed ?? 0} / ${progress.total} 张完成`);
+            lines.push(`本地图片比对审计 (Local Contrast Match)：${progress.analyzed ?? 0} / ${progress.total} 张完成`);
           }
           return lines.join('\n');
         }
