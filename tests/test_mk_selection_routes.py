@@ -277,11 +277,11 @@ def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-material-library?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkLibraryStatusQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 

@@ -226,6 +226,22 @@
   .mk-video-card { width:auto; }
   .mk-video-frame { width:100%; height:auto; aspect-ratio:9 / 16; }
 }
+@media (min-width: 769px) {
+  .oc.mk-zoomed {
+    --mk-video-card-w: 496px;
+    --mk-video-media-w: 464px;
+    --mk-video-media-h: 768px;
+  }
+  .oc.mk-zoomed .mk-video-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--mk-video-card-w), var(--mk-video-card-w)));
+  }
+  .oc.mk-zoomed .mk-video-card-title { font-size: 18px; }
+  .oc.mk-zoomed .mk-video-summary-item { font-size: 15px; }
+  .oc.mk-zoomed .mk-video-meta-list { font-size: 15px; }
+  .oc.mk-zoomed .mk-video-product-link { font-size: 15px; }
+  .oc.mk-zoomed .mk-video-detail-link { height: 32px; padding: 0 12px; font-size: 14px; }
+  .oc.mk-zoomed .mki-btn { height: 36px; padding: 0 14px; font-size: 14px; }
+}
 /* mk-import: A 子系统按钮 */
 .mki-btn {
   height: 28px; padding: 0 10px; border: 1px solid var(--oc-border-strong);
@@ -784,6 +800,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <section id="mkVideosPanel" class="mk-library-panel">
     <div class="mk-video-library-head">
       <span id="mkVideoLibraryStatus">准备加载本地视频素材快照</span>
+      <button type="button" class="mk-sort-btn mk-zoom-btn" id="mkVideoZoomBtn" onclick="toggleMkCardZoom()">卡片放大 2x</button>
     </div>
     <div class="oc-pager" id="mkVideoPagerTop"></div>
     <div class="mk-video-grid mk-video-library-grid" id="mkVideoMaterialGrid">
@@ -795,9 +812,12 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <section id="mkYesterdayTop100Panel" class="mk-library-panel" hidden>
     <div class="mk-video-library-head">
       <span id="mkYesterdayTop100Status">切换到昨天消耗前300后加载本地归档</span>
-      <div class="mk-sort-toggle-group" id="yesterdaySortGroup" hidden>
-        <button type="button" class="mk-sort-btn active" id="sortNewEntryBtn" onclick="setYesterdayTop300Sort('new_entry_first')">新进在前</button>
-        <button type="button" class="mk-sort-btn" id="sortNormalBtn" onclick="setYesterdayTop300Sort('normal')">正常排序</button>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button type="button" class="mk-sort-btn mk-zoom-btn" id="mkYesterdayZoomBtn" onclick="toggleMkCardZoom()">卡片放大 2x</button>
+        <div class="mk-sort-toggle-group" id="yesterdaySortGroup" hidden>
+          <button type="button" class="mk-sort-btn active" id="sortNewEntryBtn" onclick="setYesterdayTop300Sort('new_entry_first')">新进在前</button>
+          <button type="button" class="mk-sort-btn" id="sortNormalBtn" onclick="setYesterdayTop300Sort('normal')">正常排序</button>
+        </div>
       </div>
     </div>
     <div class="oc-pager" id="mkYesterdayTop100PagerTop"></div>
@@ -833,6 +853,8 @@ let selectedMkRange = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 100;
+let mkCardZoomed = false;
+const MK_CARD_ZOOM_STORAGE_KEY = 'mkCardZoomed';
 const MKI_FINE_AI_RESULT_CACHE = new Map();
 
 function fmtMoney(v) {
@@ -1922,6 +1944,30 @@ function closeDetail() {
   document.getElementById('detailOverlay').style.display = 'none';
 }
 
+function applyMkCardZoom(zoomed) {
+  mkCardZoomed = Boolean(zoomed);
+  const container = document.querySelector('.oc');
+  if (container) container.classList.toggle('mk-zoomed', mkCardZoomed);
+  
+  const btns = [document.getElementById('mkVideoZoomBtn'), document.getElementById('mkYesterdayZoomBtn')];
+  btns.forEach(btn => {
+    if (btn) {
+      btn.textContent = mkCardZoomed ? '恢复卡片' : '卡片放大 2x';
+      btn.classList.toggle('active', mkCardZoomed);
+      btn.setAttribute('aria-pressed', mkCardZoomed ? 'true' : 'false');
+    }
+  });
+  localStorage.setItem(MK_CARD_ZOOM_STORAGE_KEY, mkCardZoomed ? '1' : '0');
+}
+
+function toggleMkCardZoom() {
+  applyMkCardZoom(!mkCardZoomed);
+}
+
+function restoreMkCardZoom() {
+  applyMkCardZoom(localStorage.getItem(MK_CARD_ZOOM_STORAGE_KEY) === '1');
+}
+
 document.addEventListener('click', e => {
   const playButton = e.target.closest('[data-mk-video-play]');
   if (playButton) {
@@ -1946,6 +1992,7 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 
 // 初始加载
 (async function initMkSelection() {
+  restoreMkCardZoom();
   const initialTab = initMkLibraryTabFromHash();
   await loadMkSelectionSnapshots();
   if (initialTab === 'videos') {
