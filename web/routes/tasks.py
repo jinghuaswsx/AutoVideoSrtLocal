@@ -30,7 +30,7 @@ from web.upload_util import client_filename_basename
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
-_MANUAL_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_MANUAL_FILENAME_SAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-()（）]+")
 
 TASK_CENTER_DEFAULT_PAGE_SIZE = 50
 MANUAL_RESULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024
