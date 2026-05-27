@@ -440,22 +440,53 @@
     font-size: 14px;
     line-height: 1.6;
     color: #333;
-    background: #f9f9f9;
+    background: #fff;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   
   /* Shopify Preview Styling */
+  .shopify-preview-topbar {
+    background: #000;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 500;
+    text-align: center;
+    padding: 6px 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
   .shopify-preview-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 16px;
+    padding: 14px 16px;
     background: #fff;
-    border-bottom: 1px solid #eee;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    border-bottom: 1px solid #f1f1f1;
   }
-  .shopify-preview-header .header-menu-icon { font-size: 18px; color: #555; }
-  .shopify-preview-header .header-logo { font-weight: 700; font-size: 14px; color: #111; letter-spacing: 1px; }
-  .shopify-preview-header .header-cart-icon { font-size: 18px; color: #555; }
+  .shopify-preview-header .header-left-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    color: #222;
+  }
+  .shopify-preview-header .header-logo {
+    font-weight: 700;
+    font-size: 15px;
+    color: #000;
+    letter-spacing: 2px;
+    text-align: center;
+    text-transform: uppercase;
+    font-family: 'Poppins', sans-serif;
+  }
+  .shopify-preview-header .header-right-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 16px;
+    color: #222;
+  }
 
   .shopify-preview-gallery {
     position: relative;
@@ -465,11 +496,11 @@
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    scrollbar-width: none; /* Hide scrollbar for Firefox */
-    -ms-overflow-style: none; /* Hide scrollbar for IE/Edge */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   .gallery-wrapper::-webkit-scrollbar {
-    display: none; /* Hide scrollbar for Chrome/Safari */
+    display: none;
   }
   .gallery-slide {
     min-width: 100%;
@@ -489,19 +520,19 @@
     display: flex;
     justify-content: center;
     gap: 6px;
-    padding: 8px 0;
+    padding: 10px 0;
     background: #fff;
   }
   .gallery-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #ddd;
+    background: #e5e5e5;
     cursor: pointer;
     transition: all 0.2s;
   }
   .gallery-dot.active {
-    background: #2563eb;
+    background: #000;
     transform: scale(1.2);
   }
 
@@ -510,8 +541,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f3f4f6;
-    color: #6b7280;
+    background: #f8f9fa;
+    color: #777;
     font-size: 12px;
     text-align: center;
     padding: 20px;
@@ -520,52 +551,147 @@
   .shopify-preview-meta {
     padding: 16px;
     background: #fff;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #f1f1f1;
   }
   .preview-title {
     font-size: 18px;
-    font-weight: 700;
-    line-height: 1.3;
-    color: #1a1a1a;
-    margin: 0 0 8px 0;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #222;
+    margin: 0 0 6px 0;
+    font-family: 'Poppins', sans-serif;
   }
   .preview-reviews {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .preview-reviews .stars {
     color: #f59e0b;
-    font-size: 14px;
+    font-size: 13px;
     letter-spacing: -1px;
   }
   .preview-reviews .rating-text {
-    font-size: 12px;
-    color: #64748b;
+    font-size: 11px;
+    color: #878787;
   }
   .preview-price-box {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
   .preview-sale-price {
     font-size: 20px;
     font-weight: 700;
-    color: #dc2626; /* Vibrant red for sales */
+    color: #b41d1d; /* Deep red matching newjoyloo */
   }
   .preview-compare-price {
     font-size: 14px;
-    color: #94a3b8;
+    color: #878787;
     text-decoration: line-through;
   }
   .preview-badge {
-    background: #fee2e2;
-    color: #ef4444;
+    background: #f45151; /* Vibrant red matching newjoyloo */
+    color: #fff;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 2px;
+  }
+
+  /* Variations/SKUs styling matching Newjoyloo */
+  .shopify-preview-variants {
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #f1f1f1;
+  }
+  .variant-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #222;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .variant-label span {
+    font-weight: 400;
+    color: #777;
+    margin-left: 4px;
+  }
+  .variant-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .variant-option-pill {
+    padding: 8px 14px;
+    border: 1px solid #ddd;
+    border-radius: 2px;
+    background: #fff;
+    font-size: 12px;
+    color: #222;
+    cursor: pointer;
+    font-weight: 500;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.2s;
+  }
+  .variant-option-pill.selected {
+    border-color: #000;
+    background: #000;
+    color: #fff;
+  }
+
+  /* Quantity selector box */
+  .shopify-preview-quantity {
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #f1f1f1;
+  }
+  .quantity-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #222;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .quantity-selector-box {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #ddd;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .quantity-selector-box .qty-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: #f8f9fa;
+    user-select: none;
+    font-weight: 600;
+    font-size: 14px;
+    color: #222;
+    transition: background 0.15s;
+  }
+  .quantity-selector-box .qty-btn:hover {
+    background: #e9ecef;
+  }
+  .quantity-selector-box .qty-num {
+    width: 44px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #222;
+    background: #fff;
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
   }
 
   .shopify-preview-cta {
@@ -573,92 +699,126 @@
     background: #fff;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    border-bottom: 1px solid #f1f5f9;
+    gap: 10px;
+    border-bottom: 1px solid #f1f1f9;
   }
   .btn-atc {
     width: 100%;
-    padding: 12px;
+    padding: 14px;
     background: #fff;
-    color: #111;
-    border: 2px solid #111;
-    font-weight: 700;
+    color: #000;
+    border: 1.5px solid #000;
+    font-weight: 600;
     font-size: 13px;
-    border-radius: 4px;
+    border-radius: 2px;
     cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-family: 'Poppins', sans-serif;
     transition: all 0.2s;
   }
   .btn-buy {
     width: 100%;
-    padding: 12px;
-    background: #111;
+    padding: 14px;
+    background: #000;
     color: #fff;
     border: none;
-    font-weight: 700;
+    font-weight: 600;
     font-size: 13px;
-    border-radius: 4px;
+    border-radius: 2px;
     cursor: pointer;
-    transition: all 0.2s;
-    animation: pulseButton 2s infinite ease-in-out;
-  }
-  @keyframes pulseButton {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-    100% { transform: scale(1); }
-  }
-
-  .shopify-preview-desc-header {
-    background: #fff;
-    border-bottom: 2px solid #111;
-    padding: 12px 16px 8px 16px;
-    font-size: 12px;
-    font-weight: 700;
     letter-spacing: 1px;
-    color: #111;
-    margin-top: 10px;
+    text-transform: uppercase;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.2s;
+    animation: pulseButton 2.5s infinite ease-in-out;
   }
 
-  .shopify-preview-desc-body {
+  .shopify-preview-shipping-info {
     padding: 16px;
     background: #fff;
+    border-bottom: 1px solid #f1f1f1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .shipping-info-item {
+    font-size: 12px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Accordion styled DESCRIPTION */
+  .shopify-preview-accordion {
+    background: #fff;
+    margin-top: 8px;
+  }
+  .accordion-item {
+    border-bottom: 1px solid #f1f1f1;
+  }
+  .accordion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #222;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    user-select: none;
+  }
+  .accordion-header .accordion-icon {
+    font-size: 12px;
+    color: #777;
+    transition: transform 0.2s;
+  }
+  .accordion-item.active .accordion-header .accordion-icon {
+    transform: rotate(90deg);
+  }
+  .accordion-content {
+    display: none;
+    padding: 16px;
     font-size: 13px;
-    color: #374151;
-    line-height: 1.6;
+    color: #444;
+    line-height: 1.65;
+    background: #fff;
+    border-top: 1px solid #f9f9f9;
   }
-  .shopify-preview-desc-body h3 {
-    font-size: 14px;
+  .accordion-item.active .accordion-content {
+    display: block;
+  }
+
+  .accordion-content h3 {
+    font-size: 13px;
     font-weight: 700;
-    margin-top: 16px;
+    margin-top: 14px;
     margin-bottom: 8px;
-    color: #111;
+    color: #222;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
-  .shopify-preview-desc-body p {
+  .accordion-content p {
     margin-bottom: 12px;
   }
-  .shopify-preview-desc-body ul {
-    padding-left: 20px;
+  .accordion-content ul {
+    padding-left: 18px;
     margin-bottom: 12px;
   }
-  .shopify-preview-desc-body li {
+  .accordion-content li {
     margin-bottom: 4px;
   }
 
   .shopify-preview-detail-images {
     background: #fff;
-    padding: 16px 0;
-    border-top: 1px solid #f1f5f9;
-  }
-  .detail-images-header {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: #111;
-    padding: 0 16px 12px 16px;
-    text-align: center;
+    padding: 8px 0;
   }
   .detail-img-container {
     width: 100%;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .detail-img-container img {
     width: 100%;
@@ -667,15 +827,15 @@
 
   .shopify-preview-footer-trust {
     padding: 20px 16px;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
+    background: #f9f9f9;
+    border-top: 1px solid #eee;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
   .trust-item {
-    font-size: 12px;
-    color: #475569;
+    font-size: 11px;
+    color: #666;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -896,6 +1056,49 @@
     });
   }
 
+  // Handle preview variant pill selection
+  window.selectPreviewVariant = function(index, price) {
+    // Update active pill highlight
+    document.querySelectorAll('.variant-option-pill').forEach((pill, idx) => {
+      if (idx === index) {
+        pill.classList.add('selected');
+      } else {
+        pill.classList.remove('selected');
+      }
+    });
+    
+    // Update label text
+    const labelSpan = document.getElementById('selectedVariantLabel');
+    const selectedPill = document.querySelector(`.variant-option-pill:nth-child(${index + 1})`);
+    if (labelSpan && selectedPill) {
+      labelSpan.innerText = selectedPill.innerText;
+    }
+    
+    // Update active sale and compare prices
+    const saleSpan = document.querySelector('.preview-sale-price');
+    const compareSpan = document.querySelector('.preview-compare-price');
+    if (saleSpan) saleSpan.innerText = `$${price.toFixed(2)}`;
+    if (compareSpan) compareSpan.innerText = `$${(price * 1.6).toFixed(2)}`;
+  };
+
+  // Adjust preview quantity value
+  window.adjustPreviewQty = function(change) {
+    const numSpan = document.querySelector('.qty-num');
+    if (!numSpan) return;
+    let val = parseInt(numSpan.innerText) || 1;
+    val += change;
+    if (val < 1) val = 1;
+    numSpan.innerText = val;
+  };
+
+  // Toggle preview collapsible accordion items
+  window.togglePreviewAccordion = function(header) {
+    const item = header.closest('.accordion-item');
+    if (item) {
+      item.classList.toggle('active');
+    }
+  };
+
   // Generate simulated Shopify Mobile PDP HTML dynamically
   function updateMobilePreview() {
     const previewScreen = document.getElementById('mobilePreviewScreen');
@@ -904,10 +1107,21 @@
     // 1. Get title
     const title = document.getElementById('productTitle').value || 'Product Title';
     
-    // 2. Get price from the first SKU price input
-    const firstPriceInput = document.querySelector('.sku-price');
-    const price = firstPriceInput ? (parseFloat(firstPriceInput.value) || 0.0) : 19.99;
-    const comparePrice = (price * 1.6).toFixed(2);
+    // 2. Extract SKUs list dynamically from the pricing table
+    const skus = [];
+    document.querySelectorAll('.sku-row').forEach(row => {
+      const skuCodeInput = row.querySelector('.sku-code');
+      const skuPriceInput = row.querySelector('.sku-price');
+      if (skuCodeInput && skuPriceInput) {
+        skus.push({
+          sku: skuCodeInput.value || 'Default SKU',
+          price: parseFloat(skuPriceInput.value) || 0.0
+        });
+      }
+    });
+
+    const activePrice = skus.length > 0 ? skus[0].price : 19.99;
+    const comparePrice = (activePrice * 1.6).toFixed(2);
     
     // 3. Get selected carousel images
     const carouselImages = [];
@@ -936,19 +1150,26 @@
     // 5. Get HTML description
     const htmlText = document.getElementById('productHtmlDesc').value;
     
-    // Assemble the premium Shopify-style PDP layout
+    // Assemble the premium Shopify-style PDP layout matching newjoyloo.com
     let html = '';
     
-    // A. Shopify Mobile Header
+    // A. Top black announcement banner
+    html += `
+      <div class="shopify-preview-topbar">
+        ⚡ FREE SHIPPING WORLDWIDE FOR ORDERS OVER $39 ⚡
+      </div>
+    `;
+
+    // B. Header Bar
     html += `
       <div class="shopify-preview-header">
-        <div class="header-menu-icon">☰</div>
-        <div class="header-logo">🛍️ ONLINE STORE</div>
-        <div class="header-cart-icon">🛒</div>
+        <div class="header-left-box">☰</div>
+        <div class="header-logo">NEWJOYLOO</div>
+        <div class="header-right-box">🔍 ♡ 🛒</div>
       </div>
     `;
     
-    // B. Hero Image Slider / Carousel
+    // C. Hero Image Slider / Carousel
     if (carouselImages.length > 0) {
       html += `
         <div class="shopify-preview-gallery">
@@ -974,7 +1195,7 @@
       `;
     }
     
-    // C. Product Metadata Box
+    // D. Product Metadata Box
     html += `
       <div class="shopify-preview-meta">
         <h1 class="preview-title">${escapeHtml(title)}</h1>
@@ -983,50 +1204,95 @@
           <span class="rating-text">4.9 (128 reviews)</span>
         </div>
         <div class="preview-price-box">
-          <span class="preview-sale-price">$${price.toFixed(2)}</span>
+          <span class="preview-sale-price">$${activePrice.toFixed(2)}</span>
           <span class="preview-compare-price">$${comparePrice}</span>
           <span class="preview-badge">SALE</span>
         </div>
       </div>
     `;
+
+    // E. Dynamic Variant Swatch Selector
+    if (skus.length > 0) {
+      html += `
+        <div class="shopify-preview-variants">
+          <div class="variant-label">PACK SIZE: <span id="selectedVariantLabel">${escapeHtml(skus[0].sku)}</span></div>
+          <div class="variant-options">
+            ${skus.map((item, idx) => `
+              <button class="variant-option-pill ${idx === 0 ? 'selected' : ''}" onclick="selectPreviewVariant(${idx}, ${item.price})">
+                ${escapeHtml(item.sku)}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // F. Interactive Quantity Selector
+    html += `
+      <div class="shopify-preview-quantity">
+        <div class="quantity-label">QUANTITY:</div>
+        <div class="quantity-selector-box">
+          <span class="qty-btn" onclick="adjustPreviewQty(-1)">-</span>
+          <span class="qty-num">1</span>
+          <span class="qty-btn" onclick="adjustPreviewQty(1)">+</span>
+        </div>
+      </div>
+    `;
     
-    // D. CTA Buy Buttons
+    // G. CTA Buy Buttons
     html += `
       <div class="shopify-preview-cta">
         <button class="btn-atc">🛒 ADD TO CART</button>
         <button class="btn-buy">⚡ BUY IT NOW</button>
       </div>
     `;
-    
-    // E. Description Section Header
+
+    // H. Shipping Estimates
     html += `
-      <div class="shopify-preview-desc-header">
-        <span>DESCRIPTION</span>
+      <div class="shopify-preview-shipping-info">
+        <div class="shipping-info-item">✈️ Free Shipping Worldwide on orders over $39</div>
+        <div class="shipping-info-item">⏱️ Processing time: Ships within 1-3 business days</div>
       </div>
     `;
-    
-    // F. HTML Copywriting Description
+
+    // I. Collapsible Accordions (Description + Shipping Policy)
     html += `
-      <div class="shopify-preview-desc-body">
-        ${htmlText}
-      </div>
-    `;
-    
-    // G. Detail Embedded Images at the bottom of the description
-    if (detailImages.length > 0) {
-      html += `
-        <div class="shopify-preview-detail-images">
-          <div class="detail-images-header">📸 PRODUCT DETAILS</div>
-          ${detailImages.map(src => `
-            <div class="detail-img-container">
-              <img src="${src}" alt="detail image">
-            </div>
-          `).join('')}
+      <div class="shopify-preview-accordion">
+        <div class="accordion-item active">
+          <div class="accordion-header" onclick="togglePreviewAccordion(this)">
+            <span>Description</span>
+            <span class="accordion-icon">❯</span>
+          </div>
+          <div class="accordion-content">
+            ${htmlText}
+            
+            ${detailImages.length > 0 ? `
+              <div class="shopify-preview-detail-images">
+                ${detailImages.map(src => `
+                  <div class="detail-img-container">
+                    <img src="${src}" alt="detail image">
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
         </div>
-      `;
-    }
+        
+        <div class="accordion-item">
+          <div class="accordion-header" onclick="togglePreviewAccordion(this)">
+            <span>Shipping & Returns</span>
+            <span class="accordion-icon">❯</span>
+          </div>
+          <div class="accordion-content">
+            <p>✈️ <strong>Free Shipping:</strong> On all orders over $39 USD.</p>
+            <p>📦 <strong>Processing Time:</strong> Ships within 1-3 business days.</p>
+            <p>🔄 <strong>Returns:</strong> Easy 30-day hassle-free returns.</p>
+          </div>
+        </div>
+      </div>
+    `;
     
-    // H. High-Converting Trust Badges Footer
+    // J. High-Converting Trust Badges Footer
     html += `
       <div class="shopify-preview-footer-trust">
         <div class="trust-item">🚚 <strong>Free Shipping</strong> Worldwide</div>
@@ -1169,6 +1435,7 @@
     e.dataTransfer.setData('text/html', this.innerHTML);
   }
 
+  // Drag over handler
   function handleDragOver(e) {
     if (e.preventDefault) {
       e.preventDefault();
@@ -1178,10 +1445,12 @@
     return false;
   }
 
+  // Drag leave handler
   function handleDragLeave(e) {
     this.classList.remove('drag-over');
   }
 
+  // Drop handler
   function handleDrop(e) {
     if (e.stopPropagation) {
       e.stopPropagation();
@@ -1204,6 +1473,7 @@
     return false;
   }
 
+  // Drag end handler
   function handleDragEnd(e) {
     this.style.opacity = '1.0';
     document.querySelectorAll('.asset-card').forEach(card => {
@@ -1211,6 +1481,7 @@
     });
   }
 
+  // Save sorted asset IDs
   function saveAssetsSortOrder() {
     const assetIds = [];
     document.querySelectorAll('#carouselGrid .asset-card').forEach(card => {
