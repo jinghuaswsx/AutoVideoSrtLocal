@@ -20,6 +20,20 @@ def test_filter_links_small_lang():
     filtered_de = _filter_links_by_lang(links, "DE")
     assert filtered_de == ["https://newjoyloo.com/de/products/essential-preparedness-kit-rjc"]
 
+    # 测试 sv (瑞典语)
+    links_with_sv = links + [
+        "https://newjoyloo.com/sv/products/essential-preparedness-kit-rjc"
+    ]
+    filtered_sv = _filter_links_by_lang(links_with_sv, "sv")
+    assert filtered_sv == ["https://newjoyloo.com/sv/products/essential-preparedness-kit-rjc"]
+
+    # 测试 fi (芬兰语)
+    links_with_fi = links + [
+        "https://newjoyloo.com/fi/products/essential-preparedness-kit-rjc"
+    ]
+    filtered_fi = _filter_links_by_lang(links_with_fi, "fi")
+    assert filtered_fi == ["https://newjoyloo.com/fi/products/essential-preparedness-kit-rjc"]
+
 
 def test_filter_links_english_default():
     """当素材语种为英语 (en) 时，应当过滤并仅返回不含其他任何小语种标识路径的英语/默认链接。"""
@@ -28,6 +42,8 @@ def test_filter_links_english_default():
         "https://newjoyloo.com/de/products/essential-preparedness-kit-rjc",
         "https://newjoyloo.com/fr/products/essential-preparedness-kit-rjc",
         "https://newjoyloo.com/es/products/essential-preparedness-kit-rjc",
+        "https://newjoyloo.com/sv/products/essential-preparedness-kit-rjc",  # 瑞典语链接
+        "https://newjoyloo.com/fi/products/essential-preparedness-kit-rjc",  # 芬兰语链接
     ]
     
     filtered_en = _filter_links_by_lang(links, "en")
@@ -52,3 +68,4 @@ def test_filter_links_fallback_to_original():
     # 查找不存在的 ja (日语) 链接，因为无 ja，应当退避返回整个列表
     filtered = _filter_links_by_lang(links, "ja")
     assert filtered == links
+

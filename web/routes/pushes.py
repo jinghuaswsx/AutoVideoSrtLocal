@@ -991,6 +991,8 @@ _LANG_TO_COUNTRY = {
     "it": "IT",
     "pt": "PT",
     "nl": "NL",
+    "sv": "SE",
+    "fi": "FI",
     "en": "US",
 }
 
@@ -1017,7 +1019,7 @@ def _filter_links_by_lang(links: list[str], lang: str) -> list[str]:
     if not lang_str:
         return links
 
-    small_langs = ["de", "fr", "ja", "es", "it", "pt", "nl"]
+    small_langs = ["de", "fr", "ja", "es", "it", "pt", "nl", "sv", "fi"]
     filtered = []
     
     for link in links:
