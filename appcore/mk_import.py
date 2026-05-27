@@ -536,6 +536,19 @@ def _first_non_empty(*values) -> str | None:
     return None
 
 
+def _extract_cn_product_name_from_filename(filename: str | None) -> str | None:
+    if not filename:
+        return None
+    name = os.path.basename(filename.replace("\\", "/"))
+    parts = name.split("-")
+    if len(parts) < 2:
+        return None
+    candidate = parts[1].strip()
+    if any("\u4e00" <= char <= "\u9fff" for char in candidate):
+        return candidate
+    return None
+
+
 def _build_create_product_payload(
     meta: dict,
     translator_id: int | None,
@@ -546,6 +559,7 @@ def _build_create_product_payload(
     mk_detail = mk_detail or {}
     product_code = _product_code_with_rjc(meta.get("product_code") or product_asset.get("product_code"))
     name = _first_non_empty(
+        _extract_cn_product_name_from_filename(meta.get("filename")),
         meta.get("product_name"),
         mk_detail.get("product_name"),
         product_asset.get("product_cn_name"),

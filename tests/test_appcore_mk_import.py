@@ -36,6 +36,19 @@ def test_create_product_payload_uses_rjc_product_code_and_link():
     assert payload["product_link"] == "https://omurio.com/products/abc-def-rjc"
 
 
+def test_create_product_payload_extracts_chinese_name_from_filename():
+    payload = mk_import._build_create_product_payload(
+        {
+            "filename": "2026.02.28-轮胎压力传感器-原素材-补充素材-E-崔心仪.mp4",
+            "product_name": "GM TPMS Reset Tool",
+            "product_code": "ABC-DEF",
+            "product_link": "https://omurio.com/products/old-handle",
+        },
+        translator_id=1,
+    )
+    assert payload["name"] == "轮胎压力传感器"
+
+
 def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_path):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
