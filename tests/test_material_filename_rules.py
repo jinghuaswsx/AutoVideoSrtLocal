@@ -154,3 +154,39 @@ def test_material_filename_accepts_spaces_by_stripping_them():
     )
     assert result.ok
     assert result.errors == ()
+
+
+def test_material_filename_accepts_product_name_with_spaces():
+    languages = {"en": "英语", "de": "德语"}
+    product_name_with_spaces = "Multi-Purpose Anti-Scald Bowl Holder Clip for Kitchen"
+
+    # Test initial upload simple filename
+    result_init = validate_initial_material_filename(
+        "2026.05.25-Multi-PurposeAnti-ScaldBowlHolderClipforKitchen-素材.mp4",
+        product_name_with_spaces,
+        "en",
+        languages
+    )
+    assert result_init.ok
+    assert result_init.errors == ()
+
+    # Test localized supplement filename
+    result_supp = validate_material_filename(
+        "2026.05.25-Multi-PurposeAnti-ScaldBowlHolderClipforKitchen-原素材-补充素材(德语)-指派-蔡靖华.mp4",
+        product_name_with_spaces,
+        "de",
+        languages
+    )
+    assert result_supp.ok
+    assert result_supp.errors == ()
+
+    # Test localized translated filename
+    result_trans = validate_material_filename(
+        "2026.05.25-Multi-PurposeAnti-ScaldBowlHolderClipforKitchen-原素材-小语种翻译素材(德语)-20260525苏齐齐-蔡靖华.mp4",
+        product_name_with_spaces,
+        "de",
+        languages
+    )
+    assert result_trans.ok
+    assert result_trans.errors == ()
+

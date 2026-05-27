@@ -174,7 +174,8 @@ def _validate_simple_filename(filename: str, product_name: str) -> list[str]:
         return [f'日期段 "{date_str}" 必须是合法的 YYYY.MM.DD']
 
     rest = filename[11:]
-    product_prefix = product_name + "-"
+    product_name_stripped = product_name.replace(" ", "")
+    product_prefix = product_name_stripped + "-"
     if not rest.startswith(product_prefix):
         return [f'日期之后必须紧跟 "{product_name}-"']
 
@@ -230,7 +231,8 @@ def _validate_localized_filename(
     lang_start = 1 if slot_lang_part.startswith("(") else 2
     lang_part = slot_lang_part[lang_start:-1]
 
-    if product_part != product_name:
+    product_name_stripped = product_name.replace(" ", "")
+    if product_part != product_name_stripped:
         errors.append(f'商品名不符：文件名写的是 "{product_part}"，应为 "{product_name}"（注意前后不能有空格）')
     if lang_part != lang_zh:
         errors.append(f'语种中文名不符：文件名写的是 "{lang_part}"，应为 "{lang_zh}"')
@@ -274,7 +276,8 @@ def _validate_translated_localized_filename(
         return ['小语种翻译素材 后必须直接接半角括号 "(语种中文名)"']
 
     lang_name = lang_part[1:-1]
-    if product_part != product_name:
+    product_name_stripped = product_name.replace(" ", "")
+    if product_part != product_name_stripped:
         errors.append(f'商品名不符：文件名写的是 "{product_part}"，应为 "{product_name}"（注意前后不能有空格）')
     if lang_name != lang_zh:
         errors.append(f'语种中文名不符：文件名写的是 "{lang_name}"，应为 "{lang_zh}"')
