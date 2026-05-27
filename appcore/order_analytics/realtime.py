@@ -1324,8 +1324,8 @@ def _daily_campaign_purchase_rows(
         account_args = list(allowed_account_ids)
 
     rows = query(
-        "SELECT meta_business_date, ad_account_id, campaign_name, normalized_campaign_code, "
-        "matched_product_code, product_id, "
+        "SELECT meta_business_date, ad_account_id, matched_product_code, product_id, "
+        "campaign_name, normalized_campaign_code, "
         "spend_usd, "
         + _canonical_meta_purchase_value_sql() + " AS purchase_value_usd, "
         "result_count, updated_at "
@@ -2472,14 +2472,19 @@ def _build_realtime_overview_for_range(
         if include_details else 0
     )
     include_profit = include_profit_summary
+    order_profit_scope_kwargs = {
+        "product_id": product_id,
+        "site_codes": sites,
+    }
+    if product_ids is not None:
+        order_profit_scope_kwargs["product_ids"] = product_ids
+    if unmatched_ads:
+        order_profit_scope_kwargs["unmatched_ads"] = True
     order_profit_all = (
         _get_realtime_order_profit_details_for_range(
             start,
             end,
-            product_id=product_id,
-            product_ids=product_ids,
-            unmatched_ads=unmatched_ads,
-            site_codes=sites,
+            **order_profit_scope_kwargs,
         )
         if include_profit else []
     )
@@ -2487,12 +2492,9 @@ def _build_realtime_overview_for_range(
         _get_realtime_order_profit_details_for_range(
             start,
             end,
-            product_id=product_id,
-            product_ids=product_ids,
-            unmatched_ads=unmatched_ads,
             page=page,
             page_size=page_size,
-            site_codes=sites,
+            **order_profit_scope_kwargs,
         )
         if include_details else []
     )
