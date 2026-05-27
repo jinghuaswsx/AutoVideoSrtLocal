@@ -1461,6 +1461,35 @@
     width: min(520px, 92vw);
   }
 }
+
+/* ── 物理强行展示顶栏及 Tab 组防御样式 ────────────────────────── */
+@media (min-width: 769px) {
+  /* 1. 强行隐藏内容区的移动端拉高白色局部 Tab，杜绝退化 */
+  .oa-mobile-tabs {
+    display: none !important;
+  }
+  
+  /* 2. 强行让顶栏的 title 块（内含“数据分析”标题和胶囊 Tab 组）可见且保持弹性布局 */
+  .topbar > .topbar-title {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: var(--space-4) !important;
+  }
+  
+  /* 3. 确保“数据分析”主标题和胶囊 Tab 组始终是可见的，绝不隐藏 */
+  .oa-page-heading {
+    display: inline-block !important;
+  }
+  .oa-tabs-topbar {
+    display: inline-flex !important;
+    max-width: 60vw !important; /* 限制大胶囊最大宽度，避免挤占右侧操作区 */
+  }
+  
+  /* 4. 物理隐藏可能在 layout 里面由于媒体查询误触发而显现的移动端品牌标志 */
+  .topbar-mobile-brand {
+    display: none !important;
+  }
+}
 {% endblock %}
 
 {% block content %}
