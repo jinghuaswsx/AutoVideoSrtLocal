@@ -3118,11 +3118,11 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         placeholders = ",".join(["%s"] * len(asset_keys))
         try:
             rows = q_fn(
-                f"SELECT product_code, product_url, product_english_title FROM dianxiaomi_product_assets WHERE asset_key IN ({placeholders})",
+                f"SELECT product_code, product_url, product_name, product_english_title FROM dianxiaomi_product_assets WHERE asset_key IN ({placeholders})",
                 list(asset_keys)
             )
             for r in rows or []:
-                title = str(r.get("product_english_title") or "").strip()
+                title = str(r.get("product_english_title") or r.get("product_name") or "").strip()
                 if title:
                     c = str(r.get("product_code") or "").strip().lower()
                     if c:
