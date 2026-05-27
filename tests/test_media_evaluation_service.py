@@ -20,11 +20,17 @@ def test_build_product_evaluation_response_returns_success_payload():
     from web.services.media_evaluation import build_product_evaluation_response
 
     calls = []
+    detail = {"countries": [{"lang": "de", "reason": "德国需求明确。"}]}
 
     result = build_product_evaluation_response(
         123,
         evaluate_product_fn=lambda pid, **kwargs: calls.append((pid, kwargs))
-        or {"status": "evaluated", "product_id": pid, "ai_score": 90},
+        or {
+            "status": "evaluated",
+            "product_id": pid,
+            "ai_score": 90,
+            "ai_evaluation_detail": detail,
+        },
         material_evaluation_message_fn=lambda payload: "AI evaluation completed",
     )
 
@@ -33,7 +39,13 @@ def test_build_product_evaluation_response_returns_success_payload():
     assert result.payload == {
         "ok": True,
         "message": "AI evaluation completed",
-        "result": {"status": "evaluated", "product_id": 123, "ai_score": 90},
+        "result": {
+            "status": "evaluated",
+            "product_id": 123,
+            "ai_score": 90,
+            "ai_evaluation_detail": detail,
+        },
+        "ai_evaluation_detail": detail,
     }
 
 

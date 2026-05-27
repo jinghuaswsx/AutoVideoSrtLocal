@@ -209,6 +209,49 @@
     }[c]));
   }
 
+  const CHINESE_COUNTRY_BY_LANG = {
+    de: '德国',
+    fr: '法国',
+    it: '意大利',
+    es: '西班牙',
+    ja: '日本',
+    en: '美国',
+  };
+
+  function containsHanText(text) {
+    return /[\u4e00-\u9fff]/.test(String(text || ''));
+  }
+
+  function containsNonChineseScript(text) {
+    return /[\u3040-\u30ff\uac00-\ud7af]/.test(String(text || ''));
+  }
+
+  function looksLikeChineseExplanation(text) {
+    const raw = String(text || '').trim();
+    return !!raw && containsHanText(raw) && !containsNonChineseScript(raw);
+  }
+
+  function chineseCountryLabel(c) {
+    const country = String((c && c.country) || '').trim();
+    if (looksLikeChineseExplanation(country)) return country;
+    const lang = String((c && c.lang) || '').trim().toLowerCase();
+    return CHINESE_COUNTRY_BY_LANG[lang] || String((c && c.language) || c.lang || '该市场').trim();
+  }
+
+  function formatScoreForReason(score) {
+    const num = Number(score);
+    if (!Number.isFinite(num)) return '待确认';
+    return Number.isInteger(num) ? String(num) : String(Math.round(num * 10) / 10);
+  }
+
+  function displayReason(c) {
+    const raw = String((c && c.reason) || '').trim();
+    if (!raw || looksLikeChineseExplanation(raw)) return raw;
+    const target = chineseCountryLabel(c);
+    const decision = String((c && c.decision) || '').trim() || '需人工复核';
+    return `模型返回的原因不是中文，${target}评分${formatScoreForReason(c && c.score)}，结论为${decision}，需人工复核。`;
+  }
+
   function safeExternalHref(url) {
     const raw = String(url == null ? '' : url).trim();
     if (!raw) return '';
@@ -373,7 +416,7 @@
   }
 
   function reasonCellHtml(c) {
-    const r = String(c.reason || '').trim();
+    const r = displayReason(c);
     return r
       ? `<div class="ect-reason">${escapeHtml(r)}</div>`
       : `<div class="ect-reason ect-muted">—</div>`;
@@ -404,7 +447,7 @@
   }
 
   function compactReasonCellHtml(c) {
-    const fullReason = String(c.reason || '').trim();
+    const fullReason = displayReason(c);
     const brief = compactReasonText(fullReason);
     return brief
       ? `<div class="ect-compact-reason" title="${escapeHtml(fullReason)}">${escapeHtml(brief)}</div>`
@@ -421,7 +464,9 @@
   }
 
   function suggestionsCellHtml(c) {
-    const list = Array.isArray(c.suggestions) ? c.suggestions.map(s => String(s || '').trim()).filter(Boolean) : [];
+    const rawList = Array.isArray(c.suggestions) ? c.suggestions.map(s => String(s || '').trim()).filter(Boolean) : [];
+    const list = rawList.filter(looksLikeChineseExplanation);
+    if (!list.length && rawList.length) return `<div class="ect-suggestions-empty">模型返回的建议不是中文，需人工复核。</div>`;
     if (!list.length) return `<div class="ect-suggestions-empty">—</div>`;
     return `<ul class="ect-suggestions">${list.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>`;
   }

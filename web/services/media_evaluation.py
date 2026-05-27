@@ -38,6 +38,9 @@ def build_product_evaluation_response(
     message = material_evaluation_message_fn(result)
     ok = result.get("status") == "evaluated"
     payload = {"ok": ok, "message": message, "result": result}
+    detail = result.get("ai_evaluation_detail") or result.get("detail")
+    if ok and detail:
+        payload["ai_evaluation_detail"] = detail
     if ok:
         return MediaEvaluationResponse(payload, 200)
     return MediaEvaluationResponse({**payload, "error": message}, 400)

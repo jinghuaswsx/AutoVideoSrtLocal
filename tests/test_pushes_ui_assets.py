@@ -336,6 +336,8 @@ def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
 
     assert "openModal:" in shared
     assert "function openAiEvaluationDetailModal" in shared
+    assert "displayReason(c)" in shared
+    assert "模型返回的原因不是中文" in shared
     assert "window.EvalCountryTable.openModal(" in pushes
     assert "window.EvalCountryTable.openModal(" in medias
     assert "function openAuditDetailModal" not in pushes

@@ -180,6 +180,49 @@ def test_normalize_result_covers_all_languages_and_truncates_reason():
     assert "listing_status" not in normalized
 
 
+def test_normalize_result_replaces_non_chinese_reason_with_chinese_fallback():
+    from appcore import material_evaluation
+
+    normalized = material_evaluation.normalize_result(
+        {
+            "countries": [
+                {
+                    "lang": "de",
+                    "country": "德国",
+                    "is_suitable": True,
+                    "score": 82,
+                    "risk_level": "low",
+                    "decision": "适合推广",
+                    "summary": "Geeignet fuer Pendler und Outdoor-Szenen.",
+                    "reason": "Geeignet fuer deutsche Pendler und Outdoor-Szenen.",
+                    "suggestions": ["Heben Sie die Akkulaufzeit hervor"],
+                },
+                {
+                    "lang": "ja",
+                    "country": "日本",
+                    "is_suitable": False,
+                    "score": 42,
+                    "risk_level": "high",
+                    "decision": "不适合推广",
+                    "summary": "日本では季節需要が弱い。",
+                    "reason": "日本では現在の季節需要が弱い。",
+                    "suggestions": ["季節を再確認してください"],
+                },
+            ]
+        },
+        [{"code": "de", "name": "德语"}, {"code": "ja", "name": "日语"}],
+    )
+
+    for row in normalized["countries"]:
+        assert row["reason"]
+        assert "模型返回的原因不是中文" in row["reason"]
+        assert any("\u4e00" <= ch <= "\u9fff" for ch in row["reason"])
+        assert not any("\u3040" <= ch <= "\u30ff" for ch in row["reason"])
+        assert row["summary"]
+        assert any("\u4e00" <= ch <= "\u9fff" for ch in row["summary"])
+        assert all(any("\u4e00" <= ch <= "\u9fff" for ch in item) for item in row["suggestions"])
+
+
 def test_normalize_result_accepts_top_level_country_array():
     from appcore import material_evaluation
 
@@ -281,6 +324,7 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     result = material_evaluation.evaluate_product_if_ready(7)
 
     assert result["status"] == "evaluated"
+    assert result["ai_evaluation_detail"]["countries"]
     assert updates["ai_score"] == 88.0
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates

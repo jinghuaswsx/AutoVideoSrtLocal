@@ -350,12 +350,23 @@ def build_response_schema(languages: list[Any]) -> dict:
                             "type": "string",
                             "enum": ["做", "不做"],
                         },
-                        "summary": {"type": "string", "maxLength": 120},
-                        "reason": {"type": "string", "maxLength": 100},
+                        "summary": {
+                            "type": "string",
+                            "maxLength": 120,
+                            "description": "必须使用中文说明，不得使用目标国家语言。",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "maxLength": 100,
+                            "description": "必须使用中文说明，不得使用德语、法语、意大利语、西班牙语、日语或英语。",
+                        },
                         "suggestions": {
                             "type": "array",
                             "maxItems": 3,
-                            "items": {"type": "string"},
+                            "items": {
+                                "type": "string",
+                                "description": "必须使用中文建议。",
+                            },
                         },
                     },
                 },
@@ -431,10 +442,89 @@ def build_prompt(
 - 必须覆盖上面列出的每一个语种，不能遗漏或新增。
 - 每个语种返回结构化 JSON 字段：lang、country、is_suitable、score、risk_level、decision、recommendation、summary、reason、suggestions。
 - recommendation 只能返回“做”或“不做”；若不建议搬运视频素材本土化后投放 Meta，则 recommendation 必须是“不做”。
-- summary 和 reason 都必须是中文，summary 为一句结论摘要，reason 为 100 字以内的核心判断依据。
+- summary、reason、suggestions 中的所有文字都必须是中文说明；即使评估对象是德国、法国、意大利、西班牙、日本或美国，也绝不能用德语、法语、意大利语、西班牙语、日语或英语写原因。
+- summary 为一句中文结论摘要，reason 为 100 字以内的中文核心判断依据。
 - reason 必须是中文，100 字以内。
 - score 为 0-100，越高代表越适合当前日期在该目标国家推广。
 """
+
+
+def _contains_han_text(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _contains_non_chinese_script(text: str) -> bool:
+    return any(
+        ("\u3040" <= ch <= "\u30ff")
+        or ("\uac00" <= ch <= "\ud7af")
+        for ch in text
+    )
+
+
+def _looks_like_chinese_explanation(text: Any) -> bool:
+    raw = str(text or "").strip()
+    return bool(raw) and _contains_han_text(raw) and not _contains_non_chinese_script(raw)
+
+
+def _format_score_for_reason(score: float) -> str:
+    return str(int(score)) if float(score).is_integer() else f"{score:.1f}".rstrip("0").rstrip(".")
+
+
+def _chinese_target_label(row: dict, lang: dict[str, str]) -> str:
+    row_country = str(row.get("country") or "").strip()
+    if _looks_like_chinese_explanation(row_country):
+        return row_country
+    return str(lang.get("country") or lang.get("name") or lang.get("code") or "该市场").strip()
+
+
+def _chinese_reason_fallback(
+    *,
+    row: dict,
+    lang: dict[str, str],
+    score: float,
+    decision: str,
+) -> str:
+    target = _chinese_target_label(row, lang)
+    score_text = _format_score_for_reason(score)
+    conclusion = decision or "需人工复核"
+    return f"模型返回的原因不是中文，{target}评分{score_text}，结论为{conclusion}，需人工复核。"
+
+
+def _normalize_chinese_explanation(
+    value: Any,
+    *,
+    row: dict,
+    lang: dict[str, str],
+    score: float,
+    decision: str,
+    max_length: int,
+) -> str:
+    text = str(value or "").strip()
+    if _looks_like_chinese_explanation(text):
+        return text[:max_length]
+    return _chinese_reason_fallback(
+        row=row,
+        lang=lang,
+        score=score,
+        decision=decision,
+    )[:max_length]
+
+
+def _normalize_chinese_suggestions(value: Any) -> list[str]:
+    suggestions = value or []
+    if not isinstance(suggestions, list):
+        suggestions = [suggestions]
+    has_non_empty_input = any(str(item or "").strip() for item in suggestions)
+    cleaned = [
+        str(item).strip()
+        for item in suggestions
+        if _looks_like_chinese_explanation(item)
+    ]
+    if cleaned:
+        return cleaned[:3]
+    if has_non_empty_input:
+        return ["模型返回的建议不是中文，需人工复核。"]
+    return []
 
 
 def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
@@ -487,14 +577,26 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
         risk_level = str(row.get("risk_level") or "").strip().lower()
         if risk_level not in {"low", "medium", "high"}:
             risk_level = "medium"
-        reason = str(row.get("reason") or "模型未提供明确判断依据。").strip()[:100]
-        summary = str(row.get("summary") or reason or "模型未提供明确结论。").strip()[:120]
         recommendation = str(row.get("recommendation") or "").strip()
         if recommendation not in {"做", "不做"}:
             recommendation = "做" if is_suitable and score >= 60 else "不做"
-        suggestions = row.get("suggestions") or []
-        if not isinstance(suggestions, list):
-            suggestions = [str(suggestions)]
+        reason = _normalize_chinese_explanation(
+            row.get("reason") or "模型未提供明确判断依据。",
+            row=row,
+            lang=lang,
+            score=score,
+            decision=decision,
+            max_length=100,
+        )
+        summary = _normalize_chinese_explanation(
+            row.get("summary") or reason or "模型未提供明确结论。",
+            row=row,
+            lang=lang,
+            score=score,
+            decision=decision,
+            max_length=120,
+        )
+        suggestions = _normalize_chinese_suggestions(row.get("suggestions"))
         countries.append({
             "lang": lang["code"],
             "language": lang["name"],
@@ -506,7 +608,7 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
             "recommendation": recommendation,
             "summary": summary,
             "reason": reason,
-            "suggestions": [str(item).strip() for item in suggestions if str(item).strip()][:3],
+            "suggestions": suggestions,
         })
 
     scores = [row["score"] for row in countries]
@@ -1175,6 +1277,7 @@ def _evaluate_product_if_ready(
             "product_id": product_id,
             "ai_score": normalized["ai_score"],
             "ai_evaluation_result": normalized["ai_evaluation_result"],
+            "ai_evaluation_detail": detail,
         }
     except Exception as exc:
         logger.exception("material evaluation LLM call failed for product_id=%s", product_id)

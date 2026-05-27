@@ -1043,7 +1043,14 @@
     stopAiEvaluationTimers(modalState);
     if (modalState.statusTitle) modalState.statusTitle.textContent = '评估完成';
     if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
-    const detail = data && (data.ai_evaluation_detail || data.detail || data.result || data);
+    const result = data && data.result;
+    const detail = data && (
+      data.ai_evaluation_detail
+      || (result && (result.ai_evaluation_detail || result.detail))
+      || data.detail
+      || result
+      || data
+    );
     if (window.EvalCountryTable && typeof window.EvalCountryTable.render === 'function') {
       modalState.resultHtml = window.EvalCountryTable.render(detail);
     } else {
