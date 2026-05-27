@@ -251,6 +251,47 @@ def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monke
     ]
 
 
+def test_repository_latest_external_link_falls_back_to_card_video_when_link_drifted(monkeypatch):
+    from appcore import fine_ai_evaluation_repository as repo_mod
+
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append((sql, args))
+        if len(calls) == 1:
+            return None
+        return {
+            "evaluation_run_id": "eval_same_video",
+            "product_id": 0,
+            "status": "completed",
+            "countries_json": "[]",
+            "product_snapshot_json": "{}",
+            "product_facts_json": "{}",
+            "summary_json": "{}",
+            "frontend_json": "{}",
+            "metadata_json": '{"source_type":"external_product_link","external_product_link":"https://shop.example/products/archived","external_card_video":{"path":"uploads2/video-1.mp4"}}',
+            "progress_json": "{}",
+        }
+
+    monkeypatch.setattr(repo_mod, "query_one", fake_query_one)
+
+    result = repo_mod.FineAiEvaluationRepository().get_latest_external_link_run(
+        "https://shop.example/products/current",
+        card_video_path="uploads2/video-1.mp4",
+        card_video_url="/xuanpin/api/mk-video?path=uploads2%2Fvideo-1.mp4",
+        card_video_name="current-title.mp4",
+    )
+
+    assert result["evaluation_run_id"] == "eval_same_video"
+    assert len(calls) == 2
+    assert "$.external_product_link" in calls[0][0]
+    assert "$.external_product_link" not in calls[1][0]
+    assert "$.external_card_video.path" in calls[1][0]
+    assert "$.card_video_path" in calls[1][0]
+    assert "$.video_path" in calls[1][0]
+    assert calls[1][1] == ("uploads2/video-1.mp4", "uploads2/video-1.mp4", "uploads2/video-1.mp4")
+
+
 def test_repository_lists_inflight_runs_without_sorting_large_table(monkeypatch):
     from appcore import fine_ai_evaluation_repository as repo_mod
 

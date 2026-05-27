@@ -698,28 +698,38 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
             matched[material_key] = row
             run_ids.append(run_id)
 
-    # For any remaining cards, match by video_path and product link (for manual/external runs)
-    for row in run_rows:
-        run_id = str(row.get("evaluation_run_id") or "").strip()
-        if run_id in [matched_row.get("evaluation_run_id") for matched_row in matched.values()]:
-            continue
-        metadata = _json_loads(row.get("metadata_json"), {}) or {}
-        if not isinstance(metadata, dict):
-            continue
-        run_links = _fine_ai_run_links(metadata)
-        run_video_path = _fine_ai_external_card_video_path(metadata)
-        if not run_links or not run_video_path:
-            continue
-        for material_key, card in card_index.items():
-            if material_key in matched:
+    # For manual/external runs, prefer video+link matches, then fall back to
+    # video-only. The evaluation belongs to the rendered video card; historical
+    # range cards can carry a drifted product link while the video path stays
+    # stable.
+    matched_run_ids = {str(row.get("evaluation_run_id") or "").strip() for row in matched.values()}
+
+    def _match_external_runs(*, require_link_match: bool) -> None:
+        for row in run_rows:
+            run_id = str(row.get("evaluation_run_id") or "").strip()
+            if not run_id or run_id in matched_run_ids:
                 continue
-            if run_video_path != card["video_path"]:
+            metadata = _json_loads(row.get("metadata_json"), {}) or {}
+            if not isinstance(metadata, dict):
                 continue
-            if not (run_links & card["links"]):
+            run_video_path = _fine_ai_external_card_video_path(metadata)
+            if not run_video_path:
                 continue
-            matched[material_key] = row
-            run_ids.append(run_id)
-            break
+            run_links = _fine_ai_run_links(metadata)
+            for material_key, card in card_index.items():
+                if material_key in matched:
+                    continue
+                if run_video_path != card["video_path"]:
+                    continue
+                if require_link_match and not (run_links and (run_links & card["links"])):
+                    continue
+                matched[material_key] = row
+                run_ids.append(run_id)
+                matched_run_ids.add(run_id)
+                break
+
+    _match_external_runs(require_link_match=True)
+    _match_external_runs(require_link_match=False)
 
     countries_by_run: dict[str, dict[str, dict[str, Any]]] = {run_id: {} for run_id in run_ids}
     if run_ids:

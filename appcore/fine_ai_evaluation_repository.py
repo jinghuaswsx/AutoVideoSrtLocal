@@ -116,6 +116,19 @@ class FineAiEvaluationRepository:
             + " ORDER BY created_at DESC, id DESC LIMIT 1",
             tuple(args),
         )
+        if not row and str(card_video_path or "").strip():
+            video_path = str(card_video_path or "").strip()
+            row = query_one(
+                "SELECT * FROM ai_evaluation_runs WHERE product_id=0 "
+                "AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_type'))='external_product_link' "
+                "AND ("
+                "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.external_card_video.path'))=%s OR "
+                "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.card_video_path'))=%s OR "
+                "JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.video_path'))=%s"
+                ") "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (video_path, video_path, video_path),
+            )
         return _load_run(row) if row else None
 
     def update_run(self, evaluation_run_id: str, **fields) -> dict[str, Any]:

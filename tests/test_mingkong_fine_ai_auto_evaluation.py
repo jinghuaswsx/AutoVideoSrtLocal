@@ -471,6 +471,73 @@ def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monk
     assert fine_ai["countries"]["DE"]["decision"]["final_decision"] == "GO"
 
 
+def test_enrich_cards_matches_external_fine_ai_result_by_video_card_when_link_drifted(monkeypatch):
+    from appcore import mingkong_materials as mod
+
+    item = _candidate(1)
+    item["mk_product_link"] = "https://shop.example/products/current-link"
+    item["product_url"] = "https://fallback.example/products/current-link"
+    monkeypatch.setattr(mod, "_status_cache_by_hash", lambda scope, lookup_hashes: {})
+    monkeypatch.setattr(mod, "_legacy_material_rows_by_product", lambda product_ids: {})
+
+    def fake_query(sql, args=()):
+        if "FROM ai_evaluation_runs" in sql:
+            return [
+                {
+                    "id": 9,
+                    "evaluation_run_id": "eval_same_video",
+                    "product_id": 0,
+                    "status": "completed",
+                    "summary_json": "{}",
+                    "frontend_json": "{}",
+                    "progress_json": "{}",
+                    "metadata_json": json.dumps(
+                        {
+                            "source_type": "external_product_link",
+                            "external_product_link": "https://shop.example/products/archived-link",
+                            "external_card_video": {"path": "uploads2/video-1.mp4", "name": "video-1.mp4"},
+                        }
+                    ),
+                    "created_at": "2026-05-23 09:00:00",
+                    "updated_at": "2026-05-23 09:01:00",
+                    "completed_at": "2026-05-23 09:01:00",
+                    "failed_at": None,
+                }
+            ]
+        if "FROM ai_country_evaluations" in sql:
+            return [
+                {
+                    "evaluation_run_id": "eval_same_video",
+                    "country_code": "DE",
+                    "country_name": "Germany",
+                    "status": "completed",
+                    "scores_json": '{"overall_score": 81}',
+                    "decision_json": '{"final_decision": "GO"}',
+                    "full_result_json": json.dumps(
+                        {
+                            "country_code": "DE",
+                            "country_name": "Germany",
+                            "country_name_zh": "德国",
+                            "status": "completed",
+                            "scores": {"overall_score": 81},
+                            "decision": {"final_decision": "GO"},
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "error_message": "",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(mod, "query", fake_query)
+
+    enriched = mod._enrich_cached_ad_statuses([item])
+
+    fine_ai = enriched[0]["product_ad_status"]["fine_ai_evaluation"]
+    assert fine_ai["evaluation_run_id"] == "eval_same_video"
+    assert fine_ai["has_result"] is True
+
+
 def test_enrich_cards_prefers_auto_material_key_result(monkeypatch):
     from appcore import mingkong_materials as mod
 
