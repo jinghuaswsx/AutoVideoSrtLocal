@@ -5466,8 +5466,13 @@
   function edGetLinkCheckTask(lang, domain) {
     if (!lang) return null;
     const tasks = edLinkCheckTasks();
-    const key = (domain && domain !== edDefaultLinkDomain()) ? edStatusKey(lang, domain) : lang;
-    return tasks[key] || tasks[lang] || null;
+    const defaultDomain = edDefaultLinkDomain();
+    const normalizedDomain = domain ? String(domain).trim().toLowerCase() : '';
+    if (normalizedDomain && normalizedDomain !== defaultDomain) {
+      const key = edStatusKey(lang, normalizedDomain);
+      return tasks[key] || null;
+    }
+    return tasks[lang] || null;
   }
 
   function edSetLinkCheckTask(lang, task) {
