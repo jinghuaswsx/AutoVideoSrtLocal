@@ -211,11 +211,12 @@ def page():
 def detail_page(task_id: str):
     recover_project_if_needed(task_id, "link_check")
     row, task = _get_task(task_id)
+    serialized = _serialize_task(task_id, task)
     return render_template(
         "link_check_detail.html",
         project=row,
-        task=task,
-        initial_task=task,
+        task=serialized,
+        initial_task=serialized,
     )
 
 
