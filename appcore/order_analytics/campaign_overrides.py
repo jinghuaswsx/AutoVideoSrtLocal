@@ -171,6 +171,10 @@ def create_override(
         product_id=pid,
         product_code=product_code,
     )
+    try:
+        _facade().refresh_ad_match_launch_dates_for_products([pid])
+    except Exception:
+        pass
     return {
         "normalized_campaign_code": code,
         "product_id": pid,

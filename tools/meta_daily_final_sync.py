@@ -553,6 +553,13 @@ def _finish_batch(batch_id: int, *, imported: int, matched: int) -> None:
     )
 
 
+def _refresh_product_ad_launch_dates(product_ids: set[int]) -> dict[str, int]:
+    normalized = sorted({int(pid) for pid in product_ids if int(pid) > 0})
+    if not normalized:
+        return {"matched_products": 0, "updated_rows": 0}
+    return oa.refresh_ad_match_launch_dates_for_products(normalized)
+
+
 def _match_product(product_code: str | None) -> dict[str, Any] | None:
     if not product_code:
         return None
@@ -572,6 +579,7 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -579,6 +587,7 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_campaign_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -614,7 +623,14 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount) -> dict[str, Any]:
@@ -627,6 +643,7 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -636,6 +653,7 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_ad_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -671,7 +689,14 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAccount) -> dict[str, Any]:
@@ -684,6 +709,7 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -691,6 +717,7 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_adset_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -726,7 +753,14 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -914,6 +948,7 @@ def _replace_campaign_daily_rows_from_api(
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -921,6 +956,7 @@ def _replace_campaign_daily_rows_from_api(
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_campaign_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -956,7 +992,14 @@ def _replace_campaign_daily_rows_from_api(
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 def _replace_ad_daily_rows_from_api(
@@ -976,6 +1019,7 @@ def _replace_ad_daily_rows_from_api(
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -985,6 +1029,7 @@ def _replace_ad_daily_rows_from_api(
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_ad_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -1020,7 +1065,14 @@ def _replace_ad_daily_rows_from_api(
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 def _replace_adset_daily_rows_from_api(
@@ -1040,6 +1092,7 @@ def _replace_adset_daily_rows_from_api(
     )
     imported = 0
     matched = 0
+    matched_product_ids: set[int] = set()
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
@@ -1047,6 +1100,7 @@ def _replace_adset_daily_rows_from_api(
         matched_product_code = product.get("product_code") if product else None
         if product_id:
             matched += 1
+            matched_product_ids.add(int(product_id))
         execute(
             "INSERT INTO meta_ad_daily_adset_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -1082,7 +1136,14 @@ def _replace_adset_daily_rows_from_api(
         imported += 1
         spend_total = round(spend_total + float(row.get("spend_usd") or 0), 4)
     _finish_batch(batch_id, imported=imported, matched=matched)
-    return {"batch_id": batch_id, "rows": imported, "matched": matched, "spend_usd": spend_total}
+    launch_refresh = _refresh_product_ad_launch_dates(matched_product_ids)
+    return {
+        "batch_id": batch_id,
+        "rows": imported,
+        "matched": matched,
+        "spend_usd": spend_total,
+        "ad_launch_refresh": launch_refresh,
+    }
 
 
 def _sync_account_via_xhr_api(

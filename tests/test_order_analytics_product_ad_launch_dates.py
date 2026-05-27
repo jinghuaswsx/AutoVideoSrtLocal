@@ -174,3 +174,53 @@ def test_get_product_ids_for_launch_scope_unmatched_returns_empty_without_query(
     monkeypatch.setattr(oa, "query", lambda sql, args=(): pytest.fail("should not query"))
 
     assert pal.get_product_ids_for_launch_scope("unmatched", today=date(2026, 5, 27)) == ()
+
+
+def test_daily_sync_refreshes_launch_dates_for_matched_products(monkeypatch):
+    from tools import meta_daily_final_sync as sync
+
+    refreshed: list[list[int]] = []
+    monkeypatch.setattr(
+        sync.oa,
+        "refresh_ad_match_launch_dates_for_products",
+        lambda ids: refreshed.append(list(ids))
+        or {"matched_products": len(ids), "updated_rows": len(ids)},
+    )
+
+    summary = sync._refresh_product_ad_launch_dates({101, 102, 101})
+
+    assert refreshed == [[101, 102]]
+    assert summary == {"matched_products": 2, "updated_rows": 2}
+
+
+def test_manual_campaign_override_refreshes_launch_date(monkeypatch):
+    from appcore.order_analytics import campaign_overrides
+
+    refreshed: list[list[int]] = []
+    monkeypatch.setattr(
+        campaign_overrides,
+        "query_one",
+        lambda sql, args=(): {"id": 101, "product_code": "abc", "name": "ABC"},
+    )
+    monkeypatch.setattr(campaign_overrides, "execute", lambda sql, args=(): 1)
+    monkeypatch.setattr(
+        campaign_overrides,
+        "apply_override_to_history",
+        lambda **kwargs: {"matched_periodic": 0, "matched_daily": 3},
+    )
+    monkeypatch.setattr(
+        oa,
+        "refresh_ad_match_launch_dates_for_products",
+        lambda ids: refreshed.append(list(ids))
+        or {"matched_products": len(ids), "updated_rows": len(ids)},
+    )
+
+    result = campaign_overrides.create_override(
+        normalized_campaign_code="abc",
+        product_id=101,
+        reason="manual match",
+        created_by="test",
+    )
+
+    assert result["product_id"] == 101
+    assert refreshed == [[101]]
