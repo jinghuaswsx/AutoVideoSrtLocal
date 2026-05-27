@@ -271,7 +271,7 @@ def _prepend_locale_to_url(url: str, target_language: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, new_path, parsed.params, parsed.query, parsed.fragment))
 
 
-def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
+def extract_images_from_html(html: str, *, base_url: str, target_language: str = "") -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     
     # Remove all <noscript> tags to prevent extracting stale non-JS fallback images
@@ -314,7 +314,48 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             _append_image(items, seen, source_url=absolute, kind="detail")
 
     # Swapping matching English carousel URLs with localized URLs
-    # 1. Compile a pool of all img URLs found on the page
+    import re
+    token_to_localized = {}
+    loc_pattern = re.compile(r"from_url_en_\d+_(?P<token>[a-f0-9]{28,})", re.I)
+
+    # 1. Try direct JSON fetch from EZ Product Image Translate CDN
+    active_lang = target_language.lower().strip()
+    if not active_lang:
+        # Extract from URL path (e.g. /it/products/...)
+        segments = [s.lower() for s in urlparse(base_url).path.split("/") if s]
+        if segments:
+            first_seg = segments[0]
+            if len(first_seg) == 2 or (len(first_seg) == 5 and first_seg[2] == "-"):
+                active_lang = first_seg
+        # Fallback: extract from html lang
+        if not active_lang:
+            html_node = soup.find("html")
+            if html_node and html_node.get("lang"):
+                active_lang = html_node.get("lang").strip().lower().split("-", 1)[0]
+
+    if active_lang:
+        try:
+            shop_match = re.search(r'([a-zA-Z0-9\-]+\.myshopify\.com)', html)
+            if shop_match:
+                shop_domain = shop_match.group(1).lower()
+                translations_url = f"https://translate.freshify.click/storage/json_files/{shop_domain}_translations.json"
+                resp = requests.get(translations_url, timeout=5)
+                if resp.status_code == 200:
+                    translation_data = resp.json()
+                    lang_short = active_lang.split("-", 1)[0]
+                    lang_translations = translation_data.get(active_lang) or translation_data.get(lang_short) or {}
+                    
+                    token_re = re.compile(r"([a-f0-9]{28,})", re.I)
+                    for eng_filename, trans_info in lang_translations.items():
+                        if isinstance(trans_info, dict) and trans_info.get("url"):
+                            token_match = token_re.search(eng_filename)
+                            if token_match:
+                                token = token_match.group(1).lower()
+                                token_to_localized[token] = trans_info["url"]
+        except Exception:
+            pass
+
+    # 2. Supplementary compilation: pool of all img URLs found on the page DOM
     all_urls = []
     for node in soup.find_all("img"):
         for attr in ("src", "data-src", "data-master"):
@@ -322,11 +363,6 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             if val:
                 all_urls.append(_absolute_image_url(val, base_url))
 
-    # 2. Map tokens to their corresponding localized image URLs
-    # Naming convention: loc_from_url_en_XX_{token}.jpg
-    import re
-    token_to_localized = {}
-    loc_pattern = re.compile(r"from_url_en_\d+_(?P<token>[a-f0-9]{28,})", re.I)
     for url in all_urls:
         match = loc_pattern.search(url)
         if match:
@@ -463,7 +499,7 @@ class LinkCheckFetcher:
             resolved_url=response.url,
             page_language=lang,
             html=response.text,
-            images=extract_images_from_html(response.text, base_url=response.url),
+            images=extract_images_from_html(response.text, base_url=response.url, target_language=target_language),
             locale_evidence=locale_evidence,
         )
 
@@ -609,7 +645,7 @@ class LinkCheckFetcher:
             resolved_url=resolved_url,
             page_language=lang,
             html=html,
-            images=extract_images_from_html(html, base_url=resolved_url),
+            images=extract_images_from_html(html, base_url=resolved_url, target_language=target_language),
             locale_evidence=locale_evidence,
         )
 
