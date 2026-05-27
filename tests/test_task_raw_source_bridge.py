@@ -14,6 +14,7 @@ def test_ensure_raw_source_creates_same_name_source(monkeypatch, tmp_path):
     source_path.parent.mkdir(parents=True)
     source_path.write_bytes(b"processed-video")
     monkeypatch.setenv("UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setattr(bridge, "query_one", lambda sql, args=(): None)
 
     monkeypatch.setattr(
         bridge,
@@ -88,6 +89,7 @@ def test_ensure_raw_source_reuses_reviewed_media_video_without_copy(monkeypatch,
     source_path = tmp_path / "media_store" / "u1" / "reviewed.mp4"
     source_path.parent.mkdir(parents=True)
     source_path.write_bytes(b"reviewed-video")
+    monkeypatch.setattr(bridge, "query_one", lambda sql, args=(): None)
 
     monkeypatch.setattr(
         bridge,
@@ -140,6 +142,7 @@ def test_ensure_raw_source_updates_existing_same_name(monkeypatch, tmp_path):
     source_path.parent.mkdir(parents=True)
     source_path.write_bytes(b"new-video")
     monkeypatch.setenv("UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setattr(bridge, "query_one", lambda sql, args=(): None)
 
     monkeypatch.setattr(
         bridge,
@@ -327,3 +330,85 @@ def test_approve_raw_ensures_raw_source_before_unblocking_children(monkeypatch):
 
     assert sequence.index("raw_source_synced") < sequence.index("children_unblocked")
     assert "event:raw_source_created" in sequence
+
+
+def test_ensure_raw_source_prefers_niuma_done_event(monkeypatch, tmp_path):
+    from appcore import task_raw_source_bridge as bridge
+
+    upload_dir = tmp_path / "uploads"
+    # 原英文视频
+    orig_path = upload_dir / "mk-import" / "7" / "demo.mp4"
+    orig_path.parent.mkdir(parents=True)
+    orig_path.write_bytes(b"original-english-video")
+
+    # 去字幕结果视频
+    niuma_result_path = tmp_path / "niuma_result.mp4"
+    niuma_result_path.write_bytes(b"subtitle-removed-video")
+
+    monkeypatch.setenv("UPLOAD_DIR", str(upload_dir))
+
+    monkeypatch.setattr(
+        bridge,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "created_by": 3,
+            "item_id": 11,
+            "item_user_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "cover_object_key": "",
+            "duration_seconds": 12.5,
+            "file_size": None,
+            "width": 720,
+            "height": 1280,
+        },
+    )
+    monkeypatch.setattr(bridge, "_find_existing_raw_source", lambda product_id, filename: None)
+
+    # 模拟 query_one 查找事件
+    def fake_query_one(sql, args=()):
+        if "FROM task_events" in sql:
+            # 模拟发现了 niuma done 事件
+            return {
+                "payload_json": '{"subtitle_task_id": "tc-123", "new_size": 22, "result_object_key": "9/medias/7/raw_sources/demo.mp4"}'
+            }
+        return None
+
+    monkeypatch.setattr(bridge, "query_one", fake_query_one)
+
+    # 模拟本地存储
+    # 对于 niuma_object_key = "9/medias/7/raw_sources/demo.mp4"
+    # 让它的 safe_local_path_for 返回 niuma_result_path
+    def fake_safe_local_path(object_key):
+        if "raw_sources/demo.mp4" in object_key:
+            return niuma_result_path
+        return orig_path
+
+    monkeypatch.setattr(bridge.local_media_storage, "exists", lambda object_key: True)
+    monkeypatch.setattr(bridge.local_media_storage, "safe_local_path_for", fake_safe_local_path)
+
+    copied = {}
+    cover_tmp = tmp_path / "cover.jpg"
+    cover_tmp.write_bytes(b"cover")
+    monkeypatch.setattr(bridge.local_media_storage, "write_bytes", lambda key, payload: copied.setdefault(key, payload))
+    monkeypatch.setattr(bridge, "extract_thumbnail", lambda video_path, output_dir, scale=None: str(cover_tmp))
+    monkeypatch.setattr(bridge, "probe_media_info", lambda path: {"width": 720, "height": 1280, "duration": 12.5})
+
+    created = {}
+    def fake_create_raw_source(product_id, user_id, **kwargs):
+        created.update({"product_id": product_id, "user_id": user_id, **kwargs})
+        return 101
+
+    monkeypatch.setattr(bridge.medias, "create_raw_source", fake_create_raw_source)
+    executed = []
+    monkeypatch.setattr(bridge, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+
+    result = bridge.ensure_raw_source_for_parent_task(task_id=55, actor_user_id=4)
+
+    assert result == {"raw_source_id": 101, "created": True, "updated": False}
+    # 核心断言：必须使用的是去字幕结果的 object_key，而不是原英文 object_key
+    assert created["video_object_key"] == "9/medias/7/raw_sources/demo.mp4"
+    # 物理英文原视频绝对不应该被修改（这里物理文件大小或内容保持 orig_path）
+    assert orig_path.read_bytes() == b"original-english-video"

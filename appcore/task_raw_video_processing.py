@@ -357,19 +357,35 @@ def attach_niuma_result_to_parent_task(
     payload = _load_parent_task_payload(int(parent_task_id))
     if not payload:
         raise RawVideoProcessingError("parent task media item not found")
-    destination = _resolve_media_item_path(payload["object_key"])
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(result_path, destination)
-    new_size = destination.stat().st_size
-    execute(
-        "UPDATE media_items SET file_size=%s WHERE id=%s",
-        (new_size, int(payload["media_item_id"])),
+
+    product_id = int(payload.get("media_product_id") or 0)
+    filename = os.path.basename(str(payload.get("filename") or "source.mp4"))
+    user_id = int(payload.get("item_user_id") or actor_user_id or payload.get("created_by") or 0)
+    if product_id <= 0 or not filename or user_id <= 0:
+        raise RawVideoProcessingError("parent task product info missing")
+
+    from appcore import object_keys
+    result_object_key = object_keys.build_media_raw_source_key(
+        user_id,
+        product_id,
+        kind="video",
+        filename=filename,
+        exact_filename=True,
     )
+
+    new_size = result_path.stat().st_size
+    with result_path.open("rb") as stream:
+        local_media_storage.write_stream(result_object_key, stream)
+
     _write_event(
         parent_task_id,
         "raw_niuma_done",
         actor_user_id,
-        {"subtitle_task_id": subtitle_task_id, "new_size": new_size},
+        {
+            "subtitle_task_id": subtitle_task_id,
+            "new_size": new_size,
+            "result_object_key": result_object_key,
+        },
     )
     from appcore import tasks as tasks_svc
 
@@ -460,8 +476,8 @@ def _elapsed_seconds(started_at, now: datetime) -> float | None:
 
 def _load_parent_task_payload(task_id: int) -> dict | None:
     return query_one(
-        "SELECT t.id AS task_id, t.media_item_id, t.assignee_id, t.status, "
-        "       i.filename, i.object_key "
+        "SELECT t.id AS task_id, t.media_product_id, t.created_by, t.media_item_id, t.assignee_id, t.status, "
+        "       i.id AS item_id, i.user_id AS item_user_id, i.filename, i.object_key "
         "FROM tasks t "
         "JOIN media_items i ON i.id=t.media_item_id "
         "WHERE t.id=%s AND t.parent_task_id IS NULL AND i.deleted_at IS NULL",

@@ -30,6 +30,31 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
         raise RawSourceBridgeError(f"reviewed media file not found: {object_key}")
 
     video_object_key = object_key
+
+    niuma_done_event = query_one(
+        "SELECT payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type='raw_niuma_done' "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id),),
+    )
+    if niuma_done_event:
+        import json
+        raw_payload = niuma_done_event.get("payload_json")
+        event_payload = {}
+        if isinstance(raw_payload, str):
+            try:
+                event_payload = json.loads(raw_payload)
+            except Exception:
+                pass
+        elif isinstance(raw_payload, dict):
+            event_payload = raw_payload
+
+        niuma_object_key = event_payload.get("result_object_key")
+        if niuma_object_key:
+            niuma_path = _resolve_media_item_path(niuma_object_key)
+            if niuma_path.is_file():
+                source_path = niuma_path
+                video_object_key = niuma_object_key
     cover_object_key = _resolve_cover_object_key(
         payload=payload,
         source_path=source_path,
