@@ -41,6 +41,7 @@
 .oc-input { height:38px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:18px; outline:none; }
 .oc-input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
 .oc-select { width:172px; font-size:16px; background:#fff; }
+.oc-select--inventory { width:150px; }
 .oc-btn { height:38px; padding:0 18px; border:none; border-radius:var(--oc-r); font-size:18px; font-weight:500; cursor:pointer; transition:background 120ms; }
 .oc-btn--primary { background:var(--oc-accent); color:#fff; }
 .oc-btn--primary:hover { background:var(--oc-accent-hover); }
@@ -723,6 +724,13 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="this_month">本月</option>
         <option value="last_month">上月</option>
       </select>
+      <select id="mkInventoryFilter" class="oc-input oc-select oc-select--inventory" aria-label="入库状态" onchange="onMkInventoryFilterChange()">
+        <option value="">全部入库状态</option>
+        <option value="product_imported">产品已入库</option>
+        <option value="product_not_imported">产品未入库</option>
+        <option value="video_imported">视频已入库</option>
+        <option value="video_not_imported">视频未入库</option>
+      </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:480px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
@@ -1159,8 +1167,33 @@ function runMkSearch(options = {}) {
 
 function resetMkSearch() {
   document.getElementById('searchInput').value = '';
+  const inventoryFilter = document.getElementById('mkInventoryFilter');
+  if (inventoryFilter) inventoryFilter.value = '';
   activeMkProductCode = '';
   runMkSearch();
+}
+
+function currentMkLibraryStatus() {
+  const select = document.getElementById('mkInventoryFilter');
+  const value = select ? String(select.value || '').trim() : '';
+  return ['product_imported', 'product_not_imported', 'video_imported', 'video_not_imported'].includes(value) ? value : '';
+}
+
+function mkLibraryStatusQueryParam() {
+  const value = currentMkLibraryStatus();
+  return value ? `&library_status=${encodeURIComponent(value)}` : '';
+}
+
+function currentMkLibraryStatusLabel() {
+  const select = document.getElementById('mkInventoryFilter');
+  if (!select || !select.value) return '';
+  return select.options[select.selectedIndex]?.textContent || '';
+}
+
+function onMkInventoryFilterChange() {
+  mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
+  runMkSearch({preserveProductCode: true});
 }
 
 function mkSnapshotQueryParam() {
@@ -1344,7 +1377,7 @@ async function loadMkLocalMaterialLibrary(page) {
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkLibraryStatusQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1353,7 +1386,8 @@ async function loadMkLocalMaterialLibrary(page) {
     const rangeLabel = data.range_start && data.range_end ? `${data.range_start} ~ ${data.range_end}` : '';
     const snapshotLabel = rangeLabel || data.snapshot_at || data.snapshot || '最新';
     const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${snapshotLabel}`;
-    status.textContent = `${scopeText} · 视频 ${total} 条`;
+    const statusLabel = currentMkLibraryStatusLabel();
+    status.textContent = `${scopeText}${statusLabel ? ` · ${statusLabel}` : ''} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
     } else {
@@ -1378,7 +1412,7 @@ async function loadMkYesterdayTop100(page) {
   clearMkArchivePager(pagerIds);
   status.textContent = '正在读取昨天消耗前300归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1397,7 +1431,8 @@ async function loadMkYesterdayTop100(page) {
     const snapshotLabel = data.snapshot_at || data.snapshot || '最新';
     const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
-    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}`;
+    const statusLabel = currentMkLibraryStatusLabel();
+    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前300归档</div>';
     } else {
