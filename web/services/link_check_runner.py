@@ -39,3 +39,8 @@ def start(task_id: str) -> bool:
         with _lock:
             _running.discard(task_id)
     return started
+
+
+from appcore import runner_dispatch
+
+runner_dispatch.register_link_check_runner(start=start)
