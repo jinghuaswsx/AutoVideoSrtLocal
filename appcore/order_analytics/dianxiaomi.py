@@ -126,6 +126,13 @@ def extract_dianxiaomi_shopify_product_id(line: dict[str, Any]) -> str | None:
 
 def extract_dianxiaomi_product_handle(line: dict[str, Any]) -> str | None:
     for key in ("productUrl", "sourceUrl"):
+        value = str(line.get(key) or "")
+        if "/products/" not in value.lower():
+            continue
+        handle = _canonical_product_handle(value)
+        if handle:
+            return handle
+    for key in ("handle", "productHandle", "productCode", "product_code"):
         handle = _canonical_product_handle(line.get(key))
         if handle:
             return handle
@@ -137,7 +144,11 @@ def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductSc
     rows = query(
         "SELECT id, product_code, shopifyid, product_link, localized_links_json "
         "FROM media_products "
-        "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL AND shopifyid <> ''"
+        "WHERE deleted_at IS NULL "
+        "AND ("
+        "  (shopifyid IS NOT NULL AND shopifyid <> '') "
+        "  OR (product_code IS NOT NULL AND product_code <> '')"
+        ")"
     )
     by_shopify_id: dict[str, dict[str, Any]] = {}
     by_handle: dict[str, dict[str, Any]] = {}

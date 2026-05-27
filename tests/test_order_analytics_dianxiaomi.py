@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from appcore import order_analytics as oa
 
@@ -85,6 +86,56 @@ def test_build_dianxiaomi_product_scope_keeps_handle_without_site_link(monkeypat
     assert product["product_id"] == 9
     assert product["product_code"] == "sonic-lens-refresher-rjc"
     assert product["site_code"] == "newjoy"
+
+
+def test_normalize_dianxiaomi_order_matches_product_code_without_rjc_suffix(monkeypatch):
+    """订单行 product code 不带 -rjc 时，应匹配素材库带 -rjc 的 product_code。"""
+
+    def fake_query(sql, args=()):
+        if "FROM media_product_shopify_ids" in sql:
+            return []
+        if "FROM media_products" in sql:
+            if "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL" in sql:
+                return []
+            return [
+                {
+                    "id": 15,
+                    "product_code": "sonic-lens-refresher-rjc",
+                    "shopifyid": None,
+                    "product_link": "https://newjoyloo.com/products/sonic-lens-refresher-rjc",
+                    "localized_links_json": "{}",
+                },
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    scope = oa.build_dianxiaomi_product_scope(["newjoy", "omurio"])
+    order = {
+        "id": "9015",
+        "productList": [
+            {
+                "productId": "45931658477741",
+                "productCode": "sonic-lens-refresher",
+                "productSku": "45931658477741",
+                "quantity": "1",
+                "price": "24.95",
+                "productUrl": "https://newjoyloo.com/admin/order-line/9015",
+            }
+        ],
+    }
+
+    rows, skipped = oa.normalize_dianxiaomi_order(
+        order,
+        scope,
+        {},
+        rmb_per_usd=Decimal("6.83"),
+    )
+
+    assert skipped == 0
+    assert rows[0]["product_id"] == 15
+    assert rows[0]["product_code"] == "sonic-lens-refresher-rjc"
+    assert rows[0]["site_code"] == "newjoy"
 
 
 def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():

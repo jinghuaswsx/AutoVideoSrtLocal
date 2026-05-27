@@ -75,6 +75,22 @@ Listing 销量页导出是产品维度汇总，字段包括 `productId`、店铺
 8. 写入导入批次表和订单行明细表。
 9. 可选抓取同日 Listing 汇总，用于后续校验订单行汇总和 Listing 页面汇总是否大体一致。
 
+## 2026-05-27 增量：订单 product_code 的 `-rjc` 兜底匹配
+
+产品盈亏页的“未匹配产品订单”来自 `order_profit_lines.product_id IS NULL` 的订单行。
+当店小秘订单行能提供产品 code / handle，但该值不带内部后缀 `-rjc` 时，订单导入必须尝试用
+`<code>-rjc` 匹配素材管理库 `media_products.product_code`，避免素材库已有产品仍落入未匹配桶。
+
+匹配优先级保持不变：
+
+1. 按订单域名 + Shopify product ID 匹配 `media_product_shopify_ids`。
+2. 回退到 `media_products.shopifyid`。
+3. 回退到订单 URL handle / 订单 product code；该兜底同时尝试 `code` 与 `code-rjc` 等价形态。
+4. 仍无法匹配时，保留现有行为：写入 `product_id=NULL`，由产品盈亏页归入“未匹配产品订单”。
+
+素材库产品即使尚未维护 `shopifyid`，只要 `product_code` 能与订单 code / handle 按上述规则匹配，
+也应该进入订单导入作用域。该规则不做模糊匹配、不按商品名猜测、不改利润核算公式。
+
 ## 数据模型
 
 新增 `dianxiaomi_order_import_batches`，记录每个导入批次和每天抓取状态。
@@ -252,4 +268,3 @@ python tools/dianxiaomi_order_import.py --start-date 2026-01-01 --end-date 2026-
 - 店小秘订单状态页默认是 `paid`，历史已发货/已退款/已搁置订单可能需要按多个 state 补抓。实现计划需要确认 state 覆盖：至少覆盖 `paid`、`approved`、`processed`、`allocated`、`shipped`、`refound`、`ignore`，再按接口实际可用状态收敛。
 - 订单行字段在不同订单状态下可能出现在 `productList` 或 `cancelProductList`，标准化必须同时兼容。
 - 运费有两个口径：买家支付运费 `shipAmount` 与实际物流费用 `logisticFee`，两者都要保留。
-
