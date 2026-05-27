@@ -597,7 +597,7 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
         material_key = str(item.get("material_key") or "").strip()
         video_path = normalize_mk_media_path(str(item.get("video_path") or ""))
         links = _fine_ai_card_links(item)
-        if material_key and video_path and links:
+        if material_key and video_path:
             card_index[material_key] = {
                 "video_path": video_path,
                 "links": links,

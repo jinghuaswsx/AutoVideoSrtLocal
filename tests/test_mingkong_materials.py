@@ -1725,6 +1725,114 @@ def test_list_yesterday_top100_keyword_uses_shared_material_filter(monkeypatch):
     assert "%baseball-cap-organizer-rjc%" in count_args
 
 
+def test_list_yesterday_top100_attaches_fine_ai_by_video_card_without_product_link(monkeypatch):
+    material_key = "b" * 64
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_status_cache_by_hash", lambda scope, lookup_hashes: {})
+    monkeypatch.setattr(mm, "_legacy_material_rows_by_product", lambda product_ids: {})
+
+    def fake_query_one(sql, args=()):
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-26",
+                "snapshot_at": "2026-05-26 18:00:00",
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        if "SELECT t.*" in sql and "FROM mingkong_material_daily_top100 t" in sql:
+            return [
+                {
+                    "id": 1,
+                    "snapshot_date": "2026-05-26",
+                    "snapshot_at": "2026-05-26 18:00:00",
+                    "snapshot_slot": "1800",
+                    "previous_snapshot_date": "2026-05-25",
+                    "previous_snapshot_at": "2026-05-25 18:00:00",
+                    "previous_snapshot_slot": "1800",
+                    "comparison_interval_seconds": 86400,
+                    "ranking_snapshot_date": "2026-05-26",
+                    "rank_position": 1,
+                    "display_position": 1,
+                    "material_key": material_key,
+                    "product_code": "linkless-card",
+                    "product_url": "",
+                    "mk_product_link": "",
+                    "mk_product_id": 901,
+                    "mk_product_name": "Linkless Card",
+                    "video_name": "same-video.mp4",
+                    "video_path": "uploads2/same-video.mp4",
+                    "video_image_path": "uploads2/same-video.jpg",
+                    "local_cover_object_key": "artifacts/mingkong-material-covers/bb/card.jpg",
+                    "current_cumulative_90_spend": 1200,
+                    "previous_cumulative_90_spend": 800,
+                    "yesterday_spend_delta": 400,
+                    "video_ads_count": 5,
+                    "is_new_material": 0,
+                    "is_new_top100_entry": 1,
+                    "mk_video_metadata_json": "{}",
+                    "created_at": None,
+                }
+            ]
+        if "FROM mingkong_fine_ai_auto_evaluations" in sql:
+            return []
+        if "FROM ai_evaluation_runs" in sql:
+            return [
+                {
+                    "id": 9,
+                    "evaluation_run_id": "eval_same_video",
+                    "product_id": 0,
+                    "status": "completed",
+                    "summary_json": '{"overall_recommendation":"GO"}',
+                    "frontend_json": "{}",
+                    "progress_json": "{}",
+                    "metadata_json": (
+                        '{"source_type":"external_product_link",'
+                        '"external_product_link":"https://shop.example/products/old-link",'
+                        '"external_card_video":{"path":"uploads2/same-video.mp4"}}'
+                    ),
+                    "created_at": "2026-05-26 09:00:00",
+                    "updated_at": "2026-05-26 09:01:00",
+                    "completed_at": "2026-05-26 09:01:00",
+                    "failed_at": None,
+                }
+            ]
+        if "FROM ai_country_evaluations" in sql:
+            return [
+                {
+                    "evaluation_run_id": "eval_same_video",
+                    "country_code": "DE",
+                    "country_name": "Germany",
+                    "status": "completed",
+                    "scores_json": '{"overall_score":82}',
+                    "decision_json": '{"final_decision":"GO"}',
+                    "full_result_json": (
+                        '{"country_code":"DE","country_name":"Germany",'
+                        '"status":"completed","scores":{"overall_score":82},'
+                        '"decision":{"final_decision":"GO"}}'
+                    ),
+                    "error_message": "",
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_yesterday_top100(page=1, page_size=100)
+
+    fine_ai = result["items"][0]["product_ad_status"]["fine_ai_evaluation"]
+    assert fine_ai["evaluation_run_id"] == "eval_same_video"
+    assert fine_ai["has_result"] is True
+    assert fine_ai["countries"]["DE"]["decision"]["final_decision"] == "GO"
+
+
 def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch):
     writes = []
     finishes = []
