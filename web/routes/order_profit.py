@@ -155,6 +155,7 @@ def api_orders_list():
                 allocated_ad_spend_usd=sum(
                     float(o.get("ad_cost_total_usd") or 0) for o in orders
                 ),
+                unallocated_ad_spend_usd=summary.get("unallocated_ad_spend_usd"),
             ),
         })
     )

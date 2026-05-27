@@ -1,7 +1,7 @@
 """订单级利润聚合测试。"""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -19,6 +19,14 @@ from appcore.order_analytics.order_profit_aggregation import (
     list_order_profit_lines,
     list_products_for_manual_match,
 )
+
+
+def _stub_manual_ad_spend(monkeypatch):
+    monkeypatch.setattr(
+        opa.manual_ad_spend,
+        "load_supplement_map",
+        lambda *a, **kw: {},
+    )
 
 
 # -------- _derive_order_status --------
@@ -476,6 +484,58 @@ def test_summary_window_filters_by_product_id(monkeypatch):
     assert captured[1][1] == (date(2026, 5, 1), date(2026, 5, 4), 123)
 
 
+def test_summary_window_subtracts_open_day_realtime_unallocated_spend(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    import tools.meta_daily_final_sync as meta_daily_final_sync
+
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "completed_meta_business_date",
+        lambda now=None: target - timedelta(days=1),
+    )
+
+    def fake_query_one(sql, args=()):
+        if "status_per_order" not in sql:
+            return {
+                "total_orders": 1,
+                "ok_lines": 1,
+                "incomplete_lines": 0,
+                "revenue_total": 100.0,
+                "ad_cost_total": 0.0,
+                "profit_total": 100.0,
+            }
+        return {"orders_ok": 1, "orders_incomplete": 0, "orders_partial": 0}
+
+    def fake_query(sql, args=()):
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            raise AssertionError("open-day daily unallocated spend must be skipped")
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return [{"business_date": target, "product_id": None, "spend": 999.0}]
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "ad_account_id": "ACC", "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "ad_account_id=%s" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "unmatched-rjc",
+                    "normalized_campaign_code": "unmatched-rjc",
+                    "spend_usd": 40.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", lambda code: None, raising=False)
+
+    result = get_order_profit_summary_for_window(date_from=target, date_to=target)
+
+    assert result["unallocated_ad_spend_usd"] == pytest.approx(40.0)
+    assert result["profit_total_usd"] == pytest.approx(60.0)
+
+
 def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spend(monkeypatch):
     captured = {}
 
@@ -528,6 +588,7 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
 
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    _stub_manual_ad_spend(monkeypatch)
 
     payload = get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -582,6 +643,7 @@ def test_status_summary_queries_order_lines_by_meta_business_date(monkeypatch):
 
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    _stub_manual_ad_spend(monkeypatch)
 
     get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -687,6 +749,7 @@ def test_status_summary_uses_realtime_ad_snapshot_for_missing_daily_metrics(monk
         raising=False,
     )
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    _stub_manual_ad_spend(monkeypatch)
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -774,6 +837,7 @@ def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocat
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "resolve_ad_product_match", fake_match, raising=False)
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    monkeypatch.setattr(opa.manual_ad_spend, "load_supplement_map", lambda *a, **kw: {})
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -781,6 +845,122 @@ def test_status_summary_counts_realtime_matched_spend_without_units_as_unallocat
     assert payload["unallocated_ad_spend_usd"] == pytest.approx(40.0)
     assert payload["overview"]["unallocated_ad_spend_usd"] == pytest.approx(40.0)
     assert payload["overview"]["total_profit_usd"] == pytest.approx(47.5)
+
+
+def test_status_summary_skips_open_day_daily_unallocated_when_using_realtime(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    import tools.meta_daily_final_sync as meta_daily_final_sync
+
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "completed_meta_business_date",
+        lambda now=None: target - timedelta(days=1),
+    )
+
+    def fake_query(sql, args=()):
+        if "GROUP BY status" in sql:
+            return [
+                {
+                    "status": "ok",
+                    "n": 1,
+                    "revenue": 100.0,
+                    "profit": 100.0,
+                    "shopify_fee": 0.0,
+                    "ad_cost": 0.0,
+                    "purchase": 0.0,
+                    "shipping_cost": 0.0,
+                    "return_reserve": 0.0,
+                    "purchase_actual": 0.0,
+                    "purchase_estimate": 0.0,
+                    "purchase_with_estimate": 0.0,
+                    "shipping_cost_actual": 0.0,
+                    "shipping_cost_estimate": 0.0,
+                    "shipping_cost_with_estimate": 0.0,
+                    "profit_with_estimate": 100.0,
+                    "purchase_fallback_estimated": 0.0,
+                    "purchase_fallback_estimated_lines": 0,
+                    "shipping_product_estimated": 0.0,
+                    "shipping_product_estimated_lines": 0,
+                    "shipping_fallback_estimated": 0.0,
+                    "shipping_fallback_estimated_lines": 0,
+                }
+            ]
+        if "product_id IS NULL" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            raise AssertionError("open-day daily unallocated spend must be skipped")
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return [{"business_date": target, "product_id": None, "spend": 999.0}]
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "ad_account_id": "ACC", "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "ad_account_id=%s" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "unmatched-rjc",
+                    "normalized_campaign_code": "unmatched-rjc",
+                    "spend_usd": 40.0,
+                }
+            ]
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
+            return []
+        if "d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", lambda code: None, raising=False)
+    monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    monkeypatch.setattr(opa.manual_ad_spend, "load_supplement_map", lambda *a, **kw: {})
+
+    payload = get_order_profit_status_summary(date_from=target, date_to=target)
+
+    assert payload["unallocated_ad_spend_usd"] == pytest.approx(40.0)
+    assert payload["overview"]["total_profit_usd"] == pytest.approx(60.0)
+
+
+def test_realtime_fallback_excludes_matched_no_unit_spend_from_product_bucket(monkeypatch):
+    target = date(2026, 5, 7)
+    snapshot_at = datetime(2026, 5, 8, 15, 40)
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY" in sql:
+            return []
+        if "MAX(snapshot_at)" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"business_date": target, "ad_account_id": "ACC", "snapshot_at": snapshot_at}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql and "ad_account_id=%s" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "campaign_name": "with-orders-rjc",
+                    "normalized_campaign_code": "with-orders-rjc",
+                    "spend_usd": 25.0,
+                },
+                {
+                    "business_date": target,
+                    "campaign_name": "no-orders-rjc",
+                    "normalized_campaign_code": "no-orders-rjc",
+                    "spend_usd": 40.0,
+                },
+            ]
+        if "SUM(d.quantity)" in sql and "GROUP BY d.meta_business_date, p.product_id" in sql:
+            return [{"business_date": target, "product_id": 316, "units": 4}]
+        return []
+
+    def fake_match(code):
+        if code == "with-orders-rjc":
+            return {"id": 316}
+        if code == "no-orders-rjc":
+            return {"id": 427}
+        return None
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(opa, "resolve_ad_product_match", fake_match, raising=False)
+
+    result = opa._load_realtime_ad_snapshot_fallback(date_from=target, date_to=target)
+
+    assert result["spend_by_product"] == {(target, 316): pytest.approx(25.0)}
+    assert result["unallocated_spend"] == pytest.approx(40.0)
 
 
 def test_status_summary_recalculates_ad_cost_from_daily_metrics_when_profit_lines_are_stale(monkeypatch):
@@ -839,6 +1019,7 @@ def test_status_summary_recalculates_ad_cost_from_daily_metrics_when_profit_line
 
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    _stub_manual_ad_spend(monkeypatch)
 
     payload = get_order_profit_status_summary(date_from=target, date_to=target)
 
@@ -859,6 +1040,7 @@ def test_status_summary_queries_estimated_cost_sources(monkeypatch):
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
+    _stub_manual_ad_spend(monkeypatch)
 
     get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -941,6 +1123,7 @@ def test_status_summary_sql_estimates_missing_purchase_and_shipping(monkeypatch)
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
+    _stub_manual_ad_spend(monkeypatch)
 
     get_order_profit_status_summary(
         date_from=date(2026, 5, 1),
@@ -1002,6 +1185,7 @@ def test_status_summary_returns_complete_profit_with_missing_cost_estimates(monk
 
     monkeypatch.setattr(oa, "query", fake_query)
     monkeypatch.setattr(opa, "_load_sync_account_totals", lambda *a, **kw: {})
+    _stub_manual_ad_spend(monkeypatch)
 
     payload = get_order_profit_status_summary(
         date_from=date(2026, 5, 1),

@@ -300,8 +300,13 @@ def _load_realtime_ad_snapshot_fallback(
             for key, spend in spend_by_product.items()
             if int(units_by_product.get(key) or 0) <= 0
         )
+        allocated_spend_by_product = {
+            key: spend
+            for key, spend in spend_by_product.items()
+            if int(units_by_product.get(key) or 0) > 0
+        }
         return {
-            "spend_by_product": dict(spend_by_product),
+            "spend_by_product": allocated_spend_by_product,
             "units_by_product": units_by_product,
             "unallocated_spend": unallocated_spend + no_unit_spend,
         }
@@ -394,6 +399,30 @@ def _load_realtime_ad_cost_adjustments(
         "total_delta": total_delta,
         "unallocated_spend": fallback.get("unallocated_spend", 0.0),
     }
+
+
+def _load_closed_daily_unallocated_ad_spend(
+    *,
+    date_from: date,
+    date_to: date,
+) -> float:
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
+    daily_to = min(date_to, closed_through)
+    if daily_to < date_from:
+        return 0.0
+
+    rows = query(
+        "SELECT COALESCE(SUM(spend_usd), 0) AS unallocated_ad_spend_usd "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE product_id IS NULL "
+        "AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
+        (date_from, daily_to),
+    )
+    if not rows:
+        return 0.0
+    return float((rows[0] or {}).get("unallocated_ad_spend_usd") or 0)
 
 
 def get_order_profit_list(
@@ -572,6 +601,7 @@ def get_order_profit_summary_for_window(
             "total_orders": 0,
             "revenue_total_usd": 0.0,
             "profit_total_usd": 0.0,
+            "unallocated_ad_spend_usd": 0.0,
         }
 
     # 按订单维度分类（需要二次查询）
@@ -597,13 +627,21 @@ def get_order_profit_summary_for_window(
     ) or {}
 
     profit_total = float(row.get("profit_total") or 0)
-    if row.get("ad_cost_total") is not None and int(row.get("total_orders") or 0) > 0:
+    unallocated_spend = 0.0
+    if row.get("ad_cost_total") is not None:
         adjustments = _load_realtime_ad_cost_adjustments(
             date_from=date_from,
             date_to=date_to,
             product_id=product_id,
         )
         profit_total -= float(adjustments["total_delta"] or 0)
+        unallocated_spend += float(adjustments.get("unallocated_spend") or 0)
+        if product_id is None:
+            unallocated_spend += _load_closed_daily_unallocated_ad_spend(
+                date_from=date_from,
+                date_to=date_to,
+            )
+        profit_total -= unallocated_spend
 
     return {
         "date_from": date_from.isoformat(),
@@ -614,6 +652,7 @@ def get_order_profit_summary_for_window(
         "orders_partial": int(bucket_row.get("orders_partial") or 0),
         "revenue_total_usd": float(row.get("revenue_total") or 0),
         "profit_total_usd": profit_total,
+        "unallocated_ad_spend_usd": unallocated_spend,
     }
 
 
@@ -851,24 +890,16 @@ def get_order_profit_status_summary(
             row.get("shipping_fallback_estimated_lines") or 0
         )
 
-    unallocated_rows = query(
-        "SELECT COALESCE(SUM(spend_usd), 0) AS unallocated_ad_spend_usd "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE product_id IS NULL "
-        "AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
-        (date_from, date_to),
-    )
-    unallocated = (
-        float((unallocated_rows[0] or {}).get("unallocated_ad_spend_usd") or 0)
-        if unallocated_rows
-        else 0
+    unallocated = _load_closed_daily_unallocated_ad_spend(
+        date_from=date_from,
+        date_to=date_to,
     )
     line_count = _sum_summary_int(summary, "lines")
+    adjustments = _load_realtime_ad_cost_adjustments(
+        date_from=date_from,
+        date_to=date_to,
+    )
     if line_count > 0:
-        adjustments = _load_realtime_ad_cost_adjustments(
-            date_from=date_from,
-            date_to=date_to,
-        )
         for status, delta in adjustments["status_deltas"].items():
             bucket = summary.get(status)
             if bucket is None:
@@ -878,7 +909,7 @@ def get_order_profit_status_summary(
             bucket["profit_with_estimate"] = float(
                 bucket.get("profit_with_estimate") or 0
             ) - float(delta)
-        unallocated += float(adjustments.get("unallocated_spend") or 0)
+    unallocated += float(adjustments.get("unallocated_spend") or 0)
 
     sync_totals = _load_sync_account_totals(date_from, date_to)
     manual_map = manual_ad_spend.load_supplement_map(date_from, date_to)
