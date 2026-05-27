@@ -553,8 +553,20 @@ def _finish_batch(batch_id: int, *, imported: int, matched: int) -> None:
     )
 
 
-def _refresh_product_ad_launch_dates(product_ids: set[int]) -> dict[str, int]:
-    normalized = sorted({int(pid) for pid in product_ids if int(pid) > 0})
+def _coerce_positive_product_id(value: Any) -> int | None:
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _refresh_product_ad_launch_dates(product_ids: set[Any]) -> dict[str, int]:
+    normalized = sorted({
+        pid
+        for pid in (_coerce_positive_product_id(value) for value in product_ids)
+        if pid is not None
+    })
     if not normalized:
         return {"matched_products": 0, "updated_rows": 0}
     return oa.refresh_ad_match_launch_dates_for_products(normalized)
@@ -583,11 +595,11 @@ def _replace_campaign_daily_rows(path: Path, target_date: date, account: MetaAdA
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_campaign_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -649,11 +661,11 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
         product = _match_product(row.get("product_code"))
         if not product and row.get("campaign_product_code"):
             product = _match_product(row["campaign_product_code"])
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_ad_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -713,11 +725,11 @@ def _replace_adset_daily_rows(path: Path, target_date: date, account: MetaAdAcco
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_adset_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -952,11 +964,11 @@ def _replace_campaign_daily_rows_from_api(
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_campaign_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -1025,11 +1037,11 @@ def _replace_ad_daily_rows_from_api(
         product = _match_product(row.get("product_code"))
         if not product and row.get("campaign_product_code"):
             product = _match_product(row["campaign_product_code"])
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_ad_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "
@@ -1096,11 +1108,11 @@ def _replace_adset_daily_rows_from_api(
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
-        product_id = product.get("id") if product else None
-        matched_product_code = product.get("product_code") if product else None
+        product_id = _coerce_positive_product_id(product.get("id") if product else None)
+        matched_product_code = product.get("product_code") if product_id and product else None
         if product_id:
             matched += 1
-            matched_product_ids.add(int(product_id))
+            matched_product_ids.add(product_id)
         execute(
             "INSERT INTO meta_ad_daily_adset_metrics "
             "(import_batch_id, ad_account_id, ad_account_name, report_date, report_start_date, report_end_date, "

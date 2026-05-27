@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -254,6 +255,53 @@ def test_daily_sync_refreshes_launch_dates_for_matched_products(monkeypatch):
 
     assert refreshed == [[101, 102]]
     assert summary == {"matched_products": 2, "updated_rows": 2}
+
+
+def test_daily_sync_refresh_skips_invalid_product_ids(monkeypatch):
+    from tools import meta_daily_final_sync as sync
+
+    refreshed: list[list[int]] = []
+    monkeypatch.setattr(
+        sync.oa,
+        "refresh_ad_match_launch_dates_for_products",
+        lambda ids: refreshed.append(list(ids))
+        or {"matched_products": len(ids), "updated_rows": len(ids)},
+    )
+
+    summary = sync._refresh_product_ad_launch_dates({101, "abc", None, "", -3, 0})
+
+    assert refreshed == [[101]]
+    assert summary == {"matched_products": 1, "updated_rows": 1}
+
+
+def test_daily_sync_replace_rows_does_not_collect_invalid_match_id(monkeypatch, tmp_path):
+    from tools import meta_daily_final_sync as sync
+
+    csv_path = tmp_path / "ads.csv"
+    csv_path.write_text(
+        "Reporting starts,Reporting ends,Ad name,Amount spent (USD),Results\n"
+        "2026-01-01,2026-01-01,invalid-product-id 德国素材,12.50,3\n",
+        encoding="utf-8",
+    )
+    writes: list[tuple[str, tuple]] = []
+
+    def fake_execute(sql, args=()):
+        writes.append((sql, args))
+        if "INSERT INTO meta_ad_import_batches" in sql:
+            return 701
+        return 1
+
+    monkeypatch.setattr(sync, "execute", fake_execute)
+    monkeypatch.setattr(sync, "_match_product", lambda product_code: {"id": "abc", "product_code": "bad"})
+    monkeypatch.setattr(sync.oa, "refresh_ad_match_launch_dates_for_products", lambda ids: pytest.fail("invalid id should not refresh"))
+
+    account = SimpleNamespace(account_id="act_1", account_name="Meta", code="meta")
+    report = sync._replace_ad_daily_rows(csv_path, date(2026, 1, 1), account)
+
+    insert = next(args for sql, args in writes if "INSERT INTO meta_ad_daily_ad_metrics" in sql)
+    assert insert[10] is None
+    assert report["matched"] == 0
+    assert report["ad_launch_refresh"] == {"matched_products": 0, "updated_rows": 0}
 
 
 def test_manual_campaign_override_refreshes_launch_date(monkeypatch):

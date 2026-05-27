@@ -366,6 +366,11 @@ def test_meta_daily_final_sync_inserts_market_country_for_ad_rows(monkeypatch, t
         "_match_product",
         lambda product_code: {"id": 317, "product_code": "sonic-lens-refresher-rjc"},
     )
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_refresh_product_ad_launch_dates",
+        lambda product_ids: {"matched_products": len(product_ids), "updated_rows": len(product_ids)},
+    )
 
     report = meta_daily_final_sync._replace_ad_daily_rows(csv_path, date(2026, 1, 1), account)
 
