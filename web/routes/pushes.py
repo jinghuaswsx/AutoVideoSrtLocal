@@ -1148,6 +1148,7 @@ def api_history():
 
         ad_info = db_query(
             "SELECT COALESCE(SUM(spend_usd), 0) AS total_spend, "
+            "       COALESCE(SUM(purchase_value_usd), 0) AS total_purchase_value, "
             "       COUNT(DISTINCT ad_name) AS campaign_count "
             "FROM meta_ad_daily_ad_metrics "
             "WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0 "
@@ -1160,6 +1161,8 @@ def api_history():
 
         campaign_count = int(ad_info["campaign_count"] or 0)
         spend_total = float(ad_info["total_spend"] or 0)
+        purchase_value_total = float(ad_info.get("total_purchase_value") or 0)
+        ad_roas = purchase_value_total / spend_total if spend_total > 0 else 0.0
 
         history_item = {
             "log_id": r["log_id"],
@@ -1180,6 +1183,7 @@ def api_history():
             "has_ad_plan": campaign_count > 0,
             "ad_campaign_count": campaign_count,
             "ad_spend_total": spend_total,
+            "ad_roas": ad_roas,
         }
         history_items.append(history_item)
 
