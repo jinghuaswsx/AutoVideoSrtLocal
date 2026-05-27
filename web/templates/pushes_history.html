@@ -54,8 +54,8 @@
 
 <div class="oc-pager" id="history-pagination-top" style="margin-bottom: 16px;"></div>
 
-<div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
-  <table class="push-table mobile-no-scroll" style="width: 100%; border-collapse: collapse; text-align: left; table-layout: auto;">
+<div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow-x: auto; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
+  <table class="push-table mobile-no-scroll" style="min-width: 1800px; width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed;">
     <thead>
       <tr style="background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb);">
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px; white-space: nowrap;">视频快照</th>
@@ -63,7 +63,7 @@
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 150px; white-space: nowrap;">商品中文名</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; min-width: 300px; white-space: nowrap;">产品Code</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 120px; white-space: nowrap;">投放语种</th>
-        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 200px; white-space: nowrap;">文案快照</th>
+        <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px; white-space: nowrap;">文案快照</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 12.5%; min-width: 140px; white-space: nowrap;">投放链接</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 180px; min-width: 160px; white-space: nowrap;">推送时间</th>
         <th style="padding: 14px 12px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 100px; white-space: nowrap;">操作账号</th>
@@ -548,7 +548,7 @@
             const descFull = `描述：${t.description || ''}`;
 
             return `<div style="margin-bottom:8px; font-size:13px; line-height:1.5; border-left:3px solid var(--oc-accent, #3b82f6); padding-left:8px; max-width: 100%; overflow: hidden;">
-                      <div title="${escapeHtml(titleFull)}" style="color:var(--oc-fg, #111827); font-weight:500; white-space: nowrap;">标题：${escapeHtml(t.title || '')}</div>
+                      <div title="${escapeHtml(titleFull)}" style="color:var(--oc-fg, #111827); font-weight:500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">标题：${escapeHtml(t.title || '')}</div>
                       <div title="${escapeHtml(messageFull)}" style="color:var(--oc-fg, #111827); margin-top:3px; font-weight:400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">文案：${escapeHtml(t.message || '')}</div>
                       <div title="${escapeHtml(descFull)}" style="color:var(--oc-fg-muted, #4b5563); margin-top:3px; font-weight:400; font-size:12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">描述：${escapeHtml(t.description || '')}</div>
                       <div style="margin-top:6px;">
@@ -610,7 +610,7 @@
                 ${formatLanguageLabel(it.lang)}
               </span>
             </td>
-            <td style="padding:12px; vertical-align: top; min-width: 200px; overflow: hidden;">
+            <td style="padding:12px; vertical-align: top; width: 100px; overflow: hidden;">
               ${textsHtml}
             </td>
             <td style="padding:12px; vertical-align: top; width: 12.5%; min-width: 140px; overflow: hidden;">
