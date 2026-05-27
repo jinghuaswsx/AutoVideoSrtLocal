@@ -3,17 +3,17 @@
 {% block page_title %}
 <span class="oa-page-heading">数据分析</span>
 <span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
-  <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
-  <button type="button" class="oa-tab" data-tab="newProductLaunch" role="tab" aria-selected="false">新品投放分析</button>
-  <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
-  <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
-  <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
-  <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
-  <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
-  <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
-  <button type="button" class="oa-tab" data-tab="weeklyRoas" role="tab" aria-selected="false">ROAS 周报</button>
-  <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">Shopify 订单导入</button>
-  <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'adAccounts' %}active{% endif %}" data-tab="adAccounts" role="tab" aria-selected="{% if active_tab == 'adAccounts' %}true{% else %}false{% endif %}">广告账户</button>
+  <button type="button" class="oa-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" role="tab" aria-selected="{% if active_tab == 'dashboard' %}true{% else %}false{% endif %}">产品看板</button>
+  <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
+  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
+  <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
+  <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
+  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </span>
 {% endblock %}
 {% block topbar_actions %}
@@ -1506,21 +1506,21 @@
 {% include "_data_quality_bar.html" %}
 
 <nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
-  <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
-  <button type="button" class="oa-tab" data-tab="newProductLaunch" role="tab" aria-selected="false">新品投放分析</button>
-  <button type="button" class="oa-tab" data-tab="dxmOrders" role="tab" aria-selected="false">订单分析</button>
-  <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
-  <button type="button" class="oa-tab" data-tab="adAccounts" role="tab" aria-selected="false">广告账户</button>
-  <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
-  <button type="button" class="oa-tab" data-tab="countryDashboard" role="tab" aria-selected="false">国家看板</button>
-  <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
-  <button type="button" class="oa-tab" data-tab="weeklyRoas" role="tab" aria-selected="false">ROAS 周报</button>
-  <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">Shopify 订单导入</button>
-  <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">Shopify 订单分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'adAccounts' %}active{% endif %}" data-tab="adAccounts" role="tab" aria-selected="{% if active_tab == 'adAccounts' %}true{% else %}false{% endif %}">广告账户</button>
+  <button type="button" class="oa-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" role="tab" aria-selected="{% if active_tab == 'dashboard' %}true{% else %}false{% endif %}">产品看板</button>
+  <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
+  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
+  <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
+  <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
+  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </nav>
 
 
-<section class="oa-panel active" id="panelRealtime">
+<section class="oa-panel {% if active_tab == 'realtime' %}active{% endif %}" id="panelRealtime">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row oar-realtime-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="实时大盘时间范围">
@@ -1888,7 +1888,7 @@
   </div>
 </section>
 
-<section class="oa-panel" id="panelNewProductLaunch">
+<section class="oa-panel {% if active_tab == 'newProductLaunch' %}active{% endif %}" id="panelNewProductLaunch">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row oar-realtime-toolbar-row">
       <div class="oad-segmented">
@@ -2005,7 +2005,7 @@
 </section>
 
 <!-- ═══════ Tab 0: 产品看板 ═══════ -->
-<section class="oa-panel" id="panelDashboard">
+<section class="oa-panel {% if active_tab == 'dashboard' %}active{% endif %}" id="panelDashboard">
 <style>
   .oad-toolbar { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
@@ -2555,7 +2555,7 @@
 </script>
 </section>
 
-<section class="oa-panel" id="panelCountryDashboard">
+<section class="oa-panel {% if active_tab == 'countryDashboard' %}active{% endif %}" id="panelCountryDashboard">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="国家看板时间范围">
@@ -2579,7 +2579,7 @@
 </section>
 
 <!-- Tab: 真实 ROAS -->
-<div class="oa-panel" id="panelTrueRoas">
+<div class="oa-panel {% if active_tab == 'trueRoas' %}active{% endif %}" id="panelTrueRoas">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="真实 ROAS 时间范围">
@@ -2629,7 +2629,7 @@
 </div>
 
 <!-- Tab: ROAS 周报 -->
-<div class="oa-panel" id="panelWeeklyRoas">
+<div class="oa-panel {% if active_tab == 'weeklyRoas' %}active{% endif %}" id="panelWeeklyRoas">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <button type="button" class="oad-btn-secondary" id="weeklyRoasPrev" aria-label="上一周">←</button>
@@ -2670,7 +2670,7 @@
 </div>
 
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
-<div class="oa-panel" id="panelImport">
+<div class="oa-panel {% if active_tab == 'import' %}active{% endif %}" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
     <div class="oa-upload-icon">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -2721,7 +2721,7 @@
 </div>
 
 <!-- ═══════ Tab 2: 数据分析 ═══════ -->
-<div class="oa-panel" id="panelAnalytics">
+<div class="oa-panel {% if active_tab == 'analytics' %}active{% endif %}" id="panelAnalytics">
   <!-- 控件区 -->
   <div class="oa-controls">
     <label>视图：</label>
@@ -2830,7 +2830,7 @@
   </div>
 </div>
 
-<div class="oa-panel" id="panelDxmOrders">
+<div class="oa-panel {% if active_tab == 'dxmOrders' %}active{% endif %}" id="panelDxmOrders">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="订单分析时间范围">
@@ -3112,7 +3112,7 @@
   .ams-status-partial { color: var(--warning); }
   .ams-status-manual { color: var(--danger); }
 </style>
-<div class="oa-panel" id="panelAds">
+<div class="oa-panel {% if active_tab == 'ads' %}active{% endif %}" id="panelAds">
   <nav class="oa-subtabs" id="adsSubtabs" role="tablist" aria-label="广告分析子 Tab">
     <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="overview" aria-pressed="true">概览</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="campaign" aria-pressed="false">Campaign</button>
@@ -3374,7 +3374,7 @@
 </div>
 
 <!-- ═══════ Tab: 广告账户 ═══════ -->
-<section class="oa-panel" id="panelAdAccounts">
+<section class="oa-panel {% if active_tab == 'adAccounts' %}active{% endif %}" id="panelAdAccounts">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <button type="button" class="oad-btn-primary" id="metaAdAccountAdd">新增账户</button>
@@ -3436,38 +3436,25 @@
 
   // ── Tab 切换 ──────────────────────────────────────
   var tabs = document.querySelectorAll('.oa-tab');
-  function setActiveTab(activeTab) {
-    tabs.forEach(function(t) {
-      var isActive = t === activeTab;
-      t.classList.toggle('active', isActive);
-      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    });
-  }
+  var tabUrls = {
+    'realtime': '/order-analytics/realtime',
+    'newProductLaunch': '/order-analytics/new-product-launch',
+    'dxmOrders': '/order-analytics/dxm-orders-view',
+    'ads': '/order-analytics/ads-view',
+    'adAccounts': '/order-analytics/ad-accounts-view',
+    'dashboard': '/order-analytics/product-dashboard-view',
+    'countryDashboard': '/order-analytics/country-dashboard-view',
+    'trueRoas': '/order-analytics/true-roas-view',
+    'weeklyRoas': '/order-analytics/weekly-roas-view',
+    'import': '/order-analytics/import-view',
+    'analytics': '/order-analytics/shopify-analytics-view'
+  };
+
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() {
-      setActiveTab(tab);
-      document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
-      document.getElementById('panel' + capitalize(tab.dataset.tab)).classList.add('active');
-
-      if (tab.dataset.tab === 'analytics') {
-        initAnalytics();
-      } else if (tab.dataset.tab === 'ads') {
-        initAds();
-      } else if (tab.dataset.tab === 'adAccounts') {
-        initMetaAdAccounts();
-      } else if (tab.dataset.tab === 'trueRoas') {
-        initTrueRoas();
-      } else if (tab.dataset.tab === 'weeklyRoas') {
-        initWeeklyRoas();
-      } else if (tab.dataset.tab === 'realtime') {
-        loadRealtimeOverview();
-      } else if (tab.dataset.tab === 'newProductLaunch') {
-        initNewProductLaunch();
-      } else if (tab.dataset.tab === 'countryDashboard') {
-        initCountryDashboard();
-      } else if (tab.dataset.tab === 'dxmOrders') {
-        initDxmOrders();
-      }
+      var tabName = tab.dataset.tab;
+      var url = tabUrls[tabName] || '/order-analytics';
+      window.location.href = url;
     });
   });
 
@@ -4117,7 +4104,28 @@
   });
   setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
   setNewProductLaunchRange('today', true);
-  loadRealtimeOverview();
+  var initialTab = "{{ active_tab }}";
+  if (initialTab === 'analytics') {
+    initAnalytics();
+  } else if (initialTab === 'ads') {
+    initAds();
+  } else if (initialTab === 'adAccounts') {
+    initMetaAdAccounts();
+  } else if (initialTab === 'trueRoas') {
+    initTrueRoas();
+  } else if (initialTab === 'weeklyRoas') {
+    initWeeklyRoas();
+  } else if (initialTab === 'realtime') {
+    loadRealtimeOverview();
+  } else if (initialTab === 'newProductLaunch') {
+    initNewProductLaunch();
+  } else if (initialTab === 'countryDashboard') {
+    initCountryDashboard();
+  } else if (initialTab === 'dxmOrders') {
+    initDxmOrders();
+  } else {
+    loadRealtimeOverview();
+  }
 
   function localDateString(value) {
     var y = value.getFullYear();
