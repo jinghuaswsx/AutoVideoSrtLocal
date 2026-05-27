@@ -505,4 +505,29 @@ def test_extract_images_from_html_prefers_non_placeholder_src():
     assert items[0]["source_url"] == "https://img.example.com/loc_from_url_en_01_abc.webp"
 
 
+def test_extract_images_from_html_ignores_noscript_tags():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    html = """
+    <html lang="de">
+      <body>
+        <div class="t4s-product__media-item">
+          <!-- Fallback noscript image (should be ignored) -->
+          <noscript>
+            <img src="https://img.example.com/noscript_english.jpg">
+          </noscript>
+          
+          <!-- Real lazy loaded image (should be extracted) -->
+          <img src="https://img.example.com/real_lazy_loaded.jpg">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/de/products/demo")
+    assert len(items) == 1
+    assert items[0]["source_url"] == "https://img.example.com/real_lazy_loaded.jpg"
+
+
+
 

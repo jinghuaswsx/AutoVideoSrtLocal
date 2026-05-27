@@ -106,6 +106,11 @@ def _variant_featured_images(soup: BeautifulSoup, *, base_url: str) -> list[str]
 
 def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
+    
+    # Remove all <noscript> tags to prevent extracting stale non-JS fallback images
+    for noscript in soup.find_all("noscript"):
+        noscript.decompose()
+
     items: list[dict] = []
     seen: set[str] = set()
 
