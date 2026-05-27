@@ -1117,14 +1117,16 @@ def api_history():
     where_sql = " AND ".join(where)
     from appcore.db import query as db_query
 
+    owner_name_expr = medias._media_product_owner_name_expr().replace("u.", "owner_u.")
     rows = db_query(
         "SELECT l.id AS log_id, l.item_id, l.operator_user_id, l.status, l.request_payload, l.response_body, l.created_at AS pushed_at, "
         "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, "
-        "       p.name AS product_name, p.product_code, u.username AS operator_username "
+        f"       p.name AS product_name, p.product_code, u.username AS operator_username, {owner_name_expr} AS product_owner_name "
         "FROM media_push_logs l "
         "JOIN media_items i ON i.id = l.item_id "
         "JOIN media_products p ON p.id = i.product_id "
         "LEFT JOIN users u ON u.id = l.operator_user_id "
+        "LEFT JOIN users owner_u ON owner_u.id = p.user_id "
         f"WHERE {where_sql} "
         "ORDER BY l.created_at DESC, l.id DESC",
         tuple(args)
@@ -1182,6 +1184,7 @@ def api_history():
             "product_id": p_id,
             "product_name": r["product_name"],
             "product_code": r["product_code"],
+            "product_owner_name": r["product_owner_name"] or "未指派",
             "lang": r["lang"],
             "display_name": search_display_name,
             "filename": search_filename,

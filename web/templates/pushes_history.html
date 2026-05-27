@@ -66,6 +66,7 @@
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; max-width: 300px; white-space: nowrap;">文案快照</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">投放链接</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">推送时间</th>
+        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">产品负责人</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">操作账号</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">广告状态</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); text-align: right; white-space: nowrap;">消耗广告费</th>
@@ -75,7 +76,7 @@
     </thead>
     <tbody id="history-tbody">
       <tr>
-        <td colspan="13" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 14px;">加载中…</td>
+        <td colspan="14" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 14px;">加载中…</td>
       </tr>
     </tbody>
   </table>
@@ -525,7 +526,7 @@
 
   async function load() {
     const tbody = document.getElementById('history-tbody');
-    tbody.innerHTML = `<tr><td colspan="13" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">加载中…</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">加载中…</td></tr>`;
     try {
       const resp = await fetch('/pushes/api/history?' + buildQuery());
       const data = await resp.json();
@@ -533,7 +534,7 @@
       state.pageSize = data.page_size || state.pageSize;
       state.items = data.items || [];
       if (!state.items.length) {
-        tbody.innerHTML = `<tr><td colspan="13" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
       } else {
         tbody.innerHTML = state.items.map(it => {
           const thumb = it.cover_url
@@ -620,6 +621,9 @@
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-variant-numeric:tabular-nums; font-weight:500;">${escapeHtml(pushedDate)}</span>
             </td>
             <td style="padding:10px; vertical-align: top; white-space: nowrap;">
+              <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.product_owner_name)}</span>
+            </td>
+            <td style="padding:10px; vertical-align: top; white-space: nowrap;">
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.operator_username)}</span>
             </td>
             <td style="padding:10px; vertical-align:middle; white-space: nowrap;">
@@ -657,7 +661,7 @@
 
       renderPagination();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="13" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444); font-size:14px;">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444); font-size:14px;">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
