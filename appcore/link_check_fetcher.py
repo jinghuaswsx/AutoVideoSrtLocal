@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 
 class LocaleLockError(RuntimeError):
@@ -330,44 +331,85 @@ class LinkCheckFetcher:
     def __init__(self) -> None:
         self.session = requests.Session()
 
-    def _request_page(self, url: str, target_language: str):
-        return self.session.get(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept-Language": _accept_language(target_language),
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-            allow_redirects=True,
-            timeout=20,
-        )
-
     def fetch_page(self, url: str, target_language: str) -> FetchedPage:
         nocache_url = _add_cache_buster(url)
-        response = self._request_page(nocache_url, target_language)
-        response, soup, lang = self._lock_target_locale(response, requested_url=nocache_url, target_language=target_language)
         
-        locked = _is_locale_locked(
-            resolved_url=response.url,
-            page_language=lang,
-            target_language=target_language,
-        )
-        
+        with sync_playwright() as p:
+            user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            locale_map = {
+                "de": "de-DE",
+                "fr": "fr-FR",
+                "pt": "pt-PT",
+                "it": "it-IT",
+                "es": "es-ES",
+                "ja": "ja-JP",
+            }
+            locale = locale_map.get(target_language.lower(), f"{target_language}-{target_language.upper()}")
+            
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=user_agent,
+                locale=locale,
+                extra_http_headers={
+                    "Accept-Language": _accept_language(target_language),
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+            )
+            page = context.new_page()
+            
+            try:
+                page.goto(nocache_url, wait_until="domcontentloaded", timeout=30000)
+                # Wait for dynamic translations/scripts (e.g. EZ Product Image Translate)
+                page.wait_for_timeout(3000)
+                
+                resolved_url = page.url
+                html = page.content()
+                soup = BeautifulSoup(html, "html.parser")
+                lang = _page_lang(soup)
+                
+                locked = _is_locale_locked(
+                    resolved_url=resolved_url,
+                    page_language=lang,
+                    target_language=target_language,
+                )
+                
+                if not locked:
+                    retry_url = _alternate_locale_url(
+                        soup,
+                        current_url=resolved_url,
+                        requested_url=nocache_url,
+                        target_language=target_language,
+                    )
+                    if retry_url and _normalized_page_url(retry_url) != _normalized_page_url(resolved_url):
+                        page.goto(retry_url, wait_until="domcontentloaded", timeout=30000)
+                        page.wait_for_timeout(3000)
+                        resolved_url = page.url
+                        html = page.content()
+                        soup = BeautifulSoup(html, "html.parser")
+                        lang = _page_lang(soup)
+                        locked = _is_locale_locked(
+                            resolved_url=resolved_url,
+                            page_language=lang,
+                            target_language=target_language,
+                        )
+            finally:
+                browser.close()
+                
         locale_evidence = {
             "target_language": target_language,
             "requested_url": url,
-            "lock_source": "alternate_locale" if (response.url != nocache_url) else "initial",
+            "lock_source": "alternate_locale" if (resolved_url != nocache_url) else "initial",
             "locked": locked,
-            "failure_reason": "" if locked else f"locale lock failed: target={target_language} resolved_url={response.url} page_lang={lang or 'unknown'}",
+            "failure_reason": "" if locked else f"locale lock failed: target={target_language} resolved_url={resolved_url} page_lang={lang or 'unknown'}",
             "attempts": [
                 {
                     "phase": "initial",
                     "attempt_index": 1,
                     "wait_seconds_before_request": 0,
                     "requested_url": nocache_url,
-                    "resolved_url": response.url,
+                    "resolved_url": resolved_url,
                     "page_language": lang,
                     "locked": locked,
                 }
@@ -381,38 +423,12 @@ class LinkCheckFetcher:
 
         return FetchedPage(
             requested_url=url,
-            resolved_url=response.url,
+            resolved_url=resolved_url,
             page_language=lang,
-            html=response.text,
-            images=extract_images_from_html(response.text, base_url=response.url),
+            html=html,
+            images=extract_images_from_html(html, base_url=resolved_url),
             locale_evidence=locale_evidence,
         )
-
-    def _lock_target_locale(self, response, *, requested_url: str, target_language: str):
-        _raise_for_status(response)
-        soup = BeautifulSoup(response.text, "html.parser")
-        lang = _page_lang(soup)
-        if _is_locale_locked(
-            resolved_url=response.url,
-            page_language=lang,
-            target_language=target_language,
-        ):
-            return response, soup, lang
-
-        retry_url = _alternate_locale_url(
-            soup,
-            current_url=response.url,
-            requested_url=requested_url,
-            target_language=target_language,
-        )
-        if not retry_url or _normalized_page_url(retry_url) == _normalized_page_url(response.url):
-            return response, soup, lang
-
-        retry_response = self._request_page(retry_url, target_language)
-        _raise_for_status(retry_response)
-        retry_soup = BeautifulSoup(retry_response.text, "html.parser")
-        retry_lang = _page_lang(retry_soup)
-        return retry_response, retry_soup, retry_lang
 
     def download_images(self, images: list[dict], task_dir: str | Path) -> list[dict]:
         output_dir = Path(task_dir) / "site_images"
