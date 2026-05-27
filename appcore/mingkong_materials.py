@@ -2187,7 +2187,9 @@ def list_yesterday_top100(
         tuple(query_args),
     )
     items = _filter_by_library_status(
-        _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []]),
+        enrich_and_fetch_english_titles(
+            _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []])
+        ),
         status_filter,
     )
     total = len(items) if status_filter else _as_int(count_row.get("cnt"))
@@ -2970,3 +2972,198 @@ def run_daily_snapshot(
             )
         scheduled_tasks.finish_run(scheduled_run_id, status="failed", error_message=str(exc))
         raise
+
+
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+_TITLE_RESOLVER_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mk-english-title-fetcher")
+_SUBMITTED_URLS = set()
+_SUBMITTED_LOCK = threading.Lock()
+
+
+def _product_code_from_url(value: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    parts = [part for part in parsed.path.replace("\\", "/").split("/") if part]
+    if "products" in parts:
+        index = parts.index("products")
+        if index + 1 < len(parts):
+            return re.sub(r"[-_]?rjc$", "", str(parts[index + 1] or "").strip(), flags=re.I).lower()
+    return ""
+
+
+def resolve_and_save_english_title(product_url: str, product_code: str = None) -> None:
+    if not product_url or not product_url.startswith(("http://", "https://")):
+        return
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,*/*"
+    }
+    try:
+        from bs4 import BeautifulSoup
+        resp = requests.get(product_url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        title = soup.title.string if soup.title else ""
+        if not title:
+            return
+        title = title.strip()
+        
+        # Determine asset key
+        code = product_code or _product_code_from_url(product_url)
+        if code:
+            asset_key = "code:" + hashlib.sha256(code.encode("utf-8")).hexdigest()
+        else:
+            asset_key = "url:" + hashlib.sha256(product_url.encode("utf-8")).hexdigest()
+        
+        execute(
+            """
+            INSERT INTO dianxiaomi_product_assets (asset_key, product_url, product_code, product_english_title)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              product_english_title = VALUES(product_english_title),
+              product_url = COALESCE(NULLIF(VALUES(product_url), ''), product_url),
+              product_code = COALESCE(NULLIF(VALUES(product_code), ''), product_code)
+            """,
+            (asset_key, product_url, code or None, title)
+        )
+        logger.info("[english_title] successfully fetched and saved: %s for %s", title, product_url)
+    except Exception as e:
+        logger.warning("[english_title] failed to fetch title for %s: %s", product_url, e)
+    finally:
+        with _SUBMITTED_LOCK:
+            _SUBMITTED_URLS.discard(product_url)
+
+
+def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Callable = None) -> list[dict[str, Any]]:
+    """Enrich items with shopify_title or product_english_title from database.
+    If missing but product_url is present, schedules background fetch to backfill.
+    """
+    if not items:
+        return items
+
+    q_fn = query_fn or query
+
+    # Collect identifiers
+    product_codes: set[str] = set()
+    product_urls: set[str] = set()
+    media_product_ids: set[int] = set()
+
+    for item in items:
+        ad_status = item.get("product_ad_status") or {}
+        mp_id = item.get("media_product_id") or ad_status.get("media_product_id")
+        if mp_id:
+            try:
+                media_product_ids.add(int(mp_id))
+            except (TypeError, ValueError):
+                pass
+        
+        code = item.get("product_code") or item.get("product_handle") or ad_status.get("product_code")
+        if code:
+            product_codes.add(str(code).strip().lower())
+        
+        url = item.get("product_url") or item.get("mk_product_link") or item.get("product_link")
+        if url:
+            product_urls.add(str(url).strip())
+
+    # 1. Fetch from media_products.shopify_title
+    shopify_titles_by_id: dict[int, str] = {}
+    shopify_titles_by_code: dict[str, str] = {}
+    if media_product_ids:
+        placeholders = ",".join(["%s"] * len(media_product_ids))
+        try:
+            rows = q_fn(
+                f"SELECT id, product_code, shopify_title FROM media_products WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                list(media_product_ids)
+            )
+            for r in rows or []:
+                title = str(r.get("shopify_title") or "").strip()
+                if title:
+                    shopify_titles_by_id[int(r["id"])] = title
+                    c = str(r.get("product_code") or "").strip().lower()
+                    if c:
+                        shopify_titles_by_code[c] = title
+        except BaseException as e:
+            logger.warning("[english_title] failed to fetch shopify_titles by id: %s", e)
+
+    if product_codes:
+        placeholders = ",".join(["%s"] * len(product_codes))
+        try:
+            rows = q_fn(
+                f"SELECT product_code, shopify_title FROM media_products WHERE LOWER(product_code) IN ({placeholders}) AND deleted_at IS NULL",
+                list(product_codes)
+            )
+            for r in rows or []:
+                title = str(r.get("shopify_title") or "").strip()
+                if title:
+                    shopify_titles_by_code[str(r["product_code"]).strip().lower()] = title
+        except BaseException as e:
+            logger.warning("[english_title] failed to fetch shopify_titles by code: %s", e)
+
+    # 2. Fetch from dianxiaomi_product_assets
+    asset_titles_by_code: dict[str, str] = {}
+    asset_titles_by_url: dict[str, str] = {}
+    
+    asset_keys: set[str] = set()
+    for code in product_codes:
+        asset_keys.add("code:" + hashlib.sha256(code.encode("utf-8")).hexdigest())
+    for url in product_urls:
+        code_from_url = _product_code_from_url(url)
+        if code_from_url:
+            asset_keys.add("code:" + hashlib.sha256(code_from_url.encode("utf-8")).hexdigest())
+        else:
+            asset_keys.add("url:" + hashlib.sha256(url.encode("utf-8")).hexdigest())
+
+    if asset_keys:
+        placeholders = ",".join(["%s"] * len(asset_keys))
+        try:
+            rows = q_fn(
+                f"SELECT product_code, product_url, product_english_title FROM dianxiaomi_product_assets WHERE asset_key IN ({placeholders})",
+                list(asset_keys)
+            )
+            for r in rows or []:
+                title = str(r.get("product_english_title") or "").strip()
+                if title:
+                    c = str(r.get("product_code") or "").strip().lower()
+                    if c:
+                        asset_titles_by_code[c] = title
+                    u = str(r.get("product_url") or "").strip()
+                    if u:
+                        asset_titles_by_url[u] = title
+        except BaseException as e:
+            logger.warning("[english_title] failed to fetch asset_titles: %s", e)
+
+    # 3. Map back and schedule fetch if missing
+    for item in items:
+        ad_status = item.get("product_ad_status") or {}
+        mp_id = item.get("media_product_id") or ad_status.get("media_product_id")
+        code = str(item.get("product_code") or item.get("product_handle") or ad_status.get("product_code") or "").strip().lower()
+        url = str(item.get("product_url") or item.get("mk_product_link") or item.get("product_link") or "").strip()
+        
+        resolved_title = ""
+        
+        if mp_id:
+            try:
+                resolved_title = shopify_titles_by_id.get(int(mp_id)) or ""
+            except (TypeError, ValueError):
+                pass
+        
+        if not resolved_title and code:
+            resolved_title = shopify_titles_by_code.get(code) or ""
+            
+        if not resolved_title and code:
+            resolved_title = asset_titles_by_code.get(code) or ""
+            
+        if not resolved_title and url:
+            resolved_title = asset_titles_by_url.get(url) or ""
+            
+        item["product_english_title"] = resolved_title
+        
+        if not resolved_title and url and url.startswith(("http://", "https://")):
+            with _SUBMITTED_LOCK:
+                if url not in _SUBMITTED_URLS:
+                    _SUBMITTED_URLS.add(url)
+                    _TITLE_RESOLVER_EXECUTOR.submit(resolve_and_save_english_title, url, code or None)
+
+    return items
+

@@ -833,6 +833,7 @@ def build_product_asset_records(rows: list[dict[str, Any]]) -> list[dict[str, An
             "product_code": product_code,
             "product_url": product_url,
             "product_name": str(row.get("product_name") or "").strip(),
+            "product_english_title": row.get("product_name") or None,
             "product_main_image_url": row.get("product_main_image_url") or None,
             "product_main_image_object_key": row.get("product_main_image_object_key") or None,
             "product_detail_images_json": row.get("product_detail_images_json") or None,
@@ -858,9 +859,9 @@ def upsert_product_assets(cursor, rows: list[dict[str, Any]]) -> int:
             INSERT INTO dianxiaomi_product_assets
                 (asset_key, product_id, product_code, product_url, product_name,
                  product_main_image_url, product_main_image_object_key, product_detail_images_json,
-                 product_assets_error, product_cn_name, mk_first_material_name,
+                 product_assets_error, product_cn_name, product_english_title, mk_first_material_name,
                  mk_first_material_path, mk_first_material_url, mk_material_error, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON DUPLICATE KEY UPDATE
                 product_id=COALESCE(NULLIF(VALUES(product_id), ''), product_id),
                 product_code=COALESCE(NULLIF(VALUES(product_code), ''), product_code),
@@ -871,6 +872,7 @@ def upsert_product_assets(cursor, rows: list[dict[str, Any]]) -> int:
                 product_detail_images_json=COALESCE(VALUES(product_detail_images_json), product_detail_images_json),
                 product_assets_error=VALUES(product_assets_error),
                 product_cn_name=COALESCE(NULLIF(VALUES(product_cn_name), ''), product_cn_name),
+                product_english_title=COALESCE(NULLIF(VALUES(product_english_title), ''), product_english_title),
                 mk_first_material_name=COALESCE(NULLIF(VALUES(mk_first_material_name), ''), mk_first_material_name),
                 mk_first_material_path=COALESCE(NULLIF(VALUES(mk_first_material_path), ''), mk_first_material_path),
                 mk_first_material_url=COALESCE(NULLIF(VALUES(mk_first_material_url), ''), mk_first_material_url),
@@ -889,6 +891,7 @@ def upsert_product_assets(cursor, rows: list[dict[str, Any]]) -> int:
                 _asset_db_value(record.get("product_detail_images_json")),
                 _asset_db_value(record.get("product_assets_error")),
                 _asset_db_value(record.get("product_cn_name")),
+                _asset_db_value(record.get("product_english_title")),
                 _asset_db_value(record.get("mk_first_material_name")),
                 _asset_db_value(record.get("mk_first_material_path")),
                 _asset_db_value(record.get("mk_first_material_url")),

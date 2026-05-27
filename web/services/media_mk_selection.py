@@ -869,6 +869,11 @@ def build_mk_selection_response(
         "dr.product_cn_name" if has_product_cn_name else None,
         "product_cn_name",
     )
+    product_english_title_select = asset_select(
+        "product_english_title",
+        None,
+        "product_english_title",
+    )
     mk_first_material_name_select = asset_select(
         "mk_first_material_name",
         "dr.mk_first_material_name" if has_mk_first_material_name else None,
@@ -910,7 +915,7 @@ def build_mk_selection_response(
             {mk_total_spends_select}, {mk_video_count_select}, {mk_total_ads_select},
             {product_code_select}, {product_main_image_url_select},
             {product_main_image_object_key_select}, {product_detail_images_json_select},
-            {product_cn_name_select}, {mk_first_material_name_select},
+            {product_cn_name_select}, {product_english_title_select}, {mk_first_material_name_select},
             {mk_first_material_path_select}, {mk_first_material_url_select},
             dr.media_product_id,
             mp.name AS mp_name, mp.product_code AS mp_code
@@ -940,6 +945,7 @@ def build_mk_selection_response(
             "product_main_image_local_url": _local_media_url(product_main_image_object_key),
             "product_detail_image_urls": _json_list(row.get("product_detail_images_json")),
             "product_cn_name": row.get("product_cn_name") or "",
+            "product_english_title": row.get("product_english_title") or "",
             "mk_first_material_name": row.get("mk_first_material_name") or "",
             "mk_first_material_path": row.get("mk_first_material_path") or "",
             "mk_first_material_url": row.get("mk_first_material_url") or "",
@@ -967,6 +973,9 @@ def build_mk_selection_response(
     )
     for index, item in enumerate(items):
         item["library_status"] = library_statuses.get(index)
+
+    from appcore.mingkong_materials import enrich_and_fetch_english_titles
+    enrich_and_fetch_english_titles(items, query_fn=db_query_fn)
 
     return MkSelectionResponse(
         {

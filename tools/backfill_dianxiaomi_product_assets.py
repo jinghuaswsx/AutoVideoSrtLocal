@@ -139,9 +139,9 @@ def _upsert_product_asset(
         INSERT INTO dianxiaomi_product_assets
             (asset_key, product_id, product_code, product_url, product_name,
              product_main_image_url, product_main_image_object_key, product_detail_images_json,
-             product_assets_error, product_cn_name, mk_first_material_name,
+             product_assets_error, product_cn_name, product_english_title, mk_first_material_name,
              mk_first_material_path, mk_first_material_url, mk_material_error, last_synced_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON DUPLICATE KEY UPDATE
             product_id=COALESCE(NULLIF(VALUES(product_id), ''), product_id),
             product_code=COALESCE(NULLIF(VALUES(product_code), ''), product_code),
@@ -152,6 +152,7 @@ def _upsert_product_asset(
             product_detail_images_json=COALESCE(VALUES(product_detail_images_json), product_detail_images_json),
             product_assets_error=VALUES(product_assets_error),
             product_cn_name=COALESCE(NULLIF(VALUES(product_cn_name), ''), product_cn_name),
+            product_english_title=COALESCE(NULLIF(VALUES(product_english_title), ''), product_english_title),
             mk_first_material_name=COALESCE(NULLIF(VALUES(mk_first_material_name), ''), mk_first_material_name),
             mk_first_material_path=COALESCE(NULLIF(VALUES(mk_first_material_path), ''), mk_first_material_path),
             mk_first_material_url=COALESCE(NULLIF(VALUES(mk_first_material_url), ''), mk_first_material_url),
@@ -170,6 +171,7 @@ def _upsert_product_asset(
             _asset_value(record, "product_detail_images_json"),
             _asset_value(record, "product_assets_error"),
             _asset_value(record, "product_cn_name"),
+            _asset_value(record, "product_english_title"),
             _asset_value(record, "mk_first_material_name"),
             _asset_value(record, "mk_first_material_path"),
             _asset_value(record, "mk_first_material_url"),
