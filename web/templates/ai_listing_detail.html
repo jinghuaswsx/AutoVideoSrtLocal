@@ -436,27 +436,249 @@
   }
 
   .mobile-screen {
-    padding: 16px;
+    padding: 0;
     font-size: 14px;
     line-height: 1.6;
     color: #333;
+    background: #f9f9f9;
+  }
+  
+  /* Shopify Preview Styling */
+  .shopify-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .shopify-preview-header .header-menu-icon { font-size: 18px; color: #555; }
+  .shopify-preview-header .header-logo { font-weight: 700; font-size: 14px; color: #111; letter-spacing: 1px; }
+  .shopify-preview-header .header-cart-icon { font-size: 18px; color: #555; }
+
+  .shopify-preview-gallery {
+    position: relative;
+    background: #fff;
+  }
+  .gallery-wrapper {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none; /* Hide scrollbar for Firefox */
+    -ms-overflow-style: none; /* Hide scrollbar for IE/Edge */
+  }
+  .gallery-wrapper::-webkit-scrollbar {
+    display: none; /* Hide scrollbar for Chrome/Safari */
+  }
+  .gallery-slide {
+    min-width: 100%;
+    scroll-snap-align: start;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+  }
+  .gallery-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .gallery-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 0;
+    background: #fff;
+  }
+  .gallery-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ddd;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .gallery-dot.active {
+    background: #2563eb;
+    transform: scale(1.2);
   }
 
-  .mobile-screen h3 {
-    font-size: 16px;
+  .shopify-preview-no-image {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 12px;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .shopify-preview-meta {
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .preview-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #1a1a1a;
+    margin: 0 0 8px 0;
+  }
+  .preview-reviews {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .preview-reviews .stars {
+    color: #f59e0b;
+    font-size: 14px;
+    letter-spacing: -1px;
+  }
+  .preview-reviews .rating-text {
+    font-size: 12px;
+    color: #64748b;
+  }
+  .preview-price-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .preview-sale-price {
+    font-size: 20px;
+    font-weight: 700;
+    color: #dc2626; /* Vibrant red for sales */
+  }
+  .preview-compare-price {
+    font-size: 14px;
+    color: #94a3b8;
+    text-decoration: line-through;
+  }
+  .preview-badge {
+    background: #fee2e2;
+    color: #ef4444;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .shopify-preview-cta {
+    padding: 16px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .btn-atc {
+    width: 100%;
+    padding: 12px;
+    background: #fff;
+    color: #111;
+    border: 2px solid #111;
+    font-weight: 700;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-buy {
+    width: 100%;
+    padding: 12px;
+    background: #111;
+    color: #fff;
+    border: none;
+    font-weight: 700;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    animation: pulseButton 2s infinite ease-in-out;
+  }
+  @keyframes pulseButton {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+
+  .shopify-preview-desc-header {
+    background: #fff;
+    border-bottom: 2px solid #111;
+    padding: 12px 16px 8px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #111;
+    margin-top: 10px;
+  }
+
+  .shopify-preview-desc-body {
+    padding: 16px;
+    background: #fff;
+    font-size: 13px;
+    color: #374151;
+    line-height: 1.6;
+  }
+  .shopify-preview-desc-body h3 {
+    font-size: 14px;
     font-weight: 700;
     margin-top: 16px;
     margin-bottom: 8px;
     color: #111;
   }
-
-  .mobile-screen ul {
+  .shopify-preview-desc-body p {
+    margin-bottom: 12px;
+  }
+  .shopify-preview-desc-body ul {
     padding-left: 20px;
     margin-bottom: 12px;
   }
+  .shopify-preview-desc-body li {
+    margin-bottom: 4px;
+  }
 
-  .mobile-screen li {
-    margin-bottom: 6px;
+  .shopify-preview-detail-images {
+    background: #fff;
+    padding: 16px 0;
+    border-top: 1px solid #f1f5f9;
+  }
+  .detail-images-header {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #111;
+    padding: 0 16px 12px 16px;
+    text-align: center;
+  }
+  .detail-img-container {
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .detail-img-container img {
+    width: 100%;
+    display: block;
+  }
+
+  .shopify-preview-footer-trust {
+    padding: 20px 16px;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .trust-item {
+    font-size: 12px;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   /* Assets Cards and drag drop grid */
@@ -606,6 +828,11 @@
         priceInput.value = (newPrice - 1) + 0.99;
       }
     });
+
+    // Update live preview in real-time when prices change
+    if (document.getElementById('htmlPreviewArea').classList.contains('active')) {
+      updateMobilePreview();
+    }
   }
 
   // Toggle editor / live preview mode
@@ -621,10 +848,195 @@
       document.getElementById('htmlEditorArea').classList.remove('active');
       document.getElementById('htmlPreviewArea').classList.add('active');
       
-      // Render text into live preview mobile frame
-      const htmlText = document.getElementById('productHtmlDesc').value;
-      document.getElementById('mobilePreviewScreen').innerHTML = htmlText;
+      // Render simulated Shopify mobile product preview
+      updateMobilePreview();
     }
+  }
+
+  // Escape HTML helper
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // Setup Gallery Horizontal Scroll Listener for indicators/dots
+  function setupGalleryScrollListener() {
+    const wrapper = document.getElementById('previewGalleryWrapper');
+    const dots = document.querySelectorAll('.gallery-dot');
+    if (!wrapper || dots.length === 0) return;
+    
+    wrapper.addEventListener('scroll', () => {
+      const width = wrapper.clientWidth;
+      const scrollLeft = wrapper.scrollLeft;
+      const activeIndex = Math.round(scrollLeft / width);
+      
+      dots.forEach((dot, idx) => {
+        if (idx === activeIndex) {
+          dot.classList.add('active');
+        } else {
+          dot.classList.remove('active');
+        }
+      });
+    });
+  }
+
+  // Scroll to a specific slide in mobile preview
+  function scrollToSlide(index) {
+    const wrapper = document.getElementById('previewGalleryWrapper');
+    if (!wrapper) return;
+    const width = wrapper.clientWidth;
+    wrapper.scrollTo({
+      left: width * index,
+      behavior: 'smooth'
+    });
+  }
+
+  // Generate simulated Shopify Mobile PDP HTML dynamically
+  function updateMobilePreview() {
+    const previewScreen = document.getElementById('mobilePreviewScreen');
+    if (!previewScreen) return;
+    
+    // 1. Get title
+    const title = document.getElementById('productTitle').value || 'Product Title';
+    
+    // 2. Get price from the first SKU price input
+    const firstPriceInput = document.querySelector('.sku-price');
+    const price = firstPriceInput ? (parseFloat(firstPriceInput.value) || 0.0) : 19.99;
+    const comparePrice = (price * 1.6).toFixed(2);
+    
+    // 3. Get selected carousel images
+    const carouselImages = [];
+    document.querySelectorAll('#carouselGrid .asset-card').forEach(card => {
+      const checkbox = card.querySelector('input[type="checkbox"]');
+      if (checkbox && checkbox.checked) {
+        const img = card.querySelector('.asset-img');
+        if (img) {
+          carouselImages.push(img.getAttribute('src'));
+        }
+      }
+    });
+    
+    // 4. Get selected detail images
+    const detailImages = [];
+    document.querySelectorAll('#detailImagesGrid .asset-card').forEach(card => {
+      const checkbox = card.querySelector('input[type="checkbox"]');
+      if (checkbox && checkbox.checked) {
+        const img = card.querySelector('.asset-img');
+        if (img) {
+          detailImages.push(img.getAttribute('src'));
+        }
+      }
+    });
+    
+    // 5. Get HTML description
+    const htmlText = document.getElementById('productHtmlDesc').value;
+    
+    // Assemble the premium Shopify-style PDP layout
+    let html = '';
+    
+    // A. Shopify Mobile Header
+    html += `
+      <div class="shopify-preview-header">
+        <div class="header-menu-icon">☰</div>
+        <div class="header-logo">🛍️ ONLINE STORE</div>
+        <div class="header-cart-icon">🛒</div>
+      </div>
+    `;
+    
+    // B. Hero Image Slider / Carousel
+    if (carouselImages.length > 0) {
+      html += `
+        <div class="shopify-preview-gallery">
+          <div class="gallery-wrapper" id="previewGalleryWrapper">
+            ${carouselImages.map((src, idx) => `
+              <div class="gallery-slide">
+                <img src="${src}" alt="product image ${idx + 1}">
+              </div>
+            `).join('')}
+          </div>
+          <div class="gallery-dots">
+            ${carouselImages.map((_, idx) => `
+              <span class="gallery-dot ${idx === 0 ? 'active' : ''}" onclick="scrollToSlide(${idx})"></span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="shopify-preview-no-image">
+          <span>📸 暂无主图 (请在右侧勾选启用主图)</span>
+        </div>
+      `;
+    }
+    
+    // C. Product Metadata Box
+    html += `
+      <div class="shopify-preview-meta">
+        <h1 class="preview-title">${escapeHtml(title)}</h1>
+        <div class="preview-reviews">
+          <span class="stars">★★★★★</span>
+          <span class="rating-text">4.9 (128 reviews)</span>
+        </div>
+        <div class="preview-price-box">
+          <span class="preview-sale-price">$${price.toFixed(2)}</span>
+          <span class="preview-compare-price">$${comparePrice}</span>
+          <span class="preview-badge">SALE</span>
+        </div>
+      </div>
+    `;
+    
+    // D. CTA Buy Buttons
+    html += `
+      <div class="shopify-preview-cta">
+        <button class="btn-atc">🛒 ADD TO CART</button>
+        <button class="btn-buy">⚡ BUY IT NOW</button>
+      </div>
+    `;
+    
+    // E. Description Section Header
+    html += `
+      <div class="shopify-preview-desc-header">
+        <span>DESCRIPTION</span>
+      </div>
+    `;
+    
+    // F. HTML Copywriting Description
+    html += `
+      <div class="shopify-preview-desc-body">
+        ${htmlText}
+      </div>
+    `;
+    
+    // G. Detail Embedded Images at the bottom of the description
+    if (detailImages.length > 0) {
+      html += `
+        <div class="shopify-preview-detail-images">
+          <div class="detail-images-header">📸 PRODUCT DETAILS</div>
+          ${detailImages.map(src => `
+            <div class="detail-img-container">
+              <img src="${src}" alt="detail image">
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    
+    // H. High-Converting Trust Badges Footer
+    html += `
+      <div class="shopify-preview-footer-trust">
+        <div class="trust-item">🚚 <strong>Free Shipping</strong> Worldwide</div>
+        <div class="trust-item">🛡️ <strong>30-Day</strong> Refund Guarantee</div>
+        <div class="trust-item">🔒 <strong>Secure</strong> SSL Checkout</div>
+      </div>
+    `;
+    
+    previewScreen.innerHTML = html;
+    setupGalleryScrollListener();
   }
 
   // Copy HTML to Clipboard
@@ -696,6 +1108,10 @@
           } else {
             card.classList.add('discarded');
           }
+        }
+        // Update live preview in real-time if active
+        if (document.getElementById('htmlPreviewArea').classList.contains('active')) {
+          updateMobilePreview();
         }
       }
     });
@@ -808,6 +1224,15 @@
         "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
       },
       body: JSON.stringify({ asset_ids: assetIds })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.ok) {
+        // Update live preview in real-time after re-ordering
+        if (document.getElementById('htmlPreviewArea').classList.contains('active')) {
+          updateMobilePreview();
+        }
+      }
     })
     .catch(err => console.error('Sort order sync failed:', err));
   }
