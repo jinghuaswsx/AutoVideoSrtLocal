@@ -448,14 +448,16 @@ class LinkCheckRuntime:
             s_target = result["reference_match"].get("score", 0.0)
             s_en = result["original_match"].get("score", 0.0) if "original_match" in result else 0.0
             if original_paths and s_en > s_target and s_en >= 0.95:
-                is_replaced = False
+                # 只有当原始图与翻译参考图存在明显差异（差值 >= 0.02），且翻译参考图相似度未达到近乎完美（< 0.98）时，才触发“未替换”判定强行覆盖
+                if s_en - s_target >= 0.02 and s_target < 0.98:
+                    is_replaced = False
 
             result["is_replaced"] = is_replaced
 
             if not is_replaced:
                 # 换图未换到位（与后台翻译参考图不一致，或是没有被翻译的原图/错误图）
                 reason = "检测到页面图片与后台翻译的参考图不一致，二值快检不匹配，判定替换未到位"
-                if original_paths and s_en > s_target and s_en >= 0.95:
+                if original_paths and s_en > s_target and s_en >= 0.95 and s_en - s_target >= 0.02 and s_target < 0.98:
                     reason = f"检测到页面实际图与英语原图视觉相似度极高 ({s_en:.3f} > {s_target:.3f})，确认尚未替换为翻译后的参考图"
                 result["analysis"] = {
                     "decision": "replace",
