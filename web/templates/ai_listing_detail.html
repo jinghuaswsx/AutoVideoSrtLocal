@@ -109,7 +109,19 @@
           </div>
 
           <!-- Mobile Live Preview Area -->
-          <div id="htmlPreviewArea" class="preview-area">
+          <div id="htmlPreviewArea" class="preview-area" style="flex-direction: column; align-items: center;">
+            <div class="mobile-preview-toolbar" style="margin-bottom: 24px; padding: 12px 18px; border: 1.5px dashed var(--primary-blue); border-radius: 8px; background: var(--ocean-light); display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 375px;">
+              <div style="font-size: 13px; color: var(--text-slate-800); text-align: center; line-height: 1.45;">
+                📱 手机端直接扫码访问或直接点击：<br>
+                <a id="publicPreviewLink" href="/ai-listing/preview/{{ task.product_code }}" target="_blank" style="color: var(--primary-blue); font-weight: 700; text-decoration: underline; word-break: break-all;">
+                  点我新窗口打开预览页
+                </a>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="copyPublicPreviewLink()" style="font-weight: 600;">
+                📋 一键复制手机端预览链接
+              </button>
+            </div>
+            
             <div class="mobile-frame">
               <div class="mobile-screen" id="mobilePreviewScreen">
                 <!-- Content injected dynamically via JS -->
@@ -1311,6 +1323,37 @@
     textarea.select();
     document.execCommand('copy');
     alert('详情富文本 HTML 代码已成功复制到剪贴板！');
+  }
+
+  // Copy Public Preview Link to Clipboard
+  function copyPublicPreviewLink() {
+    const absoluteUrl = window.location.origin + "/ai-listing/preview/{{ task.product_code }}";
+    
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(absoluteUrl).then(() => {
+        alert('手机端预览链接已成功复制到剪贴板！\n' + absoluteUrl);
+      }).catch(err => {
+        fallbackCopyText(absoluteUrl);
+      });
+    } else {
+      fallbackCopyText(absoluteUrl);
+    }
+  }
+
+  function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      alert('手机端预览链接已成功复制到剪贴板！\n' + text);
+    } catch (err) {
+      alert('复制失败，请手动选择并复制链接：\n' + text);
+    }
+    document.body.removeChild(textarea);
   }
 
   // Save task updates via AJAX
