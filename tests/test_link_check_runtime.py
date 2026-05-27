@@ -150,17 +150,6 @@ def test_runtime_records_best_reference_match(monkeypatch):
             "reason": "ok",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.judge_same_image",
-        lambda *args, **kwargs: {
-            "status": "done",
-            "answer": "是",
-            "channel": "cloud",
-            "channel_label": "Google Cloud (Vertex AI)",
-            "model": "gemini-3.1-flash-lite-preview",
-            "reason": "",
-        },
-    )
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-2")
 
@@ -237,31 +226,19 @@ def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
             "reason": "ok",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.judge_same_image",
-        lambda *args, **kwargs: {
-            "status": "done",
-            "answer": "是",
-            "channel": "cloud",
-            "channel_label": "Google Cloud (Vertex AI)",
-            "model": "gemini-3.1-flash-lite-preview",
-            "reason": "",
-        },
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-binary-pass")
 
     saved = task_state.get("lc-binary-pass")
     item = saved["items"][0]
     assert item["binary_quick_check"]["status"] == "pass"
-    assert item["same_image_llm"]["answer"] == "是"
+    assert item["same_image_llm"]["status"] == "skipped"
     assert item["analysis"]["decision"] == "pass"
     assert item["analysis"]["decision_source"] == "green_pass"
     assert "换图检测已换到位" in item["analysis"]["quality_reason"]
     assert saved["summary"]["binary_checked_count"] == 1
-    assert saved["summary"]["same_image_llm_done_count"] == 1
-    assert saved["summary"]["same_image_llm_yes_count"] == 1
+    assert saved["summary"]["same_image_llm_done_count"] == 0
+    assert saved["summary"]["same_image_llm_yes_count"] == 0
 
 
 def test_runtime_intercepts_unmatched_reference_without_gemini_ocr(monkeypatch):
@@ -402,26 +379,14 @@ def test_runtime_replaces_image_when_same_image_is_false(monkeypatch):
             "reason": "mismatch",
         },
     )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.judge_same_image",
-        lambda *args, **kwargs: {
-            "status": "done",
-            "answer": "不是",
-            "channel": "cloud",
-            "channel_label": "Google Cloud (Vertex AI)",
-            "model": "gemini-3.1-flash-lite-preview",
-            "reason": "",
-        },
-    )
-
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())
     runtime.start("lc-same-image-false")
 
     saved = task_state.get("lc-same-image-false")
     item = saved["items"][0]
     assert item["analysis"]["decision"] == "replace"
-    assert item["analysis"]["decision_source"] == "same_image_llm_check"
-    assert "换图未换到位" in item["analysis"]["quality_reason"]
+    assert item["analysis"]["decision_source"] == "binary_quick_check"
+    assert "二值快检不匹配" in item["analysis"]["quality_reason"]
 
 
 def test_runtime_persists_step_flow_and_summary_during_success(monkeypatch):
@@ -868,17 +833,6 @@ def test_runtime_sets_is_replaced_correctly_when_matched(monkeypatch):
             "foreground_overlap": 0.91,
             "threshold": 0.90,
             "reason": "ok",
-        },
-    )
-    monkeypatch.setattr(
-        "appcore.link_check_runtime.judge_same_image",
-        lambda *args, **kwargs: {
-            "status": "done",
-            "answer": "是",
-            "channel": "cloud",
-            "channel_label": "Google Cloud",
-            "model": "gemini-3.1-flash",
-            "reason": "",
         },
     )
     runtime = LinkCheckRuntime(fetcher=DummyFetcher())

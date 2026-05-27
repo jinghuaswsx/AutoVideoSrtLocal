@@ -3,7 +3,6 @@ from __future__ import annotations
 from appcore import task_state
 from appcore.link_check_compare import find_best_reference, run_binary_quick_check, is_same_shopify_image_url
 from appcore.link_check_fetcher import LinkCheckFetcher
-from appcore.link_check_same_image import judge_same_image
 
 
 def _default_locale_evidence(task: dict) -> dict:
@@ -438,15 +437,12 @@ class LinkCheckRuntime:
             reference_path = result["reference_match"].get("reference_path", "")
             result["binary_quick_check"] = run_binary_quick_check(item["local_path"], reference_path)
             incr_progress("binary_checked")
-            result["same_image_llm"] = judge_same_image(item["local_path"], reference_path)
-            if result["same_image_llm"].get("status") == "done":
-                incr_progress("same_image_llm_done")
+            result["same_image_llm"] = _skipped_same_image("极速比对模式已启用，跳过同图大模型分析")
 
             binary_status = result["binary_quick_check"].get("status")
-            same_image_ans = result["same_image_llm"].get("answer")
 
             # 1. 换图检测部分（Part 1）：判断真实页面的图跟后台翻译结果图是不是一张图（有没有换到位）
-            is_replaced = (binary_status == "pass" or same_image_ans == "是")
+            is_replaced = (binary_status == "pass")
 
             # 双参考图判定 heuristic
             s_target = result["reference_match"].get("score", 0.0)
@@ -458,12 +454,12 @@ class LinkCheckRuntime:
 
             if not is_replaced:
                 # 换图未换到位（与后台翻译参考图不一致，或是没有被翻译的原图/错误图）
-                reason = "检测到页面图片与后台翻译的参考图不一致，换图未换到位"
+                reason = "检测到页面图片与后台翻译的参考图不一致，二值快检不匹配，判定替换未到位"
                 if original_paths and s_en > s_target and s_en >= 0.95:
                     reason = f"检测到页面实际图与英语原图视觉相似度极高 ({s_en:.3f} > {s_target:.3f})，确认尚未替换为翻译后的参考图"
                 result["analysis"] = {
                     "decision": "replace",
-                    "decision_source": "same_image_llm_check",
+                    "decision_source": "binary_quick_check",
                     "has_text": True,
                     "detected_language": "",
                     "language_match": False,
