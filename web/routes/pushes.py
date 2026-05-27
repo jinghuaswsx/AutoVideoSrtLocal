@@ -1092,8 +1092,12 @@ def api_history():
     has_ad_plan_clause = (
         "EXISTS ("
         "SELECT 1 FROM meta_ad_daily_ad_metrics madm "
-        "WHERE madm.product_id = i.product_id "
-        "AND COALESCE(madm.spend_usd, 0) > 0 "
+        "WHERE COALESCE(madm.spend_usd, 0) > 0 "
+        "AND ("
+        "madm.product_id = i.product_id "
+        "OR (madm.product_code IS NOT NULL AND CHAR_LENGTH(madm.product_code) >= 8 "
+        "AND LOWER(p.product_code) LIKE CONCAT(LOWER(madm.product_code), '%%'))"
+        ") "
         "AND ("
         "madm.ad_name LIKE CONCAT('%%', i.filename, '%%') "
         "OR madm.ad_name LIKE CONCAT('%%', i.display_name, '%%')"
@@ -1141,6 +1145,7 @@ def api_history():
         links_snap = payload.get("product_links", [])
 
         p_id = int(r["product_id"])
+        product_code_lower = (r.get("product_code") or "").strip().lower()
 
         snap_name = (video_snap.get("name") or "").strip()
         search_filename = snap_name or r["filename"]
@@ -1151,12 +1156,17 @@ def api_history():
             "       COALESCE(SUM(purchase_value_usd), 0) AS total_purchase_value, "
             "       COUNT(DISTINCT ad_name) AS campaign_count "
             "FROM meta_ad_daily_ad_metrics "
-            "WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0 "
+            "WHERE COALESCE(spend_usd, 0) > 0 "
+            "AND ("
+            "product_id = %s "
+            "OR (product_code IS NOT NULL AND CHAR_LENGTH(product_code) >= 8 "
+            "AND %s LIKE CONCAT(LOWER(product_code), '%%'))"
+            ") "
             "AND ("
             "ad_name LIKE CONCAT('%%', %s, '%%') "
             "OR ad_name LIKE CONCAT('%%', %s, '%%')"
             ")",
-            (p_id, search_filename, search_display_name)
+            (p_id, product_code_lower, search_filename, search_display_name)
         )[0]
 
         campaign_count = int(ad_info["campaign_count"] or 0)
@@ -1232,16 +1242,22 @@ def material_ads_detail(item_id: int):
     search_filename = snap_name or item["filename"]
     search_display_name = snap_name or item["display_name"] or item["filename"]
 
+    product_code_lower = (product.get("product_code") or "").strip().lower()
     campaign_daily_metrics = db_query(
         "SELECT ad_account_name, ad_name AS campaign_name, spend_usd, purchase_value_usd, result_count, report_date, market_country "
         "FROM meta_ad_daily_ad_metrics "
-        "WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0 "
+        "WHERE COALESCE(spend_usd, 0) > 0 "
+        "AND ("
+        "product_id = %s "
+        "OR (product_code IS NOT NULL AND CHAR_LENGTH(product_code) >= 8 "
+        "AND %s LIKE CONCAT(LOWER(product_code), '%%'))"
+        ") "
         "AND ("
         "ad_name LIKE CONCAT('%%', %s, '%%') "
         "OR ad_name LIKE CONCAT('%%', %s, '%%')"
         ") "
         "ORDER BY report_date DESC, spend_usd DESC",
-        (item["product_id"], search_filename, search_display_name)
+        (item["product_id"], product_code_lower, search_filename, search_display_name)
     )
 
     filtered_metrics = []

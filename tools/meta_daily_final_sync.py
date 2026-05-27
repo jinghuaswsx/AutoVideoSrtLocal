@@ -455,6 +455,7 @@ def _normalize_ad_rows(path: Path, target_date: date, account: MetaAdAccount) ->
             "ad_name": ad_name,
             "normalized_ad_code": ad_name.lower(),
             "product_code": _extract_product_code_from_ad_name(ad_name_raw),
+            "campaign_product_code": _text(campaign_name_raw.lower(), 255) or None,
             "market_country": extract_market_country_from_names(
                 ad_name=ad_name_raw,
                 adset_name=adset_name_raw,
@@ -629,6 +630,8 @@ def _replace_ad_daily_rows(path: Path, target_date: date, account: MetaAdAccount
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
+        if not product and row.get("campaign_product_code"):
+            product = _match_product(row["campaign_product_code"])
         product_id = product.get("id") if product else None
         matched_product_code = product.get("product_code") if product else None
         if product_id:
@@ -830,6 +833,7 @@ def _normalize_api_ad_rows(
             "ad_name": ad_name,
             "normalized_ad_code": ad_name.lower(),
             "product_code": _extract_product_code_from_ad_name(ad_name_raw),
+            "campaign_product_code": _text(campaign_name_raw.lower(), 255) or None,
             "market_country": extract_market_country_from_names(
                 ad_name=ad_name_raw,
                 adset_name=adset_name_raw,
@@ -975,6 +979,8 @@ def _replace_ad_daily_rows_from_api(
     spend_total = 0.0
     for row in rows:
         product = _match_product(row.get("product_code"))
+        if not product and row.get("campaign_product_code"):
+            product = _match_product(row["campaign_product_code"])
         product_id = product.get("id") if product else None
         matched_product_code = product.get("product_code") if product else None
         if product_id:
