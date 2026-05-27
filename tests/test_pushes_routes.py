@@ -2572,6 +2572,7 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
             return [
                 {
                     "total_spend": 300.0,
+                    "total_purchase_value": 600.0,
                     "campaign_count": 2
                 }
             ]
@@ -2588,6 +2589,7 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
     assert item["has_ad_plan"] is True
     assert item["ad_campaign_count"] == 2
     assert item["ad_spend_total"] == 300.0
+    assert item["ad_roas"] == 2.0
 
 
 def test_pushes_api_history_date_range_normalization(authed_client_no_db, monkeypatch):
