@@ -297,12 +297,11 @@ def test_order_analytics_secondary_screen_uses_compact_realtime_layout():
     compact_end = template.index("@media (max-width: 768px)", compact_start)
     compact_css = template[compact_start:compact_end]
 
-    assert ".topbar .oa-tabs-topbar { display: none; }" in compact_css
-    assert ".topbar .ppr-actions { display: none; }" in compact_css
-    assert ".oa-mobile-tabs {" in compact_css
-    assert "display: block;" in compact_css
-    assert ".ppr-mobile-actions {" in compact_css
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in compact_css
+    # 确保在中屏和副屏下，顶部的 Tab 与按钮不被隐藏或折叠
+    assert ".topbar .oa-tabs-topbar { display: none; }" not in compact_css
+    assert ".topbar .ppr-actions { display: none; }" not in compact_css
+    assert ".oa-mobile-tabs { display: block; }" not in compact_css
+    assert ".ppr-mobile-actions { display: grid;" not in compact_css
     assert ".oar-summary-row-main," in compact_css
     assert ".oar-summary-row-time {" in compact_css
     assert ".oar-summary-row {" in compact_css
