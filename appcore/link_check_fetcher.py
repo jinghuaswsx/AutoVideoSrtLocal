@@ -18,9 +18,23 @@ def _add_cache_buster(url: str) -> str:
     try:
         parsed = urlparse(url)
         query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-        # Filter out existing cache busters to keep the URL clean
-        query_pairs = [(k, v) for k, v in query_pairs if k not in ("nocache", "t", "_")]
-        query_pairs.append(("nocache", str(int(time.time() * 1000))))
+        
+        # Determine if it's a Shopify image CDN or already contains 'v' version parameter
+        netloc_lower = parsed.netloc.lower()
+        is_shopify = "shopify" in netloc_lower or "shopifycdn" in netloc_lower
+        has_v_param = any(k == "v" for k, v in query_pairs)
+        
+        if is_shopify or has_v_param:
+            # For Shopify-related CDN where 'v' acts as the cache key, rewrite it to force origin fetch
+            query_pairs = [(k, v) for k, v in query_pairs if k not in ("nocache", "t", "_", "v")]
+            timestamp = str(int(time.time() * 1000))
+            query_pairs.append(("v", timestamp))
+            query_pairs.append(("nocache", timestamp))
+        else:
+            # For general URLs, stick to the safe, standard nocache parameter to ensure backward and test compatibility
+            query_pairs = [(k, v) for k, v in query_pairs if k not in ("nocache", "t", "_")]
+            query_pairs.append(("nocache", str(int(time.time() * 1000))))
+            
         query = urlencode(query_pairs, doseq=True)
         return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment))
     except Exception:
@@ -319,7 +333,13 @@ class LinkCheckFetcher:
     def _request_page(self, url: str, target_language: str):
         return self.session.get(
             url,
-            headers={"User-Agent": "Mozilla/5.0", "Accept-Language": _accept_language(target_language)},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept-Language": _accept_language(target_language),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
             allow_redirects=True,
             timeout=20,
         )
@@ -402,7 +422,12 @@ class LinkCheckFetcher:
             nocache_url = _add_cache_buster(item["source_url"])
             response = self.session.get(
                 nocache_url,
-                headers={"User-Agent": "Mozilla/5.0"},
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
                 allow_redirects=True,
                 timeout=20,
             )

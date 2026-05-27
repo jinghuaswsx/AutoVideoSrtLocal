@@ -445,3 +445,43 @@ def test_extract_images_from_html_swaps_localized_carousel_images():
     assert items[1]["kind"] == "detail"
     assert items[1]["source_url"] == "https://img.example.com/cdn/files/loc_from_url_en_00_a3d946f0cd5c705ecf8f7c583dafd3f3.webp?width=800"
 
+
+def test_add_cache_buster_shopify_cdn():
+    from appcore.link_check_fetcher import _add_cache_buster
+    from urllib.parse import urlparse, parse_qsl
+    
+    # 1. Shopify CDN URL with an existing 'v' parameter
+    shopify_url = "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/image.jpg?v=1716782390&width=800"
+    nocache_shopify = _add_cache_buster(shopify_url)
+    
+    parsed = urlparse(nocache_shopify)
+    query = dict(parse_qsl(parsed.query))
+    
+    assert "v" in query
+    assert "nocache" in query
+    assert query["v"] != "1716782390"  # Verify the old version is rewritten
+    assert len(query["v"]) >= 13  # Verify it is a millisecond timestamp
+    assert query["v"] == query["nocache"]
+    assert query["width"] == "800"  # Other queries must remain intact
+    
+    # 2. General URL already containing 'v' version parameter (non-shopify domain)
+    general_v_url = "https://example.com/assets/pic.png?v=999"
+    nocache_general_v = _add_cache_buster(general_v_url)
+    
+    parsed_gen = urlparse(nocache_general_v)
+    query_gen = dict(parse_qsl(parsed_gen.query))
+    assert "v" in query_gen
+    assert query_gen["v"] != "999"
+    assert query_gen["v"] == query_gen["nocache"]
+    
+    # 3. Standard general URL without 'v' parameter (should keep it that way for compatibility)
+    normal_url = "https://img.example.com/hero.jpg?width=640"
+    nocache_normal = _add_cache_buster(normal_url)
+    
+    parsed_norm = urlparse(nocache_normal)
+    query_norm = dict(parse_qsl(parsed_norm.query))
+    assert "nocache" in query_norm
+    assert "v" not in query_norm  # Safe: do not pollute general URLs without versioning
+    assert query_norm["width"] == "640"
+
+
