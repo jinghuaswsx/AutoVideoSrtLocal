@@ -6225,17 +6225,21 @@
     const isFinished = ['done', 'review_ready', 'failed'].includes(task.status);
     const overall = (task.summary && task.summary.overall_decision) || '';
     
+    // Safe fallbacks to prevent crash if task.progress or task.summary is undefined/null
+    const progress = task.progress || {};
+    const summary = task.summary || {};
+
     if (isFinished) {
       if (task.status === 'failed') {
         verdictHtml = `
           <div class="oc-console-verdict verdict-error">
-            <strong>❌ 审计故障：</strong>检测任务在执行过程中出错，原因：${escapeHtml(task.error || '未知错误')}。请检查网络或稍后重试。
+            <strong>❌ 审计故障：</strong>检测任务在执行过程中出错，原因：${escapeHtml(task.error || '未知错误')}。请检查网络或稍后重试.
           </div>
         `;
       } else if (overall === 'done') {
-        const total = task.progress.total ?? 0;
-        const replaced = task.summary.replaced_count ?? 0;
-        const notReplaced = task.summary.not_replaced_count ?? 0;
+        const total = progress.total ?? 0;
+        const replaced = summary.replaced_count ?? 0;
+        const notReplaced = summary.not_replaced_count ?? 0;
         let subVerdict = '';
         if (total > 0) {
           subVerdict = `【换图结论：共拉取到 ${total} 张图片，已 100% 成功换图（${replaced} / ${total} 张已换到位）】`;
@@ -6247,11 +6251,11 @@
           </div>
         `;
       } else if (overall === 'unfinished') {
-        const replaceCount = task.summary.replace_count ?? 0;
-        const reviewCount = task.summary.review_count ?? 0;
-        const total = task.progress.total ?? 0;
-        const replaced = task.summary.replaced_count ?? 0;
-        const notReplaced = task.summary.not_replaced_count ?? 0;
+        const replaceCount = summary.replace_count ?? 0;
+        const reviewCount = summary.review_count ?? 0;
+        const total = progress.total ?? 0;
+        const replaced = summary.replaced_count ?? 0;
+        const notReplaced = summary.not_replaced_count ?? 0;
         let subVerdict = '';
         if (total > 0) {
           subVerdict = `【换图结论：共拉取到 ${total} 张图片，其中 ${replaced} 张已成功换图，${notReplaced} 张未换或换图未到位】`;
