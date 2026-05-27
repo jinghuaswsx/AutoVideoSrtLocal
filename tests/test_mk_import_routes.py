@@ -35,6 +35,7 @@ def test_mk_import_check_splits_imported_and_missing(authed_client_no_db, monkey
 
     monkeypatch.setattr(db, "query_all", fake_query_all)
     monkeypatch.setattr(route.mk_import_svc, "list_imported_filenames", fake_list_imported_filenames)
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_metadata", lambda filenames: {})
 
     resp = authed_client_no_db.get(
         "/mk-import/check",
@@ -44,6 +45,31 @@ def test_mk_import_check_splits_imported_and_missing(authed_client_no_db, monkey
     assert resp.status_code == 200
     assert resp.get_json() == {"imported": ["a.mp4"], "missing": ["b.mp4"]}
     assert captured["filenames"] == ["a.mp4", "b.mp4", "a.mp4"]
+
+
+def test_mk_import_check_includes_imported_metadata(authed_client_no_db, monkeypatch):
+    from web.routes import mk_import as route
+
+    def fake_list_imported_filenames(filenames):
+        return {"a.mp4"}
+
+    def fake_list_imported_metadata(filenames):
+        return {"a.mp4": {"media_product_id": 12, "media_item_id": 34}}
+
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_filenames", fake_list_imported_filenames)
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_metadata", fake_list_imported_metadata)
+
+    resp = authed_client_no_db.get(
+        "/mk-import/check",
+        query_string={"filenames": "a.mp4,b.mp4"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["imported"] == ["a.mp4"]
+    assert data["missing"] == ["b.mp4"]
+    assert data["imported_metadata"] == {"a.mp4": {"media_product_id": 12, "media_item_id": 34}}
+
 
 
 def test_mk_import_check_accepts_post_json_for_long_unicode_filenames(authed_client_no_db, monkeypatch):
@@ -60,6 +86,7 @@ def test_mk_import_check_accepts_post_json_for_long_unicode_filenames(authed_cli
         return {filenames[0]}
 
     monkeypatch.setattr(route.mk_import_svc, "list_imported_filenames", fake_list_imported_filenames)
+    monkeypatch.setattr(route.mk_import_svc, "list_imported_metadata", lambda values: {})
 
     resp = authed_client_no_db.post(
         "/mk-import/check",

@@ -1960,6 +1960,8 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 // mk-import: Task 9 — page-load + post-render batch check
 let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names
 let MKI_IMPORTED_FILENAMES = new Set();
+let MKI_IMPORTED_METADATA = new Map();
+
 
 function mkiProductCodeWithRjc(value) {
   const raw = String(value || '').trim().toLowerCase().replace(/_rjc$/i, '-rjc');
@@ -3974,8 +3976,17 @@ function mkiMarkImportedFilename(filename) {
   if (!fn) return;
   MKI_IMPORTED_FILENAMES.add(fn);
   MKI_CHECKED_FILENAMES.add(fn);
+  const metadata = arguments[1] || null;
+  if (metadata) {
+    MKI_IMPORTED_METADATA.set(fn, metadata);
+  }
   document.querySelectorAll('.mki-btn--add').forEach(btn => {
-    if (String(btn.dataset.mkiFilename || '').trim() === fn) mkiMarkImportedButton(btn);
+    if (String(btn.dataset.mkiFilename || '').trim() === fn) {
+      mkiMarkImportedButton(btn);
+      if (metadata) {
+        mkiEnableSmallLangButtonForImported(btn, metadata);
+      }
+    }
   });
 }
 
@@ -4004,6 +4015,10 @@ async function mkiCheckRenderedButtons() {
     if (!fn) continue;
     if (MKI_IMPORTED_FILENAMES.has(fn)) {
       mkiMarkImportedButton(btn);
+      const metadata = MKI_IMPORTED_METADATA.get(fn);
+      if (metadata) {
+        mkiEnableSmallLangButtonForImported(btn, metadata);
+      }
       continue;
     }
     if (btn.disabled) continue;
@@ -4016,11 +4031,26 @@ async function mkiCheckRenderedButtons() {
 
   // Chunk 100 per request
   const imported = new Set();
+  const importedMetadata = {};
   for (let i = 0; i < newFilenames.length; i += 100) {
     const chunk = newFilenames.slice(i, i + 100);
     try {
-      const importedChunk = await mkiFetchImportedFilenames(chunk);
-      importedChunk.forEach(f => imported.add(f));
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      const headers = {'Content-Type': 'application/json'};
+      if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+      const r = await fetch('/mk-import/check', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({filenames: chunk}),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const importedChunk = data.imported || [];
+        importedChunk.forEach(f => imported.add(f));
+        if (data.imported_metadata) {
+          Object.assign(importedMetadata, data.imported_metadata);
+        }
+      }
     } catch (e) { console.warn('mki check failed', e); }
   }
 
@@ -4028,8 +4058,12 @@ async function mkiCheckRenderedButtons() {
   newFilenames.forEach(fn => MKI_CHECKED_FILENAMES.add(fn));
 
   // Apply disabled state
-  imported.forEach(fn => mkiMarkImportedFilename(fn));
+  imported.forEach(fn => {
+    const metadata = importedMetadata[fn] || null;
+    mkiMarkImportedFilename(fn, metadata);
+  });
 }
+
 
 // mk-import: product owner and task assignment users
 const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
@@ -4885,6 +4919,7 @@ async function mkiHandleClick(btn) {
     importSucceeded = true;
     mkiMarkImportedButton(btn);
     mkiEnableSmallLangButtonForImported(btn, data);
+    MKI_IMPORTED_METADATA.set(btn.dataset.mkiFilename, data);
     mkiMarkImportedFilename(btn.dataset.mkiFilename);
     try {
       mkiImportProgressComplete(data, btn);

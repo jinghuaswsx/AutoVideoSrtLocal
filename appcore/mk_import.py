@@ -284,6 +284,26 @@ def list_imported_filenames(filenames: list[str]) -> set[str]:
     return {row["filename"] for row in rows}
 
 
+def list_imported_metadata(filenames: list[str]) -> dict[str, dict[str, int]]:
+    """Return dict mapping filename to its media_product_id and media_item_id."""
+    if not filenames:
+        return {}
+    rows = query_all(
+        "SELECT id, product_id, filename FROM media_items "
+        "WHERE filename IN (" + ",".join(["%s"] * len(filenames)) + ") "
+        "AND deleted_at IS NULL",
+        tuple(filenames),
+    )
+    return {
+        row["filename"]: {
+            "media_product_id": int(row["product_id"]),
+            "media_item_id": int(row["id"]),
+        }
+        for row in rows
+    }
+
+
+
 def _normalize_mk_media_path(raw_path: str) -> str:
     path = str(raw_path or "").strip().replace("\\", "/")
     while path.startswith("./"):
