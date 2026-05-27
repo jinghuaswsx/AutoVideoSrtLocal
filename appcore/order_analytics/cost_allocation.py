@@ -97,6 +97,18 @@ def get_sku_daily_ad_spend(*, product_id: int, business_date: date) -> float:
     复用现有 `meta_ad_daily_campaign_metrics`：按 product_id + 业务日求和。
     未匹配 product_id 的 campaign 走 get_unallocated_ad_spend()。
     """
+    from tools.meta_daily_final_sync import completed_meta_business_date
+    closed_through = completed_meta_business_date()
+    if closed_through and business_date > closed_through:
+        from appcore.order_analytics.order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+        res = _load_realtime_ad_snapshot_fallback(
+            date_from=business_date,
+            date_to=business_date,
+            product_id=product_id,
+        )
+        spend = res.get("spend_by_product", {}).get((business_date, product_id), 0.0)
+        return float(spend)
+
     row = query_one(
         "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "
@@ -113,6 +125,16 @@ def get_unallocated_ad_spend(*, business_date: date) -> float:
 
     业务方决策 Q9：单列展示，不进单订单核算；后续做 campaign-product 人工配对兜底。
     """
+    from tools.meta_daily_final_sync import completed_meta_business_date
+    closed_through = completed_meta_business_date()
+    if closed_through and business_date > closed_through:
+        from appcore.order_analytics.order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+        res = _load_realtime_ad_snapshot_fallback(
+            date_from=business_date,
+            date_to=business_date,
+        )
+        return float(res.get("unallocated_spend") or 0.0)
+
     row = query_one(
         "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
         "FROM meta_ad_daily_campaign_metrics "

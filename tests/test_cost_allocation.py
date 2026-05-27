@@ -155,3 +155,58 @@ def test_get_unallocated_ad_spend_returns_unmatched_total(monkeypatch):
     assert result == pytest.approx(12.34)
     assert "COALESCE(meta_business_date, report_date) = %s" in captured["sql"]
     assert captured["args"] == (date(2026, 5, 4),)
+
+
+def test_get_sku_daily_ad_spend_open_day_fallback(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "tools.meta_daily_final_sync.completed_meta_business_date",
+        lambda: date(2026, 5, 2),
+    )
+
+    def fake_fallback(date_from, date_to, product_id=None):
+        captured["fallback_called"] = True
+        captured["product_id"] = product_id
+        return {
+            "spend_by_product": {(date(2026, 5, 3), 316): 45.67},
+            "unallocated_spend": 10.0,
+        }
+
+    monkeypatch.setattr(
+        "appcore.order_analytics.order_profit_aggregation._load_realtime_ad_snapshot_fallback",
+        fake_fallback,
+    )
+
+    result = get_sku_daily_ad_spend(product_id=316, business_date=date(2026, 5, 3))
+    assert result == 45.67
+    assert captured["fallback_called"] is True
+    assert captured["product_id"] == 316
+
+
+def test_get_unallocated_ad_spend_open_day_fallback(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "tools.meta_daily_final_sync.completed_meta_business_date",
+        lambda: date(2026, 5, 2),
+    )
+
+    def fake_fallback(date_from, date_to, product_id=None):
+        captured["fallback_called"] = True
+        captured["product_id"] = product_id
+        return {
+            "spend_by_product": {},
+            "unallocated_spend": 88.99,
+        }
+
+    monkeypatch.setattr(
+        "appcore.order_analytics.order_profit_aggregation._load_realtime_ad_snapshot_fallback",
+        fake_fallback,
+    )
+
+    result = get_unallocated_ad_spend(business_date=date(2026, 5, 3))
+    assert result == 88.99
+    assert captured["fallback_called"] is True
+    assert captured["product_id"] is None
+
