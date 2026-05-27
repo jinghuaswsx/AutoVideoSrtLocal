@@ -509,7 +509,7 @@ class LinkCheckFetcher:
                 
                 # Safe natural scrolling and cycle carousel slides to trigger lazyload translations
                 try:
-                    page.evaluate("""async () => {
+                    page.evaluate("""(async () => {
                         window.scrollTo(0, 300);
                         window.dispatchEvent(new Event('scroll'));
                         await new Promise(r => setTimeout(r, 500));
@@ -522,7 +522,7 @@ class LinkCheckFetcher:
                                 await new Promise(r => setTimeout(r, 150));
                             }
                         }
-                    }""")
+                    })()""")
                 except Exception:
                     pass
                 
@@ -551,7 +551,7 @@ class LinkCheckFetcher:
                         page.goto(retry_url, wait_until="load", timeout=30000)
                         
                         try:
-                            page.evaluate("""async () => {
+                            page.evaluate("""(async () => {
                                 window.scrollTo(0, 300);
                                 window.dispatchEvent(new Event('scroll'));
                                 await new Promise(r => setTimeout(r, 500));
@@ -563,7 +563,7 @@ class LinkCheckFetcher:
                                         await new Promise(r => setTimeout(r, 150));
                                     }
                                 }
-                            }""")
+                            })()""")
                         except Exception:
                             pass
                             
