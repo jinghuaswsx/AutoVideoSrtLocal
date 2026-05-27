@@ -103,11 +103,25 @@ def test_new_launch_scope_roas_points_use_scoped_realtime_campaigns(monkeypatch)
     assert all(point["ad_spend"] != 99 for point in result["roas_points"])
 
 
-def test_unmatched_launch_scope_returns_empty_order_side_and_unmatched_ads(monkeypatch):
+def test_unmatched_launch_scope_includes_null_product_orders_and_unmatched_ads(monkeypatch):
     calls: list[tuple[str, tuple]] = []
 
     def fake_query(sql, args=()):
         calls.append((sql, args))
+        if "FROM dianxiaomi_order_lines d" in sql and "HOUR(" in sql:
+            assert "d.product_id IS NULL" in sql
+            return [{
+                "hour": 2,
+                "order_count": 2,
+                "line_count": 3,
+                "units": 4,
+                "order_revenue": 41.5,
+                "line_revenue": 41.5,
+                "shipping_revenue": 6.5,
+                "first_order_at": datetime(2026, 5, 9, 18, 5),
+                "last_order_at": datetime(2026, 5, 9, 18, 30),
+                "last_order_updated_at": datetime(2026, 5, 9, 18, 40),
+            }]
         if "FROM meta_ad_daily_campaign_metrics" in sql and "SUM(spend_usd)" in sql:
             return [{
                 "ad_spend": 25.5,
@@ -139,10 +153,17 @@ def test_unmatched_launch_scope_returns_empty_order_side_and_unmatched_ads(monke
     )
 
     assert result["scope"]["product_launch_scope"] == "unmatched"
-    assert result["summary"]["order_count"] == 0
+    assert result["summary"]["order_count"] == 2
+    assert result["summary"]["line_count"] == 3
+    assert result["summary"]["units"] == 4
+    assert result["summary"]["order_revenue"] == 41.5
+    assert result["summary"]["shipping_revenue"] == 6.5
+    assert result["summary"]["revenue_with_shipping"] == 48.0
     assert result["summary"]["ad_spend"] == 25.5
+    assert result["summary"]["true_roas"] == 1.8824
     assert result["campaigns"]
     assert result["product_sales_stats"] == []
+    assert any("d.product_id IS NULL" in sql for sql, _ in calls)
     assert any("product_id IS NULL" in sql for sql, _ in calls)
 
 
@@ -321,7 +342,25 @@ def test_range_launch_scope_applies_product_filters(monkeypatch):
 
 
 def test_range_unmatched_scope_returns_campaign_details(monkeypatch):
+    calls: list[tuple[str, tuple]] = []
+
     def fake_query(sql, args=()):
+        calls.append((sql, args))
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY d.meta_business_date" in sql:
+            assert "d.product_id IS NULL" in sql
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 9),
+                    "order_count": 3,
+                    "line_count": 4,
+                    "units": 5,
+                    "order_revenue": 80,
+                    "line_revenue": 80,
+                    "shipping_revenue": 12,
+                    "last_order_at": datetime(2026, 5, 9, 19, 0),
+                    "last_order_updated_at": datetime(2026, 5, 9, 19, 30),
+                }
+            ]
         if "FROM meta_ad_daily_campaign_metrics" in sql and "SUM(spend_usd)" in sql:
             if "GROUP BY ad_account_id" in sql:
                 return [
@@ -371,8 +410,12 @@ def test_range_unmatched_scope_returns_campaign_details(monkeypatch):
         product_launch_scope="unmatched",
     )
 
+    assert result["summary"]["order_count"] == 3
+    assert result["summary"]["revenue_with_shipping"] == 92.0
     assert result["summary"]["ad_spend"] == 25.5
+    assert result["summary"]["true_roas"] == 3.6078
     assert result["campaigns"][0]["normalized_campaign_code"] == "unmatched-campaign"
+    assert any("d.product_id IS NULL" in sql for sql, _ in calls)
 
 
 def test_route_rejects_invalid_product_launch_scope():

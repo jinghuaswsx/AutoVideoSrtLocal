@@ -112,9 +112,10 @@
 `unmatched`：
 
 - 广告侧限定 `product_id IS NULL` 或无法解析到产品的广告行。
-- 订单、订单盈亏、产品销量为空或 0，因为无法归因到产品。
+- 订单、订单盈亏限定 `dianxiaomi_order_lines.product_id IS NULL` 的订单行；这类订单属于“未匹配产品”，必须进入未匹配子 Tab，确保 `新品 + 老品 + 未匹配产品` 与不传 `product_launch_scope` 的实时大盘全量订单侧合计一致。
+- 产品销量统计可用一个“未匹配产品”汇总行承载 `product_id IS NULL` 的订单销量；如果 UI 无法稳定展示该行，至少不能影响顶部 KPI、订单明细、订单盈亏明细的守恒。
 - Campaign / Ad Set / Ad 明细展示未匹配广告，并沿用现有未分摊广告费提示。
-- 顶部 KPI 中广告费、Meta 购买金额、Meta ROAS可展示；销售额、真实 ROAS、利润类指标按无法归因处理，显示 0 / `null`，前端文案通过数据质量或提示说明。
+- 顶部 KPI 中广告费、Meta 购买金额、Meta ROAS、`product_id IS NULL` 订单销售额和真实 ROAS 都按同一未匹配 scope 展示；数据质量提示应说明该 scope 是订单未匹配产品与广告未匹配产品的合并排查口径。
 
 ## UI 设计
 
