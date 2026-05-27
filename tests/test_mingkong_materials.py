@@ -1833,6 +1833,69 @@ def test_list_yesterday_top100_attaches_fine_ai_by_video_card_without_product_li
     assert fine_ai["countries"]["DE"]["decision"]["final_decision"] == "GO"
 
 
+def test_enrich_cards_looks_up_fine_ai_video_runs_without_database_sort(monkeypatch):
+    item = {
+        "material_key": "c" * 64,
+        "product_code": "sortless-card",
+        "video_path": "uploads2/sortless-video.mp4",
+    }
+    monkeypatch.setattr(mm, "_status_cache_by_hash", lambda scope, lookup_hashes: {})
+    monkeypatch.setattr(mm, "_legacy_material_rows_by_product", lambda product_ids: {})
+
+    def fake_query(sql, args=()):
+        if "FROM mingkong_fine_ai_auto_evaluations" in sql:
+            return []
+        if "FROM ai_evaluation_runs" in sql:
+            if "JSON_UNQUOTE(JSON_EXTRACT" in sql and "ORDER BY" in sql:
+                raise RuntimeError("sort memory")
+            return [
+                {
+                    "id": 19,
+                    "evaluation_run_id": "eval_sortless",
+                    "product_id": 0,
+                    "status": "completed",
+                    "summary_json": "{}",
+                    "frontend_json": "{}",
+                    "progress_json": "{}",
+                    "metadata_json": (
+                        '{"source_type":"external_product_link",'
+                        '"external_product_link":"https://shop.example/products/old-link",'
+                        '"external_card_video":{"path":"uploads2/sortless-video.mp4"}}'
+                    ),
+                    "created_at": "2026-05-26 09:00:00",
+                    "updated_at": "2026-05-26 09:01:00",
+                    "completed_at": "2026-05-26 09:01:00",
+                    "failed_at": None,
+                }
+            ]
+        if "FROM ai_country_evaluations" in sql:
+            return [
+                {
+                    "evaluation_run_id": "eval_sortless",
+                    "country_code": "DE",
+                    "country_name": "Germany",
+                    "status": "completed",
+                    "scores_json": '{"overall_score":82}',
+                    "decision_json": '{"final_decision":"GO"}',
+                    "full_result_json": (
+                        '{"country_code":"DE","country_name":"Germany",'
+                        '"status":"completed","scores":{"overall_score":82},'
+                        '"decision":{"final_decision":"GO"}}'
+                    ),
+                    "error_message": "",
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    enriched = mm._enrich_cached_ad_statuses([item])
+
+    fine_ai = enriched[0]["product_ad_status"]["fine_ai_evaluation"]
+    assert fine_ai["evaluation_run_id"] == "eval_sortless"
+    assert fine_ai["has_result"] is True
+
+
 def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch):
     writes = []
     finishes = []

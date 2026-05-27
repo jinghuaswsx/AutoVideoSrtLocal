@@ -661,9 +661,13 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
                   OR JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.video_path')) IN ({placeholders})
                 )
                   AND status IN ('completed', 'partially_completed')
-                ORDER BY created_at DESC, id DESC
                 """,
                 tuple(list(video_paths) * 3)
+            )
+            run_rows = sorted(
+                run_rows or [],
+                key=lambda row: (_iso_datetime(row.get("created_at")), _as_int(row.get("id"))),
+                reverse=True,
             )
         except Exception:
             logger.exception("failed to load real-time fine AI evaluation runs by video paths")
