@@ -28,6 +28,12 @@ _SECONDS_PER_DAY = 24 * 60 * 60
 YESTERDAY_SPEND_TOP_LIMIT = 300
 _AD_STATUS_SCOPE_PRODUCT = "product"
 _AD_STATUS_SCOPE_MATERIAL = "material"
+_LIBRARY_STATUS_FILTERS = {
+    "product_imported",
+    "product_not_imported",
+    "video_imported",
+    "video_not_imported",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -860,6 +866,42 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         # raw source materials, so the card icon means local library match only.
         item["has_local_material_running_ad"] = material_in_library
     return items
+
+
+def _normalize_library_status_filter(value: Any) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return normalized if normalized in _LIBRARY_STATUS_FILTERS else ""
+
+
+def _library_status_matches(item: dict[str, Any], library_status: str) -> bool:
+    product_status = item.get("product_ad_status") if isinstance(item.get("product_ad_status"), dict) else {}
+    material_status = item.get("material_ad_status") if isinstance(item.get("material_ad_status"), dict) else {}
+    product_imported = bool(
+        item.get("has_local_product_in_library")
+        or product_status.get("has_local_match")
+        or _as_int(product_status.get("media_product_id")) > 0
+    )
+    video_imported = bool(
+        item.get("has_local_material_in_library")
+        or material_status.get("has_local_match")
+        or _as_int(material_status.get("media_item_id")) > 0
+    )
+    if library_status == "product_imported":
+        return product_imported
+    if library_status == "product_not_imported":
+        return not product_imported
+    if library_status == "video_imported":
+        return video_imported
+    if library_status == "video_not_imported":
+        return not video_imported
+    return True
+
+
+def _filter_by_library_status(items: list[dict[str, Any]], library_status: str) -> list[dict[str, Any]]:
+    normalized = _normalize_library_status_filter(library_status)
+    if not normalized:
+        return items
+    return [item for item in items if _library_status_matches(item, normalized)]
 
 
 def _distinct_archive_product_codes() -> list[str]:
@@ -1869,6 +1911,7 @@ def list_material_library(
     keyword: str = "",
     page: int | str | None = 1,
     page_size: int | str | None = 100,
+    library_status: str = "",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     range_bounds = _material_range_bounds(range_key)
@@ -1886,6 +1929,7 @@ def list_material_library(
         return {"items": [], "snapshot": "", "snapshot_at": "", "total": 0, "run_summary": None}
     page_num, size, offset = _page_bounds(page, page_size)
     kw = str(keyword or "").strip()
+    status_filter = _normalize_library_status_filter(library_status)
 
     if range_bounds:
         range_start, range_end = range_bounds
@@ -1896,19 +1940,23 @@ def list_material_library(
             where.append(keyword_sql)
             args.extend(keyword_args)
         where_sql = " AND ".join(where)
-        count_row = query_one(
-            f"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-              SELECT s.material_key
-              FROM mingkong_material_daily_snapshots s
-              JOIN mingkong_material_sync_runs r ON r.id = s.run_id
-              WHERE {where_sql}
-              GROUP BY s.material_key
-            ) deduped
-            """,
-            tuple(args),
-        ) or {}
+        count_row = {}
+        if not status_filter:
+            count_row = query_one(
+                f"""
+                SELECT COUNT(*) AS cnt
+                FROM (
+                  SELECT s.material_key
+                  FROM mingkong_material_daily_snapshots s
+                  JOIN mingkong_material_sync_runs r ON r.id = s.run_id
+                  WHERE {where_sql}
+                  GROUP BY s.material_key
+                ) deduped
+                """,
+                tuple(args),
+            ) or {}
+        limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
+        query_args = args + [range_start, range_end] + ([] if status_filter else [size, offset])
         rows = query(
             f"""
             SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
@@ -1931,27 +1979,29 @@ def list_material_library(
               GROUP BY s2.snapshot_at, s2.product_code
             ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
             ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
-            LIMIT %s OFFSET %s
+            {limit_clause}
             """,
-            tuple(args + [range_start, range_end, size, offset]),
+            tuple(query_args),
         )
         serialized = [_serialize_material_row(row) for row in rows or []]
-        items = _enrich_cached_ad_statuses(
+        items = _filter_by_library_status(_enrich_cached_ad_statuses(
             _enrich_material_yesterday_delta(
                 serialized,
                 snapshot_date=range_end,
                 snapshot_at=None,
             )
-        )
+        ), status_filter)
+        total = len(items) if status_filter else _as_int(count_row.get("cnt"))
+        page_items = items[offset : offset + size] if status_filter else items
         return {
-            "items": items,
+            "items": page_items,
             "snapshot": "",
             "snapshot_at": "",
             "snapshot_slot": "",
             "range": str(range_key or "").strip().lower().replace("-", "_"),
             "range_start": range_start,
             "range_end": range_end,
-            "total": _as_int(count_row.get("cnt")),
+            "total": total,
             "page": page_num,
             "page_size": size,
             "run_summary": None,
@@ -1968,10 +2018,14 @@ def list_material_library(
         where.append(keyword_sql)
         args.extend(keyword_args)
     where_sql = " AND ".join(where)
-    count_row = query_one(
-        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots s WHERE {where_sql}",
-        tuple(args),
-    ) or {}
+    count_row = {}
+    if not status_filter:
+        count_row = query_one(
+            f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots s WHERE {where_sql}",
+            tuple(args),
+        ) or {}
+    limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
+    query_args = [selected_snapshot_at] + args + ([] if status_filter else [size, offset])
     rows = query(
         f"""
         SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
@@ -1987,24 +2041,26 @@ def list_material_library(
         ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
         WHERE {where_sql}
         ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
-        LIMIT %s OFFSET %s
+        {limit_clause}
         """,
-        tuple([selected_snapshot_at] + args + [size, offset]),
+        tuple(query_args),
     )
     serialized = [_serialize_material_row(row) for row in rows or []]
-    items = _enrich_cached_ad_statuses(
+    items = _filter_by_library_status(_enrich_cached_ad_statuses(
         _enrich_material_yesterday_delta(
             serialized,
             snapshot_date=snapshot,
             snapshot_at=selected_snapshot_at,
         )
-    )
+    ), status_filter)
+    total = len(items) if status_filter else _as_int(count_row.get("cnt"))
+    page_items = items[offset : offset + size] if status_filter else items
     return {
-        "items": items,
+        "items": page_items,
         "snapshot": snapshot,
         "snapshot_at": selected_snapshot_at,
         "snapshot_slot": identity.get("snapshot_slot") or "",
-        "total": _as_int(count_row.get("cnt")),
+        "total": total,
         "page": page_num,
         "page_size": size,
         "run_summary": _run_summary(snapshot, selected_snapshot_at),
@@ -2072,6 +2128,7 @@ def list_yesterday_top100(
     page: int | str | None = 1,
     page_size: int | str | None = 100,
     sort_order: str = "new_entry_first",
+    library_status: str = "",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     identity = _latest_snapshot_identity(
@@ -2102,15 +2159,20 @@ def list_yesterday_top100(
         where.append(keyword_sql)
         base_args.extend(keyword_args)
     where_sql = " AND ".join(where)
+    status_filter = _normalize_library_status_filter(library_status)
     page_num, size, offset = _page_bounds(page, page_size)
-    count_row = query_one(
-        f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 t WHERE {where_sql}",
-        tuple(base_args),
-    ) or {}
+    count_row = {}
+    if not status_filter:
+        count_row = query_one(
+            f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_top100 t WHERE {where_sql}",
+            tuple(base_args),
+        ) or {}
 
     order_clause = "is_new_top100_entry DESC, yesterday_spend_delta DESC"
     if sort_order == "normal":
         order_clause = "yesterday_spend_delta DESC"
+    limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
+    query_args = base_args + ([] if status_filter else [size, offset])
 
     rows = query(
         f"""
@@ -2120,21 +2182,26 @@ def list_yesterday_top100(
         ORDER BY {order_clause},
                  current_cumulative_90_spend DESC, video_ads_count DESC,
                  rank_position ASC, id ASC
-        LIMIT %s OFFSET %s
+        {limit_clause}
         """,
-        tuple(base_args + [size, offset]),
+        tuple(query_args),
     )
-    items = _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []])
+    items = _filter_by_library_status(
+        _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []]),
+        status_filter,
+    )
+    total = len(items) if status_filter else _as_int(count_row.get("cnt"))
     previous_snapshot = items[0].get("previous_snapshot_date") if items else ""
     previous_snapshot_at = items[0].get("previous_snapshot_at") if items else ""
+    page_items = items[offset : offset + size] if status_filter else items
     return {
-        "items": items,
+        "items": page_items,
         "snapshot": snapshot,
         "snapshot_at": selected_snapshot_at,
         "snapshot_slot": identity.get("snapshot_slot") or "",
         "previous_snapshot": previous_snapshot or "",
         "previous_snapshot_at": previous_snapshot_at or "",
-        "total": _as_int(count_row.get("cnt")),
+        "total": total,
         "page": page_num,
         "page_size": size,
         "run_summary": _run_summary(snapshot, selected_snapshot_at),

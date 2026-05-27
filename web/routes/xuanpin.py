@@ -320,6 +320,7 @@ def api_mk_material_library():
         keyword=(request.args.get("keyword") or "").strip(),
         page=request.args.get("page") or 1,
         page_size=request.args.get("page_size") or 100,
+        library_status=(request.args.get("library_status") or request.args.get("inventory_status") or "").strip(),
     )
     return jsonify(result)
 
@@ -339,6 +340,7 @@ def api_mk_yesterday_top300():
         page=request.args.get("page") or 1,
         page_size=request.args.get("page_size") or 100,
         sort_order=sort_order,
+        library_status=(request.args.get("library_status") or request.args.get("inventory_status") or "").strip(),
     )
     result["sort_order"] = sort_order
     return jsonify(result)

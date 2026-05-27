@@ -1725,6 +1725,90 @@ def test_list_yesterday_top100_keyword_uses_shared_material_filter(monkeypatch):
     assert "%baseball-cap-organizer-rjc%" in count_args
 
 
+def test_list_yesterday_top100_filters_library_status_before_pagination(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def top_row(material_key, product_code, video_name):
+        return {
+            "id": 1 if material_key == "imported-video" else 2,
+            "snapshot_date": "2026-05-18",
+            "snapshot_at": "2026-05-18 18:00:00",
+            "snapshot_slot": "1800",
+            "previous_snapshot_date": "2026-05-17",
+            "previous_snapshot_at": "2026-05-17 18:01:00",
+            "previous_snapshot_slot": "1800",
+            "comparison_interval_seconds": 86340,
+            "material_key": material_key,
+            "product_code": product_code,
+            "product_url": f"https://shop.example/products/{product_code}",
+            "mk_product_id": 901,
+            "mk_product_name": product_code.title(),
+            "mk_product_link": f"https://shop.example/products/{product_code}-rjc",
+            "video_name": video_name,
+            "video_path": f"uploads2/{video_name}",
+            "local_cover_object_key": "",
+            "cover_cached_at": None,
+            "cover_cache_error": None,
+            "current_cumulative_90_spend": 1000,
+            "previous_cumulative_90_spend": 800,
+            "yesterday_spend_delta": 200,
+            "video_ads_count": 5,
+            "is_new_material": 0,
+            "is_new_top100_entry": 0,
+            "mk_video_metadata_json": "{}",
+            "created_at": None,
+        }
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 2}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        if "SELECT t.*" in sql and "FROM mingkong_material_daily_top100 t" in sql:
+            return [
+                top_row("imported-video", "cool-widget", "imported.mp4"),
+                top_row("missing-video", "fresh-widget", "missing.mp4"),
+            ]
+        raise AssertionError(sql)
+
+    def fake_enrich(items):
+        for item in items:
+            imported = item["material_key"] == "imported-video"
+            item["product_ad_status"] = {"has_local_match": True}
+            item["material_ad_status"] = {"has_local_match": imported}
+            item["has_local_product_in_library"] = True
+            item["has_local_material_in_library"] = imported
+        return items
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", fake_enrich)
+
+    result = mm.list_yesterday_top100(
+        page=1,
+        page_size=1,
+        library_status="video_not_imported",
+    )
+
+    assert result["total"] == 1
+    assert [item["material_key"] for item in result["items"]] == ["missing-video"]
+    list_sql = next(sql for kind, sql, _args in captured if kind == "query" and "SELECT t.*" in sql)
+    assert "LIMIT %s OFFSET %s" not in list_sql
+
+
 def test_list_yesterday_top100_attaches_fine_ai_by_video_card_without_product_link(monkeypatch):
     material_key = "b" * 64
 
