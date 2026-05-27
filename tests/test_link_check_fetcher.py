@@ -529,5 +529,43 @@ def test_extract_images_from_html_ignores_noscript_tags():
     assert items[0]["source_url"] == "https://img.example.com/real_lazy_loaded.jpg"
 
 
+def test_extract_images_from_html_deduplicates_by_token():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    variant_json = json.dumps(
+        [
+            {
+                "id": 111,
+                "featured_media": {
+                    "preview_image": {
+                        "src": "//newjoyloo.com/cdn/shop/files/397272e4c57da3bde45de1a933041431.jpg?v=1779520337",
+                    }
+                },
+            }
+        ]
+    )
+    html = f"""
+    <html lang="it">
+      <body>
+        <script type="application/json">{variant_json}</script>
+        <div class="t4s-product__media-item" data-media-id="111">
+          <!-- Stale English DOM image -->
+          <img src="https://newjoyloo.com/cdn/shop/files/397272e4c57da3bde45de1a933041431.jpg?v=1779520337&width=720">
+          <!-- Translated DOM image -->
+          <img src="https://cdn.shopify.com/s/files/1/0727/2831/4029/files/6a153b398faf9_20260526_from_url_en_01_397272e4c57da3bde45de1a933041431.webp?v=1779776316">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://newjoyloo.com/it/products/demo?variant=111")
+    
+    # It should only return 1 carousel item (the localized one), filtering out the duplicates
+    assert len(items) == 1
+    assert items[0]["kind"] == "carousel"
+    assert items[0]["source_url"] == "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/6a153b398faf9_20260526_from_url_en_01_397272e4c57da3bde45de1a933041431.webp?v=1779776316"
+
+
+
 
 
