@@ -4035,6 +4035,7 @@ async function mkiCheckRenderedButtons() {
 const MKI_ACTIVE_USERS_API = '/tasks/api/translation-work-users';
 let mkiProductOwnerResolve = null;
 let mkiProductOwnersCache = null;
+const mkiXiaoProductOwnerIdCache = new Map();
 
 function mkiUserLabel(user) {
   const fallback = user && user.id ? `用户 #${user.id}` : '';
@@ -4049,6 +4050,41 @@ async function mkiFetchActiveUsers() {
   const r = await fetch(MKI_ACTIVE_USERS_API);
   const data = await r.json();
   return data.users || [];
+}
+
+async function mkiXiaoResolveProductOwnerId(options = {}) {
+  const explicitOwnerId = Number(options.productOwnerId || options.ownerId || 0);
+  if (explicitOwnerId > 0) return explicitOwnerId;
+
+  const sourceButton = options.sourceButton || null;
+  const buttonOwnerId = Number(
+    sourceButton && sourceButton.dataset ? sourceButton.dataset.mkiProductOwnerId || 0 : 0
+  );
+  if (buttonOwnerId > 0) return buttonOwnerId;
+
+  const buttonProductId = Number(
+    sourceButton && sourceButton.dataset
+      ? sourceButton.dataset.mkiLocalProductId || sourceButton.dataset.mkiAiProductId || 0
+      : 0
+  );
+  const productId = Number(options.productId || options.aiProductId || buttonProductId || 0);
+  if (!productId) return null;
+  if (mkiXiaoProductOwnerIdCache.has(productId)) {
+    return mkiXiaoProductOwnerIdCache.get(productId);
+  }
+
+  try {
+    const r = await fetch('/medias/api/products/' + encodeURIComponent(productId));
+    if (!r.ok) return null;
+    const data = await r.json();
+    const product = (data && data.product) || data || {};
+    const ownerId = Number(product.user_id || product.owner_id || 0);
+    const resolved = ownerId > 0 ? ownerId : null;
+    mkiXiaoProductOwnerIdCache.set(productId, resolved);
+    return resolved;
+  } catch (e) {
+    return null;
+  }
 }
 
 // mk-import: Task 11 — toast + real handler
@@ -5169,6 +5205,7 @@ async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoAiProductId = Number(options.productId || options.aiProductId || 0) || null;
   mkiXiaoFineAiSourceButton = options.sourceButton || null;
   options.fineAiResult = options.fineAiResult || mkiFineAiResultFromButton(mkiXiaoFineAiSourceButton);
+  const productOwnerId = await mkiXiaoResolveProductOwnerId(options);
   // Load assignable employees
   if (!mkiXiaoTranslatorsCache) {
     try {
@@ -5186,12 +5223,13 @@ async function mkiXiaoOpenModal(options = {}) {
   }
   const sel = document.getElementById('mkiXiaoTranslator');
   sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
-  if (options.translatorId) sel.value = String(options.translatorId);
+  const defaultTranslatorId = options.translatorId || productOwnerId;
+  if (defaultTranslatorId) sel.value = String(defaultTranslatorId);
   const rawSel = document.getElementById('mkiXiaoRawProcessor');
   rawSel.innerHTML = '<option value="">请选择原视频处理人</option>' + mkiXiaoRawProcessorsCache.map(mkiUserOption).join('');
-  const rawDefault = options.rawProcessorId || (
-    options.translatorId && mkiXiaoRawProcessorsCache.some(function(u) { return Number(u.id) === Number(options.translatorId); })
-      ? options.translatorId
+  const rawDefault = options.rawProcessorId || productOwnerId || (
+    defaultTranslatorId && mkiXiaoRawProcessorsCache.some(function(u) { return Number(u.id) === Number(defaultTranslatorId); })
+      ? defaultTranslatorId
       : null
   );
   if (rawDefault) rawSel.value = String(rawDefault);

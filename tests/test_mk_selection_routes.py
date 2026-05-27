@@ -431,6 +431,16 @@ def test_mk_selection_small_language_modal_matches_task_parent_contract():
     assert "function mkiXiaoHandleClick" not in template
 
 
+def test_mk_selection_small_language_modal_prefills_assignees_from_product_owner():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "async function mkiXiaoResolveProductOwnerId(options = {})" in template
+    assert "fetch('/medias/api/products/' + encodeURIComponent(productId))" in template
+    assert "const productOwnerId = await mkiXiaoResolveProductOwnerId(options);" in template
+    assert "const defaultTranslatorId = options.translatorId || productOwnerId;" in template
+    assert "const rawDefault = options.rawProcessorId || productOwnerId || (" in template
+
+
 def test_mk_selection_small_language_modal_keeps_task_creation_feedback_inline():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
