@@ -88,9 +88,15 @@ def check():
         )
 
     imported = mk_import_svc.list_imported_filenames(filenames)
+    imported_metadata = mk_import_svc.list_imported_metadata(filenames)
     return mk_import_flask_response(
-        build_mk_import_check_response(filenames=filenames, imported=imported)
+        build_mk_import_check_response(
+            filenames=filenames,
+            imported=imported,
+            imported_metadata=imported_metadata,
+        )
     )
+
 
 
 @bp.route("/video", methods=["POST"])

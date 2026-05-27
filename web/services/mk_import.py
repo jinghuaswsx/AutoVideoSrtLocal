@@ -30,14 +30,16 @@ def build_mk_import_check_response(
     *,
     filenames: list[str],
     imported: set[str],
+    imported_metadata: dict[str, dict[str, int]] | None = None,
 ) -> MkImportResponse:
-    return MkImportResponse(
-        {
-            "imported": sorted(imported),
-            "missing": sorted(set(filenames) - imported),
-        },
-        200,
-    )
+    payload = {
+        "imported": sorted(imported),
+        "missing": sorted(set(filenames) - imported),
+    }
+    if imported_metadata:
+        payload["imported_metadata"] = imported_metadata
+    return MkImportResponse(payload, 200)
+
 
 
 def build_mk_import_admin_required_response() -> MkImportResponse:
