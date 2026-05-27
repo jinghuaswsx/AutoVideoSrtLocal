@@ -201,3 +201,37 @@ def rerun_task(task_id: int):
     start_background_task(_run_ai_listing_task, task_id, current_user.id)
     return jsonify({"ok": True})
 
+
+@bp.route("/preview/<preview_key>", methods=["GET"])
+def public_preview(preview_key: str):
+    """免登录公共移动端预览页面."""
+    preview_key = preview_key.strip()
+
+    # Try querying by ID first if numeric
+    task = None
+    if preview_key.isdigit():
+        task = db.query_one("SELECT * FROM ai_listing_tasks WHERE id = %s", (int(preview_key),))
+
+    # Fallback to query by product_code
+    if not task:
+        task = db.query_one("SELECT * FROM ai_listing_tasks WHERE product_code = %s", (preview_key,))
+
+    if not task:
+        abort(404)
+
+    # Get only active/selected assets, ordered as configured
+    assets = db.query(
+        "SELECT * FROM ai_listing_assets WHERE task_id = %s AND is_selected = 1 ORDER BY sort_order ASC, id ASC",
+        (task["id"],)
+    )
+
+    skus = []
+    if task["generated_skus_json"]:
+        try:
+            skus = json.loads(task["generated_skus_json"])
+        except Exception:
+            skus = []
+
+    return render_template("ai_listing_preview.html", task=task, assets=assets, skus=skus)
+
+

@@ -159,3 +159,50 @@ def test_ai_listing_rerun(authed_client_no_db, monkeypatch):
     assert launched[0][0] == 12
 
 
+def test_ai_listing_public_preview_by_id_and_code(authed_client_no_db, monkeypatch):
+    """测试免登录公共预览页面，支持 task_id 与 product_code 两种查找方式."""
+    dummy_task = {
+        "id": 12, "product_code": "AL_XYZ", "source_type": "manual_input", 
+        "source_link": "http://x.com", "transit_link": "http://y.com", 
+        "target_store_domain": "my.shop.com", "status": "completed", 
+        "pricing_ratio": 1.5, "pricing_offset": 0.0, "error_message": None, 
+        "created_at": "2026-05-24", "generated_title": "Premium Product Preview",
+        "generated_html_desc": "<p>A premium Shopify description.</p>",
+        "generated_skus_json": json.dumps([{"sku": "SKU-RED", "price": 29.99}])
+    }
+    dummy_assets = [
+        {"id": 1, "task_id": 12, "asset_type": "carousel", "original_url": "http://img1", 
+         "transformed_url": "uploads/ai_listing/12/c1.png", "ai_classification": "showcase", 
+         "is_selected": 1, "sort_order": 0}
+    ]
+    
+    queried_keys = []
+    def mock_query_one(sql, args):
+        queried_keys.append(args[0])
+        return dummy_task
+        
+    monkeypatch.setattr("appcore.db.query_one", mock_query_one)
+    monkeypatch.setattr("appcore.db.query", lambda *args: dummy_assets)
+    
+    # Create an unauthenticated client
+    client = authed_client_no_db.application.test_client()
+    
+    # 1. Access via Task ID
+    resp = client.get("/ai-listing/preview/12")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Premium Product Preview" in html
+    assert "A premium Shopify description" in html
+    assert "uploads/ai_listing/12/c1.png" in html
+    assert 12 in queried_keys
+    
+    # 2. Access via Product Code
+    queried_keys.clear()
+    resp = client.get("/ai-listing/preview/AL_XYZ")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Premium Product Preview" in html
+    assert "AL_XYZ" in queried_keys
+
+
+

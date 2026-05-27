@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ task.generated_title or 'Live Preview' }} - Newjoyloo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-primary: #000000;
+      --color-accent: #b41d1d;
+      --color-accent-hover: #9c1717;
+      --color-bg: #ffffff;
+      --color-bg-gray: #f9f9f9;
+      --color-border: #f1f1f1;
+      --color-border-strong: #dddddd;
+      --color-text: #222222;
+      --color-text-muted: #777777;
+      --font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--color-bg-gray);
+      color: var(--color-text);
+      font-family: var(--font-family);
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Single Phone Shell Viewport for previewing on desktop, full viewport on mobile */
+    .mobile-container {
+      width: 100%;
+      max-width: 480px;
+      background: var(--color-bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 20px rgba(0,0,0,0.05);
+    }
+
+    /* Black Announcement Banner */
+    .shopify-preview-topbar {
+      background: #000000;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 600;
+      text-align: center;
+      padding: 8px 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Header Bar */
+    .shopify-preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--color-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .shopify-preview-header .header-left-box {
+      font-size: 18px;
+      color: var(--color-text);
+      cursor: pointer;
+    }
+
+    .shopify-preview-header .header-logo {
+      font-weight: 800;
+      font-size: 16px;
+      color: #000000;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .shopify-preview-header .header-right-box {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 16px;
+      color: var(--color-text);
+      cursor: pointer;
+    }
+
+    /* Product Image Carousel */
+    .shopify-preview-gallery {
+      position: relative;
+      background: #ffffff;
+      overflow: hidden;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .gallery-wrapper {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .gallery-wrapper::-webkit-scrollbar {
+      display: none;
+    }
+
+    .gallery-slide {
+      min-width: 100%;
+      scroll-snap-align: start;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+    }
+
+    .gallery-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .gallery-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 0;
+      background: #ffffff;
+    }
+
+    .gallery-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e5e5e5;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .gallery-dot.active {
+      background: #000000;
+      transform: scale(1.2);
+    }
+
+    .shopify-preview-no-image {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-bg-gray);
+      color: var(--color-text-muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    /* Product Metadata / Title & Price Block */
+    .shopify-preview-meta {
+      padding: 20px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .preview-title {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--color-text);
+      margin-bottom: 8px;
+    }
+
+    .preview-reviews {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .preview-reviews .stars {
+      color: #f59e0b;
+      font-size: 14px;
+      letter-spacing: -1px;
+    }
+
+    .preview-reviews .rating-text {
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+
+    .preview-price-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .preview-sale-price {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--color-accent);
+    }
+
+    .preview-compare-price {
+      font-size: 15px;
+      color: var(--color-text-muted);
+      text-decoration: line-through;
+    }
+
+    .preview-badge {
+      background: #f45151;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    /* Variations Selector */
+    .shopify-preview-variants {
+      padding: 18px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .variant-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .variant-label span {
+      font-weight: 400;
+      color: var(--color-text-muted);
+      margin-left: 4px;
+    }
+
+    .variant-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .variant-option-pill {
+      padding: 10px 16px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 4px;
+      background: #ffffff;
+      font-size: 13px;
+      color: var(--color-text);
+      cursor: pointer;
+      font-weight: 600;
+      font-family: var(--font-family);
+      transition: all 0.2s ease;
+    }
+
+    .variant-option-pill.selected {
+      border-color: #000000;
+      background: #000000;
+      color: #ffffff;
+    }
+
+    /* Quantity Selector */
+    .shopify-preview-quantity {
+      padding: 18px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .quantity-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .quantity-selector-box {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .quantity-selector-box .qty-btn {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      background: var(--color-bg-gray);
+      user-select: none;
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--color-text);
+      transition: background 0.15s ease;
+    }
+
+    .quantity-selector-box .qty-btn:hover {
+      background: #e9ecef;
+    }
+
+    .quantity-selector-box .qty-num {
+      width: 50px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text);
+      background: #ffffff;
+      border-left: 1px solid var(--color-border-strong);
+      border-right: 1px solid var(--color-border-strong);
+    }
+
+    /* Buy CTAs Block */
+    .shopify-preview-cta {
+      padding: 20px 16px;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .btn-atc {
+      width: 100%;
+      padding: 15px;
+      background: #ffffff;
+      color: #000000;
+      border: 2px solid #000000;
+      font-weight: 700;
+      font-size: 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      font-family: var(--font-family);
+      transition: all 0.2s ease;
+    }
+
+    .btn-atc:hover {
+      background: #000000;
+      color: #ffffff;
+    }
+
+    .btn-buy {
+      width: 100%;
+      padding: 15px;
+      background: #000000;
+      color: #ffffff;
+      border: none;
+      font-weight: 700;
+      font-size: 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      font-family: var(--font-family);
+      transition: all 0.2s ease;
+      animation: pulseButton 2.5s infinite ease-in-out;
+    }
+
+    @keyframes pulseButton {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+
+    .shopify-preview-shipping-info {
+      padding: 18px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .shipping-info-item {
+      font-size: 12px;
+      color: #444444;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Accordions */
+    .shopify-preview-accordion {
+      background: #ffffff;
+      margin-top: 10px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .accordion-item {
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .accordion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-text);
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      user-select: none;
+    }
+
+    .accordion-header .accordion-icon {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .accordion-item.active .accordion-header .accordion-icon {
+      transform: rotate(90deg);
+    }
+
+    .accordion-content {
+      display: none;
+      padding: 16px;
+      font-size: 13px;
+      color: #444444;
+      line-height: 1.7;
+      background: #ffffff;
+      border-top: 1px solid #f9f9f9;
+    }
+
+    .accordion-content p {
+      margin-bottom: 12px;
+    }
+
+    .accordion-content ul, .accordion-content ol {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .accordion-content li {
+      margin-bottom: 6px;
+    }
+
+    .accordion-content img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 12px auto;
+    }
+
+    .accordion-item.active .accordion-content {
+      display: block;
+    }
+
+    /* Detail description embedded images */
+    .shopify-preview-detail-images {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .detail-img-container {
+      width: 100%;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .detail-img-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* Trust Footer */
+    .shopify-preview-footer-trust {
+      padding: 24px 20px;
+      background: var(--color-bg-gray);
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .trust-item {
+      font-size: 12px;
+      color: #555555;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="mobile-container">
+    
+    <!-- A. Announcement Banner -->
+    <div class="shopify-preview-topbar">
+      ⚡ FREE SHIPPING WORLDWIDE FOR ORDERS OVER $39 ⚡
+    </div>
+
+    <!-- B. Shopify Header Bar -->
+    <div class="shopify-preview-header">
+      <div class="header-left-box">☰</div>
+      <div class="header-logo">NEWJOYLOO</div>
+      <div class="header-right-box">🔍 ♡ 🛒</div>
+    </div>
+
+    <!-- C. Image Gallery Carousel -->
+    {% set carousel_assets = assets | selectattr("asset_type", "equalto", "carousel") | list %}
+    {% if carousel_assets | length > 0 %}
+    <div class="shopify-preview-gallery">
+      <div class="gallery-wrapper" id="previewGalleryWrapper">
+        {% for asset in carousel_assets %}
+        <div class="gallery-slide">
+          <img src="/medias/obj/{{ asset.transformed_url or asset.original_url }}" alt="product slide {{ loop.index }}">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="gallery-dots">
+        {% for asset in carousel_assets %}
+        <span class="gallery-dot {% if loop.first %}active{% endif %}" onclick="scrollToSlide({{ loop.index0 }})"></span>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="shopify-preview-no-image">
+      <span>📸 暂无主图/轮播图 (请在上架工作台勾选启用主图)</span>
+    </div>
+    {% endif %}
+
+    <!-- D. Title & Price Block -->
+    <div class="shopify-preview-meta">
+      <h1 class="preview-title">{{ task.generated_title or 'Premium Shopify Product Title' }}</h1>
+      <div class="preview-reviews">
+        <span class="stars">★★★★★</span>
+        <span class="rating-text">4.9 (128 reviews)</span>
+      </div>
+      <div class="preview-price-box">
+        {% set base_price = skus[0].price if skus | length > 0 else 19.99 %}
+        <span class="preview-sale-price" id="salePriceSpan">${{ "%.2f" | format(base_price) }}</span>
+        <span class="preview-compare-price" id="comparePriceSpan">${{ "%.2f" | format(base_price * 1.6) }}</span>
+        <span class="preview-badge">SALE</span>
+      </div>
+    </div>
+
+    <!-- E. Variant Options Swatches -->
+    {% if skus | length > 0 %}
+    <div class="shopify-preview-variants">
+      <div class="variant-label">PACK SIZE: <span id="selectedVariantLabel">{{ skus[0].sku }}</span></div>
+      <div class="variant-options">
+        {% for item in skus %}
+        <button class="variant-option-pill {% if loop.first %}selected{% endif %}" onclick="selectPreviewVariant({{ loop.index0 }}, {{ item.price }}, '{{ item.sku | escape }}')">
+          {{ item.sku }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- F. Quantity Selector -->
+    <div class="shopify-preview-quantity">
+      <div class="quantity-label">QUANTITY:</div>
+      <div class="quantity-selector-box">
+        <span class="qty-btn" onclick="adjustPreviewQty(-1)">-</span>
+        <span class="qty-num" id="qtySelectorNum">1</span>
+        <span class="qty-btn" onclick="adjustPreviewQty(1)">+</span>
+      </div>
+    </div>
+
+    <!-- G. CTAs -->
+    <div class="shopify-preview-cta">
+      <button class="btn-atc">🛒 ADD TO CART</button>
+      <button class="btn-buy">⚡ BUY IT NOW</button>
+    </div>
+
+    <!-- H. Estimates -->
+    <div class="shopify-preview-shipping-info">
+      <div class="shipping-info-item">✈️ Free Shipping Worldwide on orders over $39</div>
+      <div class="shipping-info-item">⏱️ Processing time: Ships within 1-3 business days</div>
+    </div>
+
+    <!-- I. Description Accordion -->
+    <div class="shopify-preview-accordion">
+      
+      <div class="accordion-item active">
+        <div class="accordion-header" onclick="togglePreviewAccordion(this)">
+          <span>Description</span>
+          <span class="accordion-icon">❯</span>
+        </div>
+        <div class="accordion-content">
+          {{ (task.generated_html_desc or '') | safe }}
+          
+          {% set detail_assets = assets | selectattr("asset_type", "equalto", "detail_image") | list %}
+          {% if detail_assets | length > 0 %}
+          <div class="shopify-preview-detail-images">
+            {% for asset in detail_assets %}
+            <div class="detail-img-container">
+              <img src="/medias/obj/{{ asset.transformed_url or asset.original_url }}" alt="detail image {{ loop.index }}">
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <div class="accordion-header" onclick="togglePreviewAccordion(this)">
+          <span>Shipping & Returns</span>
+          <span class="accordion-icon">❯</span>
+        </div>
+        <div class="accordion-content">
+          <p>✈️ <strong>Free Shipping:</strong> On all orders over $39 USD.</p>
+          <p>📦 <strong>Processing Time:</strong> Ships within 1-3 business days.</p>
+          <p>🔄 <strong>Returns:</strong> Easy 30-day hassle-free returns.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- J. Trust Footer -->
+    <div class="shopify-preview-footer-trust">
+      <div class="trust-item">🚚 <strong>Free Shipping</strong> Worldwide</div>
+      <div class="trust-item">🛡️ <strong>30-Day</strong> Refund Guarantee</div>
+      <div class="trust-item">🔒 <strong>Secure</strong> SSL Checkout</div>
+    </div>
+
+  </div>
+
+  <script>
+    // 1. Carousel Scroll indicators update
+    const wrapper = document.getElementById('previewGalleryWrapper');
+    if (wrapper) {
+      wrapper.addEventListener('scroll', () => {
+        const width = wrapper.clientWidth;
+        const scrollLeft = wrapper.scrollLeft;
+        const activeIndex = Math.round(scrollLeft / width);
+        
+        document.querySelectorAll('.gallery-dot').forEach((dot, idx) => {
+          if (idx === activeIndex) {
+            dot.classList.add('active');
+          } else {
+            dot.classList.remove('active');
+          }
+        });
+      });
+    }
+
+    // Scroll to active dot index
+    function scrollToSlide(index) {
+      const wrapper = document.getElementById('previewGalleryWrapper');
+      if (!wrapper) return;
+      const width = wrapper.clientWidth;
+      wrapper.scrollTo({
+        left: width * index,
+        behavior: 'smooth'
+      });
+    }
+
+    // 2. Select SKU Variant Swatches
+    function selectPreviewVariant(index, price, skuName) {
+      // Highlight selected pill
+      document.querySelectorAll('.variant-option-pill').forEach((pill, idx) => {
+        if (idx === index) {
+          pill.classList.add('selected');
+        } else {
+          pill.classList.remove('selected');
+        }
+      });
+
+      // Update selected SKU label
+      const selectedLabel = document.getElementById('selectedVariantLabel');
+      if (selectedLabel) {
+        selectedLabel.innerText = skuName;
+      }
+
+      // Update prices dynamically
+      const saleSpan = document.getElementById('salePriceSpan');
+      const compareSpan = document.getElementById('comparePriceSpan');
+      if (saleSpan) saleSpan.innerText = '$' + price.toFixed(2);
+      if (compareSpan) compareSpan.innerText = '$' + (price * 1.6).toFixed(2);
+    }
+
+    // 3. Adjust Quantity
+    function adjustPreviewQty(change) {
+      const qtyNum = document.getElementById('qtySelectorNum');
+      if (!qtyNum) return;
+      let qty = parseInt(qtyNum.innerText) || 1;
+      qty += change;
+      if (qty < 1) qty = 1;
+      qtyNum.innerText = qty;
+    }
+
+    // 4. Toggle Accordion collapsing
+    function togglePreviewAccordion(header) {
+      const item = header.closest('.accordion-item');
+      if (item) {
+        item.classList.toggle('active');
+      }
+    }
+  </script>
+</body>
+</html>
