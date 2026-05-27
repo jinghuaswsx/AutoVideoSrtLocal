@@ -205,38 +205,78 @@ class LinkCheckRuntime:
             original_paths = [orig["local_path"] for orig in originals]
             original_index = {orig["local_path"]: orig for orig in originals}
 
+            # 1. 预先构建所有图片的结果槽并初始化，保持原本的列表顺序，方便前端渲染一致性
+            results_map = {}
             new_items = []
-            analyze_failed = False
             for item in downloaded:
                 item_id = item["id"]
                 if item_id in existing_items:
                     result = existing_items[item_id]
-                    if result.get("status") == "failed":
-                        analyze_failed = True
                 else:
                     result = self._build_item_result(item, reference_paths, original_paths)
-                    try:
-                        self._analyze_one(
-                            task,
-                            result,
-                            item,
-                            reference_paths,
-                            reference_index,
-                            original_paths,
-                            original_index,
-                        )
-                        task["progress"]["analyzed"] += 1
-                        result["status"] = "done"
-                    except Exception as exc:
-                        task["progress"]["failed"] += 1
-                        result["status"] = "failed"
-                        result["error"] = str(exc)
-                        analyze_failed = True
-
+                results_map[item_id] = result
                 new_items.append(result)
-                task["items"] = new_items
-                task["summary"] = _build_summary(task["items"])
-                self._persist(task_id, task)
+
+            task["items"] = new_items
+            task["summary"] = _build_summary(task["items"])
+            self._persist(task_id, task)
+
+            analyze_failed = False
+            to_analyze = []
+            for item in downloaded:
+                item_id = item["id"]
+                if item_id in existing_items:
+                    res = existing_items[item_id]
+                    if res.get("status") == "failed":
+                        analyze_failed = True
+                    if res.get("status") in {"done", "failed"}:
+                        continue
+                to_analyze.append(item)
+
+            # 2. 启用并发多线程审计（最大并发数为 10）
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
+
+            max_workers = min(10, len(to_analyze)) if to_analyze else 1
+            progress_lock = threading.Lock()
+
+            def process_single_item(item):
+                item_id = item["id"]
+                res = results_map[item_id]
+                try:
+                    self._analyze_one(
+                        task,
+                        res,
+                        item,
+                        reference_paths,
+                        reference_index,
+                        original_paths,
+                        original_index,
+                        lock=progress_lock,
+                    )
+                    res["status"] = "done"
+                    return item_id, True, None
+                except Exception as exc:
+                    res["status"] = "failed"
+                    res["error"] = str(exc)
+                    return item_id, False, str(exc)
+
+            if to_analyze:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(process_single_item, item): item for item in to_analyze}
+                    for future in as_completed(futures):
+                        item_id, success, err_msg = future.result()
+                        
+                        with progress_lock:
+                            if success:
+                                task["progress"]["analyzed"] += 1
+                            else:
+                                task["progress"]["failed"] += 1
+                                analyze_failed = True
+                            
+                            # 每次并发线程完成一张图，即时刷新数据库状态，提供流畅进展刷新
+                            task["summary"] = _build_summary(task["items"])
+                            self._persist(task_id, task)
 
             if analyze_failed:
                 task["status"] = "failed"
@@ -292,7 +332,15 @@ class LinkCheckRuntime:
         reference_index: dict[str, dict],
         original_paths: list[str],
         original_index: dict[str, dict],
+        lock: threading.Lock | None = None,
     ) -> None:
+        def incr_progress(key: str):
+            if lock:
+                with lock:
+                    task["progress"][key] += 1
+            else:
+                task["progress"][key] += 1
+
         # 1. 尺寸免检校验：如果是尺寸极小的边角小图（如支付图标、小挂件等），直接绿色放行，避免误报
         try:
             from PIL import Image
@@ -332,7 +380,7 @@ class LinkCheckRuntime:
                 "reference_id": matched_ref.get("id", ""),
                 "reference_filename": matched_ref.get("filename", ""),
             }
-            task["progress"]["compared"] += 1
+            incr_progress("compared")
             result["binary_quick_check"] = {
                 "status": "pass",
                 "binary_similarity": 1.0,
@@ -340,7 +388,7 @@ class LinkCheckRuntime:
                 "threshold": 0.90,
                 "reason": "Shopify CDN URL 精确匹配，自动通过二值快检",
             }
-            task["progress"]["binary_checked"] += 1
+            incr_progress("binary_checked")
             result["same_image_llm"] = {
                 "status": "done",
                 "answer": "是",
@@ -349,7 +397,7 @@ class LinkCheckRuntime:
                 "model": "short_circuit",
                 "reason": "Shopify CDN URL 精确匹配，自动判断为相同图片",
             }
-            task["progress"]["same_image_llm_done"] += 1
+            incr_progress("same_image_llm_done")
             result["is_replaced"] = True
 
             # 【绿色免检通道】：Shopify CDN 成功吻合，免除多模态大模型二次审计
@@ -375,7 +423,7 @@ class LinkCheckRuntime:
                 "reference_id": reference_meta.get("id", ""),
                 "reference_filename": reference_meta.get("filename", ""),
             }
-            task["progress"]["compared"] += 1
+            incr_progress("compared")
 
         if original_paths:
             best_original = find_best_reference(item["local_path"], original_paths)
@@ -390,10 +438,10 @@ class LinkCheckRuntime:
         if reference_status == "matched":
             reference_path = result["reference_match"].get("reference_path", "")
             result["binary_quick_check"] = run_binary_quick_check(item["local_path"], reference_path)
-            task["progress"]["binary_checked"] += 1
+            incr_progress("binary_checked")
             result["same_image_llm"] = judge_same_image(item["local_path"], reference_path)
             if result["same_image_llm"].get("status") == "done":
-                task["progress"]["same_image_llm_done"] += 1
+                incr_progress("same_image_llm_done")
 
             binary_status = result["binary_quick_check"].get("status")
             same_image_ans = result["same_image_llm"].get("answer")
