@@ -58,22 +58,38 @@ def test_normalize_product_launch_scope_accepts_expected_values():
 def test_seed_missing_fallback_rows_uses_media_product_created_at(monkeypatch):
     from appcore.order_analytics import product_ad_launch as pal
 
+    queries: list[tuple[str, tuple]] = []
     executed: list[tuple[str, tuple]] = []
 
-    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append((sql, args)) or 3)
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=(): queries.append((sql, args)) or [{"missing_count": 3}],
+    )
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append((sql, args)) or 999)
 
     inserted = pal.seed_missing_fallback_launch_dates()
 
     assert inserted == 3
+    assert queries
     assert executed
     sql, args = executed[0]
-    assert "INSERT INTO product_ad_launch_dates" in sql
+    assert "INSERT IGNORE INTO product_ad_launch_dates" in sql
     assert "FROM media_products p" in sql
-    assert "DATE(COALESCE(p.created_at, NOW()))" in sql
+    assert "DATE(COALESCE(p.created_at, CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00')))" in sql
     assert "p.deleted_at IS NULL" in sql
     assert "created_at_fallback" in args
     assert "product_created_at" in args
     assert "media_products" in args
+
+
+def test_seed_missing_fallback_summary_ignores_insert_lastrowid(monkeypatch):
+    from appcore.order_analytics import product_ad_launch as pal
+
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [{"missing_count": 2}])
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): 8742)
+
+    assert pal.seed_missing_fallback_launch_dates() == 2
 
 
 def test_refresh_ad_match_launch_dates_keeps_existing_ad_match_locked(monkeypatch):
@@ -97,11 +113,12 @@ def test_refresh_ad_match_launch_dates_keeps_existing_ad_match_locked(monkeypatc
         return []
 
     monkeypatch.setattr(oa, "query", fake_query)
-    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append((sql, args)) or 9001)
 
     result = pal.refresh_ad_match_launch_dates_for_products([101])
 
     assert result["matched_products"] == 1
+    assert result["updated_rows"] == 1
     assert executed
     sql, args = executed[0]
     assert "ON DUPLICATE KEY UPDATE" in sql
@@ -110,6 +127,24 @@ def test_refresh_ad_match_launch_dates_keeps_existing_ad_match_locked(monkeypatc
     assert args[0] == 101
     assert args[1] == date(2026, 5, 21)
     assert args[2] == "ad_match"
+
+
+def test_refresh_ad_match_launch_dates_skips_invalid_product_ids(monkeypatch):
+    from appcore.order_analytics import product_ad_launch as pal
+
+    queries: list[tuple[str, tuple]] = []
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): pytest.fail("should not execute"))
+
+    result = pal.refresh_ad_match_launch_dates_for_products([None, "", "abc", "-2", 0])
+
+    assert result == {"matched_products": 0, "updated_rows": 0}
+    assert queries == []
 
 
 def test_refresh_ad_match_launch_dates_picks_earliest_daily_match(monkeypatch):

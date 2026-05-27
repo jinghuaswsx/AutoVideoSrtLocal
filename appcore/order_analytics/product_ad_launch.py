@@ -55,22 +55,43 @@ def normalize_product_launch_scope(value: Any) -> str | None:
     return scope
 
 
+def _row_int(row: dict[str, Any], key: str) -> int:
+    try:
+        return int(row.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def seed_missing_fallback_launch_dates() -> int:
-    return int(execute(
-        "INSERT INTO product_ad_launch_dates "
+    rows = query(
+        "SELECT COUNT(*) AS missing_count "
+        "FROM media_products p "
+        "LEFT JOIN product_ad_launch_dates l ON l.product_id = p.id "
+        "WHERE p.deleted_at IS NULL AND l.product_id IS NULL",
+        (),
+    ) or []
+    missing_count = _row_int(rows[0], "missing_count") if rows else 0
+    execute(
+        "INSERT IGNORE INTO product_ad_launch_dates "
         "(product_id, ad_launch_date, source, source_level, source_table) "
-        "SELECT p.id, DATE(COALESCE(p.created_at, NOW())), %s, %s, %s "
+        "SELECT p.id, "
+        "DATE(COALESCE(p.created_at, CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))), "
+        "%s, %s, %s "
         "FROM media_products p "
         "LEFT JOIN product_ad_launch_dates l ON l.product_id = p.id "
         "WHERE p.deleted_at IS NULL AND l.product_id IS NULL",
         (FALLBACK_SOURCE, "product_created_at", "media_products"),
-    ) or 0)
+    )
+    return missing_count
 
 
-def _normalize_product_ids(product_ids: list[int] | tuple[int, ...]) -> tuple[int, ...]:
+def _normalize_product_ids(product_ids: list[Any] | tuple[Any, ...]) -> tuple[int, ...]:
     normalized: set[int] = set()
     for product_id in product_ids:
-        pid = int(product_id)
+        try:
+            pid = int(product_id)
+        except (TypeError, ValueError):
+            continue
         if pid > 0:
             normalized.add(pid)
     return tuple(sorted(normalized))
@@ -121,12 +142,11 @@ def _earliest_ad_matches_for_products(product_ids: tuple[int, ...]) -> list[dict
 
 
 def refresh_ad_match_launch_dates_for_products(
-    product_ids: list[int] | tuple[int, ...],
+    product_ids: list[Any] | tuple[Any, ...],
 ) -> dict[str, int]:
     rows = _earliest_ad_matches_for_products(_normalize_product_ids(product_ids))
-    updated = 0
     for row in rows:
-        updated += int(execute(
+        execute(
             "INSERT INTO product_ad_launch_dates "
             "(product_id, ad_launch_date, source, source_level, source_table, source_row_id) "
             "VALUES (%s, %s, %s, %s, %s, %s) "
@@ -144,8 +164,8 @@ def refresh_ad_match_launch_dates_for_products(
                 row["source_table"],
                 row["source_row_id"],
             ),
-        ) or 0)
-    return {"matched_products": len(rows), "updated_rows": updated}
+        )
+    return {"matched_products": len(rows), "updated_rows": len(rows)}
 
 
 def backfill_product_ad_launch_dates() -> dict[str, int]:
