@@ -2397,7 +2397,7 @@ def test_update_item_display_name_rejects_invalid_name_with_suggestion(authed_cl
     assert update_calls == []
 
 
-def test_item_bootstrap_skip_validation_rejects_filename_with_space(
+def test_item_bootstrap_accepts_filename_with_space_by_stripping(
     authed_client_no_db, monkeypatch
 ):
     _stub_material_filename_product(monkeypatch)
@@ -2411,13 +2411,10 @@ def test_item_bootstrap_skip_validation_rejects_filename_with_space(
         },
     )
 
-    assert resp.status_code == 400
-    data = resp.get_json()
-    assert data["error"] == "filename_invalid"
-    assert data["details"] == ["文件名不能包含空格"]
+    assert resp.status_code == 200
 
 
-def test_item_complete_rejects_leading_space_filename_before_insert(
+def test_item_complete_accepts_leading_space_filename_by_stripping(
     authed_client_no_db, monkeypatch
 ):
     r = _stub_material_filename_product(monkeypatch)
@@ -2440,29 +2437,27 @@ def test_item_complete_rejects_leading_space_filename_before_insert(
         },
     )
 
-    assert resp.status_code == 400
-    data = resp.get_json()
-    assert data["error"] == "filename_invalid"
-    assert data["details"] == ["文件名不能包含空格"]
-    assert created == []
+    assert resp.status_code == 201
+    assert len(created) == 1
 
 
-def test_update_item_display_name_rejects_trailing_space(
+def test_update_item_display_name_accepts_trailing_space_by_stripping(
     authed_client_no_db, monkeypatch
 ):
     from web.routes import medias as r
 
+    item = {
+        "id": 44,
+        "product_id": 123,
+        "lang": "en",
+        "filename": "2026.04.17-测试商品-原素材.mp4",
+        "display_name": "2026.04.17-测试商品-原素材.mp4",
+        "object_key": "1/medias/123/en.mp4",
+    }
     monkeypatch.setattr(
         r.medias,
         "get_item",
-        lambda item_id: {
-            "id": item_id,
-            "product_id": 123,
-            "lang": "en",
-            "filename": "2026.04.17-测试商品-原素材.mp4",
-            "display_name": "2026.04.17-测试商品-原素材.mp4",
-            "object_key": "1/medias/123/en.mp4",
-        },
+        lambda item_id: item if item_id == 44 else None,
     )
     monkeypatch.setattr(
         r.medias,
@@ -2479,11 +2474,8 @@ def test_update_item_display_name_rejects_trailing_space(
         json={"display_name": "2026.04.17-测试商品-原素材.mp4 "},
     )
 
-    assert resp.status_code == 400
-    body = resp.get_json()
-    assert body["error"] == "filename_invalid"
-    assert body["details"] == ["文件名不能包含空格"]
-    assert update_calls == []
+    assert resp.status_code == 200
+    assert len(update_calls) == 1
 
 
 def test_update_item_display_name_rejects_blank_name(authed_client_no_db, monkeypatch):
