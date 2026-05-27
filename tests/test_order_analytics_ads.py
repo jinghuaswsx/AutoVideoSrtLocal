@@ -2120,3 +2120,46 @@ def test_ads_detail_route_passes_account_to_data_layer(authed_client_no_db, monk
         "end_date": "2026-05-17",
         "ad_account_id": "act_1253003326160754",
     }
+
+
+def test_get_ads_level_list_includes_realtime_today_for_campaign(monkeypatch):
+    today = oa.current_meta_business_date()
+    captured_queries = []
+
+    def fake_query_one(sql, args=()):
+        return {"total": 1}
+
+    def fake_query(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
+        # broken-groups query returns empty list
+        if "GROUP BY ad_account_id, LOWER(matched_product_code)" in sql:
+            return []
+        return [
+            {
+                "code": "abc-rjc", "name": "Realtime Glow Set",
+                "ad_account_id": "1234", "ad_account_name": "newjoyloo",
+                "matched_product_code": None,  # From realtime UNION it is NULL
+                "spend_usd": 150.0, "purchase_value_usd": 300.0,
+                "result_count": 8, "day_count": 1,
+                "roas_purchase": 2.0,
+            },
+        ]
+
+    # Mock resolve_ad_product_match to return matched product
+    monkeypatch.setattr(oa.meta_ads, "resolve_ad_product_match", lambda name: {"product_code": "abc-rjc"})
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    # end_date is today, level is campaign, which triggers UNION
+    result = oa.get_ads_level_list("campaign", start_date=today.isoformat(), end_date=today.isoformat())
+
+    assert result["level"] == "campaign"
+    assert result["rows"][0]["code"] == "abc-rjc"
+    # Auto product association filling verification:
+    assert result["rows"][0]["matched_product_code"] == "abc-rjc"
+    assert result["rows"][0]["spend_usd"] == 150.0
+
+    # Ensure SQL contained UNION ALL and selected from both daily & realtime tables
+    union_query = next(q for q in captured_queries if "UNION ALL" in q["sql"])
+    assert "meta_ad_realtime_daily_campaign_metrics" in union_query["sql"]
+    assert "meta_ad_daily_campaign_metrics" in union_query["sql"]

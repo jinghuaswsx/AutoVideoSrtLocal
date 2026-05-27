@@ -1212,37 +1212,90 @@ def get_ads_level_list(
     sort_expr = _ADS_LIST_SORT_EXPR.get(sort_by) or _ADS_LIST_SORT_EXPR["spend_usd"]
     sort_dir_norm = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
 
-    table = cfg["table"]
-    code_col = cfg["code_col"]
-    name_col = cfg["name_col"]
+    supports_realtime = cfg["supports_realtime"]
     q_clean = (q or "").strip()
     account_filter = _normalize_ad_account_filter(ad_account_id)
     account_clause = "AND ad_account_id = %s " if account_filter else ""
     account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
+
+    today = current_meta_business_date()
+    use_union = supports_realtime and end >= today
+
+    if use_union:
+        # 子查询 1: 历史日终表（昨天及以前）
+        hist_table_sql = (
+            f"SELECT meta_business_date, {cfg['code_col']} AS code, {cfg['name_col']} AS name, "
+            f"ad_account_id, ad_account_name, matched_product_code, "
+            f"spend_usd, purchase_value_usd, result_count "
+            f"FROM {cfg['table']} "
+            f"WHERE meta_business_date >= %s AND meta_business_date <= %s "
+            f"{account_clause}"
+        )
+        hist_end = min(end, today - timedelta(days=1))
+        hist_args = (start, hist_end) + account_args
+
+        # 子查询 2: 实时表的今日最新快照
+        real_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
+        realtime_sql = (
+            f"SELECT m.business_date AS meta_business_date, "
+            f"m.normalized_campaign_code AS code, "
+            f"m.campaign_name AS name, "
+            f"m.ad_account_id, m.ad_account_name, "
+            f"NULL AS matched_product_code, "
+            f"m.spend_usd, m.purchase_value_usd, m.result_count "
+            f"FROM meta_ad_realtime_daily_campaign_metrics m "
+            f"INNER JOIN ("
+            f"  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
+            f"  FROM meta_ad_realtime_daily_campaign_metrics "
+            f"  WHERE business_date = %s AND data_completeness = 'realtime_partial' "
+            f"  GROUP BY business_date, ad_account_id "
+            f") latest "
+            f"ON m.business_date = latest.business_date "
+            f"AND m.ad_account_id = latest.ad_account_id "
+            f"AND m.snapshot_at = latest.max_snapshot_at "
+            f"WHERE m.business_date = %s AND m.data_completeness = 'realtime_partial' "
+            f"{real_account_clause}"
+        )
+        real_args = (today, today) + account_args
+
+        table = f"( {hist_table_sql} UNION ALL {realtime_sql} ) AS combined_t"
+        code_col = "code"
+        name_col = "name"
+        subquery_args = hist_args + real_args
+        where_clause = "WHERE 1=1"
+        where_args = ()
+    else:
+        table = cfg["table"]
+        code_col = cfg["code_col"]
+        name_col = cfg["name_col"]
+        subquery_args = ()
+        where_clause = f"WHERE meta_business_date >= %s AND meta_business_date <= %s {account_clause}"
+        where_args = (start, end) + account_args
+
     search_clause = ""
     search_args: tuple[str, ...] = ()
     if q_clean:
         pattern = f"%{q_clean}%"
+        filter_name_col = "name" if use_union else name_col
+        filter_code_col = "code" if use_union else code_col
         search_clause = (
-            f"AND (LOWER({name_col}) LIKE LOWER(%s) "
-            f"OR LOWER({code_col}) LIKE LOWER(%s) "
+            f"AND (LOWER({filter_name_col}) LIKE LOWER(%s) "
+            f"OR LOWER({filter_code_col}) LIKE LOWER(%s) "
             "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)) "
         )
         search_args = (pattern, pattern, pattern)
 
-    # 按 (code, ad_account_id) 分组：同一个 normalized_*_code 在多个广告户复用时（例：
-    # Omurio 与 newjoyloo_old 同名 ad），各自单独成行，避免 MAX(ad_account_id) 把 Omurio 的消耗
-    # 错误地挂到旧户名下，导致按订单兜底时找不到正确的广告账户对应的 store_codes。
-    # Spec: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md
+    query_args = subquery_args + where_args + search_args
+
+    # 按 (code, ad_account_id) 分组
     total_row = query_one(
         f"SELECT COUNT(*) AS total FROM ("
         f"SELECT 1 FROM {table} "
-        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
-        f"{account_clause}"
+        f"{where_clause} "
         f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id"
-        ") AS t",
-        (start, end) + account_args + search_args,
+        f") AS count_t",
+        query_args,
     )
     total = int((total_row or {}).get("total") or 0)
 
@@ -1256,13 +1309,12 @@ def get_ads_level_list(
         "COUNT(DISTINCT meta_business_date) AS day_count, "
         "(SUM(purchase_value_usd) / NULLIF(SUM(spend_usd), 0)) AS roas_purchase "
         f"FROM {table} "
-        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
-        f"{account_clause}"
+        f"{where_clause} "
         f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id "
         f"ORDER BY {sort_expr} {sort_dir_norm} "
         "LIMIT %s OFFSET %s",
-        (start, end) + account_args + search_args + (page_size, offset),
+        query_args + (page_size, offset),
     )
 
     out: list[dict] = []
@@ -1281,6 +1333,13 @@ def get_ads_level_list(
             "result_count": int(row.get("result_count") or 0),
             "day_count": int(row.get("day_count") or 0),
         })
+
+    # 为没有 matched_product_code 且来自今日实时快照的数据，前置通过解析/人工配置规则补全产品关联
+    for row in out:
+        if not row.get("matched_product_code") and row.get("code"):
+            match = resolve_ad_product_match(row["code"])
+            if match:
+                row["matched_product_code"] = match.get("product_code")
 
     fallback_stats = _facade().fill_purchase_value_from_orders(
         out,
