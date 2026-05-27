@@ -325,6 +325,26 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
                 if token in token_to_localized:
                     item["source_url"] = token_to_localized[token]
 
+    # 4. Deduplicate items by token to prevent having both English and localized versions of the same image slot
+    token_to_item = {}
+    other_items = []
+    for item in items:
+        url = item["source_url"]
+        token_match = carousel_token_re.search(url.lower())
+        if token_match and item["kind"] == "carousel":
+            token = token_match.group(1).lower()
+            is_localized = bool(loc_pattern.search(url))
+            if token not in token_to_item:
+                token_to_item[token] = item
+            else:
+                existing_item = token_to_item[token]
+                existing_is_localized = bool(loc_pattern.search(existing_item["source_url"]))
+                if is_localized and not existing_is_localized:
+                    token_to_item[token] = item
+        else:
+            other_items.append(item)
+            
+    items = list(token_to_item.values()) + other_items
     return items
 
 
@@ -372,8 +392,22 @@ class LinkCheckFetcher:
             
             try:
                 page.goto(nocache_url, wait_until="domcontentloaded", timeout=30000)
+                
+                # Scroll and trigger lazyloading of gallery elements
+                try:
+                    page.evaluate("""
+                        window.scrollTo(0, document.body.scrollHeight / 2);
+                        document.querySelectorAll('.lazyloadt4s, .lazyload').forEach(img => {
+                            img.classList.add('lazyloaded');
+                            if (img.dataset.src) img.src = img.dataset.src;
+                            if (img.dataset.master) img.src = img.dataset.master;
+                        });
+                    """)
+                except Exception:
+                    pass
+                
                 # Wait for dynamic translations/scripts (e.g. EZ Product Image Translate)
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(5000)
                 
                 resolved_url = page.url
                 html = page.content()
@@ -395,7 +429,21 @@ class LinkCheckFetcher:
                     )
                     if retry_url and _normalized_page_url(retry_url) != _normalized_page_url(resolved_url):
                         page.goto(retry_url, wait_until="domcontentloaded", timeout=30000)
-                        page.wait_for_timeout(3000)
+                        
+                        # Scroll and trigger lazyloading for retry URL too
+                        try:
+                            page.evaluate("""
+                                window.scrollTo(0, document.body.scrollHeight / 2);
+                                document.querySelectorAll('.lazyloadt4s, .lazyload').forEach(img => {
+                                    img.classList.add('lazyloaded');
+                                    if (img.dataset.src) img.src = img.dataset.src;
+                                    if (img.dataset.master) img.src = img.dataset.master;
+                                });
+                            """)
+                        except Exception:
+                            pass
+                            
+                        page.wait_for_timeout(5000)
                         resolved_url = page.url
                         html = page.content()
                         soup = BeautifulSoup(html, "html.parser")
