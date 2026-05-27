@@ -1142,6 +1142,10 @@ def api_history():
 
         p_id = int(r["product_id"])
 
+        snap_name = (video_snap.get("name") or "").strip()
+        search_filename = snap_name or r["filename"]
+        search_display_name = snap_name or r["display_name"] or r["filename"]
+
         ad_info = db_query(
             "SELECT COALESCE(SUM(spend_usd), 0) AS total_spend, "
             "       COUNT(DISTINCT ad_name) AS campaign_count "
@@ -1151,7 +1155,7 @@ def api_history():
             "ad_name LIKE CONCAT('%%', %s, '%%') "
             "OR ad_name LIKE CONCAT('%%', %s, '%%')"
             ")",
-            (p_id, r["filename"], r["display_name"])
+            (p_id, search_filename, search_display_name)
         )[0]
 
         campaign_count = int(ad_info["campaign_count"] or 0)
@@ -1164,8 +1168,8 @@ def api_history():
             "product_name": r["product_name"],
             "product_code": r["product_code"],
             "lang": r["lang"],
-            "display_name": r["display_name"] or r["filename"],
-            "filename": r["filename"],
+            "display_name": search_display_name,
+            "filename": search_filename,
             "file_size": r["file_size"] or 0,
             "pushed_at": r["pushed_at"].isoformat() if r.get("pushed_at") else None,
             "operator_username": r["operator_username"] or "System",
@@ -1219,6 +1223,11 @@ def material_ads_detail(item_id: int):
 
     country = _country_for_lang(item["lang"])
 
+    video_snap = payload.get("videos", [{}])[0] if payload.get("videos") else {}
+    snap_name = (video_snap.get("name") or "").strip()
+    search_filename = snap_name or item["filename"]
+    search_display_name = snap_name or item["display_name"] or item["filename"]
+
     campaign_daily_metrics = db_query(
         "SELECT ad_account_name, ad_name AS campaign_name, spend_usd, purchase_value_usd, result_count, report_date, market_country "
         "FROM meta_ad_daily_ad_metrics "
@@ -1228,7 +1237,7 @@ def material_ads_detail(item_id: int):
         "OR ad_name LIKE CONCAT('%%', %s, '%%')"
         ") "
         "ORDER BY report_date DESC, spend_usd DESC",
-        (item["product_id"], item["filename"], item["display_name"])
+        (item["product_id"], search_filename, search_display_name)
     )
 
     filtered_metrics = []
