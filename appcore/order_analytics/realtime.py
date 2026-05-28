@@ -341,8 +341,7 @@ def _build_order_profit_summary(
         - summary["purchase_cost_with_estimate_usd"]
         - summary["logistics_cost_with_estimate_usd"]
         - summary["shopify_fee_total_usd"]
-        - summary["ad_cost_usd"]
-        - summary["unallocated_ad_spend_usd"]
+        - summary["total_ad_spend_usd"]
     )
     for key, value in list(summary.items()):
         if value is None:
