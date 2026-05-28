@@ -164,7 +164,8 @@ def api_product_evaluate_clip(pid: int):
     except ValueError:
         abort(404)
     return send_file(
-        str(path),
+        str(path.resolve()),
         mimetype=mimetypes.guess_type(str(path))[0] or "video/mp4",
         conditional=True,
     )
+
