@@ -1203,7 +1203,7 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     assert calls["upload"][0]["allowed_statuses"] == ("raw_in_progress", "raw_review")
     assert calls["upload"][0]["mark_uploaded_after"] is False
     assert calls["mark_uploaded"] == [(44, 2)]
-    assert calls["approve"] == []
+    assert calls["approve"] == [{"task_id": 44, "actor_user_id": 2, "is_admin": False}]
     assert calls["audit"] == [
         (44, "task_parent_manual_result_uploaded", {"new_size": 12}),
     ]
