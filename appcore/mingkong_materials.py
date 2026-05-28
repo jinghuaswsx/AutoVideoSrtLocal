@@ -1687,6 +1687,14 @@ def _serialize_material_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _group_items_by_snapshot(items: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in items:
+        key = (str(item.get("snapshot_date") or ""), str(item.get("snapshot_at") or ""))
+        grouped.setdefault(key, []).append(item)
+    return grouped
+
+
 def _enrich_material_yesterday_delta(
     items: list[dict[str, Any]],
     *,
@@ -1987,12 +1995,15 @@ def list_material_library(
             tuple(query_args),
         )
         serialized = [_serialize_material_row(row) for row in rows or []]
-        items = _filter_by_library_status(_enrich_cached_ad_statuses(
+        for grouped_items in _group_items_by_snapshot(serialized).values():
+            first = grouped_items[0]
             _enrich_material_yesterday_delta(
-                serialized,
-                snapshot_date=range_end,
-                snapshot_at=None,
+                grouped_items,
+                snapshot_date=first.get("snapshot_date") or range_end,
+                snapshot_at=first.get("snapshot_at"),
             )
+        items = _filter_by_library_status(_enrich_cached_ad_statuses(
+            serialized
         ), status_filter)
         total = len(items) if status_filter else _as_int(count_row.get("cnt"))
         page_items = items[offset : offset + size] if status_filter else items
@@ -3169,4 +3180,3 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
                     _TITLE_RESOLVER_EXECUTOR.submit(resolve_and_save_english_title, url, code or None)
 
     return items
-

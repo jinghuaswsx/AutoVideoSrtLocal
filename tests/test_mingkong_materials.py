@@ -1143,6 +1143,7 @@ def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypat
 
     monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
     monkeypatch.setattr(mm, "_today", lambda: date(2026, 5, 20))
+    monkeypatch.setattr(mm, "_enrich_material_yesterday_delta", lambda items, **_: items)
 
     def fake_query_one(sql, args=()):
         captured.append(("query_one", sql, args))
@@ -1187,6 +1188,90 @@ def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypat
         for item in captured
         if item[0] == "query"
     )
+
+
+def test_list_material_library_range_uses_row_snapshot_for_yesterday_delta(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_today", lambda: date(2026, 5, 20))
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", lambda items: items)
+
+    def current_row():
+        return {
+            "id": 1,
+            "snapshot_date": date(2026, 5, 20),
+            "snapshot_at": datetime(2026, 5, 20, 5, 0, 0),
+            "snapshot_slot": "0500",
+            "ranking_snapshot_date": date(2026, 5, 19),
+            "material_key": "abc",
+            "product_code": "cool-widget",
+            "rank_position": 7,
+            "video_name": "winner.mp4",
+            "video_path": "uploads2/winner.mp4",
+            "video_image_path": "uploads2/winner.jpg",
+            "local_cover_object_key": "",
+            "cover_cached_at": None,
+            "cover_cache_error": None,
+            "cumulative_90_spend": 12000,
+            "video_ads_count": 9,
+            "mk_video_metadata_json": "{}",
+            "created_at": None,
+            "updated_at": None,
+        }
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        if "FROM mingkong_material_sync_runs" in sql:
+            return {
+                "snapshot_at": datetime(2026, 5, 20, 5, 0, 0),
+                "snapshot_slot": "0500",
+                "ranking_snapshot_date": date(2026, 5, 19),
+                "status": "success",
+                "source_product_count": 300,
+                "source_product_limit": 300,
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        if "SELECT s.*, COALESCE" in sql:
+            return [current_row()]
+        if "SELECT s.snapshot_date, s.snapshot_at, s.snapshot_slot" in sql:
+            return [
+                {
+                    "snapshot_date": date(2026, 5, 19),
+                    "snapshot_at": datetime(2026, 5, 19, 5, 1, 0),
+                    "snapshot_slot": "0500",
+                    "source_product_count": 300,
+                    "source_product_limit": 300,
+                    "ranking_snapshot_date": date(2026, 5, 18),
+                }
+            ]
+        if "material_key IN" in sql:
+            return [
+                {
+                    "material_key": "abc",
+                    "cumulative_90_spend": 11500,
+                    "mk_video_metadata_json": "{}",
+                }
+            ]
+        if "SELECT DISTINCT product_code" in sql:
+            return [{"product_code": "cool-widget"}]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(range_key="this_week", page=1, page_size=100)
+
+    item = result["items"][0]
+    assert item["current_cumulative_90_spend"] == 12000.0
+    assert item["previous_cumulative_90_spend"] == 11500.0
+    assert item["yesterday_spend_delta"] == 500.0
+    assert item["previous_snapshot_at"] == "2026-05-19 05:01:00"
 
 
 def test_list_material_library_enriches_from_cached_ad_status(monkeypatch):

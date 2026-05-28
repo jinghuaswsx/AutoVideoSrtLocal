@@ -419,6 +419,14 @@ Response fields:
 - `total`
 - `run_summary`
 
+When `range` queries are used by the local material library, each displayed
+material row keeps its own latest `snapshot_at` from the selected range. Any
+`yesterday_spend_delta` shown on those cards must be calculated against that
+row-specific `snapshot_at` and its compatible previous snapshot, not against
+the range end date. This prevents 90-day cumulative spend from being displayed
+as yesterday spend when the page is filtered to `this_week`, `this_month`, or
+similar ranges.
+
 Add an admin-only API for the archived daily Top300:
 
 ```text
