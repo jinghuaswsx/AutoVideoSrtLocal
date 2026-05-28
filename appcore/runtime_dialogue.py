@@ -27,6 +27,83 @@ def _target_lang(task: dict) -> str:
     return "en"
 
 
+def _voice_id_from(voice: object) -> str:
+    if isinstance(voice, dict):
+        for key in ("voice_id", "elevenlabs_voice_id", "id"):
+            value = str(voice.get(key) or "").strip()
+            if value:
+                return value
+    elif voice:
+        return str(voice).strip()
+    return ""
+
+
+def _voice_name_from(voice: object, voice_id: str) -> str:
+    if isinstance(voice, dict):
+        for key in ("name", "voice_name", "label"):
+            value = str(voice.get(key) or "").strip()
+            if value:
+                return value
+    return voice_id
+
+
+def _selected_voice_from_existing(voice: object) -> dict | None:
+    voice_id = _voice_id_from(voice)
+    if not voice_id:
+        return None
+    selected = dict(voice) if isinstance(voice, dict) else {}
+    selected["voice_id"] = voice_id
+    selected.setdefault("name", _voice_name_from(voice, voice_id))
+    return selected
+
+
+def _selected_voice_from_candidate(candidate: object) -> dict | None:
+    voice_id = _voice_id_from(candidate)
+    if not voice_id:
+        return None
+    selected = {
+        "voice_id": voice_id,
+        "name": _voice_name_from(candidate, voice_id),
+    }
+    if isinstance(candidate, dict) and candidate.get("voice_name"):
+        selected["voice_name"] = candidate["voice_name"]
+    return selected
+
+
+def _initialize_selected_speaker_voices(
+    profiles: dict,
+    selected_voice_by_speaker: object,
+) -> tuple[dict, dict]:
+    selected = (
+        dict(selected_voice_by_speaker)
+        if isinstance(selected_voice_by_speaker, dict)
+        else {}
+    )
+    normalized_profiles = {
+        speaker: dict(profile) if isinstance(profile, dict) else profile
+        for speaker, profile in (profiles or {}).items()
+    }
+
+    for speaker in ("A", "B"):
+        profile = normalized_profiles.get(speaker)
+        if not isinstance(profile, dict):
+            continue
+
+        selected_voice = _selected_voice_from_existing(selected.get(speaker))
+        if selected_voice is None:
+            for candidate in profile.get("candidates") or []:
+                selected_voice = _selected_voice_from_candidate(candidate)
+                if selected_voice is not None:
+                    break
+
+        if selected_voice is None:
+            continue
+        selected[speaker] = selected_voice
+        profile["selected_voice"] = selected_voice
+
+    return normalized_profiles, selected
+
+
 class DialogueTranslateRunner(OmniV2TranslateRunner):
     """Dialogue translation runner with speaker detection and A/B voice review."""
 
@@ -116,12 +193,15 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             sample_specs=sample_specs,
             user_id=self.user_id,
         )
-        selected = task.get("selected_voice_by_speaker") or {}
+        profiles, selected = _initialize_selected_speaker_voices(
+            profiles,
+            task.get("selected_voice_by_speaker") or {},
+        )
         task_state.update(
             task_id,
             speaker_sample_specs=sample_specs,
             speaker_profiles=profiles,
-            selected_voice_by_speaker=selected if isinstance(selected, dict) else {},
+            selected_voice_by_speaker=selected,
         )
         task_state.set_current_review_step(task_id, "voice_match_ab")
         self._set_step(task_id, "voice_match_ab", "waiting", "A/B voice candidates are ready for review")

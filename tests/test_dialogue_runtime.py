@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 
@@ -77,8 +79,8 @@ def test_step_voice_match_ab_persists_profiles_and_waits_for_review(monkeypatch,
         "B": {"sample_windows": [[5.0, 9.0]], "sample_duration": 4.0, "match_warnings": []},
     }
     profiles = {
-        "A": {"candidates": [{"voice_id": "voice-a"}], "selected_voice": None},
-        "B": {"candidates": [{"voice_id": "voice-b"}], "selected_voice": None},
+        "A": {"candidates": [{"voice_id": "voice-a", "name": "Voice A"}], "selected_voice": None},
+        "B": {"candidates": [{"voice_id": "voice-b", "name": "Voice B"}], "selected_voice": None},
     }
     calls = []
 
@@ -104,8 +106,12 @@ def test_step_voice_match_ab_persists_profiles_and_waits_for_review(monkeypatch,
 
     state = task_state.get(task_id)
     assert state["speaker_sample_specs"] == sample_specs
-    assert state["speaker_profiles"] == profiles
-    assert state["selected_voice_by_speaker"] == {"A": {"voice_id": "existing-a"}}
+    assert state["selected_voice_by_speaker"] == {
+        "A": {"voice_id": "existing-a", "name": "existing-a"},
+        "B": {"voice_id": "voice-b", "name": "Voice B"},
+    }
+    assert state["speaker_profiles"]["A"]["selected_voice"] == {"voice_id": "existing-a", "name": "existing-a"}
+    assert state["speaker_profiles"]["B"]["selected_voice"] == {"voice_id": "voice-b", "name": "Voice B"}
     assert state["current_review_step"] == "voice_match_ab"
     assert state["steps"]["voice_match_ab"] == "waiting"
     assert calls[0] == ("samples", state["dialogue_segments"])
@@ -120,3 +126,86 @@ def test_step_voice_match_ab_persists_profiles_and_waits_for_review(monkeypatch,
             "user_id": 7,
         },
     )
+
+
+def test_step_voice_match_ab_initializes_empty_selected_voices_from_candidates(monkeypatch, tmp_path):
+    from appcore import task_state
+    from appcore.events import EventBus
+    from appcore.runtime_dialogue import DialogueTranslateRunner
+
+    task_id = "dialogue-runtime-empty-selected"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        target_language="en",
+        dialogue_segments=[
+            {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 4.0},
+            {"index": 1, "speaker_id": "B", "start_time": 5.0, "end_time": 9.0},
+        ],
+        selected_voice_by_speaker={},
+    )
+    sample_specs = {
+        "A": {"sample_windows": [[0.0, 4.0]], "sample_duration": 4.0, "match_warnings": []},
+        "B": {"sample_windows": [[5.0, 9.0]], "sample_duration": 4.0, "match_warnings": []},
+    }
+    profiles = {
+        "A": {
+            "candidates": [
+                {"name": "No ID"},
+                {"elevenlabs_voice_id": "voice-a", "voice_name": "Voice A"},
+            ],
+            "selected_voice": None,
+        },
+        "B": {
+            "candidates": [{"id": "voice-b", "name": "Voice B"}],
+            "selected_voice": None,
+        },
+    }
+
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.voice_match.build_speaker_sample_windows",
+        lambda dialogue_segments: sample_specs,
+    )
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.voice_match.match_voices_for_speakers",
+        lambda **kwargs: profiles,
+    )
+
+    runner = DialogueTranslateRunner(bus=EventBus(), user_id=7)
+    runner._step_voice_match_ab(task_id)
+
+    state = task_state.get(task_id)
+    assert state["selected_voice_by_speaker"] == {
+        "A": {"voice_id": "voice-a", "name": "Voice A", "voice_name": "Voice A"},
+        "B": {"voice_id": "voice-b", "name": "Voice B"},
+    }
+    assert state["speaker_profiles"]["A"]["selected_voice"] == {
+        "voice_id": "voice-a",
+        "name": "Voice A",
+        "voice_name": "Voice A",
+    }
+    assert state["speaker_profiles"]["B"]["selected_voice"] == {"voice_id": "voice-b", "name": "Voice B"}
+    assert state["current_review_step"] == "voice_match_ab"
+    assert state["steps"]["voice_match_ab"] == "waiting"
+
+
+def test_dialogue_pipeline_runner_import_registers_dispatch_start(monkeypatch):
+    from appcore import runner_dispatch
+
+    runner_dispatch.clear_runner_registry()
+    service = importlib.import_module("web.services.dialogue_pipeline_runner")
+    service = importlib.reload(service)
+    calls = []
+
+    def fake_start_tracked_thread(**kwargs):
+        calls.append(kwargs)
+        return "started"
+
+    monkeypatch.setattr(service, "start_tracked_thread", fake_start_tracked_thread)
+
+    result = runner_dispatch.start_dialogue_translate_runner("dialogue-task", user_id=42)
+
+    assert result == "started"
+    assert calls[0]["project_type"] == "dialogue_translate"
+    assert calls[0]["task_id"] == "dialogue-task"
+    assert calls[0]["args"][1] == "dialogue-task"
