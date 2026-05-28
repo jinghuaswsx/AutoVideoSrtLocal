@@ -65,6 +65,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/api/products/<int:pid>/detail-images/reorder", ("POST",), "medias.api_detail_images_reorder"),
         ("/medias/api/products/<int:pid>/detail-images/translate-from-en", ("POST",), "medias.api_detail_images_translate_from_en"),
         ("/medias/api/products/<int:pid>/evaluate", ("POST",), "medias.api_product_evaluate"),
+        ("/medias/api/products/<int:pid>/evaluate/<run_id>/countries/<country_code>/rerun", ("POST",), "medias.api_product_evaluate_country_rerun"),
         ("/medias/api/products/<int:pid>/evaluate/clip", ("GET",), "medias.api_product_evaluate_clip"),
         ("/medias/api/products/<int:pid>/evaluate/request-payload", ("GET",), "medias.api_product_evaluate_request_payload"),
         ("/medias/api/products/<int:pid>/evaluate/request-preview", ("GET",), "medias.api_product_evaluate_request_preview"),

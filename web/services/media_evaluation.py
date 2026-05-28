@@ -102,6 +102,33 @@ def build_product_evaluation_status_response(
     return MediaEvaluationResponse(payload, 200)
 
 
+def build_product_evaluation_country_rerun_response(
+    product_id: int,
+    run_id: str,
+    country_code: str,
+    *,
+    rerun_country_fn: Callable[..., dict] = material_evaluation_runs.rerun_product_evaluation_country_async,
+) -> MediaEvaluationResponse:
+    if not run_id:
+        return MediaEvaluationResponse({"ok": False, "error": "missing run_id"}, 400)
+    try:
+        run = rerun_country_fn(product_id, run_id, country_code)
+    except material_evaluation_runs.MaterialEvaluationRunNotFound:
+        return MediaEvaluationResponse({"ok": False, "error": "evaluation run not found"}, 404)
+    except ValueError as exc:
+        return MediaEvaluationResponse({"ok": False, "error": str(exc)}, 400)
+    run_id = str(run.get("run_id") or run_id)
+    payload = {
+        "ok": True,
+        "async": True,
+        "run_id": run_id,
+        "status": run.get("status") or "running",
+        "status_url": f"/medias/api/products/{product_id}/evaluate/status?{urlencode({'run_id': run_id})}",
+        "progress": run.get("progress") or {},
+    }
+    return MediaEvaluationResponse(payload, 202)
+
+
 def build_product_evaluation_preview_response(
     product_id: int,
     *,

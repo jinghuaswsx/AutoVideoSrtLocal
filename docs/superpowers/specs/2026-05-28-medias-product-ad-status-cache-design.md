@@ -1,0 +1,140 @@
+# 素材管理产品投放汇总缓存设计
+
+Date: 2026-05-28
+
+## Context
+
+`/medias/` 产品列表当前在 `/medias/api/products` 中批量返回素材数、语种覆盖和产品基础信息。语种覆盖只展示语种 chip，不展示对应语种的推送视频数、广告 ROAS 或产品投放状态。
+
+列表页不能在每次请求时实时扫描订单、推送日志和广告明细，否则分页加载会变慢。项目已有 `media_push_status_cache` 的缓存化模式，本需求沿用“后台定时维护，列表只读缓存”的设计。
+
+## Goals
+
+1. 在“语种覆盖”列中只显示有视频素材的语种，一行一个。
+2. 每个语种行展示该语种成功推送过的不同视频数，以及该语种视频对应广告的总 ROAS。
+3. 如果某语种有视频素材但成功推送视频数为 0，`0` 必须使用醒目的红色大号样式。
+4. “语种覆盖”列顶部新增“总体ROAS”，口径与数据分析统一：`(商品销售额 + 运费) / 产品相关广告消耗`。
+5. 在“语种覆盖”列后新增“投放情况”列。
+6. 产品列表筛选区新增“投放情况：全部 / 投放中 / 终止投放 / 未投”。
+7. 列表接口保持快速：请求路径只批量读取缓存，缓存由 APScheduler 每小时刷新。
+
+## Metrics
+
+### Per-Language Video Ad ROAS
+
+语种广告 ROAS 按 `product_id + lang` 聚合：
+
+```text
+language_ad_roas = SUM(meta_ad_daily_ad_metrics.purchase_value_usd)
+                 / SUM(meta_ad_daily_ad_metrics.spend_usd)
+```
+
+广告与视频素材匹配沿用现有素材广告详情口径：
+
+- `media_items.product_id = meta_ad_daily_ad_metrics.product_id`
+- 且广告名称或归一化广告名包含 `media_items.filename` 或 `media_items.display_name`
+- 只统计 `spend_usd > 0` 的广告行
+- 同一个广告明细行如果匹配到同一语种多个素材，只计一次，避免重复加总
+
+### Pushed Video Count
+
+推送视频数为该 `product_id + lang` 下 `media_push_logs.status='success'` 的不同 `item_id` 数量。
+
+### Overall ROAS
+
+产品顶部“总体ROAS”使用数据分析统一口径：
+
+```text
+overall_roas = (SUM(order line amount) + SUM(shipping amount)) / SUM(product ad spend)
+```
+
+订单收入优先使用 `order_profit_lines` 的美元字段：
+
+- `COALESCE(order_profit_lines.line_amount_usd, dianxiaomi_order_lines.line_amount, 0)`
+- `COALESCE(order_profit_lines.shipping_allocated_usd, dianxiaomi_order_lines.ship_amount, 0)`
+
+广告消耗使用产品维度广告数据：
+
+- `meta_ad_daily_campaign_metrics.product_id`
+- `spend_usd > 0`
+
+### Delivery Status
+
+产品投放情况按产品广告消耗判断：
+
+- `投放中`：产品有任意广告消耗，且最近 7 天有消耗
+- `终止投放`：产品有历史广告消耗，但最近 7 天无消耗
+- `未投`：产品没有任何广告消耗
+
+最近 7 天按 `COALESCE(meta_business_date, report_date) >= CURDATE() - INTERVAL 6 DAY`。
+
+## Data Model
+
+新增两张缓存表：
+
+### `media_product_ad_summary_cache`
+
+产品级缓存，用于“总体ROAS”和“投放情况”筛选：
+
+- `product_id` primary key
+- `order_revenue_usd`
+- `shipping_revenue_usd`
+- `total_revenue_usd`
+- `ad_spend_usd`
+- `active_7d_ad_spend_usd`
+- `overall_roas`
+- `delivery_status`: `active | stopped | never`
+- `computed_at`, `created_at`, `updated_at`
+
+### `media_product_lang_ad_summary_cache`
+
+产品语种级缓存，用于“语种覆盖”列：
+
+- `(product_id, lang)` primary key
+- `item_count`
+- `pushed_video_count`
+- `ad_spend_usd`
+- `purchase_value_usd`
+- `ad_roas`
+- `active_7d_ad_spend_usd`
+- `computed_at`, `created_at`, `updated_at`
+
+## Request Flow
+
+1. `appcore.medias.list_products()` 接收 `delivery_status` 筛选参数。
+2. 当筛选不是 `all` 时，SQL 通过 `media_product_ad_summary_cache` 过滤产品。
+3. `web.services.media_products_listing.build_products_list_response()` 对当前页产品 ID 批量读取两张缓存。
+4. `_serialize_product()` 把缓存序列化为：
+   - `ad_summary`
+   - `lang_ad_summary`
+5. 前端 `medias.js`：
+   - “语种覆盖”列顶部显示总体 ROAS
+   - 语种行只渲染 `items > 0` 的语种
+   - 推送数为 0 时高亮
+   - 新增“投放情况”列和筛选参数
+
+## Scheduler
+
+新增 APScheduler job：
+
+- code: `media_product_ad_status_cache_refresh`
+- schedule: 每小时
+- runner: `appcore.media_product_ad_status_cache_scheduler.tick_once`
+- task registry: `appcore/scheduled_tasks.py`
+
+刷新失败写入 `scheduled_task_runs`，不阻塞列表读取。列表读取到缺失缓存时显示 `-` / `未投`，不在请求内实时回算全量数据。
+
+## Non-Goals
+
+- 不改变推送流程和广告匹配规则。
+- 不在列表请求中实时拉取 Meta 或店小秘数据。
+- 不加入排序，首版只提供筛选。
+- 不按语种拆订单收入；语种行只展示广告 ROAS。
+
+## Verification
+
+- 单元测试覆盖缓存聚合、状态分类、ROAS 计算。
+- 列表服务测试覆盖缓存数据传入 serializer。
+- `medias.list_products()` SQL 测试覆盖投放情况筛选。
+- 静态前端测试覆盖新增筛选框、请求参数、列标题和高亮 class。
+- Scheduler 测试覆盖任务登记和每小时注册。

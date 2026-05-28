@@ -130,6 +130,38 @@ def test_build_product_evaluation_status_response_returns_progress_payload():
     assert result.payload["progress"]["countries"][1]["status"] == "running"
 
 
+def test_build_product_evaluation_country_rerun_response_returns_same_run_status_url():
+    from web.services.media_evaluation import build_product_evaluation_country_rerun_response
+
+    calls = []
+
+    result = build_product_evaluation_country_rerun_response(
+        123,
+        "mat_eval_abc",
+        "DE",
+        rerun_country_fn=lambda pid, run_id, country_code: calls.append((pid, run_id, country_code)) or {
+            "run_id": run_id,
+            "product_id": pid,
+            "status": "running",
+            "progress": {
+                "current_lang": "de",
+                "countries": [
+                    {"lang": "de", "country": "德国", "status": "running"},
+                    {"lang": "fr", "country": "法国", "status": "completed"},
+                ],
+            },
+        },
+    )
+
+    assert calls == [(123, "mat_eval_abc", "DE")]
+    assert result.status_code == 202
+    assert result.payload["ok"] is True
+    assert result.payload["async"] is True
+    assert result.payload["run_id"] == "mat_eval_abc"
+    assert result.payload["status_url"] == "/medias/api/products/123/evaluate/status?run_id=mat_eval_abc"
+    assert result.payload["progress"]["countries"][0]["status"] == "running"
+
+
 def test_build_product_evaluation_preview_response_adds_full_payload_url():
     from web.services.media_evaluation import build_product_evaluation_preview_response
 
