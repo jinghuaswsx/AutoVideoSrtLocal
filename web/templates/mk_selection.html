@@ -479,6 +479,27 @@
 .mki-progress-fine-ai-pill.is-empty { background: var(--oc-bg-muted); color: var(--oc-fg-muted); border-color: var(--oc-border); }
 .mki-progress-fine-ai-list { margin: 0; padding-left: 16px; }
 .mki-progress-fine-ai-list li { margin: 2px 0; }
+.mki-progress-fine-ai-mobile-list { display: none; gap: 10px; padding: 10px; }
+.mki-progress-fine-ai-mobile-card {
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r); background: #fff;
+  overflow: hidden; color: var(--oc-fg);
+}
+.mki-progress-fine-ai-mobile-card.is-go { border-color: oklch(82% .08 165); background: oklch(98% 0.018 165); }
+.mki-progress-fine-ai-mobile-card.is-test { border-color: oklch(84% .09 85); background: oklch(98.5% 0.030 85); }
+.mki-progress-fine-ai-mobile-card.is-hold,
+.mki-progress-fine-ai-mobile-card.is-failed { border-color: oklch(82% .08 25); background: oklch(98% 0.020 25); }
+.mki-progress-fine-ai-mobile-card.is-empty { background: #fff; }
+.mki-progress-fine-ai-mobile-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--oc-border);
+}
+.mki-progress-fine-ai-mobile-country { display: grid; gap: 2px; min-width: 0; }
+.mki-progress-fine-ai-mobile-country strong { font-size: 14px; line-height: 1.35; color: var(--oc-fg); }
+.mki-progress-fine-ai-mobile-country span { font-size: 11px; line-height: 1.25; color: var(--oc-fg-muted); }
+.mki-progress-fine-ai-mobile-body { display: grid; gap: 10px; padding: 10px 12px 12px; }
+.mki-progress-fine-ai-mobile-row { display: grid; gap: 5px; min-width: 0; }
+.mki-progress-fine-ai-mobile-label { font-size: 11px; line-height: 1.25; font-weight: 800; color: var(--oc-fg-muted); }
+.mki-progress-fine-ai-mobile-text { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .mki-progress-fine-ai-empty {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   padding: 14px; background: var(--oc-warning-bg); color: var(--oc-warning-fg);
@@ -683,6 +704,11 @@
   .mki-progress-backdrop { padding: 12px; }
   .mki-progress-info-label { min-width: 64px; }
   .mki-progress-meta { grid-template-columns: 1fr; }
+  .mki-progress-fine-ai-head { padding: 10px 12px; }
+  .mki-progress-fine-ai-actions { width: 100%; }
+  .mki-progress-fine-ai-actions .oc-btn { width: 100%; justify-content: center; }
+  .mki-progress-fine-ai-scroll { display: none; }
+  .mki-progress-fine-ai-mobile-list { display: grid; }
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
   .mki-xiao-dialog { padding: 22px; }
@@ -2541,6 +2567,41 @@ function mkiImportProgressFineAiTable(result) {
         <tr><th>风险与建议</th>${adviceCells}</tr>
       </tbody>
     </table>
+  </div>${mkiImportProgressFineAiMobileCards(result)}`;
+}
+
+function mkiImportProgressFineAiMobileCards(result) {
+  return `<div class="mki-progress-fine-ai-mobile-list">
+    ${mkiFineAiProgressTableRows(result).map(({code, row}) => {
+      const score = mkiFineAiScoreForImport(row);
+      const cls = mkiFineAiDecisionClassForImport(row);
+      return `<article class="${escapeHtml(mkiFineAiCellClassForImport(row, 'mki-progress-fine-ai-mobile-card'))}">
+        <div class="mki-progress-fine-ai-mobile-head">
+          <div class="mki-progress-fine-ai-mobile-country">
+            <strong>${escapeHtml(mkiFineAiCountryNameForImport(code, row))}</strong>
+            <span>${escapeHtml(code)}</span>
+          </div>
+          <span class="mki-progress-fine-ai-pill is-${escapeHtml(cls)}">${escapeHtml(mkiFineAiDecisionLabelForImport(row))}</span>
+        </div>
+        <div class="mki-progress-fine-ai-mobile-body">
+          <div class="mki-progress-fine-ai-mobile-row">
+            <span class="mki-progress-fine-ai-mobile-label">AI 评分</span>
+            <div class="mki-progress-fine-ai-score">
+              <strong>${score === null ? '-' : escapeHtml(score)}</strong>
+              <div class="mki-progress-fine-ai-score-track"><div class="mki-progress-fine-ai-score-fill" style="width:${score === null ? 0 : score}%"></div></div>
+            </div>
+          </div>
+          <div class="mki-progress-fine-ai-mobile-row">
+            <span class="mki-progress-fine-ai-mobile-label">详细说明</span>
+            <span class="mki-progress-fine-ai-mobile-text">${escapeHtml(mkiFineAiSummaryForImport(row))}</span>
+          </div>
+          <div class="mki-progress-fine-ai-mobile-row">
+            <span class="mki-progress-fine-ai-mobile-label">风险与建议</span>
+            <ul class="mki-progress-fine-ai-list">${mkiFineAiAdviceItemsForImport(row).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+        </div>
+      </article>`;
+    }).join('')}
   </div>`;
 }
 
