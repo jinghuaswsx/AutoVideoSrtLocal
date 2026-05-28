@@ -4,7 +4,9 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import mimetypes
 import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 
@@ -261,6 +263,92 @@ def _list_enabled_target_langs() -> tuple[str, ...]:
     return normalize_enabled_target_langs(enabled)
 
 
+def _list_filter_langs() -> tuple[str, ...]:
+    try:
+        enabled = medias.list_enabled_language_codes()
+    except Exception:
+        log.warning(
+            "[dialogue_translate] failed to load enabled languages for filter, falling back",
+            exc_info=True,
+        )
+        return SUPPORTED_LANGS
+    return normalize_enabled_target_langs(enabled)
+
+
+def _multi_translate_creator_name_expr() -> str:
+    try:
+        return medias._media_product_owner_name_expr()
+    except Exception:
+        log.warning(
+            "[dialogue_translate] resolve creator name expr failed; fallback to username",
+            exc_info=True,
+        )
+        return "u.username"
+
+
+def _is_superadmin_user() -> bool:
+    return getattr(current_user, "is_superadmin", False)
+
+
+def _parse_user_filter_id() -> int | None:
+    raw = (request.args.get("user_id") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _resolve_create_plugin_config() -> tuple[dict | None, dict | None, int]:
+    raw_plugin_config = (request.form.get("plugin_config") or "").strip()
+    raw_preset_id = (request.form.get("preset_id") or "").strip()
+    if raw_plugin_config:
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        try:
+            inline_config = json.loads(raw_plugin_config)
+        except json.JSONDecodeError:
+            return None, {"error": "plugin_config 必须是合法 JSON 对象"}, 400
+        try:
+            return validate_plugin_config(inline_config), None, 200
+        except ValueError as exc:
+            return None, {"error": f"plugin_config 不合法：{exc}"}, 400
+
+    if raw_preset_id:
+        from appcore import omni_preset_dao
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        try:
+            preset_id = int(raw_preset_id)
+        except (TypeError, ValueError):
+            return None, {"error": "preset_id 必须是整数"}, 400
+        preset = omni_preset_dao.get(preset_id)
+        if not preset:
+            return None, {"error": f"preset_id={preset_id} 不存在"}, 400
+        if preset["scope"] == "user" and preset.get("user_id") != current_user.id:
+            return None, {"error": "无权使用他人的用户级 preset"}, 403
+        try:
+            return validate_plugin_config(preset["plugin_config"]), None, 200
+        except ValueError as exc:
+            return None, {"error": f"preset 内的 plugin_config 不合法：{exc}"}, 400
+
+    try:
+        from appcore import omni_preset_dao
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        default_preset = omni_preset_dao.get_default()
+        if default_preset:
+            return validate_plugin_config(default_preset["plugin_config"]), None, 200
+    except Exception:
+        log.warning(
+            "[dialogue_translate] resolve default omni preset failed; using fixed dialogue config",
+            exc_info=True,
+        )
+    return current_fixed_plugin_config(), None, 200
+
+
 def _step_maps(step_names: list[str]) -> tuple[dict[str, str], dict[str, str]]:
     return (
         {step: "pending" for step in step_names},
@@ -421,6 +509,48 @@ def _selected_voice_payload(
     raise ValueError(f"voice_id is not a candidate for Speaker {speaker}")
 
 
+def _copy_source_video_for_duplicate(
+    *,
+    source_video_path: str,
+    task_id: str,
+    original_filename: str,
+) -> tuple[str, int, str]:
+    ext = os.path.splitext(original_filename or source_video_path)[1].lower()
+    if not ext:
+        ext = os.path.splitext(source_video_path)[1].lower() or ".mp4"
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    destination = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    shutil.copy2(source_video_path, destination)
+
+    try:
+        from appcore import tos_backup_storage
+
+        tos_backup_storage.ensure_remote_copy_for_local_path(destination)
+    except Exception:
+        log.warning(
+            "[dialogue_translate] TOS backup sync failed after duplicate source copy: %s",
+            destination,
+            exc_info=True,
+        )
+
+    content_type = (
+        mimetypes.guess_type(original_filename or destination)[0]
+        or "application/octet-stream"
+    )
+    return destination, os.path.getsize(destination), content_type
+
+
+def _duplicate_display_name(task: dict, row: dict) -> str:
+    original_filename = task.get("original_filename") or row.get("original_filename") or ""
+    base = (
+        task.get("display_name")
+        or row.get("display_name")
+        or _default_display_name(original_filename)
+    )
+    return f"{base} 副本"
+
+
 @bp.before_request
 def _require_dialogue_translate_permission():
     if not current_user.is_authenticated:
@@ -434,13 +564,32 @@ def _require_dialogue_translate_permission():
 
 @bp.route("/dialogue-translate")
 @login_required
-@admin_required
 @permission_required("dialogue_translate")
 def index():
-    rows = translation_route_store.list_projects_with_state(
+    filter_langs = _list_filter_langs()
+    lang = request.args.get("lang", "").strip()
+    if lang and lang not in filter_langs:
+        lang = ""
+
+    owner_name_expr = _multi_translate_creator_name_expr()
+    show_user_filter = _is_superadmin_user()
+    current_user_filter = _parse_user_filter_id() if show_user_filter else None
+    user_filter_options = []
+    if show_user_filter:
+        user_filter_options = translation_route_store.list_project_creators(
+            project_type="dialogue_translate",
+            owner_name_expr=owner_name_expr,
+            query_func=db_query,
+        )
+
+    rows = translation_route_store.list_projects_with_creator(
         user_id=current_user.id,
         project_type="dialogue_translate",
-        is_admin=_is_admin_user(),
+        is_admin=show_user_filter,
+        owner_name_expr=owner_name_expr,
+        target_lang=lang,
+        filter_user_id=current_user_filter,
+        include_visible_to_all=True,
         query_func=db_query,
     )
     for row in rows:
@@ -451,6 +600,7 @@ def index():
         row["source_lang"] = state.get("source_language") or "en"
         row["target_lang"] = state.get("target_lang") or ""
         row["current_review_step"] = state.get("current_review_step") or ""
+        row["video_duration"] = state.get("video_duration")
 
     from appcore.settings import get_retention_hours
 
@@ -458,7 +608,11 @@ def index():
         "dialogue_translate.html",
         projects=rows,
         now=datetime.now(),
-        allowed_source_languages=ALLOWED_SOURCE_LANGUAGES,
+        current_lang=lang,
+        filter_langs=filter_langs,
+        show_user_filter=show_user_filter,
+        current_user_filter=current_user_filter,
+        user_filter_options=user_filter_options,
         supported_langs=_list_enabled_target_langs(),
         retention_hours=get_retention_hours("dialogue_translate"),
     )
@@ -466,7 +620,6 @@ def index():
 
 @bp.route("/dialogue-translate/<task_id>")
 @login_required
-@admin_required
 @permission_required("dialogue_translate")
 def detail(task_id: str):
     recover_project_if_needed(task_id, "dialogue_translate")
@@ -505,7 +658,6 @@ def detail(task_id: str):
 
 @bp.route("/api/dialogue-translate/start", methods=["POST"])
 @login_required
-@admin_required
 def upload_and_start():
     if "video" not in request.files:
         return _json_response({"error": "No video file"}, 400)
@@ -539,7 +691,10 @@ def upload_and_start():
             400,
         )
 
-    plugin_config = current_fixed_plugin_config()
+    plugin_config, error_payload, error_status = _resolve_create_plugin_config()
+    if error_payload:
+        return _json_response(error_payload, error_status)
+    plugin_config = plugin_config or current_fixed_plugin_config()
     step_names = _dialogue_pipeline_step_names(
         {"plugin_config": plugin_config},
         include_analysis=False,
@@ -608,9 +763,138 @@ def upload_and_start():
     )
 
 
+@bp.route("/api/dialogue-translate/<task_id>/duplicate", methods=["POST"])
+@login_required
+def duplicate(task_id: str):
+    row = _query_viewable_project(
+        task_id,
+        "id, user_id, original_filename, display_name, task_dir, state_json",
+        include_deleted=False,
+    )
+    if not row:
+        return _json_response({"error": "Task not found"}, 404)
+
+    row_task = _task_from_project_row(row)
+    source_task = copy.deepcopy(store.get(task_id) or {})
+    if source_task:
+        for key, value in row_task.items():
+            source_task.setdefault(key, value)
+    else:
+        source_task = row_task
+
+    source_video_path = str(source_task.get("video_path") or "").strip()
+    if not source_video_path:
+        return _json_response({"error": "源视频缺失，无法复制项目。"}, 409)
+
+    if not os.path.exists(source_video_path):
+        try:
+            from web.services.task_source_video import ensure_local_source_video
+
+            source_video_path = ensure_local_source_video(task_id, source_task)
+        except FileNotFoundError as exc:
+            return _json_response({"error": str(exc)}, 409)
+
+    if not os.path.exists(source_video_path):
+        return _json_response({"error": f"源视频缺失: {source_video_path}"}, 409)
+
+    original_filename = (
+        source_task.get("original_filename")
+        or row.get("original_filename")
+        or os.path.basename(source_video_path)
+    )
+    new_task_id = str(uuid.uuid4())
+    new_task_dir = os.path.join(OUTPUT_DIR, new_task_id)
+    os.makedirs(new_task_dir, exist_ok=True)
+
+    try:
+        new_video_path, file_size, content_type = _copy_source_video_for_duplicate(
+            source_video_path=source_video_path,
+            task_id=new_task_id,
+            original_filename=original_filename,
+        )
+    except OSError as exc:
+        log.exception("[dialogue_translate] duplicate source copy failed task=%s", task_id)
+        return _json_response({"error": f"复制源视频失败: {exc}"}, 500)
+
+    user_id = current_user.id
+    store.create(
+        new_task_id,
+        new_video_path,
+        new_task_dir,
+        original_filename=original_filename,
+        user_id=user_id,
+    )
+
+    from web.upload_util import build_source_object_info
+
+    plugin_config = copy.deepcopy(
+        source_task.get("plugin_config") or current_fixed_plugin_config()
+    )
+    step_names = _dialogue_pipeline_step_names(
+        {"plugin_config": plugin_config},
+        include_analysis=False,
+    )
+    steps, step_messages = _step_maps(step_names)
+    display_name = _resolve_name_conflict(
+        user_id,
+        _duplicate_display_name(source_task, row),
+    )
+    update_kwargs = dict(
+        display_name=display_name,
+        type="dialogue_translate",
+        status="running",
+        target_lang=source_task.get("target_lang") or "",
+        source_language=source_task.get("source_language") or "en",
+        user_specified_source_language=bool(
+            source_task.get("user_specified_source_language", True)
+        ),
+        source_tos_key="",
+        source_object_info=build_source_object_info(
+            original_filename=original_filename,
+            content_type=content_type,
+            file_size=file_size,
+            storage_backend="local",
+            uploaded_at=datetime.now().isoformat(timespec="seconds"),
+        ),
+        delivery_mode="local_primary",
+        plugin_config=plugin_config,
+        steps=steps,
+        step_messages=step_messages,
+        dialogue_segments=[],
+        speaker_summary={},
+        speaker_sample_specs=[],
+        speaker_profiles={},
+        selected_voice_by_speaker={},
+    )
+    for key in (
+        "subtitle_position",
+        "subtitle_font",
+        "subtitle_size",
+        "subtitle_position_y",
+        "interactive_review",
+        "loudness_profile",
+        "loudness_manual_boost_pct",
+    ):
+        if key in source_task:
+            update_kwargs[key] = copy.deepcopy(source_task[key])
+
+    store.update(new_task_id, **update_kwargs)
+    store.set_preview_file(new_task_id, "source_video", new_video_path)
+    _ensure_uploaded_video_thumbnail(new_task_id, new_video_path, new_task_dir)
+
+    dialogue_pipeline_runner.start(new_task_id, user_id=user_id)
+    return _json_response(
+        {
+            "status": "started",
+            "task_id": new_task_id,
+            "redirect_url": f"/dialogue-translate/{new_task_id}",
+        },
+        201,
+    )
+
+
 @bp.route("/api/dialogue-translate/<task_id>", methods=["GET"])
 @login_required
-@admin_required
 def get_task(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -621,7 +905,6 @@ def get_task(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/subtitle-preview", methods=["GET"])
 @login_required
-@admin_required
 def subtitle_preview(task_id: str):
     row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
@@ -636,7 +919,6 @@ def subtitle_preview(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/llm-debug/<step>", methods=["GET"])
 @login_required
-@admin_required
 def get_llm_debug(task_id: str, step: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -650,7 +932,6 @@ def get_llm_debug(task_id: str, step: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/restart", methods=["POST"])
 @login_required
-@admin_required
 def restart(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -695,7 +976,6 @@ def restart(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/source-language", methods=["PUT"])
 @login_required
-@admin_required
 def update_source_language(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -733,7 +1013,6 @@ def update_source_language(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/alignment", methods=["PUT"])
 @login_required
-@admin_required
 def update_alignment(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -754,7 +1033,6 @@ def update_alignment(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/segments", methods=["PUT"])
 @login_required
-@admin_required
 def update_segments(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -796,7 +1074,6 @@ def update_segments(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
-@admin_required
 def set_loudness_profile(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -843,7 +1120,6 @@ def set_loudness_profile(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/resume", methods=["POST"])
 @login_required
-@admin_required
 def resume(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -874,7 +1150,6 @@ def resume(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/download/<file_type>")
 @login_required
-@admin_required
 def download(task_id: str, file_type: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -883,9 +1158,46 @@ def download(task_id: str, file_type: str):
     return serve_artifact_download(task, task_id, file_type, variant=variant)
 
 
+@bp.route("/api/dialogue-translate/<task_id>", methods=["DELETE"])
+@login_required
+def delete(task_id: str):
+    row = translation_route_store.get_active_project_storage(
+        task_id,
+        current_user.id,
+        "dialogue_translate",
+        query_one_func=db_query_one,
+    )
+    if not row:
+        return _json_response({"error": "Task not found"}, 404)
+
+    task = store.get(task_id) or {}
+    from appcore import cleanup
+
+    cleanup_payload = dict(task)
+    cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
+    cleanup_payload["state_json"] = row.get("state_json") or ""
+    cleanup_payload["tos_keys"] = cleanup.collect_task_tos_keys(cleanup_payload)
+    try:
+        cleanup.delete_task_storage(cleanup_payload)
+    except Exception:
+        log.warning(
+            "[dialogue_translate] delete task storage failed task=%s",
+            task_id,
+            exc_info=True,
+        )
+
+    translation_route_store.soft_delete_project(
+        task_id,
+        current_user.id,
+        "dialogue_translate",
+        execute_func=db_execute,
+    )
+    store.update(task_id, status="deleted")
+    return _json_response({"status": "ok"})
+
+
 @bp.route("/api/dialogue-translate/<task_id>/visible-to-all", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_visible_to_all(task_id: str):
     if not getattr(current_user, "is_superadmin", False):
         return _json_response({"error": "Only superadmin can change visibility"}, 403)
@@ -906,7 +1218,6 @@ def toggle_visible_to_all(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/artifact/<name>")
 @login_required
-@admin_required
 def get_artifact(task_id: str, name: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -940,7 +1251,6 @@ def get_artifact(task_id: str, name: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/artifact-path")
 @login_required
-@admin_required
 def get_artifact_path(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -964,7 +1274,6 @@ _ALLOWED_ROUND_KINDS = {
 
 @bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>")
 @login_required
-@admin_required
 def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
     if round_index not in (1, 2, 3, 4, 5) or attempt not in (1, 2, 3, 4, 5):
         abort(404)
@@ -988,7 +1297,6 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
 
 @bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>")
 @login_required
-@admin_required
 def get_round_file(task_id: str, round_index: int, kind: str):
     try:
         filename, mime = resolve_round_file_entry(
@@ -1017,7 +1325,6 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/analysis/run", methods=["POST"])
 @login_required
-@admin_required
 def run_ai_analysis(task_id: str):
     if not _get_viewable_task(task_id):
         return _json_response({"error": "Task not found"}, 404)
@@ -1026,7 +1333,6 @@ def run_ai_analysis(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/start-translate", methods=["POST"])
 @login_required
-@admin_required
 def start_translate(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1044,7 +1350,6 @@ def start_translate(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/retranslate", methods=["POST"])
 @login_required
-@admin_required
 def retranslate(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1061,7 +1366,6 @@ def retranslate(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/select-translation", methods=["PUT"])
 @login_required
-@admin_required
 def select_translation(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1073,7 +1377,6 @@ def select_translation(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/confirm-voices", methods=["POST"])
 @login_required
-@admin_required
 def confirm_voices(task_id: str):
     row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
@@ -1132,11 +1435,18 @@ def confirm_voices(task_id: str):
     task_state.set_step(task_id, "voice_match_ab", "done")
     task_state.set_current_review_step(task_id, "")
 
-    dialogue_pipeline_runner.resume(
-        task_id,
-        "alignment",
-        user_id=owner_user_id,
-    )
+    next_step = "alignment"
+    try:
+        step_names = _dialogue_pipeline_step_names(state)
+        idx = step_names.index("voice_match_ab")
+        if idx + 1 < len(step_names):
+            next_step = step_names[idx + 1]
+    except Exception:
+        log.warning(
+            "[dialogue_translate] confirm-voices: next_step resolve failed; fallback alignment",
+            exc_info=True,
+        )
+    dialogue_pipeline_runner.resume(task_id, next_step, user_id=owner_user_id)
     return _json_response(
         {
             "ok": True,

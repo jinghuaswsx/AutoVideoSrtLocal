@@ -32,12 +32,27 @@ def ensure_raw_source_for_parent_task(*, task_id: int, actor_user_id: int | None
     video_object_key = object_key
 
     niuma_done_event = query_one(
-        "SELECT payload_json FROM task_events "
+        "SELECT id, payload_json FROM task_events "
         "WHERE task_id=%s AND event_type='raw_niuma_done' "
         "ORDER BY id DESC LIMIT 1",
         (int(task_id),),
     )
+    manual_uploaded_event = query_one(
+        "SELECT id FROM task_events "
+        "WHERE task_id=%s AND event_type='raw_manual_uploaded' "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id),),
+    )
+
+    use_niuma = False
     if niuma_done_event:
+        use_niuma = True
+        niuma_id = niuma_done_event.get("id") or 0
+        manual_id = manual_uploaded_event.get("id") or 0 if manual_uploaded_event else 0
+        if manual_id > niuma_id:
+            use_niuma = False
+
+    if use_niuma:
         import json
         raw_payload = niuma_done_event.get("payload_json")
         event_payload = {}
