@@ -27,6 +27,7 @@ from appcore.fine_ai_evaluation_service import recover_interrupted_fine_ai_evalu
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
+import web.services.dialogue_pipeline_runner  # runner dispatch registration
 
 
 # 登录 session 有效期：1 个月

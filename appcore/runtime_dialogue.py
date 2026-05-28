@@ -123,29 +123,15 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
         return _replace_voice_match_steps(names)
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        step_fns = {
-            "extract": lambda: self._step_extract(task_id, video_path, task_dir),
-            "asr": lambda: self._step_asr(task_id, task_dir),
-            "separate": lambda: self._step_separate(task_id, task_dir),
-            "shot_decompose": lambda: self._step_shot_decompose(task_id, video_path, task_dir),
-            "asr_clean": lambda: self.profile.post_asr(self, task_id),
-            "asr_normalize": lambda: self.profile.post_asr(self, task_id),
-            "speaker_detect": lambda: self._step_speaker_detect(task_id),
-            "voice_match_ab": lambda: self._step_voice_match_ab(task_id),
-            "alignment": lambda: self._step_alignment(task_id, video_path, task_dir),
-            "translate": lambda: self.profile.translate(self, task_id),
-            "tts": lambda: self.profile.tts(self, task_id, task_dir),
-            "av_sync_audit": lambda: self._step_av_sync_audit(task_id, video_path, task_dir),
-            "loudness_match": lambda: self._step_loudness_match(task_id, task_dir),
-            "subtitle": lambda: self.profile.subtitle(self, task_id, task_dir),
-            "compose": lambda: self._step_compose(task_id, video_path, task_dir),
-            "analysis": lambda: self._step_analysis(task_id),
-            "export": lambda: self._step_export(task_id, video_path, task_dir),
-        }
-        return [
-            (name, step_fns[name])
-            for name in self.pipeline_step_names_for_task(task_id)
-        ]
+        steps = super()._get_pipeline_steps(task_id, video_path, task_dir)
+        out = []
+        for name, fn in steps:
+            if name == "voice_match":
+                out.append(("speaker_detect", lambda: self._step_speaker_detect(task_id)))
+                out.append(("voice_match_ab", lambda: self._step_voice_match_ab(task_id)))
+            else:
+                out.append((name, fn))
+        return out
 
     def _step_speaker_detect(self, task_id: str) -> None:
         from appcore.dialogue_translate.speaker_detection import detect_dialogue_segments
