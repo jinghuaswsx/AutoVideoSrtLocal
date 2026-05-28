@@ -40,6 +40,8 @@ CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
+TASK_ARCHIVED_EVENT = "archived"
+TASK_ARCHIVABLE_STATUSES = (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE)
 FINAL_MATERIAL_CONFIRM_LABEL = "最终素材和链接确认"
 FINAL_MATERIAL_CONFIRM_HINT = (
     "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
@@ -621,6 +623,7 @@ def list_task_center_items(
     task_type: str = "",
     assignee_id: int | None = None,
     parent_only: bool = False,
+    archived: bool | None = False,
 ) -> dict:
     page_size = max(1, int(page_size))
     requested_page = max(1, int(page))
@@ -643,6 +646,10 @@ def list_task_center_items(
     if assignee_id:
         where.append("t.assignee_id=%s")
         args.append(int(assignee_id))
+    if archived is True:
+        where.append("t.archived_at IS NOT NULL")
+    elif archived is False:
+        where.append("t.archived_at IS NULL")
 
     if task_id:
         where.append("t.id=%s")
@@ -740,6 +747,12 @@ def list_task_center_items(
                     if row.get("cancelled_at")
                     else None
                 ),
+                "archived_at": (
+                    row["archived_at"].isoformat()
+                    if row.get("archived_at")
+                    else None
+                ),
+                "archived_by": row.get("archived_by"),
                 "last_reason": row["last_reason"],
             }
             for row in rows
@@ -749,6 +762,36 @@ def list_task_center_items(
         "total": total,
         "total_pages": total_pages,
     }
+
+
+def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
+    """Hide a completed task from active task-center lists."""
+    if not is_admin:
+        raise PermissionError("only admin can archive tasks")
+    row = query_one(
+        "SELECT id, status, archived_at FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("task not found")
+    if row.get("status") not in TASK_ARCHIVABLE_STATUSES:
+        raise StateError("only completed tasks can be archived")
+    if row.get("archived_at"):
+        return False
+
+    affected = execute(
+        "UPDATE tasks SET archived_at=NOW(), archived_by=%s, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NULL",
+        (int(actor_user_id), int(task_id)),
+    )
+    if not affected:
+        return False
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (int(task_id), TASK_ARCHIVED_EVENT, int(actor_user_id), None),
+    )
+    return True
 
 
 def bind_parent_media_item(

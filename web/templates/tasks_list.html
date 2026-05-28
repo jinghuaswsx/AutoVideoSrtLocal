@@ -419,6 +419,7 @@
       <button class="tc-subtab" type="button" data-bucket="todo">待处理任务</button>
       <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
       <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
+      <button class="tc-subtab" type="button" data-bucket="archived">已归档</button>
     </div>
   </div>
 
@@ -2021,12 +2022,30 @@ function tcTaskDetailUrl(id) {
 function tcOpenDetailAction(id) {
   window.location.href = tcTaskDetailUrl(id);
 }
+async function tcArchiveTask(id) {
+  const taskId = Number(id || 0);
+  if (!taskId) return;
+  if (!confirm('确认归档这个已完成任务？')) return;
+  await tcFetchJson('/tasks/api/' + encodeURIComponent(String(id)) + '/archive', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  tcRender();
+}
 function tcActiveTaskAction(id, label, primary) {
   const cls = primary ? 'tc-btn tc-btn--primary' : 'tc-btn';
   return `<button class="${cls}" onclick="tcOpenDetailAction(${Number(id || 0)})">${tcEsc(label)}</button>`;
 }
+function tcTaskRowActions(actions) {
+  const buttons = (actions || []).filter(Boolean).join('');
+  return `<div class="tc-action-links">${buttons}</div>`;
+}
 function tcDisabledTaskAction(label) {
   return `<button class="tc-btn" disabled title="${tcEsc(label)}">${tcEsc(label)}</button>`;
+}
+function tcArchiveTaskAction(id) {
+  if (!TC_IS_ADMIN) return '';
+  return `<button class="tc-btn" onclick="tcArchiveTask(${Number(id || 0)})">归档</button>`;
 }
 function tcCanHandleRawTask(it) {
   const assigneeId = Number(it && it.assignee_id || 0);
@@ -2049,7 +2068,10 @@ function tcTaskRowAction(it) {
         ? tcActiveTaskAction(id, '审核', true)
         : tcDisabledTaskAction('等待审核');
     }
-    if (status === 'raw_done' || status === 'all_done') return tcActiveTaskAction(id, '查看结果', false);
+    if (status === 'raw_done' || status === 'all_done') return tcTaskRowActions([
+      tcActiveTaskAction(id, '查看结果', false),
+      it.archived_at ? '' : tcArchiveTaskAction(id),
+    ]);
     if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
     return tcActiveTaskAction(id, '查看', false);
   }
@@ -2060,7 +2082,10 @@ function tcTaskRowAction(it) {
   if (status === 'review') {
     return TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核');
   }
-  if (status === 'done') return tcActiveTaskAction(id, '查看结果', false);
+  if (status === 'done') return tcTaskRowActions([
+    tcActiveTaskAction(id, '查看结果', false),
+    it.archived_at ? '' : tcArchiveTaskAction(id),
+  ]);
   if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
   return tcActiveTaskAction(id, '查看', false);
 }
@@ -2189,6 +2214,7 @@ let TC_DETAIL_TASK_ID = null;
 function tcDetailListUrl(id) {
   return '/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine')
     + '&task_id=' + encodeURIComponent(String(id || ''))
+    + '&include_archived=1'
     + '&page_size=1';
 }
 async function tcFetchDetailTask(id, forceRefresh) {

@@ -188,9 +188,11 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
     assert 'data-bucket="done"' in body
+    assert 'data-bucket="archived"' in body
     assert "待处理任务" in body
     assert "待审核任务" in body
     assert "已完成任务" in body
+    assert "已归档" in body
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
     assert "const TC_TASK_PAGE_SIZE = 50;" in body
@@ -235,6 +237,24 @@ def test_task_center_overview_has_assignee_filter_after_task_type(authed_client_
     assert "/tasks/api/translation-work-users" in body
     assert "assignee_id: assigneeId" in body
     assert "tcAssigneeFilter').addEventListener('change'" in body
+
+
+def test_task_center_completed_rows_expose_archive_action(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcArchiveTask" in body
+    assert "'/tasks/api/' + encodeURIComponent(String(id)) + '/archive'" in body
+    assert "tcTaskRowActions" in body
+    assert "tcArchiveTask(${Number(id || 0)})" in body
+    assert "归档" in body
+
+    start = body.index("if (status === 'done')")
+    end = body.index("if (status === 'cancelled')", start)
+    done_block = body[start:end]
+    assert "tcTaskRowActions" in done_block
+    assert "查看结果" in done_block
+    assert "tcArchiveTaskAction(id)" in done_block
 
 
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
@@ -487,6 +507,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "keyword": "abc",
         "high_status": "in_progress",
         "bucket": "todo",
+        "archived": False,
         "page": 3,
         "page_size": 100,
         "task_id": 44,
@@ -607,6 +628,74 @@ def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_n
 
     assert rsp.status_code == 200
     assert captured["bucket"] == ""
+    assert captured["archived"] is False
+
+
+def test_api_list_accepts_archived_bucket(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&bucket=archived")
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == ""
+    assert captured["archived"] is True
+
+
+def test_api_list_allows_exact_detail_fetch_to_include_archived(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get(
+        "/tasks/api/list?tab=all&task_id=44&include_archived=1&page_size=1"
+    )
+
+    assert rsp.status_code == 200
+    assert captured["task_id"] == 44
+    assert captured["archived"] is None
+
+
+def test_archive_task_route_delegates_to_service(authed_client_no_db, monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.archive_task",
+        lambda **kwargs: calls.append(kwargs) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: calls.append(
+            {"audit": (task_id, action, detail)}
+        ),
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/44/archive", json={})
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True}
+    assert calls == [
+        {"task_id": 44, "actor_user_id": 1, "is_admin": True},
+        {"audit": (44, "task_archived", None)},
+    ]
 
 
 def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
@@ -615,6 +704,7 @@ def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_
 
     assert "task_id=' + encodeURIComponent(String(id || ''))" in body
     assert "'&task_id='" in body
+    assert "'&include_archived=1'" in body
 
 
 def test_task_detail_drawer_checks_task_before_secondary_fetches(authed_client_no_db):
