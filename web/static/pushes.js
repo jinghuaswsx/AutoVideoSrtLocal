@@ -1030,6 +1030,7 @@
       ? `<a class="product-name product-link product-name-line" href="${escapeAttr(productPageUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
       : `<div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>`;
     const productCode = it.product_code || '';
+    const productBothContent = `${it.product_name || ''}\n${productCode}`;
     const productCodeHtml = productCode
       ? `<div class="product-code-row">
            <span class="product-code">${escapeHtml(productCode)}</span>
@@ -1045,6 +1046,7 @@
                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
              </svg>
            </a>
+           <button type="button" class="product-copy-both-btn" data-copy-both="${escapeAttr(productBothContent)}" title="复制中文名和产品Code">复制两个值</button>
          </div>`
       : `<div class="product-code-row"><span class="product-code"></span></div>`;
     const productOwnerName = String(it.product_owner_name || '').trim();
@@ -2415,7 +2417,7 @@
 
   document.addEventListener('click', async ev => {
     const copyBtn = ev.target.closest(
-      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag]',
+      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag], button[data-copy-both]',
     );
     if (!copyBtn) return;
     try {
@@ -2423,6 +2425,7 @@
         copyBtn.getAttribute('data-copy-product-code')
           || copyBtn.getAttribute('data-copy-modal-product-code')
           || copyBtn.getAttribute('data-copy-payload-tag')
+          || copyBtn.getAttribute('data-copy-both')
           || '',
       );
       flashCopyButton(copyBtn, '已复制');

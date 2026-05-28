@@ -408,8 +408,29 @@
               transform var(--oc-dur-fast) var(--oc-ease),
               box-shadow var(--oc-dur-fast) var(--oc-ease);
 }
+.product-copy-both-btn {
+  height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-sm);
+  background: var(--oc-bg);
+  color: var(--oc-fg-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease),
+              color var(--oc-dur-fast) var(--oc-ease),
+              transform var(--oc-dur-fast) var(--oc-ease),
+              box-shadow var(--oc-dur-fast) var(--oc-ease);
+}
 .product-copy-btn:hover,
-.product-search-btn:hover {
+.product-search-btn:hover,
+.product-copy-both-btn:hover {
   background: var(--oc-bg-subtle);
   border-color: var(--oc-accent);
   color: var(--oc-accent);
@@ -417,11 +438,13 @@
   box-shadow: var(--oc-shadow-sm);
 }
 .product-copy-btn:active,
-.product-search-btn:active {
+.product-search-btn:active,
+.product-copy-both-btn:active {
   transform: translateY(0);
 }
 .product-copy-btn:focus-visible,
-.product-search-btn:focus-visible {
+.product-search-btn:focus-visible,
+.product-copy-both-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--oc-accent-ring);
 }
