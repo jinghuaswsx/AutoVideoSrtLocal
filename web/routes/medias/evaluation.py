@@ -15,6 +15,7 @@ from web.auth import admin_required
 from . import bp
 from ._helpers import _can_access_product
 from web.services.media_evaluation import (
+    build_product_evaluation_country_rerun_response as _build_product_evaluation_country_rerun_response_impl,
     build_product_evaluation_payload_response as _build_product_evaluation_payload_response_impl,
     build_product_evaluation_preview_response as _build_product_evaluation_preview_response_impl,
     build_product_evaluation_response as _build_product_evaluation_response_impl,
@@ -108,6 +109,10 @@ def _build_product_evaluation_status_response(pid: int, run_id: str):
     return _build_product_evaluation_status_response_impl(pid, run_id)
 
 
+def _build_product_evaluation_country_rerun_response(pid: int, run_id: str, country_code: str):
+    return _build_product_evaluation_country_rerun_response_impl(pid, run_id, country_code)
+
+
 def _build_product_evaluation_preview_response(
     pid: int,
     media_item_id: int | None = None,
@@ -162,6 +167,18 @@ def api_product_evaluate_status(pid: int):
         abort(404)
     routes = _routes_module()
     result = routes._build_product_evaluation_status_response(pid, str(request.args.get("run_id") or ""))
+    return routes._media_evaluation_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/evaluate/<run_id>/countries/<country_code>/rerun", methods=["POST"])
+@login_required
+@admin_required
+def api_product_evaluate_country_rerun(pid: int, run_id: str, country_code: str):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    routes = _routes_module()
+    result = routes._build_product_evaluation_country_rerun_response(pid, run_id, country_code)
     return routes._media_evaluation_flask_response(result)
 
 

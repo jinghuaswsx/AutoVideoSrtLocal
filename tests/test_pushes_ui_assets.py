@@ -369,10 +369,14 @@ def test_push_ai_evaluation_modal_polls_country_progress():
     pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")
 
     assert "const AI_EVAL_STATUS_ENDPOINT" in pushes
+    assert "const AI_EVAL_COUNTRY_RERUN_ENDPOINT" in pushes
     assert "function pollAiEvaluationStatus(modalState, pid, runId, onComplete)" in pushes
     assert "function renderAiEvaluationCountryProgress(modalState)" in pushes
+    assert "function rerunAiEvaluationCountry(modalState, countryCode)" in pushes
     assert "data-ai-country-progress" in pushes
+    assert "data-ai-country-rerun" in pushes
     assert "ect-ai-country-card" in pushes
+    assert "重跑" in pushes
     assert "排队中" in pushes
     assert "进行中" in pushes
     assert "已完成" in pushes

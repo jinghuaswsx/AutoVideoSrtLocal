@@ -409,20 +409,38 @@ def test_product_evaluation_routes_delegate_flask_response(authed_client_no_db, 
         "_build_product_evaluation_payload_response",
         lambda pid: Result({"route": "payload", "pid": pid}, 209),
     )
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_country_rerun_response",
+        lambda pid, run_id, country_code: Result(
+            {"route": "country-rerun", "pid": pid, "run_id": run_id, "country_code": country_code},
+            210,
+        ),
+    )
 
     evaluate_resp = authed_client_no_db.post("/medias/api/products/123/evaluate?sync=1")
     preview_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-preview")
     payload_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-payload")
+    country_rerun_resp = authed_client_no_db.post(
+        "/medias/api/products/123/evaluate/mat_eval_abc/countries/de/rerun"
+    )
 
-    assert [evaluate_resp.status_code, preview_resp.status_code, payload_resp.status_code] == [
+    assert [
+        evaluate_resp.status_code,
+        preview_resp.status_code,
+        payload_resp.status_code,
+        country_rerun_resp.status_code,
+    ] == [
         207,
         208,
         209,
+        210,
     ]
     assert captured == [
         {"route": "evaluate", "pid": 123},
         {"route": "preview", "pid": 123},
         {"route": "payload", "pid": 123},
+        {"route": "country-rerun", "pid": 123, "run_id": "mat_eval_abc", "country_code": "de"},
     ]
 
 
