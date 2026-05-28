@@ -454,6 +454,14 @@
       .ect-ai-country-name { font-size:13px; font-weight:700; color:var(--oc-fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .ect-ai-country-pill { flex:0 0 auto; border-radius:999px; padding:2px 8px; background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:700; }
       .ect-ai-country-meta { color:var(--oc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+      .ect-ai-inline-summary { margin-top:12px; border:1px solid var(--oc-border); border-radius:8px; padding:12px; background:var(--oc-bg-subtle); display:grid; gap:8px; }
+      .ect-ai-inline-summary-head { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+      .ect-ai-inline-summary-title { font-size:13px; font-weight:700; color:var(--oc-fg); }
+      .ect-ai-inline-summary-meta { display:flex; flex-wrap:wrap; gap:8px 14px; color:var(--oc-fg-muted); font-size:12px; }
+      .ect-ai-inline-summary-meta strong { color:var(--oc-fg); font-weight:700; }
+      .ect-ai-inline-summary-list { display:grid; gap:6px; }
+      .ect-ai-inline-summary-item { color:var(--oc-fg); font-size:12px; line-height:1.55; overflow-wrap:anywhere; }
+      .ect-ai-inline-summary-country { color:var(--oc-fg-muted); font-weight:700; margin-right:6px; }
       .ect-ai-tabs { display:flex; gap:8px; padding:12px 20px 0; background:var(--oc-bg); }
       .ect-ai-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-size:13px; font-weight:600; cursor:pointer; }
       .ect-ai-tab.active { background:var(--oc-bg); color:var(--oc-accent); border-color:var(--oc-accent); }
@@ -528,6 +536,7 @@
       fullPayloadUrl: '',
       progress: null,
       progressTimer: null,
+      evaluationDetail: null,
     };
     modalState.modal.classList.add('ect-modal--ai-evaluating');
 
@@ -627,6 +636,55 @@
     renderAiEvaluationCountryProgress(modalState);
   }
 
+  function aiEvaluationResultDetail(data) {
+    const result = data && data.result;
+    const detail = data && (
+      data.ai_evaluation_detail
+      || (result && (result.ai_evaluation_detail || result.detail))
+      || data.detail
+      || result
+      || data
+    );
+    if (typeof detail === 'string') {
+      try {
+        return JSON.parse(detail);
+      } catch (_err) {
+        return detail;
+      }
+    }
+    return detail;
+  }
+
+  function renderAiEvaluationInlineSummary(modalState) {
+    const detail = modalState && modalState.evaluationDetail;
+    if (!detail || typeof detail !== 'object') return '';
+    const countries = Array.isArray(detail.countries) ? detail.countries : [];
+    const rawScore = detail.ai_score;
+    const score = rawScore === null || rawScore === undefined || rawScore === '' ? NaN : Number(rawScore);
+    const scoreText = Number.isFinite(score) ? String(detail.ai_score) : '';
+    const resultText = String(detail.ai_evaluation_result || '').trim();
+    const meta = [
+      scoreText ? `综合评分 <strong>${escapeHtml(scoreText)}</strong>/100` : '',
+      resultText ? `整体结论 <strong>${escapeHtml(resultText)}</strong>` : '',
+    ].filter(Boolean).map((item) => `<span>${item}</span>`).join('');
+    const items = countries.map((country) => {
+      const text = String(country.summary || country.reason || '').trim();
+      if (!text) return '';
+      const label = String(country.country || country.language || country.lang || '').trim();
+      const displayLabel = label || '国家';
+      return `<div class="ect-ai-inline-summary-item"><span class="ect-ai-inline-summary-country">${escapeHtml(displayLabel)}</span>${escapeHtml(text)}</div>`;
+    }).filter(Boolean).slice(0, 6).join('');
+    if (!meta && !items) return '';
+    return `
+      <div class="ect-ai-inline-summary" data-ai-eval-summary>
+        <div class="ect-ai-inline-summary-head">
+          <div class="ect-ai-inline-summary-title">评估摘要</div>
+          ${meta ? `<div class="ect-ai-inline-summary-meta">${meta}</div>` : ''}
+        </div>
+        ${items ? `<div class="ect-ai-inline-summary-list">${items}</div>` : ''}
+      </div>`;
+  }
+
   function renderAiEvaluationCountryProgress(modalState) {
     const box = modalState && modalState.body && modalState.body.querySelector('[data-ai-country-progress]');
     if (!box) return;
@@ -668,7 +726,8 @@
         <span>报错 ${escapeHtml(String(failed))}</span>
         ${providerText ? `<span>${escapeHtml(providerText)}</span>` : ''}
       </div>
-      <div class="ect-ai-country-grid">${cards}</div>`;
+      <div class="ect-ai-country-grid">${cards}</div>
+      ${renderAiEvaluationInlineSummary(modalState)}`;
   }
 
   function pollAiEvaluationStatus(modalState, pid, runId, onComplete) {
@@ -902,14 +961,9 @@
     stopAiEvaluationTimers(modalState);
     if (modalState.statusTitle) modalState.statusTitle.textContent = '评估完成';
     if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
-    const result = data && data.result;
-    const detail = data && (
-      data.ai_evaluation_detail
-      || (result && (result.ai_evaluation_detail || result.detail))
-      || data.detail
-      || result
-      || data
-    );
+    const detail = aiEvaluationResultDetail(data);
+    modalState.evaluationDetail = detail;
+    renderAiEvaluationCountryProgress(modalState);
     if (window.EvalCountryTable && typeof window.EvalCountryTable.render === 'function') {
       modalState.resultHtml = window.EvalCountryTable.render(detail);
     } else {
