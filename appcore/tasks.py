@@ -621,6 +621,7 @@ def list_task_center_items(
     task_type: str = "",
     assignee_id: int | None = None,
     parent_only: bool = False,
+    task_status: str = "",
 ) -> dict:
     page_size = max(1, int(page_size))
     requested_page = max(1, int(page))
@@ -671,6 +672,24 @@ def list_task_center_items(
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
     elif bucket:
         raise ValueError("invalid bucket")
+
+    if task_status == "todo":
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_PENDING, PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED])
+    elif task_status == "review":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
+    elif task_status == "blocked":
+        where.append("t.status = %s")
+        args.append(CHILD_BLOCKED)
+    elif task_status == "done":
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
+    elif task_status == "cancelled":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_CANCELLED, CHILD_CANCELLED])
+    elif task_status and task_status != "all":
+        raise ValueError("invalid task_status")
 
     where_sql = " AND ".join(where)
     count_sql = (

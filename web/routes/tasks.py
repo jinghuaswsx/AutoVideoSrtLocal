@@ -245,6 +245,8 @@ def api_list():
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or TASK_CENTER_DEFAULT_PAGE_SIZE)))
     raw_task_id = (request.args.get("task_id") or "").strip()
+    task_status = (request.args.get("task_status") or "").strip()
+
     assignee_id = None
     if raw_assignee_id and raw_assignee_id != "all":
         try:
@@ -277,6 +279,10 @@ def api_list():
         task_type = ""
     if task_type and task_type not in {"raw", "translate"}:
         return _json_response({"error": "invalid task_type"}, 400)
+    if task_status == "all":
+        task_status = ""
+    if task_status and task_status not in {"todo", "review", "blocked", "done", "cancelled"}:
+        return _json_response({"error": "invalid task_status"}, 400)
 
     return _json_response(
         tasks_svc.list_task_center_items(
@@ -291,6 +297,7 @@ def api_list():
             task_id=task_id,
             task_type=task_type,
             assignee_id=assignee_id,
+            task_status=task_status,
         )
     )
 

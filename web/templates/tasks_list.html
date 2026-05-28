@@ -434,6 +434,14 @@
     <select id="tcAssigneeFilter" class="tc-input tc-select" aria-label="负责人筛选">
       <option value="all" selected>全部负责人</option>
     </select>
+    <select id="tcStatusFilter" class="tc-input tc-select" aria-label="任务状态筛选">
+      <option value="all" selected>全部状态</option>
+      <option value="todo">待处理</option>
+      <option value="review">待审核</option>
+      <option value="blocked">阻塞</option>
+      <option value="done">已完成</option>
+      <option value="cancelled">已取消</option>
+    </select>
     <button class="tc-btn" id="tcRefresh">刷新</button>
   </div>
 
@@ -1908,6 +1916,8 @@ document.getElementById('tcTaskTypeFilter').addEventListener('change', () => { T
 document.getElementById('tcTaskTypeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 document.getElementById('tcAssigneeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcAssigneeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+document.getElementById('tcStatusFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcStatusFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 tcLoadAssigneeFilterUsers();
 
 async function tcRender() {
@@ -1935,12 +1945,14 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   const kw = document.getElementById('tcKeyword').value.trim();
   const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
   const assigneeId = document.getElementById('tcAssigneeFilter').value || 'all';
+  const taskStatus = document.getElementById('tcStatusFilter').value || 'all';
   const params = new URLSearchParams({
     tab,
     keyword: kw,
     bucket,
     task_type: taskType,
     assignee_id: assigneeId,
+    task_status: taskStatus,
     page: String(TC_TASK_PAGE),
     page_size: String(TC_TASK_PAGE_SIZE),
   });
