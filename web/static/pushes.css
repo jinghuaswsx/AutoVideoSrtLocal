@@ -274,10 +274,16 @@
 .push-table-shell {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: auto;
+  max-height: calc(100vh - 56px - var(--sticky-header-height, 220px) - 68px);
   border: 1px solid var(--oc-border);
   border-radius: var(--oc-r-lg);
   background: var(--oc-bg);
+}
+@media (max-width: 768px) {
+  .push-table-shell {
+    max-height: calc(100vh - 52px - var(--sticky-header-height, 220px) - 52px);
+  }
 }
 .push-table {
   width: 100%;
@@ -309,13 +315,8 @@
   font-size: 12px;
   letter-spacing: 0.02em;
   position: sticky;
-  top: calc(56px + var(--sticky-header-height, 220px));
+  top: 0;
   z-index: 29;
-}
-@media (max-width: 768px) {
-  .push-table th {
-    top: calc(52px + var(--sticky-header-height, 220px));
-  }
 }
 .push-table td {
   padding: var(--oc-sp-3);
