@@ -166,12 +166,13 @@
 
   function flashCopyButton(btn, text) {
     if (!btn) return;
-    const original = btn.dataset.originalLabel || btn.textContent || '复制';
-    btn.dataset.originalLabel = original;
-    btn.textContent = text;
+    if (!btn.dataset.originalHtml) {
+      btn.dataset.originalHtml = btn.innerHTML;
+    }
+    btn.innerHTML = `<span style="font-size: 11px; white-space: nowrap; color: var(--oc-success-fg); font-weight: 600;">${escapeHtml(text)}</span>`;
     if (btn._copyTimer) window.clearTimeout(btn._copyTimer);
     btn._copyTimer = window.setTimeout(() => {
-      btn.textContent = original;
+      btn.innerHTML = btn.dataset.originalHtml;
     }, 1200);
   }
 
@@ -497,7 +498,18 @@
     const productCodeHtml = productCode
       ? `<div class="product-code-row">
            <span class="product-code">${escapeHtml(productCode)}</span>
-           <button type="button" class="product-copy-btn" data-copy-product-code="${escapeAttr(productCode)}">复制</button>
+           <button type="button" class="product-copy-btn" data-copy-product-code="${escapeAttr(productCode)}" title="复制产品代码">
+             <svg class="icon-copy" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+             </svg>
+           </button>
+           <a href="/medias/?q=${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer" class="product-search-btn" title="在素材管理中搜索">
+             <svg class="icon-search" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+               <circle cx="11" cy="11" r="8"></circle>
+               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+             </svg>
+           </a>
          </div>`
       : `<div class="product-code-row"><span class="product-code"></span></div>`;
     const productOwnerName = String(it.product_owner_name || '').trim();
