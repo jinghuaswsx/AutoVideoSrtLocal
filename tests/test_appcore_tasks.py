@@ -15,6 +15,42 @@ def test_status_constants_present():
     assert tasks.CHILD_CANCELLED == "cancelled"
 
 
+def test_existing_task_languages_ignore_cancelled_parent_unfinished_children(monkeypatch):
+    captured = {}
+
+    def fake_query_all(sql, args):
+        captured["sql"] = " ".join(str(sql).split())
+        captured["args"] = args
+        return [
+            {
+                "country_code": "de",
+                "child_status": tasks.CHILD_ASSIGNED,
+                "parent_status": tasks.PARENT_RAW_DONE,
+            },
+            {
+                "country_code": "fr",
+                "child_status": tasks.CHILD_ASSIGNED,
+                "parent_status": tasks.PARENT_CANCELLED,
+            },
+            {
+                "country_code": "ja",
+                "child_status": tasks.CHILD_DONE,
+                "parent_status": tasks.PARENT_CANCELLED,
+            },
+            {
+                "country_code": "nl",
+                "child_status": tasks.CHILD_CANCELLED,
+                "parent_status": tasks.PARENT_RAW_DONE,
+            },
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.get_existing_task_languages_for_item(42) == ["DE", "JA"]
+    assert "LEFT JOIN tasks parent ON parent.id = child.parent_task_id" in captured["sql"]
+    assert captured["args"] == (42,)
+
+
 def test_high_level_status_rollup():
     assert tasks.high_level_status("pending") == "in_progress"
     assert tasks.high_level_status("raw_in_progress") == "in_progress"

@@ -1621,6 +1621,40 @@ def test_api_languages_delegates_to_tasks_service(authed_client_no_db, monkeypat
     assert captured == [True]
 
 
+def test_api_languages_marks_existing_languages_for_media_item(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_enabled_target_languages():
+        return [
+            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)"},
+            {"code": "FR", "name_zh": "法语", "label": "法语 (FR)"},
+        ]
+
+    def fake_get_existing_task_languages_for_item(media_item_id):
+        captured["media_item_id"] = media_item_id
+        return ["DE"]
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_enabled_target_languages",
+        fake_list_enabled_target_languages,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_existing_task_languages_for_item",
+        fake_get_existing_task_languages_for_item,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/languages?media_item_id=42")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {
+        "languages": [
+            {"code": "DE", "name_zh": "德语", "label": "德语 (DE)", "existing": True},
+            {"code": "FR", "name_zh": "法语", "label": "法语 (FR)", "existing": False},
+        ]
+    }
+    assert captured == {"media_item_id": 42}
+
+
 def test_api_product_en_items_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
     captured = []
 

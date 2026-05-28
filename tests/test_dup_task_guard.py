@@ -9,10 +9,26 @@ def test_get_existing_task_languages_for_item(monkeypatch):
     def mock_query_all(sql, args=None):
         query_calls.append((sql, args))
         return [
-            {"country_code": "FR"},
-            {"country_code": "DE"},
-            {"country_code": None},
-            {"country_code": "  es  "}
+            {
+                "country_code": "FR",
+                "child_status": tasks_svc.CHILD_ASSIGNED,
+                "parent_status": tasks_svc.PARENT_RAW_DONE,
+            },
+            {
+                "country_code": "DE",
+                "child_status": tasks_svc.CHILD_DONE,
+                "parent_status": tasks_svc.PARENT_CANCELLED,
+            },
+            {
+                "country_code": None,
+                "child_status": tasks_svc.CHILD_ASSIGNED,
+                "parent_status": tasks_svc.PARENT_RAW_DONE,
+            },
+            {
+                "country_code": "  es  ",
+                "child_status": tasks_svc.CHILD_BLOCKED,
+                "parent_status": tasks_svc.PARENT_CANCELLED,
+            },
         ]
 
     monkeypatch.setattr("appcore.tasks.query_all", mock_query_all)
@@ -21,12 +37,11 @@ def test_get_existing_task_languages_for_item(monkeypatch):
 
     assert len(query_calls) == 1
     assert "media_item_id=%s" in query_calls[0][0]
-    assert query_calls[0][1][0] == 42
-    assert "status <> %s" in query_calls[0][0]
-    assert query_calls[0][1][1] == tasks_svc.CHILD_CANCELLED
+    assert "LEFT JOIN tasks parent" in query_calls[0][0]
+    assert query_calls[0][1] == (42,)
 
-    # Check normalization and distinct uppercase mapping
-    assert langs == ["FR", "DE", "ES"]
+    # FR is active, DE is completed, ES belongs to a cancelled parent and is rebuildable.
+    assert langs == ["FR", "DE"]
 
 
 def test_create_parent_task_duplicate_guard(monkeypatch):
@@ -191,4 +206,3 @@ def test_create_parent_task_force_bypass(monkeypatch):
 
     assert parent_id == 200
     assert existing_calls == []
-

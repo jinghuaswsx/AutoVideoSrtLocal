@@ -141,14 +141,31 @@ def list_enabled_target_languages() -> list[dict]:
 
 
 def get_existing_task_languages_for_item(media_item_id: int) -> list[str]:
-    """获取该素材已创建的、非取消状态的活跃子任务语言列表"""
+    """获取该素材已创建的、会阻止同语种重建的子任务语言列表"""
     rows = query_all(
-        "SELECT DISTINCT country_code FROM tasks "
-        "WHERE media_item_id=%s AND parent_task_id IS NOT NULL "
-        "AND status <> %s",
-        (int(media_item_id), CHILD_CANCELLED)
+        "SELECT child.country_code, child.status AS child_status, "
+        "parent.status AS parent_status "
+        "FROM tasks child "
+        "LEFT JOIN tasks parent ON parent.id = child.parent_task_id "
+        "WHERE child.media_item_id=%s AND child.parent_task_id IS NOT NULL "
+        "ORDER BY child.id",
+        (int(media_item_id),),
     )
-    return [str(row["country_code"]).strip().upper() for row in rows if row.get("country_code")]
+    languages: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        code = str(row.get("country_code") or "").strip().upper()
+        if not code or code in seen:
+            continue
+        child_status = str(row.get("child_status") or "").strip()
+        parent_status = str(row.get("parent_status") or "").strip()
+        if child_status == CHILD_CANCELLED:
+            continue
+        if child_status != CHILD_DONE and parent_status == PARENT_CANCELLED:
+            continue
+        seen.add(code)
+        languages.append(code)
+    return languages
 
 
 
