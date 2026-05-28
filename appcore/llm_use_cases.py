@@ -382,7 +382,7 @@ USE_CASES: dict[str, UseCase] = {
         "素材评估",
         "根据商品图、链接和视频评估市场适配度",
         "openrouter",
-        "google/gemini-3.5-flash",
+        "google/gemini-3-flash-preview",
         "openrouter",
         "tokens",
     ),

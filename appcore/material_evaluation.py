@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
 EVALUATION_PROVIDER = "openrouter"
-EVALUATION_MODEL = "google/gemini-3.5-flash"
+EVALUATION_MODEL = "google/gemini-3-flash-preview"
 EVALUATION_SEARCH_ENABLED = False
 EVALUATION_CLIP_SECONDS = 30
 MAX_AUTOMATIC_ATTEMPTS = 1
@@ -56,6 +56,19 @@ def _search_tools_for_provider(provider: str) -> list[dict]:
     if (provider or "").strip().lower() == "openrouter":
         return [{"type": "openrouter:web_search"}]
     return [{"google_search": {}}]
+
+
+def _country_project_id_suffix(lang: dict[str, str]) -> str:
+    raw = str(lang.get("code") or "").strip().lower()
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in raw)
+    return safe or "country"
+
+
+def _evaluation_project_id(product_id: int, lang: dict[str, str] | None = None) -> str:
+    base = f"media-product-{int(product_id)}"
+    if not lang:
+        return base
+    return f"{base}-{_country_project_id_suffix(lang)}"
 
 
 def _clean_product_url_override(value: str | None) -> str:
@@ -745,11 +758,20 @@ def _invoke_evaluation_llm_with_recovery(
     response_schema: dict,
     llm_config: dict,
     recovery: dict[str, Any],
+    project_id: str | None = None,
+    billing_extra: dict[str, Any] | None = None,
 ) -> Any:
-    project_id = f"media-product-{product_id}"
+    project_id = project_id or f"media-product-{product_id}"
+    country_billing_extra = dict(billing_extra or {})
 
     def invoke_original(*, retry_attempt: int = 1) -> dict[str, Any]:
         attempt_project_id = project_id if retry_attempt == 1 else f"{project_id}-retry-{retry_attempt}"
+        invoke_billing_extra = {
+            "google_search": llm_config["search_enabled"],
+            "tools": llm_config["search_tools"],
+            "structured_retry_attempt": retry_attempt,
+        }
+        invoke_billing_extra.update(country_billing_extra)
         return llm_client.invoke_generate(
             USE_CASE_CODE,
             prompt=prompt,
@@ -763,11 +785,7 @@ def _invoke_evaluation_llm_with_recovery(
             provider_override=llm_config["provider"],
             model_override=llm_config["model"],
             google_search=llm_config["search_enabled"],
-            billing_extra={
-                "google_search": llm_config["search_enabled"],
-                "tools": llm_config["search_tools"],
-                "structured_retry_attempt": retry_attempt,
-            },
+            billing_extra=invoke_billing_extra,
         )
 
     first_result = invoke_original()
@@ -781,6 +799,12 @@ def _invoke_evaluation_llm_with_recovery(
         if raw_text.strip():
             recovery["json_repair_attempted"] = True
             try:
+                repair_billing_extra = {
+                    "google_search": False,
+                    "tools": [],
+                    "json_repair": True,
+                }
+                repair_billing_extra.update(country_billing_extra)
                 repair_result = llm_client.invoke_generate(
                     USE_CASE_CODE,
                     prompt=_json_repair_prompt(
@@ -797,11 +821,7 @@ def _invoke_evaluation_llm_with_recovery(
                     provider_override=llm_config["provider"],
                     model_override=llm_config["model"],
                     google_search=False,
-                    billing_extra={
-                        "google_search": False,
-                        "tools": [],
-                        "json_repair": True,
-                    },
+                    billing_extra=repair_billing_extra,
                 )
                 payload = _structured_payload_from_llm_result(repair_result)
                 recovery["json_repair_succeeded"] = True
@@ -824,6 +844,53 @@ def _invoke_evaluation_llm_with_recovery(
         raise
     recovery["retry_usage_log_id"] = retry_result.get("usage_log_id")
     return payload
+
+
+def _evaluate_countries_with_llm(
+    *,
+    product: dict,
+    product_id: int,
+    product_url: str,
+    languages: list[dict[str, str]],
+    system: str,
+    media: list[Path],
+    llm_config: dict,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    country_rows: list[dict[str, Any]] = []
+    recovery_by_lang: dict[str, Any] = {}
+    has_incomplete_country = False
+
+    for lang in languages:
+        single_language = [lang]
+        code = str(lang.get("code") or "").strip().lower()
+        country_recovery: dict[str, Any] = {}
+        raw_json = _invoke_evaluation_llm_with_recovery(
+            prompt=build_prompt(product, product_url, single_language),
+            system=system,
+            media=media,
+            product=product,
+            product_id=product_id,
+            response_schema=build_response_schema(single_language),
+            llm_config=llm_config,
+            recovery=country_recovery,
+            project_id=_evaluation_project_id(product_id, lang),
+            billing_extra={
+                "evaluation_mode": "per_country",
+                "target_lang": code,
+                "target_country": lang.get("country") or lang.get("name") or code,
+            },
+        )
+        normalized = normalize_result(raw_json, single_language)
+        country_rows.extend(normalized["countries"])
+        if normalized.get("ai_evaluation_result") == "需人工复核":
+            has_incomplete_country = True
+        if country_recovery:
+            recovery_by_lang[code or _country_project_id_suffix(lang)] = country_recovery
+
+    normalized_all = normalize_result({"countries": country_rows}, languages)
+    if has_incomplete_country:
+        normalized_all["ai_evaluation_result"] = "需人工复核"
+    return normalized_all, recovery_by_lang
 
 
 def _product_link_preflight_error(product_id: int, product_url: str) -> dict | None:
@@ -1031,8 +1098,20 @@ def build_request_debug_payload(
             include_base64=include_base64,
         ),
     ]
+    country_requests = [
+        {
+            "lang": lang.get("code"),
+            "country": lang.get("country") or lang.get("name") or lang.get("code"),
+            "project_id": _evaluation_project_id(product_id, lang),
+            "prompt": build_prompt(product, product_url, [lang]),
+            "response_schema": build_response_schema([lang]),
+            "media": "[same as request.media]",
+        }
+        for lang in languages
+    ]
     request_payload = {
         "use_case": USE_CASE_CODE,
+        "evaluation_mode": "per_country",
         "provider": llm_config["provider"],
         "model": llm_config["model"],
         "system": system_prompt,
@@ -1059,6 +1138,7 @@ def build_request_debug_payload(
         "max_output_tokens": 4096,
         "google_search": llm_config["search_enabled"],
         "tools": llm_config["search_tools"],
+        "country_requests": country_requests,
     }
     return {
         "product": {
@@ -1069,6 +1149,7 @@ def build_request_debug_payload(
             "user_id": product.get("user_id"),
         },
         "media_item_id": int(media_item_id) if media_item_id else video.get("id"),
+        "evaluation_mode": "per_country",
         "languages": languages,
         "prompts": {
             "system": system_prompt,
@@ -1077,16 +1158,22 @@ def build_request_debug_payload(
         "response_schema": response_schema,
         "llm": {
             "use_case": USE_CASE_CODE,
+            "evaluation_mode": "per_country",
             "provider": llm_config["provider"],
             "model": llm_config["model"],
             "temperature": 0.2,
             "max_output_tokens": 4096,
             "project_id": f"media-product-{product_id}",
+            "country_project_ids": [
+                _evaluation_project_id(product_id, lang)
+                for lang in languages
+            ],
             "google_search": llm_config["search_enabled"],
             "tools": llm_config["search_tools"],
         },
         "media": media,
         "request": request_payload,
+        "country_requests": country_requests,
         "include_base64": include_base64,
     }
 
@@ -1233,21 +1320,20 @@ def _evaluate_product_if_ready(
             video_key,
             trigger="manual" if manual else "auto",
         )
-        prompt = build_prompt(product, product_url, languages)
-        raw_json = _invoke_evaluation_llm_with_recovery(
-            prompt=prompt,
-            system=build_system_prompt(),
-            media=[cover_path, video_path],
+        normalized, llm_recovery = _evaluate_countries_with_llm(
             product=product,
             product_id=product_id,
-            response_schema=build_response_schema(languages),
+            product_url=product_url,
+            languages=languages,
+            system=build_system_prompt(),
+            media=[cover_path, video_path],
             llm_config=llm_config,
-            recovery=llm_recovery,
         )
-        normalized = normalize_result(raw_json, languages)
         detail = {
             "schema_version": 1,
             "use_case": USE_CASE_CODE,
+            "evaluation_mode": "per_country",
+            "country_call_count": len(languages),
             "provider": llm_config["provider"],
             "model": llm_config["model"],
             "search_enabled": llm_config["search_enabled"],
