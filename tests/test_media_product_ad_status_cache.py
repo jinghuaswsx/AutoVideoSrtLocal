@@ -88,7 +88,9 @@ def test_product_lang_ad_summary_cache_returns_nested_map(monkeypatch):
     assert sorted(result[1]) == ["de", "fr"]
     assert result[1]["de"]["pushed_video_count"] == 0
     assert result[1]["de"]["ad_roas"] is None
+    assert result[1]["de"]["delivery_status"] == "never"
     assert result[1]["fr"]["ad_roas"] == 1.5
+    assert result[1]["fr"]["delivery_status"] == "active"
 
 
 def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):

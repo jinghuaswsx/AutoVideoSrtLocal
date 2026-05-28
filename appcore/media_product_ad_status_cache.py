@@ -118,6 +118,7 @@ def get_product_lang_ad_summary_cache(product_ids: list[int] | tuple[int, ...] |
             "purchase_value_usd": _safe_float(row.get("purchase_value_usd")),
             "ad_roas": _nullable_float(row.get("ad_roas")),
             "active_7d_ad_spend_usd": _safe_float(row.get("active_7d_ad_spend_usd")),
+            "delivery_status": _delivery_status(row.get("ad_spend_usd"), row.get("active_7d_ad_spend_usd")),
             "computed_at": _iso(row.get("computed_at")),
         }
     return out

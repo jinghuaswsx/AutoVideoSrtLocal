@@ -713,7 +713,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-lang-summary strong { color: #2563eb; font-size: 16px; font-weight: 800; margin-left: 4px; }
 .oc-lang-line {
   display:grid;
-  grid-template-columns:minmax(82px, 1fr) minmax(58px, auto) minmax(72px, auto);
+  grid-template-columns:minmax(130px, 1fr) minmax(58px, auto) minmax(72px, auto);
   gap:6px;
   align-items:center;
   width:100%;
@@ -722,7 +722,13 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   font-size:12px;
   font-variant-numeric:tabular-nums;
 }
-.oc-lang-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); font-weight:600; }
+.oc-lang-name {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  color:var(--oc-fg);
+  font-weight:600;
+}
 .oc-lang-push, .oc-lang-roas { color:var(--oc-fg-muted); white-space:nowrap; }
 .oc-lang-push-count { color:var(--oc-fg); font-weight:700; }
 .oc-lang-push-zero { color:var(--oc-danger-fg); font-size:24px; font-weight:900; line-height:1; }
@@ -743,6 +749,21 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-delivery-pill.active { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
 .oc-delivery-pill.stopped { background:#f3f4f6; color:#111827; border:1px solid #d1d5db; }
 .oc-delivery-pill.never { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+.oc-lang-status-pill {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:18px;
+  padding:0 6px;
+  border-radius:4px;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+  line-height:1;
+}
+.oc-lang-status-pill.active { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+.oc-lang-status-pill.stopped { background:#f3f4f6; color:#374151; border:1px solid #d1d5db; }
+.oc-lang-status-pill.never { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
 .oc-lang-checkbox-group { display:flex; flex-wrap:wrap; gap:var(--oc-sp-2); }
 .oc-lang-checkbox {
   display:inline-flex; align-items:center; gap:6px;

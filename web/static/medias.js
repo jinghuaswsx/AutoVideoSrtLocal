@@ -529,9 +529,15 @@
       const pushedClass = pushed === 0 ? 'oc-lang-push-zero' : 'oc-lang-push-count';
       const roas = fmtAdRoas(summary.ad_roas);
       const spend = fmtAdSpend(summary.ad_spend_usd);
-      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'}`;
+      
+      const statusRaw = String(summary.delivery_status || 'never').toLowerCase();
+      const statusMeta = DELIVERY_STATUS_META[statusRaw] || DELIVERY_STATUS_META.never;
+      const statusLabel = statusRaw === 'stopped' ? '投放终止' : statusMeta.label;
+      const statusPill = `<span class="oc-lang-status-pill ${statusMeta.cls}">${statusLabel}</span>`;
+      
+      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'} / 状态 ${statusLabel}`;
       return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
-        + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}</span>`
+        + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}${statusPill}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
         + `<span class="oc-lang-roas">ROAS ${roas} / 消耗 ${spend}</span>`
         + `</div>`;
