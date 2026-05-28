@@ -1185,7 +1185,10 @@
   function renderRow(it) {
     const thumbUrl = safeMediaSrc(it.cover_url);
     const thumb = thumbUrl
-      ? `<img class="thumb" src="${escapeAttr(thumbUrl)}" alt="">`
+      ? `<div class="push-thumb-wrap" data-action="play-video" data-id="${it.id}">` +
+        `<img class="thumb" src="${escapeAttr(thumbUrl)}" alt="">` +
+        `<div class="push-play-overlay"><span class="push-play-btn-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span></div>` +
+        `</div>`
       : `<div class="thumb thumb-empty"></div>`;
     const mainImageUrl = `/medias/cover/${it.product_id}`;
     const mainImage = `<div class="main-image-wrap">` +
@@ -2619,11 +2622,67 @@
     }
   });
 
+  function playVideoModal(itemId) {
+    const item = state.items.find(i => Number(i.id) === Number(itemId));
+    if (!item || !item.object_key) {
+      alert('视频未就绪或未找到');
+      return;
+    }
+
+    const encoded = item.object_key.split('/').map(encodeURIComponent).join('/');
+    const videoUrl = '/medias/obj/' + encoded;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'push-video-modal-overlay';
+    overlay.setAttribute('role', 'presentation');
+
+    overlay.innerHTML = `
+      <div class="push-video-modal-container">
+        <button type="button" class="push-video-modal-close" aria-label="关闭">&times;</button>
+        <div class="push-video-modal-content">
+          <video class="push-video-player" src="${escapeAttr(videoUrl)}" controls autoplay playsinline></video>
+        </div>
+      </div>
+    `;
+
+    const closeBtn = overlay.querySelector('.push-video-modal-close');
+    const videoEl = overlay.querySelector('.push-video-player');
+
+    function close() {
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.src = '';
+        videoEl.load();
+      }
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') close();
+    }
+
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) close();
+    });
+    closeBtn.addEventListener('click', close);
+
+    document.body.appendChild(overlay);
+  }
+
   document.getElementById('push-tbody').addEventListener('click', ev => {
-    const btn = ev.target.closest('button[data-action]');
+    const clickable = ev.target.closest('[data-action]');
+    if (!clickable) return;
+    const action = clickable.getAttribute('data-action');
+    const id = Number(clickable.getAttribute('data-id'));
+    if (action === 'play-video') {
+      playVideoModal(id);
+      return;
+    }
+
+    const btn = clickable.closest('button');
     if (!btn) return;
-    const action = btn.getAttribute('data-action');
-    const id = Number(btn.getAttribute('data-id'));
     if (action === 'open-modal') openPushModal(id);
     else if (action === 'ai-detail') showAuditDetail(id);
     else if (action === 'reset') resetPush(id);
