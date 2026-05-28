@@ -1404,6 +1404,88 @@ def test_get_ads_level_list_filters_by_ad_account(monkeypatch):
     assert list_query["args"] == (report_start, report_end, "1253003326160754", 50, 0)
 
 
+def test_get_ads_level_list_filters_adsets_by_campaign_parent(monkeypatch):
+    today = oa.current_meta_business_date()
+    captured: list[dict] = []
+
+    def fake_query_one(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_ads_level_list(
+        "adset",
+        start_date=today.isoformat(),
+        end_date=today.isoformat(),
+        parent_level="campaign",
+        parent_code="sonic-lens-refresher-rjc",
+    )
+
+    assert result["parent"] == {
+        "level": "campaign",
+        "code": "sonic-lens-refresher-rjc",
+    }
+    union_query = next(q for q in captured if "UNION ALL" in q["sql"])
+    assert "AND normalized_campaign_code = %s" in union_query["sql"]
+    assert "AND m.normalized_campaign_code = %s" in union_query["sql"]
+    assert union_query["args"].count("sonic-lens-refresher-rjc") == 2
+
+
+def test_get_ads_level_list_filters_ads_by_adset_parent(monkeypatch):
+    captured: list[dict] = []
+    report_start = oa._parse_meta_date("2026-05-17")
+    report_end = oa._parse_meta_date("2026-05-17")
+
+    def fake_query_one(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_ads_level_list(
+        "ad",
+        start_date="2026-05-17",
+        end_date="2026-05-17",
+        parent_level="adset",
+        parent_code="glow-go-insect-set-rjc",
+    )
+
+    assert result["parent"] == {
+        "level": "adset",
+        "code": "glow-go-insect-set-rjc",
+    }
+    total_query = captured[0]
+    list_query = captured[1]
+    assert "normalized_adset_code = %s" in total_query["sql"]
+    assert total_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc")
+    assert "normalized_adset_code = %s" in list_query["sql"]
+    assert list_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc", 50, 0)
+
+
+def test_get_ads_level_list_rejects_invalid_parent_filter():
+    import pytest
+
+    with pytest.raises(ValueError):
+        oa.get_ads_level_list(
+            "adset",
+            start_date="2026-05-17",
+            end_date="2026-05-17",
+            parent_level="adset",
+            parent_code="glow-go-insect-set-rjc",
+        )
+
+
 def test_search_ads_by_level_rejects_empty_q():
     import pytest
 
@@ -2100,24 +2182,39 @@ def test_get_ads_level_detail_applies_order_fallback_to_historical_days(monkeypa
 def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeypatch):
     captured = {}
 
-    def fake_list(level, start_date, end_date, page, page_size, sort_by, sort_dir, q, ad_account_id):
+    def fake_list(
+        level,
+        start_date,
+        end_date,
+        page,
+        page_size,
+        sort_by,
+        sort_dir,
+        q,
+        ad_account_id,
+        parent_level=None,
+        parent_code=None,
+    ):
         captured.update({
             "level": level, "start_date": start_date, "end_date": end_date,
             "page": page, "page_size": page_size,
             "sort_by": sort_by, "sort_dir": sort_dir, "q": q,
             "ad_account_id": ad_account_id,
+            "parent_level": parent_level,
+            "parent_code": parent_code,
         })
         return {"level": level, "rows": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
 
     monkeypatch.setattr(oa, "get_ads_level_list", fake_list)
     response = authed_client_no_db.get(
-        "/order-analytics/ads/list?level=campaign"
+        "/order-analytics/ads/list?level=adset"
         "&start_date=2026-04-01&end_date=2026-04-14"
         "&page=2&page_size=25&sort_by=roas_purchase&sort_dir=asc"
         "&q=water-blaster&ad_account_id=1253003326160754"
+        "&parent_level=campaign&parent_code=sonic-lens-refresher-rjc"
     )
     assert response.status_code == 200, response.data
-    assert captured["level"] == "campaign"
+    assert captured["level"] == "adset"
     assert captured["start_date"] == "2026-04-01"
     assert captured["end_date"] == "2026-04-14"
     assert captured["page"] == 2
@@ -2126,6 +2223,8 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     assert captured["sort_dir"] == "asc"
     assert captured["q"] == "water-blaster"
     assert captured["ad_account_id"] == "1253003326160754"
+    assert captured["parent_level"] == "campaign"
+    assert captured["parent_code"] == "sonic-lens-refresher-rjc"
 
 
 def test_ads_detail_route_passes_account_to_data_layer(authed_client_no_db, monkeypatch):

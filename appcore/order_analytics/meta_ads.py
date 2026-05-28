@@ -1021,6 +1021,7 @@ def _ads_purchase_data_quality(fallback_stats: dict) -> dict:
 # ── 三层级（Campaign / Ad Set / Ad）查询：list / search / detail ──────
 # Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
 # Docs-anchor: docs/superpowers/specs/2026-05-28-ads-level-realtime-default-today.md
+# Docs-anchor: docs/superpowers/specs/2026-05-28-ads-hierarchy-drilldown-design.md
 
 _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
     "campaign": {
@@ -1036,6 +1037,12 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "table": "meta_ad_daily_adset_metrics",
         "code_col": "normalized_adset_code",
         "name_col": "adset_name",
+        "parent_filters": {
+            "campaign": {
+                "daily_col": "normalized_campaign_code",
+                "realtime_col": "normalized_campaign_code",
+            },
+        },
         "realtime_table": "meta_ad_realtime_daily_adset_metrics",
         "realtime_code_col": "normalized_adset_code",
         "realtime_name_col": "adset_name",
@@ -1045,6 +1052,16 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "table": "meta_ad_daily_ad_metrics",
         "code_col": "normalized_ad_code",
         "name_col": "ad_name",
+        "parent_filters": {
+            "campaign": {
+                "daily_col": "normalized_campaign_code",
+                "realtime_col": "normalized_campaign_code",
+            },
+            "adset": {
+                "daily_col": "normalized_adset_code",
+                "realtime_col": "normalized_adset_code",
+            },
+        },
         "realtime_table": "meta_ad_realtime_daily_ad_metrics",
         "realtime_code_col": "normalized_ad_code",
         "realtime_name_col": "ad_name",
@@ -1126,6 +1143,29 @@ def _resolve_ads_level(level: str) -> dict:
     if not cfg:
         raise ValueError("level must be one of campaign/adset/ad")
     return cfg
+
+
+def _resolve_ads_parent_filter(
+    cfg: dict,
+    parent_level: str | None,
+    parent_code: str | None,
+) -> dict[str, str] | None:
+    parent_level_norm = (parent_level or "").strip().lower()
+    parent_code_clean = (parent_code or "").strip()
+    if not parent_level_norm and not parent_code_clean:
+        return None
+    if not parent_level_norm or not parent_code_clean:
+        raise ValueError("parent_level and parent_code must be provided together")
+    filters = cfg.get("parent_filters") or {}
+    parent_cfg = filters.get(parent_level_norm)
+    if not parent_cfg:
+        raise ValueError("unsupported ads hierarchy parent filter")
+    return {
+        "level": parent_level_norm,
+        "code": parent_code_clean,
+        "daily_col": parent_cfg["daily_col"],
+        "realtime_col": parent_cfg["realtime_col"],
+    }
 
 
 def _coerce_ads_date_range(
@@ -1212,9 +1252,12 @@ def get_ads_level_list(
     sort_dir: str = "desc",
     q: str | None = None,
     ad_account_id: str | None = None,
+    parent_level: str | None = None,
+    parent_code: str | None = None,
 ) -> dict:
     """List Campaign / Ad Set / Ad rows aggregated by code within a date range."""
     cfg = _resolve_ads_level(level)
+    parent_filter = _resolve_ads_parent_filter(cfg, parent_level, parent_code)
     start, end = _coerce_ads_date_range(start_date, end_date)
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 50), 200))
@@ -1227,6 +1270,13 @@ def get_ads_level_list(
     account_filter = _normalize_ad_account_filter(ad_account_id)
     account_clause = "AND ad_account_id = %s " if account_filter else ""
     account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
+    parent_daily_clause = (
+        f"AND {parent_filter['daily_col']} = %s " if parent_filter else ""
+    )
+    parent_realtime_clause = (
+        f"AND m.{parent_filter['realtime_col']} = %s " if parent_filter else ""
+    )
+    parent_args: tuple[str, ...] = (parent_filter["code"],) if parent_filter else ()
 
     today = current_meta_business_date()
     use_union = supports_realtime and end >= today
@@ -1240,9 +1290,10 @@ def get_ads_level_list(
             f"FROM {cfg['table']} "
             f"WHERE meta_business_date >= %s AND meta_business_date <= %s "
             f"{account_clause}"
+            f"{parent_daily_clause}"
         )
         hist_end = min(end, today - timedelta(days=1))
-        hist_args = (start, hist_end) + account_args
+        hist_args = (start, hist_end) + account_args + parent_args
 
         # 子查询 2: 实时表的今日最新快照
         real_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
@@ -1268,8 +1319,9 @@ def get_ads_level_list(
             f"AND m.snapshot_at = latest.max_snapshot_at "
             f"WHERE m.business_date = %s AND m.data_completeness = 'realtime_partial' "
             f"{real_account_clause}"
+            f"{parent_realtime_clause}"
         )
-        real_args = (today, today) + account_args
+        real_args = (today, today) + account_args + parent_args
 
         table = f"( {hist_table_sql} UNION ALL {realtime_sql} ) AS combined_t"
         code_col = "code"
@@ -1282,8 +1334,12 @@ def get_ads_level_list(
         code_col = cfg["code_col"]
         name_col = cfg["name_col"]
         subquery_args = ()
-        where_clause = f"WHERE meta_business_date >= %s AND meta_business_date <= %s {account_clause}"
-        where_args = (start, end) + account_args
+        where_clause = (
+            f"WHERE meta_business_date >= %s AND meta_business_date <= %s "
+            f"{account_clause}"
+            f"{parent_daily_clause}"
+        )
+        where_args = (start, end) + account_args + parent_args
 
     search_clause = ""
     search_args: tuple[str, ...] = ()
@@ -1363,7 +1419,7 @@ def get_ads_level_list(
 
     dq_result = _ads_purchase_data_quality(fallback_stats)
 
-    return {
+    result = {
         "level": level,
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "rows": out,
@@ -1373,6 +1429,12 @@ def get_ads_level_list(
         "has_more": (page * page_size) < total,
         "data_quality": dq_result,
     }
+    if parent_filter:
+        result["parent"] = {
+            "level": parent_filter["level"],
+            "code": parent_filter["code"],
+        }
+    return result
 
 
 def search_ads_by_level(level: str, q: str, limit: int = 20) -> dict:

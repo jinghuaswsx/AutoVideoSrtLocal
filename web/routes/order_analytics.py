@@ -463,6 +463,7 @@ def ad_summary():
 
 # ── 三级 tab：Campaign / Ad Set / Ad ────────────────────
 # Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
+# Docs-anchor: docs/superpowers/specs/2026-05-28-ads-hierarchy-drilldown-design.md
 
 _ADS_LEVELS = ("campaign", "adset", "ad")
 
@@ -491,6 +492,8 @@ def ads_level_list():
             sort_dir=(request.args.get("sort_dir") or "desc").strip(),
             q=(request.args.get("q") or "").strip() or None,
             ad_account_id=(request.args.get("ad_account_id") or "").strip() or None,
+            parent_level=(request.args.get("parent_level") or "").strip() or None,
+            parent_code=(request.args.get("parent_code") or "").strip() or None,
         )
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400

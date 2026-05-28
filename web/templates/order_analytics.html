@@ -3090,6 +3090,8 @@
   .oa-breadcrumb button { height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-strong);
     background: var(--bg); border-radius: var(--radius); cursor: pointer; font-size: var(--text-sm); color: var(--fg); }
   .oa-breadcrumb button:hover { background: var(--bg-muted); }
+  .ads-hierarchy-child[hidden] { display: none; }
+  .ads-hierarchy-empty { padding: var(--space-6); color: var(--fg-muted); }
   .oa-row-clickable { cursor: pointer; }
   .oa-row-clickable:hover { background: var(--bg-subtle); }
   .ads-name-cell { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
@@ -3278,6 +3280,31 @@
         <button type="button" data-ads-detail-back="{{ level }}">← 返回 {{ label }} 列表</button>
         <span class="oa-detail-title">[{{ label }}] <strong data-ads-detail-name="{{ level }}"></strong></span>
       </div>
+      <div class="ads-hierarchy-child" data-ads-child-panel="{{ level }}" hidden>
+        <div class="oa-warning-banner" data-ads-child-quality="{{ level }}" hidden></div>
+        <div class="oa-table-wrap">
+          <div class="oa-table-scroll">
+            <table class="oa-table">
+              <thead>
+                <tr>
+                  <th data-ads-child-label="{{ level }}">Child</th>
+                  <th>账户</th>
+                  <th class="oa-table-num">消耗 (USD)</th>
+                  <th class="oa-table-num">购买金额 (USD)</th>
+                  <th class="oa-table-num">ROAS</th>
+                  <th class="oa-table-num">购买数</th>
+                  <th class="oa-table-num">活跃天数</th>
+                </tr>
+              </thead>
+              <tbody data-ads-child-body="{{ level }}">
+                <tr><td colspan="7" class="oad-loading">加载中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="oa-pagination" data-ads-child-pagination="{{ level }}"></div>
+      </div>
+      <div data-ads-detail-panel="{{ level }}">
       <div class="oa-detail-header">
         <div class="oa-detail-summary">
           <span class="oa-detail-summary-label">总消耗</span>
@@ -3336,6 +3363,7 @@
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   </div>
@@ -7388,15 +7416,16 @@
   // ──────────────────────────────────────────────────────
   // Ads sub-tabs (Campaign / Ad Set / Ad)
   // Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
+  // Docs-anchor: docs/superpowers/specs/2026-05-28-ads-hierarchy-drilldown-design.md
   // ──────────────────────────────────────────────────────
   var ADS_LEVELS = ['campaign', 'adset', 'ad'];
   var adsLevelLabels = { campaign: 'Campaign', adset: 'Ad Set', ad: 'Ad' };
   var adsCopyLabels = { campaign: '复制Campaign名', adset: '复制Ad Set名', ad: '复制广告名' };
   var adsLevelInited = false;
   var adsLevelState = {
-    campaign: { mode: 'list', code: null, name: null, listPage: 1, listSearchTimer: null, activeIdx: -1, searchRows: [] },
-    adset:    { mode: 'list', code: null, name: null, listPage: 1, listSearchTimer: null, activeIdx: -1, searchRows: [] },
-    ad:       { mode: 'list', code: null, name: null, listPage: 1, listSearchTimer: null, activeIdx: -1, searchRows: [] }
+    campaign: { mode: 'list', detailKind: 'detail', code: null, name: null, listPage: 1, childPage: 1, childLevel: null, listSearchTimer: null, activeIdx: -1, searchRows: [] },
+    adset:    { mode: 'list', detailKind: 'detail', code: null, name: null, listPage: 1, childPage: 1, childLevel: null, listSearchTimer: null, activeIdx: -1, searchRows: [] },
+    ad:       { mode: 'list', detailKind: 'detail', code: null, name: null, listPage: 1, childPage: 1, childLevel: null, listSearchTimer: null, activeIdx: -1, searchRows: [] }
   };
 
   function adsTodayIso() { return new Date().toISOString().slice(0, 10); }
@@ -7458,7 +7487,11 @@
       if (adsLevelState[target].mode === 'list') {
         adsLoadList(target);
       } else if (adsLevelState[target].mode === 'detail' && adsLevelState[target].code) {
-        adsLoadDetail(target);
+        if (adsLevelState[target].detailKind === 'child' && adsLevelState[target].childLevel) {
+          adsLoadChildList(target, adsLevelState[target].childLevel);
+        } else {
+          adsLoadDetail(target);
+        }
       }
     }
   }
@@ -7468,12 +7501,19 @@
     if (!subpanel) return;
     var listEl = subpanel.querySelector('[data-level-list="' + level + '"]');
     var detailEl = subpanel.querySelector('[data-subdetail="' + level + '"]');
+    var childEl = subpanel.querySelector('[data-ads-child-panel="' + level + '"]');
+    var detailPanelEl = subpanel.querySelector('[data-ads-detail-panel="' + level + '"]');
     if (mode === 'detail') {
       if (listEl) listEl.style.display = 'none';
       if (detailEl) detailEl.classList.add('is-active');
+      var showChild = adsLevelState[level].detailKind === 'child';
+      if (childEl) childEl.hidden = !showChild;
+      if (detailPanelEl) detailPanelEl.hidden = showChild;
     } else {
       if (listEl) listEl.style.display = '';
       if (detailEl) detailEl.classList.remove('is-active');
+      if (childEl) childEl.hidden = true;
+      if (detailPanelEl) detailPanelEl.hidden = false;
     }
     adsLevelState[level].mode = mode;
   }
@@ -7601,7 +7641,9 @@
   }
 
   function adsRenderDataQuality(level, dq, mode) {
-    var selector = mode === 'detail'
+    var selector = mode === 'child'
+      ? '[data-ads-child-quality="' + level + '"]'
+      : mode === 'detail'
       ? '[data-ads-detail-quality="' + level + '"]'
       : '[data-ads-list-quality="' + level + '"]';
     var bar = document.querySelector(selector);
@@ -7629,6 +7671,156 @@
     }
     bar.hidden = true;
     bar.textContent = '';
+  }
+
+  function adsCopyListContext(fromLevel, toLevel, accountId) {
+    var fromStart = document.querySelector('[data-ads-list-start="' + fromLevel + '"]');
+    var fromEnd = document.querySelector('[data-ads-list-end="' + fromLevel + '"]');
+    var toStart = document.querySelector('[data-ads-list-start="' + toLevel + '"]');
+    var toEnd = document.querySelector('[data-ads-list-end="' + toLevel + '"]');
+    if (fromStart && toStart) toStart.value = fromStart.value;
+    if (fromEnd && toEnd) toEnd.value = fromEnd.value;
+    var toAccount = document.querySelector('[data-ads-account-filter="' + toLevel + '"]');
+    if (toAccount) {
+      toAccount.value = adsNormalizeAccountId(accountId) ||
+        getSelectedAdsAccountId('[data-ads-account-filter="' + fromLevel + '"]') || '';
+    }
+    adsSyncLevelRangeSelection(toLevel);
+  }
+
+  function adsOpenChildList(parentLevel, childLevel, parentCode, parentName, accountId) {
+    if (!parentCode) return;
+    var state = adsLevelState[parentLevel];
+    if (!state) return;
+    state.mode = 'detail';
+    state.detailKind = 'child';
+    state.code = parentCode;
+    state.name = parentName || parentCode;
+    state.accountId = adsNormalizeAccountId(accountId) ||
+      getSelectedAdsAccountId('[data-ads-account-filter="' + parentLevel + '"]');
+    state.childLevel = childLevel;
+    state.childPage = 1;
+    var nameEl = document.querySelector('[data-ads-detail-name="' + parentLevel + '"]');
+    if (nameEl) {
+      nameEl.textContent = (parentName || parentCode || '') + ' -> ' + adsLevelLabels[childLevel];
+    }
+    var childLabel = document.querySelector('[data-ads-child-label="' + parentLevel + '"]');
+    if (childLabel) childLabel.textContent = adsLevelLabels[childLevel] || 'Child';
+    adsShowMode(parentLevel, 'detail');
+    adsLoadChildList(parentLevel, childLevel);
+  }
+
+  function adsLoadChildList(parentLevel, childLevel) {
+    var state = adsLevelState[parentLevel];
+    if (!state || !state.code) return;
+    var parentCode = state.code;
+    var start = (document.querySelector('[data-ads-list-start="' + parentLevel + '"]') || {}).value || adsDefaultStartIso(parentLevel);
+    var end = (document.querySelector('[data-ads-list-end="' + parentLevel + '"]') || {}).value || adsDefaultEndIso(parentLevel);
+    var accountId = state.accountId ||
+      getSelectedAdsAccountId('[data-ads-account-filter="' + parentLevel + '"]');
+    var page = state.childPage || 1;
+    var url = '/order-analytics/ads/list?level=' + encodeURIComponent(childLevel) +
+              '&start_date=' + encodeURIComponent(start) +
+              '&end_date=' + encodeURIComponent(end) +
+              '&page=' + encodeURIComponent(page) +
+              '&page_size=50&sort_by=spend_usd&sort_dir=desc' +
+              '&parent_level=' + encodeURIComponent(parentLevel) +
+              '&parent_code=' + encodeURIComponent(parentCode);
+    if (accountId) {
+      url += '&ad_account_id=' + encodeURIComponent(accountId);
+    }
+    var body = document.querySelector('[data-ads-child-body="' + parentLevel + '"]');
+    if (body) body.innerHTML = '<tr><td colspan="7" class="oad-loading">加载中...</td></tr>';
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(res) { return res.json(); })
+      .then(function(payload) { adsRenderChildList(parentLevel, childLevel, payload); })
+      .catch(function() {
+        if (body) body.innerHTML = '<tr><td colspan="7" class="oad-loading">加载失败，请刷新或换日期范围。</td></tr>';
+      });
+  }
+
+  function adsRenderChildList(parentLevel, childLevel, payload) {
+    var data = (payload && payload.data) || payload || {};
+    var rows = data.rows || [];
+    var body = document.querySelector('[data-ads-child-body="' + parentLevel + '"]');
+    if (!body) return;
+    adsRenderDataQuality(parentLevel, data.data_quality, 'child');
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="oad-loading">该日期范围内暂无对应 ' + adsLevelLabels[childLevel] + ' 数据。</td></tr>';
+    } else {
+      var html = '';
+      rows.forEach(function(r) {
+        var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
+        html += '<tr class="oa-row-clickable" data-ads-child-row="' + escHtml(r.code || '') + '" data-ads-child-name="' + escHtml(r.name || '') + '" data-ads-account-id="' + escHtml(r.ad_account_id || '') + '">';
+        var copyLabel = adsCopyLabels[childLevel];
+        var levelName = r.name || r.code || '';
+        html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(levelName || '—') + '</span>';
+        if (copyLabel) {
+          html += '<button type="button" class="ads-copy-name-btn" data-ads-child-copy-name="' + escHtml(levelName) + '" data-ads-copy-label="' + escHtml(copyLabel) + '" title="' + escHtml(copyLabel) + '">' + escHtml(copyLabel) + '</button>';
+        }
+        html += '</div></td>';
+        html += '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>';
+        html += '<td class="oa-table-num">' + adsFmtInt(r.day_count) + '</td>';
+        html += '</tr>';
+      });
+      body.innerHTML = html;
+      body.querySelectorAll('[data-ads-child-copy-name]').forEach(function(btn) {
+        btn.addEventListener('click', function(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          adsCopyText(btn.dataset.adsChildCopyName || '')
+            .then(function() { adsSetCopyButtonState(btn, '已复制', 'is-copied'); })
+            .catch(function() { adsSetCopyButtonState(btn, '复制失败', ''); });
+        });
+      });
+      body.querySelectorAll('[data-ads-child-row]').forEach(function(tr) {
+        tr.addEventListener('click', function(ev) {
+          if (ev.target && ev.target.closest && ev.target.closest('[data-ads-child-copy-name]')) return;
+          var code = tr.dataset.adsChildRow;
+          var name = tr.dataset.adsChildName || code;
+          var rowAccountId = tr.dataset.adsAccountId || '';
+          if (childLevel === 'adset') {
+            adsCopyListContext(parentLevel, 'adset', rowAccountId);
+            setAdsSubtab('adset');
+            adsOpenChildList('adset', 'ad', code, name, rowAccountId);
+          } else {
+            adsCopyListContext(parentLevel, 'ad', rowAccountId);
+            setAdsSubtab('ad');
+            adsOpenDetail('ad', code, name, rowAccountId);
+          }
+        });
+      });
+    }
+    var pag = document.querySelector('[data-ads-child-pagination="' + parentLevel + '"]');
+    if (pag) {
+      var page = data.page || 1;
+      var total = data.total || 0;
+      var pageSize = data.page_size || 50;
+      var totalPages = Math.max(1, Math.ceil(total / pageSize));
+      var prevDisabled = page <= 1 ? 'disabled' : '';
+      var nextDisabled = (data.has_more === false) ? 'disabled' : '';
+      pag.innerHTML = '<button type="button" data-ads-child-prev="' + parentLevel + '" ' + prevDisabled + '>上一页</button>' +
+                      '<span>第 ' + page + ' / ' + totalPages + ' 页 · 共 ' + total + ' 条</span>' +
+                      '<button type="button" data-ads-child-next="' + parentLevel + '" ' + nextDisabled + '>下一页</button>';
+      var prevBtn = pag.querySelector('[data-ads-child-prev]');
+      var nextBtn = pag.querySelector('[data-ads-child-next]');
+      if (prevBtn) prevBtn.addEventListener('click', function() {
+        if (adsLevelState[parentLevel].childPage > 1) {
+          adsLevelState[parentLevel].childPage -= 1;
+          adsLoadChildList(parentLevel, childLevel);
+        }
+      });
+      if (nextBtn) nextBtn.addEventListener('click', function() {
+        if (data.has_more) {
+          adsLevelState[parentLevel].childPage += 1;
+          adsLoadChildList(parentLevel, childLevel);
+        }
+      });
+    }
   }
 
   function adsRenderList(level, payload) {
@@ -7674,6 +7866,14 @@
       body.querySelectorAll('[data-ads-row]').forEach(function(tr) {
         tr.addEventListener('click', function(ev) {
           if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
+          if (level === 'campaign') {
+            adsOpenChildList('campaign', 'adset', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+            return;
+          }
+          if (level === 'adset') {
+            adsOpenChildList('adset', 'ad', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+            return;
+          }
           adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
         });
       });
@@ -7708,9 +7908,11 @@
 
   function adsOpenDetail(level, code, name, accountId) {
     adsLevelState[level].mode = 'detail';
+    adsLevelState[level].detailKind = 'detail';
     adsLevelState[level].code = code;
     adsLevelState[level].name = name;
     adsLevelState[level].accountId = adsNormalizeAccountId(accountId);
+    adsLevelState[level].childLevel = null;
     var accountSelect = document.querySelector('[data-ads-detail-account="' + level + '"]');
     if (accountSelect) {
       var selectedAccount = adsNormalizeAccountId(accountId) ||
@@ -7849,7 +8051,9 @@
       var backBtn = document.querySelector('[data-ads-detail-back="' + level + '"]');
       if (backBtn) backBtn.addEventListener('click', function() {
         adsLevelState[level].mode = 'list';
+        adsLevelState[level].detailKind = 'detail';
         adsLevelState[level].code = null;
+        adsLevelState[level].childLevel = null;
         adsShowMode(level, 'list');
       });
     });

@@ -272,6 +272,19 @@ def test_ads_page_supports_campaign_detail_deep_link_from_query_params():
     assert "document.addEventListener('DOMContentLoaded', adsApplyDeepLinkFromQuery);" in template
 
 
+def test_ads_level_rows_drill_down_through_hierarchy():
+    """Docs-anchor: docs/superpowers/specs/2026-05-28-ads-hierarchy-drilldown-design.md"""
+    template = _template_source()
+
+    assert "function adsOpenChildList(parentLevel, childLevel, parentCode, parentName, accountId)" in template
+    assert "function adsLoadChildList(parentLevel, childLevel)" in template
+    assert "parent_level=' + encodeURIComponent(parentLevel)" in template
+    assert "parent_code=' + encodeURIComponent(parentCode)" in template
+    assert "adsOpenChildList('campaign', 'adset'," in template
+    assert "adsOpenChildList('adset', 'ad'," in template
+    assert "adsOpenDetail(level, tr.dataset.adsRow" in template
+
+
 def test_ads_deep_link_defaults_detail_range_to_recent_month():
     """素材广告计划深链进入 Campaign 详情时，日期默认最近一个月。"""
     template = _template_source()
