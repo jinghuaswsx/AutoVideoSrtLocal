@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 
 import pytest
 
@@ -403,6 +404,71 @@ def test_subtitle_removal_provider_can_use_niuma_infra_credentials(monkeypatch):
     assert captured["headers"]["authorization"] == "GOLDEN_NIUMA"
     assert captured["json"]["biz"] == "aiRemoveSubtitleSubmitTask"
     assert captured["timeout"] == 30
+
+
+def test_subtitle_removal_provider_niuma_region_adds_position_payload(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": {"taskId": "niuma-task-region"}}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_API_KEY", "GOLDEN_NIUMA", raising=False)
+    monkeypatch.setattr(provider.config, "NIUMA_ERASE_BASE_URL", "https://niuma.example/api/openAi", raising=False)
+
+    provider.submit_task(
+        file_size_mb=2.0,
+        duration_seconds=10.0,
+        resolution="720x1280",
+        video_name="sr-niuma_0_0_11_22_333_444",
+        source_url="https://tos.example/source.mp4",
+        credential_code="niuma_main",
+        remove_region={"l": 11, "t": 22, "w": 322, "h": 422},
+    )
+
+    assert json.loads(captured["json"]["position"]) == {"l": 11, "t": 22, "w": 322, "h": 422}
+
+
+def test_subtitle_removal_provider_volc_omits_position_payload(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": {"taskId": "volc-task-region"}}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+    configure_provider(monkeypatch, provider, api_key="TOKEN", base_url="https://goodline.example/api")
+
+    provider.submit_task(
+        file_size_mb=2.0,
+        duration_seconds=10.0,
+        resolution="720x1280",
+        video_name="sr_task_11_22_333_444",
+        source_url="https://tos.example/source.mp4",
+        credential_code="subtitle_removal",
+        remove_region={"l": 11, "t": 22, "w": 322, "h": 422},
+    )
+
+    assert "position" not in captured["json"]
 
 
 def test_subtitle_removal_provider_niuma_missing_api_key_has_infra_hint(monkeypatch):

@@ -728,7 +728,49 @@ def test_runtime_submit_uses_niuma_credentials_and_video_name(monkeypatch, tmp_p
 
     assert captured["credential_code"] == "niuma_main"
     assert captured["video_name"] == "sr-niuma-runtime_0_0_11_22_333_444"
+    assert captured["remove_region"] == {"l": 11, "t": 22, "w": 322, "h": 422}
     assert "erase_text_type" not in captured or captured["erase_text_type"] == "subtitle"
+
+
+def test_runtime_submit_niuma_full_mode_keeps_default_payload(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    task_state.create_subtitle_removal(
+        "sr-niuma-full-runtime",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-niuma-full-runtime",
+        status="queued",
+        subtitle_backend="niuma",
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 720, "y2": 1280},
+        position_payload={"l": 0, "t": 0, "w": 720, "h": 1280},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        source_tos_key="uploads/1/sr-niuma-full-runtime/source.mp4",
+    )
+
+    captured = {}
+
+    def fake_submit_task(**kwargs):
+        captured.update(kwargs)
+        return "niuma-provider-task"
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.submit_task", fake_submit_task)
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_source_storage.tos_clients.generate_signed_download_url",
+        lambda key, expires=None: "https://tos.example/source.mp4",
+    )
+
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner._submit("sr-niuma-full-runtime")
+
+    assert captured["credential_code"] == "niuma_main"
+    assert captured["video_name"] == "sr-niuma-full-runtime_0_0_0_0_720_1280"
+    assert captured.get("remove_region") is None
 
 
 def test_runtime_poll_uses_niuma_credentials(monkeypatch, tmp_path):

@@ -97,6 +97,15 @@ def _niuma_video_name(task_id: str, selection: dict[str, int]) -> str:
     )
 
 
+def _position_payload_from_bounds(selection: dict[str, int]) -> dict[str, int]:
+    return {
+        "l": selection["x1"],
+        "t": selection["y1"],
+        "w": selection["x2"] - selection["x1"],
+        "h": selection["y2"] - selection["y1"],
+    }
+
+
 class SubtitleRemovalRuntime:
     def __init__(self, bus: EventBus, user_id: int | None = None):
         self._bus = bus
@@ -216,6 +225,12 @@ class SubtitleRemovalRuntime:
             erase_text_type = "subtitle"
         if erase_text_type not in {"subtitle", "text"}:
             erase_text_type = "subtitle"
+        remove_region = None
+        if (
+            credential_code == NIUMA_CREDENTIAL_CODE
+            and str(task.get("remove_mode") or "").strip().lower() == "box"
+        ):
+            remove_region = _position_payload_from_bounds(selection)
         self._set_step(task_id, "submit", "running", "正在提交去字幕任务")
         try:
             provider_task_id = submit_task(
@@ -226,6 +241,7 @@ class SubtitleRemovalRuntime:
                 source_url=source_url,
                 erase_text_type=erase_text_type,
                 credential_code=credential_code,
+                remove_region=remove_region,
             )
         except Exception as exc:
             self._set_step(task_id, "submit", "error", f"提交失败: {exc}")

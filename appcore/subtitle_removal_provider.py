@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import requests
 
 import config
@@ -90,6 +92,23 @@ def _post(payload: dict, *, credential_code: str = DEFAULT_CREDENTIAL_CODE) -> d
     return data
 
 
+def _position_payload(remove_region: dict | None) -> str:
+    if not remove_region:
+        return ""
+    try:
+        payload = {
+            "l": int(remove_region.get("l")),
+            "t": int(remove_region.get("t")),
+            "w": int(remove_region.get("w")),
+            "h": int(remove_region.get("h")),
+        }
+    except (TypeError, ValueError) as exc:
+        raise ValueError("remove_region must include integer l, t, w and h") from exc
+    if payload["w"] <= 0 or payload["h"] <= 0:
+        raise ValueError("remove_region width and height must be positive")
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
 def submit_task(
     *,
     file_size_mb: float,
@@ -100,6 +119,7 @@ def submit_task(
     cover_url: str = "",
     erase_text_type: str = "subtitle",
     credential_code: str = DEFAULT_CREDENTIAL_CODE,
+    remove_region: dict | None = None,
 ) -> str:
     if erase_text_type not in {"subtitle", "text"}:
         raise ValueError(
@@ -126,6 +146,8 @@ def submit_task(
                 },
             },
         }
+    if _normalize_credential_code(credential_code) == NIUMA_CREDENTIAL_CODE and remove_region:
+        payload["position"] = _position_payload(remove_region)
     data = _post(payload, credential_code=credential_code)
     payload_result = data.get("data")
     if isinstance(payload_result, dict) and payload_result.get("taskId"):

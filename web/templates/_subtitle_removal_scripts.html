@@ -488,8 +488,12 @@
       }
       if (!rect) {
         selectionBoxEl.hidden = true;
-        selectionCoords.textContent = "未选择区域";
-        stateSelection.textContent = "未选择区域";
+        if (selectionCoords) {
+          selectionCoords.textContent = "未选择区域";
+        }
+        if (stateSelection) {
+          stateSelection.textContent = "未选择区域";
+        }
         return;
       }
       selectionBoxEl.hidden = false;
@@ -498,8 +502,12 @@
       selectionBoxEl.style.width = rect.width + "px";
       selectionBoxEl.style.height = rect.height + "px";
       var text = "l:" + (selectionState.box ? selectionState.box.l : 0) + " t:" + (selectionState.box ? selectionState.box.t : 0) + " w:" + (selectionState.box ? selectionState.box.w : 0) + " h:" + (selectionState.box ? selectionState.box.h : 0);
-      selectionCoords.textContent = text;
-      stateSelection.textContent = text;
+      if (selectionCoords) {
+        selectionCoords.textContent = text;
+      }
+      if (stateSelection) {
+        stateSelection.textContent = text;
+      }
     }
 
     function getCurrentSelectionPayload() {
@@ -716,6 +724,9 @@
       }
       var mode = state.remove_mode || selectionState.mode || "full";
       selectionState.mode = mode;
+      if (selectionOverlay) {
+        selectionOverlay.hidden = mode !== "box";
+      }
       if (stateMode) {
         stateMode.textContent = mode === "box" ? "框选去除" : "全屏去除";
       }
@@ -764,6 +775,9 @@
 
     function syncMode(nextMode) {
       selectionState.mode = nextMode;
+      if (selectionOverlay) {
+        selectionOverlay.hidden = nextMode !== "box";
+      }
       if (nextMode !== "box") {
         selectionState.box = null;
         updateSelectionBoxDisplay(null);

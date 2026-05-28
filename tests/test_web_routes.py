@@ -1392,6 +1392,12 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     detail_body = detail_response.get_data(as_text=True)
     assert "全屏去除" in detail_body
     assert "框选去除" in detail_body
+    assert 'name="remove_mode"' in detail_body
+    assert 'value="full"' in detail_body
+    assert 'value="box"' in detail_body
+    assert 'id="srSelectionCoords"' in detail_body
+    assert 'id="srStateMode"' in detail_body
+    assert 'id="srStateSelection"' in detail_body
     assert "join_subtitle_removal_task" in detail_body
     assert 'socket.on("connect", joinFn);' in detail_body
     assert "连接任务房间" not in detail_body
@@ -1456,6 +1462,8 @@ def test_subtitle_removal_detail_shell_exposes_selection_stage_hooks(authed_clie
     assert "提交去字幕任务" in body
     assert "全屏去除" in body
     assert "框选去除" in body
+    assert "处理范围" in body
+    assert "srSelectionCoords" in body
     assert "Task 4" not in body
 
 

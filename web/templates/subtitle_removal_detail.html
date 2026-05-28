@@ -5,6 +5,9 @@
 <script>
   window.subtitleRemovalBootstrap = {{ state | tojson }};
 </script>
+{% set sr_detail_status = state.status or project.status or 'uploaded' %}
+{% set sr_remove_mode = state.remove_mode or 'full' %}
+{% set sr_mode_readonly = sr_detail_status not in ['ready'] %}
 <div class="sr-shell sr-detail-page" data-subtitle-removal-page="detail" data-task-id="{{ task_id }}">
   <a class="sr-back-link" href="/subtitle-removal">返回列表</a>
   <header class="sr-hero">
@@ -42,6 +45,39 @@
           </div>
         </div>
       </div>
+
+      <div class="sr-selection-footer">
+        <div class="sr-mode-select{% if sr_mode_readonly %} sr-mode-readonly{% endif %}" role="radiogroup" aria-label="去除范围">
+          <label class="sr-radio-tile{% if sr_remove_mode != 'box' %} is-active{% endif %}">
+            <input
+              type="radio"
+              name="remove_mode"
+              value="full"
+              {% if sr_remove_mode != 'box' %}checked{% endif %}
+              {% if sr_mode_readonly %}disabled{% endif %}
+            >
+            <span class="sr-radio-title">全屏去除</span>
+            <span class="sr-radio-desc">保持默认流程，提交整帧给去字幕服务。</span>
+          </label>
+          <label class="sr-radio-tile{% if sr_remove_mode == 'box' %} is-active{% endif %}">
+            <input
+              type="radio"
+              name="remove_mode"
+              value="box"
+              {% if sr_remove_mode == 'box' %}checked{% endif %}
+              {% if sr_mode_readonly %}disabled{% endif %}
+            >
+            <span class="sr-radio-title">框选去除</span>
+            <span class="sr-radio-desc">在首帧上拖拽字幕区域，只提交该范围。</span>
+          </label>
+        </div>
+        <div class="sr-selection-summary">
+          <div id="srStateHint" class="sr-hint">
+            {% if sr_remove_mode == 'box' %}请在首帧图上拖拽字幕区域{% else %}全屏去除将直接提交整帧{% endif %}
+          </div>
+          <div id="srSelectionCoords" class="sr-selection-coords">未选择区域</div>
+        </div>
+      </div>
     </section>
 
     <section class="sr-card sr-control-card">
@@ -74,6 +110,14 @@
         <div class="sr-status-item">
           <span class="sr-status-label">任务状态</span>
           <strong id="srStateStatus">{{ state.status or project.status or 'uploaded' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">处理范围</span>
+          <strong id="srStateMode">{% if sr_remove_mode == 'box' %}框选去除{% else %}全屏去除{% endif %}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">去除区域</span>
+          <strong id="srStateSelection">未选择区域</strong>
         </div>
         <div class="sr-status-item">
           <span class="sr-status-label">视频分辨率</span>

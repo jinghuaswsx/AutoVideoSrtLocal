@@ -117,7 +117,10 @@ def test_start_niuma_processing_prepares_subtitle_task_and_watcher(monkeypatch, 
     assert result["subtitle_task_id"] == "tcraw-5-fixed"
     assert created["task_id"] == "tcraw-5-fixed"
     assert updates[0][1]["subtitle_backend"] == "niuma"
+    assert updates[0][1]["remove_mode"] == "full"
     assert updates[0][1]["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
+    assert updates[0][1]["position_payload"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
+    assert "manual_remove_region" not in updates[0][1]
     assert runner_calls == [("tcraw-5-fixed", 9)]
     assert watcher_calls[0]["parent_task_id"] == 5
     assert events[0][1] == "raw_niuma_submitted"
