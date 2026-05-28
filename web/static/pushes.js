@@ -33,6 +33,7 @@
   };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
+  const AI_EVAL_STATUS_ENDPOINT = (pid, runId) => `/medias/api/products/${pid}/evaluate/status?run_id=${encodeURIComponent(runId || '')}`;
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
   const DEFAULT_FILTERS = {
@@ -441,6 +442,18 @@
       .ect-ai-status-dot { width:16px; height:16px; border-radius:50%; background:var(--oc-accent); box-shadow:0 0 0 7px var(--oc-accent-ring); }
       .ect-ai-status-title { font-size:26px; line-height:1.3; font-weight:700; color:var(--oc-fg); }
       .ect-ai-request-timer { display:inline-flex; align-items:center; height:44px; padding:0 16px; border-radius:999px; background:var(--oc-cyan-subtle); color:var(--oc-accent); font-size:22px; line-height:1.3; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ect-ai-country-progress { padding:14px 20px; border-bottom:1px solid var(--oc-border); background:var(--oc-bg); }
+      .ect-ai-country-progress:empty { display:none; }
+      .ect-ai-progress-summary { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-bottom:12px; color:var(--oc-fg-muted); font-size:13px; }
+      .ect-ai-country-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; }
+      .ect-ai-country-card { min-height:82px; border:1px solid var(--oc-border); border-radius:10px; padding:10px; background:var(--oc-bg-subtle); display:grid; gap:6px; }
+      .ect-ai-country-card.is-running { border-color:var(--oc-accent); background:var(--oc-cyan-subtle); }
+      .ect-ai-country-card.is-completed { border-color:var(--oc-success); background:var(--oc-success-bg); }
+      .ect-ai-country-card.is-failed { border-color:var(--oc-danger); background:var(--oc-danger-bg); }
+      .ect-ai-country-head { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0; }
+      .ect-ai-country-name { font-size:13px; font-weight:700; color:var(--oc-fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ect-ai-country-pill { flex:0 0 auto; border-radius:999px; padding:2px 8px; background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:700; }
+      .ect-ai-country-meta { color:var(--oc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
       .ect-ai-tabs { display:flex; gap:8px; padding:12px 20px 0; background:var(--oc-bg); }
       .ect-ai-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-size:13px; font-weight:600; cursor:pointer; }
       .ect-ai-tab.active { background:var(--oc-bg); color:var(--oc-accent); border-color:var(--oc-accent); }
@@ -484,6 +497,10 @@
       window.clearTimeout(modalState.timeoutTimer);
       modalState.timeoutTimer = null;
     }
+    if (modalState.progressTimer) {
+      window.clearInterval(modalState.progressTimer);
+      modalState.progressTimer = null;
+    }
   }
 
   function openAiEvaluationRequestModal(product) {
@@ -509,6 +526,8 @@
       previewError: '',
       resultHtml: '',
       fullPayloadUrl: '',
+      progress: null,
+      progressTimer: null,
     };
     modalState.modal.classList.add('ect-modal--ai-evaluating');
 
@@ -554,6 +573,7 @@
         </div>
         <span class="ect-ai-request-timer" data-ai-eval-status>已请求 ${aiEvaluationElapsedSeconds(modalState)} 秒</span>
       </div>
+      <div class="ect-ai-country-progress" data-ai-country-progress></div>
       <div class="ect-ai-tabs" role="tablist">
         <button type="button" class="ect-ai-tab active" data-ai-eval-tab="request">请求报文</button>
         <button type="button" class="ect-ai-tab" data-ai-eval-tab="result">结果</button>
@@ -569,6 +589,7 @@
     });
     renderAiEvaluationRequestPreview(modalState);
     renderAiEvaluationResultPanel(modalState);
+    renderAiEvaluationCountryProgress(modalState);
   }
 
   function switchAiEvaluationTab(modalState, tab) {
@@ -578,6 +599,125 @@
     });
     modalState.body.querySelectorAll('[data-ai-eval-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.aiEvalPanel !== modalState.activeTab;
+    });
+  }
+
+  function aiEvaluationCountryStatusLabel(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'running') return '进行中';
+    if (normalized === 'completed') return '已完成';
+    if (normalized === 'failed') return '报错';
+    return '排队中';
+  }
+
+  function aiEvaluationTerminalStatus(status) {
+    return ['completed', 'partially_completed', 'failed'].includes(String(status || '').trim().toLowerCase());
+  }
+
+  function setAiEvaluationProgress(modalState, progress) {
+    if (!modalState || !progress) return;
+    modalState.progress = progress;
+    const status = String(progress.status || '').trim().toLowerCase();
+    if (modalState.statusTitle && !modalState.done) {
+      if (status === 'completed') modalState.statusTitle.textContent = '评估完成';
+      else if (status === 'partially_completed') modalState.statusTitle.textContent = '部分完成';
+      else if (status === 'failed') modalState.statusTitle.textContent = '评估失败';
+      else modalState.statusTitle.textContent = '正在评估';
+    }
+    renderAiEvaluationCountryProgress(modalState);
+  }
+
+  function renderAiEvaluationCountryProgress(modalState) {
+    const box = modalState && modalState.body && modalState.body.querySelector('[data-ai-country-progress]');
+    if (!box) return;
+    const progress = modalState.progress || {};
+    const countries = Array.isArray(progress.countries) ? progress.countries : [];
+    if (!countries.length) {
+      box.innerHTML = '';
+      return;
+    }
+    const summary = progress.summary || {};
+    const total = summary.total || countries.length;
+    const completed = summary.completed || countries.filter((item) => item.status === 'completed').length;
+    const failed = summary.failed || countries.filter((item) => item.status === 'failed').length;
+    const running = summary.running || countries.filter((item) => item.status === 'running').length;
+    const queued = summary.queued || countries.filter((item) => item.status === 'queued').length;
+    const providerText = [progress.provider, progress.model].filter(Boolean).join(' / ');
+    const cards = countries.map((country) => {
+      const status = String(country.status || 'queued').trim().toLowerCase();
+      const displayStatus = ['queued', 'running', 'completed', 'failed'].includes(status) ? status : 'queued';
+      const countryName = country.name || country.country || country.lang || '-';
+      const code = country.lang ? String(country.lang).toUpperCase() : '';
+      const elapsed = country.elapsed_seconds ? `${country.elapsed_seconds} 秒` : '';
+      const error = country.error ? `错误：${country.error}` : '';
+      const meta = [code, elapsed, error].filter(Boolean).join(' · ') || '等待调度';
+      return `
+        <div class="ect-ai-country-card is-${displayStatus}">
+          <div class="ect-ai-country-head">
+            <span class="ect-ai-country-name">${escapeHtml(countryName)}</span>
+            <span class="ect-ai-country-pill">${escapeHtml(aiEvaluationCountryStatusLabel(displayStatus))}</span>
+          </div>
+          <div class="ect-ai-country-meta">${escapeHtml(meta)}</div>
+        </div>`;
+    }).join('');
+    box.innerHTML = `
+      <div class="ect-ai-progress-summary">
+        <span>国家进度：已完成 ${escapeHtml(String(completed))}/${escapeHtml(String(total))}</span>
+        <span>进行中 ${escapeHtml(String(running))}</span>
+        <span>排队中 ${escapeHtml(String(queued))}</span>
+        <span>报错 ${escapeHtml(String(failed))}</span>
+        ${providerText ? `<span>${escapeHtml(providerText)}</span>` : ''}
+      </div>
+      <div class="ect-ai-country-grid">${cards}</div>`;
+  }
+
+  function pollAiEvaluationStatus(modalState, pid, runId, onComplete) {
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      function cleanup() {
+        if (modalState.progressTimer) {
+          window.clearInterval(modalState.progressTimer);
+          modalState.progressTimer = null;
+        }
+        if (modalState.timeoutTimer) {
+          window.clearTimeout(modalState.timeoutTimer);
+          modalState.timeoutTimer = null;
+        }
+      }
+      function finish(error, data) {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (typeof onComplete === 'function') onComplete(data);
+        resolve(data);
+      }
+      async function tick() {
+        if (finished) return;
+        try {
+          const data = await fetchJSON(AI_EVAL_STATUS_ENDPOINT(pid, runId));
+          const progress = data && data.progress ? data.progress : data;
+          setAiEvaluationProgress(modalState, progress);
+          const status = progress && progress.status;
+          if (!aiEvaluationTerminalStatus(status)) return;
+          if (String(status || '').toLowerCase() === 'failed' && !(data && data.result)) {
+            finish(new Error(progress.error || '评估失败'), data);
+            return;
+          }
+          finish(null, data);
+        } catch (err) {
+          finish(err);
+        }
+      }
+      cleanup();
+      modalState.progressTimer = window.setInterval(tick, 2000);
+      modalState.timeoutTimer = window.setTimeout(() => {
+        finish(new Error('服务器没有返回评估结果'));
+      }, AI_EVALUATION_TIMEOUT_MS);
+      tick();
     });
   }
 
@@ -757,6 +897,7 @@
 
   function setAiEvaluationModalResult(modalState, data) {
     if (!modalState || !modalState.body) return;
+    if (data && data.progress) setAiEvaluationProgress(modalState, data.progress);
     modalState.done = true;
     stopAiEvaluationTimers(modalState);
     if (modalState.statusTitle) modalState.statusTitle.textContent = '评估完成';
@@ -1804,6 +1945,13 @@
           method: 'POST',
           signal: controller ? controller.signal : undefined,
         });
+        let finalData = data;
+        if (data && data.progress) {
+          setAiEvaluationProgress(modalState, data.progress);
+        }
+        if (data && data.async && data.run_id) {
+          finalData = await pollAiEvaluationStatus(modalState, productId, data.run_id);
+        }
         let freshProduct = null;
         try {
           const fresh = await fetchJSON(`/medias/api/products/${productId}`);
@@ -1811,8 +1959,8 @@
         } catch (_) {
           freshProduct = null;
         }
-        setAiEvaluationModalResult(modalState, freshProduct || data.result || data);
-        applyAiEvaluationProduct(freshProduct || data.result || data);
+        setAiEvaluationModalResult(modalState, freshProduct || finalData.result || finalData);
+        applyAiEvaluationProduct(freshProduct || finalData.result || finalData);
         aiReevaluateBtn.textContent = '已完成';
         load({ syncUrl: false }).catch(() => {});
         window.setTimeout(() => {

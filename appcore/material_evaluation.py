@@ -11,7 +11,7 @@ import threading
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
 from appcore import llm_bindings, llm_client, local_media_storage, medias, pushes, tos_clients
@@ -869,42 +869,183 @@ def _evaluate_countries_with_llm(
     system: str,
     media: list[Path],
     llm_config: dict,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     country_rows: list[dict[str, Any]] = []
     recovery_by_lang: dict[str, Any] = {}
     has_incomplete_country = False
+    has_failed_country = False
+    successful_country_count = 0
+    first_country_error = ""
+    progress_started_at = datetime.now(UTC)
+    country_states = [_country_progress_row(lang) for lang in languages]
+
+    def state_for(code: str) -> dict[str, Any]:
+        for row in country_states:
+            if row["lang"] == code:
+                return row
+        row = _country_progress_row({"code": code, "name": code, "country": code})
+        country_states.append(row)
+        return row
+
+    def emit(status: str = "running", current_lang: str = "") -> None:
+        if not progress_callback:
+            return
+        now = datetime.now(UTC)
+        countries = [_country_progress_public(row, now) for row in country_states]
+        payload = {
+            "schema_version": 1,
+            "evaluation_mode": "per_country",
+            "status": status,
+            "started_at": progress_started_at.isoformat(),
+            "finished_at": now.isoformat() if status in {"completed", "partially_completed", "failed"} else None,
+            "elapsed_seconds": max(0, int((now - progress_started_at).total_seconds())),
+            "current_lang": current_lang,
+            "completed_count": sum(1 for row in countries if row["status"] == "completed"),
+            "failed_count": sum(1 for row in countries if row["status"] == "failed"),
+            "total_count": len(countries),
+            "provider": llm_config.get("provider"),
+            "model": llm_config.get("model"),
+            "countries": countries,
+        }
+        try:
+            progress_callback(payload)
+        except Exception:
+            logger.debug("material evaluation progress callback failed", exc_info=True)
+
+    emit("running")
 
     for lang in languages:
         single_language = [lang]
         code = str(lang.get("code") or "").strip().lower()
         country_recovery: dict[str, Any] = {}
-        raw_json = _invoke_evaluation_llm_with_recovery(
-            prompt=build_prompt(product, product_url, single_language),
-            system=system,
-            media=media,
-            product=product,
-            product_id=product_id,
-            response_schema=build_response_schema(single_language),
-            llm_config=llm_config,
-            recovery=country_recovery,
-            project_id=_evaluation_project_id(product_id, lang),
-            billing_extra={
-                "evaluation_mode": "per_country",
-                "target_lang": code,
-                "target_country": lang.get("country") or lang.get("name") or code,
-            },
-        )
-        normalized = normalize_result(raw_json, single_language)
-        country_rows.extend(normalized["countries"])
-        if normalized.get("ai_evaluation_result") == "需人工复核":
+        state = state_for(code)
+        state["status"] = "running"
+        state["started_at"] = datetime.now(UTC)
+        state["finished_at"] = None
+        state["error"] = ""
+        emit("running", code)
+        try:
+            raw_json = _invoke_evaluation_llm_with_recovery(
+                prompt=build_prompt(product, product_url, single_language),
+                system=system,
+                media=media,
+                product=product,
+                product_id=product_id,
+                response_schema=build_response_schema(single_language),
+                llm_config=llm_config,
+                recovery=country_recovery,
+                project_id=_evaluation_project_id(product_id, lang),
+                billing_extra={
+                    "evaluation_mode": "per_country",
+                    "target_lang": code,
+                    "target_country": lang.get("country") or lang.get("name") or code,
+                },
+            )
+            normalized = normalize_result(raw_json, single_language)
+            rows = normalized["countries"]
+            country_rows.extend(rows)
+            if rows:
+                successful_country_count += 1
+            row = rows[0] if rows else {}
+            state["status"] = "completed"
+            state["score"] = row.get("score")
+            state["result"] = row.get("decision") or row.get("recommendation") or normalized.get("ai_evaluation_result") or ""
+            state["summary"] = row.get("summary") or row.get("reason") or ""
+            if normalized.get("ai_evaluation_result") == "需人工复核":
+                has_incomplete_country = True
+        except Exception as exc:
+            has_failed_country = True
             has_incomplete_country = True
+            error = str(exc)[:500] or exc.__class__.__name__
+            if not first_country_error:
+                first_country_error = error
+            country_rows.append(_failed_country_row(lang, error))
+            country_recovery["error"] = error
+            state["status"] = "failed"
+            state["score"] = 50
+            state["result"] = "需人工复核"
+            state["summary"] = "该国家评估失败，需人工复核。"
+            state["error"] = error
+            logger.info(
+                "material evaluation country failed: product_id=%s lang=%s error=%s",
+                product_id,
+                code,
+                error,
+            )
+        finally:
+            state["finished_at"] = datetime.now(UTC)
+            emit("running", "")
         if country_recovery:
             recovery_by_lang[code or _country_project_id_suffix(lang)] = country_recovery
+
+    if has_failed_country and successful_country_count == 0:
+        emit("failed")
+        raise RuntimeError(first_country_error or "all country evaluations failed")
 
     normalized_all = normalize_result({"countries": country_rows}, languages)
     if has_incomplete_country:
         normalized_all["ai_evaluation_result"] = "需人工复核"
+    emit("partially_completed" if has_failed_country else "completed")
     return normalized_all, recovery_by_lang
+
+
+def _country_progress_row(lang: dict[str, Any]) -> dict[str, Any]:
+    code = str(lang.get("code") or "").strip().lower()
+    return {
+        "lang": code,
+        "language": lang.get("name") or code,
+        "country": lang.get("country") or lang.get("name") or code,
+        "status": "queued",
+        "started_at": None,
+        "finished_at": None,
+        "score": None,
+        "result": "",
+        "summary": "",
+        "error": "",
+    }
+
+
+def _country_progress_public(row: dict[str, Any], now: datetime) -> dict[str, Any]:
+    started = row.get("started_at")
+    finished = row.get("finished_at")
+    if isinstance(started, datetime):
+        elapsed_end = finished if isinstance(finished, datetime) else now
+        elapsed_seconds = max(0, int((elapsed_end - started).total_seconds()))
+        started_at = started.isoformat()
+    else:
+        elapsed_seconds = 0
+        started_at = None
+    return {
+        "lang": row.get("lang"),
+        "language": row.get("language"),
+        "country": row.get("country"),
+        "status": row.get("status") or "queued",
+        "started_at": started_at,
+        "finished_at": finished.isoformat() if isinstance(finished, datetime) else None,
+        "elapsed_seconds": elapsed_seconds,
+        "score": row.get("score"),
+        "result": row.get("result") or "",
+        "summary": row.get("summary") or "",
+        "error": row.get("error") or "",
+    }
+
+
+def _failed_country_row(lang: dict[str, Any], error: str) -> dict[str, Any]:
+    code = str(lang.get("code") or "").strip().lower()
+    country = str(lang.get("country") or lang.get("name") or code).strip()
+    return {
+        "lang": code,
+        "country": country,
+        "is_suitable": False,
+        "score": 50,
+        "risk_level": "high",
+        "decision": "谨慎推广",
+        "recommendation": "不做",
+        "summary": "该国家评估失败，需人工复核。",
+        "reason": f"模型调用失败：{error[:80]}",
+        "suggestions": ["人工复核该国家评估结果"],
+    }
 
 
 def _product_link_preflight_error(product_id: int, product_url: str) -> dict | None:
@@ -1230,6 +1371,7 @@ def evaluate_product_if_ready(
     manual: bool = False,
     media_item_id: int | None = None,
     product_url_override: str | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict:
     pid = int(product_id)
     if not _enter_product(pid):
@@ -1241,6 +1383,7 @@ def evaluate_product_if_ready(
             manual=manual,
             media_item_id=media_item_id,
             product_url_override=product_url_override,
+            progress_callback=progress_callback,
         )
     finally:
         _leave_product(pid)
@@ -1266,6 +1409,7 @@ def _evaluate_product_if_ready(
     manual: bool = False,
     media_item_id: int | None = None,
     product_url_override: str | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict:
     product = medias.get_product(product_id)
     if not product:
@@ -1342,6 +1486,7 @@ def _evaluate_product_if_ready(
             system=build_system_prompt(),
             media=[cover_path, video_path],
             llm_config=llm_config,
+            progress_callback=progress_callback,
         )
         detail = {
             "schema_version": 1,
