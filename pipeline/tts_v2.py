@@ -19,7 +19,7 @@ REFINE_SCHEMA = {
 
 REFINE_PROMPT = (
     "上一版译文「{previous}」生成的音频比分镜长 {over_pct}%。\n"
-    "请缩写为约 {target_chars} 字符，保留核心语义，只删修饰性内容。\n"
+    "请继续以目标语言（{language}）对该译文进行微调缩写，使其约 {target_chars} 字符，保留核心语义，只删修饰性内容，绝对不要输出中文或其他语言的翻译。\n"
     "以 JSON 输出：{{\"translated_text\": \"...\"}}"
 )
 
@@ -41,11 +41,12 @@ def _get_duration(path: str) -> float:
 
 
 def _refine_text(previous_text: str, over_ratio: float,
-                 target_chars: int, user_id: int) -> str:
+                 target_chars: int, user_id: int, language: str) -> str:
     prompt = REFINE_PROMPT.format(
         previous=previous_text,
         over_pct=int(round(over_ratio * 100)),
         target_chars=target_chars,
+        language=language,
     )
     invoked = gemini_generate(
         "translate_lab.tts_refine",
@@ -101,7 +102,7 @@ def generate_and_verify_shot(
         )
         target_chars = max(1, int(shot_duration * 0.9 * cps))
         current_text = _refine_text(current_text, over_ratio, target_chars,
-                                     user_id)
+                                     user_id, language)
         retry_count += 1
 
     return {
