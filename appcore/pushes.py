@@ -1020,23 +1020,10 @@ def _enabled_product_link_langs() -> list[str]:
     return out
 
 
-def build_product_links_push_preview(product: dict | None) -> dict:
-    """组装产品维度的投放链接补推预览。
-
-    `handle` 直接使用产品的 product_code，不额外拼接后缀。product_links
-    以 Media Language 中 enabled=1 的语种为准，包含英语。
-    """
+def resolve_filtered_product_link_langs(product: dict | None) -> list[str]:
+    """根据待推送素材状态，过滤并确定需要推送的推广链接语种。英语 (en) 始终保留。"""
     if not isinstance(product, dict):
-        raise ProductLinksPayloadError("product_not_found")
-    if not medias.is_product_listed(product):
-        raise ProductNotListedError("product_not_listed")
-
-    handle = str(product.get("product_code") or "").strip()
-    if not handle:
-        raise ProductLinksPayloadError("missing_product_code")
-    if not handle.lower().endswith("-rjc"):
-        raise ProductLinksPayloadError("product_code_must_end_with_rjc")
-
+        return []
     product_id = product.get("id")
     # 获取该产品下所有活跃的素材
     all_items = medias.list_items(product_id) if product_id else []
@@ -1057,10 +1044,32 @@ def build_product_links_push_preview(product: dict | None) -> dict:
     filtered_langs = []
     for lang in enabled_langs:
         lang_lower = lang.strip().lower()
-        if lang_lower == "en":
+        if lang_lower == "en" or lang_lower in pending_langs:
             filtered_langs.append(lang)
-        elif lang_lower in pending_langs:
-            filtered_langs.append(lang)
+    return filtered_langs
+
+
+def build_product_links_push_preview(product: dict | None) -> dict:
+    """组装产品维度的投放链接补推预览。
+
+    `handle` 直接使用产品的 product_code，不额外拼接后缀。product_links
+    以 Media Language 中 enabled=1 的语种为准，包含英语。
+    """
+    if not isinstance(product, dict):
+        raise ProductLinksPayloadError("product_not_found")
+    if not medias.is_product_listed(product):
+        raise ProductNotListedError("product_not_listed")
+
+    handle = str(product.get("product_code") or "").strip()
+    if not handle:
+        raise ProductLinksPayloadError("missing_product_code")
+    if not handle.lower().endswith("-rjc"):
+        raise ProductLinksPayloadError("product_code_must_end_with_rjc")
+
+    # 强门禁校验：若明空端尚未推送过第一条视频，即刻阻断并抛出异常
+    get_exact_product_mk_id(product)
+
+    filtered_langs = resolve_filtered_product_link_langs(product)
 
     rows: list[dict[str, str]] = []
     links: list[str] = []
@@ -1632,31 +1641,7 @@ def build_item_payload(item: dict, product: dict) -> dict:
         "image_url": build_media_public_url(cover_object_key),
     }
 
-    enabled_langs = [
-        str(c or "").strip().lower()
-        for c in medias.list_enabled_language_codes()
-        if str(c or "").strip()
-    ]
-
-    product_id = product.get("id")
-    # 获取该产品下所有活跃的素材
-    all_items = medias.list_items(product_id) if product_id else []
-
-    # 统计哪些语种具有满足待推送状态的素材
-    pending_langs = set()
-    for it in all_items:
-        item_lang = str(it.get("lang") or "en").strip().lower()
-        # 计算素材的状态
-        readiness = compute_readiness(it, product)
-        status = compute_status_from_readiness(it, product, readiness)
-        if status == STATUS_PENDING:
-            pending_langs.add(item_lang)
-
-    filtered_langs = []
-    for lang in enabled_langs:
-        lang_lower = lang.strip().lower()
-        if lang_lower == "en" or lang_lower in pending_langs:
-            filtered_langs.append(lang)
+    filtered_langs = resolve_filtered_product_link_langs(product)
 
     product_links: list[str] = []
     seen_product_links: set[str] = set()
