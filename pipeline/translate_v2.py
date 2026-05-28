@@ -36,8 +36,8 @@ TRANSLATE_PROMPT = (
 )
 
 RETRY_PROMPT = (
-    "上一版译文「{previous}」超出了 {char_limit} 字符上限，实际 {actual} 字符。"
-    "请缩写为 ≤ {char_limit} 字符，保留核心含义。"
+    "上一版译文「{previous}」超出了 {char_limit} 字符上限，实际 {actual} 字符。\n"
+    "请继续以目标语言（{target_language}）对该译文进行缩写，使其字符数 ≤ {char_limit}，保留核心含义且严禁改用中文或其他语言输出。\n"
     "以 JSON 输出：{{\"translated_text\": \"...\"}}"
 )
 
@@ -147,6 +147,7 @@ def translate_shot(
             previous=text,
             char_limit=char_limit,
             actual=len(text),
+            target_language=target_language,
         )
         debug_calls.append(
             _build_debug_call(

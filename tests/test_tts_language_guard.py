@@ -30,7 +30,7 @@ def test_tts_language_guard_uses_gemini_flash_lite_use_case(monkeypatch):
     assert kwargs["temperature"] == 0
     assert kwargs["max_tokens"] <= 8
     assert kwargs["provider_override"] == "openrouter"
-    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite-preview"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite"
     assert kwargs["billing_extra"] == {"variant": "normal", "round": 1}
     assert "Spanish" in kwargs["messages"][0]["content"]
     assert "只返回一个字" in kwargs["messages"][0]["content"]
@@ -40,7 +40,7 @@ def test_tts_language_guard_uses_gemini_flash_lite_use_case(monkeypatch):
     assert debug_call["use_case_code"] == "video_translate.tts_language_check"
     assert debug_call["label"] == "TTS 语种校验"
     assert debug_call["request_payload"]["provider"] == "openrouter"
-    assert debug_call["request_payload"]["model"] == "google/gemini-3.1-flash-lite-preview"
+    assert debug_call["request_payload"]["model"] == "google/gemini-3.1-flash-lite"
     assert "¿Sabías que esto funciona?" in debug_call["messages"][1]["content"]
 
 
