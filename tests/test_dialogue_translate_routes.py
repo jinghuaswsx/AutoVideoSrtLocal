@@ -121,6 +121,8 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
     app = authed_client_no_db.application
     rules = {(rule.rule, tuple(sorted(rule.methods))) for rule in app.url_map.iter_rules()}
     expected = {
+        ("/api/dialogue-translate/<task_id>", ("DELETE", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/duplicate", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/source-language", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/subtitle-preview", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/alignment", ("OPTIONS", "PUT")),
@@ -142,6 +144,27 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
     }
 
     assert expected <= rules
+
+
+def test_dialogue_translate_list_template_uses_omni_project_management_shell():
+    html = Path("web/templates/dialogue_translate.html").read_text(encoding="utf-8")
+
+    assert "新建任务" not in html
+    assert "最近任务" not in html
+    assert "+ 新建项目" in html
+    assert 'id="gridView"' in html
+    assert 'id="listView"' in html
+    assert 'id="uploadOverlay"' in html
+    assert 'id="modalLangPills"' in html
+    assert 'id="modalSourceLangPills"' in html
+    assert "复制项目" in html
+    assert "删除" in html
+    assert "duplicateTask(event" in html
+    assert "deleteTask(event" in html
+    assert "/api/dialogue-translate/' + taskId + '/duplicate" in html
+    assert "/api/dialogue-translate/' + taskId" in html
+    assert "formData.set('plugin_config'," in html
+    assert "/api/omni-translate" not in html
 
 
 def test_dialogue_translate_restart_uses_dialogue_step_order(
@@ -749,6 +772,186 @@ def test_dialogue_translate_start_creates_task_and_starts_runner(
     assert task["selected_voice_by_speaker"] == {}
     assert payload["redirect_url"] == f"/dialogue-translate/{payload['task_id']}"
     assert started == {"task_id": payload["task_id"], "user_id": 1}
+
+
+def test_dialogue_translate_start_accepts_plugin_config_snapshot(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    plugin_config = {
+        "asr_post": "asr_normalize",
+        "shot_decompose": False,
+        "translate_algo": "av_sentence",
+        "source_anchored": False,
+        "tts_strategy": "sentence_reconcile",
+        "subtitle": "sentence_units",
+        "voice_separation": False,
+        "loudness_match": False,
+        "av_sync_audit": "off",
+    }
+    monkeypatch.setattr("web.routes.dialogue_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.dialogue_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.dialogue_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.dialogue_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.upload_util.validate_video_extension", lambda filename: True)
+    monkeypatch.setattr(
+        "web.upload_util.save_uploaded_video",
+        lambda file, upload_dir, task_id, original_filename: (
+            str(tmp_path / "uploads" / f"{task_id}.mp4"),
+            len(b"dialogue-video"),
+            "video/mp4",
+        ),
+    )
+    monkeypatch.setattr(
+        "web.upload_util.build_source_object_info",
+        lambda **kwargs: {
+            "original_filename": kwargs["original_filename"],
+            "content_type": kwargs["content_type"],
+            "file_size": kwargs["file_size"],
+            "storage_backend": kwargs["storage_backend"],
+            "uploaded_at": kwargs["uploaded_at"],
+        },
+    )
+    monkeypatch.setattr("web.routes.dialogue_translate._list_enabled_target_langs", lambda: ("en", "de"))
+    monkeypatch.setattr("web.routes.dialogue_translate._ensure_uploaded_video_thumbnail", lambda *args, **kwargs: "")
+    monkeypatch.setattr("web.routes.dialogue_translate._resolve_name_conflict", lambda user_id, desired_name: desired_name)
+    monkeypatch.setattr("web.routes.dialogue_translate.dialogue_pipeline_runner.start", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        "/api/dialogue-translate/start",
+        data={
+            "source_language": "en",
+            "target_lang": "de",
+            "plugin_config": json.dumps(plugin_config),
+            "video": (io.BytesIO(b"dialogue-video"), "dialogue.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    task = store.get(resp.get_json()["task_id"])
+    assert task["plugin_config"] == plugin_config
+    assert list(task["steps"].keys()) == [
+        "extract",
+        "asr",
+        "asr_normalize",
+        "speaker_detect",
+        "voice_match_ab",
+        "alignment",
+        "translate",
+        "tts",
+        "subtitle",
+        "compose",
+        "export",
+    ]
+
+
+def test_dialogue_translate_duplicate_copies_source_config_and_restarts(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-duplicate-source"
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"source-video")
+    source_state = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "dialogue_translate",
+        "video_path": str(source_video),
+        "task_dir": str(tmp_path / "old-task"),
+        "original_filename": "source.mp4",
+        "display_name": "Dialogue Source",
+        "source_language": "en",
+        "target_lang": "de",
+        "plugin_config": {
+            "asr_post": "asr_clean",
+            "shot_decompose": False,
+            "translate_algo": "standard",
+            "source_anchored": True,
+            "tts_strategy": "five_round_rewrite",
+            "subtitle": "asr_realign",
+            "voice_separation": True,
+            "loudness_match": True,
+            "av_sync_audit": "off",
+        },
+        "dialogue_segments": [{"speaker_id": "A"}],
+        "speaker_profiles": {"A": {"selected_voice": {"voice_id": "old"}}},
+        "selected_voice_by_speaker": {"A": {"voice_id": "old"}},
+    }
+    store.create(task_id, str(source_video), source_state["task_dir"], user_id=1)
+    store.update(task_id, **source_state)
+    monkeypatch.setattr("web.routes.dialogue_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.dialogue_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.dialogue_translate.db_query_one", lambda *args, **kwargs: {
+        "id": task_id,
+        "user_id": 1,
+        "original_filename": "source.mp4",
+        "display_name": "Dialogue Source",
+        "task_dir": source_state["task_dir"],
+        "state_json": json.dumps(source_state, ensure_ascii=False),
+    })
+    monkeypatch.setattr("web.routes.dialogue_translate.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.tos_backup_storage.ensure_remote_copy_for_local_path", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.dialogue_translate._ensure_uploaded_video_thumbnail", lambda *args, **kwargs: "")
+    monkeypatch.setattr("web.routes.dialogue_translate._resolve_name_conflict", lambda user_id, desired_name: desired_name)
+    started: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    resp = authed_client_no_db.post(f"/api/dialogue-translate/{task_id}/duplicate")
+
+    assert resp.status_code == 201
+    payload = resp.get_json()
+    new_task = store.get(payload["task_id"])
+    assert payload["redirect_url"] == f"/dialogue-translate/{payload['task_id']}"
+    assert new_task["type"] == "dialogue_translate"
+    assert new_task["display_name"] == "Dialogue Source 副本"
+    assert new_task["source_language"] == "en"
+    assert new_task["target_lang"] == "de"
+    assert new_task["plugin_config"] == source_state["plugin_config"]
+    assert new_task["dialogue_segments"] == []
+    assert new_task["speaker_profiles"] == {}
+    assert new_task["selected_voice_by_speaker"] == {}
+    assert started == {"task_id": payload["task_id"], "user_id": 1}
+
+
+def test_dialogue_translate_delete_soft_deletes_project(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-delete"
+    store.create(task_id, "/tmp/source.mp4", "/tmp/dialogue-delete", user_id=1)
+    store.update(task_id, type="dialogue_translate", status="running")
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.translation_route_store.get_active_project_storage",
+        lambda *args, **kwargs: {
+            "task_dir": "/tmp/dialogue-delete",
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+        },
+    )
+    soft_deleted: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.translation_route_store.soft_delete_project",
+        lambda task_id, user_id, project_type, execute_func=None: soft_deleted.update(
+            {"task_id": task_id, "user_id": user_id, "project_type": project_type}
+        ),
+    )
+    monkeypatch.setattr("appcore.cleanup.delete_task_storage", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.delete(f"/api/dialogue-translate/{task_id}")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+    assert soft_deleted == {
+        "task_id": task_id,
+        "user_id": 1,
+        "project_type": "dialogue_translate",
+    }
+    assert store.get(task_id)["status"] == "deleted"
 
 
 def test_dialogue_translate_confirm_voices_requires_both_a_and_b(

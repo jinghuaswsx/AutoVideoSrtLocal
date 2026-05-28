@@ -195,6 +195,17 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 
 ## UI 设计
 
+### 2026-05-28 Handoff 补充：必须同构 Omni 项目管理体验
+
+用户确认本模块不是简化上传表单，而是“全能视频翻译”的双人说话人版本。因此 `/dialogue-translate` 的产品外壳必须复刻 `/omni-translate`：
+
+- 列表页使用 Omni 的项目管理体验：卡片/列表视图、顶部新建项目按钮、语言筛选、创建人筛选（超管）、保留期提示、缩略图、项目状态、源语言到目标语言展示、复制项目、删除项目和复制进度遮罩。
+- 创建项目流程复刻 Omni：上传视频、选择目标语言、选择源语言、填写项目名、超级管理员可选系统级 preset；提交时保存生效的 `plugin_config` 快照。已有任务不回查 preset。
+- 生命周期端点复刻 Omni：详情、状态、失败恢复、强制重启、复制、删除、下载结果、artifact、round file、source-language、alignment、segments、resume、loudness-profile、visible-to-all、LLM debug。
+- 路由必须保持 `@login_required + @admin_required`，并通过 `dialogue_translate` 权限门禁；所有 mutating 请求必须带 `X-CSRFToken`。
+- 详情页继续复用 `_translate_detail_shell.html` 和 Omni workbench。唯一 UI 差异是 `voice_match` 阶段替换为 Speaker A / Speaker B 双音色确认面板；不能暴露单音色确认作为主路径。
+- 运行主干复用 Omni step 生命周期，`voice_match` 在 dialogue 中替换为 `speaker_detect` 和 `voice_match_ab`，后续从实际 step 顺序的下一步继续，不能硬编码只从 `alignment` 继续。
+
 详情页复用现有视频翻译 workbench 结构，新增“说话人”面板：
 
 - A/B 摘要：语音时长、句数、匹配状态、确认音色。
