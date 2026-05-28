@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
@@ -21,7 +21,10 @@ SETTING_APP_ID = "feishu_alerts.app_id"
 SETTING_APP_SECRET = "feishu_alerts.app_secret"
 SETTING_CHAT_ID = "feishu_alerts.chat_id"
 SETTING_FAILURE_REPEAT_EVERY = "feishu_alerts.failure_repeat_every"
+SETTING_FAILURE_REPEAT_HOURS = "feishu_alerts.failure_repeat_hours"
+SETTING_FAILURE_LAST_ALERT_PREFIX = "feishu_alerts.failure_last_alert."
 DEFAULT_FAILURE_REPEAT_EVERY = 5
+DEFAULT_FAILURE_REPEAT_HOURS = 12
 DEFAULT_FAILURE_MIN_CONSECUTIVE = 20
 
 REQUEST_TIMEOUT = 8
@@ -233,12 +236,95 @@ def _failure_repeat_every() -> int:
     return value if value >= 1 else DEFAULT_FAILURE_REPEAT_EVERY
 
 
+def _failure_repeat_hours() -> int:
+    raw = _setting(SETTING_FAILURE_REPEAT_HOURS)
+    if not raw:
+        return DEFAULT_FAILURE_REPEAT_HOURS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_FAILURE_REPEAT_HOURS
+    return value if value >= 1 else DEFAULT_FAILURE_REPEAT_HOURS
+
+
+def _failure_alert_record_key(task_code: str) -> str:
+    return f"{SETTING_FAILURE_LAST_ALERT_PREFIX}{str(task_code or '').strip()}"
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=None)
+
+
+def failure_alert_record(task_code: str) -> dict[str, Any] | None:
+    raw = _setting(_failure_alert_record_key(task_code))
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return {"alerted_at": raw}
+    return payload if isinstance(payload, dict) else None
+
+
+def _current_run_time(rows: list[dict[str, Any]], current_run_id: int | None) -> datetime | None:
+    if current_run_id is None:
+        return None
+    for row in rows:
+        if int(row.get("id") or 0) == int(current_run_id):
+            return _parse_time(
+                row.get("started_at") or row.get("finished_at") or row.get("created_at")
+            )
+    return None
+
+
+def failure_alert_cooldown_allows(
+    task_code: str,
+    *,
+    current_run_id: int | None = None,
+    reference_at: Any = None,
+) -> bool:
+    record = failure_alert_record(task_code)
+    if not record:
+        return True
+    last_alerted_at = _parse_time(record.get("alerted_at"))
+    if last_alerted_at is None:
+        return True
+    current_at = _parse_time(reference_at) or datetime.now()
+    return current_at - last_alerted_at >= timedelta(hours=_failure_repeat_hours())
+
+
+def record_failure_alert_sent(
+    task_code: str,
+    *,
+    run_id: int | None = None,
+    alerted_at: Any = None,
+) -> None:
+    timestamp = _parse_time(alerted_at) or datetime.now()
+    payload = {
+        "run_id": int(run_id) if run_id is not None else None,
+        "alerted_at": timestamp.isoformat(timespec="seconds"),
+    }
+    settings_store.set_setting(
+        _failure_alert_record_key(task_code),
+        json.dumps(payload, ensure_ascii=False),
+    )
+
+
 def _query_recent_run_statuses(task_code: str) -> list[dict[str, Any]]:
     """Indirection so tests can monkeypatch a single hook without touching db."""
     from appcore.db import query as _query
 
     return _query(
-        "SELECT id, status FROM scheduled_task_runs "
+        "SELECT id, status, started_at, finished_at, created_at FROM scheduled_task_runs "
         "WHERE task_code=%s AND status IN ('success','failed') "
         "ORDER BY id DESC LIMIT 100",
         (task_code,),
@@ -272,15 +358,42 @@ def should_dispatch_failure(
     current_run_id: int | None,
     immediate: bool = False,
 ) -> tuple[bool, int]:
-    streak = consecutive_failure_count(task_code, current_run_id=current_run_id)
+    rows = _query_recent_run_statuses(task_code)
+    streak = 0
+    for row in rows:
+        if current_run_id is not None and int(row.get("id") or 0) > int(current_run_id):
+            continue
+        status = str(row.get("status") or "").strip()
+        if status == "failed":
+            streak += 1
+            continue
+        break
     if streak <= 0:
         return False, streak
+    current_at = _current_run_time(rows, current_run_id)
     if immediate and streak == 1:
-        return True, streak
+        return (
+            failure_alert_cooldown_allows(
+                task_code,
+                current_run_id=current_run_id,
+                reference_at=current_at,
+            ),
+            streak,
+        )
     if streak < DEFAULT_FAILURE_MIN_CONSECUTIVE:
         return False, streak
     repeat = max(_failure_repeat_every(), DEFAULT_FAILURE_MIN_CONSECUTIVE)
-    return (streak == DEFAULT_FAILURE_MIN_CONSECUTIVE or streak % repeat == 0), streak
+    should_send = streak == DEFAULT_FAILURE_MIN_CONSECUTIVE or streak % repeat == 0
+    if not should_send:
+        return False, streak
+    return (
+        failure_alert_cooldown_allows(
+            task_code,
+            current_run_id=current_run_id,
+            reference_at=current_at,
+        ),
+        streak,
+    )
 
 
 def format_scheduled_task_recovery(row: dict[str, Any], *, prior_failures: int) -> str:
