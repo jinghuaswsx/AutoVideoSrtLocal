@@ -153,7 +153,7 @@ def join_diarization_to_utterances(utterances: list[dict], diarization_segments:
         u_end = float(utterance.get("end_time") or 0.0)
         u_duration = max(0.001, u_end - u_start)
         by_label: dict[str, float] = defaultdict(float)
-        best_confidence = 0.0
+        confidence_by_label: dict[str, float] = defaultdict(float)
         for diar in diarization_segments:
             label = _speaker_label(diar)
             overlap = _overlap_seconds(
@@ -165,13 +165,14 @@ def join_diarization_to_utterances(utterances: list[dict], diarization_segments:
             if overlap <= 0:
                 continue
             by_label[label] += overlap
-            best_confidence = max(best_confidence, _confidence(diar, default=0.0))
+            confidence_by_label[label] = max(confidence_by_label[label], _confidence(diar, default=0.0))
         ranked = sorted(by_label.items(), key=lambda item: item[1], reverse=True)
         raw_label = ranked[0][0] if ranked else ""
         overlap_ratio = (ranked[0][1] / u_duration) if ranked else 0.0
+        assigned_confidence = confidence_by_label[raw_label] if raw_label else 0.0
         overlap = len([item for item in ranked if item[1] > 0]) > 1
         reasons = []
-        if overlap_ratio < MIN_JOIN_OVERLAP_RATIO or best_confidence < MIN_SPEAKER_CONFIDENCE:
+        if overlap_ratio < MIN_JOIN_OVERLAP_RATIO or assigned_confidence < MIN_SPEAKER_CONFIDENCE:
             reasons.append(REVIEW_LOW_CONFIDENCE)
         if overlap:
             reasons.append(REVIEW_OVERLAP)
@@ -182,7 +183,7 @@ def join_diarization_to_utterances(utterances: list[dict], diarization_segments:
             "end_time": u_end,
             "speaker_id": mapping.get(raw_label, "A"),
             "raw_speaker_id": raw_label,
-            "speaker_confidence": round(max(0.0, min(1.0, overlap_ratio * best_confidence)), 4),
+            "speaker_confidence": round(max(0.0, min(1.0, overlap_ratio * assigned_confidence)), 4),
             "speaker_source": "diarization",
             "overlap": overlap,
             "review_required": bool(reasons),

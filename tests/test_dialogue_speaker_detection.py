@@ -88,3 +88,21 @@ def test_diarization_join_marks_overlapping_speech():
     assert segment["overlap"] is True
     assert segment["review_required"] is True
     assert REVIEW_OVERLAP in segment["review_reason"]
+
+
+def test_diarization_low_confidence_uses_assigned_speaker_confidence():
+    utterances = [
+        {"text": "primary speaker is uncertain", "start_time": 0.0, "end_time": 10.0},
+    ]
+    diarization_segments = [
+        {"speaker": "x", "start_time": 0.0, "end_time": 8.0, "confidence": 0.5},
+        {"speaker": "y", "start_time": 8.0, "end_time": 10.0, "confidence": 0.99},
+    ]
+
+    result = join_diarization_to_utterances(utterances, diarization_segments)
+
+    segment = result["dialogue_segments"][0]
+    assert segment["raw_speaker_id"] == "x"
+    assert segment["speaker_confidence"] == pytest.approx(0.4)
+    assert segment["review_required"] is True
+    assert REVIEW_LOW_CONFIDENCE in segment["review_reason"]
