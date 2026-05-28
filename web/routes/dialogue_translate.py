@@ -123,7 +123,7 @@ def _query_viewable_project(
     task_id: str,
     columns: str = "*",
     *,
-    include_deleted: bool = True,
+    include_deleted: bool = False,
 ) -> dict | None:
     return translation_route_store.get_viewable_project(
         task_id,
@@ -132,12 +132,21 @@ def _query_viewable_project(
         is_admin=_is_admin_user(),
         columns=columns,
         include_deleted=include_deleted,
+        include_visible_to_all=True,
         query_one_func=db_query_one,
     )
 
 
-def _fresh_viewable_project_task(task_id: str) -> dict | None:
-    row = _query_viewable_project(task_id, _PROJECT_STATE_COLUMNS)
+def _fresh_viewable_project_task(
+    task_id: str,
+    *,
+    include_deleted: bool = False,
+) -> dict | None:
+    row = _query_viewable_project(
+        task_id,
+        _PROJECT_STATE_COLUMNS,
+        include_deleted=include_deleted,
+    )
     task = _task_from_project_row(row)
     if not task or not _can_view_task(task):
         return None
@@ -151,13 +160,22 @@ def _hydrate_task_state_cache(task_id: str, task: dict) -> None:
         task_state._tasks[task_id] = copy.deepcopy(task)
 
 
-def _get_viewable_task(task_id: str) -> dict | None:
-    fresh_task = _fresh_viewable_project_task(task_id)
+def _get_viewable_task(
+    task_id: str,
+    *,
+    include_deleted: bool = False,
+) -> dict | None:
+    fresh_task = _fresh_viewable_project_task(
+        task_id,
+        include_deleted=include_deleted,
+    )
     if fresh_task:
         _hydrate_task_state_cache(task_id, fresh_task)
         return fresh_task
     task = store.get(task_id)
     if not task or task.get("type") != "dialogue_translate" or not _can_view_task(task):
+        return None
+    if not include_deleted and (task.get("deleted_at") or task.get("status") == "deleted"):
         return None
     return task
 
@@ -367,15 +385,17 @@ def _normalize_voice_selection_payload(body: dict) -> dict[str, str]:
     return normalized
 
 
-def _selected_voice_payload(profile: dict, requested_voice_id: str) -> dict:
+def _selected_voice_payload(
+    profile: dict,
+    requested_voice_id: str,
+    *,
+    speaker: str,
+) -> dict:
     requested_voice_id = str(requested_voice_id or "").strip()
-    selected_voice = profile.get("selected_voice")
-    if _voice_id_from(selected_voice) == requested_voice_id:
-        return {
-            "voice_id": requested_voice_id,
-            "name": _voice_name_from(selected_voice, requested_voice_id),
-        }
-    for candidate in profile.get("candidates") or []:
+    candidates = profile.get("candidates") or []
+    if not candidates:
+        raise ValueError(f"Speaker {speaker} has no voice candidates")
+    for candidate in candidates:
         if _voice_id_from(candidate) == requested_voice_id:
             payload = {
                 "voice_id": requested_voice_id,
@@ -384,10 +404,18 @@ def _selected_voice_payload(profile: dict, requested_voice_id: str) -> dict:
             if isinstance(candidate, dict) and candidate.get("voice_name"):
                 payload["voice_name"] = candidate["voice_name"]
             return payload
-    return {
-        "voice_id": requested_voice_id,
-        "name": requested_voice_id,
-    }
+    raise ValueError(f"voice_id is not a candidate for Speaker {speaker}")
+
+
+@bp.before_request
+def _require_dialogue_translate_permission():
+    if not current_user.is_authenticated:
+        return None
+    if not current_user.has_permission("dialogue_translate"):
+        if request.path.startswith("/api/dialogue-translate"):
+            return _json_response({"error": "Forbidden"}, 403)
+        abort(403)
+    return None
 
 
 @bp.route("/dialogue-translate")
@@ -428,10 +456,10 @@ def index():
 @permission_required("dialogue_translate")
 def detail(task_id: str):
     recover_project_if_needed(task_id, "dialogue_translate")
-    row = _query_viewable_project(task_id)
+    row = _query_viewable_project(task_id, include_deleted=True)
     state = _task_from_project_row(row)
     if not row:
-        task = _get_viewable_task(task_id)
+        task = _get_viewable_task(task_id, include_deleted=True)
         if task and task.get("type") == "dialogue_translate":
             row = _project_row_from_task(task)
             state = dict(task)
@@ -640,6 +668,13 @@ def restart(task_id: str):
         user_id=owner_id,
         runner=dialogue_pipeline_runner,
         step_order=tuple(_dialogue_pipeline_step_names(task)),
+        extra_reset_fields={
+            "dialogue_segments": [],
+            "speaker_summary": {},
+            "speaker_sample_specs": [],
+            "speaker_profiles": {},
+            "selected_voice_by_speaker": {},
+        },
     )
     return _json_response({"status": "restarted", "task": updated})
 
@@ -1034,6 +1069,8 @@ def confirm_voices(task_id: str):
         state = json.loads(row.get("state_json") or "{}")
     except Exception:
         state = {}
+    if (state.get("steps") or {}).get("voice_match_ab") != "waiting":
+        return _json_response({"error": "voice_match_ab is not waiting"}, 409)
 
     try:
         selected_voice_ids = _normalize_voice_selection_payload(
@@ -1049,10 +1086,14 @@ def confirm_voices(task_id: str):
     selected_voice_by_speaker: dict[str, dict] = {}
     for speaker in ("A", "B"):
         profile = speaker_profiles.get(speaker) or {}
-        selected_voice = _selected_voice_payload(
-            profile,
-            selected_voice_ids[speaker],
-        )
+        try:
+            selected_voice = _selected_voice_payload(
+                profile,
+                selected_voice_ids[speaker],
+                speaker=speaker,
+            )
+        except ValueError as exc:
+            return _json_response({"error": str(exc)}, 400)
         profile["selected_voice"] = selected_voice
         speaker_profiles[speaker] = profile
         selected_voice_by_speaker[speaker] = selected_voice

@@ -191,9 +191,7 @@
 {% endblock %}
 
 {% block scripts %}
-{% if not project.deleted_at %}
-{% include "_task_workbench_scripts.html" %}
-{% endif %}
+{{ super() }}
 <script>
 window.DIALOGUE_TRANSLATE_DETAIL_CONFIG = {
   taskId: {{ (task_id if not project.deleted_at else '')|tojson }},
