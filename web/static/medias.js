@@ -499,6 +499,12 @@
     return isFinite(num) ? num.toFixed(2) : '<span class="muted">—</span>';
   }
 
+  function fmtAdSpend(value) {
+    if (value === null || value === undefined || value === '') return '<span class="muted">&mdash;</span>';
+    const num = Number(value);
+    return isFinite(num) ? `$${Math.round(num).toLocaleString('en-US')}` : '<span class="muted">&mdash;</span>';
+  }
+
   function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
     const coverageMap = coverage || {};
     const langSummary = langAdSummary || {};
@@ -522,11 +528,12 @@
       const pushed = Number(summary.pushed_video_count || 0);
       const pushedClass = pushed === 0 ? 'oc-lang-push-zero' : 'oc-lang-push-count';
       const roas = fmtAdRoas(summary.ad_roas);
-      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'}`;
+      const spend = fmtAdSpend(summary.ad_spend_usd);
+      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'}`;
       return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
         + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
-        + `<span class="oc-lang-roas">ROAS ${roas}</span>`
+        + `<span class="oc-lang-roas">ROAS ${roas} / 消耗 ${spend}</span>`
         + `</div>`;
     }).filter(Boolean);
     const body = lines.length
