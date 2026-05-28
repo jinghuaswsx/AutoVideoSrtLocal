@@ -62,6 +62,7 @@
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">视频文件名</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 100px; white-space: nowrap;">商品中文名</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">产品Code</th>
+        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 130px; white-space: nowrap;">商品主图</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px; white-space: nowrap;">投放语种</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; max-width: 300px; white-space: nowrap;">文案快照</th>
         <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">投放链接</th>
@@ -76,7 +77,7 @@
     </thead>
     <tbody id="history-tbody">
       <tr>
-        <td colspan="14" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 14px;">加载中…</td>
+        <td colspan="15" style="padding: 32px; text-align: center; color: var(--oc-fg-subtle, #9ca3af); font-size: 14px;">加载中…</td>
       </tr>
     </tbody>
   </table>
@@ -175,6 +176,23 @@
     font-size: 10px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     cursor: pointer;
+  }
+  .history-main-image-thumb {
+    position: relative;
+    width: 114px;
+    height: 114px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--oc-border-strong, #d1d5db);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .history-main-image-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   /* ────────── Pager (Ocean Blue & Modern) ────────── */
@@ -526,7 +544,7 @@
 
   async function load() {
     const tbody = document.getElementById('history-tbody');
-    tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">加载中…</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="15" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">加载中…</td></tr>`;
     try {
       const resp = await fetch('/pushes/api/history?' + buildQuery());
       const data = await resp.json();
@@ -535,12 +553,15 @@
       state.newProductCount = data.new_product_count || 0;
       state.items = data.items || [];
       if (!state.items.length) {
-        tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
       } else {
         tbody.innerHTML = state.items.map(it => {
           const thumb = it.cover_url
             ? `<div class="history-video-thumb"><img src="${escapeHtml(it.cover_url)}"><a href="${escapeHtml(it.video_url)}" target="_blank" class="plan-play play-btn">▶</a></div>`
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
+            
+          const mainImageUrl = `/medias/cover/${it.product_id}`;
+          const mainImage = `<div class="history-main-image-thumb"><img src="${escapeHtml(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"><span style="color:#9ca3af; font-size:24px; display:none;">🖼</span></div>`;
             
           const textsHtml = (it.texts || []).map(t => {
             // 全量拼接文案
@@ -612,6 +633,9 @@
                 ${newProductBadge}
               </div>
             </td>
+            <td style="padding:10px; vertical-align: top; width: 130px;">
+              ${mainImage}
+            </td>
             <td style="padding:10px; vertical-align: top; width: 80px; white-space: nowrap;">
               <span style="display: inline-block; background: var(--oc-accent-subtle, #eff6ff); color: var(--oc-accent-hover, #1d4ed8); padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap;">
                 ${formatLanguageLabel(it.lang)}
@@ -667,7 +691,7 @@
 
       renderPagination();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444); font-size:14px;">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="15" style="padding:32px; text-align:center; color:var(--oc-danger-fg, #ef4444); font-size:14px;">数据加载失败: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
