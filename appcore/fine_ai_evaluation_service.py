@@ -2063,6 +2063,8 @@ def _fill_country_defaults(out: dict[str, Any], country: dict[str, Any]) -> dict
         "competitive_disadvantages": [],
         "evidence_gaps": [],
     })
+    out.setdefault("aesthetic_analysis", {})
+    out.setdefault("cultural_analysis", {})
     out.setdefault("pricing_analysis", {
         "current_price": None,
         "current_currency": "",
@@ -2079,7 +2081,7 @@ def _fill_country_defaults(out: dict[str, Any], country: dict[str, Any]) -> dict
     creative.setdefault("product_image_audit", {"score": 0, "issues": [], "recommended_image_directions": []})
     creative.setdefault("video_audit", {"score": 0, "timestamp_findings": [], "hook_analysis": "", "proof_gaps": [], "scenes_to_keep": [], "scenes_to_replace_or_reshoot": []})
     creative.setdefault("localized_copy_directions", {"cover_text_direction": [], "hook_direction": [], "cta_direction": [], "language_notes": []})
-    creative.setdefault("final_creative_decision", "NO_CREATIVE_PROVIDED" if creative.get("creative_missing") else "LOCALIZE_BEFORE_TEST")
+    creative.setdefault("final_creative_decision", "NO_CREATIVE_PROVIDED" if creative.get("creative_missing") else "USE_AS_IS")
     out.setdefault("landing_page_localization", {
         "localization_difficulty": 0,
         "hero_section": {"title_direction": "", "subtitle_direction": "", "cta_direction": "", "image_direction": ""},
