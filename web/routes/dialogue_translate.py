@@ -564,7 +564,6 @@ def _require_dialogue_translate_permission():
 
 @bp.route("/dialogue-translate")
 @login_required
-@admin_required
 @permission_required("dialogue_translate")
 def index():
     filter_langs = _list_filter_langs()
@@ -621,7 +620,6 @@ def index():
 
 @bp.route("/dialogue-translate/<task_id>")
 @login_required
-@admin_required
 @permission_required("dialogue_translate")
 def detail(task_id: str):
     recover_project_if_needed(task_id, "dialogue_translate")
@@ -660,7 +658,6 @@ def detail(task_id: str):
 
 @bp.route("/api/dialogue-translate/start", methods=["POST"])
 @login_required
-@admin_required
 def upload_and_start():
     if "video" not in request.files:
         return _json_response({"error": "No video file"}, 400)
@@ -768,7 +765,6 @@ def upload_and_start():
 
 @bp.route("/api/dialogue-translate/<task_id>/duplicate", methods=["POST"])
 @login_required
-@admin_required
 def duplicate(task_id: str):
     row = _query_viewable_project(
         task_id,
@@ -899,7 +895,6 @@ def duplicate(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>", methods=["GET"])
 @login_required
-@admin_required
 def get_task(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -910,7 +905,6 @@ def get_task(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/subtitle-preview", methods=["GET"])
 @login_required
-@admin_required
 def subtitle_preview(task_id: str):
     row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
@@ -925,7 +919,6 @@ def subtitle_preview(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/llm-debug/<step>", methods=["GET"])
 @login_required
-@admin_required
 def get_llm_debug(task_id: str, step: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -939,7 +932,6 @@ def get_llm_debug(task_id: str, step: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/restart", methods=["POST"])
 @login_required
-@admin_required
 def restart(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -984,7 +976,6 @@ def restart(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/source-language", methods=["PUT"])
 @login_required
-@admin_required
 def update_source_language(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1022,7 +1013,6 @@ def update_source_language(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/alignment", methods=["PUT"])
 @login_required
-@admin_required
 def update_alignment(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1043,7 +1033,6 @@ def update_alignment(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/segments", methods=["PUT"])
 @login_required
-@admin_required
 def update_segments(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1085,7 +1074,6 @@ def update_segments(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/loudness-profile", methods=["POST"])
 @login_required
-@admin_required
 def set_loudness_profile(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -1132,7 +1120,6 @@ def set_loudness_profile(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/resume", methods=["POST"])
 @login_required
-@admin_required
 def resume(task_id: str):
     recover_task_if_needed(task_id)
     task = _get_viewable_task(task_id)
@@ -1163,7 +1150,6 @@ def resume(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/download/<file_type>")
 @login_required
-@admin_required
 def download(task_id: str, file_type: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1174,7 +1160,6 @@ def download(task_id: str, file_type: str):
 
 @bp.route("/api/dialogue-translate/<task_id>", methods=["DELETE"])
 @login_required
-@admin_required
 def delete(task_id: str):
     row = translation_route_store.get_active_project_storage(
         task_id,
@@ -1213,7 +1198,6 @@ def delete(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/visible-to-all", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_visible_to_all(task_id: str):
     if not getattr(current_user, "is_superadmin", False):
         return _json_response({"error": "Only superadmin can change visibility"}, 403)
@@ -1234,7 +1218,6 @@ def toggle_visible_to_all(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/artifact/<name>")
 @login_required
-@admin_required
 def get_artifact(task_id: str, name: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1268,7 +1251,6 @@ def get_artifact(task_id: str, name: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/artifact-path")
 @login_required
-@admin_required
 def get_artifact_path(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1292,7 +1274,6 @@ _ALLOWED_ROUND_KINDS = {
 
 @bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>")
 @login_required
-@admin_required
 def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
     if round_index not in (1, 2, 3, 4, 5) or attempt not in (1, 2, 3, 4, 5):
         abort(404)
@@ -1316,7 +1297,6 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
 
 @bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>")
 @login_required
-@admin_required
 def get_round_file(task_id: str, round_index: int, kind: str):
     try:
         filename, mime = resolve_round_file_entry(
@@ -1345,7 +1325,6 @@ def get_round_file(task_id: str, round_index: int, kind: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/analysis/run", methods=["POST"])
 @login_required
-@admin_required
 def run_ai_analysis(task_id: str):
     if not _get_viewable_task(task_id):
         return _json_response({"error": "Task not found"}, 404)
@@ -1354,7 +1333,6 @@ def run_ai_analysis(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/start-translate", methods=["POST"])
 @login_required
-@admin_required
 def start_translate(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1372,7 +1350,6 @@ def start_translate(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/retranslate", methods=["POST"])
 @login_required
-@admin_required
 def retranslate(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1389,7 +1366,6 @@ def retranslate(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/select-translation", methods=["PUT"])
 @login_required
-@admin_required
 def select_translation(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1401,7 +1377,6 @@ def select_translation(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/confirm-voices", methods=["POST"])
 @login_required
-@admin_required
 def confirm_voices(task_id: str):
     row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
