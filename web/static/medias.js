@@ -540,7 +540,10 @@
       ? lines.join('')
       : '<div class="oc-lang-empty muted">—</div>';
     return `<div class="oc-lang-bar">`
-      + `<div class="oc-lang-summary"><span>总体ROAS</span><strong>${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
+      + `<div class="oc-lang-summary">`
+      + `<span>总体ROAS<strong>${fmtAdRoas(productSummary.overall_roas)}</strong></span>`
+      + `<span>总消耗<strong>${fmtAdSpend(productSummary.ad_spend_usd)}</strong></span>`
+      + `</div>`
       + body
       + `</div>`;
   }
