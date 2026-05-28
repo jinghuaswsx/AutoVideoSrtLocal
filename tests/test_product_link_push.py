@@ -125,15 +125,16 @@ def test_build_product_links_push_preview_filters_small_langs_without_pending_ma
 
     preview = pushes.build_product_links_push_preview(product)
 
-    # en 应保留 (不作为小语种进行 pending 限制)
+    # en 应保留 (不作为小语种限制)
     # de 应保留 (具有 pending 状态素材)
-    # fr 应被过滤 (虽有素材，但非 pending)
+    # fr 应保留 (具有 pushed 状态素材)
     # ja 应被过滤 (完全无素材)
     assert preview["payload"] == {
         "handle": "demo-rjc",
         "product_links": [
             "https://newjoyloo.com/products/demo-rjc",
             "https://newjoyloo.com/de/products/demo-rjc",
+            "https://newjoyloo.com/fr/products/demo-rjc",
         ],
     }
 
@@ -747,10 +748,11 @@ def test_resolve_localized_texts_payload_filters_small_langs_without_pending_mat
 
     # en should be kept (not filtered as small language)
     # de should be kept (has pending material)
-    # fr should be filtered out (no pending material)
-    assert len(texts) == 2
+    # fr should be kept (has pushed material)
+    assert len(texts) == 3
     assert texts[0]["lang"] == "Name_en"
     assert texts[1]["lang"] == "Name_de"
+    assert texts[2]["lang"] == "Name_fr"
 
 
 def test_medias_product_localized_texts_push_payload_endpoint_returns_preview(
@@ -1077,13 +1079,14 @@ def test_build_item_payload_filters_small_langs_without_pending_materials(monkey
 
     payload = pushes.build_item_payload(item, product)
 
-    # en 应保留 (不作为小语种进行 pending 限制)
+    # en 应保留 (不作为小语种限制)
     # de 应保留 (具有 pending 状态素材)
-    # fr 应被过滤 (虽有素材，但已推送非 pending)
+    # fr 应保留 (具有 pushed 状态素材)
     # ja 应被过滤 (完全无素材)
     assert payload["product_links"] == [
         "https://shop.test/en/products/demo-rjc",
         "https://shop.test/de/products/demo-rjc",
+        "https://shop.test/fr/products/demo-rjc",
     ]
 
 

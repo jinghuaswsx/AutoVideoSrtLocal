@@ -1035,7 +1035,7 @@ def resolve_filtered_product_link_langs(product: dict | None) -> list[str]:
         # 计算素材的状态
         readiness = compute_readiness(item, product)
         status = compute_status_from_readiness(item, product, readiness)
-        if status == STATUS_PENDING:
+        if status in (STATUS_PENDING, STATUS_PUSHED):
             pending_langs.add(item_lang)
 
     # 过滤出符合条件的语种代码列表
@@ -1518,7 +1518,7 @@ def resolve_localized_texts_payload(item: dict) -> list[dict[str, str]]:
             # 计算素材的状态
             readiness = compute_readiness(it, product)
             status = compute_status_from_readiness(it, product, readiness)
-            if status == STATUS_PENDING:
+            if status in (STATUS_PENDING, STATUS_PUSHED):
                 pending_langs.add(item_lang)
 
     texts: list[dict[str, str]] = []
