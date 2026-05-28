@@ -136,13 +136,31 @@
     return resp.json();
   }
 
+  const langCountryMap = {
+    'en': '英语',
+    'de': '德国',
+    'fr': '法国',
+    'es': '西班牙',
+    'it': '意大利',
+    'ja': '日本',
+    'ko': '韩国',
+    'pt': '葡萄牙',
+    'ru': '俄罗斯',
+    'nl': '荷兰',
+    'sv': '瑞典',
+    'fi': '芬兰'
+  };
+
   function formatLanguageLabel(code) {
     const raw = String(code || '').trim();
     const normalized = raw.toLowerCase();
     if (!normalized) return '';
+    const upper = normalized.toUpperCase();
+    if (langCountryMap[normalized]) {
+      return `${langCountryMap[normalized]} ${upper}`;
+    }
     const lang = LANGUAGES.find(l => l && l.code === normalized);
     const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
-    const upper = normalized.toUpperCase();
     return name ? `${name} ${upper}` : upper || raw;
   }
 
@@ -198,7 +216,7 @@
   async function loadLanguages() {
     try {
       const data = await fetchJSON('/medias/api/languages');
-      LANGUAGES = data.languages || [];
+      LANGUAGES = data.items || data.languages || [];
       const sel = document.getElementById('f-lang');
       const all = document.createElement('option');
       all.value = ''; all.textContent = '全部';

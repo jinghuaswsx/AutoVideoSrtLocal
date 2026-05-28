@@ -467,14 +467,17 @@
 
   const langZhMap = {
     'en': '英语',
-    'de': '德语',
-    'es': '西班牙语',
-    'fr': '法语',
-    'it': '意大利语',
-    'ja': '日语',
-    'ko': '韩语',
-    'pt': '葡萄牙语',
-    'ru': '俄语',
+    'de': '德国',
+    'es': '西班牙',
+    'fr': '法国',
+    'it': '意大利',
+    'ja': '日本',
+    'ko': '韩国',
+    'pt': '葡萄牙',
+    'ru': '俄罗斯',
+    'nl': '荷兰',
+    'sv': '瑞典',
+    'fi': '芬兰',
     'zh': '中文'
   };
 
@@ -482,13 +485,13 @@
     const raw = String(code || '').trim().toLowerCase();
     const zhName = langZhMap[raw];
     if (zhName) {
-      return `${zhName}${raw.toUpperCase()}`;
+      return `${zhName} ${raw.toUpperCase()}`;
     }
     const apiName = languageNameMap[raw];
     if (apiName) {
       const match = apiName.match(/^([^(（\s]+)/);
       if (match) {
-        return `${match[1]}${raw.toUpperCase()}`;
+        return `${match[1]} ${raw.toUpperCase()}`;
       }
       return apiName;
     }
@@ -518,10 +521,10 @@
       const resp = await fetch('/medias/api/languages');
       const data = await resp.json();
       const sel = document.getElementById('f-lang');
-      (data.languages || []).forEach(l => {
+      (data.items || data.languages || []).forEach(l => {
         const opt = document.createElement('option');
         opt.value = l.code;
-        const displayName = `${l.name_zh || l.code.toUpperCase()} (${l.code.toUpperCase()})`;
+        const displayName = formatLanguageLabel(l.code);
         opt.textContent = displayName;
         sel.appendChild(opt);
         languageNameMap[l.code.toLowerCase()] = displayName;
