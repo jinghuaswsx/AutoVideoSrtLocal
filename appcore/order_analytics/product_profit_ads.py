@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -98,12 +98,75 @@ def _load_campaign_metrics(
     )
 
 
-def _load_unmatched_campaign_metrics(
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _business_dates_between(date_from: date, date_to: date) -> list[date]:
+    if not date_from or not date_to or date_from > date_to:
+        return []
+    dates: list[date] = []
+    cur = date_from
+    while cur <= date_to:
+        dates.append(cur)
+        cur += timedelta(days=1)
+    return dates
+
+
+def _open_business_dates_in_range(date_from: date, date_to: date) -> list[date]:
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
+    return [d for d in _business_dates_between(date_from, date_to) if d > closed_through]
+
+
+def _sql_in(values: list[Any]) -> str:
+    return ", ".join(["%s"] * len(values))
+
+
+def _load_profit_units_for_products(
+    business_dates: list[date],
+    product_ids: set[int],
+) -> dict[tuple[date, int], int]:
+    if not business_dates or not product_ids:
+        return {}
+    product_list = sorted(product_ids)
+    rows = query(
+        "SELECT d.meta_business_date AS business_date, p.product_id, "
+        "COALESCE(SUM(d.quantity), 0) AS units "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        f"WHERE d.meta_business_date IN ({_sql_in(business_dates)}) "
+        f"AND p.product_id IN ({_sql_in(product_list)}) "
+        "GROUP BY d.meta_business_date, p.product_id",
+        tuple(list(business_dates) + product_list),
+    )
+    out: dict[tuple[date, int], int] = {}
+    for row in rows or []:
+        business_date = _date_value(row.get("business_date"))
+        product_id = row.get("product_id")
+        if business_date and product_id is not None:
+            out[(business_date, int(product_id))] = int(row.get("units") or 0)
+    return out
+
+
+def _load_daily_unmatched_campaign_metrics(
     date_from: date,
     date_to: date,
     country: str | None = None,
 ) -> list[dict[str, Any]]:
-    """拉日期范围内仍未匹配 product_id 的广告行，供全局排查入口使用。"""
+    """拉日终表里仍未匹配 product_id 的广告行。"""
     market_country = normalize_market_country(country)
     if is_single_market_country(market_country):
         return query(
@@ -130,6 +193,127 @@ def _load_unmatched_campaign_metrics(
         "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
         (date_from, date_to),
     )
+
+
+def _load_realtime_unmatched_campaign_metrics(
+    date_from: date,
+    date_to: date,
+) -> list[dict[str, Any]]:
+    """拉开放业务日实时快照中会计入未分摊广告费的 campaign 行。"""
+    business_dates = _business_dates_between(date_from, date_to)
+    if not business_dates:
+        return []
+    snapshot_rows = query(
+        "SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        f"WHERE business_date IN ({_sql_in(business_dates)}) "
+        "AND data_completeness='realtime_partial' "
+        "GROUP BY business_date, ad_account_id",
+        tuple(business_dates),
+    ) or []
+
+    rows: list[dict[str, Any]] = []
+    for snapshot in snapshot_rows:
+        business_date = _date_value(snapshot.get("business_date"))
+        snapshot_at = snapshot.get("snapshot_at")
+        if not business_date or not snapshot_at:
+            continue
+        ad_account_id = snapshot.get("ad_account_id")
+        select_sql = (
+            "SELECT business_date AS report_date, ad_account_id, "
+            "MAX(ad_account_name) AS ad_account_name, "
+            "campaign_name, normalized_campaign_code, "
+            "SUM(spend_usd) AS spend_usd, "
+            "SUM(result_count) AS result_count, "
+            "SUM(purchase_value_usd) AS purchase_value_usd "
+            "FROM meta_ad_realtime_daily_campaign_metrics "
+            "WHERE business_date=%s "
+        )
+        params: list[Any] = [business_date]
+        if ad_account_id is None:
+            select_sql += "AND ad_account_id IS NULL "
+        else:
+            select_sql += "AND ad_account_id=%s "
+            params.append(ad_account_id)
+        select_sql += (
+            "AND snapshot_at=%s "
+            "AND data_completeness='realtime_partial' "
+            "GROUP BY business_date, ad_account_id, campaign_name, normalized_campaign_code "
+            "ORDER BY spend_usd DESC"
+        )
+        params.append(snapshot_at)
+        rows.extend(query(select_sql, tuple(params)) or [])
+
+    if not rows:
+        return []
+
+    annotated: list[dict[str, Any]] = []
+    product_ids: set[int] = set()
+    match_cache: dict[str, dict[str, Any] | None] = {}
+    for row in rows:
+        spend = Decimal(str(row.get("spend_usd") or 0))
+        if spend <= 0:
+            continue
+        code = str(
+            row.get("normalized_campaign_code") or row.get("campaign_name") or ""
+        ).strip()
+        if not code:
+            continue
+        lookup = code.lower()
+        if lookup not in match_cache:
+            match_cache[lookup] = resolve_ad_product_match(lookup)
+        match = match_cache[lookup]
+        item = dict(row)
+        item["report_date"] = _date_value(row.get("report_date"))
+        item["normalized_campaign_code"] = code
+        item["allocation_reason"] = "unmatched_product"
+        item["matched_product_id"] = None
+        item["matched_product_code"] = None
+        item["matched_product_name"] = None
+        if match and match.get("id") is not None:
+            product_id = int(match["id"])
+            item["matched_product_id"] = product_id
+            item["matched_product_code"] = match.get("product_code")
+            item["matched_product_name"] = match.get("name") or match.get("product_name")
+            item["_matched_product_id"] = product_id
+            product_ids.add(product_id)
+        annotated.append(item)
+
+    units_by_product = _load_profit_units_for_products(business_dates, product_ids)
+    out: list[dict[str, Any]] = []
+    for item in annotated:
+        product_id = item.pop("_matched_product_id", None)
+        if product_id is not None:
+            business_date = _date_value(item.get("report_date"))
+            units = int(units_by_product.get((business_date, int(product_id))) or 0)
+            if units > 0:
+                continue
+            item["allocation_reason"] = "matched_no_units"
+            item["matched_profit_units"] = units
+        out.append(item)
+    return out
+
+
+def _load_unmatched_campaign_metrics(
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
+    """拉日期范围内会计入未分摊广告费的广告行，供全局排查入口使用。"""
+    market_country = normalize_market_country(country)
+    open_dates = _open_business_dates_in_range(date_from, date_to)
+    daily_to = min(open_dates) - timedelta(days=1) if open_dates else date_to
+    rows: list[dict[str, Any]] = []
+    if daily_to >= date_from:
+        rows.extend(_load_daily_unmatched_campaign_metrics(date_from, daily_to, country))
+    if open_dates and not is_single_market_country(market_country):
+        rows.extend(
+            _load_realtime_unmatched_campaign_metrics(
+                min(open_dates),
+                max(open_dates),
+            )
+        )
+    return rows
 
 
 def _load_campaign_perf(
@@ -508,13 +692,6 @@ def generate_unmatched_ads_report(
     if not rows:
         return {"accounts": [], "campaigns": [], "daily": [], "unmatched": []}
 
-    codes: set[str] = {
-        (r.get("normalized_campaign_code") or "").strip()
-        for r in rows
-        if (r.get("normalized_campaign_code") or "").strip()
-    }
-    match_map = _load_match_map(codes) if codes else {}
-
     unmatched: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "normalized_campaign_code": "",
@@ -525,12 +702,16 @@ def generate_unmatched_ads_report(
             "result_count": 0,
             "purchase_value": Decimal("0"),
             "last_seen": None,
+            "allocation_reasons": set(),
+            "matched_product_id": None,
+            "matched_product_code": None,
+            "matched_product_name": None,
         }
     )
 
     for r in rows:
         norm = (r.get("normalized_campaign_code") or "").strip()
-        if not norm or match_map.get(norm) is not None:
+        if not norm:
             continue
         spend = Decimal(str(r.get("spend_usd") or 0))
         bucket = unmatched[norm]
@@ -541,6 +722,13 @@ def generate_unmatched_ads_report(
         bucket["spend"] += spend
         bucket["result_count"] += int(r.get("result_count") or 0)
         bucket["purchase_value"] += Decimal(str(r.get("purchase_value_usd") or 0))
+        reason = (r.get("allocation_reason") or "unmatched_product").strip()
+        if reason:
+            bucket["allocation_reasons"].add(reason)
+        if bucket["matched_product_id"] is None and r.get("matched_product_id") is not None:
+            bucket["matched_product_id"] = r.get("matched_product_id")
+            bucket["matched_product_code"] = r.get("matched_product_code")
+            bucket["matched_product_name"] = r.get("matched_product_name")
         report_date = r.get("report_date")
         if report_date is not None and (
             bucket["last_seen"] is None or report_date > bucket["last_seen"]
@@ -552,6 +740,7 @@ def generate_unmatched_ads_report(
         spend = item["spend"]
         purchase_value = item["purchase_value"]
         last_seen = item["last_seen"]
+        reasons = sorted(item["allocation_reasons"])
         unmatched_list.append({
             "normalized_campaign_code": norm,
             "campaign_name": item["campaign_name"],
@@ -562,6 +751,10 @@ def generate_unmatched_ads_report(
             "purchase_value_usd": float(purchase_value),
             "roas_meta": float(purchase_value / spend) if spend > 0 and purchase_value > 0 else None,
             "last_seen": last_seen.isoformat() if hasattr(last_seen, "isoformat") else last_seen,
+            "allocation_reason": reasons[0] if len(reasons) == 1 else "mixed",
+            "matched_product_id": item["matched_product_id"],
+            "matched_product_code": item["matched_product_code"],
+            "matched_product_name": item["matched_product_name"],
         })
     unmatched_list.sort(key=lambda x: -x["spend_usd"])
     total_unmatched_spend = sum(float(item["spend_usd"] or 0) for item in unmatched_list)

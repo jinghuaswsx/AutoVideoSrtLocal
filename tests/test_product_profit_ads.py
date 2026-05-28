@@ -1,7 +1,7 @@
 """产品广告明细聚合测试（Tab ④ 数据源）。"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -251,7 +251,7 @@ def test_load_unmatched_campaign_metrics_with_country_uses_ad_table_filter():
     assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7), "VN")
 
 
-def test_generate_unmatched_ads_report_aggregates_and_excludes_resolved_codes():
+def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
     fake_rows = [
         {
             "report_date": date(2026, 5, 5),
@@ -295,8 +295,12 @@ def test_generate_unmatched_ads_report_aggregates_and_excludes_resolved_codes():
     assert result["accounts"] == []
     assert result["campaigns"] == []
     assert result["daily"] == []
-    assert len(result["unmatched"]) == 1
+    assert len(result["unmatched"]) == 2
     row = result["unmatched"][0]
+    assert row["normalized_campaign_code"] == "known-rjc"
+    assert row["spend_usd"] == 9.0
+
+    row = result["unmatched"][1]
     assert row["normalized_campaign_code"] == "mystery"
     assert row["campaign_name"] == "Mystery 2"
     assert row["ad_account_id"] == "act_1"
@@ -306,6 +310,58 @@ def test_generate_unmatched_ads_report_aggregates_and_excludes_resolved_codes():
     assert row["purchase_value_usd"] == 14.0
     assert row["roas_meta"] == 2.0
     assert row["last_seen"] == "2026-05-06"
+
+
+def test_generate_unmatched_ads_report_uses_realtime_for_open_business_day():
+    target = date(2026, 5, 27)
+    snapshot_at = datetime(2026, 5, 28, 10, 40)
+    queries: list[tuple[str, tuple]] = []
+
+    def fake_query(sql, params):
+        queries.append((sql, params))
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "MAX(snapshot_at)" in sql
+        ):
+            return [
+                {
+                    "business_date": target,
+                    "ad_account_id": "act_1",
+                    "snapshot_at": snapshot_at,
+                }
+            ]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "snapshot_at=%s" in sql
+        ):
+            return [
+                {
+                    "report_date": target,
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "newjoyloo",
+                    "normalized_campaign_code": "mystery-rjc",
+                    "campaign_name": "Mystery Campaign",
+                    "spend_usd": Decimal("130.49"),
+                    "result_count": 4,
+                    "purchase_value_usd": Decimal("260.98"),
+                }
+            ]
+        return []
+
+    with patch("appcore.order_analytics._open_day_freshness.ensure_open_day_profit_lines_fresh"), \
+         patch("tools.meta_daily_final_sync.completed_meta_business_date", return_value=date(2026, 5, 26)), \
+         patch.object(ppa, "query", side_effect=fake_query), \
+         patch.object(ppa, "resolve_ad_product_match", return_value=None):
+        result = ppa.generate_unmatched_ads_report(date_from=target, date_to=target)
+
+    assert any("meta_ad_realtime_daily_campaign_metrics" in sql for sql, _ in queries)
+    assert result["unallocated_ad_spend_usd"] == 130.49
+    assert len(result["unmatched"]) == 1
+    row = result["unmatched"][0]
+    assert row["normalized_campaign_code"] == "mystery-rjc"
+    assert row["campaign_name"] == "Mystery Campaign"
+    assert row["spend_usd"] == 130.49
+    assert row["last_seen"] == "2026-05-27"
 
 
 def test_generate_ads_report_resolve_recovers_unmatched_to_current_product():
