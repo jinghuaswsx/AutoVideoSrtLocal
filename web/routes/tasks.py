@@ -320,6 +320,7 @@ def api_create_parent():
         )
         raw_processor_id = int(payload["raw_processor_id"])
         product_url_override = str(payload.get("product_link") or "").strip() or None
+        force = bool(payload.get("force"))
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
@@ -344,6 +345,7 @@ def api_create_parent():
             "language_assignments": language_assignments,
             "raw_processor_id": raw_processor_id,
             "created_by": int(current_user.id),
+            "force": force,
         }
         if raw_source_reuse:
             create_kwargs["reused_raw_source_id"] = int(raw_source_reuse["id"])

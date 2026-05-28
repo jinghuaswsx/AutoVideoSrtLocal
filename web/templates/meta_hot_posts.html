@@ -2187,6 +2187,43 @@ async function mkiImportMetaHotPost(btn, postId) {
 }
 
 // ---- 创建小语种翻译任务 modal ----
+function mkiXiaoForceUnlock(event, btn, code) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  var card = btn.closest('.mki-xiao-lang-card');
+  if (!card) return;
+  var cb = card.querySelector('.mki-xiao-lang-check');
+  if (cb) {
+    cb.removeAttribute('disabled');
+    cb.setAttribute('data-mki-force', '1');
+    cb.checked = true;
+    card.classList.remove('mki-xiao-lang-card--disabled');
+    card.style.borderColor = '#d9534f';
+    card.style.boxShadow = '0 0 4px rgba(217, 83, 79, 0.4)';
+    btn.style.display = 'none';
+    var small = card.querySelector('.mki-xiao-ai-suggestion');
+    if (small) {
+      small.innerHTML = '<span style="color: #d9534f; font-weight: bold;">已强选</span>';
+    }
+    var mainTextEl = card.querySelector('.mki-xiao-lang-main');
+    if (mainTextEl) {
+      mainTextEl.textContent = mainTextEl.textContent.replace(' (已有任务)', ' (强创)');
+    }
+  }
+}
+
+function mkiXiaoIsForce() {
+  var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+  for (var i = 0; i < cbs.length; i++) {
+    if (cbs[i].checked && cbs[i].getAttribute('data-mki-force') === '1') {
+      return true;
+    }
+  }
+  return false;
+}
+
 let mkiXiaoResolve = null;
 let mkiXiaoTranslatorsCache = null;
 let mkiXiaoRawProcessorsCache = null;
@@ -2368,13 +2405,19 @@ async function mkiXiaoOpenModal(options = {}) {
     var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
     var labelText = isExisting ? label + ' (已有任务)' : label;
     var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
+    var forceBtnHtml = isExisting
+      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center;">强制创建</button>'
+      : '';
     return '<label class="mki-xiao-lang-pill">'
       + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
       + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
       + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
       + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
       + '</span>'
-      + '<small class="mki-xiao-ai-suggestion">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</small>'
+      + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
+      + (isExisting ? '已有任务' : 'AI建议：暂无')
+      + forceBtnHtml
+      + '</small>'
       + '</span></label>';
   }).join('');
 
@@ -2400,7 +2443,7 @@ function mkiXiaoOK() {
   if (!countries.length) { alert('请选择目标国家'); return; }
   mkiXiaoSetBusy(true);
   mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
-  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries}); mkiXiaoResolve = null; }
+  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries, force: mkiXiaoIsForce()}); mkiXiaoResolve = null; }
 }
 
 function mkiXiaoCancel() {
@@ -2455,7 +2498,8 @@ async function mkiCreateSmallLangTaskFromMetaHot(btn, postId) {
         translator_id: selection.translatorId,
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
-        countries: selection.countries
+        countries: selection.countries,
+        force: !!selection.force
       })
     });
     const data = await rsp.json().catch(() => ({}));

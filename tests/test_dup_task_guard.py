@@ -136,3 +136,59 @@ def test_api_languages_returns_existing_flags(authed_client_no_db, monkeypatch):
     assert de_lang["existing"] is True
     fr_lang = next(l for l in data["languages"] if l["code"] == "FR")
     assert fr_lang["existing"] is False
+
+
+def test_create_parent_task_force_bypass(monkeypatch):
+    existing_calls = []
+
+    def mock_get_existing(media_item_id):
+        existing_calls.append(media_item_id)
+        return ["FR", "DE"]
+
+    monkeypatch.setattr("appcore.tasks.get_existing_task_languages_for_item", mock_get_existing)
+
+    db_calls = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.lastrowid = 200
+        def execute(self, sql, args=None):
+            db_calls.append((sql, args))
+        def fetchone(self):
+            return {"name": "Test Product"}
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    class FakeConn:
+        def begin(self):
+            pass
+        def commit(self):
+            pass
+        def rollback(self):
+            pass
+        def close(self):
+            pass
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr("appcore.tasks.get_conn", lambda: FakeConn())
+    monkeypatch.setattr("appcore.tasks._product_name_for_notification", lambda cur, pid: "Fake Product")
+    monkeypatch.setattr("appcore.user_notifications.notify_child_blocked", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.user_notifications.notify_parent_assigned", lambda *args, **kwargs: None)
+
+    # force=True should bypass duplication check
+    parent_id = tasks_svc.create_parent_task(
+        media_product_id=1,
+        media_item_id=42,
+        countries=["DE", "NL"],
+        translator_id=9,
+        raw_processor_id=8,
+        created_by=1,
+        force=True
+    )
+
+    assert parent_id == 200
+    assert existing_calls == []
+

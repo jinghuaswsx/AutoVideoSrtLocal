@@ -919,6 +919,7 @@ def create_parent_task(
     raw_processor_id: int | None = None,
     reused_raw_source_id: int | None = None,
     created_by: int,
+    force: bool = False,
 ) -> int:
     """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
     if not countries:
@@ -927,7 +928,7 @@ def create_parent_task(
     if not norm_countries:
         raise ValueError("countries must be non-empty after normalization")
 
-    if media_item_id is not None:
+    if media_item_id is not None and not force:
         existing_langs = get_existing_task_languages_for_item(media_item_id)
         duplicates = [c for c in norm_countries if c in existing_langs]
         if duplicates:
