@@ -37,6 +37,9 @@ def apply_speaker_voices_to_tts_segments(
     selected_voice_by_speaker: dict[str, Any],
 ) -> list[dict]:
     """Copy TTS segments and apply speaker_id/voice_id/voice_name by segment index."""
+    if not isinstance(selected_voice_by_speaker, dict):
+        selected_voice_by_speaker = {}
+
     dialogue_by_index: dict[int, dict] = {}
     for fallback, dialogue_segment in enumerate(dialogue_segments or []):
         if not isinstance(dialogue_segment, dict):

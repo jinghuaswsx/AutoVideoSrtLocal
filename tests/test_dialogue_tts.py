@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from appcore.tts_engines.elevenlabs import ElevenLabsEngine
+
+
+def _use_test_tts_pool(monkeypatch, tts, max_workers: int = 4) -> ThreadPoolExecutor:
+    pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="test-tts")
+    monkeypatch.setattr(tts, "_get_tts_pool", lambda: pool)
+    return pool
 
 
 def test_apply_speaker_voices_to_tts_segments_maps_by_dialogue_index():
@@ -82,9 +89,22 @@ def test_apply_speaker_voices_accepts_elevenlabs_voice_id_and_preserves_existing
     assert mapped[1]["voice_name"] == "Missing Voice"
 
 
+def test_apply_speaker_voices_treats_malformed_selected_voice_mapping_as_empty():
+    from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments
+
+    mapped = apply_speaker_voices_to_tts_segments(
+        [{"tts_text": "first", "voice_id": "existing"}],
+        [{"index": 0, "speaker_id": "speaker_a"}],
+        None,
+    )
+
+    assert mapped == [{"tts_text": "first", "voice_id": "existing", "speaker_id": "speaker_a"}]
+
+
 def test_generate_full_audio_with_segment_voices_uses_each_segment_voice(monkeypatch, tmp_path):
     from pipeline import tts
 
+    pool = _use_test_tts_pool(monkeypatch, tts)
     calls: list[tuple[str, str, str]] = []
 
     def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
@@ -97,29 +117,82 @@ def test_generate_full_audio_with_segment_voices_uses_each_segment_voice(monkeyp
         return type("Result", (), {"returncode": 0, "stderr": ""})()
 
     monkeypatch.setattr(tts, "generate_segment_audio", fake_generate_segment_audio)
-    monkeypatch.setattr(tts, "_get_audio_duration", lambda path: 1.25 if path.endswith("0000.mp3") else 2.5)
+    monkeypatch.setattr(tts, "_get_audio_duration", lambda path: 1.25 if "seg_0000." in path else 2.5)
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
 
-    result = tts.generate_full_audio_with_segment_voices(
-        [
-            {"tts_text": "A", "voice_id": "voice-a"},
-            {"tts_text": "B"},
-            {"tts_text": "C", "voice_id": "voice-c"},
-        ],
-        default_voice_id="default-voice",
-        output_dir=str(tmp_path),
-        variant="dialogue",
-    )
+    try:
+        result = tts.generate_full_audio_with_segment_voices(
+            [
+                {"tts_text": "A", "voice_id": "voice-a"},
+                {"tts_text": "B"},
+                {"tts_text": "C", "voice_id": "voice-c"},
+            ],
+            default_voice_id="default-voice",
+            output_dir=str(tmp_path),
+            variant="dialogue",
+        )
+    finally:
+        pool.shutdown(wait=True)
 
     calls_by_segment = sorted(calls, key=lambda call: call[2])
     assert [call[1] for call in calls_by_segment] == ["voice-a", "default-voice", "voice-c"]
     assert result["full_audio_path"] == str(tmp_path / "tts_full.dialogue.mp3")
     assert [seg["tts_duration"] for seg in result["segments"]] == [1.25, 2.5, 2.5]
     assert [Path(seg["tts_path"]).name for seg in result["segments"]] == [
-        "seg_0000.mp3",
-        "seg_0001.mp3",
-        "seg_0002.mp3",
+        Path(calls_by_segment[0][2]).name,
+        Path(calls_by_segment[1][2]).name,
+        Path(calls_by_segment[2][2]).name,
     ]
+
+
+def test_generate_full_audio_with_segment_voices_uses_distinct_paths_for_distinct_voice_settings(
+    monkeypatch,
+    tmp_path,
+):
+    from pipeline import tts
+
+    pool = _use_test_tts_pool(monkeypatch, tts)
+    output_paths: list[str] = []
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        output_paths.append(output_path)
+        Path(output_path).write_bytes(b"mp3")
+        return output_path
+
+    def fake_run(cmd, capture_output, text):
+        Path(cmd[-1]).write_bytes(b"full")
+        return type("Result", (), {"returncode": 0, "stderr": ""})()
+
+    monkeypatch.setattr(tts, "generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr(tts, "_get_audio_duration", lambda path: 1.0)
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+
+    try:
+        tts.generate_full_audio_with_segment_voices(
+            [{"tts_text": "same text", "voice_id": "voice-a"}],
+            default_voice_id="default",
+            output_dir=str(tmp_path),
+            variant="dialogue",
+        )
+        tts.generate_full_audio_with_segment_voices(
+            [{"tts_text": "same text", "voice_id": "voice-b"}],
+            default_voice_id="default",
+            output_dir=str(tmp_path),
+            variant="dialogue",
+        )
+        tts.regenerate_full_audio_with_segment_voices_speed(
+            [{"tts_text": "same text", "voice_id": "voice-b"}],
+            default_voice_id="default",
+            output_dir=str(tmp_path),
+            variant="dialogue",
+            speed=1.1,
+        )
+    finally:
+        pool.shutdown(wait=True)
+
+    assert len(output_paths) == 3
+    assert len(set(output_paths)) == 3
+    assert all("seg_0000." in Path(path).name for path in output_paths)
 
 
 def test_elevenlabs_engine_uses_segment_voice_helper_when_voice_differs(monkeypatch, tmp_path):

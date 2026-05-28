@@ -1,4 +1,6 @@
 import atexit
+import hashlib
+import json
 import logging
 import os
 import ssl
@@ -309,6 +311,28 @@ def generate_segment_audio(
     return output_path
 
 
+def _segment_output_fingerprint(
+    text: str,
+    voice_id: str,
+    model_id: str,
+    language_code: str | None,
+    speed: float | None,
+    stability: float | None,
+    similarity_boost: float | None,
+) -> str:
+    payload = {
+        "text": text or "",
+        "voice_id": voice_id or "",
+        "model_id": model_id or "",
+        "language_code": language_code or "",
+        "speed": round(float(speed), 4) if speed is not None else 1.0,
+        "stability": round(float(stability), 4) if stability is not None else None,
+        "similarity_boost": round(float(similarity_boost), 4) if similarity_boost is not None else None,
+    }
+    payload_str = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(payload_str.encode("utf-8")).hexdigest()[:12]
+
+
 def _generate_full_audio_impl(
     segments: List[Dict],
     output_dir: str,
@@ -319,6 +343,7 @@ def _generate_full_audio_impl(
     failure_label: str = "TTS segment generation",
     concat_error_label: str = "音频拼接失败",
     voice_id_for_segment: Callable[[Dict], str],
+    fingerprint_segment_paths: bool = False,
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
@@ -386,8 +411,21 @@ def _generate_full_audio_impl(
     tasks: list[tuple[int, dict, str, str, Future]] = []
     for i, seg in enumerate(segments):
         text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
-        seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
         segment_voice_id = voice_id_for_segment(seg)
+        if fingerprint_segment_paths:
+            fingerprint = _segment_output_fingerprint(
+                text,
+                segment_voice_id,
+                model_id,
+                language_code,
+                speed,
+                stability,
+                similarity_boost,
+            )
+            seg_filename = f"seg_{i:04d}.{fingerprint}.mp3"
+        else:
+            seg_filename = f"seg_{i:04d}.mp3"
+        seg_path = os.path.join(seg_dir, seg_filename)
         future = pool.submit(_segment_wrapper, text, seg_path, segment_voice_id)
         tasks.append((i, seg, text, seg_path, future))
 
@@ -512,6 +550,7 @@ def generate_full_audio_with_segment_voices(
         variant=variant,
         segment_dir_variant=variant,
         voice_id_for_segment=lambda seg: seg.get("voice_id") or default_voice_id,
+        fingerprint_segment_paths=True,
         elevenlabs_api_key=elevenlabs_api_key,
         model_id=model_id,
         language_code=language_code,
@@ -602,6 +641,7 @@ def regenerate_full_audio_with_segment_voices_speed(
         failure_label="TTS speedup segment generation",
         concat_error_label="音频拼接失败 (speedup)",
         voice_id_for_segment=lambda seg: seg.get("voice_id") or default_voice_id,
+        fingerprint_segment_paths=True,
         elevenlabs_api_key=elevenlabs_api_key,
         model_id=model_id,
         language_code=language_code,
