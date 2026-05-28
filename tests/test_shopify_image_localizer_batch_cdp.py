@@ -197,6 +197,27 @@ def test_pair_carousel_images_prefers_matching_source_index_for_duplicate_tokens
     ]
 
 
+def test_pair_carousel_images_prefers_one_based_carousel_source_before_detail_duplicate():
+    token = "56b8a50ce0f65727698b30d5cdd7ceca"
+    product_images = [
+        {"src": "https://cdn.shopify.com/files/1189cb536b2866cf42f9a22f326918c1.jpg"},
+        {"src": "https://cdn.shopify.com/files/3626cdd48c7ed37bebc5db0e8f6d3c99.jpg"},
+        {"src": f"https://cdn.shopify.com/files/{token}.jpg"},
+    ]
+    localized_images = [
+        _localized("loc_from_url_en_02_3626cdd48c7ed37bebc5db0e8f6d3c99.jpg"),
+        _localized(f"loc_from_url_en_03_{token}.png"),
+        _localized(f"loc_from_url_en_11_{token}.png"),
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [
+        (1, str(Path("C:/tmp") / "loc_from_url_en_02_3626cdd48c7ed37bebc5db0e8f6d3c99.jpg")),
+        (2, str(Path("C:/tmp") / f"loc_from_url_en_03_{token}.png")),
+    ]
+
+
 def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_token():
     product_images = [
         {"src": "https://cdn.shopify.com/files/nano6_8ec008c6-5d50-41f9-9f75-f54df04cbf0f.jpg?v=1"},
