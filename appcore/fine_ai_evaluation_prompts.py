@@ -6,6 +6,7 @@ docs/superpowers/specs/2026-05-22-single-product-five-country-ai-evaluation-desi
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from typing import Any
 
@@ -34,9 +35,18 @@ PRODUCT_FACT_SYSTEM_PROMPT = (
 )
 
 COUNTRY_EVALUATION_SYSTEM_PROMPT = (
-    "你是跨境电商市场研究员、广告素材审计专家和文化审美分析专家。"
-    "当前任务不调用搜索工具；找不到可靠来源时写未找到可靠来源，不要猜。"
-    "只输出符合 schema 的 JSON，不输出 Markdown。\n"
+    "你是跨境电商市场研究员、广告素材审计专家和文化审美分析专家。\n"
+    "当前任务不调用搜索工具；找不到可靠来源时写“未找到可靠来源”，不要猜。只输出符合 schema 的 JSON，不输出 Markdown。\n"
+    "【重要国别评估准则：差异化与真实研判】\n"
+    "1. 严禁不同国家的分数雷同或完全一致！你必须根据目标国家的消费文化、生活习惯、品类竞争激烈度以及法规限制，进行差异化的独立打分。禁止为了偷懒而无脑给所有国家打相同的默认高分（如 88 分）。\n"
+    "2. 严禁不同国家使用相似的理由、句式或套路模板！严禁只是机械性替换国名、语言或季节词汇。必须深入探讨该国消费者的独特性。\n"
+    "3. 必须结合目标国家的真实本土化人文与市场特征进行深刻研判：\n"
+    "   - 德国(DE)：严谨、追求实用性和高品质，看重环保标识和材质安全认证（如CE/GS），消费偏理性保守。\n"
+    "   - 法国(FR)：审美艺术感和设计要求高，看重情感连接，反感低质英美粗暴买量风格，重视法式优雅。\n"
+    "   - 意大利(IT)：极重家族陪伴和家庭温情，审美水平高，但电商渗透相对保守，高单价决策慢，偏好感性共鸣。\n"
+    "   - 西班牙(ES)：户外、出行和社交极度频繁，偏爱高性价比、鲜艳、便携的商品，客单价承受力低于德法。\n"
+    "   - 日本(JP)：居住空间极度狭小，极度关注“静音”、“小巧/易折叠收纳”、“绝对无异味/无毒/安全”。视宠物如子嗣，追求极简或极致卡哇伊（Cute），对低质廉价塑料感和粗糙包装极其零容忍。\n"
+    "   - 美国(US)：消费能力极强，但广告与产品买量竞争是极致红海。极度重视退换货便利性、包装质感、物流时效（如FBA/Prime）。对“BPA-free/安全无害”等产品宣称敏感。\n"
     f"{CHINESE_OUTPUT_RULES}"
 )
 
@@ -82,6 +92,7 @@ def build_country_evaluation_prompt(
         "country": country,
         "asset_snapshot": asset_snapshot,
     }
+    eval_date_text = datetime.now().strftime("%Y-%m-%d")
     return (
         "请针对当前单个产品，在指定国家做一次完整 AI 评估。\n\n"
         "核心评估维度（按重要性排序）：\n"
@@ -105,6 +116,10 @@ def build_country_evaluation_prompt(
         "12. 如果没有素材，creative_missing = true。\n"
         "13. 检查素材里的 claim、SKU、规格与产品事实是否一致。\n"
         "14. 输出必须是 JSON，必须符合 schema，不要 Markdown。\n\n"
+        "【真实且具有显著差异的国别研判硬规则】\n"
+        f"1. 当前评估日期：{eval_date_text}。所有季节、气候和消费场景判断必须严格以该日期为准。必须明确分析当前季节对该国商品需求的影响（例如：西欧5月底白昼漫长且户外活动爆发；日本5月正值梅雨季前期且室内潮湿防霉静音玩具是热点）。\n"
+        "2. 各项评分（scores）必须呈现符合真实情况的差异与波动，综合分 overall_score 绝不能在不同国家完全相同！禁止敷衍性地在所有国家都打出默认高分（如 88）。如果某国竞争极度激烈（如美国）或该国消费者由于生活习惯（如日本极小户型）对该产品并不适合，必须坚决打低分（50-70），并将决策（decision.final_decision）定为 HOLD 或 TEST。只有确实完美无暇、低竞争高潜力的市场才允许打高分（85分以上）并判断为 GO。\n"
+        "3. 详细说明（detailed_explanation）、why、风险（risks）和下一步建议（recommendations）的内容必须深度切合当前国家的文化、住宅环境（如日本的公寓极小户型对比美国的独栋大别墅）、消费心理和具体法规（如 CE、PSE 认证、GDPR），严禁在不同国家之间使用相似或重复的句式，严禁仅做国名/语言词汇的机械性替换！\n\n"
         f"{COUNTRY_EVALUATION_CHINESE_OUTPUT_RULES}\n"
         "需要完成：市场适配、竞品分析、素材适配、审美适配、文化适配、风险、结论、下一步建议。\n\n"
         "输入：\n"

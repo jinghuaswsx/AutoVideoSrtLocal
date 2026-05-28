@@ -602,7 +602,7 @@ def test_parallel_country_mode_honors_adc_and_configured_country_concurrency(mon
     result = service.run_evaluation(run["evaluation_run_id"])
 
     assert result["status"] == "completed"
-    assert result["metadata"]["provider"] == "gemini_vertex_adc"
+    assert result["metadata"]["provider"] == "gemini_vertex"
     assert result["metadata"]["country_parallel_mode"] == "parallel"
     assert result["metadata"]["country_execution_mode"] == "parallel"
     assert result["metadata"]["country_concurrency"] == 2
@@ -1207,7 +1207,7 @@ def make_country_result(code, *, creative_missing=False):
                 "cta_direction": [],
                 "language_notes": [],
             },
-            "final_creative_decision": "NO_CREATIVE_PROVIDED" if creative_missing else "LOCALIZE_BEFORE_TEST",
+            "final_creative_decision": "NO_CREATIVE_PROVIDED" if creative_missing else "USE_AS_IS",
         },
         "landing_page_localization": {
             "localization_difficulty": 50,
