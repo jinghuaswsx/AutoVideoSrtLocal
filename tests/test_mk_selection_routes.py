@@ -162,6 +162,17 @@ def test_mk_import_progress_modal_uses_full_padded_overlay_width():
     assert "width: 100%; max-height: 100%" in template
 
 
+def test_mk_import_progress_fine_ai_panel_has_mobile_card_layout():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "mki-progress-fine-ai-mobile-list" in template
+    assert "mki-progress-fine-ai-mobile-card" in template
+    assert "function mkiImportProgressFineAiMobileCards(result)" in template
+    assert "@media (max-width: 560px)" in template
+    assert ".mki-progress-fine-ai-scroll { display: none; }" in template
+    assert ".mki-progress-fine-ai-mobile-list { display: grid; }" in template
+
+
 def test_mk_import_progress_uses_product_owner_step_before_domains():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
