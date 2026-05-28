@@ -37,6 +37,8 @@ def build_product_links_push_error_response(exc: Exception) -> MediaPushErrorRes
         )
     if isinstance(exc, pushes.ProductLinksPushConfigError):
         return MediaPushErrorResponse({"error": message or "push_product_links_config_missing"}, 500)
+    if isinstance(exc, pushes.ProductLocalizedTextsPayloadError):
+        return MediaPushErrorResponse({"error": message or "localized_texts_payload_invalid"}, 400)
     if isinstance(exc, pushes.ProductLinksPayloadError):
         return MediaPushErrorResponse({"error": message or "product_links_payload_invalid"}, 400)
     return MediaPushErrorResponse({"error": "product_links_push_failed", "message": message}, 500)

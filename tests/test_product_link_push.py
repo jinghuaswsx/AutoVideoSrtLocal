@@ -45,6 +45,7 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     product = {
         "id": 10,
         "product_code": "demo-rjc",
+        "mk_id": 3836,
         "localized_links_json": json.dumps({
             "de": "https://newjoyloo.com/de/products/demo-rjc-special",
         }),
@@ -119,6 +120,7 @@ def test_build_product_links_push_preview_filters_small_langs_without_pending_ma
     product = {
         "id": 10,
         "product_code": "demo-rjc",
+        "mk_id": 3836,
     }
 
     preview = pushes.build_product_links_push_preview(product)
@@ -471,6 +473,7 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
     result = pushes.push_product_links({
         "id": 10,
         "product_code": "demo-rjc",
+        "mk_id": 3836,
         "localized_links_json": json.dumps({
             "de": "https://newjoyloo.com/de/products/demo-rjc",
         }),
@@ -1082,5 +1085,43 @@ def test_build_item_payload_filters_small_langs_without_pending_materials(monkey
         "https://shop.test/en/products/demo-rjc",
         "https://shop.test/de/products/demo-rjc",
     ]
+
+
+def test_build_product_links_push_preview_raises_when_no_match(monkeypatch):
+    from appcore import pushes
+    import pytest
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "lookup_mk_id", lambda code: (None, "no_match"))
+
+    with pytest.raises(pushes.ProductLocalizedTextsPayloadError) as exc_info:
+        pushes.build_product_links_push_preview({
+            "id": 10,
+            "product_code": "demo-rjc",
+            "listing_status": "上架",
+        })
+
+    assert "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。" in str(exc_info.value)
+
+
+def test_medias_product_links_push_payload_raises_400_when_no_match(
+    authed_client_no_db, monkeypatch,
+):
+    from appcore import pushes
+    product = {
+        "id": 10,
+        "product_code": "demo-rjc",
+        "listing_status": "上架",
+    }
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr("web.routes.medias.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "lookup_mk_id", lambda code: (None, "no_match"))
+
+    resp = authed_client_no_db.get("/medias/api/products/10/product-links-push/payload")
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。"
 
 
