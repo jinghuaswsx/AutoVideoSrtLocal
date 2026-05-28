@@ -17,7 +17,7 @@ class HttpDiarizationClient:
     endpoint: str
     timeout_seconds: int = 120
 
-    def run(self, *, audio_path: str, task_id: str) -> list[dict]:
+    def run(self, audio_path: str, task_id: str) -> list[dict]:
         path = Path(audio_path)
         if not path.exists():
             raise DiarizationUnavailable(f"audio file does not exist: {audio_path}")

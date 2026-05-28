@@ -93,3 +93,30 @@ def test_http_diarization_client_posts_audio(monkeypatch):
     assert captured["url"] == "http://diarizer.local/run"
     assert captured["data"] == {"task_id": "task-http"}
     assert captured["timeout"] == 12
+
+
+def test_http_diarization_client_accepts_positional_audio_path_and_task_id(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"segments": [{"speaker": "x", "start_time": 0.0, "end_time": 1.0}]}
+
+    def fake_post(url, files, data, timeout):
+        files["audio"].close()
+        return FakeResponse()
+
+    audio = monkeypatch.context()
+    with audio:
+        import tempfile
+
+        path = tempfile.NamedTemporaryFile(delete=False)
+        path.write(b"audio")
+        path.close()
+        monkeypatch.setattr("requests.post", fake_post)
+
+        client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
+        segments = client.run(path.name, "task-http")
+
+    assert segments == [{"speaker": "x", "start_time": 0.0, "end_time": 1.0}]
