@@ -729,6 +729,16 @@ def api_reset(item_id: int):
     return ("", 204)
 
 
+@bp.route("/api/cache/clear", methods=["POST"])
+@login_required
+@admin_required
+def api_clear_cache():
+    from appcore.db import execute
+    execute("DELETE FROM media_push_status_cache")
+    _audit_push_action(None, "push_cache_cleared")
+    return _json_response({"ok": True})
+
+
 @bp.route("/api/items/<int:item_id>/skip", methods=["POST"])
 @login_required
 @admin_required
