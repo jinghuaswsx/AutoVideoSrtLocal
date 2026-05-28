@@ -125,6 +125,9 @@ def _choose_carousel_candidate(
             exact = [row for row in candidates if row.get("source_index") == slot_idx]
             if exact:
                 return exact[0]
+            one_based_exact = [row for row in candidates if row.get("source_index") == slot_idx + 1]
+            if one_based_exact:
+                return one_based_exact[0]
             if len(candidates) == 1:
                 return candidates[0]
             no_index = [row for row in candidates if row.get("source_index") is None]
