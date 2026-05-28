@@ -33,6 +33,31 @@ def test_apply_speaker_voices_to_tts_segments_maps_by_dialogue_index():
     assert tts_segments[1]["voice_id"] == "original"
 
 
+def test_apply_speaker_voices_to_out_of_order_tts_segments_uses_tts_index_fields():
+    from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments
+
+    tts_segments = [
+        {"tts_text": "third", "source_index": 2},
+        {"tts_text": "first", "segment_index": 0},
+        {"tts_text": "second", "source_index": 1},
+    ]
+    dialogue_segments = [
+        {"index": 0, "speaker_id": "speaker_a"},
+        {"index": 1, "speaker_id": "speaker_b"},
+        {"index": 2, "speaker_id": "speaker_a"},
+    ]
+    selected = {
+        "speaker_a": {"voice_id": "voice-a", "voice_name": "Voice A"},
+        "speaker_b": {"voice_id": "voice-b", "voice_name": "Voice B"},
+    }
+
+    mapped = apply_speaker_voices_to_tts_segments(tts_segments, dialogue_segments, selected)
+
+    assert [segment["speaker_id"] for segment in mapped] == ["speaker_a", "speaker_a", "speaker_b"]
+    assert [segment["voice_id"] for segment in mapped] == ["voice-a", "voice-a", "voice-b"]
+    assert [segment["tts_text"] for segment in mapped] == ["third", "first", "second"]
+
+
 def test_generate_full_audio_with_segment_voices_uses_each_segment_voice(monkeypatch, tmp_path):
     from pipeline import tts
 

@@ -46,7 +46,7 @@ def apply_speaker_voices_to_tts_segments(
     mapped_segments: list[dict] = []
     for fallback, tts_segment in enumerate(tts_segments or []):
         segment_copy = dict(tts_segment) if isinstance(tts_segment, dict) else {}
-        dialogue_segment = dialogue_by_index.get(fallback)
+        dialogue_segment = dialogue_by_index.get(_segment_index(tts_segment, fallback))
         if not dialogue_segment:
             mapped_segments.append(segment_copy)
             continue
