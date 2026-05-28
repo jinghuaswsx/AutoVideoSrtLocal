@@ -1017,3 +1017,70 @@ def test_build_unsuitable_product_push_preview_raises_when_no_match(monkeypatch)
 
     assert "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。" in str(exc_info.value)
 
+
+def test_build_item_payload_filters_small_langs_without_pending_materials(monkeypatch):
+    from appcore import pushes
+
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_enabled_language_codes",
+        lambda: ["en", "de", "fr", "ja"],
+    )
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_items",
+        lambda product_id: [
+            # de: 具有 pending 状态素材
+            {"id": 101, "product_id": 10, "lang": "de", "object_key": "obj_de"},
+            # fr: 素材已推送 (pushed_at 已设置) -> 状态为 STATUS_PUSHED (非 pending)
+            {"id": 102, "product_id": 10, "lang": "fr", "object_key": "obj_fr", "pushed_at": "2026-05-28"},
+            # ja: 无任何素材 (通过只在返回列表中包含 de/fr 模拟)
+        ],
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product, **kwargs: {
+            "is_listed": True,
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    # mock resolve_push_texts
+    monkeypatch.setattr(pushes, "resolve_push_texts", lambda product_id: [])
+    # mock build_media_public_url
+    monkeypatch.setattr(pushes, "build_media_public_url", lambda key: f"https://media.test/{key}")
+    # mock build_product_link
+    monkeypatch.setattr(pushes, "build_product_link", lambda lang, code: f"https://shop.test/{lang}/products/{code}")
+    # mock resolve_product_page_urls (返回空，以触发 build_product_link 兜底)
+    monkeypatch.setattr(pushes, "resolve_product_page_urls", lambda lang, product: [])
+
+    product = {
+        "id": 10,
+        "product_code": "demo-rjc",
+    }
+    item = {
+        "id": 101,
+        "product_id": 10,
+        "lang": "de",
+        "object_key": "obj_de",
+        "cover_object_key": "cov_de",
+    }
+
+    payload = pushes.build_item_payload(item, product)
+
+    # en 应保留 (不作为小语种进行 pending 限制)
+    # de 应保留 (具有 pending 状态素材)
+    # fr 应被过滤 (虽有素材，但已推送非 pending)
+    # ja 应被过滤 (完全无素材)
+    assert payload["product_links"] == [
+        "https://shop.test/en/products/demo-rjc",
+        "https://shop.test/de/products/demo-rjc",
+    ]
+
+

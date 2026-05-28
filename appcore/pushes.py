@@ -1637,9 +1637,30 @@ def build_item_payload(item: dict, product: dict) -> dict:
         for c in medias.list_enabled_language_codes()
         if str(c or "").strip()
     ]
+
+    product_id = product.get("id")
+    # 获取该产品下所有活跃的素材
+    all_items = medias.list_items(product_id) if product_id else []
+
+    # 统计哪些语种具有满足待推送状态的素材
+    pending_langs = set()
+    for it in all_items:
+        item_lang = str(it.get("lang") or "en").strip().lower()
+        # 计算素材的状态
+        readiness = compute_readiness(it, product)
+        status = compute_status_from_readiness(it, product, readiness)
+        if status == STATUS_PENDING:
+            pending_langs.add(item_lang)
+
+    filtered_langs = []
+    for lang in enabled_langs:
+        lang_lower = lang.strip().lower()
+        if lang_lower == "en" or lang_lower in pending_langs:
+            filtered_langs.append(lang)
+
     product_links: list[str] = []
     seen_product_links: set[str] = set()
-    for lang in enabled_langs:
+    for lang in filtered_langs:
         url_rows = resolve_product_page_urls(lang, product)
         if not url_rows:
             url_rows = [{"url": build_product_link(lang, product_code)}]
