@@ -14,6 +14,7 @@ _KNOWN_PROJECT_TYPES = {
     "multi_translate",
     "omni_translate",
     "omni_translate_v2",
+    "dialogue_translate",
 }
 
 _VISIBLE_TO_ALL_EXPR = "JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.visible_to_all')) = 'true'"
