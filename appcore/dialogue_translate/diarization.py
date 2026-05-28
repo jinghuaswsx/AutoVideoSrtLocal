@@ -34,7 +34,7 @@ def _finite_float(value: object) -> float:
     return parsed
 
 
-def _validate_segments(segments: list) -> list[dict]:
+def validate_diarization_segments(segments: list) -> list[dict]:
     if not segments:
         raise DiarizationUnavailable("diarization response contains no segments")
 
@@ -80,7 +80,7 @@ class HttpDiarizationClient:
         segments = payload.get("segments")
         if not isinstance(segments, list):
             raise DiarizationUnavailable("diarization response missing segments list")
-        return _validate_segments(segments)
+        return validate_diarization_segments(segments)
 
 
 def resolve_diarization_client() -> HttpDiarizationClient:

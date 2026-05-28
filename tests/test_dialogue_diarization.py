@@ -35,6 +35,16 @@ class FailingDiarizationClient:
         raise RuntimeError("diarizer crashed")
 
 
+class EmptyDiarizationClient:
+    def run(self, *, audio_path: str, task_id: str) -> list[dict]:
+        return []
+
+
+class ValidDiarizationClient:
+    def run(self, *, audio_path: str, task_id: str) -> list[dict]:
+        return [{"speaker": "s1", "start_time": 0.0, "end_time": 1.0, "confidence": 0.95}]
+
+
 def test_detect_uses_diarization_when_provider_is_unreliable():
     utterances = [
         {"text": "hello", "start_time": 0.0, "end_time": 1.0},
@@ -96,6 +106,41 @@ def test_detect_wraps_diarization_client_failure_with_task_id():
 
     assert "diarization fallback failed for task task-failure" in str(exc.value)
     assert "diarizer crashed" in str(exc.value)
+
+
+def test_detect_wraps_injected_empty_diarization_segments_with_task_id():
+    utterances = [{"text": "hello", "start_time": 0.0, "end_time": 1.0}]
+
+    with pytest.raises(DiarizationUnavailable) as exc:
+        detect_dialogue_segments(
+            utterances=utterances,
+            audio_path="input.mp4",
+            task_id="task-empty",
+            diarization_client=EmptyDiarizationClient(),
+        )
+
+    assert "diarization fallback failed for task task-empty" in str(exc.value)
+    assert "no segments" in str(exc.value)
+
+
+def test_detect_wraps_diarization_join_failure_with_task_id(monkeypatch):
+    utterances = [{"text": "hello", "start_time": 0.0, "end_time": 1.0}]
+
+    def fail_join(utterances, diarization_segments):
+        raise ValueError("join exploded")
+
+    monkeypatch.setattr("appcore.dialogue_translate.speaker_detection.join_diarization_to_utterances", fail_join)
+
+    with pytest.raises(DiarizationUnavailable) as exc:
+        detect_dialogue_segments(
+            utterances=utterances,
+            audio_path="input.mp4",
+            task_id="task-join",
+            diarization_client=ValidDiarizationClient(),
+        )
+
+    assert "diarization fallback failed for task task-join" in str(exc.value)
+    assert "join exploded" in str(exc.value)
 
 
 def test_resolve_diarization_client_requires_endpoint(monkeypatch):

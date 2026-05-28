@@ -4,7 +4,11 @@ from collections import defaultdict
 import math
 from typing import Iterable
 
-from appcore.dialogue_translate.diarization import DiarizationUnavailable, resolve_diarization_client
+from appcore.dialogue_translate.diarization import (
+    DiarizationUnavailable,
+    resolve_diarization_client,
+    validate_diarization_segments,
+)
 
 REVIEW_LOW_CONFIDENCE = "low_speaker_confidence"
 REVIEW_OVERLAP = "speaker_overlap"
@@ -249,8 +253,9 @@ def detect_dialogue_segments(
 
     try:
         diarization_segments = client.run(audio_path=audio_path, task_id=task_id)
+        diarization_segments = validate_diarization_segments(diarization_segments)
+        result = join_diarization_to_utterances(utterances, diarization_segments)
     except Exception as exc:
         raise DiarizationUnavailable(f"diarization fallback failed for task {task_id}: {exc}") from exc
-    result = join_diarization_to_utterances(utterances, diarization_segments)
     result["dialogue_warnings"] = provider_result.get("dialogue_warnings", []) + result.get("dialogue_warnings", [])
     return result
