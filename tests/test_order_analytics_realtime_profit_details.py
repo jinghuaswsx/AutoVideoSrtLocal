@@ -68,6 +68,94 @@ def test_build_order_profit_status_label():
     assert _build_order_profit_status_label("ok", "partial_refund") == "完整 / 部分退款"
 
 
+def test_get_realtime_order_details_returns_product_cn_names(monkeypatch):
+    from appcore.order_analytics.realtime import _get_realtime_order_details
+
+    target = date(2026, 5, 6)
+    day_start = datetime(2026, 5, 5, 16, 0)
+    data_until = datetime(2026, 5, 6, 12, 0)
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "site_code": "newjoy",
+                "dxm_package_id": "PKG-CN",
+                "dxm_order_id": "DXM-CN",
+                "package_number": "PN-CN",
+                "order_state": "paid",
+                "buyer_country": "US",
+                "buyer_country_name": "United States",
+                "order_time": datetime(2026, 5, 6, 10, 30),
+                "line_count": 1,
+                "units": 2,
+                "product_revenue": 80.0,
+                "shipping_revenue": 6.0,
+                "total_revenue": 86.0,
+                "skus": "SKU-CN",
+                "product_names": "Sonic Lens Refresher",
+                "product_cn_names": "隐形眼镜清洗器",
+                "product_ids": "316",
+            }
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    details = _get_realtime_order_details(target, day_start, data_until)
+
+    assert "LEFT JOIN media_products mp ON mp.id = d.product_id" in captured["sql"]
+    assert "AS product_cn_names" in captured["sql"]
+    assert captured["args"] == (target, data_until)
+    assert details[0]["product_names"] == "Sonic Lens Refresher"
+    assert details[0]["product_cn_names"] == "隐形眼镜清洗器"
+
+
+def test_get_realtime_order_details_for_range_returns_product_cn_names(monkeypatch):
+    from appcore.order_analytics.realtime import _get_realtime_order_details_for_range
+
+    start = date(2026, 5, 5)
+    end = date(2026, 5, 6)
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "meta_business_date": date(2026, 5, 6),
+                "site_code": "newjoy",
+                "dxm_package_id": "PKG-RANGE-CN",
+                "dxm_order_id": "DXM-RANGE-CN",
+                "package_number": "PN-RANGE-CN",
+                "order_state": "paid",
+                "buyer_country": "US",
+                "buyer_country_name": "United States",
+                "order_time": datetime(2026, 5, 6, 10, 30),
+                "line_count": 1,
+                "units": 2,
+                "product_revenue": 80.0,
+                "shipping_revenue": 6.0,
+                "total_revenue": 86.0,
+                "skus": "SKU-CN",
+                "product_names": "Sonic Lens Refresher",
+                "product_cn_names": "隐形眼镜清洗器",
+                "product_ids": "316",
+            }
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    details = _get_realtime_order_details_for_range(start, end)
+
+    assert "LEFT JOIN media_products mp ON mp.id = d.product_id" in captured["sql"]
+    assert "AS product_cn_names" in captured["sql"]
+    assert captured["args"] == (start, end)
+    assert details[0]["product_names"] == "Sonic Lens Refresher"
+    assert details[0]["product_cn_names"] == "隐形眼镜清洗器"
+
+
 def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypatch):
     target = date(2026, 5, 6)
     day_start = datetime(2026, 5, 5, 16, 0)

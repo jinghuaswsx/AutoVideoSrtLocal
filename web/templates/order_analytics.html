@@ -443,6 +443,23 @@
 .oar-product-cell {
   min-width: 280px; max-width: 520px; white-space: normal; word-break: break-word;
 }
+.oar-product-name-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+}
+.oar-product-name-en {
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.oar-product-name-cn {
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
 .oar-id-cell {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
 }
@@ -4954,7 +4971,7 @@
       addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
       addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
       addCoverImageCell(tr, row.product_ids);
-      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addRealtimeProductNameCell(tr, row.product_names, row.product_cn_names, row.skus);
       addTextCell(tr, fmtInt(row.units || 0));
       addTextCell(tr, fmtMoney(row.product_revenue));
       addTextCell(tr, fmtMoney(row.shipping_revenue));
@@ -5382,6 +5399,31 @@
     if (input) input.value = '';
     hideRealtimeProductSearchResults();
     loadRealtimeOverview();
+  }
+
+  function addRealtimeProductNameCell(tr, englishName, chineseName, fallbackName) {
+    var td = document.createElement('td');
+    td.className = 'oar-product-cell';
+    var enText = String(englishName || fallbackName || '-').trim() || '-';
+    var cnText = String(chineseName || '').trim();
+
+    var stack = document.createElement('div');
+    stack.className = 'oar-product-name-stack';
+
+    var en = document.createElement('div');
+    en.className = 'oar-product-name-en';
+    en.textContent = enText;
+    stack.appendChild(en);
+
+    if (cnText) {
+      var cn = document.createElement('div');
+      cn.className = 'oar-product-name-cn';
+      cn.textContent = cnText;
+      stack.appendChild(cn);
+    }
+
+    td.appendChild(stack);
+    tr.appendChild(td);
   }
 
   function addTextCell(tr, value, className) {

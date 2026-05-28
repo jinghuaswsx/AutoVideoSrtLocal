@@ -187,6 +187,24 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
     assert "product_id 为空订单同口径核算" in load_block
 
 
+def test_realtime_order_detail_product_cell_renders_cn_name_after_english_name():
+    template = _template_source()
+    order_block = template[
+        template.index("function appendRealtimeOrders"):
+        template.index("function renderRealtimeOrderPagination")
+    ]
+
+    assert ".oar-product-name-stack" in template
+    assert ".oar-product-name-en" in template
+    assert ".oar-product-name-cn" in template
+    assert "function addRealtimeProductNameCell" in template
+    assert "addRealtimeProductNameCell(tr, row.product_names, row.product_cn_names, row.skus);" in order_block
+    assert "row.product_cn_names" in order_block
+    assert order_block.index("addCoverImageCell(tr, row.product_ids);") < order_block.index(
+        "addRealtimeProductNameCell(tr, row.product_names, row.product_cn_names, row.skus);"
+    )
+
+
 def test_realtime_scope_cards_use_compact_tablet_and_mobile_columns():
     template = _template_source()
     tablet_block = template[
