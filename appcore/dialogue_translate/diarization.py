@@ -35,6 +35,8 @@ def _finite_float(value: object) -> float:
 
 
 def validate_diarization_segments(segments: list) -> list[dict]:
+    if not isinstance(segments, list):
+        raise DiarizationUnavailable("diarization segments must be a list")
     if not segments:
         raise DiarizationUnavailable("diarization response contains no segments")
 
