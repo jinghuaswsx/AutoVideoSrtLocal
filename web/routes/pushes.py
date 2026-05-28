@@ -542,6 +542,8 @@ def api_push(item_id: int):
     if item.get("pushed_at"):
         return _json_response({"error": "already_pushed"}, 409)
 
+    had_no_mk_id = not product.get("mk_id")
+
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
         missing = [k for k, v in readiness.items() if not v]
@@ -592,7 +594,7 @@ def api_push(item_id: int):
 
     body_text = str(post_result.get("response_body_full") or "")
     if post_result.get("ok"):
-        pushes.record_push_success(
+        log_id = pushes.record_push_success(
             item_id=item_id,
             operator_user_id=current_user.id,
             payload=payload,
@@ -611,19 +613,19 @@ def api_push(item_id: int):
         if task_id:
             try:
                 tasks_svc.record_push_material_approved(
-                    task_id=int(task_id),
-                    actor_user_id=int(current_user.id),
-                    item_id=int(item_id),
-                    product_code=product_code,
-                    lang=lang,
-                    upstream_status=post_result.get("upstream_status"),
+                     task_id=int(task_id),
+                     actor_user_id=int(current_user.id),
+                     item_id=int(item_id),
+                     product_code=product_code,
+                     lang=lang,
+                     upstream_status=post_result.get("upstream_status"),
                 )
             except Exception:
                 log.warning(
-                    "record task push approved event failed item_id=%s task_id=%s",
-                    item_id,
-                    task_id,
-                    exc_info=True,
+                     "record task push approved event failed item_id=%s task_id=%s",
+                     item_id,
+                     task_id,
+                     exc_info=True,
                 )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
@@ -639,6 +641,12 @@ def api_push(item_id: int):
         if matched_mk_id:
             try:
                 medias.update_product(product["id"], mk_id=int(matched_mk_id))
+                if had_no_mk_id:
+                    from appcore.db import execute as db_execute
+                    db_execute(
+                        "UPDATE media_push_logs SET is_new_product_push = 1 WHERE id = %s",
+                        (log_id,)
+                    )
             except Exception as exc:
                 # 唯一键冲突（已被其他产品占用）或别的 DB 错误
                 log.warning("update_product mk_id failed: %s", exc)
@@ -1141,6 +1149,7 @@ def api_history():
     rows = db_query(
         "SELECT l.id AS log_id, l.item_id, l.operator_user_id, l.status, l.request_payload, l.response_body, l.created_at AS pushed_at, "
         "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, "
+        "       l.is_new_product_push, "
         f"       p.name AS product_name, p.product_code, u.username AS operator_username, {owner_name_expr} AS product_owner_name "
         "FROM media_push_logs l "
         "JOIN media_items i ON i.id = l.item_id "
@@ -1153,6 +1162,7 @@ def api_history():
     )
 
     total = len(rows)
+    new_product_count = sum(1 for r in rows if r.get("is_new_product_push"))
     start = (page - 1) * limit
     page_rows = rows[start:start + limit]
 
@@ -1199,26 +1209,27 @@ def api_history():
         ad_roas = purchase_value_total / spend_total if spend_total > 0 else 0.0
 
         history_item = {
-            "log_id": r["log_id"],
-            "item_id": r["item_id"],
+            "log_id": r.get("log_id"),
+            "item_id": r.get("item_id"),
             "product_id": p_id,
-            "product_name": r["product_name"],
-            "product_code": r["product_code"],
-            "product_owner_name": r["product_owner_name"] or "未指派",
-            "lang": r["lang"],
+            "product_name": r.get("product_name"),
+            "product_code": r.get("product_code"),
+            "product_owner_name": r.get("product_owner_name") or "未指派",
+            "lang": r.get("lang"),
             "display_name": search_display_name,
             "filename": search_filename,
-            "file_size": r["file_size"] or 0,
+            "file_size": r.get("file_size") or 0,
             "pushed_at": r["pushed_at"].isoformat() if r.get("pushed_at") else None,
-            "operator_username": r["operator_username"] or "System",
+            "operator_username": r.get("operator_username") or "System",
             "video_url": _normalize_push_media_url(video_snap.get("url")),
             "cover_url": _normalize_push_media_url(video_snap.get("image_url")),
             "texts": texts_snap,
-            "product_links": _filter_links_by_lang(links_snap, r["lang"]),
+            "product_links": _filter_links_by_lang(links_snap, r.get("lang")),
             "has_ad_plan": campaign_count > 0,
             "ad_campaign_count": campaign_count,
             "ad_spend_total": spend_total,
             "ad_roas": ad_roas,
+            "is_new_product_push": bool(r.get("is_new_product_push")),
         }
         history_items.append(history_item)
 
@@ -1227,6 +1238,7 @@ def api_history():
         "total": total,
         "page": page,
         "page_size": limit,
+        "new_product_count": new_product_count,
     })
 
 

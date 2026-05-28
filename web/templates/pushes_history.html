@@ -532,6 +532,7 @@
       const data = await resp.json();
       state.total = data.total;
       state.pageSize = data.page_size || state.pageSize;
+      state.newProductCount = data.new_product_count || 0;
       state.items = data.items || [];
       if (!state.items.length) {
         tbody.innerHTML = `<tr><td colspan="14" style="padding:32px; text-align:center; color:var(--oc-fg, #111827); font-size:14px;">无推送历史记录</td></tr>`;
@@ -554,8 +555,8 @@
                       <div title="${escapeHtml(descFull)}" style="color:var(--oc-fg-muted, #4b5563); margin-top:3px; font-weight:400; font-size:12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">描述：${escapeHtml(t.description || '')}</div>
                       <div style="margin-top:6px;">
                         <button class="btn-copy-all-texts" data-text="${escapeHtml(fullCopyText)}" style="background:transparent; border:1px solid var(--oc-accent, #3b82f6); color:var(--oc-accent, #3b82f6); padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:4px; line-height: 1;" title="复制全量文案">
-                          <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                          复制文案
+                           <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                           复制文案
                         </button>
                       </div>
                     </div>`;
@@ -580,6 +581,10 @@
 
           const pushedDate = it.pushed_at ? it.pushed_at.replace('T', ' ').slice(0, 16) : '-';
 
+          const newProductBadge = it.is_new_product_push
+            ? `<span style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 6px; white-space: nowrap;">新品</span>`
+            : '';
+
           return `<tr class="history-row">
             <td style="padding:10px; vertical-align: top; width: 80px;">
               ${thumb}
@@ -599,11 +604,12 @@
               <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
             </td>
             <td style="padding:10px; vertical-align: top; min-width: 180px;">
-              <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px;">
+              <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
                 <code style="background: var(--oc-bg-subtle, #f3f4f6); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 500; word-break: break-all;">${escapeHtml(it.product_code)}</code>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; flex-shrink:0;" title="复制商品Code">
                   <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
+                ${newProductBadge}
               </div>
             </td>
             <td style="padding:10px; vertical-align: top; width: 80px; white-space: nowrap;">
@@ -675,7 +681,10 @@
     if (totalPages <= 1) {
       pagers.forEach(pager => {
         pager.style.display = 'flex';
-        pager.innerHTML = `<span class="oc-vm-page-summary">第 1 / 1 页 · 每页 ${state.pageSize} 条 · 共 ${state.total} 条数据</span>`;
+        pager.innerHTML = `
+          <span class="oc-vm-page-summary">第 1 / 1 页 · 每页 ${state.pageSize} 条 · 共 <span style="font-size: 26px; color: #2563eb; font-weight: 700; margin: 0 4px;">${state.total}</span> 条数据</span>
+          <span style="color: #2563eb; font-size: 16px; font-weight: 700; margin-left: 20px; display: inline-flex; align-items: center; white-space: nowrap;">新品数量: ${state.newProductCount}</span>
+        `;
       });
       return;
     }
@@ -684,7 +693,7 @@
     const lastDisabled = page >= totalPages ? ' disabled aria-disabled="true"' : '';
 
     const buttons = [
-      `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 每页 ${state.pageSize} 条 · 共 ${state.total} 条数据</span>`,
+      `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 每页 ${state.pageSize} 条 · 共 <span style="font-size: 26px; color: #2563eb; font-weight: 700; margin: 0 4px;">${state.total}</span> 条数据</span>`,
       `<button type="button" data-page="${Math.max(1, page - 1)}"${firstDisabled}>上一页</button>`
     ];
 
@@ -699,6 +708,9 @@
         <input type="number" min="1" max="${totalPages}" value="${page}" inputmode="numeric" pattern="[0-9]*" data-page-jump aria-label="跳转到指定页">
         <span>页</span>
       </label>
+    `);
+    buttons.push(`
+      <span style="color: #2563eb; font-size: 16px; font-weight: 700; margin-left: 20px; display: inline-flex; align-items: center; white-space: nowrap;">新品数量: ${state.newProductCount}</span>
     `);
 
     pagers.forEach(pager => {
