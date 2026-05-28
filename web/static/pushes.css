@@ -93,6 +93,27 @@
   --oc-danger-fg:      oklch(80% 0.15 25);
 }
 
+/* ---------- 粘性顶栏容器 ---------- */
+.push-header-sticky {
+  position: sticky;
+  top: 56px; /* Desktop topbar height */
+  z-index: 30;
+  background: var(--oc-bg-page);
+  margin-top: -28px;
+  padding-top: 28px;
+  padding-bottom: 12px;
+}
+.push-header-sticky .push-toolbar {
+  margin-bottom: 0; /* Let parent padding control spacing */
+}
+@media (max-width: 768px) {
+  .push-header-sticky {
+    top: 52px; /* Mobile topbar height */
+    margin-top: -14px;
+    padding-top: 14px;
+  }
+}
+
 /* ---------- 页头 & 警告条 ---------- */
 .page-header {
   margin-bottom: var(--oc-sp-4);
@@ -287,6 +308,14 @@
   font-weight: 500;
   font-size: 12px;
   letter-spacing: 0.02em;
+  position: sticky;
+  top: calc(56px + var(--sticky-header-height, 220px));
+  z-index: 29;
+}
+@media (max-width: 768px) {
+  .push-table th {
+    top: calc(52px + var(--sticky-header-height, 220px));
+  }
 }
 .push-table td {
   padding: var(--oc-sp-3);
