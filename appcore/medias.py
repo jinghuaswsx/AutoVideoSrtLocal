@@ -4,7 +4,7 @@ import re
 import uuid
 from typing import Any
 
-from appcore import product_link_domains, product_roas
+from appcore import media_product_ad_status_cache, product_link_domains, product_roas
 from appcore.db import query, query_one, execute, get_conn
 from appcore.material_filename_rules import validate_video_filename_no_spaces
 from appcore.users import ensure_translation_work_user
@@ -466,14 +466,17 @@ def _media_product_owner_name_expr() -> str:
     return "u.username"
 XMYC_MATCH_FILTERS = ("all", "matched", "unmatched")
 ROAS_STATUS_FILTERS = ("all", "complete", "missing_estimated", "missing_actual")
+DELIVERY_STATUS_FILTERS = media_product_ad_status_cache.DELIVERY_STATUS_FILTERS
 
 
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
                   offset: int = 0, limit: int = 20,
                   xmyc_match: str = "all",
-                  roas_status: str = "all") -> tuple[list[dict], int]:
+                  roas_status: str = "all",
+                  delivery_status: str = "all") -> tuple[list[dict], int]:
     where = ["p.deleted_at IS NULL"]
     args: list[Any] = []
+    delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(delivery_status)
     if user_id is not None:
         where.append("p.user_id=%s")
         args.append(user_id)
@@ -509,6 +512,14 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
             "(p.standalone_price IS NULL OR p.purchase_price IS NULL "
             "OR p.packet_cost_actual IS NULL)"
         )
+    if delivery_status != media_product_ad_status_cache.STATUS_ALL:
+        where.append(
+            "EXISTS ("
+            "SELECT 1 FROM media_product_ad_summary_cache ads "
+            "WHERE ads.product_id = p.id AND ads.delivery_status=%s"
+            ")"
+        )
+        args.append(delivery_status)
     where_sql = " AND ".join(where)
     owner_name_expr = _media_product_owner_name_expr()
 
