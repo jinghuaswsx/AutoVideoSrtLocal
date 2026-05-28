@@ -169,13 +169,48 @@ def _serialize_product(p: dict, items_count: int | None = None,
         default_link_domain = product_link_domains.get_default_domain()
     except Exception:
         default_link_domain = ""
+
+    resolved_shopify_title = (p.get("shopify_title") or "").strip()
+    if not resolved_shopify_title and p.get("product_code"):
+        product_code = p["product_code"].strip()
+        # Fallback 1: Query dianxiaomi_product_assets by product_code
+        try:
+            from appcore.db import query_one
+            asset_row = query_one(
+                "SELECT product_english_title, product_name FROM dianxiaomi_product_assets WHERE product_code = %s",
+                (product_code,)
+            )
+            if asset_row:
+                resolved_shopify_title = (asset_row.get("product_english_title") or asset_row.get("product_name") or "").strip()
+        except Exception:
+            pass
+
+        # Fallback 2: Schedule background fetch if still empty and we have a URL
+        if not resolved_shopify_title:
+            try:
+                product_url = ""
+                if localized_links and isinstance(localized_links, dict):
+                    product_url = (localized_links.get("en") or "").strip()
+                
+                if not product_url and default_link_domain:
+                    product_url = f"https://{default_link_domain}/products/{product_code}"
+                
+                if product_url and product_url.startswith(("http://", "https://")):
+                    from appcore.mingkong_materials import resolve_and_save_english_title, _TITLE_RESOLVER_EXECUTOR, _SUBMITTED_LOCK, _SUBMITTED_URLS
+                    with _SUBMITTED_LOCK:
+                        if product_url not in _SUBMITTED_URLS:
+                            _SUBMITTED_URLS.add(product_url)
+                            _TITLE_RESOLVER_EXECUTOR.submit(resolve_and_save_english_title, product_url, product_code)
+            except Exception:
+                pass
+
     return {
         "id": p["id"],
         "name": p["name"],
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
         "shopifyid": p.get("shopifyid"),
-        "shopify_title": p.get("shopify_title") or "",
+        "shopify_title": resolved_shopify_title,
         "skus": _serialize_product_skus(
             skus,
             cost_inputs={

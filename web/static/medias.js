@@ -2494,6 +2494,12 @@
         e.stopPropagation();
         copyProductCode(b);
       }));
+    grid.querySelectorAll('.oc-product-english-copy').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyProductEnglishName(b);
+      }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
     grid.querySelectorAll('td.listing-status-cell').forEach(td =>
@@ -2893,7 +2899,8 @@
       : '<span class="muted">—</span>';
     const shopifyTitle = (p.shopify_title || '').trim();
     const shopifyTitleCell = shopifyTitle
-      ? `<span title="${escapeHtml(shopifyTitle)}">${escapeHtml(shopifyTitle)}</span>`
+      ? `<div class="shopify-title-main" title="${escapeHtml(shopifyTitle)}" style="line-height:1.35; overflow-wrap:anywhere; word-break:break-all;">${escapeHtml(shopifyTitle)}</div>`
+        + `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名">${icon('copy', 12)}<span>复制</span></button>`
       : '<span class="muted">—</span>';
     const skuCell = renderSkuSummary(p);
     return `
@@ -5756,6 +5763,14 @@
     const code = btn && btn.dataset ? (btn.dataset.productCode || '').trim() : '';
     if (!code) return;
     copyText(code)
+      .then(() => flashCopiedButton(btn))
+      .catch(() => alert('复制失败，请手动复制'));
+  }
+
+  function copyProductEnglishName(btn) {
+    const title = btn && btn.dataset ? (btn.dataset.productEnglishName || '').trim() : '';
+    if (!title) return;
+    copyText(title)
       .then(() => flashCopiedButton(btn))
       .catch(() => alert('复制失败，请手动复制'));
   }
