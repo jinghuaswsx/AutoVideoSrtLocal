@@ -4,6 +4,8 @@ from collections import defaultdict
 import math
 from typing import Iterable
 
+from appcore.dialogue_translate.diarization import DiarizationUnavailable, resolve_diarization_client
+
 REVIEW_LOW_CONFIDENCE = "low_speaker_confidence"
 REVIEW_OVERLAP = "speaker_overlap"
 REVIEW_EXTRA_SPEAKER = "unsupported_extra_speaker"
@@ -218,3 +220,30 @@ def join_diarization_to_utterances(utterances: list[dict], diarization_segments:
         "review_required_segments": _review_index_payload(segments),
         "dialogue_warnings": [],
     }
+
+
+def detect_dialogue_segments(
+    *,
+    utterances: list[dict],
+    audio_path: str,
+    task_id: str,
+    diarization_client: object | None = None,
+) -> dict:
+    provider_result = build_dialogue_segments(utterances)
+    if provider_result["speaker_strategy"] != "needs_diarization":
+        return provider_result
+
+    try:
+        client = diarization_client if diarization_client is not None else resolve_diarization_client()
+    except DiarizationUnavailable as exc:
+        warnings = ", ".join(provider_result.get("dialogue_warnings", []))
+        detail = f" provider warnings: {warnings}" if warnings else ""
+        raise DiarizationUnavailable(f"diarization fallback is required for task {task_id}:{detail}") from exc
+
+    if not hasattr(client, "run"):
+        raise DiarizationUnavailable(f"diarization fallback is required for task {task_id}: client has no run method")
+
+    diarization_segments = client.run(audio_path=audio_path, task_id=task_id)
+    result = join_diarization_to_utterances(utterances, diarization_segments)
+    result["dialogue_warnings"] = provider_result.get("dialogue_warnings", []) + result.get("dialogue_warnings", [])
+    return result
