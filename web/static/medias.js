@@ -7871,8 +7871,11 @@
       const sourceHtml = sourceLabel
         ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
         : '';
+      const playBtnHtml = coverSrc
+        ? `<button type="button" class="mk-video-play-btn" data-act="play-video" aria-label="播放视频" title="播放视频"></button>`
+        : '';
       const imgTag = coverSrc
-        ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">`
+        ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">${playBtnHtml}`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
       <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}">
@@ -7917,6 +7920,19 @@
         panes.forEach(p => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
         if (t.dataset.tab === 'video') edEnsureVideoLoaded(card, id);
       }));
+      const playBtn = card.querySelector('[data-act="play-video"]');
+      if (playBtn) {
+        playBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const videoTab = card.querySelector('.vtab[data-tab="video"]');
+          const videoPane = card.querySelector('.vpane[data-pane="video"]');
+          if (videoTab && videoPane) {
+            tabs.forEach(x => x.classList.toggle('active', x === videoTab));
+            panes.forEach(p => p.classList.toggle('active', p.dataset.pane === videoTab.dataset.tab));
+            edEnsureVideoLoaded(card, id, true);
+          }
+        });
+      }
       card.querySelector('[data-act="del"]').addEventListener('click', () => edRemoveItem(id, card));
       card.querySelector('[data-act="cover"]').addEventListener('click', () => edPickItemCover(id));
       const vrRunBtn = card.querySelector('[data-act="vr-run"]');
@@ -8042,9 +8058,17 @@
     }
   }
 
-  async function edEnsureVideoLoaded(card, itemId) {
+  async function edEnsureVideoLoaded(card, itemId, shouldPlay = false) {
     const pane = card.querySelector('[data-pane="video"]');
-    if (pane.dataset.loaded === '1') return;
+    if (pane.dataset.loaded === '1') {
+      if (shouldPlay) {
+        const video = pane.querySelector('video');
+        if (video) {
+          video.play().catch(err => console.log('自动播放失败:', err));
+        }
+      }
+      return;
+    }
     pane.innerHTML = `<div class="vvideo-ph">加载中…</div>`;
     try {
       const r = await fetchJSON(`/medias/api/items/${itemId}/play_url`);
@@ -8052,6 +8076,12 @@
       if (!playUrl) throw new Error('视频地址不可用');
       pane.innerHTML = `<video controls preload="metadata" src="${escapeHtml(playUrl)}"></video>`;
       pane.dataset.loaded = '1';
+      if (shouldPlay) {
+        const video = pane.querySelector('video');
+        if (video) {
+          video.play().catch(err => console.log('自动播放失败:', err));
+        }
+      }
     } catch (e) {
       pane.innerHTML = `<div class="vvideo-ph err">加载失败：${escapeHtml(e.message || '')}</div>`;
     }

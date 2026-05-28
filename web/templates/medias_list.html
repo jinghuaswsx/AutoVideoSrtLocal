@@ -2998,6 +2998,44 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   padding-left: 8px;
   font-size: 11px;
 }
+
+/* 视频素材卡片图片封面上的播放按钮 */
+.oc-vitem .mk-video-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, .88);
+  background: rgba(15, 23, 42, .68);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, .28);
+  transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
+  z-index: 10;
+}
+.oc-vitem .mk-video-play-btn::before {
+  content: "";
+  display: block;
+  margin-left: 4px;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  border-left: 17px solid currentColor;
+}
+.oc-vitem .mk-video-play-btn:hover {
+  background: rgba(15, 23, 42, .82);
+  transform: translate(-50%, -50%) scale(1.04);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, .34);
+}
+.oc-vitem .mk-video-play-btn:focus-visible {
+  outline: 3px solid rgba(14, 165, 233, .55);
+  outline-offset: 3px;
+}
 {% endblock %}
 
 {% block content %}
