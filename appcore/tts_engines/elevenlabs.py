@@ -15,6 +15,14 @@ class ElevenLabsEngine(TtsEngine):
     code = "elevenlabs"
     name = "ElevenLabs"
     supports_speed_param = True
+    supports_segment_voice_override = True
+
+    @staticmethod
+    def _has_segment_voice_override(segments: list[dict], voice_id: str) -> bool:
+        return any(
+            (seg.get("voice_id") if isinstance(seg, dict) else None) not in (None, "", voice_id)
+            for seg in segments
+        )
 
     def synthesize_full(
         self,
@@ -28,7 +36,7 @@ class ElevenLabsEngine(TtsEngine):
         on_progress: Optional[Callable[[dict], None]] = None,
         on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
     ) -> dict:
-        from pipeline.tts import generate_full_audio
+        from pipeline.tts import generate_full_audio, generate_full_audio_with_segment_voices
 
         kwargs: dict = {}
         if variant is not None:
@@ -41,6 +49,8 @@ class ElevenLabsEngine(TtsEngine):
             kwargs["on_progress"] = on_progress
         if on_segment_done is not None:
             kwargs["on_segment_done"] = on_segment_done
+        if self._has_segment_voice_override(segments, voice_id):
+            return generate_full_audio_with_segment_voices(segments, voice_id, output_dir, **kwargs)
         return generate_full_audio(segments, voice_id, output_dir, **kwargs)
 
     def regenerate_with_speed(
@@ -57,7 +67,10 @@ class ElevenLabsEngine(TtsEngine):
         language_code: str | None = None,
         on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
     ) -> dict:
-        from pipeline.tts import regenerate_full_audio_with_speed
+        from pipeline.tts import (
+            regenerate_full_audio_with_segment_voices_speed,
+            regenerate_full_audio_with_speed,
+        )
 
         kwargs: dict = {"variant": variant, "speed": speed}
         if stability is not None:
@@ -70,6 +83,8 @@ class ElevenLabsEngine(TtsEngine):
             kwargs["language_code"] = language_code
         if on_segment_done is not None:
             kwargs["on_segment_done"] = on_segment_done
+        if self._has_segment_voice_override(segments, voice_id):
+            return regenerate_full_audio_with_segment_voices_speed(segments, voice_id, output_dir, **kwargs)
         return regenerate_full_audio_with_speed(segments, voice_id, output_dir, **kwargs)
 
     def get_audio_duration(self, audio_path: str) -> float:

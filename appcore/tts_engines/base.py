@@ -27,6 +27,7 @@ class TtsEngine(ABC):
     # ElevenLabs 支持；早期 OpenAI TTS 不支持，需要走 atempo 后处理变速。
     # _run_tts_duration_loop 的 speedup 短路分支据此决定能否 attempt。
     supports_speed_param: bool = True
+    supports_segment_voice_override: bool = False
 
     @abstractmethod
     def synthesize_full(

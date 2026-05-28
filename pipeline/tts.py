@@ -309,33 +309,28 @@ def generate_segment_audio(
     return output_path
 
 
-def generate_full_audio(
+def _generate_full_audio_impl(
     segments: List[Dict],
-    voice_id: str,
     output_dir: str,
     *,
     variant: str | None = None,
+    segment_dir_variant: str | None = None,
+    full_audio_name: str | None = None,
+    failure_label: str = "TTS segment generation",
+    concat_error_label: str = "音频拼接失败",
+    voice_id_for_segment: Callable[[Dict], str],
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
+    speed: float | None = None,
+    stability: float | None = None,
+    similarity_boost: float | None = None,
     on_progress: Optional[Callable[[dict], None]] = None,
     on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
 ) -> Dict:
-    """为所有翻译段落生成音频并拼接成完整音轨（并发提交到全局 TTS 线程池）。
-
-    Args:
-        on_progress: 新接口。每次状态变化触发 (state ∈ submitted/started/completed)，
-            snapshot = {state, total, done, active, queued, info}。回调抛出的异常会
-            被吞掉。
-        on_segment_done: 兼容旧接口。每段完成后调用 (done, total, info)。回调抛出的
-            异常会被吞掉。两者可同时传，会都被调用。
-
-    Returns:
-        {"full_audio_path": str, "segments": [...]}  # 每段新增 tts_path, tts_duration
-    """
     seg_dir = (
-        os.path.join(output_dir, "tts_segments", variant)
-        if variant else os.path.join(output_dir, "tts_segments")
+        os.path.join(output_dir, "tts_segments", segment_dir_variant)
+        if segment_dir_variant else os.path.join(output_dir, "tts_segments")
     )
     os.makedirs(seg_dir, exist_ok=True)
 
@@ -362,16 +357,19 @@ def generate_full_audio(
         except Exception:
             log.exception("on_progress callback raised; ignoring")
 
-    def _segment_wrapper(text: str, seg_path: str) -> tuple[str, float]:
+    def _segment_wrapper(text: str, seg_path: str, segment_voice_id: str) -> tuple[str, float]:
         with state_lock:
             state["active"] += 1
             state["queued"] -= 1
         _emit_progress("started", {"text_preview": (text or "")[:60]})
         try:
             generate_segment_audio(
-                text, voice_id, seg_path,
+                text, segment_voice_id, seg_path,
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=model_id, language_code=language_code,
+                speed=speed,
+                stability=stability,
+                similarity_boost=similarity_boost,
             )
             duration = _get_audio_duration(seg_path)
             return seg_path, duration
@@ -389,7 +387,8 @@ def generate_full_audio(
     for i, seg in enumerate(segments):
         text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
         seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
-        future = pool.submit(_segment_wrapper, text, seg_path)
+        segment_voice_id = voice_id_for_segment(seg)
+        future = pool.submit(_segment_wrapper, text, seg_path, segment_voice_id)
         tasks.append((i, seg, text, seg_path, future))
 
     # 3. as_completed 收回（按完成时间，不按 i 顺序）
@@ -416,6 +415,10 @@ def generate_full_audio(
             "tts_duration": duration,
             "tts_text_preview": (text or "")[:60],
         }
+        if speed is not None:
+            info["speed"] = speed
+            info["stability"] = stability
+            info["similarity_boost"] = similarity_boost
         _emit_progress("completed", info)
         if on_segment_done is not None:
             try:
@@ -428,7 +431,7 @@ def generate_full_audio(
             f.cancel()
         first_idx, first_exc = failures[0]
         raise RuntimeError(
-            f"TTS segment generation failed at index {first_idx} "
+            f"{failure_label} failed at index {first_idx} "
             f"({len(failures)}/{total} failed): {first_exc}"
         ) from first_exc
 
@@ -440,7 +443,7 @@ def generate_full_audio(
             concat_f.write(f"file '{os.path.abspath(seg_copy['tts_path'])}'\n")
 
     # 5. ffmpeg concat（不变）
-    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_name = full_audio_name or (f"tts_full.{variant}.mp3" if variant else "tts_full.mp3")
     full_audio_path = os.path.join(output_dir, full_audio_name)
     result = subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
@@ -448,9 +451,73 @@ def generate_full_audio(
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"音频拼接失败: {result.stderr}")
+        raise RuntimeError(f"{concat_error_label}: {result.stderr}")
 
     return {"full_audio_path": full_audio_path, "segments": updated_segments}
+
+
+def generate_full_audio(
+    segments: List[Dict],
+    voice_id: str,
+    output_dir: str,
+    *,
+    variant: str | None = None,
+    elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
+    on_progress: Optional[Callable[[dict], None]] = None,
+    on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
+) -> Dict:
+    """为所有翻译段落生成音频并拼接成完整音轨（并发提交到全局 TTS 线程池）。
+
+    Args:
+        on_progress: 新接口。每次状态变化触发 (state ∈ submitted/started/completed)，
+            snapshot = {state, total, done, active, queued, info}。回调抛出的异常会
+            被吞掉。
+        on_segment_done: 兼容旧接口。每段完成后调用 (done, total, info)。回调抛出的
+            异常会被吞掉。两者可同时传，会都被调用。
+
+    Returns:
+        {"full_audio_path": str, "segments": [...]}  # 每段新增 tts_path, tts_duration
+    """
+    return _generate_full_audio_impl(
+        segments,
+        output_dir,
+        variant=variant,
+        segment_dir_variant=variant,
+        voice_id_for_segment=lambda _seg: voice_id,
+        elevenlabs_api_key=elevenlabs_api_key,
+        model_id=model_id,
+        language_code=language_code,
+        on_progress=on_progress,
+        on_segment_done=on_segment_done,
+    )
+
+
+def generate_full_audio_with_segment_voices(
+    segments: List[Dict],
+    default_voice_id: str,
+    output_dir: str,
+    *,
+    variant: str | None = None,
+    elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
+    on_progress: Optional[Callable[[dict], None]] = None,
+    on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
+) -> Dict:
+    return _generate_full_audio_impl(
+        segments,
+        output_dir,
+        variant=variant,
+        segment_dir_variant=variant,
+        voice_id_for_segment=lambda seg: seg.get("voice_id") or default_voice_id,
+        elevenlabs_api_key=elevenlabs_api_key,
+        model_id=model_id,
+        language_code=language_code,
+        on_progress=on_progress,
+        on_segment_done=on_segment_done,
+    )
 
 
 def regenerate_full_audio_with_speed(
@@ -491,100 +558,58 @@ def regenerate_full_audio_with_speed(
     """
     if not (0.7 <= speed <= 1.2):
         raise ValueError(f"speed must be in [0.7, 1.2], got {speed}")
-    seg_dir = os.path.join(output_dir, "tts_segments", f"{variant}_speedup")
-    os.makedirs(seg_dir, exist_ok=True)
-
-    total = len(segments)
-    pool = _get_tts_pool()
-    state = {"total": total, "active": 0, "queued": total, "done": 0}
-    state_lock = threading.Lock()
-
-    def _segment_wrapper(text: str, seg_path: str) -> tuple[str, float]:
-        with state_lock:
-            state["active"] += 1
-            state["queued"] -= 1
-        try:
-            generate_segment_audio(
-                text, voice_id, seg_path,
-                elevenlabs_api_key=elevenlabs_api_key,
-                model_id=model_id, language_code=language_code,
-                speed=speed,
-                stability=stability,
-                similarity_boost=similarity_boost,
-            )
-            duration = _get_audio_duration(seg_path)
-            return seg_path, duration
-        finally:
-            with state_lock:
-                state["active"] -= 1
-
-    # submit 全部
-    tasks: list[tuple[int, dict, str, str, Future]] = []
-    for i, seg in enumerate(segments):
-        text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
-        seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
-        future = pool.submit(_segment_wrapper, text, seg_path)
-        tasks.append((i, seg, text, seg_path, future))
-
-    # as_completed 收回（按完成时间）
-    seg_results: dict[int, dict] = {}
-    failures: list[tuple[int, BaseException]] = []
-    future_to_meta = {t[4]: t for t in tasks}
-    for fut in as_completed([t[4] for t in tasks]):
-        i, seg, text, seg_path, _ = future_to_meta[fut]
-        try:
-            _, duration = fut.result()
-        except BaseException as exc:
-            failures.append((i, exc))
-            continue
-        seg_copy = dict(seg)
-        seg_copy["tts_path"] = seg_path
-        seg_copy["tts_duration"] = duration
-        seg_results[i] = seg_copy
-
-        with state_lock:
-            state["done"] += 1
-            done_now = state["done"]
-        info = {
-            "segment_index": i,
-            "tts_duration": duration,
-            "tts_text_preview": (text or "")[:60],
-            "speed": speed,
-            "stability": stability,
-            "similarity_boost": similarity_boost,
-        }
-        if on_segment_done is not None:
-            try:
-                on_segment_done(done_now, total, info)
-            except Exception:
-                log.exception("on_segment_done callback raised; ignoring")
-
-    if failures:
-        for _, _, _, _, f in tasks:
-            f.cancel()
-        first_idx, first_exc = failures[0]
-        raise RuntimeError(
-            f"TTS speedup segment generation failed at index {first_idx} "
-            f"({len(failures)}/{total} failed): {first_exc}"
-        ) from first_exc
-
-    # 按 i 顺序拼 concat 列表
-    updated_segments = [seg_results[i] for i in range(total)]
-    concat_list_path = os.path.join(seg_dir, "concat.txt")
-    with open(concat_list_path, "w", encoding="utf-8") as concat_f:
-        for seg_copy in updated_segments:
-            concat_f.write(f"file '{os.path.abspath(seg_copy['tts_path'])}'\n")
-
-    full_audio_path = os.path.join(output_dir, f"tts_full.{variant}.speedup.mp3")
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
-         "-c", "copy", full_audio_path],
-        capture_output=True, text=True,
+    return _generate_full_audio_impl(
+        segments,
+        output_dir,
+        variant=variant,
+        segment_dir_variant=f"{variant}_speedup",
+        full_audio_name=f"tts_full.{variant}.speedup.mp3",
+        failure_label="TTS speedup segment generation",
+        concat_error_label="音频拼接失败 (speedup)",
+        voice_id_for_segment=lambda _seg: voice_id,
+        elevenlabs_api_key=elevenlabs_api_key,
+        model_id=model_id,
+        language_code=language_code,
+        speed=speed,
+        stability=stability,
+        similarity_boost=similarity_boost,
+        on_segment_done=on_segment_done,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"音频拼接失败 (speedup): {result.stderr}")
 
-    return {"full_audio_path": full_audio_path, "segments": updated_segments}
+
+def regenerate_full_audio_with_segment_voices_speed(
+    segments: List[Dict],
+    default_voice_id: str,
+    output_dir: str,
+    *,
+    variant: str,
+    speed: float,
+    elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
+    stability: float | None = None,
+    similarity_boost: float | None = None,
+    on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
+) -> Dict:
+    if not (0.7 <= speed <= 1.2):
+        raise ValueError(f"speed must be in [0.7, 1.2], got {speed}")
+    return _generate_full_audio_impl(
+        segments,
+        output_dir,
+        variant=variant,
+        segment_dir_variant=f"{variant}_speedup",
+        full_audio_name=f"tts_full.{variant}.speedup.mp3",
+        failure_label="TTS speedup segment generation",
+        concat_error_label="音频拼接失败 (speedup)",
+        voice_id_for_segment=lambda seg: seg.get("voice_id") or default_voice_id,
+        elevenlabs_api_key=elevenlabs_api_key,
+        model_id=model_id,
+        language_code=language_code,
+        speed=speed,
+        stability=stability,
+        similarity_boost=similarity_boost,
+        on_segment_done=on_segment_done,
+    )
 
 
 def assemble_full_audio_from_segments(
