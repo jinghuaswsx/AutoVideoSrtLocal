@@ -900,10 +900,10 @@
       </details>
       {% endif %}
       {% set video_translate_href = "" %}
-      {% if has_permission('multi_translate') %}
-        {% set video_translate_href = "/multi-translate" %}
-      {% elif has_permission('omni_translate') %}
+      {% if has_permission('omni_translate') %}
         {% set video_translate_href = "/omni-translate" %}
+      {% elif has_permission('multi_translate') %}
+        {% set video_translate_href = "/multi-translate" %}
       {% elif has_permission('omni_translate_v2') %}
         {% set video_translate_href = "/omni-translate-v2" %}
       {% elif has_permission('english_redub') %}
@@ -925,14 +925,14 @@
           <span class="sidebar-group-caret">⌄</span>
         </summary>
         <div class="sidebar-subnav">
-          {% if has_permission('multi_translate') %}
-          <a href="/multi-translate" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
-            <span class="nav-icon">🌐</span> 多语种视频翻译
-          </a>
-          {% endif %}
           {% if has_permission('omni_translate') %}
           <a href="/omni-translate" {% if request.path.startswith('/omni-translate') %}class="active"{% endif %}>
             <span class="nav-icon">🌍</span> 全能视频翻译
+          </a>
+          {% endif %}
+          {% if has_permission('multi_translate') %}
+          <a href="/multi-translate" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🌐</span> 多语种视频翻译
           </a>
           {% endif %}
           {% if has_permission('english_redub') %}
