@@ -1713,6 +1713,7 @@
               <th>店铺</th>
               <th>订单号</th>
               <th>国家</th>
+              <th>主图</th>
               <th>商品</th>
               <th>件数</th>
               <th>商品销售额</th>
@@ -1989,7 +1990,7 @@
   <div class="oar-subpanel is-active" id="nplSubOrders">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">订单明细 <span class="oar-page-info" id="nplOrderPageInfo">加载中...</span></div></div>
-      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
+      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>主图</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubProfitDetails">
@@ -4344,7 +4345,7 @@
   }
 
   function setNewProductLaunchLoading() {
-    setNewProductLaunchTable('nplOrderBody', 10, '加载中...');
+    setNewProductLaunchTable('nplOrderBody', 11, '加载中...');
     setNewProductLaunchTable('nplOrderProfitBody', 18, '加载中...');
     setNewProductLaunchTable('nplProductSalesBody', 6, '加载中...');
     setNewProductLaunchTable('nplCampaignBody', 10, '加载中...');
@@ -4352,7 +4353,7 @@
   }
 
   function setNewProductLaunchError(message) {
-    setNewProductLaunchTable('nplOrderBody', 10, message);
+    setNewProductLaunchTable('nplOrderBody', 11, message);
     setNewProductLaunchTable('nplOrderProfitBody', 18, message);
     setNewProductLaunchTable('nplProductSalesBody', 6, message);
     setNewProductLaunchTable('nplCampaignBody', 10, message);
@@ -4475,6 +4476,7 @@
       addTextCell(tr, row.site_code || '-');
       addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
       addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addCoverImageCell(tr, row.product_ids);
       addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
       addTextCell(tr, fmtInt(row.units || 0));
       addTextCell(tr, fmtMoney(row.product_revenue));
@@ -4482,7 +4484,7 @@
       addTextCell(tr, fmtMoney(row.total_revenue));
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 10, '暂无订单数据');
+    if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 11, '暂无订单数据');
     setRealtimeProfitText('nplOrderPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
   }
 
@@ -4783,7 +4785,7 @@
     var productSalesBody = document.getElementById('realtimeProductSalesBody');
     var campaignBody = document.getElementById('realtimeCampaignBody');
     if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
-    if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">加载中...</td></tr>';
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
     if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
@@ -4797,7 +4799,7 @@
       range = getRealtimeDateRange();
     } catch (err) {
       if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
-      if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+      if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
       if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
@@ -4871,7 +4873,7 @@
       })
       .catch(function(err) {
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
-        if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+        if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
         if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
@@ -4901,6 +4903,7 @@
       addTextCell(tr, row.site_code || '-');
       addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
       addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addCoverImageCell(tr, row.product_ids);
       addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
       addTextCell(tr, fmtInt(row.units || 0));
       addTextCell(tr, fmtMoney(row.product_revenue));
@@ -4909,7 +4912,7 @@
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+      body.innerHTML = '<tr><td colspan="11">暂无订单数据</td></tr>';
     }
   }
 
@@ -5335,6 +5338,45 @@
     var td = document.createElement('td');
     if (className) td.className = className;
     td.textContent = value === null || value === undefined || value === '' ? '-' : value;
+    tr.appendChild(td);
+  }
+
+  function addCoverImageCell(tr, productIdsStr, className) {
+    var td = document.createElement('td');
+    if (className) td.className = className;
+    if (!productIdsStr) {
+      td.textContent = '-';
+      tr.appendChild(td);
+      return;
+    }
+    var ids = String(productIdsStr).split('/').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (!ids.length) {
+      td.textContent = '-';
+      tr.appendChild(td);
+      return;
+    }
+    var container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.gap = '8px';
+    container.style.flexWrap = 'wrap';
+    container.style.justifyContent = 'center';
+    
+    ids.forEach(function(pid) {
+      var img = document.createElement('img');
+      img.src = '/medias/cover/' + pid + '?lang=en';
+      img.style.width = '100px';
+      img.style.height = '100px';
+      img.style.objectFit = 'cover';
+      img.style.borderRadius = '4px';
+      img.style.border = '1px solid var(--border-main)';
+      img.alt = '主图';
+      img.onerror = function() {
+        img.style.display = 'none';
+      };
+      container.appendChild(img);
+    });
+    
+    td.appendChild(container);
     tr.appendChild(td);
   }
 

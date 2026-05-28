@@ -511,7 +511,8 @@ def _get_realtime_order_details(
         "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
         "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names, "
+        "GROUP_CONCAT(DISTINCT d.product_id ORDER BY d.product_id SEPARATOR ' / ') AS product_ids "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
@@ -544,6 +545,7 @@ def _get_realtime_order_details(
             "total_revenue": _money(row.get("total_revenue")),
             "skus": row.get("skus"),
             "product_names": row.get("product_names"),
+            "product_ids": row.get("product_ids"),
         })
     return details
 
@@ -619,7 +621,8 @@ def _get_realtime_order_details_for_range(
         "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
         "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names, "
+        "GROUP_CONCAT(DISTINCT d.product_id ORDER BY d.product_id SEPARATOR ' / ') AS product_ids "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
@@ -654,6 +657,7 @@ def _get_realtime_order_details_for_range(
             "total_revenue": _money(row.get("total_revenue")),
             "skus": row.get("skus"),
             "product_names": row.get("product_names"),
+            "product_ids": row.get("product_ids"),
         })
     return details
 
