@@ -238,3 +238,25 @@ def test_get_product_covers_batch(user_id):
     finally:
         medias.soft_delete_product(pid1)
         medias.soft_delete_product(pid2)
+
+
+def test_create_item_with_skip_push(user_id):
+    pid = medias.create_product(user_id, "SkipPush测试")
+    try:
+        # 1. 默认状态 (skip_push=0)
+        iid_normal = medias.create_item(pid, user_id, "normal.mp4", "k/normal", lang="en")
+        item_normal = medias.get_item(iid_normal)
+        assert item_normal is not None
+        assert item_normal["skip_push"] == 0
+        assert item_normal["skip_push_at"] is None
+        assert item_normal["skip_push_by"] is None
+
+        # 2. 显式开启不推送 (skip_push=1)
+        iid_skipped = medias.create_item(pid, user_id, "skipped.mp4", "k/skipped", lang="en", skip_push=1)
+        item_skipped = medias.get_item(iid_skipped)
+        assert item_skipped is not None
+        assert item_skipped["skip_push"] == 1
+        assert item_skipped["skip_push_at"] is not None
+        assert item_skipped["skip_push_by"] == user_id
+    finally:
+        medias.soft_delete_product(pid)

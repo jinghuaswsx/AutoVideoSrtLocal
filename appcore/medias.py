@@ -799,19 +799,34 @@ def create_item(product_id: int, user_id: int, filename: str, object_key: str,
                 file_size: int | None = None,
                 cover_object_key: str | None = None,
                 lang: str = "en",
-                task_id: int | None = None) -> int:
+                task_id: int | None = None,
+                skip_push: int = 0) -> int:
     _ensure_video_filename_no_spaces(filename)
     _ensure_video_filename_no_spaces(object_key)
     if display_name:
         _ensure_video_filename_no_spaces(display_name)
-    return execute(
-        "INSERT INTO media_items "
-        "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
-        " thumbnail_path, cover_object_key, duration_seconds, file_size, task_id) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-        (product_id, lang, user_id, filename, display_name or filename, object_key,
-         file_url, thumbnail_path, cover_object_key, duration_seconds, file_size, task_id),
-    )
+    
+    if skip_push:
+        return execute(
+            "INSERT INTO media_items "
+            "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
+            " thumbnail_path, cover_object_key, duration_seconds, file_size, task_id, "
+            " skip_push, skip_push_at, skip_push_by) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 1, NOW(), %s)",
+            (product_id, lang, user_id, filename, display_name or filename, object_key,
+             file_url, thumbnail_path, cover_object_key, duration_seconds, file_size, task_id,
+             user_id),
+        )
+    else:
+        return execute(
+            "INSERT INTO media_items "
+            "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
+            " thumbnail_path, cover_object_key, duration_seconds, file_size, task_id, "
+            " skip_push, skip_push_at, skip_push_by) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 0, NULL, NULL)",
+            (product_id, lang, user_id, filename, display_name or filename, object_key,
+             file_url, thumbnail_path, cover_object_key, duration_seconds, file_size, task_id),
+        )
 
 
 def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
