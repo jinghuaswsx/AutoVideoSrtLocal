@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 INSUFFICIENT_SAMPLE_REASON = "insufficient_speaker_sample"
+MALFORMED_SEGMENT_REASON = "malformed_dialogue_segment"
+NO_VOICE_CANDIDATES_REASON = "no_voice_candidates"
 _SPEAKERS = ("A", "B")
 
 
@@ -24,13 +26,30 @@ def resolve_default_voice(lang: str, user_id: int | None = None):
     return _resolve_default_voice(lang, user_id=user_id)
 
 
+def _append_warning(warnings: list[str], reason: str) -> None:
+    if reason not in warnings:
+        warnings.append(reason)
+
+
+def _valid_dialogue_segments(dialogue_segments: Iterable[dict]) -> tuple[list[dict], int]:
+    valid_segments: list[dict] = []
+    malformed_count = 0
+    for segment in dialogue_segments or []:
+        if isinstance(segment, dict):
+            valid_segments.append(segment)
+        else:
+            malformed_count += 1
+    return valid_segments, malformed_count
+
+
 def build_speaker_sample_windows(
     dialogue_segments: Iterable[dict],
     min_duration: float = 3.0,
     target_duration: float = 10.0,
 ) -> dict[str, dict]:
     usable_by_speaker: dict[str, list[dict[str, float]]] = {speaker: [] for speaker in _SPEAKERS}
-    for segment in dialogue_segments or []:
+    valid_segments, malformed_count = _valid_dialogue_segments(dialogue_segments)
+    for segment in valid_segments:
         speaker = segment.get("speaker_id")
         if speaker not in usable_by_speaker:
             continue
@@ -39,6 +58,7 @@ def build_speaker_sample_windows(
         start = _safe_float(segment.get("start_time"))
         end = _safe_float(segment.get("end_time"))
         if start is None or end is None:
+            malformed_count += 1
             continue
         duration = max(0.0, end - start)
         if duration <= 0:
@@ -55,10 +75,15 @@ def build_speaker_sample_windows(
                 break
             windows.append([segment["start"], segment["end"]])
             total += segment["duration"]
+        warnings: list[str] = []
+        if malformed_count:
+            _append_warning(warnings, MALFORMED_SEGMENT_REASON)
+        if total < min_duration:
+            _append_warning(warnings, INSUFFICIENT_SAMPLE_REASON)
         result[speaker] = {
             "sample_windows": windows,
             "sample_duration": round(total, 3),
-            "match_warnings": [] if total >= min_duration else [INSUFFICIENT_SAMPLE_REASON],
+            "match_warnings": warnings,
         }
     return result
 
@@ -79,6 +104,16 @@ def _concat_file_line(path: Path) -> str:
     return "file '" + path.as_posix().replace("'", "'\\''") + "'"
 
 
+def _validate_sample_window(window: Any) -> tuple[float, float]:
+    if not isinstance(window, (list, tuple)) or len(window) != 2:
+        raise ValueError("invalid sample window")
+    start = _safe_float(window[0])
+    end = _safe_float(window[1])
+    if start is None or end is None or end <= start:
+        raise ValueError("invalid sample window")
+    return start, end
+
+
 def extract_sample_for_windows(video_path: str, windows: list[list[float]], out_path: Path) -> str:
     if not windows:
         raise ValueError("sample windows are empty")
@@ -89,12 +124,7 @@ def extract_sample_for_windows(video_path: str, windows: list[list[float]], out_
     list_path = out_path.with_suffix(out_path.suffix + ".concat.txt")
     try:
         for index, window in enumerate(windows):
-            if len(window) < 2:
-                continue
-            start = _safe_float(window[0])
-            end = _safe_float(window[1])
-            if start is None or end is None or end <= start:
-                continue
+            start, end = _validate_sample_window(window)
             temp_path = out_path.with_name(f"{out_path.stem}.part{index}.wav")
             temp_paths.append(temp_path)
             _run_ffmpeg(
@@ -152,7 +182,8 @@ def extract_sample_for_windows(video_path: str, windows: list[list[float]], out_
 
 
 def _speaker_utterances(dialogue_segments: Iterable[dict], speaker: str) -> list[dict]:
-    return [segment for segment in dialogue_segments or [] if segment.get("speaker_id") == speaker]
+    valid_segments, _malformed_count = _valid_dialogue_segments(dialogue_segments)
+    return [segment for segment in valid_segments if segment.get("speaker_id") == speaker]
 
 
 def _candidate_with_float_similarity(candidate: dict) -> dict:
@@ -177,6 +208,7 @@ def match_voices_for_speakers(
     from pipeline.voice_embedding import embed_audio_file, serialize_embedding
     from pipeline.voice_match_speed import match_candidates_speed_aware
 
+    _valid_segments, malformed_count = _valid_dialogue_segments(dialogue_segments)
     specs = sample_specs or build_speaker_sample_windows(dialogue_segments)
     default_voice = resolve_default_voice(target_lang, user_id=user_id)
     exclude_voice_ids = [default_voice] if default_voice else None
@@ -187,6 +219,8 @@ def match_voices_for_speakers(
         spec = specs.get(speaker) or {}
         windows = spec.get("sample_windows") or []
         warnings = list(spec.get("match_warnings") or [])
+        if malformed_count:
+            _append_warning(warnings, MALFORMED_SEGMENT_REASON)
         sample_duration = spec.get("sample_duration")
         if sample_duration is None:
             sample_duration = round(sum(_window_duration(window) for window in windows), 3)
@@ -219,11 +253,15 @@ def match_voices_for_speakers(
             top_k=20,
             exclude_voice_ids=exclude_voice_ids,
         )
+        normalized_candidates = [_candidate_with_float_similarity(candidate) for candidate in candidates]
+        if not normalized_candidates:
+            _append_warning(warnings, NO_VOICE_CANDIDATES_REASON)
         profile.update(
             {
                 "sample_path": sample_path,
                 "query_embedding": base64.b64encode(serialized).decode("ascii"),
-                "candidates": [_candidate_with_float_similarity(candidate) for candidate in candidates],
+                "candidates": normalized_candidates,
+                "match_warnings": warnings,
             }
         )
         profiles[speaker] = profile
@@ -232,10 +270,8 @@ def match_voices_for_speakers(
 
 
 def _window_duration(window: Any) -> float:
-    if not isinstance(window, (list, tuple)) or len(window) < 2:
-        return 0.0
-    start = _safe_float(window[0])
-    end = _safe_float(window[1])
-    if start is None or end is None:
+    try:
+        start, end = _validate_sample_window(window)
+    except ValueError:
         return 0.0
     return max(0.0, end - start)

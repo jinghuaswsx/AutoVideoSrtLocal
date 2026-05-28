@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+
 from appcore.dialogue_translate.voice_match import (
     INSUFFICIENT_SAMPLE_REASON,
+    MALFORMED_SEGMENT_REASON,
+    NO_VOICE_CANDIDATES_REASON,
     build_speaker_sample_windows,
+    extract_sample_for_windows,
     match_voices_for_speakers,
 )
 
@@ -36,6 +41,27 @@ def test_sample_windows_warn_when_speaker_has_too_little_audio():
     assert result["A"]["match_warnings"] == [INSUFFICIENT_SAMPLE_REASON]
     assert result["B"]["sample_windows"] == []
     assert result["B"]["match_warnings"] == [INSUFFICIENT_SAMPLE_REASON]
+
+
+def test_sample_windows_skip_malformed_segments_and_warn():
+    segments = [
+        None,
+        "bad row",
+        {"speaker_id": "A", "start_time": 0.0, "end_time": 4.0, "review_required": False, "overlap": False},
+        {"speaker_id": "B", "start_time": "oops", "end_time": 6.0, "review_required": False, "overlap": False},
+    ]
+
+    result = build_speaker_sample_windows(segments, min_duration=3.0, target_duration=8.0)
+
+    assert result["A"]["sample_windows"] == [[0.0, 4.0]]
+    assert result["A"]["match_warnings"] == [MALFORMED_SEGMENT_REASON]
+    assert result["B"]["sample_windows"] == []
+    assert result["B"]["match_warnings"] == [MALFORMED_SEGMENT_REASON, INSUFFICIENT_SAMPLE_REASON]
+
+
+def test_extract_sample_for_windows_rejects_invalid_window_shape(tmp_path):
+    with pytest.raises(ValueError, match="invalid sample window"):
+        extract_sample_for_windows("video.mp4", [None], tmp_path / "sample.wav")
 
 
 def test_match_voices_for_speakers_uses_existing_embedding_and_speed_match(monkeypatch, tmp_path):
@@ -71,7 +97,12 @@ def test_match_voices_for_speakers_uses_existing_embedding_and_speed_match(monke
         video_path="video.mp4",
         task_dir=str(tmp_path),
         target_lang="en",
-        dialogue_segments=[{"text": "hi"}, {"text": "yes"}],
+        dialogue_segments=[
+            {"speaker_id": "A", "text": "hi"},
+            {"speaker_id": "B", "text": "yes"},
+            {"speaker_id": "C", "text": "mixed"},
+            None,
+        ],
         sample_specs=sample_specs,
         user_id=7,
     )
@@ -81,3 +112,34 @@ def test_match_voices_for_speakers_uses_existing_embedding_and_speed_match(monke
     assert base64.b64decode(profiles["A"]["query_embedding"]).startswith(b"vec:")
     assert calls[0][0] == "extract"
     assert calls[1][0] == "match"
+    match_calls = [call for call in calls if call[0] == "match"]
+    assert match_calls[0][3] == [{"speaker_id": "A", "text": "hi"}]
+    assert match_calls[1][3] == [{"speaker_id": "B", "text": "yes"}]
+
+
+def test_match_voices_for_speakers_warns_when_no_candidates(monkeypatch, tmp_path):
+    sample_specs = {
+        "A": {"sample_windows": [[0.0, 5.0]], "match_warnings": []},
+        "B": {"sample_windows": [], "match_warnings": [INSUFFICIENT_SAMPLE_REASON]},
+    }
+
+    def fake_extract(video_path, windows, out_path):
+        out_path.write_bytes(b"wav")
+        return str(out_path)
+
+    monkeypatch.setattr("appcore.dialogue_translate.voice_match.extract_sample_for_windows", fake_extract)
+    monkeypatch.setattr("pipeline.voice_embedding.embed_audio_file", lambda path: f"vec:{path}")
+    monkeypatch.setattr("pipeline.voice_embedding.serialize_embedding", lambda vec: vec.encode("utf-8"))
+    monkeypatch.setattr("pipeline.voice_match_speed.match_candidates_speed_aware", lambda vec, **kwargs: [])
+    monkeypatch.setattr("appcore.dialogue_translate.voice_match.resolve_default_voice", lambda lang, user_id=None: None)
+
+    profiles = match_voices_for_speakers(
+        video_path="video.mp4",
+        task_dir=str(tmp_path),
+        target_lang="en",
+        dialogue_segments=[{"speaker_id": "A", "text": "hi"}],
+        sample_specs=sample_specs,
+    )
+
+    assert profiles["A"]["candidates"] == []
+    assert profiles["A"]["match_warnings"] == [NO_VOICE_CANDIDATES_REASON]
