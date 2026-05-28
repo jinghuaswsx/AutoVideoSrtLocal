@@ -2701,6 +2701,12 @@
         e.stopPropagation();
         copyProductCode(b);
       }));
+    grid.querySelectorAll('.oc-product-name-copy').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyProductName(b);
+      }));
     grid.querySelectorAll('.oc-product-english-copy').forEach(b =>
       b.addEventListener('click', (e) => {
         e.preventDefault();
@@ -3086,9 +3092,10 @@
     const coverCell = productDetailHref
       ? `<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>`
       : cover;
-    const nameCell = productDetailHref
-      ? `<a href="${productDetailHref}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a>`
-      : `<span title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>`;
+    const nameCell = (productDetailHref
+      ? `<a href="${productDetailHref}" title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</a>`
+      : `<span title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</span>`)
+      + ` <button type="button" class="oc-btn text sm oc-product-name-copy" data-product-name="${escapeHtml(p.name)}" data-copy-label="" title="复制产品名称" aria-label="复制产品名称" style="display:inline-flex; vertical-align:middle; margin-left:4px; padding:2px; height:20px; min-width:20px; width:auto; justify-content:center; align-items:center;">${icon('copy', 12)}</button>`;
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
@@ -5972,6 +5979,14 @@
     const code = btn && btn.dataset ? (btn.dataset.productCode || '').trim() : '';
     if (!code) return;
     copyText(code)
+      .then(() => flashCopiedButton(btn))
+      .catch(() => alert('复制失败，请手动复制'));
+  }
+
+  function copyProductName(btn) {
+    const name = btn && btn.dataset ? (btn.dataset.productName || '').trim() : '';
+    if (!name) return;
+    copyText(name)
       .then(() => flashCopiedButton(btn))
       .catch(() => alert('复制失败，请手动复制'));
   }
