@@ -894,6 +894,8 @@
       <button type="button" class="ppd-quick-btn" data-range="last-week">上周</button>
       <button type="button" class="ppd-quick-btn" data-range="this-month">本月</button>
       <button type="button" class="ppd-quick-btn" data-range="last-month">上月</button>
+      <button type="button" class="ppd-quick-btn" data-range="this-year">今年</button>
+      <button type="button" class="ppd-quick-btn" data-range="last-year">去年</button>
     </div>
     <button type="button" class="ppd-btn ppd-btn-primary" id="ppd-reload" data-filter-control="reload">查询</button>
     <a class="ppd-btn" id="ppd-download" href="#" target="_blank" rel="noopener noreferrer" data-filter-control="orders-download">下载 Excel</a>
@@ -1441,6 +1443,14 @@
         fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
         toDate = new Date(today.getFullYear(), today.getMonth(), 0);
         break;
+      case 'this-year':
+        fromDate = new Date(today.getFullYear(), 0, 1);
+        toDate = today;
+        break;
+      case 'last-year':
+        fromDate = new Date(today.getFullYear() - 1, 0, 1);
+        toDate = new Date(today.getFullYear() - 1, 11, 31);
+        break;
       default:
         return;
     }
@@ -1520,6 +1530,20 @@
     var lastDayOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
     if (fromVal === fmt(firstDayOfLastMonth) && toVal === fmt(lastDayOfLastMonth)) {
       updateQuickDateButtons('last-month');
+      return;
+    }
+    
+    var firstDayOfYear = new Date(today.getFullYear(), 0, 1);
+    var lastDayOfYear = new Date(today.getFullYear(), 11, 31);
+    if (fromVal === fmt(firstDayOfYear) && (toVal === fmt(lastDayOfYear) || toVal === fmtToday)) {
+      updateQuickDateButtons('this-year');
+      return;
+    }
+    
+    var firstDayOfLastYear = new Date(today.getFullYear() - 1, 0, 1);
+    var lastDayOfLastYear = new Date(today.getFullYear() - 1, 11, 31);
+    if (fromVal === fmt(firstDayOfLastYear) && toVal === fmt(lastDayOfLastYear)) {
+      updateQuickDateButtons('last-year');
       return;
     }
   }

@@ -1546,6 +1546,8 @@
         <button type="button" class="oad-seg" data-realtime-range="lastWeek" aria-pressed="false">上周</button>
         <button type="button" class="oad-seg" data-realtime-range="thisMonth" aria-pressed="false">本月</button>
         <button type="button" class="oad-seg" data-realtime-range="lastMonth" aria-pressed="false">上月</button>
+        <button type="button" class="oad-seg" data-realtime-range="thisYear" aria-pressed="false">今年</button>
+        <button type="button" class="oad-seg" data-realtime-range="lastYear" aria-pressed="false">去年</button>
       </div>
       <div class="oad-date-range-field" role="group" aria-label="实时大盘自定义日期范围">
         <input type="date" id="realtimeStartDate" aria-label="开始日期">
@@ -1915,6 +1917,8 @@
         <button type="button" class="oad-seg" data-npl-range="lastWeek" aria-pressed="false">上周</button>
         <button type="button" class="oad-seg" data-npl-range="thisMonth" aria-pressed="false">本月</button>
         <button type="button" class="oad-seg" data-npl-range="lastMonth" aria-pressed="false">上月</button>
+        <button type="button" class="oad-seg" data-npl-range="thisYear" aria-pressed="false">今年</button>
+        <button type="button" class="oad-seg" data-npl-range="lastYear" aria-pressed="false">去年</button>
       </div>
       <div class="oad-date-range">
         <input type="date" id="nplStartDate" aria-label="新品投放分析开始日期">
@@ -2116,6 +2120,8 @@
       <button type="button" class="oad-seg" data-dashboard-range="lastWeek" aria-pressed="false">上周</button>
       <button type="button" class="oad-seg" data-dashboard-range="thisMonth" aria-pressed="false">本月</button>
       <button type="button" class="oad-seg" data-dashboard-range="lastMonth" aria-pressed="false">上月</button>
+      <button type="button" class="oad-seg" data-dashboard-range="thisYear" aria-pressed="false">今年</button>
+      <button type="button" class="oad-seg" data-dashboard-range="lastYear" aria-pressed="false">去年</button>
     </div>
 
     <div class="oad-date-range-field" role="group" aria-label="产品看板自定义日期范围">
@@ -2237,6 +2243,12 @@
       } else if (range === 'lastMonth') {
         start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         end = new Date(now.getFullYear(), now.getMonth(), 0);
+      } else if (range === 'thisYear') {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31);
+      } else if (range === 'lastYear') {
+        start = new Date(now.getFullYear() - 1, 0, 1);
+        end = new Date(now.getFullYear() - 1, 11, 31);
       }
       return {start: start, end: end};
     }
@@ -2270,7 +2282,7 @@
     var currentStart = document.getElementById('oadStartDate').value;
     var currentEnd = document.getElementById('oadEndDate').value;
     var matchedRange = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveDashboardRange(range);
       if (currentStart === formatOadDateInput(bounds.start) && currentEnd === formatOadDateInput(bounds.end)) {
         matchedRange = range;
@@ -2585,6 +2597,8 @@
         <button type="button" class="oad-seg" data-country-range="lastWeek" aria-pressed="false">上周</button>
         <button type="button" class="oad-seg" data-country-range="thisMonth" aria-pressed="false">本月</button>
         <button type="button" class="oad-seg" data-country-range="lastMonth" aria-pressed="false">上月</button>
+        <button type="button" class="oad-seg" data-country-range="thisYear" aria-pressed="false">今年</button>
+        <button type="button" class="oad-seg" data-country-range="lastYear" aria-pressed="false">去年</button>
       </div>
       <div class="oad-date-range-field" role="group" aria-label="国家看板自定义日期范围">
         <input type="date" id="countryStartDate" aria-label="开始日期">
@@ -2609,6 +2623,8 @@
         <button type="button" class="oad-seg" data-true-roas-range="lastWeek" aria-pressed="false">上周</button>
         <button type="button" class="oad-seg" data-true-roas-range="thisMonth" aria-pressed="false">本月</button>
         <button type="button" class="oad-seg" data-true-roas-range="lastMonth" aria-pressed="false">上月</button>
+        <button type="button" class="oad-seg" data-true-roas-range="thisYear" aria-pressed="false">今年</button>
+        <button type="button" class="oad-seg" data-true-roas-range="lastYear" aria-pressed="false">去年</button>
       </div>
       <div class="oad-date-range-field" role="group" aria-label="真实 ROAS 自定义日期范围">
         <input type="date" id="trueRoasStart" aria-label="开始日期">
@@ -2860,6 +2876,8 @@
         <button type="button" class="oad-seg" data-dxm-range="lastWeek" aria-pressed="false">上周</button>
         <button type="button" class="oad-seg is-active" data-dxm-range="thisMonth" aria-pressed="true">本月</button>
         <button type="button" class="oad-seg" data-dxm-range="lastMonth" aria-pressed="false">上月</button>
+        <button type="button" class="oad-seg" data-dxm-range="thisYear" aria-pressed="false">今年</button>
+        <button type="button" class="oad-seg" data-dxm-range="lastYear" aria-pressed="false">去年</button>
       </div>
       <div class="oad-date-range-field" role="group" aria-label="订单分析自定义日期范围">
         <input type="date" id="dxmStartDate" aria-label="开始日期">
@@ -3172,6 +3190,8 @@
             <button type="button" class="oad-seg" data-ad-range="lastWeek" aria-pressed="false">上周</button>
             <button type="button" class="oad-seg" data-ad-range="thisMonth" aria-pressed="false">本月</button>
             <button type="button" class="oad-seg" data-ad-range="lastMonth" aria-pressed="false">上月</button>
+            <button type="button" class="oad-seg" data-ad-range="thisYear" aria-pressed="false">今年</button>
+            <button type="button" class="oad-seg" data-ad-range="lastYear" aria-pressed="false">去年</button>
           </div>
           <div class="oad-date-range-field" role="group" aria-label="广告分析自定义日期范围">
             <input type="date" id="adStartDate" aria-label="开始日期">
@@ -3242,6 +3262,8 @@
           <button type="button" class="oad-seg" data-ads-level-range="lastWeek" data-ads-level="{{ level }}" aria-pressed="false">上周</button>
           <button type="button" class="oad-seg" data-ads-level-range="thisMonth" data-ads-level="{{ level }}" aria-pressed="false">本月</button>
           <button type="button" class="oad-seg" data-ads-level-range="lastMonth" data-ads-level="{{ level }}" aria-pressed="false">上月</button>
+          <button type="button" class="oad-seg" data-ads-level-range="thisYear" data-ads-level="{{ level }}" aria-pressed="false">今年</button>
+          <button type="button" class="oad-seg" data-ads-level-range="lastYear" data-ads-level="{{ level }}" aria-pressed="false">去年</button>
         </div>
         <div class="oad-date-range-field" role="group" aria-label="{{ label }} 日期范围">
           <input type="date" data-ads-list-start="{{ level }}" aria-label="开始日期">
@@ -3597,7 +3619,7 @@
     var currentStart = start ? start.value : '';
     var currentEnd = end ? end.value : '';
     var matchedRange = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveCountryRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matchedRange = range;
@@ -3664,7 +3686,7 @@
     var currentStart = start ? start.value : '';
     var currentEnd = end ? end.value : '';
     var matchedRange = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveCountryRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matchedRange = range;
@@ -3784,7 +3806,7 @@
     var currentStart = startEl ? startEl.value : '';
     var currentEnd = endEl ? endEl.value : '';
     var matched = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matched = range;
@@ -4243,7 +4265,7 @@
     var currentStart = startEl ? startEl.value : '';
     var currentEnd = endEl ? endEl.value : '';
     var matched = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveRealtimeRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matched = range;
@@ -4307,7 +4329,7 @@
     var currentStart = startEl ? startEl.value : '';
     var currentEnd = endEl ? endEl.value : '';
     var matched = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveRealtimeRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matched = range;
@@ -6420,7 +6442,7 @@
     var currentStart = start ? start.value : '';
     var currentEnd = end ? end.value : '';
     var matchedRange = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveCountryRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matchedRange = range;
@@ -7546,7 +7568,7 @@
     var currentStart = startEl ? startEl.value : '';
     var currentEnd = endEl ? endEl.value : '';
     var matchedRange = '';
-    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
       var bounds = resolveCountryRange(range);
       if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
         matchedRange = range;

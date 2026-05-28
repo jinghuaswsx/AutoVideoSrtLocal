@@ -464,6 +464,8 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
       <button type="button" class="op-seg" data-op-range="lastWeek">上周</button>
       <button type="button" class="op-seg" data-op-range="thisMonth">本月</button>
       <button type="button" class="op-seg" data-op-range="lastMonth">上月</button>
+      <button type="button" class="op-seg" data-op-range="thisYear">今年</button>
+      <button type="button" class="op-seg" data-op-range="lastYear">去年</button>
     </div>
     <span class="op-date-range-field">
       <input type="date" id="opDateFrom" aria-label="开始日期">
@@ -752,6 +754,14 @@ function resolveOpRange(range) {
     return {start: new Date(today.getFullYear(), today.getMonth()-1, 1),
             end: new Date(today.getFullYear(), today.getMonth(), 0)};
   }
+  if (range === 'thisYear') {
+    return {start: new Date(today.getFullYear(), 0, 1),
+            end: new Date(today.getFullYear(), 11, 31)};
+  }
+  if (range === 'lastYear') {
+    return {start: new Date(today.getFullYear() - 1, 0, 1),
+            end: new Date(today.getFullYear() - 1, 11, 31)};
+  }
   return {start: today, end: today};
 }
 
@@ -772,7 +782,7 @@ function syncBjHint() {
   document.getElementById('opTimeWindowHint').textContent = describeBjWindow(f, t);
   // 同步快捷按钮 active 状态
   let matched = '';
-  ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth'].forEach(r => {
+  ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth','thisYear','lastYear'].forEach(r => {
     const b = resolveOpRange(r);
     if (fmtIsoDate(b.start) === f && fmtIsoDate(b.end) === t) matched = r;
   });
