@@ -2726,3 +2726,26 @@ def test_clear_cache_success(authed_client_no_db, monkeypatch):
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True}
     assert any("DELETE FROM media_push_status_cache" in s for s in executed_sqls)
+
+
+def test_refresh_item_cache_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.post("/pushes/api/items/1001/refresh-cache")
+    assert resp.status_code == 403
+
+
+def test_refresh_item_cache_success(authed_client_no_db, monkeypatch):
+    refreshed_item_ids = []
+
+    def fake_refresh_push_status_cache_for_item(item_id):
+        refreshed_item_ids.append(item_id)
+        return {item_id: {}}
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.refresh_push_status_cache_for_item",
+        fake_refresh_push_status_cache_for_item,
+    )
+
+    resp = authed_client_no_db.post("/pushes/api/items/1001/refresh-cache")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert 1001 in refreshed_item_ids

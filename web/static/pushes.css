@@ -218,24 +218,27 @@
   background: var(--oc-accent-hover);
   border-color: var(--oc-accent-hover);
 }
-.filter-actions button#btn-refresh-cache {
+.filter-actions button#btn-refresh-cache,
+.btn-push.btn-modal-refresh-cache {
   height: 32px;
   padding: 0 16px;
   border-radius: var(--oc-r-full);
   border: 1px solid var(--oc-accent);
   background: var(--oc-accent-subtle);
   color: var(--oc-accent);
-  font-weight: 500;
+  font-weight: 700;
   transition: background var(--oc-dur-fast) var(--oc-ease),
               border-color var(--oc-dur-fast) var(--oc-ease),
               color var(--oc-dur-fast) var(--oc-ease);
 }
-.filter-actions button#btn-refresh-cache:hover:not(:disabled) {
+.filter-actions button#btn-refresh-cache:hover:not(:disabled),
+.btn-push.btn-modal-refresh-cache:hover:not(:disabled) {
   background: var(--oc-accent);
   color: #fff;
   border-color: var(--oc-accent);
 }
-.filter-actions button#btn-refresh-cache:disabled {
+.filter-actions button#btn-refresh-cache:disabled,
+.btn-push.btn-modal-refresh-cache:disabled {
   background: var(--oc-bg-muted);
   border-color: var(--oc-border);
   color: var(--oc-fg-subtle);
@@ -1596,7 +1599,7 @@
 }
 .pm-footer {
   display: flex;
-  gap: 100px;
+  gap: 20px;
   justify-content: flex-end;
   align-items: center;
   padding: var(--oc-sp-3) var(--oc-sp-5);

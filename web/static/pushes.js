@@ -1227,12 +1227,17 @@
       disabled: !item.task_id,
       title: item.task_id ? '' : '这条素材没有关联任务，不能打回重做',
     }, '打回重做');
+    const btnRefresh = el('button', {
+      type: 'button',
+      class: 'btn-push btn-modal-refresh-cache',
+    }, '刷新数据');
     const btnPush = el('button', {
       type: 'button',
       class: 'btn-push btn-modal-material-push',
       disabled: true,
     }, '推送');
     footer.appendChild(btnRework);
+    footer.appendChild(btnRefresh);
     footer.appendChild(btnPush);
     mainPanel.appendChild(footer);
 
@@ -1573,6 +1578,21 @@
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
     btnClose.addEventListener('click', close);
     btnRework.addEventListener('click', openReworkModal);
+    btnRefresh.addEventListener('click', async () => {
+      btnRefresh.disabled = true;
+      const originalText = btnRefresh.textContent;
+      btnRefresh.textContent = '刷新中…';
+      try {
+        await fetchJSON(`/pushes/api/items/${itemId}/refresh-cache`, { method: 'POST' });
+        manualLinkConfirmed = false;
+        await loadPayload();
+      } catch (err) {
+        alert('刷新失败: ' + (err.message || err));
+      } finally {
+        btnRefresh.disabled = false;
+        btnRefresh.textContent = originalText;
+      }
+    });
 
     function showManualLinkConfirm(err) {
       const body = parseErrorBody(err);

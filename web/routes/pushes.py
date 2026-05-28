@@ -739,6 +739,15 @@ def api_clear_cache():
     return _json_response({"ok": True})
 
 
+@bp.route("/api/items/<int:item_id>/refresh-cache", methods=["POST"])
+@login_required
+@admin_required
+def api_refresh_item_cache(item_id: int):
+    pushes.refresh_push_status_cache_for_item(item_id)
+    _audit_push_action(item_id, "push_item_cache_refreshed")
+    return _json_response({"ok": True})
+
+
 @bp.route("/api/items/<int:item_id>/skip", methods=["POST"])
 @login_required
 @admin_required
