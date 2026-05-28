@@ -12,7 +12,7 @@ Environment=BROWSER_AUTOMATION_APP_ROOT=/opt/autovideosrt
 Environment=BROWSER_AUTOMATION_PYTHON_BIN=/opt/autovideosrt/venv/bin/python
 Environment=PYTHONUNBUFFERED=1
 ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/output/meta_daily_final_exports
-ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/meta_daily_final_sync.py --mode check
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/meta_daily_final_sync.py --mode check --include-adsets
 User=root
 Group=root
 StandardOutput=journal

@@ -215,12 +215,16 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "meta_daily_final": {
         "code": "meta_daily_final",
         "name": "Meta 收盘日数据",
-        "description": "每天北京时间 16:30 抓取刚收盘的 Meta 广告整日数据，17:00 做成功检测和补跑。",
+        "description": (
+            "每天北京时间 16:30 抓取刚收盘的 Meta 广告整日数据（Campaign / Ad Set / Ad），"
+            "17:00 做成功检测和补跑；spec: "
+            "docs/superpowers/specs/2026-05-28-meta-daily-final-adset-steady-sync-design.md。"
+        ),
         "schedule": "每天 16:30 同步；17:00 检查补跑",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-meta-daily-final-sync.timer / autovideosrt-meta-daily-final-check.timer",
-        "runner": "tools/meta_daily_final_sync.py",
+        "runner": "tools/meta_daily_final_sync.py --include-adsets",
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },

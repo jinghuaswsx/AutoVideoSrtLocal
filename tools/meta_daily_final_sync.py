@@ -1602,13 +1602,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=[],
         help="Optional Meta account code to sync. Can be repeated or comma-separated; includes disabled accounts when explicit.",
     )
+    parser.add_argument(
+        "--include-adsets",
+        action="store_true",
+        help="Also fetch and persist Ad Set daily-final rows.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     target = _parse_date(args.date) if args.date else completed_meta_business_date()
-    result = run_final_sync(target, mode=args.mode, account_codes=args.account_code)
+    result = run_final_sync(
+        target,
+        mode=args.mode,
+        account_codes=args.account_code,
+        include_adsets=args.include_adsets,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default))
     return 0 if result.get("status") in {"success", "skipped"} else 1
 

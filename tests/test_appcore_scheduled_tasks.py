@@ -653,6 +653,8 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["shopifyid"]["source_ref"] == "autovideosrt-shopifyid-sync.timer"
     assert definitions["roi_hourly_sync"]["source_ref"] == "autovideosrt-roi-realtime-sync.timer"
     assert "autovideosrt-meta-daily-final-sync.timer" in definitions["meta_daily_final"]["source_ref"]
+    assert "--include-adsets" in definitions["meta_daily_final"]["runner"]
+    assert "Ad Set" in definitions["meta_daily_final"]["description"]
     assert definitions["cdp_environment_watchdog"]["schedule"] == "每 1 分钟"
     assert definitions["cdp_environment_watchdog"]["source_ref"] == "autovideosrt-cdp-environment-watchdog.timer"
     assert definitions["cdp_environment_watchdog"]["log_table"] == "scheduled_task_runs"

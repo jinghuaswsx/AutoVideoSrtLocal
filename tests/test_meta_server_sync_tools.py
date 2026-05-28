@@ -932,6 +932,43 @@ def test_run_final_sync_xhr_api_session_failure_marks_xhr_failed_csv_runs_anyway
     assert "lock timeout" in a_err
 
 
+def test_meta_daily_final_cli_forwards_include_adsets(monkeypatch, capsys):
+    """Docs-anchor: docs/superpowers/specs/2026-05-28-meta-daily-final-adset-steady-sync-design.md"""
+    from tools import meta_daily_final_sync
+
+    calls: list[dict] = []
+
+    def fake_run_final_sync(target_date, *, mode, account_codes, include_adsets=False):
+        calls.append({
+            "target_date": target_date,
+            "mode": mode,
+            "account_codes": list(account_codes),
+            "include_adsets": include_adsets,
+        })
+        return {"status": "success"}
+
+    monkeypatch.setattr(meta_daily_final_sync, "run_final_sync", fake_run_final_sync)
+
+    rc = meta_daily_final_sync.main([
+        "--date",
+        "2026-05-08",
+        "--mode",
+        "run",
+        "--account-code",
+        "newjoyloo_bak,Omurio",
+        "--include-adsets",
+    ])
+
+    assert rc == 0
+    assert calls == [{
+        "target_date": date(2026, 5, 8),
+        "mode": "run",
+        "account_codes": ["newjoyloo_bak,Omurio"],
+        "include_adsets": True,
+    }]
+    assert '"status": "success"' in capsys.readouterr().out
+
+
 def test_run_final_sync_xhr_api_uses_account_timezone_for_time_range(monkeypatch, tmp_path):
     """Daily final XHR path must build time_range via the shared
     account_xhr_time_range helper (same as realtime). Regression for

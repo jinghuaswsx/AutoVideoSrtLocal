@@ -185,6 +185,8 @@ def test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered
 
     assert "--mode run" in sync_service
     assert "--mode check" in check_service
+    assert "--include-adsets" in sync_service
+    assert "--include-adsets" in check_service
     assert "OnCalendar=*-*-* 16:30:00" in sync_timer
     assert "OnCalendar=*-*-* 17:00:00" in check_timer
 
