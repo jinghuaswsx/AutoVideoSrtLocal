@@ -50,7 +50,7 @@
 
 /* ────────── Toolbar ────────── */
 .oc-toolbar { display:block; padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:0; position:sticky; top:var(--sticky-toolbar-top,130px); z-index:21; }
-.oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--oc-sp-3); align-items:center; width:100%; }
+.oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--oc-sp-3); align-items:center; width:100%; }
 .oc-search { position:relative; min-width:0; max-width:none; width:100%; }
 .oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
@@ -691,31 +691,57 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-lang-bar {
   display:flex;
   flex-direction:column;
-  gap:4px;
+  gap:6px;
   align-items:flex-start;
+  min-width:0;
 }
-.oc-lang-row {
+.oc-lang-summary {
   display:flex;
-  gap:4px;
-  flex-wrap:nowrap;
   align-items:center;
-}
-.oc-lang-chip {
-  display:inline-flex; align-items:center; justify-content:flex-start;
-  min-width:30px; height:22px; padding:0 8px;
-  border-radius:var(--oc-r-md);
-  font-size:11px; font-weight:600; letter-spacing:0.02em;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  max-width:280px;
+  padding-bottom:2px;
+  border-bottom:1px solid var(--oc-border);
+  color:var(--oc-fg);
+  font-size:12px;
+  font-weight:700;
   font-variant-numeric:tabular-nums;
-  transition:all var(--oc-dur-fast) var(--oc-ease);
-  cursor:default;
+}
+.oc-lang-summary strong { color:var(--oc-accent); font-size:13px; }
+.oc-lang-line {
+  display:grid;
+  grid-template-columns:minmax(82px, 1fr) minmax(58px, auto) minmax(72px, auto);
+  gap:6px;
+  align-items:center;
+  width:100%;
+  max-width:280px;
+  min-height:24px;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.oc-lang-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); font-weight:600; }
+.oc-lang-push, .oc-lang-roas { color:var(--oc-fg-muted); white-space:nowrap; }
+.oc-lang-push-count { color:var(--oc-fg); font-weight:700; }
+.oc-lang-push-zero { color:var(--oc-danger-fg); font-size:24px; font-weight:900; line-height:1; }
+.oc-lang-empty { font-size:12px; }
+.delivery-status-cell { text-align:center; vertical-align:middle; }
+.oc-delivery-pill {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:64px;
+  height:26px;
+  padding:0 10px;
+  border-radius:9999px;
+  font-size:12px;
+  font-weight:800;
   white-space:nowrap;
 }
-.oc-lang-chip.filled { background:var(--oc-accent); color:#fff; }
-.oc-lang-chip.empty {
-  background:transparent; color:var(--oc-fg-subtle);
-  border:1px solid var(--oc-border-strong);
-}
-.oc-lang-chip .count { margin-left:3px; opacity:0.9; }
+.oc-delivery-pill.active { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+.oc-delivery-pill.stopped { background:#f3f4f6; color:#111827; border:1px solid #d1d5db; }
+.oc-delivery-pill.never { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
 .oc-lang-checkbox-group { display:flex; flex-wrap:wrap; gap:var(--oc-sp-2); }
 .oc-lang-checkbox {
   display:inline-flex; align-items:center; gap:6px;
@@ -2662,7 +2688,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   .oc-header { gap: var(--oc-sp-3); padding-bottom: var(--oc-sp-3); top: 52px; }
   .oc-header .title { font-size: 18px; }
   .oc-toolbar { gap: var(--oc-sp-2); padding: var(--oc-sp-3); top: var(--sticky-toolbar-top, 110px); }
-  .oc-toolbar-filter-row { gap: var(--oc-sp-2); }
+  .oc-toolbar-filter-row { grid-template-columns:repeat(2, minmax(0, 1fr)); gap: var(--oc-sp-2); }
   .oc-tool-download-btn { padding: 0 12px; height: 32px; font-size: 12px; }
   /* 产品详情页：去掉桌面 220px 左 inset，移动端全屏化 */
   #edMask.oc-product-detail-mask {
@@ -2686,6 +2712,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   .oc-card .name { font-size: 12px; }
   .oc-header .title { font-size: 17px; }
   .oc-tool-download-meta { font-size: 11px; }
+  .oc-toolbar-filter-row { grid-template-columns:1fr; }
 }
 
 .oc-page-tabs {
@@ -3137,6 +3164,12 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
         <option value="complete">数据已完成</option>
         <option value="missing_estimated">缺失（预估）</option>
         <option value="missing_actual">缺失（实际）</option>
+      </select>
+      <select id="filterDeliveryStatus" class="oc-select" title="按投放情况筛选">
+        <option value="all">投放情况：全部</option>
+        <option value="active">投放中</option>
+        <option value="stopped">终止投放</option>
+        <option value="never">未投</option>
       </select>
     </div>
   </div>

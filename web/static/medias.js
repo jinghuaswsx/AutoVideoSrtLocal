@@ -493,6 +493,63 @@
          + `</div>`;
   }
 
+  function fmtAdRoas(value) {
+    if (value === null || value === undefined || value === '') return '<span class="muted">—</span>';
+    const num = Number(value);
+    return isFinite(num) ? num.toFixed(2) : '<span class="muted">—</span>';
+  }
+
+  function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
+    const coverageMap = coverage || {};
+    const langSummary = langAdSummary || {};
+    const productSummary = adSummary || {};
+    const seen = new Set();
+    const ordered = [];
+    (LANGUAGES || []).forEach((lang) => {
+      if (!lang || !lang.code) return;
+      const code = String(lang.code).toLowerCase();
+      seen.add(code);
+      ordered.push(code);
+    });
+    Object.keys(coverageMap).sort().forEach((code) => {
+      const normalized = String(code || '').toLowerCase();
+      if (normalized && !seen.has(normalized)) ordered.push(normalized);
+    });
+    const lines = ordered.map((code) => {
+      const c = coverageMap[code] || { items: 0, copy: 0, cover: false };
+      if (!Number(c.items || 0)) return '';
+      const summary = langSummary[code] || {};
+      const pushed = Number(summary.pushed_video_count || 0);
+      const pushedClass = pushed === 0 ? 'oc-lang-push-zero' : 'oc-lang-push-count';
+      const roas = fmtAdRoas(summary.ad_roas);
+      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'}`;
+      return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
+        + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}</span>`
+        + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
+        + `<span class="oc-lang-roas">ROAS ${roas}</span>`
+        + `</div>`;
+    }).filter(Boolean);
+    const body = lines.length
+      ? lines.join('')
+      : '<div class="oc-lang-empty muted">—</div>';
+    return `<div class="oc-lang-bar">`
+      + `<div class="oc-lang-summary"><span>总体ROAS</span><strong>${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
+      + body
+      + `</div>`;
+  }
+
+  const DELIVERY_STATUS_META = {
+    active: { label: '投放中', cls: 'active' },
+    stopped: { label: '终止投放', cls: 'stopped' },
+    never: { label: '未投', cls: 'never' },
+  };
+
+  function renderDeliveryStatus(p) {
+    const raw = String(((p || {}).ad_summary || {}).delivery_status || 'never').toLowerCase();
+    const meta = DELIVERY_STATUS_META[raw] || DELIVERY_STATUS_META.never;
+    return `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`;
+  }
+
   function icon(name, size = 14) {
     return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
   }
@@ -2444,6 +2501,10 @@
     if (roasStatusEl && roasStatusEl.value && roasStatusEl.value !== 'all') {
       params.set('roas_status', roasStatusEl.value);
     }
+    const deliveryStatusEl = $('filterDeliveryStatus');
+    if (deliveryStatusEl && deliveryStatusEl.value && deliveryStatusEl.value !== 'all') {
+      params.set('delivery_status', deliveryStatusEl.value);
+    }
     renderSkeleton();
     try {
       await ensureLanguages();
@@ -2537,6 +2598,7 @@
         <col style="width:56px">
         <col style="width:300px">
         <col style="width:92px">
+        <col style="width:92px">
         <col style="width:180px">
         <col style="width:104px">
         <col style="width:240px">
@@ -2556,6 +2618,7 @@
           <th>负责人</th>
           <th>素材数</th>
           <th>语种覆盖</th>
+          <th>投放情况</th>
           <th>修改时间</th>
           <th>产品链接</th>
           <th>投放推送</th>
@@ -3057,7 +3120,8 @@
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
-        <td>${renderLangBar(p.lang_coverage)}</td>
+        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
+        <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="oc-domain-cell" data-pid="${p.id}">${renderProductLinkCell(p)}</td>
         <td class="product-push-cell">
@@ -8562,6 +8626,8 @@
     if (filterXmyc) filterXmyc.addEventListener('change', () => runSearchNow());
     const filterRoas = $('filterRoasStatus');
     if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
+    const filterDelivery = $('filterDeliveryStatus');
+    if (filterDelivery) filterDelivery.addEventListener('change', () => runSearchNow());
 
     const syncChip = (chipId, inputId) => {
       const chip = $(chipId), inp = $(inputId);

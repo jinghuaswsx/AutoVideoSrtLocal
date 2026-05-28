@@ -313,6 +313,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "media_product_ad_status_cache_refresh": {
+        "code": "media_product_ad_status_cache_refresh",
+        "name": "素材管理投放汇总缓存刷新",
+        "description": (
+            "每小时刷新素材管理产品列表使用的总体 ROAS、语种推送/ROAS 与投放情况缓存；"
+            "列表请求只读取 media_product_ad_summary_cache 和 "
+            "media_product_lang_ad_summary_cache。Docs-anchor: "
+            "docs/superpowers/specs/2026-05-28-medias-product-ad-status-cache-design.md"
+        ),
+        "schedule": "每小时",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "media_product_ad_status_cache_refresh",
+        "runner": "appcore.media_product_ad_status_cache_scheduler.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "apimart_balance_watchdog": {
         "code": "apimart_balance_watchdog",
         "name": "APIMART 余额看护",

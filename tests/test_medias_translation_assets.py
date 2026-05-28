@@ -91,12 +91,13 @@ def test_medias_list_keeps_compact_lang_coverage_rows():
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert "for (let i = 0; i < chips.length; i += 4) rows.push(chips.slice(i, i + 4));" in script
-    assert 'class="oc-lang-row"' in script
+    assert "oc-lang-line" in script
+    assert "oc-lang-summary" in script
+    assert "oc-lang-push-zero" in script
+    assert "总体ROAS" in script
     assert ".oc-lang-bar {" in template
     assert "flex-direction:column;" in template
-    assert ".oc-lang-row {" in template
-    assert "flex-wrap:nowrap;" in template
+    assert ".oc-lang-line {" in template
 
 
 def test_medias_list_missing_english_cover_warning_has_no_red_row_edge():

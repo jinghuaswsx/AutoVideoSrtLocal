@@ -610,6 +610,20 @@ def test_task_definitions_include_push_status_cache_refresh():
     assert "2026-05-22-pushes-status-cache-design.md" in task["description"]
 
 
+def test_task_definitions_include_media_product_ad_status_cache_refresh():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["media_product_ad_status_cache_refresh"]
+    assert task["schedule"] == "每小时"
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "media_product_ad_status_cache_refresh"
+    assert task["runner"] == "appcore.media_product_ad_status_cache_scheduler.tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-05-28-medias-product-ad-status-cache-design.md" in task["description"]
+
+
 def test_task_definitions_include_apimart_balance_watchdog():
     from appcore import scheduled_tasks
 

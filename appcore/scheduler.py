@@ -32,6 +32,8 @@ def get_scheduler() -> BackgroundScheduler:
         push_quality_check_scheduler.register(_scheduler)
         from appcore import push_status_cache_scheduler
         push_status_cache_scheduler.register(_scheduler)
+        from appcore import media_product_ad_status_cache_scheduler
+        media_product_ad_status_cache_scheduler.register(_scheduler)
         from appcore import apimart_balance_watchdog
         apimart_balance_watchdog.register(_scheduler)
         from appcore import product_cover_backfill_scheduler

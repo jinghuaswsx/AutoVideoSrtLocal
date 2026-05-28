@@ -7,7 +7,12 @@ from typing import Any
 
 from flask import jsonify
 
-from appcore import medias, product_roas, sku_actual_roas
+from appcore import (
+    medias,
+    media_product_ad_status_cache,
+    product_roas,
+    sku_actual_roas,
+)
 
 
 DEFAULT_PAGE_SIZE = 20
@@ -47,6 +52,8 @@ def build_products_list_response(
     list_xmyc_unit_prices_fn=None,
     get_latest_sku_actual_roas_fn=None,
     get_configured_rmb_per_usd_fn=None,
+    get_product_ad_summary_cache_fn=None,
+    get_product_lang_ad_summary_cache_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
 ) -> dict:
     list_products_fn = list_products_fn or medias.list_products
@@ -72,6 +79,14 @@ def build_products_list_response(
     get_configured_rmb_per_usd_fn = (
         get_configured_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd
     )
+    get_product_ad_summary_cache_fn = (
+        get_product_ad_summary_cache_fn
+        or media_product_ad_status_cache.get_product_ad_summary_cache
+    )
+    get_product_lang_ad_summary_cache_fn = (
+        get_product_lang_ad_summary_cache_fn
+        or media_product_ad_status_cache.get_product_lang_ad_summary_cache
+    )
 
     keyword = str(_request_arg(args, "keyword", "") or "").strip()
     archived = _request_arg(args, "archived", "") in ("1", "true", "yes")
@@ -85,6 +100,9 @@ def build_products_list_response(
     roas_status = str(_request_arg(args, "roas_status", "all") or "all").strip().lower()
     if roas_status not in medias.ROAS_STATUS_FILTERS:
         roas_status = "all"
+    delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(
+        str(_request_arg(args, "delivery_status", "all") or "all").strip().lower()
+    )
 
     rows, total = list_products_fn(
         None,
@@ -94,6 +112,7 @@ def build_products_list_response(
         limit=limit,
         xmyc_match=xmyc_match,
         roas_status=roas_status,
+        delivery_status=delivery_status,
     )
     pids = [row["id"] for row in rows]
     counts = count_items_by_product_fn(pids)
@@ -102,6 +121,8 @@ def build_products_list_response(
     filenames = list_item_filenames_by_product_fn(pids, limit_per=5)
     coverage = lang_coverage_by_product_fn(pids)
     covers_map = get_product_covers_batch_fn(pids)
+    ad_summary_map = get_product_ad_summary_cache_fn(pids)
+    lang_ad_summary_map = get_product_lang_ad_summary_cache_fn(pids)
     skus_map = list_product_skus_batch_fn(pids)
     all_dxm_skus = sorted({
         (sku.get("dianxiaomi_sku") or "").strip()
@@ -121,6 +142,8 @@ def build_products_list_response(
             thumb_covers.get(row["id"]),
             items_filenames=filenames.get(row["id"], []),
             lang_coverage=coverage.get(row["id"], {}),
+            ad_summary=ad_summary_map.get(row["id"], {}),
+            lang_ad_summary=lang_ad_summary_map.get(row["id"], {}),
             covers=covers_map.get(row["id"], {}),
             raw_sources_count=raw_counts.get(row["id"], 0),
             roas_rmb_per_usd=roas_rmb_per_usd,
