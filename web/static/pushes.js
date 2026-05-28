@@ -2305,10 +2305,24 @@
     load({ syncUrl: false });
   });
 
+  function setupStickyHeaderResizeObserver() {
+    const stickyHeader = document.querySelector('.push-header-sticky');
+    if (stickyHeader) {
+      const observer = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          const height = entry.target.offsetHeight;
+          document.documentElement.style.setProperty('--sticky-header-height', `${height}px`);
+        }
+      });
+      observer.observe(stickyHeader);
+    }
+  }
+
   window._pushesLoad = load;
   Promise.all([loadLanguages(), loadOwners()]).then(() => {
     applyUrlToFilters();
     bindFilters();
+    setupStickyHeaderResizeObserver();
     load({ urlMode: 'replace' });
   });
 })();
