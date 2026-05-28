@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   assignee_id      INT DEFAULT NULL,
   status           VARCHAR(24) NOT NULL,
   last_reason      TEXT DEFAULT NULL,
+  is_urgent        TINYINT(1) NOT NULL DEFAULT 0,
   created_by       INT NOT NULL,
   created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   KEY idx_product (media_product_id),
   KEY idx_assignee_status (assignee_id, status),
   KEY idx_status_parent (status, parent_task_id),
+  KEY idx_urgent_created (is_urgent, created_at, id),
   UNIQUE KEY uk_parent_country (parent_task_id, country_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

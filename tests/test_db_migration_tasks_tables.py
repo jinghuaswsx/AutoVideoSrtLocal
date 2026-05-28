@@ -18,6 +18,7 @@ def test_migration_has_required_columns_on_tasks():
         "parent_task_id", "media_product_id", "media_item_id",
         "country_code", "assignee_id", "status", "last_reason",
         "created_by", "claimed_at", "completed_at", "cancelled_at",
+        "is_urgent",
     ):
         assert col in sql, f"missing column {col} in tasks DDL"
 
@@ -35,3 +36,12 @@ def test_migration_has_required_columns_on_task_events():
     )
     for col in ("task_id", "event_type", "actor_user_id", "payload_json"):
         assert col in sql
+
+
+def test_task_center_urgent_priority_migration_exists():
+    sql = Path("db/migrations/2026_05_28_task_center_urgent_priority.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "ALTER TABLE tasks" in sql
+    assert "is_urgent" in sql
+    assert "idx_urgent_created" in sql

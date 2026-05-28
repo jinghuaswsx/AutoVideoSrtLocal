@@ -112,6 +112,7 @@
 .tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
 .tc-badge--terminated { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
+.tc-badge--urgent { background:var(--tc-danger-bg); color:var(--tc-danger-fg); font-weight:700; }
 .tc-empty { padding:60px 20px; text-align:center; color:var(--tc-fg-muted); }
 #tcDetailDrawer {
   display:none;
@@ -431,6 +432,11 @@
       <option value="all" selected>全部</option>
       <option value="raw">去字幕任务</option>
       <option value="translate">翻译任务</option>
+    </select>
+    <select id="tcUrgencyFilter" class="tc-input tc-select" aria-label="紧急状态筛选">
+      <option value="all" selected>全部紧急状态</option>
+      <option value="urgent">紧急</option>
+      <option value="normal">非紧急</option>
     </select>
     <select id="tcAssigneeFilter" class="tc-input tc-select" aria-label="负责人筛选">
       <option value="all" selected>全部负责人</option>
@@ -1915,6 +1921,8 @@ document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_P
 document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 document.getElementById('tcTaskTypeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcTaskTypeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
+document.getElementById('tcUrgencyFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
+document.getElementById('tcUrgencyFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 document.getElementById('tcAssigneeFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
 document.getElementById('tcAssigneeFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 document.getElementById('tcStatusFilter').addEventListener('change', () => { TC_TASK_PAGE = 1; tcRender(); });
@@ -1945,6 +1953,7 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   const users = await tcLoadAssigneeFilterUsers();
   const kw = document.getElementById('tcKeyword').value.trim();
   const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
+  const urgency = document.getElementById('tcUrgencyFilter').value || 'all';
   const assigneeId = document.getElementById('tcAssigneeFilter').value || 'all';
   const taskStatus = document.getElementById('tcStatusFilter').value || 'all';
   const params = new URLSearchParams({
@@ -1952,6 +1961,7 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     keyword: kw,
     bucket,
     task_type: taskType,
+    urgency,
     assignee_id: assigneeId,
     task_status: taskStatus,
     page: String(TC_TASK_PAGE),
@@ -1985,6 +1995,7 @@ async function tcRenderTaskList(wrap, tab, bucket) {
       <td>
         <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
           <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
+          ${tcUrgentBadge(it)}
           ${tcCopyIconButton(it.product_name, '复制产品中文名', 'tc-task-name-copy')}
         </div>
         <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
@@ -2097,11 +2108,38 @@ function tcTaskActionGroup(actions) {
   const visible = (actions || []).filter(Boolean);
   return `<div class="tc-row-actions">${visible.join('')}</div>`;
 }
+function tcUrgentBadge(task) {
+  return task && task.is_urgent
+    ? '<span class="tc-badge tc-badge--urgent">紧急</span>'
+    : '';
+}
 function tcDetailTaskAction(id) {
   return `<button class="tc-btn" onclick="tcOpenDetailAction(${Number(id || 0)})">查看详情</button>`;
 }
 function tcCancelTaskAction(kind, id) {
   return `<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('${tcInlineArg(kind)}', ${Number(id || 0)}, 'cancel')">取消任务</button>`;
+}
+function tcTaskUrgencyAction(it) {
+  if (!TC_IS_ADMIN || !it) return '';
+  const id = Number(it.id || 0);
+  if (!id) return '';
+  const nextUrgent = !it.is_urgent;
+  const label = it.is_urgent ? '取消紧急' : '标记紧急';
+  return `<button class="tc-btn" onclick="tcSetTaskUrgency(${id}, ${nextUrgent ? 'true' : 'false'})">${label}</button>`;
+}
+async function tcSetTaskUrgency(id, isUrgent) {
+  try {
+    await tcFetchJson('/tasks/api/' + encodeURIComponent(String(id)) + '/urgency', {
+      method: 'POST',
+      body: JSON.stringify({is_urgent: !!isUrgent}),
+    });
+    await tcRender();
+    if (Number(TC_DETAIL_TASK_ID || 0) === Number(id || 0)) {
+      await tcLoadDetail(id, {forceRefresh: true, keepContent: true});
+    }
+  } catch (e) {
+    alert('紧急标记失败：' + (e.message || 'unknown'));
+  }
 }
 function tcActiveTaskAction(id, label, primary) {
   const cls = primary ? 'tc-btn tc-btn--primary' : 'tc-btn';
@@ -2129,7 +2167,8 @@ function tcTaskRowAction(it) {
   const status = it.status;
   const isParent = !it.parent_task_id;
   if (!id) return tcDisabledTaskAction('不可处理');
-  const actions = [];
+  const urgencyAction = tcTaskUrgencyAction(it);
+  const actions = urgencyAction ? [urgencyAction] : [];
   if (isParent) {
     if (status === 'pending') {
       actions.push(tcDetailTaskAction(id));
@@ -2159,7 +2198,7 @@ function tcTaskRowAction(it) {
     return tcTaskActionGroup(actions);
   }
   if (status === 'blocked') {
-    const blockedActions = [tcDetailTaskAction(id)];
+    const blockedActions = actions.concat([tcDetailTaskAction(id)]);
     if (tcCanCancelTask(it, isParent)) blockedActions.push(tcCancelTaskAction('child', id));
     return tcTaskActionGroup(blockedActions);
   }
@@ -2479,7 +2518,7 @@ function tcRenderDetail(task, events, reviewAssets) {
               <h3>${tcEsc(task.product_name)}</h3>
               ${identityRows}
             </div>
-            <div class="tc-detail-status"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
+            <div class="tc-detail-status">${tcUrgentBadge(task)} <span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
             <div class="tc-detail-meta">
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
               负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
@@ -2512,6 +2551,9 @@ function tcDetailButtons(task, isParent) {
   const id = task.id;
   const status = task.status;
   const btns = [];
+  if (TC_IS_ADMIN) {
+    btns.push(tcTaskUrgencyAction(task));
+  }
   if (isParent) {
     if (tcCanForceRerunNiuma(task, isParent)) {
       btns.push(`<button class="tc-btn" onclick="tcForceRerunNiuma(${id})">强制重跑</button>`);

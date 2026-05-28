@@ -41,6 +41,19 @@ def test_task_center_row_actions_navigate_to_detail_route(authed_client_no_db):
     assert "tcOpenDetail(" not in action_helper
 
 
+def test_task_center_template_contains_urgent_controls(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "tcUrgencyFilter" in body
+    assert "全部紧急状态" in body
+    assert "标记紧急" in body
+    assert "取消紧急" in body
+    assert "function tcUrgentBadge" in body
+    assert "function tcSetTaskUrgency" in body
+
+
 def test_task_detail_drawer_sticks_header_and_refreshes_latest_status(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -539,6 +552,7 @@ def test_api_list_delegates_to_tasks_service_for_mine(authed_user_client_no_db, 
         "task_type": "",
         "assignee_id": None,
         "task_status": "",
+        "urgency": "",
     }
 
 
@@ -722,6 +736,60 @@ def test_archive_task_route_delegates_to_service(authed_client_no_db, monkeypatc
         {"task_id": 44, "actor_user_id": 1, "is_admin": True},
         {"audit": (44, "task_archived", None)},
     ]
+
+
+def test_api_list_accepts_urgency_filter(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&urgency=urgent")
+
+    assert rsp.status_code == 200
+    assert captured["urgency"] == "urgent"
+
+
+def test_api_list_accepts_all_urgency_as_unfiltered(authed_user_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&urgency=all")
+
+    assert rsp.status_code == 200
+    assert captured["urgency"] == ""
+
+
+def test_api_list_rejects_invalid_urgency(authed_user_client_no_db, monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        lambda **kwargs: calls.append(kwargs),
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine&urgency=soon")
+
+    assert rsp.status_code == 400
+    assert rsp.get_json()["error"] == "invalid urgency"
+    assert calls == []
 
 
 def test_task_detail_deep_link_fetches_exact_task_before_fallback(authed_client_no_db):
@@ -1332,6 +1400,76 @@ def test_parent_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
     assert rsp.status_code == 403
     rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/cancel", json={"reason": "x"})
     assert rsp.status_code == 403
+    rsp = authed_user_client_no_db.post("/tasks/api/9999/urgency", json={"is_urgent": True})
+    assert rsp.status_code == 403
+
+
+def test_task_urgency_endpoint_admin_only_and_delegates(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fake_set_task_urgency(**kwargs):
+        captured.update(kwargs)
+        return {"changed": True, "is_urgent": True, "previous_is_urgent": False}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.set_task_urgency",
+        fake_set_task_urgency,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/44/urgency", json={"is_urgent": True})
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {
+        "ok": True,
+        "changed": True,
+        "is_urgent": True,
+        "previous_is_urgent": False,
+    }
+    assert captured == {"task_id": 44, "actor_user_id": 1, "is_urgent": True}
+    assert audit_calls == [
+        (
+            44,
+            "task_urgency_changed",
+            {"changed": True, "is_urgent": True, "previous_is_urgent": False},
+        )
+    ]
+
+
+def test_task_urgency_endpoint_requires_boolean(authed_client_no_db, monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.set_task_urgency",
+        lambda **kwargs: calls.append(kwargs),
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/44/urgency", json={"is_urgent": "yes"})
+
+    assert rsp.status_code == 400
+    assert rsp.get_json()["error"] == "is_urgent must be boolean"
+    assert calls == []
+
+
+def test_task_urgency_endpoint_maps_missing_task(authed_client_no_db, monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.set_task_urgency",
+        lambda **kwargs: (_ for _ in ()).throw(tasks.StateError("task not found")),
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/44/urgency", json={"is_urgent": True})
+
+    assert rsp.status_code == 404
+    assert rsp.get_json() == {"error": "task not found"}
 
 
 def test_parent_bind_item_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
