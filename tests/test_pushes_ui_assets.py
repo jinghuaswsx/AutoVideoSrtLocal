@@ -207,8 +207,8 @@ def test_pushes_css_has_secondary_screen_portrait_layout():
     assert "@media (min-width: 769px) and (orientation: portrait)" in css
     assert ".sidebar { transform: translateX(-100%); }" in css
     assert ".main-wrap { margin-left: 0; max-width: 100vw; }" in css
-    assert "--push-table-min-w: 100%;" in css
-    assert ".push-table-shell { overflow-x: visible; }" in css
+    assert "--push-table-min-w: 1100px;" in css
+    assert ".push-table-shell { overflow-x: auto; }" in css
     assert ".ready-row { flex-wrap: wrap;" in css
 
 
