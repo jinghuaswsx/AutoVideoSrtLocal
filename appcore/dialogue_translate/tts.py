@@ -56,10 +56,9 @@ def apply_speaker_voices_to_tts_segments(
             segment_copy["speaker_id"] = speaker_id
 
         selected_voice = selected_voice_by_speaker.get(speaker_id) if speaker_id else None
-        voice_id = _voice_field(selected_voice, "voice_id", "id")
+        voice_id = _voice_field(selected_voice, "voice_id", "elevenlabs_voice_id", "id")
         voice_name = _voice_field(selected_voice, "voice_name", "name", "label")
-        if voice_id:
-            segment_copy["voice_id"] = voice_id
+        segment_copy["voice_id"] = voice_id or segment_copy.get("voice_id")
         if voice_name:
             segment_copy["voice_name"] = voice_name
 

@@ -58,6 +58,30 @@ def test_apply_speaker_voices_to_out_of_order_tts_segments_uses_tts_index_fields
     assert [segment["tts_text"] for segment in mapped] == ["third", "first", "second"]
 
 
+def test_apply_speaker_voices_accepts_elevenlabs_voice_id_and_preserves_existing_when_missing():
+    from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments
+
+    tts_segments = [
+        {"tts_text": "first", "voice_id": "old-a"},
+        {"tts_text": "second", "voice_id": "old-b"},
+    ]
+    dialogue_segments = [
+        {"index": 0, "speaker_id": "speaker_a"},
+        {"index": 1, "speaker_id": "speaker_b"},
+    ]
+    selected = {
+        "speaker_a": {"elevenlabs_voice_id": "eleven-a", "voice_name": "Eleven A"},
+        "speaker_b": {"voice_name": "Missing Voice"},
+    }
+
+    mapped = apply_speaker_voices_to_tts_segments(tts_segments, dialogue_segments, selected)
+
+    assert mapped[0]["voice_id"] == "eleven-a"
+    assert mapped[0]["voice_name"] == "Eleven A"
+    assert mapped[1]["voice_id"] == "old-b"
+    assert mapped[1]["voice_name"] == "Missing Voice"
+
+
 def test_generate_full_audio_with_segment_voices_uses_each_segment_voice(monkeypatch, tmp_path):
     from pipeline import tts
 
@@ -134,5 +158,58 @@ def test_elevenlabs_engine_uses_segment_voice_helper_when_voice_differs(monkeypa
             "voice-default",
             str(tmp_path),
             {"variant": "dialogue", "model_id": "model-1", "language_code": "en"},
+        )
+    ]
+
+
+def test_elevenlabs_engine_regenerate_with_speed_uses_segment_voice_helper_when_voice_differs(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_segment_voice_regenerate(segments, default_voice_id, output_dir, **kwargs):
+        calls.append(("segment", segments, default_voice_id, output_dir, kwargs))
+        return {"full_audio_path": str(tmp_path / "segment-speed.mp3"), "segments": segments}
+
+    def fake_single_voice_regenerate(segments, voice_id, output_dir, **kwargs):
+        calls.append(("single", segments, voice_id, output_dir, kwargs))
+        return {"full_audio_path": str(tmp_path / "single-speed.mp3"), "segments": segments}
+
+    monkeypatch.setattr(
+        "pipeline.tts.regenerate_full_audio_with_segment_voices_speed",
+        fake_segment_voice_regenerate,
+    )
+    monkeypatch.setattr("pipeline.tts.regenerate_full_audio_with_speed", fake_single_voice_regenerate)
+
+    segments = [
+        {"tts_text": "A", "voice_id": "voice-default"},
+        {"tts_text": "B", "voice_id": "voice-other"},
+    ]
+
+    result = ElevenLabsEngine().regenerate_with_speed(
+        segments,
+        "voice-default",
+        str(tmp_path),
+        variant="round_2",
+        speed=1.1,
+        stability=0.4,
+        similarity_boost=0.7,
+        model_id="model-1",
+        language_code="en",
+    )
+
+    assert result["full_audio_path"].endswith("segment-speed.mp3")
+    assert calls == [
+        (
+            "segment",
+            segments,
+            "voice-default",
+            str(tmp_path),
+            {
+                "variant": "round_2",
+                "speed": 1.1,
+                "stability": 0.4,
+                "similarity_boost": 0.7,
+                "model_id": "model-1",
+                "language_code": "en",
+            },
         )
     ]
