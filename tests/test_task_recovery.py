@@ -780,6 +780,62 @@ def test_recover_project_state_marks_translate_lab_running_as_interrupted():
     assert recovered["steps"]["subtitle"] == "pending"
 
 
+def test_recover_project_state_marks_dialogue_translate_running_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="dialogue_translate",
+        task_id="dialogue-orphan",
+        state={
+            "type": "dialogue_translate",
+            "status": "running",
+            "current_review_step": "voice_match_ab",
+            "steps": {
+                "extract": "done",
+                "speaker_detect": "done",
+                "voice_match_ab": "done",
+                "translate": "running",
+                "tts": "queued",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["current_review_step"] == ""
+    assert recovered["steps"]["translate"] == "interrupted"
+    assert recovered["steps"]["tts"] == "interrupted"
+
+
+def test_recover_project_state_keeps_waiting_dialogue_translate_review_state():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="dialogue_translate",
+        task_id="dialogue-waiting",
+        state={
+            "type": "dialogue_translate",
+            "status": "running",
+            "current_review_step": "voice_match_ab",
+            "steps": {
+                "extract": "done",
+                "speaker_detect": "done",
+                "voice_match_ab": "waiting",
+                "translate": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "running"
+    assert recovered["current_review_step"] == "voice_match_ab"
+    assert recovered["steps"]["voice_match_ab"] == "waiting"
+
+
 def test_recover_project_state_keeps_terminal_omni_error_state():
     from appcore import task_recovery
 
@@ -963,6 +1019,48 @@ def test_recover_all_interrupted_tasks_picks_up_image_translate_rows(monkeypatch
     assert persisted[0][0] == "it-boot"
     assert persisted[0][2] == "interrupted"
     assert persisted[0][1]["items"][1]["status"] == "pending"
+
+
+def test_recover_all_interrupted_tasks_query_includes_dialogue_translate(monkeypatch):
+    from appcore import task_recovery
+
+    captured = {}
+    row = {
+        "id": "dialogue-boot",
+        "type": "dialogue_translate",
+        "status": "running",
+        "state_json": json.dumps(
+            {
+                "type": "dialogue_translate",
+                "status": "running",
+                "steps": {"translate": "running"},
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    def fake_db_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [row]
+
+    monkeypatch.setattr(task_recovery, "db_query", fake_db_query)
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+    monkeypatch.setattr(task_recovery.active_tasks, "snapshot_active_tasks", lambda *args, **kwargs: None)
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert "dialogue_translate" in captured["args"]
+    assert recovered == 1
+    assert persisted[0][0] == "dialogue-boot"
+    assert persisted[0][2] == "interrupted"
+    assert persisted[0][1]["steps"]["translate"] == "interrupted"
 
 
 def test_recover_all_interrupted_tasks_snapshots_startup_recovery(monkeypatch):

@@ -8,6 +8,8 @@ MultiStartFunc = Callable[[str, int | None], object]
 MultiResumeFunc = Callable[[str, str, int | None], object]
 OmniStartFunc = Callable[[str, int | None], object]
 OmniResumeFunc = Callable[[str, str, int | None], object]
+DialogueStartFunc = Callable[[str, int | None], object]
+DialogueResumeFunc = Callable[[str, str, int | None], object]
 JaStartFunc = Callable[[str, int | None], object]
 JaResumeFunc = Callable[[str, str, int | None], object]
 LinkCheckStartFunc = Callable[[str], bool]
@@ -20,6 +22,8 @@ _omni_translate_start: OmniStartFunc | None = None
 _omni_translate_resume: OmniResumeFunc | None = None
 _omni_translate_v2_start: OmniStartFunc | None = None
 _omni_translate_v2_resume: OmniResumeFunc | None = None
+_dialogue_translate_start: DialogueStartFunc | None = None
+_dialogue_translate_resume: DialogueResumeFunc | None = None
 _ja_translate_start: JaStartFunc | None = None
 _ja_translate_resume: JaResumeFunc | None = None
 _link_check_start: LinkCheckStartFunc | None = None
@@ -30,6 +34,7 @@ def clear_runner_registry() -> None:
     global _multi_translate_start, _multi_translate_resume
     global _omni_translate_start, _omni_translate_resume
     global _omni_translate_v2_start, _omni_translate_v2_resume
+    global _dialogue_translate_start, _dialogue_translate_resume
     global _ja_translate_start, _ja_translate_resume
     global _link_check_start
     _image_translate_start = None
@@ -40,6 +45,8 @@ def clear_runner_registry() -> None:
     _omni_translate_resume = None
     _omni_translate_v2_start = None
     _omni_translate_v2_resume = None
+    _dialogue_translate_start = None
+    _dialogue_translate_resume = None
     _ja_translate_start = None
     _ja_translate_resume = None
     _link_check_start = None
@@ -83,6 +90,16 @@ def register_omni_v2_translate_runner(
     global _omni_translate_v2_start, _omni_translate_v2_resume
     _omni_translate_v2_start = start
     _omni_translate_v2_resume = resume
+
+
+def register_dialogue_translate_runner(
+    *,
+    start: DialogueStartFunc,
+    resume: DialogueResumeFunc | None = None,
+) -> None:
+    global _dialogue_translate_start, _dialogue_translate_resume
+    _dialogue_translate_start = start
+    _dialogue_translate_resume = resume
 
 
 def register_ja_translate_runner(
@@ -153,6 +170,22 @@ def resume_omni_translate_v2_runner(
     if _omni_translate_v2_resume is None:
         raise RuntimeError("omni_translate_v2 resume runner is not registered")
     return _omni_translate_v2_resume(task_id, start_step, user_id)
+
+
+def start_dialogue_translate_runner(task_id: str, user_id: int | None = None) -> object:
+    if _dialogue_translate_start is None:
+        raise RuntimeError("dialogue_translate runner is not registered")
+    return _dialogue_translate_start(task_id, user_id)
+
+
+def resume_dialogue_translate_runner(
+    task_id: str,
+    start_step: str,
+    user_id: int | None = None,
+) -> object:
+    if _dialogue_translate_resume is None:
+        raise RuntimeError("dialogue_translate resume runner is not registered")
+    return _dialogue_translate_resume(task_id, start_step, user_id)
 
 
 def start_ja_translate_runner(task_id: str, user_id: int | None = None) -> object:

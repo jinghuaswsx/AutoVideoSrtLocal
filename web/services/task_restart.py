@@ -183,6 +183,7 @@ def restart_task(
     runner,
     source_language: str | None = None,
     step_order: tuple[str, ...] | None = None,
+    extra_reset_fields: Mapping[str, Any] | None = None,
 ) -> dict:
     """Restart a translation task and return the refreshed task state.
 
@@ -200,6 +201,8 @@ def restart_task(
     _purge_task_dir(task.get("task_dir") or "")
 
     payload = _build_reset_fields()
+    if extra_reset_fields:
+        payload.update(dict(extra_reset_fields))
     if source_video_path:
         payload["preview_files"] = {"source_video": source_video_path}
     steps = step_order or (_AV_SYNC_STEPS if task.get("pipeline_version") == "av" else _STEPS)

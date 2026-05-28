@@ -19,7 +19,7 @@ _TASK_AUTO_RETRY_MAX = 3
 _TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
 _ALL_STEP_NAMES = (
     "extract", "asr", "separate", "asr_normalize", "asr_clean",
-    "voice_match", "alignment", "shot_decompose", "translate", "tts",
+    "speaker_detect", "voice_match", "voice_match_ab", "alignment", "shot_decompose", "translate", "tts",
     "av_sync_audit", "loudness_match", "subtitle", "compose", "export",
 )
 
@@ -1299,6 +1299,10 @@ class PipelineRunner:
 
             # Phase 3: audio_gen
             tts_segments = loc_mod.build_tts_segments(tts_script, script_segments)
+            tts_segments = self._prepare_tts_segments_for_audio_gen(
+                task_state.get(task_id) or {},
+                tts_segments,
+            )
             round_record["audio_segments_total"] = len(tts_segments)
             round_record["audio_segments_done"] = 0
             _substep(f"生成 ElevenLabs 音频 0/{len(tts_segments)}")
@@ -2034,6 +2038,9 @@ class PipelineRunner:
                 "name": "Default",
             }
         return voice
+
+    def _prepare_tts_segments_for_audio_gen(self, task: dict, tts_segments: list[dict]) -> list[dict]:
+        return tts_segments
 
     def start(self, task_id: str) -> None:
         self._run(task_id, start_step="extract")

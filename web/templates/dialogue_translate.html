@@ -1,0 +1,271 @@
+{% extends "layout.html" %}
+{% block title %}对话式视频翻译 - AutoVideoSrt{% endblock %}
+{% block page_title %}对话式视频翻译{% endblock %}
+{% block extra_style %}
+<style>
+  .dialogue-page {
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .dialogue-panel {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-main);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .dialogue-panel h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+  .dialogue-panel p {
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .dialogue-form {
+    display: grid;
+    gap: 14px;
+  }
+  .dialogue-field {
+    display: grid;
+    gap: 6px;
+  }
+  .dialogue-field label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .dialogue-field input,
+  .dialogue-field select {
+    width: 100%;
+    min-height: 36px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 10px;
+    background: var(--bg-body);
+    color: var(--text-main);
+    padding: 0 12px;
+    font: inherit;
+  }
+  .dialogue-field input[type="file"] {
+    padding: 8px 12px;
+  }
+  .dialogue-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .dialogue-submit {
+    min-width: 132px;
+    min-height: 36px;
+    border: 0;
+    border-radius: 10px;
+    padding: 0 16px;
+    background: var(--primary-color);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .dialogue-submit:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+  .dialogue-feedback {
+    font-size: 13px;
+    color: #6b7280;
+  }
+  .dialogue-feedback[data-state="error"] {
+    color: #dc2626;
+  }
+  .dialogue-feedback[data-state="success"] {
+    color: #15803d;
+  }
+  .dialogue-list {
+    display: grid;
+    gap: 12px;
+  }
+  .dialogue-task {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid var(--border-main);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--bg-card);
+  }
+  .dialogue-task-name {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .dialogue-task-meta {
+    margin-top: 4px;
+    color: #6b7280;
+    font-size: 12px;
+  }
+  .dialogue-task-step {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+  .dialogue-task-link {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main);
+    color: var(--text-main);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .dialogue-empty {
+    border: 1px dashed var(--border-main);
+    border-radius: 10px;
+    padding: 24px 16px;
+    color: #6b7280;
+    text-align: center;
+    background: var(--bg-card);
+  }
+  @media (max-width: 960px) {
+    .dialogue-page {
+      grid-template-columns: 1fr;
+    }
+    .dialogue-task {
+      grid-template-columns: 1fr;
+    }
+    .dialogue-task-step {
+      white-space: normal;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section class="dialogue-page">
+  <section class="dialogue-panel">
+    <h2>新建任务</h2>
+    <p>自动识别说话人 A/B，确认两路音色后继续走对齐、翻译、配音与合成流程。</p>
+    <form id="dialogueCreateForm" class="dialogue-form" enctype="multipart/form-data">
+      <div class="dialogue-field">
+        <label for="dialogueDisplayName">任务名称</label>
+        <input id="dialogueDisplayName" name="display_name" type="text" maxlength="200" placeholder="默认使用文件名">
+      </div>
+      <div class="dialogue-field">
+        <label for="dialogueSourceLanguage">源语言</label>
+        <select id="dialogueSourceLanguage" name="source_language" required>
+          {% for code in allowed_source_languages %}
+          <option value="{{ code }}" {% if code == 'en' %}selected{% endif %}>{{ code | upper }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="dialogue-field">
+        <label for="dialogueTargetLanguage">目标语言</label>
+        <select id="dialogueTargetLanguage" name="target_lang" required>
+          {% for code in supported_langs %}
+          <option value="{{ code }}" {% if code == 'de' %}selected{% endif %}>{{ code | upper }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="dialogue-field">
+        <label for="dialogueVideoFile">视频文件</label>
+        <input id="dialogueVideoFile" name="video" type="file" accept="video/*" required>
+      </div>
+      <div class="dialogue-actions">
+        <button id="dialogueSubmitBtn" class="dialogue-submit" type="submit">开始处理</button>
+        <span id="dialogueCreateFeedback" class="dialogue-feedback" aria-live="polite"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="dialogue-panel">
+    <h2>最近任务</h2>
+    <p>保留期 {{ retention_hours }} 小时。进入详情页后可确认 A/B 音色并继续流程。</p>
+    {% if projects %}
+    <div class="dialogue-list">
+      {% for project in projects %}
+      <article class="dialogue-task">
+        <div>
+          <div class="dialogue-task-name">{{ project.display_name or project.original_filename or project.id }}</div>
+          <div class="dialogue-task-meta">
+            {{ (project.source_lang or 'en') | upper }} → {{ (project.target_lang or '-') | upper }}
+            · {{ project.status or 'uploaded' }}
+          </div>
+        </div>
+        <div class="dialogue-task-step">
+          {{ project.current_review_step or '处理中' }}
+        </div>
+        <a class="dialogue-task-link" href="/dialogue-translate/{{ project.id }}">查看详情</a>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dialogue-empty">还没有对话式视频翻译任务。</div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById("dialogueCreateForm");
+  if (!form) return;
+
+  var feedback = document.getElementById("dialogueCreateFeedback");
+  var submitBtn = document.getElementById("dialogueSubmitBtn");
+
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute("content") || "" : "";
+  }
+
+  function safeInternalHref(url, fallback) {
+    if (!url || typeof url !== "string") return fallback;
+    if (url.startsWith("/") && !url.startsWith("//")) return url;
+    return fallback;
+  }
+
+  function setFeedback(message, state) {
+    feedback.textContent = message || "";
+    feedback.dataset.state = state || "";
+  }
+
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    setFeedback("正在创建任务...", "");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "提交中...";
+    try {
+      var response = await fetch("/api/dialogue-translate/start", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken()
+        },
+        body: new FormData(form)
+      });
+      var data = {};
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = {};
+      }
+      if (!response.ok) {
+        throw new Error(data.error || ("HTTP " + response.status));
+      }
+      setFeedback("任务已创建，正在跳转...", "success");
+      var fallbackUrl = "/dialogue-translate/" + encodeURIComponent(data.task_id || "");
+      window.location.href = safeInternalHref(data.redirect_url, fallbackUrl);
+    } catch (error) {
+      setFeedback(error && error.message ? error.message : "创建失败", "error");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "开始处理";
+    }
+  });
+})();
+</script>
+{% endblock %}

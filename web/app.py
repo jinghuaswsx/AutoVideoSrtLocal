@@ -27,6 +27,7 @@ from appcore.fine_ai_evaluation_service import recover_interrupted_fine_ai_evalu
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
+import web.services.dialogue_pipeline_runner  # runner dispatch registration
 
 
 # 登录 session 有效期：1 个月
@@ -89,6 +90,7 @@ from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.multi_translate import bp as multi_translate_bp
 from web.routes.omni_translate import bp as omni_translate_bp
 from web.routes.omni_translate_v2 import bp as omni_translate_v2_bp
+from web.routes.dialogue_translate import bp as dialogue_translate_bp
 from web.routes.english_redub import bp as english_redub_bp
 from web.routes.omni_preset_api import bp as omni_preset_api_bp
 from web.routes.translation_quality import bp as translation_quality_bp
@@ -139,6 +141,7 @@ _COOKIE_API_CSRF_GUARDED_BLUEPRINTS = {
     "multi_translate",
     "omni_translate",
     "omni_translate_v2",
+    "dialogue_translate",
     "english_redub",
     "ja_translate",
     "translation_quality",
@@ -323,6 +326,7 @@ def create_app() -> Flask:
     csrf.exempt(multi_translate_bp)
     csrf.exempt(omni_translate_bp)
     csrf.exempt(omni_translate_v2_bp)
+    csrf.exempt(dialogue_translate_bp)
     csrf.exempt(english_redub_bp)
     csrf.exempt(ja_translate_bp)
     app.register_blueprint(text_translate_bp)
@@ -336,6 +340,7 @@ def create_app() -> Flask:
     app.register_blueprint(multi_translate_bp)
     app.register_blueprint(omni_translate_bp)
     app.register_blueprint(omni_translate_v2_bp)
+    app.register_blueprint(dialogue_translate_bp)
     app.register_blueprint(english_redub_bp)
     app.register_blueprint(omni_preset_api_bp)
     app.register_blueprint(translation_quality_bp)
