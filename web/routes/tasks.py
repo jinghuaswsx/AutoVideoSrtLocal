@@ -242,6 +242,10 @@ def api_list():
     bucket = (request.args.get("bucket") or "").strip()
     task_type = (request.args.get("task_type") or "").strip()
     raw_assignee_id = (request.args.get("assignee_id") or "").strip()
+    include_archived = (
+        (request.args.get("include_archived") or "").strip().lower()
+        in {"1", "true", "yes"}
+    )
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or TASK_CENTER_DEFAULT_PAGE_SIZE)))
     raw_task_id = (request.args.get("task_id") or "").strip()
@@ -271,7 +275,11 @@ def api_list():
         pass
     else:
         return _json_response({"error": "invalid tab"}, 400)
+    archived = False
     if bucket == "all":
+        bucket = ""
+    elif bucket == "archived":
+        archived = True
         bucket = ""
     if bucket and bucket not in {"todo", "review", "done"}:
         return _json_response({"error": "invalid bucket"}, 400)
@@ -292,6 +300,7 @@ def api_list():
             keyword=keyword,
             high_status=high_status,
             bucket=bucket,
+            archived=None if (include_archived and task_id) else archived,
             page=page,
             page_size=page_size,
             task_id=task_id,
@@ -300,6 +309,24 @@ def api_list():
             task_status=task_status,
         )
     )
+
+
+@bp.route("/api/<int:tid>/archive", methods=["POST"])
+@login_required
+@admin_required
+def api_archive_task(tid: int):
+    try:
+        tasks_svc.archive_task(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
+    except tasks_svc.StateError as e:
+        return _json_response({"error": str(e)}, 400)
+    _audit_task_action(tid, "task_archived")
+    return _json_response({"ok": True})
 
 
 @bp.route("/api/dispatch_pool", methods=["GET"])

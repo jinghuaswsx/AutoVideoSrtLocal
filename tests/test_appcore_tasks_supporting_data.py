@@ -401,6 +401,8 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "claimed_at": None,
                 "completed_at": datetime(2026, 5, 7, 10, 10, 0),
                 "cancelled_at": None,
+                "archived_at": None,
+                "archived_by": None,
                 "last_reason": None,
             }
         ]
@@ -438,6 +440,8 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "claimed_at": None,
                 "completed_at": "2026-05-07T10:10:00",
                 "cancelled_at": None,
+                "archived_at": None,
+                "archived_by": None,
                 "last_reason": None,
             }
         ],
@@ -453,6 +457,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "FROM tasks c WHERE c.parent_task_id = t.id" in captured["sql"]
     assert "LEFT JOIN users u" in captured["sql"]
     assert "u.display_name AS assignee_display_name" in captured["sql"]
+    assert "t.archived_at IS NULL" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert "ORDER BY t.created_at DESC, t.id DESC" in captured["sql"]
@@ -466,6 +471,126 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
         5,
         5,
     )
+
+
+def test_list_task_center_items_archived_bucket_filters_archived_rows(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        archived=True,
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+
+    assert "t.archived_at IS NOT NULL" in captured["sql"]
+    assert "t.archived_at IS NULL" not in captured["sql"]
+    assert captured["args"] == (20, 0)
+
+
+def test_list_task_center_items_can_skip_archive_filter_for_exact_detail_fetch(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        archived=None,
+        page=1,
+        page_size=1,
+        task_id=44,
+    ) == {"items": [], "page": 1, "page_size": 1, "total": 0, "total_pages": 1}
+
+    assert "t.archived_at IS NULL" not in captured["sql"]
+    assert "t.archived_at IS NOT NULL" not in captured["sql"]
+    assert captured["args"] == (44, 1, 0)
+
+
+def test_archive_task_marks_completed_task_and_records_event(monkeypatch):
+    from appcore import tasks
+
+    calls = []
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "status": tasks.CHILD_DONE,
+            "archived_at": None,
+        },
+    )
+
+    def fake_execute(sql, args=()):
+        calls.append((sql, args))
+        if sql.startswith("UPDATE tasks SET archived_at=NOW()"):
+            return 1
+        return 99
+
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+
+    assert tasks.archive_task(task_id=44, actor_user_id=7, is_admin=True) is True
+    assert calls[0] == (
+        "UPDATE tasks SET archived_at=NOW(), archived_by=%s, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NULL",
+        (7, 44),
+    )
+    assert calls[1][0].startswith(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json)"
+    )
+    assert calls[1][1] == (44, "archived", 7, None)
+
+
+def test_archive_task_rejects_unfinished_task(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "status": tasks.CHILD_ASSIGNED,
+            "archived_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "execute",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unfinished task should not be archived")),
+    )
+
+    with pytest.raises(tasks.StateError, match="only completed tasks can be archived"):
+        tasks.archive_task(task_id=44, actor_user_id=7, is_admin=True)
 
 
 def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch):
