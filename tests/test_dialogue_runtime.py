@@ -25,6 +25,7 @@ def test_dialogue_step_names_replace_voice_match_with_speaker_detect_and_ab():
     assert names[names.index("speaker_detect") + 1] == "voice_match_ab"
     assert names.index("speaker_detect") < names.index("alignment")
     assert names.index("voice_match_ab") < names.index("alignment")
+    assert names.index("alignment") < names.index("translate")
 
 
 def test_prepare_tts_segments_for_audio_gen_applies_selected_speaker_voices():
