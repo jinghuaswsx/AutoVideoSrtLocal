@@ -218,6 +218,29 @@
   background: var(--oc-accent-hover);
   border-color: var(--oc-accent-hover);
 }
+.filter-actions button#btn-refresh-cache {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--oc-r-full);
+  border: 1px solid var(--oc-accent);
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  font-weight: 500;
+  transition: background var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease),
+              color var(--oc-dur-fast) var(--oc-ease);
+}
+.filter-actions button#btn-refresh-cache:hover:not(:disabled) {
+  background: var(--oc-accent);
+  color: #fff;
+  border-color: var(--oc-accent);
+}
+.filter-actions button#btn-refresh-cache:disabled {
+  background: var(--oc-bg-muted);
+  border-color: var(--oc-border);
+  color: var(--oc-fg-subtle);
+  cursor: not-allowed;
+}
 .filter-actions button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--oc-accent-ring);

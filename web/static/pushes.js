@@ -595,6 +595,25 @@
       document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });
+    const refreshBtn = document.getElementById('btn-refresh-cache');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async () => {
+        if (!confirm('确认要刷新数据吗？这会清空当前页面加载的数据状态缓存，从零重新加载一轮推送数据。')) return;
+        refreshBtn.disabled = true;
+        const originalText = refreshBtn.textContent;
+        refreshBtn.textContent = '刷新中…';
+        try {
+          await fetchJSON('/pushes/api/cache/clear', { method: 'POST' });
+          state.page = 1;
+          await load();
+        } catch (e) {
+          alert('刷新失败: ' + e.message);
+        } finally {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalText;
+        }
+      });
+    }
   }
 
   // ---------- 弹窗 · 推送胶囊 ----------

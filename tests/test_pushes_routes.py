@@ -2707,3 +2707,22 @@ def test_pushes_material_ads_detail_robust_matching(authed_client_no_db, monkeyp
     assert len(daily_rows) == 2
     daily_campaign_names = {d["campaign_name"] for d in daily_rows}
     assert daily_campaign_names == {"glow-go-insect-set", "glow-go-insect-set-jp"}
+
+
+def test_clear_cache_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.post("/pushes/api/cache/clear")
+    assert resp.status_code == 403
+
+
+def test_clear_cache_success(authed_client_no_db, monkeypatch):
+    executed_sqls = []
+
+    def fake_execute(sql, *args):
+        executed_sqls.append(sql)
+
+    monkeypatch.setattr("appcore.db.execute", fake_execute)
+
+    resp = authed_client_no_db.post("/pushes/api/cache/clear")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert any("DELETE FROM media_push_status_cache" in s for s in executed_sqls)
