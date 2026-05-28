@@ -245,6 +245,20 @@ def test_ads_level_name_columns_expose_copy_buttons():
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
 
 
+def test_ads_subtabs_use_large_click_targets():
+    """Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md"""
+    template = _template_source()
+    start = template.index(".oa-subtabs {")
+    tabs_style = template[start:template.index(".oa-subpanel, .oa-subdetail", start)]
+
+    assert "gap: var(--space-3);" in tabs_style
+    assert "padding: var(--space-5) 0;" in tabs_style
+    assert "height: 64px;" in tabs_style
+    assert "padding: 0 32px;" in tabs_style
+    assert "font-size: 20px;" in tabs_style
+    assert "font-weight: 700;" in tabs_style
+
+
 def test_ads_page_supports_campaign_detail_deep_link_from_query_params():
     """素材管理广告计划入口应能新开 order-analytics 并自动进入 Campaign 详情。"""
     template = _template_source()
