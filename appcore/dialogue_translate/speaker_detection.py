@@ -50,8 +50,8 @@ def _confidence(item: dict, default: float = 1.0) -> float:
         try:
             value = float(item[key])
         except (TypeError, ValueError):
-            return default
-        return value if math.isfinite(value) else default
+            return 0.0
+        return value if math.isfinite(value) else 0.0
     return default
 
 

@@ -56,6 +56,23 @@ def test_extra_speakers_keep_top_two_and_mark_rest_for_review():
     assert result["review_required_segments"] == [{"index": 2, "reason": REVIEW_EXTRA_SPEAKER}]
 
 
+def test_malformed_provider_confidence_marks_low_confidence_review():
+    utterances = [
+        {"text": "bad confidence", "start_time": 0.0, "end_time": 1.0, "speaker": "a", "speaker_confidence": "bad"},
+        {"text": "missing confidence", "start_time": 1.0, "end_time": 2.0, "speaker": "b"},
+    ]
+
+    result = build_dialogue_segments(utterances)
+
+    malformed = result["dialogue_segments"][0]
+    missing = result["dialogue_segments"][1]
+    assert malformed["speaker_confidence"] == 0.0
+    assert malformed["review_required"] is True
+    assert REVIEW_LOW_CONFIDENCE in malformed["review_reason"]
+    assert missing["speaker_confidence"] == 1.0
+    assert missing["review_required"] is False
+
+
 def test_diarization_join_marks_low_overlap_for_review():
     utterances = [
         {"text": "hard to place", "start_time": 10.0, "end_time": 12.0},
