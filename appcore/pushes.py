@@ -1470,9 +1470,26 @@ def resolve_localized_texts_payload(item: dict) -> list[dict[str, str]]:
     if not product_id:
         return []
 
+    product = medias.get_product(int(product_id)) if product_id else None
+    all_items = medias.list_items(int(product_id)) if product_id else []
+
+    # 统计哪些语种具有满足待推送状态的素材
+    pending_langs = set()
+    if product:
+        for it in all_items:
+            item_lang = str(it.get("lang") or "en").strip().lower()
+            # 计算素材的状态
+            readiness = compute_readiness(it, product)
+            status = compute_status_from_readiness(it, product, readiness)
+            if status == STATUS_PENDING:
+                pending_langs.add(item_lang)
+
     texts: list[dict[str, str]] = []
     for row in _list_first_enabled_copywritings(int(product_id)):
         lang = ((row or {}).get("lang") or "").strip().lower()
+        # 英语 (en) 保持必推，小语种必须具有待推送状态的素材
+        if lang != "en" and lang not in pending_langs:
+            continue
         fields = _normalize_localized_copywriting_fields(row)
         if not fields:
             continue

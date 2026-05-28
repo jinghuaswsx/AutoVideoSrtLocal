@@ -696,6 +696,60 @@ def test_build_product_localized_texts_push_preview_reuses_product_texts(monkeyp
     }
 
 
+def test_resolve_localized_texts_payload_filters_small_langs_without_pending_materials(monkeypatch):
+    from appcore import pushes
+
+    copywritings = [
+        {"lang": "en", "title": "en title", "body": "en body", "description": "en desc"},
+        {"lang": "de", "title": "de title", "body": "de body", "description": "de desc"},
+        {"lang": "fr", "title": "fr title", "body": "fr body", "description": "fr desc"},
+    ]
+
+    monkeypatch.setattr(
+        pushes,
+        "_list_first_enabled_copywritings",
+        lambda product_id: copywritings,
+    )
+    monkeypatch.setattr(
+        pushes.medias,
+        "get_product",
+        lambda product_id: {"id": 10, "is_listed": True},
+    )
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_items",
+        lambda product_id: [
+            # de: has pending material
+            {"id": 101, "product_id": 10, "lang": "de", "object_key": "obj_de"},
+            # fr: has no pending materials (pushed_at set -> not pending)
+            {"id": 102, "product_id": 10, "lang": "fr", "object_key": "obj_fr", "pushed_at": "2026-05-28"},
+        ],
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product, **kwargs: {
+            "is_listed": True,
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: f"Name_{code}")
+
+    texts = pushes.resolve_localized_texts_payload({"product_id": 10})
+
+    # en should be kept (not filtered as small language)
+    # de should be kept (has pending material)
+    # fr should be filtered out (no pending material)
+    assert len(texts) == 2
+    assert texts[0]["lang"] == "Name_en"
+    assert texts[1]["lang"] == "Name_de"
+
+
 def test_medias_product_localized_texts_push_payload_endpoint_returns_preview(
     authed_client_no_db, monkeypatch,
 ):
