@@ -86,6 +86,8 @@
 .tc-action-link--primary { background:var(--tc-accent); border-color:var(--tc-accent); color:#fff; }
 .tc-action-link--primary:hover { background:var(--tc-accent-hover); }
 .tc-action-link--disabled { color:var(--tc-fg-muted); background:var(--tc-bg-muted); cursor:not-allowed; }
+.tc-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; min-width:180px; }
+.tc-row-actions .tc-btn { min-width:72px; padding:0 10px; }
 .tc-manual-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
 .tc-manual-action { display:inline-flex; align-items:center; justify-content:center; min-height:26px; height:auto; padding:4px 9px; font-size:12px; line-height:1.2; text-decoration:none; white-space:nowrap; }
 .tc-manual-confirmed { color:var(--tc-success-fg); background:var(--tc-success-bg); border-color:var(--tc-success-bg); cursor:default; }
@@ -2019,6 +2021,16 @@ function tcTaskDetailUrl(id) {
 function tcOpenDetailAction(id) {
   window.location.href = tcTaskDetailUrl(id);
 }
+function tcTaskActionGroup(actions) {
+  const visible = (actions || []).filter(Boolean);
+  return `<div class="tc-row-actions">${visible.join('')}</div>`;
+}
+function tcDetailTaskAction(id) {
+  return `<button class="tc-btn" onclick="tcOpenDetailAction(${Number(id || 0)})">查看详情</button>`;
+}
+function tcCancelTaskAction(kind, id) {
+  return `<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('${tcInlineArg(kind)}', ${Number(id || 0)}, 'cancel')">取消任务</button>`;
+}
 function tcActiveTaskAction(id, label, primary) {
   const cls = primary ? 'tc-btn tc-btn--primary' : 'tc-btn';
   return `<button class="${cls}" onclick="tcOpenDetailAction(${Number(id || 0)})">${tcEsc(label)}</button>`;
@@ -2030,37 +2042,64 @@ function tcCanHandleRawTask(it) {
   const assigneeId = Number(it && it.assignee_id || 0);
   return !!(TC_IS_ADMIN || TC_CAPS.can_process_raw_video || (assigneeId && assigneeId === Number(TC_CURRENT_USER_ID || 0)));
 }
+function tcCanCancelTask(it, isParent) {
+  if (!TC_IS_ADMIN || !it) return false;
+  const status = String(it.status || '');
+  if (isParent) return ['pending','raw_in_progress','raw_review','raw_done'].includes(status);
+  return ['blocked','assigned','review'].includes(status);
+}
 function tcTaskRowAction(it) {
   const id = Number(it.id || 0);
   const status = it.status;
   const isParent = !it.parent_task_id;
   if (!id) return tcDisabledTaskAction('不可处理');
+  const actions = [];
   if (isParent) {
     if (status === 'pending') {
-      return tcActiveTaskAction(id, '查看', false);
+      actions.push(tcDetailTaskAction(id));
+      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
+      return tcTaskActionGroup(actions);
     }
     if (status === 'raw_in_progress') {
-      return tcCanHandleRawTask(it) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中');
+      actions.push(tcCanHandleRawTask(it) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中'));
+      actions.push(tcDetailTaskAction(id));
+      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
+      return tcTaskActionGroup(actions);
     }
     if (status === 'raw_review') {
-      return (TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0))
+      actions.push((TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0))
         ? tcActiveTaskAction(id, '审核', true)
-        : tcDisabledTaskAction('等待审核');
+        : tcDisabledTaskAction('等待审核'));
+      actions.push(tcDetailTaskAction(id));
+      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
+      return tcTaskActionGroup(actions);
     }
-    if (status === 'raw_done' || status === 'all_done') return tcActiveTaskAction(id, '查看结果', false);
-    if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
-    return tcActiveTaskAction(id, '查看', false);
+    if (status === 'raw_done' || status === 'all_done') actions.push(tcActiveTaskAction(id, '查看结果', false));
+    actions.push(tcDetailTaskAction(id));
+    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
+    return tcTaskActionGroup(actions);
   }
-  if (status === 'blocked') return tcDisabledTaskAction('等待 去字幕原始素材');
+  if (status === 'blocked') {
+    const blockedActions = [tcDetailTaskAction(id)];
+    if (tcCanCancelTask(it, isParent)) blockedActions.push(tcCancelTaskAction('child', id));
+    return tcTaskActionGroup(blockedActions);
+  }
   if (status === 'assigned') {
-    return (TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限');
+    actions.push((TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限'));
+    actions.push(tcDetailTaskAction(id));
+    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
+    return tcTaskActionGroup(actions);
   }
   if (status === 'review') {
-    return TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核');
+    actions.push(TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核'));
+    actions.push(tcDetailTaskAction(id));
+    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
+    return tcTaskActionGroup(actions);
   }
-  if (status === 'done') return tcActiveTaskAction(id, '查看结果', false);
-  if (status === 'cancelled') return tcActiveTaskAction(id, '查看记录', false);
-  return tcActiveTaskAction(id, '查看', false);
+  if (status === 'done') actions.push(tcActiveTaskAction(id, '查看结果', false));
+  actions.push(tcDetailTaskAction(id));
+  if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
+  return tcTaskActionGroup(actions);
 }
 async function tcRenderDispatchPool(wrap) {
   const data = await tcFetchJson('/tasks/api/dispatch_pool');
@@ -2559,7 +2598,7 @@ async function tcSubmitReason() {
   if (!TC_REASON_CTX) return;
   const reason = document.getElementById('tcReasonText').value.trim();
   if (reason.length < 10) { alert('原因至少 10 字符'); return; }
-  if (TC_REASON_CTX.action === 'cancel' && !confirm('取消后非已完成的子任务也会一起终止，不可撤销，确认？')) return;
+  if (TC_REASON_CTX.action === 'cancel' && !confirm('只取消当前任务，不影响关联任务；取消后不可撤销，确认？')) return;
   try {
     await tcFetchJson(`/tasks/api/${TC_REASON_CTX.kind}/${TC_REASON_CTX.id}/${TC_REASON_CTX.action}`, {
       method: 'POST',

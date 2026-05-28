@@ -103,9 +103,9 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "<td>${tcTaskStatusCell(it)}</td>" in body
     assert "tcActiveTaskAction(parentId, '去查看等待的任务', false)" in body
     assert "function tcTaskRowAction(it)" in body
-    assert "tcDisabledTaskAction('等待 去字幕原始素材')" in body
     assert "function tcBlockedTaskAction(it)" not in body
-    assert "if (status === 'blocked') return tcDisabledTaskAction('等待 去字幕原始素材');" in body
+    assert "if (status === 'blocked')" in body
+    assert "blockedActions.push(tcCancelTaskAction('child', id));" in body
     assert "tcOpenDetail(id)" in body
     assert "去处理" in body
     assert "处理去字幕原始视频" in body
@@ -113,9 +113,34 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "const kind = it.parent_task_id ? '子任务' : '父任务';" not in body
     assert "等待前置完成" not in body
     assert "查看结果" in body
-    assert "查看记录" in body
+    assert "查看详情" in body
+    assert "查看记录" not in body
     assert ">详情</button>" not in body
     assert "<td>${tcEsc(it.status)}</td>" not in body
+
+
+def test_task_center_overview_action_column_shows_detail_and_admin_cancel(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "function tcTaskActionGroup(actions)" in body
+    assert "function tcDetailTaskAction(id)" in body
+    assert "function tcCancelTaskAction(kind, id)" in body
+    assert "tcDetailTaskAction(id)" in body
+    assert "tcCancelTaskAction('parent', id)" in body
+    assert "tcCancelTaskAction('child', id)" in body
+    assert "查看详情" in body
+    assert "取消任务" in body
+
+
+def test_task_center_cancel_confirm_text_is_non_cascading(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+
+    assert "只取消当前任务，不影响关联任务" in body
+    assert "非已完成的子任务也会一起终止" not in body
 
 
 def test_task_center_raw_processing_action_allows_assignee_without_legacy_capability(authed_client_no_db):
