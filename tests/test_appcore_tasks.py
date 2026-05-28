@@ -778,7 +778,7 @@ def test_reject_raw_requires_min_reason(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
-def test_cancel_parent_cascades_non_done_children(
+def test_cancel_parent_does_not_cascade_children(
     db_user_admin, db_user_translator, db_product
 ):
     from appcore import tasks
@@ -789,7 +789,7 @@ def test_cancel_parent_cascades_non_done_children(
         translator_id=db_user_translator,
         created_by=db_user_admin,
     )
-    # 走一遍领取父任务，再模拟 DE 子任务已完成，验证取消只影响未完成子任务。
+    # 走一遍领取父任务，再模拟 DE 子任务已完成，验证取消只影响当前父任务。
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
     de_id = query_one(
         "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
@@ -811,9 +811,90 @@ def test_cancel_parent_cascades_non_done_children(
         "SELECT * FROM tasks WHERE parent_task_id=%s AND id<>%s",
         (parent_id, de_id),
     )
-    assert all(c["status"] == tasks.CHILD_CANCELLED for c in others)
+    assert all(c["status"] == tasks.CHILD_BLOCKED for c in others)
+    assert all(c["cancelled_at"] is None for c in others)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_cancel_parent_service_only_updates_current_parent(monkeypatch):
+    import json
+
+    from appcore import tasks
+
+    sequence = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            normalized = " ".join(str(sql).split())
+            if normalized.startswith("UPDATE tasks SET status=%s, last_reason=%s") and "parent_task_id IS NULL" in normalized:
+                sequence.append(("parent_update", args))
+                self.rowcount = 1
+                self.rows = []
+                return
+            if normalized.startswith("SELECT id FROM tasks WHERE parent_task_id=%s"):
+                sequence.append(("select_children", args))
+                self.rows = [{"id": 101}, {"id": 102}]
+                return
+            if "WHERE id IN" in normalized:
+                sequence.append(("child_update", args))
+                self.rowcount = 2
+                return
+            if normalized.startswith("INSERT INTO task_events"):
+                payload = json.loads(args[3]) if args[3] else None
+                sequence.append(("event", args[0], args[1], payload))
+                return
+            sequence.append(("other", normalized, args))
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class FakeConn:
+        def begin(self):
+            sequence.append(("begin",))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            sequence.append(("commit",))
+
+        def rollback(self):
+            sequence.append(("rollback",))
+
+        def close(self):
+            sequence.append(("close",))
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+
+    tasks.cancel_parent(
+        task_id=77,
+        actor_user_id=1,
+        reason="只取消当前任务不联动",
+    )
+
+    assert ("parent_update", (
+        tasks.PARENT_CANCELLED,
+        "只取消当前任务不联动",
+        77,
+        tasks.PARENT_PENDING,
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
+        tasks.PARENT_RAW_DONE,
+    )) in sequence
+    assert not any(item[0] == "select_children" for item in sequence)
+    assert not any(item[0] == "child_update" for item in sequence)
+    assert ("event", 77, "cancelled", {"reason": "只取消当前任务不联动"}) in sequence
 
 
 def test_submit_child_passes_with_ready(
