@@ -53,7 +53,7 @@ def test_response_schema_requires_fixed_xuanpin_target_countries():
     assert item_props["reason"]["maxLength"] == 100
 
 
-def test_material_evaluation_defaults_to_openrouter_gemini35(monkeypatch):
+def test_material_evaluation_defaults_to_openrouter_gemini3_flash(monkeypatch):
     from appcore import material_evaluation
 
     monkeypatch.setattr(
@@ -65,7 +65,7 @@ def test_material_evaluation_defaults_to_openrouter_gemini35(monkeypatch):
     config = material_evaluation.resolve_evaluation_llm_config()
 
     assert config["provider"] == "openrouter"
-    assert config["model"] == "google/gemini-3.5-flash"
+    assert config["model"] == "google/gemini-3-flash-preview"
     assert config["search_enabled"] is False
     assert config["search_tools"] == []
 
@@ -329,16 +329,19 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates
     assert "listing_status" not in result
-    assert llm_calls[0][1]["provider_override"] == "openrouter"
-    assert llm_calls[0][1]["model_override"] == "google/gemini-3.5-flash"
-    assert llm_calls[0][1]["google_search"] is False
-    assert llm_calls[0][1]["billing_extra"]["tools"] == []
+    assert len(llm_calls) == 6
+    assert all(call[1]["provider_override"] == "openrouter" for call in llm_calls)
+    assert all(call[1]["model_override"] == "google/gemini-3-flash-preview" for call in llm_calls)
+    assert all(call[1]["google_search"] is False for call in llm_calls)
+    assert all(call[1]["billing_extra"]["tools"] == [] for call in llm_calls)
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
     assert detail["provider"] == "openrouter"
-    assert detail["model"] == "google/gemini-3.5-flash"
+    assert detail["model"] == "google/gemini-3-flash-preview"
     assert detail["search_enabled"] is False
     assert detail["search_tools"] == []
+    assert detail["evaluation_mode"] == "per_country"
+    assert detail["country_call_count"] == 6
     assert detail["countries"][0]["lang"] == "de"
     assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja", "en"]
 
@@ -443,6 +446,120 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
     assert detail["search_tools"] == []
 
 
+def test_evaluate_ready_product_invokes_llm_once_per_target_country(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    llm_calls = []
+    languages = [
+        {"code": "de", "name": "德语", "country": "德国"},
+        {"code": "fr", "name": "法语", "country": "法国"},
+        {"code": "en", "name": "英语", "country": "美国"},
+    ]
+    scores = {"de": 76, "fr": 61, "en": 84}
+
+    monkeypatch.setattr(
+        material_evaluation,
+        "evaluation_target_languages",
+        lambda: [dict(item) for item in languages],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "STEM Robot Kit",
+            "product_code": "tool-free-robotics-building-set-rjc",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/tool-free-robotics-building-set-rjc",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+
+    def fake_invoke(*args, **kwargs):
+        llm_calls.append(kwargs)
+        enum = kwargs["response_schema"]["properties"]["countries"]["items"]["properties"]["lang"]["enum"]
+        assert len(enum) == 1
+        code = enum[0]
+        lang = next(item for item in languages if item["code"] == code)
+        return {
+            "json": {
+                "countries": [
+                    {
+                        "lang": code,
+                        "country": lang["country"],
+                        "is_suitable": scores[code] >= 70,
+                        "score": scores[code],
+                        "risk_level": "medium",
+                        "decision": "适合推广" if scores[code] >= 70 else "谨慎推广",
+                        "recommendation": "做" if scores[code] >= 70 else "不做",
+                        "summary": f"{lang['country']}市场可以单独判断。",
+                        "reason": f"{lang['country']}当前有独立市场判断依据。",
+                        "suggestions": [f"针对{lang['country']}本土化素材"],
+                    }
+                ]
+            },
+            "usage_log_id": 100 + len(llm_calls),
+        }
+
+    monkeypatch.setattr(material_evaluation.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result["status"] == "evaluated"
+    assert len(llm_calls) == 3
+    assert [call["project_id"] for call in llm_calls] == [
+        "media-product-7-de",
+        "media-product-7-fr",
+        "media-product-7-en",
+    ]
+    assert [
+        call["response_schema"]["properties"]["countries"]["items"]["properties"]["lang"]["enum"]
+        for call in llm_calls
+    ] == [["de"], ["fr"], ["en"]]
+    assert "德国 / 德语(de)" in llm_calls[0]["prompt"]
+    assert "法国 / 法语(fr)" not in llm_calls[0]["prompt"]
+    assert [call["billing_extra"]["target_lang"] for call in llm_calls] == ["de", "fr", "en"]
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert detail["evaluation_mode"] == "per_country"
+    assert detail["country_call_count"] == 3
+    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "en"]
+    assert updates["ai_score"] == 73.7
+
+
 @pytest.mark.parametrize("provider", ["gemini_vertex", "gemini_aistudio"])
 def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provider):
     from appcore import material_evaluation
@@ -492,6 +609,11 @@ def test_evaluate_ready_product_sends_30s_clip_to_llm(monkeypatch, tmp_path):
         material_evaluation.medias,
         "list_enabled_languages_kv",
         lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "evaluation_target_languages",
+        lambda: [{"code": "de", "name": "德语", "country": "德国"}],
     )
     monkeypatch.setattr(
         material_evaluation.medias,
@@ -1156,6 +1278,11 @@ def test_evaluation_repairs_invalid_llm_json_before_marking_failed(monkeypatch, 
         lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
     )
     monkeypatch.setattr(
+        material_evaluation,
+        "evaluation_target_languages",
+        lambda: [{"code": "de", "name": "德语", "country": "德国"}],
+    )
+    monkeypatch.setattr(
         material_evaluation.medias,
         "resolve_cover",
         lambda product_id, lang="en": "media/cover.jpg",
@@ -1213,9 +1340,9 @@ def test_evaluation_repairs_invalid_llm_json_before_marking_failed(monkeypatch, 
     assert result["status"] == "evaluated"
     assert updates["ai_evaluation_result"] == "适合推广"
     detail = json.loads(updates["ai_evaluation_detail"])
-    assert detail["llm_recovery"]["json_repair_succeeded"] is True
-    assert detail["llm_recovery"]["initial_usage_log_id"] == 101
-    assert detail["llm_recovery"]["repair_usage_log_id"] == 102
+    assert detail["llm_recovery"]["de"]["json_repair_succeeded"] is True
+    assert detail["llm_recovery"]["de"]["initial_usage_log_id"] == 101
+    assert detail["llm_recovery"]["de"]["repair_usage_log_id"] == 102
 
 
 def test_evaluation_retries_original_call_when_invalid_json_has_no_raw_text(monkeypatch, tmp_path):
@@ -1243,6 +1370,11 @@ def test_evaluation_retries_original_call_when_invalid_json_has_no_raw_text(monk
         material_evaluation.medias,
         "list_enabled_languages_kv",
         lambda: [{"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "evaluation_target_languages",
+        lambda: [{"code": "de", "name": "德语", "country": "德国"}],
     )
     monkeypatch.setattr(
         material_evaluation.medias,
@@ -1280,7 +1412,7 @@ def test_evaluation_retries_original_call_when_invalid_json_has_no_raw_text(monk
                 "usage_log_id": 201,
             }
         assert kwargs["media"] == [cover, video]
-        assert kwargs["project_id"] == "media-product-7-retry-2"
+        assert kwargs["project_id"] == "media-product-7-de-retry-2"
         return {
             "json": {
                 "countries": _fixed_target_country_rows(score=88)
@@ -1300,8 +1432,8 @@ def test_evaluation_retries_original_call_when_invalid_json_has_no_raw_text(monk
     assert result["status"] == "evaluated"
     assert updates["ai_evaluation_result"] == "适合推广"
     detail = json.loads(updates["ai_evaluation_detail"])
-    assert detail["llm_recovery"]["original_retry_attempted"] is True
-    assert detail["llm_recovery"]["retry_usage_log_id"] == 202
+    assert detail["llm_recovery"]["de"]["original_retry_attempted"] is True
+    assert detail["llm_recovery"]["de"]["retry_usage_log_id"] == 202
 
 
 def test_manual_evaluation_failure_preserves_existing_success(monkeypatch, tmp_path):
