@@ -66,6 +66,9 @@ def test_medias_js_ai_evaluation_shows_summary_below_country_cards():
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
     assert "function aiEvaluationResultDetail(data)" in script
+    assert "function aiEvaluationNumberScore(rawScore)" in script
+    assert "function aiEvaluationScoreTone(score)" in script
+    assert "function aiEvaluationScorePercent(score)" in script
     assert "function renderAiEvaluationInlineSummary(modalState)" in script
     assert "JSON.parse(detail)" in script
 
@@ -82,6 +85,12 @@ def test_medias_js_ai_evaluation_shows_summary_below_country_cards():
     assert "data-ai-eval-summary" in summary_block
     assert "评估摘要" in summary_block
     assert "rawScore === null || rawScore === undefined || rawScore === ''" in summary_block
+    assert "const overallTone = aiEvaluationScoreTone(score);" in summary_block
+    assert "ect-ai-inline-score-card is-${overallTone}" in summary_block
+    assert "ect-ai-inline-score-fill" in summary_block
+    assert "const countryScore = aiEvaluationNumberScore(country.score);" in summary_block
+    assert "const countryTone = aiEvaluationScoreTone(countryScore);" in summary_block
+    assert "ect-ai-inline-country-summary is-${countryTone}" in summary_block
 
     result_block = script[
         script.index("function setAiEvaluationModalResult"):

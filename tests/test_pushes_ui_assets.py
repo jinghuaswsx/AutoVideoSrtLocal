@@ -378,11 +378,20 @@ def test_push_ai_evaluation_modal_polls_country_progress():
     assert "已完成" in pushes
     assert "报错" in pushes
     assert "function aiEvaluationResultDetail(data)" in pushes
+    assert "function aiEvaluationNumberScore(rawScore)" in pushes
+    assert "function aiEvaluationScoreTone(score)" in pushes
+    assert "function aiEvaluationScorePercent(score)" in pushes
     assert "function renderAiEvaluationInlineSummary(modalState)" in pushes
     assert "JSON.parse(detail)" in pushes
     assert "data-ai-eval-summary" in pushes
     assert "评估摘要" in pushes
     assert "rawScore === null || rawScore === undefined || rawScore === ''" in pushes
+    assert "const overallTone = aiEvaluationScoreTone(score);" in pushes
+    assert "ect-ai-inline-score-card is-${overallTone}" in pushes
+    assert "ect-ai-inline-score-fill" in pushes
+    assert "const countryScore = aiEvaluationNumberScore(country.score);" in pushes
+    assert "const countryTone = aiEvaluationScoreTone(countryScore);" in pushes
+    assert "ect-ai-inline-country-summary is-${countryTone}" in pushes
 
     result_block = pushes[
         pushes.index("function setAiEvaluationModalResult"):
