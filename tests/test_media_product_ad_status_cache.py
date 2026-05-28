@@ -116,8 +116,8 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
                 self.rowcount = 0
 
     class FakeConn:
-        def autocommit(self, enabled):
-            tx_events.append(("autocommit", enabled))
+        def begin(self):
+            tx_events.append("begin")
 
         def cursor(self):
             return FakeCursor()
@@ -136,7 +136,7 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     summary = cache.refresh_all()
 
     assert summary == {"product_rows": 7, "lang_rows": 11}
-    assert tx_events == [("autocommit", False), "commit", ("autocommit", True), "close"]
+    assert tx_events == ["begin", "commit", "close"]
     joined = "\n".join(calls)
     assert "DELETE FROM media_product_ad_summary_cache" in joined
     assert "DELETE FROM media_product_lang_ad_summary_cache" in joined

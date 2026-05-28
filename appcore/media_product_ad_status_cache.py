@@ -268,7 +268,7 @@ ON DUPLICATE KEY UPDATE
 def refresh_all() -> dict[str, int]:
     conn = get_conn()
     try:
-        conn.autocommit(False)
+        conn.begin()
         with conn.cursor() as cur:
             cur.execute("DELETE FROM media_product_ad_summary_cache")
             cur.execute(_PRODUCT_REFRESH_SQL)
@@ -282,7 +282,4 @@ def refresh_all() -> dict[str, int]:
         conn.rollback()
         raise
     finally:
-        try:
-            conn.autocommit(True)
-        finally:
-            conn.close()
+        conn.close()
