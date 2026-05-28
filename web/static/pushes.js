@@ -454,14 +454,38 @@
       .ect-ai-country-name { font-size:13px; font-weight:700; color:var(--oc-fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .ect-ai-country-pill { flex:0 0 auto; border-radius:999px; padding:2px 8px; background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:700; }
       .ect-ai-country-meta { color:var(--oc-fg-muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
-      .ect-ai-inline-summary { margin-top:12px; border:1px solid var(--oc-border); border-radius:8px; padding:12px; background:var(--oc-bg-subtle); display:grid; gap:8px; }
+      .ect-ai-inline-summary { margin-top:12px; border:1px solid var(--oc-border); border-radius:8px; padding:12px; background:var(--oc-bg-subtle); display:grid; gap:12px; }
       .ect-ai-inline-summary-head { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
       .ect-ai-inline-summary-title { font-size:13px; font-weight:700; color:var(--oc-fg); }
-      .ect-ai-inline-summary-meta { display:flex; flex-wrap:wrap; gap:8px 14px; color:var(--oc-fg-muted); font-size:12px; }
-      .ect-ai-inline-summary-meta strong { color:var(--oc-fg); font-weight:700; }
-      .ect-ai-inline-summary-list { display:grid; gap:6px; }
-      .ect-ai-inline-summary-item { color:var(--oc-fg); font-size:12px; line-height:1.55; overflow-wrap:anywhere; }
-      .ect-ai-inline-summary-country { color:var(--oc-fg-muted); font-weight:700; margin-right:6px; }
+      .ect-ai-inline-summary-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+      .ect-ai-inline-result-tag { display:inline-flex; align-items:center; min-height:24px; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+      .ect-ai-inline-result-tag.is-good { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+      .ect-ai-inline-result-tag.is-mid { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
+      .ect-ai-inline-result-tag.is-bad { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+      .ect-ai-inline-result-tag.is-info { background:var(--oc-accent-subtle); color:var(--oc-accent); }
+      .ect-ai-inline-result-tag.is-na { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+      .ect-ai-inline-score-card { display:grid; grid-template-columns:auto minmax(140px, 220px); gap:6px 12px; align-items:center; max-width:360px; padding:10px 12px; border:1px solid var(--oc-border); border-radius:8px; background:var(--oc-bg); }
+      .ect-ai-inline-score-label { color:var(--oc-fg-muted); font-size:12px; }
+      .ect-ai-inline-score-num { font-family:var(--font-mono, ui-monospace, Consolas, monospace); font-size:20px; line-height:1.2; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ect-ai-inline-score-num span { margin-left:2px; color:var(--oc-fg-subtle); font-size:12px; font-weight:500; }
+      .ect-ai-inline-score-bar { grid-column:1 / -1; height:5px; border-radius:999px; overflow:hidden; background:var(--oc-bg-muted); }
+      .ect-ai-inline-score-bar.small { height:4px; }
+      .ect-ai-inline-score-fill { height:100%; border-radius:inherit; transition:width 180ms ease-out; }
+      .ect-ai-inline-score-card.is-good .ect-ai-inline-score-num, .ect-ai-inline-country-summary.is-good .ect-ai-inline-country-score { color:var(--oc-success-fg); }
+      .ect-ai-inline-score-card.is-good .ect-ai-inline-score-fill, .ect-ai-inline-country-summary.is-good .ect-ai-inline-score-fill { background:var(--oc-success); }
+      .ect-ai-inline-score-card.is-mid .ect-ai-inline-score-num, .ect-ai-inline-country-summary.is-mid .ect-ai-inline-country-score { color:var(--oc-warning-fg); }
+      .ect-ai-inline-score-card.is-mid .ect-ai-inline-score-fill, .ect-ai-inline-country-summary.is-mid .ect-ai-inline-score-fill { background:var(--oc-warning); }
+      .ect-ai-inline-score-card.is-bad .ect-ai-inline-score-num, .ect-ai-inline-country-summary.is-bad .ect-ai-inline-country-score { color:var(--oc-danger-fg); }
+      .ect-ai-inline-score-card.is-bad .ect-ai-inline-score-fill, .ect-ai-inline-country-summary.is-bad .ect-ai-inline-score-fill { background:var(--oc-danger); }
+      .ect-ai-inline-score-card.is-na .ect-ai-inline-score-num, .ect-ai-inline-country-summary.is-na .ect-ai-inline-country-score { color:var(--oc-fg-subtle); }
+      .ect-ai-inline-score-card.is-na .ect-ai-inline-score-fill, .ect-ai-inline-country-summary.is-na .ect-ai-inline-score-fill { background:var(--oc-border-strong); }
+      .ect-ai-inline-summary-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
+      .ect-ai-inline-country-summary { min-width:0; border:1px solid var(--oc-border); border-radius:8px; padding:10px; background:var(--oc-bg); display:grid; gap:7px; }
+      .ect-ai-inline-country-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
+      .ect-ai-inline-country-name { color:var(--oc-fg); font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ect-ai-inline-country-score { flex:0 0 auto; font-family:var(--font-mono, ui-monospace, Consolas, monospace); font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ect-ai-inline-country-score span { color:var(--oc-fg-subtle); font-size:11px; font-weight:500; }
+      .ect-ai-inline-country-text { color:var(--oc-fg); font-size:12px; line-height:1.55; overflow-wrap:anywhere; }
       .ect-ai-tabs { display:flex; gap:8px; padding:12px 20px 0; background:var(--oc-bg); }
       .ect-ai-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-size:13px; font-weight:600; cursor:pointer; }
       .ect-ai-tab.active { background:var(--oc-bg); color:var(--oc-accent); border-color:var(--oc-accent); }
@@ -655,33 +679,85 @@
     return detail;
   }
 
+  function aiEvaluationNumberScore(rawScore) {
+    if (rawScore === null || rawScore === undefined || rawScore === '') return NaN;
+    const score = Number(rawScore);
+    return Number.isFinite(score) ? score : NaN;
+  }
+
+  function aiEvaluationScoreTone(score) {
+    if (!Number.isFinite(score)) return 'na';
+    if (score >= 80) return 'good';
+    if (score >= 60) return 'mid';
+    return 'bad';
+  }
+
+  function aiEvaluationScorePercent(score) {
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(0, Math.min(100, score));
+  }
+
+  function aiEvaluationResultTone(resultText) {
+    const text = String(resultText || '').trim();
+    if (!text) return 'na';
+    if (text.includes('不适合')) return 'bad';
+    if (text.includes('需人工')) return 'mid';
+    if (text.includes('适合')) return 'good';
+    return 'info';
+  }
+
+  function aiEvaluationScoreText(score, rawScore) {
+    if (!Number.isFinite(score)) return '—';
+    const rawText = String(rawScore === null || rawScore === undefined ? '' : rawScore).trim();
+    return rawText || String(score);
+  }
+
   function renderAiEvaluationInlineSummary(modalState) {
     const detail = modalState && modalState.evaluationDetail;
     if (!detail || typeof detail !== 'object') return '';
     const countries = Array.isArray(detail.countries) ? detail.countries : [];
     const rawScore = detail.ai_score;
-    const score = rawScore === null || rawScore === undefined || rawScore === '' ? NaN : Number(rawScore);
-    const scoreText = Number.isFinite(score) ? String(detail.ai_score) : '';
+    const score = rawScore === null || rawScore === undefined || rawScore === '' ? NaN : aiEvaluationNumberScore(rawScore);
+    const overallTone = aiEvaluationScoreTone(score);
+    const scoreText = aiEvaluationScoreText(score, rawScore);
+    const scorePercent = aiEvaluationScorePercent(score);
     const resultText = String(detail.ai_evaluation_result || '').trim();
-    const meta = [
-      scoreText ? `综合评分 <strong>${escapeHtml(scoreText)}</strong>/100` : '',
-      resultText ? `整体结论 <strong>${escapeHtml(resultText)}</strong>` : '',
-    ].filter(Boolean).map((item) => `<span>${item}</span>`).join('');
-    const items = countries.map((country) => {
+    const resultTone = aiEvaluationResultTone(resultText);
+    const scoreCard = Number.isFinite(score) ? `
+      <div class="ect-ai-inline-score-card is-${overallTone}">
+        <span class="ect-ai-inline-score-label">综合评分</span>
+        <span class="ect-ai-inline-score-num">${escapeHtml(scoreText)}<span>/100</span></span>
+        <div class="ect-ai-inline-score-bar"><div class="ect-ai-inline-score-fill" style="width:${scorePercent}%"></div></div>
+      </div>` : '';
+    const resultTag = resultText ? `<span class="ect-ai-inline-result-tag is-${resultTone}">${escapeHtml(resultText)}</span>` : '';
+    const coloredItems = countries.map((country) => {
+      const countryScore = aiEvaluationNumberScore(country.score);
+      const countryTone = aiEvaluationScoreTone(countryScore);
+      const countryScoreText = aiEvaluationScoreText(countryScore, country.score);
+      const countryPercent = aiEvaluationScorePercent(countryScore);
       const text = String(country.summary || country.reason || '').trim();
-      if (!text) return '';
-      const label = String(country.country || country.language || country.lang || '').trim();
+      if (!text && !Number.isFinite(countryScore)) return '';
+      const label = String(country.country || country.name || country.language || country.lang || '').trim();
       const displayLabel = label || '国家';
-      return `<div class="ect-ai-inline-summary-item"><span class="ect-ai-inline-summary-country">${escapeHtml(displayLabel)}</span>${escapeHtml(text)}</div>`;
+      return `
+        <div class="ect-ai-inline-country-summary is-${countryTone}">
+          <div class="ect-ai-inline-country-top">
+            <span class="ect-ai-inline-country-name">${escapeHtml(displayLabel)}</span>
+            <span class="ect-ai-inline-country-score">${escapeHtml(countryScoreText)}<span>/100</span></span>
+          </div>
+          <div class="ect-ai-inline-score-bar small"><div class="ect-ai-inline-score-fill" style="width:${countryPercent}%"></div></div>
+          <div class="ect-ai-inline-country-text">${escapeHtml(text || '暂无摘要')}</div>
+        </div>`;
     }).filter(Boolean).slice(0, 6).join('');
-    if (!meta && !items) return '';
+    if (!scoreCard && !resultTag && !coloredItems) return '';
     return `
       <div class="ect-ai-inline-summary" data-ai-eval-summary>
         <div class="ect-ai-inline-summary-head">
           <div class="ect-ai-inline-summary-title">评估摘要</div>
-          ${meta ? `<div class="ect-ai-inline-summary-meta">${meta}</div>` : ''}
+          ${resultTag ? `<div class="ect-ai-inline-summary-actions">${resultTag}</div>` : ''}
         </div>
-        ${items ? `<div class="ect-ai-inline-summary-list">${items}</div>` : ''}
+        ${scoreCard}
+        ${coloredItems ? `<div class="ect-ai-inline-summary-list">${coloredItems}</div>` : ''}
       </div>`;
   }
 
