@@ -542,7 +542,15 @@ def api_push(item_id: int):
     if item.get("pushed_at"):
         return _json_response({"error": "already_pushed"}, 409)
 
-    had_no_mk_id = not product.get("mk_id")
+    # Check if this product has ever been successfully pushed before
+    from appcore.db import query_one as db_query_one
+    exist_row = db_query_one(
+        "SELECT 1 FROM media_push_logs l "
+        "JOIN media_items i ON i.id = l.item_id "
+        "WHERE i.product_id = %s AND l.status = 'success' LIMIT 1",
+        (product["id"],)
+    )
+    had_no_success_push = not exist_row
 
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
@@ -641,7 +649,7 @@ def api_push(item_id: int):
         if matched_mk_id:
             try:
                 medias.update_product(product["id"], mk_id=int(matched_mk_id))
-                if had_no_mk_id:
+                if had_no_success_push:
                     from appcore.db import execute as db_execute
                     db_execute(
                         "UPDATE media_push_logs SET is_new_product_push = 1 WHERE id = %s",
