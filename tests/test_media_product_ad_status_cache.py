@@ -144,6 +144,9 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     assert "meta_ad_daily_campaign_metrics" in joined
     assert "meta_ad_daily_ad_metrics" in joined
     assert "media_push_logs" in joined
+    assert "DATE(COALESCE(meta_business_date, report_date)) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()" in joined
+    assert "DATE(matched.activity_date) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()" in joined
+    assert "INTERVAL 6 DAY" not in joined
 
 
 def test_migration_declares_cache_tables_and_indexes():
