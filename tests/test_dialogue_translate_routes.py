@@ -303,6 +303,56 @@ def test_dialogue_translate_deleted_task_api_is_not_resumable(
     assert resumed == {}
 
 
+def test_dialogue_translate_db_deleted_task_blocks_memory_fallback(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-db-deleted-memory-active"
+    memory_state = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "dialogue_translate",
+        "status": "running",
+        "steps": {"speaker_detect": "done", "voice_match_ab": "pending"},
+    }
+    store.create(task_id, "/tmp/active.mp4", "/tmp/dialogue-db-deleted-memory-active", user_id=1)
+    store.update(task_id, **memory_state)
+
+    def fake_query_one(sql, args):
+        if "deleted_at IS NULL" in sql:
+            return None
+        deleted_state = dict(memory_state)
+        deleted_state["status"] = "expired"
+        return {
+            "id": task_id,
+            "user_id": 1,
+            "original_filename": "deleted.mp4",
+            "display_name": "DB Deleted Dialogue",
+            "task_dir": "/tmp/dialogue-db-deleted-memory-active",
+            "state_json": json.dumps(deleted_state, ensure_ascii=False),
+            "status": "expired",
+            "thumbnail_path": "",
+            "created_at": None,
+            "expires_at": None,
+            "deleted_at": "2026-05-28T10:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.dialogue_translate.db_query_one", fake_query_one)
+    resumed: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda *args, **kwargs: resumed.update({"called": True}),
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/resume",
+        json={"start_step": "speaker_detect"},
+    )
+
+    assert resp.status_code == 404
+    assert resumed == {}
+
+
 def test_dialogue_translate_post_requires_csrf_when_enabled(monkeypatch):
     monkeypatch.setenv("WTF_CSRF_ENABLED", "1")
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
@@ -420,11 +470,15 @@ def test_dialogue_translate_layout_and_workbench_labels_are_registered():
     workbench = Path("web/templates/_task_workbench_scripts.html").read_text(
         encoding="utf-8",
     )
+    shell = Path("web/templates/_translate_detail_shell.html").read_text(
+        encoding="utf-8",
+    )
 
     assert "has_permission('dialogue_translate')" in layout
     assert "/dialogue-translate" in layout
     assert 'speaker_detect: "说话人识别"' in workbench
     assert 'voice_match_ab: "A/B 音色确认"' in workbench
+    assert "restartHeaders['X-CSRFToken']" in shell
 
 
 def test_dialogue_translate_resume_from_speaker_detect_clears_speaker_state(

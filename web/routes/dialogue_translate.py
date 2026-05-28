@@ -102,6 +102,13 @@ def _task_from_project_row(row: dict | None) -> dict:
     return task
 
 
+def _is_deleted_task(task: dict) -> bool:
+    return bool(task.get("deleted_at")) or str(task.get("status") or "").lower() in {
+        "deleted",
+        "expired",
+    }
+
+
 def _project_row_from_task(task: dict) -> dict:
     return {
         "id": task.get("id", ""),
@@ -172,10 +179,17 @@ def _get_viewable_task(
     if fresh_task:
         _hydrate_task_state_cache(task_id, fresh_task)
         return fresh_task
+    if not include_deleted:
+        deleted_or_expired_task = _fresh_viewable_project_task(
+            task_id,
+            include_deleted=True,
+        )
+        if deleted_or_expired_task and _is_deleted_task(deleted_or_expired_task):
+            return None
     task = store.get(task_id)
     if not task or task.get("type") != "dialogue_translate" or not _can_view_task(task):
         return None
-    if not include_deleted and (task.get("deleted_at") or task.get("status") == "deleted"):
+    if not include_deleted and _is_deleted_task(task):
         return None
     return task
 

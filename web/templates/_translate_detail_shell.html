@@ -507,10 +507,15 @@
       var originalText = confirmBtn.textContent;
       confirmBtn.disabled = true;
       confirmBtn.textContent = '重新启动中…';
+      var restartCsrfMeta = document.querySelector('meta[name=csrf-token]');
+      var restartHeaders = {'Content-Type': 'application/json'};
+      if (restartCsrfMeta && restartCsrfMeta.content) {
+        restartHeaders['X-CSRFToken'] = restartCsrfMeta.content;
+      }
       try {
         var res = await fetch(apiBase + '/' + taskId + '/restart', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: restartHeaders,
           body: JSON.stringify(payload)
         });
         if (!res.ok) {
