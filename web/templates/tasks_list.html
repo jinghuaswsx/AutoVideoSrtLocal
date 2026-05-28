@@ -1142,11 +1142,13 @@ function tcShouldSuppressReviewAssets(eventType, suppressRawReviewAssets) {
   return ['raw_niuma_done', 'raw_uploaded'].includes(String(eventType || ''));
 }
 function tcRawSelfReviewAnchorEvent(events) {
-  const ordered = ['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded', 'raw_niuma_failed', 'raw_niuma_timeout'];
-  for (let i = 0; i < ordered.length; i += 1) {
-    const wanted = ordered[i];
-    if ((Array.isArray(events) ? events : []).some(event => String(event && event.event_type || '') === wanted)) {
-      return wanted;
+  const list = Array.isArray(events) ? events : [];
+  const wanted = new Set(['raw_niuma_done', 'raw_manual_uploaded', 'raw_uploaded', 'raw_niuma_failed', 'raw_niuma_timeout']);
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const event = list[i];
+    const type = String(event && event.event_type || '');
+    if (wanted.has(type)) {
+      return type;
     }
   }
   return '';
