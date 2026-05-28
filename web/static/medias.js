@@ -4,6 +4,7 @@
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const AI_EVAL_STATUS_ENDPOINT = (pid, runId) => `/medias/api/products/${pid}/evaluate/status?run_id=${encodeURIComponent(runId || '')}`;
+  const AI_EVAL_COUNTRY_RERUN_ENDPOINT = (pid, runId, country) => `/medias/api/products/${pid}/evaluate/${encodeURIComponent(runId || '')}/countries/${encodeURIComponent(country || '')}/rerun`;
   const $ = (id) => document.getElementById(id);
 
   function productDetailConfig() {
@@ -522,6 +523,11 @@
     return res.json();
   }
 
+  function csrfHeaders(extra = {}) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    return token ? { ...extra, 'X-CSRFToken': token } : extra;
+  }
+
   function fmtDate(s) {
     if (!s) return '';
     const d = new Date(s);
@@ -718,6 +724,8 @@
       .ect-ai-country-name { font-size:13px; font-weight:700; color:var(--oc-fg, oklch(22% 0.020 235)); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .ect-ai-country-pill { flex:0 0 auto; border-radius:999px; padding:2px 8px; background:var(--oc-bg, oklch(99% 0.004 230)); color:var(--oc-fg-muted, oklch(48% 0.018 230)); font-size:12px; font-weight:700; }
       .ect-ai-country-meta { color:var(--oc-fg-muted, oklch(48% 0.018 230)); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+      .ect-ai-country-rerun { justify-self:start; border:1px solid var(--oc-accent, oklch(56% 0.16 230)); border-radius:6px; background:var(--oc-bg, #fff); color:var(--oc-accent, oklch(56% 0.16 230)); font-size:12px; font-weight:700; padding:4px 8px; cursor:pointer; }
+      .ect-ai-country-rerun:disabled { opacity:.65; cursor:wait; }
       .ect-ai-inline-summary { margin-top:12px; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:8px; padding:12px; background:var(--oc-bg-subtle, oklch(97% 0.006 230)); display:grid; gap:12px; }
       .ect-ai-inline-summary-head { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
       .ect-ai-inline-summary-title { font-size:13px; font-weight:700; color:var(--oc-fg, oklch(22% 0.020 235)); }
@@ -823,6 +831,8 @@
       progress: null,
       progressTimer: null,
       evaluationDetail: null,
+      productId: product && product.id ? product.id : null,
+      runId: '',
     };
     modalState.modal.classList.add('ect-modal--ai-evaluating');
 
@@ -910,6 +920,7 @@
   function setAiEvaluationProgress(modalState, progress) {
     if (!modalState || !progress) return;
     modalState.progress = progress;
+    if (progress.run_id) modalState.runId = progress.run_id;
     const status = String(progress.status || '').trim().toLowerCase();
     if (modalState.statusTitle && !modalState.done) {
       if (status === 'completed') modalState.statusTitle.textContent = '评估完成';
@@ -1045,13 +1056,18 @@
       const elapsed = country.elapsed_seconds ? `${country.elapsed_seconds} 秒` : '';
       const error = country.error ? `错误：${country.error}` : '';
       const meta = [code, elapsed, error].filter(Boolean).join(' · ') || '等待调度';
+      const canRerun = displayStatus === 'failed' && code && modalState.runId;
+      const rerunButton = canRerun
+        ? `<button type="button" class="ect-ai-country-rerun" data-ai-country-rerun="${escapeHtml(code)}">重跑</button>`
+        : '';
       return `
-        <div class="ect-ai-country-card is-${displayStatus}">
+        <div class="ect-ai-country-card is-${displayStatus}" data-ai-country-card="${escapeHtml(code)}">
           <div class="ect-ai-country-head">
             <span class="ect-ai-country-name">${escapeHtml(countryName)}</span>
             <span class="ect-ai-country-pill">${escapeHtml(aiEvaluationCountryStatusLabel(displayStatus))}</span>
           </div>
           <div class="ect-ai-country-meta">${escapeHtml(meta)}</div>
+          ${rerunButton}
         </div>`;
     }).join('');
     box.innerHTML = `
@@ -1064,6 +1080,51 @@
       </div>
       <div class="ect-ai-country-grid">${cards}</div>
       ${renderAiEvaluationInlineSummary(modalState)}`;
+    box.querySelectorAll('[data-ai-country-rerun]').forEach((btn) => {
+      btn.addEventListener('click', () => rerunAiEvaluationCountry(modalState, btn.dataset.aiCountryRerun));
+    });
+  }
+
+  async function rerunAiEvaluationCountry(modalState, countryCode) {
+    const code = String(countryCode || '').trim().toUpperCase();
+    const pid = modalState && modalState.productId;
+    const runId = modalState && modalState.runId;
+    if (!pid || !runId || !code) return;
+    if (!window.confirm(`确认只重跑 ${code} 的 AI 评估？`)) return;
+    modalState.done = false;
+    if (modalState.statusTitle) modalState.statusTitle.textContent = '正在评估';
+    if (modalState.status) modalState.status.textContent = `${code} 正在重跑`;
+    const card = modalState.body && modalState.body.querySelector(`[data-ai-country-card="${code}"]`);
+    if (card) {
+      card.classList.remove('is-failed');
+      card.classList.add('is-running');
+      const pill = card.querySelector('.ect-ai-country-pill');
+      if (pill) pill.textContent = '进行中';
+      const btn = card.querySelector('[data-ai-country-rerun]');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '重跑中';
+      }
+    }
+    try {
+      const data = await fetchJSON(AI_EVAL_COUNTRY_RERUN_ENDPOINT(pid, runId, code), {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      });
+      if (data && data.progress) setAiEvaluationProgress(modalState, data.progress);
+      const finalData = await pollAiEvaluationStatus(modalState, pid, runId);
+      let fresh = null;
+      try {
+        fresh = await fetchJSON('/medias/api/products/' + pid);
+      } catch (_) {
+        fresh = null;
+      }
+      setAiEvaluationModalResult(modalState, (fresh && fresh.product) || finalData.result || finalData);
+      await loadList();
+    } catch (err) {
+      setAiEvaluationModalFailure(modalState, aiEvaluationErrorMessage(err));
+    }
   }
 
   function pollAiEvaluationStatus(modalState, pid, runId, onComplete) {
@@ -4159,6 +4220,7 @@
         setAiEvaluationProgress(modalState, data.progress);
       }
       if (data && data.async && data.run_id) {
+        modalState.runId = data.run_id;
         finalData = await pollAiEvaluationStatus(modalState, pid, data.run_id);
       }
       let fresh = null;

@@ -560,6 +560,126 @@ def test_evaluate_ready_product_invokes_llm_once_per_target_country(monkeypatch,
     assert updates["ai_score"] == 73.7
 
 
+def test_rerun_country_evaluation_only_calls_target_and_merges_existing_detail(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    llm_calls = []
+    languages = [
+        {"code": "de", "name": "德语", "country": "德国"},
+        {"code": "fr", "name": "法语", "country": "法国"},
+    ]
+    existing_detail = {
+        "schema_version": 1,
+        "use_case": material_evaluation.USE_CASE_CODE,
+        "evaluation_mode": "per_country",
+        "countries": [
+            {
+                "lang": "de",
+                "country": "德国",
+                "is_suitable": False,
+                "score": 50,
+                "risk_level": "high",
+                "decision": "谨慎推广",
+                "recommendation": "不做",
+                "summary": "该国家评估失败，需人工复核。",
+                "reason": "模型调用失败：INVALID_ARGUMENT",
+                "suggestions": ["人工复核该国家评估结果"],
+            },
+            {
+                "lang": "fr",
+                "country": "法国",
+                "is_suitable": True,
+                "score": 82,
+                "risk_level": "low",
+                "decision": "适合推广",
+                "recommendation": "做",
+                "summary": "法国可小预算测试。",
+                "reason": "法国用户需求明确。",
+                "suggestions": ["保留教程场景"],
+            },
+        ],
+    }
+
+    monkeypatch.setattr(material_evaluation, "evaluation_target_languages", lambda: [dict(item) for item in languages])
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Thread Kit",
+            "product_code": "thread-kit",
+            "product_link": "https://newjoyloo.com/products/thread-kit",
+            "user_id": 9,
+            "ai_score": 66,
+            "ai_evaluation_result": "需人工复核",
+            "ai_evaluation_detail": json.dumps(existing_detail, ensure_ascii=False),
+        },
+    )
+    monkeypatch.setattr(material_evaluation.medias, "resolve_cover", lambda product_id, lang="en": "media/cover.jpg")
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [{"id": 907, "lang": "en", "object_key": "media/promo.mp4"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/thread-kit",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_make_eval_clip_30s", lambda product_id, item: video)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+
+    def fake_invoke(*args, **kwargs):
+        llm_calls.append(kwargs)
+        enum = kwargs["response_schema"]["properties"]["countries"]["items"]["properties"]["lang"]["enum"]
+        assert enum == ["de"]
+        assert kwargs["billing_extra"]["target_lang"] == "de"
+        return {
+            "json": {
+                "countries": [
+                    {
+                        "lang": "de",
+                        "country": "德国",
+                        "is_suitable": True,
+                        "score": 91,
+                        "risk_level": "low",
+                        "decision": "适合推广",
+                        "recommendation": "做",
+                        "summary": "德国手工缝纫需求明确。",
+                        "reason": "德国用户对便携缝纫工具有明确使用场景。",
+                        "suggestions": ["突出教程和套装配件"],
+                    }
+                ]
+            },
+            "usage_log_id": 901,
+        }
+
+    monkeypatch.setattr(material_evaluation.llm_client, "invoke_generate", fake_invoke)
+    monkeypatch.setattr(material_evaluation.medias, "update_product", lambda product_id, **kwargs: updates.update(kwargs) or 1)
+
+    result = material_evaluation.rerun_country_evaluation(7, "DE")
+
+    assert result["status"] == "evaluated"
+    assert result["rerun_country"] == "de"
+    assert len(llm_calls) == 1
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert [row["lang"] for row in detail["countries"]] == ["de", "fr"]
+    assert detail["countries"][0]["score"] == 91.0
+    assert detail["countries"][1]["score"] == 82.0
+    assert updates["ai_evaluation_result"] == "适合推广"
+
+
 def test_evaluate_countries_records_failed_country_and_continues(monkeypatch, tmp_path):
     from appcore import material_evaluation
 

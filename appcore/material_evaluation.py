@@ -1563,6 +1563,249 @@ def _evaluate_product_if_ready(
         return result
 
 
+def rerun_country_evaluation(
+    product_id: int,
+    country_code: str,
+    *,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+    existing_detail: dict[str, Any] | str | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict:
+    pid = int(product_id)
+    if not _enter_product(pid):
+        return {"status": "running", "product_id": pid, "country_code": str(country_code or "").lower()}
+    try:
+        return _rerun_country_evaluation(
+            pid,
+            country_code,
+            media_item_id=media_item_id,
+            product_url_override=product_url_override,
+            existing_detail=existing_detail,
+            progress_callback=progress_callback,
+        )
+    finally:
+        _leave_product(pid)
+
+
+def _rerun_country_evaluation(
+    product_id: int,
+    country_code: str,
+    *,
+    media_item_id: int | None,
+    product_url_override: str | None,
+    existing_detail: dict[str, Any] | str | None,
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+) -> dict:
+    target_code = str(country_code or "").strip().lower()
+    languages = evaluation_target_languages()
+    target_lang = next((lang for lang in languages if str(lang.get("code") or "").lower() == target_code), None)
+    if not target_lang:
+        raise ValueError(f"unsupported country code: {country_code}")
+
+    product = medias.get_product(product_id)
+    if not product:
+        return {"status": "product_missing", "product_id": product_id, "country_code": target_code}
+
+    product_url = _resolve_evaluation_product_url(product, product_url_override=product_url_override)
+    if not product_url:
+        return {"status": "missing_product_link", "product_id": product_id, "country_code": target_code}
+    link_error = _product_link_preflight_error(product_id, product_url)
+    if link_error:
+        link_error["country_code"] = target_code
+        return link_error
+
+    cover_key = _resolve_product_cover_key(product_id, product)
+    if not cover_key or not _looks_like_image_key(cover_key):
+        return {"status": "missing_cover", "product_id": product_id, "country_code": target_code}
+
+    video = _selected_english_video(product_id, media_item_id=media_item_id)
+    if not video:
+        return {"status": "missing_video", "product_id": product_id, "country_code": target_code}
+    video_key = str(video.get("object_key") or "").strip()
+
+    cover_path, media_error = _materialize_required_media(
+        product_id,
+        cover_key,
+        missing_status="missing_cover_file",
+    )
+    if media_error:
+        media_error["country_code"] = target_code
+        return media_error
+    video_path, media_error = _materialize_required_eval_video(product_id, video)
+    if media_error:
+        media_error["country_code"] = target_code
+        return media_error
+
+    llm_config = resolve_evaluation_llm_config()
+    attempt_id = None
+    llm_recovery: dict[str, Any] = {}
+    try:
+        attempt_id = _record_attempt_start(
+            product_id,
+            cover_key,
+            video_key,
+            trigger="manual",
+        )
+        normalized, llm_recovery = _evaluate_countries_with_llm(
+            product=product,
+            product_id=product_id,
+            product_url=product_url,
+            languages=[target_lang],
+            system=build_system_prompt(),
+            media=[cover_path, video_path],
+            llm_config=llm_config,
+            progress_callback=progress_callback,
+        )
+        base_detail = _coerce_evaluation_detail(existing_detail)
+        if not base_detail:
+            base_detail = _coerce_evaluation_detail(product.get("ai_evaluation_detail"))
+        detail, merged = _merge_rerun_country_detail(
+            base_detail=base_detail,
+            languages=languages,
+            target_code=target_code,
+            target_rows=normalized["countries"],
+            product_id=product_id,
+            product=product,
+            product_url=product_url,
+            product_url_override=product_url_override,
+            media_item_id=media_item_id,
+            cover_key=cover_key,
+            video=video,
+            video_key=video_key,
+            video_path=video_path,
+            llm_config=llm_config,
+            llm_recovery=llm_recovery,
+        )
+        medias.update_product(
+            product_id,
+            ai_score=merged["ai_score"],
+            ai_evaluation_result=merged["ai_evaluation_result"],
+            ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
+        )
+        _record_attempt_finish(attempt_id, success=True, error="")
+        return {
+            "status": "evaluated",
+            "product_id": product_id,
+            "rerun_country": target_code,
+            "ai_score": merged["ai_score"],
+            "ai_evaluation_result": merged["ai_evaluation_result"],
+            "ai_evaluation_detail": detail,
+        }
+    except Exception as exc:
+        logger.exception(
+            "material evaluation country rerun failed for product_id=%s lang=%s",
+            product_id,
+            target_code,
+        )
+        error_message = str(exc)[:500] or exc.__class__.__name__
+        _record_attempt_finish(attempt_id, success=False, error=str(exc))
+        return {
+            "status": "failed",
+            "product_id": product_id,
+            "country_code": target_code,
+            "error": error_message,
+        }
+
+
+def _coerce_evaluation_detail(value: dict[str, Any] | str | None) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _merge_rerun_country_detail(
+    *,
+    base_detail: dict[str, Any],
+    languages: list[dict[str, str]],
+    target_code: str,
+    target_rows: list[dict[str, Any]],
+    product_id: int,
+    product: dict,
+    product_url: str,
+    product_url_override: str | None,
+    media_item_id: int | None,
+    cover_key: str,
+    video: dict,
+    video_key: str,
+    video_path: Path,
+    llm_config: dict[str, Any],
+    llm_recovery: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    expected = {str(lang.get("code") or "").lower() for lang in languages}
+    by_lang: dict[str, dict[str, Any]] = {}
+    existing_rows = base_detail.get("countries") if isinstance(base_detail, dict) else []
+    if isinstance(existing_rows, dict):
+        existing_rows = list(existing_rows.values())
+    for row in existing_rows if isinstance(existing_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("lang") or "").strip().lower()
+        if code in expected:
+            by_lang[code] = dict(row)
+    for row in target_rows:
+        if not isinstance(row, dict):
+            continue
+        updated = dict(row)
+        updated["lang"] = target_code
+        by_lang[target_code] = updated
+
+    rows = [by_lang.get(str(lang.get("code") or "").lower()) for lang in languages]
+    rows = [
+        row if isinstance(row, dict) else _failed_country_row(lang, "该国家尚未完成评估")
+        for row, lang in zip(rows, languages)
+    ]
+    merged = normalize_result({"countries": rows}, languages)
+    if any(_country_row_requires_review(row) for row in rows):
+        merged["ai_evaluation_result"] = "需人工复核"
+
+    detail = dict(base_detail or {})
+    now = datetime.now(UTC).isoformat()
+    detail.update({
+        "schema_version": 1,
+        "use_case": USE_CASE_CODE,
+        "evaluation_mode": "per_country",
+        "country_call_count": detail.get("country_call_count") or len(languages),
+        "provider": llm_config["provider"],
+        "model": llm_config["model"],
+        "search_enabled": llm_config["search_enabled"],
+        "search_tools": llm_config["search_tools"],
+        "evaluated_at": now,
+        "last_rerun_at": now,
+        "last_rerun_country": target_code,
+        "product_id": product_id,
+        "requested_media_item_id": int(media_item_id) if media_item_id else None,
+        "product_url_override": _clean_product_url_override(product_url_override) or None,
+        "product_url": product_url,
+        "cover_object_key": cover_key,
+        "video_item_id": video.get("id"),
+        "video_object_key": video_key,
+        "video_clip_path": str(video_path),
+        "countries": merged["countries"],
+    })
+    if llm_recovery:
+        recovery = detail.get("llm_recovery") if isinstance(detail.get("llm_recovery"), dict) else {}
+        recovery_value = llm_recovery.get(target_code) if target_code in llm_recovery else llm_recovery
+        detail["llm_recovery"] = {**recovery, target_code: recovery_value}
+    history = detail.get("rerun_history") if isinstance(detail.get("rerun_history"), list) else []
+    detail["rerun_history"] = [*history[-9:], {"country": target_code, "at": now}]
+    return detail, merged
+
+
+def _country_row_requires_review(row: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(row.get(key) or "")
+        for key in ("summary", "reason", "error", "error_message")
+    )
+    return any(token in text for token in ("评估失败", "人工复核", "模型未返回", "模型调用失败"))
+
+
 def _automatic_attempt_count(product_id: int, cover_key: str, video_key: str) -> int:
     """Count automatic attempts, including historical usage logs before this guard."""
     table_count = 0

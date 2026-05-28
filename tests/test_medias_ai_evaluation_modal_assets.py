@@ -52,10 +52,14 @@ def test_medias_js_ai_evaluation_polls_country_progress():
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
     assert "const AI_EVAL_STATUS_ENDPOINT" in script
+    assert "const AI_EVAL_COUNTRY_RERUN_ENDPOINT" in script
     assert "function pollAiEvaluationStatus(modalState, pid, runId, onComplete)" in script
     assert "function renderAiEvaluationCountryProgress(modalState)" in script
+    assert "function rerunAiEvaluationCountry(modalState, countryCode)" in script
     assert "data-ai-country-progress" in script
+    assert "data-ai-country-rerun" in script
     assert "ect-ai-country-card" in script
+    assert "重跑" in script
     assert "排队中" in script
     assert "进行中" in script
     assert "已完成" in script
