@@ -1040,16 +1040,17 @@ def test_ads_default_date_range_uses_meta_business_today_for_campaign(authed_cli
     assert "adsDaysAgoIso" not in body
 
 
-def test_ads_adset_and_ad_default_to_latest_closed_business_day(authed_client_no_db):
+def test_ads_adset_and_ad_default_to_meta_business_today(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "docs/superpowers/specs/2026-05-28-ads-non-realtime-default-closed-day.md" in body
+    assert "docs/superpowers/specs/2026-05-28-ads-level-realtime-default-today.md" in body
     assert "function adsLevelUsesRealtime(level)" in body
-    assert "return level === 'campaign';" in body
-    assert "if (!adsLevelUsesRealtime(level))" in body
-    assert "window.orderAnalyticsMetaCalendar.addDays(d, -1)" in body
+    assert "return ADS_LEVELS.indexOf(level) !== -1;" in body
+    assert "return level === 'campaign';" not in body
+    assert "docs/superpowers/specs/2026-05-28-ads-non-realtime-default-closed-day.md" not in body
+    assert "window.orderAnalyticsMetaCalendar.addDays(d, -1)" not in body
     assert "endListEl.value = adsDefaultEndIso(level);" in body
     assert "endDetailEl.value = adsDefaultEndIso(level);" in body
     assert ".value || adsDefaultEndIso(level);" in body
@@ -1488,19 +1489,29 @@ def test_get_ads_level_detail_includes_realtime_today_for_campaign(monkeypatch):
         assert row["budget_usd"] is None
 
 
-def test_get_ads_level_detail_excludes_realtime_for_adset(monkeypatch):
+def test_get_ads_level_detail_includes_realtime_today_for_adset(monkeypatch):
     today = oa.current_meta_business_date()
 
     def fake_query(sql, args=()):
-        # No daily rows; should NOT call realtime path because supports_realtime=False
-        assert "realtime" not in sql
+        assert "FROM meta_ad_daily_adset_metrics" in sql
         return []
 
-    realtime_called = {"called": False}
+    captured_realtime_sql = []
 
     def fake_query_one(sql, args=()):
-        if "realtime" in sql:
-            realtime_called["called"] = True
+        captured_realtime_sql.append(sql)
+        if "meta_ad_realtime_daily_adset_metrics" in sql:
+            return {
+                "spend_usd": 50.0,
+                "purchase_value_usd": 80.0,
+                "result_count": 3,
+                "impressions": 5000,
+                "clicks": 100,
+                "snapshot_at": None,
+                "name": "Glow Set",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+            }
         return None
 
     monkeypatch.setattr(oa, "query", fake_query)
@@ -1508,9 +1519,13 @@ def test_get_ads_level_detail_excludes_realtime_for_adset(monkeypatch):
     result = oa.get_ads_level_detail("adset", code="glow-set",
                                       start_date=today.isoformat(),
                                       end_date=today.isoformat())
-    assert realtime_called["called"] is False
-    assert result["supports_realtime"] is False
-    assert result["rows"] == []
+    assert result["supports_realtime"] is True
+    assert result["name"] == "Glow Set"
+    assert any("normalized_adset_code = %s" in sql for sql in captured_realtime_sql)
+    assert any("meta_ad_realtime_daily_adset_metrics" in sql for sql in captured_realtime_sql)
+    assert result["rows"][0]["date"] == today.isoformat()
+    assert result["rows"][0]["is_realtime"] is True
+    assert result["rows"][0]["spend_usd"] == 50.0
 
 
 def test_get_ads_level_detail_filters_by_ad_account(monkeypatch):
@@ -2186,40 +2201,39 @@ def test_get_ads_level_list_includes_realtime_today_for_campaign(monkeypatch):
     assert "meta_ad_daily_campaign_metrics" in union_query["sql"]
 
 
-def test_get_ads_level_list_adset_today_data_quality_realtime_not_supported(monkeypatch):
+def test_get_ads_level_list_adset_and_ad_include_realtime_today(monkeypatch):
     today = oa.current_meta_business_date()
+    captured_queries: list[dict] = []
 
     def fake_query_one(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
         return {"total": 0}
 
     def fake_query(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
         return []
 
     monkeypatch.setattr(oa, "query_one", fake_query_one)
     monkeypatch.setattr(oa, "query", fake_query)
 
-    # 包含今日的 adset 级查询
-    result = oa.get_ads_level_list(
-        "adset", 
-        start_date=today.isoformat(), 
-        end_date=today.isoformat()
-    )
+    cases = [
+        ("adset", "meta_ad_daily_adset_metrics", "meta_ad_realtime_daily_adset_metrics",
+         "normalized_adset_code", "adset_name"),
+        ("ad", "meta_ad_daily_ad_metrics", "meta_ad_realtime_daily_ad_metrics",
+         "normalized_ad_code", "ad_name"),
+    ]
+    for level, daily_table, realtime_table, code_col, name_col in cases:
+        captured_queries.clear()
+        result = oa.get_ads_level_list(
+            level,
+            start_date=today.isoformat(),
+            end_date=today.isoformat(),
+        )
 
-    assert result["level"] == "adset"
-    dq = result["data_quality"]
-    assert dq["status"] == "realtime_not_supported"
-    assert "当前查询范围包含今天" in dq["message"]
-    assert "Ad Set" in dq["message"]
-
-    # 包含今日的 ad 级查询
-    result_ad = oa.get_ads_level_list(
-        "ad", 
-        start_date=today.isoformat(), 
-        end_date=today.isoformat()
-    )
-
-    assert result_ad["level"] == "ad"
-    dq_ad = result_ad["data_quality"]
-    assert dq_ad["status"] == "realtime_not_supported"
-    assert "当前查询范围包含今天" in dq_ad["message"]
-    assert "Ad 级别" in dq_ad["message"] or "Ad 级" in dq_ad["message"]
+        assert result["level"] == level
+        assert result["data_quality"]["status"] == "ok"
+        union_sql = next(q["sql"] for q in captured_queries if "UNION ALL" in q["sql"])
+        assert daily_table in union_sql
+        assert realtime_table in union_sql
+        assert f"m.{code_col} AS code" in union_sql
+        assert f"m.{name_col} AS name" in union_sql

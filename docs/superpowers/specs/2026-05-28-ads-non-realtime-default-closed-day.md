@@ -1,5 +1,9 @@
 # 2026-05-28 - Ads Ad Set/Ad default to latest closed day
 
+Superseded on 2026-05-28 by
+[`2026-05-28-ads-level-realtime-default-today.md`](2026-05-28-ads-level-realtime-default-today.md).
+Ad Set and Ad now have realtime XHR snapshots and default to the current Meta business day.
+
 ## Context
 
 The Ads analysis page has Campaign, Ad Set, and Ad sub-tabs. Campaign can include the current Meta business day through `meta_ad_realtime_daily_campaign_metrics`; Ad Set and Ad only read daily final tables and therefore cannot show the current business day until the daily-final sync has completed.

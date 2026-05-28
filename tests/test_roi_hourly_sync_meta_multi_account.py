@@ -568,8 +568,8 @@ def test_sync_meta_realtime_daily_uses_xhr_session_for_xhr_api_account(
 
     captured: list[dict] = []
 
-    def fake_import(*, run_id, business_date, snapshot_at, rows, account):
-        captured.append({"account": account.code, "rows": rows})
+    def fake_import(*, run_id, business_date, snapshot_at, rows, account, level="campaign"):
+        captured.append({"account": account.code, "level": level, "rows": rows})
         return {"rows_imported": len(rows), "spend_usd": sum(float(r["spend"]) for r in rows)}
 
     monkeypatch.setattr(roi_hourly_sync, "_import_meta_realtime_api_rows", fake_import)
@@ -582,13 +582,16 @@ def test_sync_meta_realtime_daily_uses_xhr_session_for_xhr_api_account(
         meta_channel="browser",  # process default; account-level overrides
     )
 
-    assert fake_session.calls == [("111", "campaign")]
-    assert [c["account"] for c in captured] == ["newjoyloo"]
+    assert fake_session.calls == [("111", "campaign"), ("111", "adset"), ("111", "ad")]
+    assert [c["account"] for c in captured] == ["newjoyloo", "newjoyloo", "newjoyloo"]
+    assert [c["level"] for c in captured] == ["campaign", "adset", "ad"]
     assert summary["status"] == "success"
     assert summary["rows_imported"] == 2
     assert summary["spend_usd"] == 15.5
     result = next(r for r in summary["account_results"] if r["code"] == "newjoyloo")
     assert result["channel"] == "xhr_api"
+    assert result["level_reports"]["adset"]["rows_imported"] == 2
+    assert result["level_reports"]["ad"]["rows_imported"] == 2
 
 
 def test_import_meta_realtime_api_rows_keep_only_business_date(
@@ -640,6 +643,66 @@ def test_import_meta_realtime_api_rows_keep_only_business_date(
     assert result["spend_usd"] == 10.0
 
 
+def test_import_meta_realtime_api_rows_inserts_adset_and_ad_levels(
+    monkeypatch, disable_appcore_db_writes
+):
+    account = _account("newjoyloo_bak", "111", sync_mode="xhr_api")
+    inserted: dict[str, list[dict]] = {"adset": [], "ad": []}
+
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_insert_meta_realtime_adset_metric",
+        lambda **kwargs: inserted["adset"].append(kwargs),
+    )
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_insert_meta_realtime_ad_metric",
+        lambda **kwargs: inserted["ad"].append(kwargs),
+    )
+
+    result_adset = roi_hourly_sync._import_meta_realtime_api_rows(
+        run_id=9001,
+        business_date=date(2026, 5, 9),
+        snapshot_at=datetime(2026, 5, 9, 12, 20),
+        account=account,
+        level="adset",
+        rows=[{
+            "campaign_id": "camp-1",
+            "campaign_name": "Camp One",
+            "adset_id": "set-1",
+            "adset_name": "Set One",
+            "date_start": "2026-05-09",
+            "date_stop": "2026-05-09",
+            "spend": "12.5",
+        }],
+    )
+    result_ad = roi_hourly_sync._import_meta_realtime_api_rows(
+        run_id=9001,
+        business_date=date(2026, 5, 9),
+        snapshot_at=datetime(2026, 5, 9, 12, 20),
+        account=account,
+        level="ad",
+        rows=[{
+            "campaign_id": "camp-1",
+            "campaign_name": "Camp One",
+            "adset_id": "set-1",
+            "adset_name": "Set One",
+            "ad_id": "ad-1",
+            "ad_name": "Ad One",
+            "date_start": "2026-05-09",
+            "date_stop": "2026-05-09",
+            "spend": "7.5",
+        }],
+    )
+
+    assert result_adset["rows_imported"] == 1
+    assert result_ad["rows_imported"] == 1
+    assert inserted["adset"][0]["adset_id"] == "set-1"
+    assert inserted["adset"][0]["normalized_adset_code"] == "set one"
+    assert inserted["ad"][0]["ad_id"] == "ad-1"
+    assert inserted["ad"][0]["normalized_ad_code"] == "ad one"
+
+
 def test_sync_meta_realtime_daily_xhr_filters_rows_to_account_report_date(
     monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
 ):
@@ -663,8 +726,8 @@ def test_sync_meta_realtime_daily_xhr_filters_rows_to_account_report_date(
 
     captured: list[list[dict]] = []
 
-    def fake_import(*, run_id, business_date, snapshot_at, rows, account):
-        captured.append(rows)
+    def fake_import(*, run_id, business_date, snapshot_at, rows, account, level="campaign"):
+        captured.append({"level": level, "rows": rows})
         return {"rows_imported": len(rows), "spend_usd": sum(float(r["spend"]) for r in rows)}
 
     monkeypatch.setattr(roi_hourly_sync, "_import_meta_realtime_api_rows", fake_import)
@@ -676,7 +739,9 @@ def test_sync_meta_realtime_daily_xhr_filters_rows_to_account_report_date(
         meta_channel="browser",
     )
 
-    assert [row["campaign_id"] for row in captured[0]] == ["keep"]
+    assert fake_session.calls == [("111", "campaign"), ("111", "adset"), ("111", "ad")]
+    assert [row["campaign_id"] for row in captured[0]["rows"]] == ["keep"]
+    assert [item["level"] for item in captured] == ["campaign", "adset", "ad"]
     assert summary["rows_imported"] == 1
     assert summary["spend_usd"] == 7.0
     result = next(r for r in summary["account_results"] if r["code"] == "newjoyloo")
@@ -714,7 +779,7 @@ def test_sync_meta_realtime_daily_mixed_sync_modes_each_use_their_own_path(
     )
 
     # xhr_api went via session
-    assert fake_session.calls == [("111", "campaign")]
+    assert fake_session.calls == [("111", "campaign"), ("111", "adset"), ("111", "ad")]
     # csv_export went via subprocess export
     assert csv_calls == ["Omurio"]
     assert summary["status"] == "success"
@@ -821,9 +886,9 @@ def test_xhr_time_range_uses_account_timezone_helper(
     # Each account must have received the helper-derived time_range.
     pdt_expected = meta_ad_accounts.account_xhr_time_range(accounts[0], business_date)
     bj_expected = meta_ad_accounts.account_xhr_time_range(accounts[1], business_date)
-    # Order of fetch_insights calls follows order of xhr_api accounts in
-    # the input list; FakeSession captures one entry per call.
-    assert fake_session.time_ranges == [pdt_expected, bj_expected]
+    # Order of fetch_insights calls follows account order, then the
+    # campaign/adset/ad levels for each account.
+    assert fake_session.time_ranges == [pdt_expected] * 3 + [bj_expected] * 3
     # Sanity: the two timezones produce different ranges in this case
     # (PDT and BJ both straddle two days but for different reasons —
     # the helper still encodes per-tz semantics).
@@ -857,4 +922,4 @@ def test_xhr_time_range_pst_account_returns_single_day(
 
     assert fake_session.time_ranges == [
         {"since": "2026-02-05", "until": "2026-02-05"},
-    ]
+    ] * 3

@@ -7401,19 +7401,14 @@
 
   function adsTodayIso() { return new Date().toISOString().slice(0, 10); }
   // Docs-anchor: docs/superpowers/specs/2026-05-09-ads-analytics-default-date-range.md
-  // Docs-anchor: docs/superpowers/specs/2026-05-28-ads-non-realtime-default-closed-day.md
+  // Docs-anchor: docs/superpowers/specs/2026-05-28-ads-level-realtime-default-today.md
   function adsLevelUsesRealtime(level) {
-    return level === 'campaign';
+    return ADS_LEVELS.indexOf(level) !== -1;
   }
   function adsDefaultEndIso(level) {
     var d = window.orderAnalyticsMetaCalendar
       ? window.orderAnalyticsMetaCalendar.today()
       : new Date();
-    if (!adsLevelUsesRealtime(level)) {
-      d = window.orderAnalyticsMetaCalendar
-        ? window.orderAnalyticsMetaCalendar.addDays(d, -1)
-        : new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
-    }
     return formatDateInput(d);
   }
   function adsDefaultStartIso(level) {

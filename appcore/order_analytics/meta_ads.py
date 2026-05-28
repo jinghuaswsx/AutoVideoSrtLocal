@@ -1020,25 +1020,35 @@ def _ads_purchase_data_quality(fallback_stats: dict) -> dict:
 
 # ── 三层级（Campaign / Ad Set / Ad）查询：list / search / detail ──────
 # Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md
+# Docs-anchor: docs/superpowers/specs/2026-05-28-ads-level-realtime-default-today.md
 
 _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
     "campaign": {
         "table": "meta_ad_daily_campaign_metrics",
         "code_col": "normalized_campaign_code",
         "name_col": "campaign_name",
+        "realtime_table": "meta_ad_realtime_daily_campaign_metrics",
+        "realtime_code_col": "normalized_campaign_code",
+        "realtime_name_col": "campaign_name",
         "supports_realtime": True,
     },
     "adset": {
         "table": "meta_ad_daily_adset_metrics",
         "code_col": "normalized_adset_code",
         "name_col": "adset_name",
-        "supports_realtime": False,
+        "realtime_table": "meta_ad_realtime_daily_adset_metrics",
+        "realtime_code_col": "normalized_adset_code",
+        "realtime_name_col": "adset_name",
+        "supports_realtime": True,
     },
     "ad": {
         "table": "meta_ad_daily_ad_metrics",
         "code_col": "normalized_ad_code",
         "name_col": "ad_name",
-        "supports_realtime": False,
+        "realtime_table": "meta_ad_realtime_daily_ad_metrics",
+        "realtime_code_col": "normalized_ad_code",
+        "realtime_name_col": "ad_name",
+        "supports_realtime": True,
     },
 }
 
@@ -1236,17 +1246,20 @@ def get_ads_level_list(
 
         # 子查询 2: 实时表的今日最新快照
         real_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
+        realtime_table = cfg["realtime_table"]
+        realtime_code_col = cfg["realtime_code_col"]
+        realtime_name_col = cfg["realtime_name_col"]
         realtime_sql = (
             f"SELECT m.business_date AS meta_business_date, "
-            f"m.normalized_campaign_code AS code, "
-            f"m.campaign_name AS name, "
+            f"m.{realtime_code_col} AS code, "
+            f"m.{realtime_name_col} AS name, "
             f"m.ad_account_id, m.ad_account_name, "
             f"NULL AS matched_product_code, "
             f"m.spend_usd, m.purchase_value_usd, m.result_count "
-            f"FROM meta_ad_realtime_daily_campaign_metrics m "
+            f"FROM {realtime_table} m "
             f"INNER JOIN ("
             f"  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
-            f"  FROM meta_ad_realtime_daily_campaign_metrics "
+            f"  FROM {realtime_table} "
             f"  WHERE business_date = %s AND data_completeness = 'realtime_partial' "
             f"  GROUP BY business_date, ad_account_id "
             f") latest "
@@ -1349,15 +1362,6 @@ def get_ads_level_list(
     )
 
     dq_result = _ads_purchase_data_quality(fallback_stats)
-    if level in ("adset", "ad") and end >= today:
-        level_label = "Ad Set" if level == "adset" else "Ad"
-        dq_result = {
-            "status": "realtime_not_supported",
-            "message": (
-                f"当前查询范围包含今天。受限于 Meta 自动化抓取维度，"
-                f"今日的 {level_label} 级别消耗与成效数据将在次日凌晨日终报表同步后展现。"
-            ),
-        }
 
     return {
         "level": level,
@@ -1409,16 +1413,20 @@ def search_ads_by_level(level: str, q: str, limit: int = 20) -> dict:
     return {"level": level, "query": q_clean, "rows": out}
 
 
-def _fetch_realtime_today_campaign(
+def _fetch_realtime_today_level(
+    cfg: dict[str, Any],
     code: str,
     business_date: date,
     ad_account_id: str | None = None,
 ) -> dict | None:
-    """Latest-snapshot-per-account aggregation for a single campaign code on `business_date`.
+    """Latest-snapshot-per-account aggregation for one ads-level code on `business_date`.
 
     Mirrors the (business_date, ad_account_id) -> MAX(snapshot_at) rule documented in
     CLAUDE.md "Meta 广告多账户同步" — DO NOT use a global MAX(snapshot_at).
     """
+    realtime_table = cfg["realtime_table"]
+    realtime_code_col = cfg["realtime_code_col"]
+    realtime_name_col = cfg["realtime_name_col"]
     account_filter = _normalize_ad_account_filter(ad_account_id)
     inner_account_clause = "AND ad_account_id = %s " if account_filter else ""
     outer_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
@@ -1435,21 +1443,23 @@ def _fetch_realtime_today_campaign(
         "SUM(m.impressions) AS impressions, "
         "SUM(m.clicks) AS clicks, "
         "MAX(m.snapshot_at) AS snapshot_at, "
-        "MAX(m.campaign_name) AS campaign_name, "
+        f"MAX(m.{realtime_name_col}) AS name, "
         "GROUP_CONCAT(DISTINCT m.ad_account_id) AS ad_account_id, "
         "GROUP_CONCAT(DISTINCT m.ad_account_name) AS ad_account_name "
-        "FROM meta_ad_realtime_daily_campaign_metrics m "
+        f"FROM {realtime_table} m "
         "INNER JOIN ("
         "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
-        "  FROM meta_ad_realtime_daily_campaign_metrics "
-        "  WHERE business_date = %s AND normalized_campaign_code = %s "
+        f"  FROM {realtime_table} "
+        f"  WHERE business_date = %s AND {realtime_code_col} = %s "
+        "  AND data_completeness = 'realtime_partial' "
         f"{inner_account_clause}"
         "  GROUP BY business_date, ad_account_id "
         ") latest "
         "ON m.business_date = latest.business_date "
         "AND m.ad_account_id = latest.ad_account_id "
         "AND m.snapshot_at = latest.max_snapshot_at "
-        "WHERE m.business_date = %s AND m.normalized_campaign_code = %s "
+        f"WHERE m.business_date = %s AND m.{realtime_code_col} = %s "
+        "AND m.data_completeness = 'realtime_partial' "
         f"{outer_account_clause}",
         tuple(args),
     )
@@ -1495,7 +1505,7 @@ def get_ads_level_detail(
     today = current_meta_business_date()
     realtime_row = None
     if supports_realtime and end >= today:
-        realtime_row = _fetch_realtime_today_campaign(code_clean, today, account_filter)
+        realtime_row = _fetch_realtime_today_level(cfg, code_clean, today, account_filter)
 
     daily_by_date: dict[date, list[dict]] = {}
     name_seen = None
@@ -1513,7 +1523,7 @@ def get_ads_level_detail(
         matched_product_seen = matched_product_seen or row.get("matched_product_code")
 
     if realtime_row and not name_seen:
-        name_seen = realtime_row.get("campaign_name")
+        name_seen = realtime_row.get("name")
     if realtime_row and not account_id_seen:
         account_id_seen = realtime_row.get("ad_account_id")
         account_name_seen = realtime_row.get("ad_account_name")

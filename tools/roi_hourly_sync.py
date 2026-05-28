@@ -63,6 +63,10 @@ META_INSIGHTS_FIELDS = (
     "account_currency",
     "campaign_id",
     "campaign_name",
+    "adset_id",
+    "adset_name",
+    "ad_id",
+    "ad_name",
     "date_start",
     "date_stop",
     "spend",
@@ -71,6 +75,7 @@ META_INSIGHTS_FIELDS = (
     "actions",
     "action_values",
 )
+META_REALTIME_XHR_LEVELS = ("campaign", "adset", "ad")
 META_PURCHASE_ACTION_TYPES = (
     "omni_purchase",
     "offsite_conversion.fb_pixel_purchase",
@@ -586,6 +591,122 @@ def _insert_meta_realtime_campaign_metric(
     )
 
 
+def _insert_meta_realtime_adset_metric(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account_id: str,
+    account_name: str | None,
+    campaign_id: str | None,
+    campaign_name: str | None,
+    normalized_campaign_code: str | None,
+    adset_id: str,
+    adset_name: str,
+    normalized_adset_code: str,
+    result_count: int,
+    spend: float,
+    purchase_value: float,
+    impressions: int,
+    clicks: int,
+    raw: dict[str, Any],
+) -> None:
+    execute(
+        "INSERT INTO meta_ad_realtime_daily_adset_metrics "
+        "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
+        "campaign_id, campaign_name, normalized_campaign_code, adset_id, adset_name, normalized_adset_code, "
+        "result_count, spend_usd, purchase_value_usd, impressions, clicks, raw_json) "
+        "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
+        "ad_account_name=VALUES(ad_account_name), campaign_id=VALUES(campaign_id), campaign_name=VALUES(campaign_name), "
+        "normalized_campaign_code=VALUES(normalized_campaign_code), adset_name=VALUES(adset_name), "
+        "normalized_adset_code=VALUES(normalized_adset_code), result_count=VALUES(result_count), "
+        "spend_usd=VALUES(spend_usd), purchase_value_usd=VALUES(purchase_value_usd), "
+        "impressions=VALUES(impressions), clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
+        (
+            run_id,
+            business_date,
+            snapshot_at,
+            account_id,
+            account_name,
+            campaign_id,
+            campaign_name,
+            normalized_campaign_code,
+            adset_id,
+            adset_name,
+            normalized_adset_code,
+            result_count,
+            spend,
+            purchase_value,
+            impressions,
+            clicks,
+            json.dumps(raw, ensure_ascii=False),
+        ),
+    )
+
+
+def _insert_meta_realtime_ad_metric(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account_id: str,
+    account_name: str | None,
+    campaign_id: str | None,
+    campaign_name: str | None,
+    normalized_campaign_code: str | None,
+    adset_id: str | None,
+    adset_name: str | None,
+    normalized_adset_code: str | None,
+    ad_id: str,
+    ad_name: str,
+    normalized_ad_code: str,
+    result_count: int,
+    spend: float,
+    purchase_value: float,
+    impressions: int,
+    clicks: int,
+    raw: dict[str, Any],
+) -> None:
+    execute(
+        "INSERT INTO meta_ad_realtime_daily_ad_metrics "
+        "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
+        "campaign_id, campaign_name, normalized_campaign_code, adset_id, adset_name, normalized_adset_code, "
+        "ad_id, ad_name, normalized_ad_code, result_count, spend_usd, purchase_value_usd, impressions, clicks, raw_json) "
+        "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
+        "ad_account_name=VALUES(ad_account_name), campaign_id=VALUES(campaign_id), campaign_name=VALUES(campaign_name), "
+        "normalized_campaign_code=VALUES(normalized_campaign_code), adset_id=VALUES(adset_id), "
+        "adset_name=VALUES(adset_name), normalized_adset_code=VALUES(normalized_adset_code), "
+        "ad_name=VALUES(ad_name), normalized_ad_code=VALUES(normalized_ad_code), "
+        "result_count=VALUES(result_count), spend_usd=VALUES(spend_usd), "
+        "purchase_value_usd=VALUES(purchase_value_usd), impressions=VALUES(impressions), "
+        "clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
+        (
+            run_id,
+            business_date,
+            snapshot_at,
+            account_id,
+            account_name,
+            campaign_id,
+            campaign_name,
+            normalized_campaign_code,
+            adset_id,
+            adset_name,
+            normalized_adset_code,
+            ad_id,
+            ad_name,
+            normalized_ad_code,
+            result_count,
+            spend,
+            purchase_value,
+            impressions,
+            clicks,
+            json.dumps(raw, ensure_ascii=False),
+        ),
+    )
+
+
 def _run_meta_ads_manager_export(
     business_date,
     snapshot_at: datetime,
@@ -636,13 +757,13 @@ def _run_meta_ads_manager_export(
     return {
         "command": cmd,
         "returncode": completed.returncode,
-        "export_dir": str(export_dir),
+        "export_dir": export_dir.as_posix(),
         "account_code": account.code,
         "account_id": account.account_id,
         "stdout_tail": completed.stdout[-3000:],
         "stderr_tail": completed.stderr[-3000:],
-        "campaigns_path": str(export_dir / f"{account.csv_prefix}_campaigns_{business_date.isoformat()}.csv"),
-        "ads_path": str(export_dir / f"{account.csv_prefix}_ads_{business_date.isoformat()}.csv"),
+        "campaigns_path": (export_dir / f"{account.csv_prefix}_campaigns_{business_date.isoformat()}.csv").as_posix(),
+        "ads_path": (export_dir / f"{account.csv_prefix}_ads_{business_date.isoformat()}.csv").as_posix(),
     }
 
 
@@ -844,9 +965,17 @@ def _import_meta_realtime_api_rows(
     snapshot_at: datetime,
     rows: list[dict[str, Any]],
     account: MetaAdAccount,
+    level: str = "campaign",
 ) -> dict[str, Any]:
+    table_by_level = {
+        "campaign": "meta_ad_realtime_daily_campaign_metrics",
+        "adset": "meta_ad_realtime_daily_adset_metrics",
+        "ad": "meta_ad_realtime_daily_ad_metrics",
+    }
+    if level not in table_by_level:
+        raise ValueError(f"Unsupported Meta realtime level: {level!r}")
     execute(
-        "DELETE FROM meta_ad_realtime_daily_campaign_metrics "
+        f"DELETE FROM {table_by_level[level]} "
         "WHERE business_date=%s AND snapshot_at=%s AND ad_account_id=%s "
         "AND data_completeness='realtime_partial'",
         (business_date, snapshot_at, account.account_id),
@@ -858,16 +987,11 @@ def _import_meta_realtime_api_rows(
         if not _api_row_belongs_to_business_date(row, business_date):
             continue
         campaign_name_raw = str(row.get("campaign_name") or row.get("campaign_id") or "").strip()
-        if not campaign_name_raw:
+        if level == "campaign" and not campaign_name_raw:
             continue
-        campaign_name = _fit_text(campaign_name_raw, 255)
+        campaign_name = _fit_text(campaign_name_raw, 255) if campaign_name_raw else None
         account_id = str(row.get("account_id") or account.account_id).strip().removeprefix("act_") or account.account_id
         account_name = str(row.get("account_name") or "").strip() or None
-        campaign_id = _fit_report_identifier(
-            row.get("campaign_id"),
-            fallback=campaign_name_raw,
-            prefix="campaign",
-        )
         spend = round(_safe_report_number(row.get("spend")), 4)
         result_count = int(round(_extract_purchase_metric(row.get("actions"))))
         purchase_value = round(_extract_purchase_metric(row.get("action_values")), 4)
@@ -876,22 +1000,102 @@ def _import_meta_realtime_api_rows(
         currency = str(row.get("account_currency") or "").strip()
         if currency:
             currencies.add(currency)
-        _insert_meta_realtime_campaign_metric(
-            run_id=run_id,
-            business_date=business_date,
-            snapshot_at=snapshot_at,
-            account_id=account_id or account.account_id,
-            account_name=account_name,
-            campaign_id=campaign_id,
-            campaign_name=campaign_name,
-            normalized_campaign_code=_fit_text(campaign_name_raw.lower(), 255),
-            result_count=result_count,
-            spend=spend,
-            purchase_value=purchase_value,
-            impressions=impressions,
-            clicks=clicks,
-            raw=row,
-        )
+        campaign_id = _fit_report_identifier(
+            row.get("campaign_id"),
+            fallback=campaign_name_raw,
+            prefix="campaign",
+        ) if campaign_name_raw else None
+        normalized_campaign_code = _fit_text(campaign_name_raw.lower(), 255) if campaign_name_raw else None
+        if level == "campaign":
+            _insert_meta_realtime_campaign_metric(
+                run_id=run_id,
+                business_date=business_date,
+                snapshot_at=snapshot_at,
+                account_id=account_id or account.account_id,
+                account_name=account_name,
+                campaign_id=campaign_id or _fit_report_identifier(
+                    row.get("campaign_id"),
+                    fallback=campaign_name_raw,
+                    prefix="campaign",
+                ),
+                campaign_name=campaign_name,
+                normalized_campaign_code=normalized_campaign_code or _fit_text(campaign_name_raw.lower(), 255),
+                result_count=result_count,
+                spend=spend,
+                purchase_value=purchase_value,
+                impressions=impressions,
+                clicks=clicks,
+                raw=row,
+            )
+        elif level == "adset":
+            adset_name_raw = str(row.get("adset_name") or row.get("adset_id") or "").strip()
+            if not adset_name_raw:
+                continue
+            _insert_meta_realtime_adset_metric(
+                run_id=run_id,
+                business_date=business_date,
+                snapshot_at=snapshot_at,
+                account_id=account_id or account.account_id,
+                account_name=account_name,
+                campaign_id=campaign_id,
+                campaign_name=campaign_name if campaign_name_raw else None,
+                normalized_campaign_code=normalized_campaign_code,
+                adset_id=_fit_report_identifier(
+                    row.get("adset_id"),
+                    fallback=adset_name_raw,
+                    prefix="adset",
+                ),
+                adset_name=_fit_text(adset_name_raw, 512),
+                normalized_adset_code=_fit_text(adset_name_raw.lower(), 512),
+                result_count=result_count,
+                spend=spend,
+                purchase_value=purchase_value,
+                impressions=impressions,
+                clicks=clicks,
+                raw=row,
+            )
+        else:
+            ad_name_raw = str(row.get("ad_name") or row.get("ad_id") or "").strip()
+            if not ad_name_raw:
+                continue
+            adset_name_raw = str(row.get("adset_name") or row.get("adset_id") or "").strip()
+            adset_id = None
+            normalized_adset_code = None
+            adset_name = None
+            if adset_name_raw:
+                adset_id = _fit_report_identifier(
+                    row.get("adset_id"),
+                    fallback=adset_name_raw,
+                    prefix="adset",
+                )
+                adset_name = _fit_text(adset_name_raw, 512)
+                normalized_adset_code = _fit_text(adset_name_raw.lower(), 512)
+            _insert_meta_realtime_ad_metric(
+                run_id=run_id,
+                business_date=business_date,
+                snapshot_at=snapshot_at,
+                account_id=account_id or account.account_id,
+                account_name=account_name,
+                campaign_id=campaign_id,
+                campaign_name=campaign_name if campaign_name_raw else None,
+                normalized_campaign_code=normalized_campaign_code,
+                adset_id=adset_id,
+                adset_name=adset_name,
+                normalized_adset_code=normalized_adset_code,
+                ad_id=_fit_report_identifier(
+                    row.get("ad_id"),
+                    fallback=ad_name_raw,
+                    prefix="ad",
+                ),
+                ad_name=_fit_text(ad_name_raw, 512),
+                normalized_ad_code=_fit_text(ad_name_raw.lower(), 512),
+                result_count=result_count,
+                spend=spend,
+                purchase_value=purchase_value,
+                impressions=impressions,
+                clicks=clicks,
+                raw=row,
+            )
         imported += 1
         spend_total = round(spend_total + spend, 4)
     return {
@@ -997,38 +1201,84 @@ def _sync_meta_account_in_page_api(
     Reuses an already-open ``MetaAdsSession`` so multiple accounts in the
     same run share a single browser visit and CDP lock acquisition.
     """
-    raw_rows = session.fetch_insights(
-        account.account_id,
-        level="campaign",
-        time_range=account_xhr_time_range(account, business_date),
-        fields=META_INSIGHTS_FIELDS,
-        time_increment="1",
-        limit=META_MARKETING_API_LIMIT,
-        max_pages=META_MARKETING_API_MAX_PAGES,
-    )
     report_date = account_xhr_report_date(account, business_date)
-    rows = filter_xhr_insight_rows_to_report_date(raw_rows, report_date)
+    time_range = account_xhr_time_range(account, business_date)
+    level_reports: dict[str, dict[str, Any]] = {}
+    primary_api_report: dict[str, Any] | None = None
+    primary_import_report: dict[str, Any] | None = None
+
+    for level in META_REALTIME_XHR_LEVELS:
+        try:
+            raw_rows = session.fetch_insights(
+                account.account_id,
+                level=level,
+                time_range=time_range,
+                fields=META_INSIGHTS_FIELDS,
+                time_increment="1",
+                limit=META_MARKETING_API_LIMIT,
+                max_pages=META_MARKETING_API_MAX_PAGES,
+            )
+            rows = filter_xhr_insight_rows_to_report_date(raw_rows, report_date)
+            api_report = {
+                "business_date": business_date,
+                "snapshot_at": snapshot_at,
+                "account_id": account.account_id,
+                "request_count": 1,
+                "raw_row_count": len(raw_rows),
+                "row_count": len(rows),
+                "filtered_out_rows": len(raw_rows) - len(rows),
+                "report_date": report_date.isoformat(),
+                "channel": "xhr_api",
+                "level": level,
+            }
+            import_report = _import_meta_realtime_api_rows(
+                run_id=run_id,
+                business_date=business_date,
+                snapshot_at=snapshot_at,
+                rows=rows,
+                account=account,
+                level=level,
+            )
+            level_reports[level] = {
+                **api_report,
+                **import_report,
+                "status": "success",
+            }
+            if level == "campaign":
+                primary_api_report = dict(api_report)
+                primary_api_report.pop("level", None)
+                primary_import_report = import_report
+        except Exception as exc:
+            level_reports[level] = {
+                "business_date": business_date,
+                "snapshot_at": snapshot_at,
+                "account_id": account.account_id,
+                "report_date": report_date.isoformat(),
+                "channel": "xhr_api",
+                "level": level,
+                "rows_imported": 0,
+                "spend_usd": 0.0,
+                "status": "failed",
+                "error": str(exc),
+            }
+            if level == "campaign":
+                raise
+
     result: dict[str, Any] = {
-        "api_report": {
+        "api_report": primary_api_report or {
             "business_date": business_date,
             "snapshot_at": snapshot_at,
             "account_id": account.account_id,
             "request_count": 1,
-            "raw_row_count": len(raw_rows),
-            "row_count": len(rows),
-            "filtered_out_rows": len(raw_rows) - len(rows),
+            "raw_row_count": 0,
+            "row_count": 0,
+            "filtered_out_rows": 0,
             "report_date": report_date.isoformat(),
             "channel": "xhr_api",
         },
+        "level_reports": level_reports,
     }
-    import_report = _import_meta_realtime_api_rows(
-        run_id=run_id,
-        business_date=business_date,
-        snapshot_at=snapshot_at,
-        rows=rows,
-        account=account,
-    )
-    result.update(import_report)
+    result.update(primary_import_report or {"rows_imported": 0, "spend_usd": 0.0})
     return result
 
 

@@ -37,6 +37,11 @@
 | Ad Set | `meta_ad_daily_adset_metrics` | （无 realtime 表） | `normalized_adset_code` | `adset_name` | 同上 |
 | Ad | `meta_ad_daily_ad_metrics` | （无 realtime 表） | `normalized_ad_code` | `ad_name` | 同上 |
 
+2026-05-28 update: this table's Ad Set/Ad realtime assumption is superseded by
+[`2026-05-28-ads-level-realtime-default-today.md`](2026-05-28-ads-level-realtime-default-today.md).
+Ad Set now uses `meta_ad_realtime_daily_adset_metrics`; Ad now uses
+`meta_ad_realtime_daily_ad_metrics`.
+
 **`raw_json` 实际形状**（2026-05-08 上线后实测）：
 
 生产环境 `meta_ad_daily_*_metrics.raw_json` 不是扁平 dict，而是 **`{"rows": [{...metrics}], "merged_rows": N}`** 包装结构，单天单 code 可能对应 1+ 条原始 report 行（被同步链路 merge 进同一行）。详情解析时必须先 unwrap 到 `raw_json["rows"][0]`，否则所有 CPC/eCPM/展示量等字段都拿不到。
