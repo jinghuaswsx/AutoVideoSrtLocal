@@ -467,17 +467,17 @@
 
   const langZhMap = {
     'en': '英语',
-    'de': '德国',
-    'es': '西班牙',
-    'fr': '法国',
-    'it': '意大利',
-    'ja': '日本',
-    'ko': '韩国',
-    'pt': '葡萄牙',
-    'ru': '俄罗斯',
-    'nl': '荷兰',
-    'sv': '瑞典',
-    'fi': '芬兰',
+    'de': '德语',
+    'es': '西班牙语',
+    'fr': '法语',
+    'it': '意大利语',
+    'ja': '日语',
+    'ko': '韩语',
+    'pt': '葡萄牙语',
+    'ru': '俄语',
+    'nl': '荷兰语',
+    'sv': '瑞典语',
+    'fi': '芬兰语',
     'zh': '中文'
   };
 
@@ -496,6 +496,22 @@
       return apiName;
     }
     return raw.toUpperCase();
+  }
+
+  function renderLangPill(code) {
+    const raw = String(code || '').trim().toLowerCase();
+    let name = '';
+    if (langZhMap[raw]) {
+      name = langZhMap[raw];
+    } else {
+      const apiName = languageNameMap[raw];
+      if (apiName) {
+        const match = apiName.match(/^([^(（\s]+)/);
+        name = match ? match[1] : apiName;
+      }
+    }
+    name = name || raw.toUpperCase();
+    return `<span class="lang-pill"><span class="lang-name">${escapeHtml(name)}</span><span class="lang-code">${escapeHtml(raw.toUpperCase())}</span></span>`;
   }
 
   function renderStatusBadge(hasAd, count) {
@@ -640,9 +656,7 @@
               ${mainImage}
             </td>
             <td style="padding:10px; vertical-align: top; width: 80px; white-space: nowrap;">
-              <span style="display: inline-block; background: var(--oc-accent-subtle, #eff6ff); color: var(--oc-accent-hover, #1d4ed8); padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap;">
-                ${formatLanguageLabel(it.lang)}
-              </span>
+              ${renderLangPill(it.lang)}
             </td>
             <td style="padding:10px; vertical-align: top; width: 300px; max-width: 300px; overflow: hidden;">
               ${textsHtml}

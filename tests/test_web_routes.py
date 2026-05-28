@@ -3858,7 +3858,8 @@ def test_pushes_scripts_format_language_as_chinese_plus_code():
     assert "function formatLanguageLabel" in pushes_js
     assert "const raw = String(code || '').trim();" in pushes_js
     assert "${name} ${upper}" in pushes_js
-    assert '<span class="lang-pill">${formatLanguageLabel(it.lang)}</span>' in pushes_js
+    assert "function renderLangPill" in pushes_js
+    assert '<td class="push-lang-cell">${renderLangPill(it.lang)}</td>' in pushes_js
     assert "[['语种', formatLanguageLabel(t.lang)" in pushes_js
     assert "addKV('语种', formatLanguageLabel(item.lang));" in pushes_js
 
