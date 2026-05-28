@@ -62,17 +62,20 @@
 ## 前端行为
 
 1. 详情页默认选中 `全屏去除`，提交 payload 为 `{"remove_mode":"full"}`。
-2. 用户切换 `框选去除` 后，首帧图上开启拖拽框选；未框选时提交后端会继续按现有校验返回错误。
-3. 页面显示当前坐标，如 `l:0 t:1000 w:720 h:180`，便于提交前核对。
-4. 任务进入 queued/running/done/error 后，页面仍展示本次保存的处理范围。
-5. 牛马任务不显示火山的“擦除类型”，只显示“处理方式”和“处理范围”。
+2. 用户切换 `框选去除` 后，详情页使用可播放的视频预览框，字幕是动态内容，用户需要能在播放过程中核对并调整区域。
+3. 框选模式不再要求用户从空白状态手动画框。若当前任务没有保存过选区，前端自动创建一个默认矩形：按原视频坐标，矩形顶边位于视频高度约 70% 处，高度 100px，宽度默认覆盖视频宽度，并自动限制在视频边界内。
+4. 默认矩形在视频预览层上可整体拖动，也可以拖动四个角缩放；视频播放过程中仍可调整该矩形。提交时继续使用同一个 `selection_box` 数据契约。
+5. 手工框选预览框按竖屏视频工作流放大到 450x800 级别，窄屏下按容器自适应缩小，避免溢出。
+6. 页面显示当前坐标，如 `l:0 t:1000 w:720 h:180`，便于提交前核对。
+7. 任务进入 queued/running/done/error 后，页面仍展示本次保存的处理范围。
+8. 牛马任务不显示火山的“擦除类型”，只显示“处理方式”和“处理范围”。
 
 ## 验证
 
 1. Provider 测试：牛马提交在显式传入手工区域时包含 `position` JSON 字符串；火山提交不包含 `position`。
 2. Runtime 测试：牛马 `_submit()` 只在 `remove_mode="box"` 时从 `selection_box` / `position_payload` 生成 `remove_region` 并传给 provider；`remove_mode="full"` 不传。
 3. Route 测试：手工框选提交保存 `selection_box` 与 `position_payload`；任务中心自动牛马测试仍断言全帧 selection 且不写手工选区标记。
-4. UI 测试：详情页包含全屏/框选控件、坐标展示节点和提交按钮。
+4. UI 测试：详情页包含全屏/框选控件、可播放视频节点、默认 70%/100px 矩形逻辑、四角缩放节点、坐标展示节点和提交按钮。
 5. 回归命令：
    - `pytest tests/test_subtitle_removal_provider.py tests/test_subtitle_removal_runtime.py tests/test_subtitle_removal_routes.py tests/test_task_raw_video_processing.py tests/test_web_routes.py -q`
    - `python3 -m compileall appcore/subtitle_removal_provider.py appcore/subtitle_removal_runtime.py web/routes/subtitle_removal.py`

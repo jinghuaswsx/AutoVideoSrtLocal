@@ -30,18 +30,32 @@
 
       <div class="sr-selection-stage" data-role="selection-stage">
         <div class="sr-selection-viewport">
+          <video
+            id="srSelectionVideo"
+            class="sr-selection-video"
+            controls
+            playsinline
+            preload="metadata"
+            src="{{ state.source_video_url or '' }}"
+            {% if not state.source_video_url %}hidden{% endif %}
+          ></video>
           <img
             id="srSelectionImage"
             class="sr-selection-image"
             src="{{ state.thumbnail_url or '' }}"
             alt="首帧预览"
-            {% if not state.thumbnail_url %}hidden{% endif %}
+            {% if state.source_video_url or not state.thumbnail_url %}hidden{% endif %}
           >
           <div id="srSelectionOverlay" class="sr-selection-overlay" aria-label="字幕区域选择层" hidden></div>
-          <div id="srSelectionBox" class="sr-selection-box" hidden></div>
-          <div id="srSelectionEmpty" class="sr-selection-empty"{% if state.thumbnail_url %}hidden{% endif %}>
-            <div class="sr-selection-empty-title">首帧图暂未就绪</div>
-            <div class="sr-hint">完成上传后会在这里显示视频首帧。</div>
+          <div id="srSelectionBox" class="sr-selection-box" hidden>
+            <span class="sr-selection-handle sr-selection-handle-nw" data-selection-handle="nw" aria-hidden="true"></span>
+            <span class="sr-selection-handle sr-selection-handle-ne" data-selection-handle="ne" aria-hidden="true"></span>
+            <span class="sr-selection-handle sr-selection-handle-sw" data-selection-handle="sw" aria-hidden="true"></span>
+            <span class="sr-selection-handle sr-selection-handle-se" data-selection-handle="se" aria-hidden="true"></span>
+          </div>
+          <div id="srSelectionEmpty" class="sr-selection-empty"{% if state.source_video_url or state.thumbnail_url %}hidden{% endif %}>
+            <div class="sr-selection-empty-title">视频预览暂未就绪</div>
+            <div class="sr-hint">完成上传后会在这里显示可播放的视频预览。</div>
           </div>
         </div>
       </div>
@@ -68,12 +82,12 @@
               {% if sr_mode_readonly %}disabled{% endif %}
             >
             <span class="sr-radio-title">框选去除</span>
-            <span class="sr-radio-desc">在首帧上拖拽字幕区域，只提交该范围。</span>
+            <span class="sr-radio-desc">默认生成字幕带区域，可拖动或拉四角调整。</span>
           </label>
         </div>
         <div class="sr-selection-summary">
           <div id="srStateHint" class="sr-hint">
-            {% if sr_remove_mode == 'box' %}请在首帧图上拖拽字幕区域{% else %}全屏去除将直接提交整帧{% endif %}
+            {% if sr_remove_mode == 'box' %}可播放视频并调整字幕区域{% else %}全屏去除将直接提交整帧{% endif %}
           </div>
           <div id="srSelectionCoords" class="sr-selection-coords">未选择区域</div>
         </div>

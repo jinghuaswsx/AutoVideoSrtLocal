@@ -217,30 +217,33 @@
   .sr-selection-stage {
     display: grid;
     gap: 12px;
+    justify-items: start;
   }
 
   .sr-selection-viewport {
     position: relative;
-    max-width: 720px;
-    aspect-ratio: 16 / 9;
+    width: min(450px, 100%);
+    aspect-ratio: 9 / 16;
     border: 1px solid var(--border-main);
-    border-radius: 12px;
-    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+    border-radius: 8px;
+    background: #06111f;
     overflow: hidden;
   }
 
+  .sr-selection-video,
   .sr-selection-image {
     width: 100%;
     height: 100%;
     object-fit: contain;
     display: block;
-    background: #f8fbff;
+    background: #06111f;
   }
 
   .sr-selection-overlay {
     position: absolute;
     inset: 0;
-    cursor: crosshair;
+    z-index: 2;
+    pointer-events: none;
   }
 
   .sr-selection-empty {
@@ -265,10 +268,13 @@
   .sr-selection-box {
     position: absolute;
     border: 2px solid var(--primary-color);
-    border-radius: 10px;
+    border-radius: 6px;
     background: rgba(59, 130, 246, 0.12);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
-    pointer-events: none;
+    cursor: move;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 3;
   }
 
   .sr-selection-box::before,
@@ -276,8 +282,51 @@
     content: "";
     position: absolute;
     inset: 0;
-    border-radius: 8px;
+    border-radius: 4px;
     pointer-events: none;
+  }
+
+  .sr-selection-box[hidden],
+  .sr-selection-video[hidden],
+  .sr-selection-image[hidden],
+  .sr-selection-overlay[hidden] {
+    display: none !important;
+  }
+
+  .sr-selection-handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(17, 24, 39, 0.24);
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  .sr-selection-handle-nw {
+    left: -8px;
+    top: -8px;
+    cursor: nwse-resize;
+  }
+
+  .sr-selection-handle-ne {
+    right: -8px;
+    top: -8px;
+    cursor: nesw-resize;
+  }
+
+  .sr-selection-handle-sw {
+    left: -8px;
+    bottom: -8px;
+    cursor: nesw-resize;
+  }
+
+  .sr-selection-handle-se {
+    right: -8px;
+    bottom: -8px;
+    cursor: nwse-resize;
   }
 
   .sr-selection-footer {
@@ -640,7 +689,7 @@
     }
 
     .sr-selection-viewport {
-      max-width: 100%;
+      width: min(450px, 100%);
     }
 
     .sr-upload-dropzone {

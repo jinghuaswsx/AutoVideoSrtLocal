@@ -333,6 +333,7 @@
     var taskId = page.getAttribute("data-task-id") || bootstrap.id || "";
     var apiUrl = bootstrap.state_api_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) : "");
     var selectionOverlay = document.getElementById("srSelectionOverlay");
+    var selectionVideo = document.getElementById("srSelectionVideo");
     var selectionImage = document.getElementById("srSelectionImage");
     var selectionBoxEl = document.getElementById("srSelectionBox");
     var selectionEmpty = document.getElementById("srSelectionEmpty");
@@ -361,6 +362,9 @@
     var stateEraseType = document.getElementById("srStateEraseType");
     var stateEraseTypeItem = stateEraseType && stateEraseType.closest ? stateEraseType.closest(".sr-status-item") : null;
     var pendingActionMode = "submit";
+    var DEFAULT_SELECTION_TOP_RATIO = 0.7;
+    var DEFAULT_SELECTION_HEIGHT = 100;
+    var MIN_SELECTION_SIZE = 20;
 
     var selectionState = {
       mode: bootstrap.remove_mode || "full",
@@ -368,26 +372,21 @@
       dragging: false,
       start: null,
       current: null,
+      interaction: null,
     };
 
     function clamp(value, min, max) {
       return Math.max(min, Math.min(max, value));
     }
 
-    function pointInsideRect(point, rect) {
-      if (!point || !rect) {
-        return false;
-      }
-      return (
-        point.x >= rect.left &&
-        point.x <= rect.left + rect.width &&
-        point.y >= rect.top &&
-        point.y <= rect.top + rect.height
-      );
-    }
-
     function getMediaInfo() {
-      return bootstrap.media_info || {};
+      var info = bootstrap.media_info || {};
+      var width = Number(info.width) || (selectionVideo && selectionVideo.videoWidth) || (selectionImage && selectionImage.naturalWidth) || 0;
+      var height = Number(info.height) || (selectionVideo && selectionVideo.videoHeight) || (selectionImage && selectionImage.naturalHeight) || 0;
+      return Object.assign({}, info, {
+        width: width,
+        height: height,
+      });
     }
 
     function escapeHtml(text) {
@@ -402,7 +401,7 @@
       });
     }
 
-    function getContainedImageRect(container, mediaInfo) {
+    function getContainedMediaRect(container, mediaInfo) {
       var width = Number(mediaInfo.width) || 0;
       var height = Number(mediaInfo.height) || 0;
       if (!width || !height || !container) {
@@ -444,41 +443,49 @@
       };
     }
 
-    function computeSelectionBox(selection, imageRect, mediaInfo) {
+    function defaultSelectionBox(mediaInfo) {
       var width = Number(mediaInfo.width) || 0;
       var height = Number(mediaInfo.height) || 0;
-      if (!selection || !imageRect || !width || !height) {
+      if (!width || !height) {
         return null;
       }
+      var boxHeight = Math.max(1, Math.min(DEFAULT_SELECTION_HEIGHT, height));
+      var top = clamp(Math.round(height * DEFAULT_SELECTION_TOP_RATIO), 0, Math.max(0, height - boxHeight));
+      return normalizeSelectionBox({
+        l: 0,
+        t: top,
+        w: width,
+        h: boxHeight,
+      }, null);
+    }
 
-      var left = clamp(Math.min(selection.startX, selection.endX), imageRect.left, imageRect.left + imageRect.width);
-      var top = clamp(Math.min(selection.startY, selection.endY), imageRect.top, imageRect.top + imageRect.height);
-      var right = clamp(Math.max(selection.startX, selection.endX), imageRect.left, imageRect.left + imageRect.width);
-      var bottom = clamp(Math.max(selection.startY, selection.endY), imageRect.top, imageRect.top + imageRect.height);
-      var boxWidth = Math.max(0, right - left);
-      var boxHeight = Math.max(0, bottom - top);
-
-      if (!boxWidth || !boxHeight) {
+    function ensureDefaultSelectionBox() {
+      if (selectionState.mode !== "box") {
         return null;
       }
+      if (selectionState.box) {
+        return selectionState.box;
+      }
+      var box = defaultSelectionBox(getMediaInfo());
+      if (!box) {
+        return null;
+      }
+      selectionState.box = box;
+      renderSelectionBoxFromState();
+      return box;
+    }
 
+    function pointerToMediaPoint(pointer, imageRect, mediaInfo) {
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!pointer || !imageRect || !width || !height) {
+        return null;
+      }
       var scaleX = width / imageRect.width;
       var scaleY = height / imageRect.height;
-      var normalizedLeft = Math.round((left - imageRect.left) * scaleX);
-      var normalizedTop = Math.round((top - imageRect.top) * scaleY);
-      var normalizedWidth = Math.round(boxWidth * scaleX);
-      var normalizedHeight = Math.round(boxHeight * scaleY);
-      var x2 = normalizedLeft + normalizedWidth;
-      var y2 = normalizedTop + normalizedHeight;
       return {
-        l: normalizedLeft,
-        t: normalizedTop,
-        w: normalizedWidth,
-        h: normalizedHeight,
-        x1: normalizedLeft,
-        y1: normalizedTop,
-        x2: x2,
-        y2: y2,
+        x: clamp(Math.round((pointer.x - imageRect.left) * scaleX), 0, width),
+        y: clamp(Math.round((pointer.y - imageRect.top) * scaleY), 0, height),
       };
     }
 
@@ -510,8 +517,81 @@
       }
     }
 
+    function renderSelectionBoxFromState(mediaInfo) {
+      if (selectionState.mode !== "box" || !selectionState.box || !selectionOverlay) {
+        updateSelectionBoxDisplay(null);
+        return;
+      }
+      mediaInfo = mediaInfo || getMediaInfo();
+      var mediaRect = getContainedMediaRect(selectionOverlay, mediaInfo);
+      updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, mediaRect, mediaInfo));
+    }
+
     function getCurrentSelectionPayload() {
-      return selectionState.box || normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload) || null;
+      if (selectionState.box) {
+        return selectionState.box;
+      }
+      if ((bootstrap.remove_mode || "") === "box") {
+        return normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload);
+      }
+      return null;
+    }
+
+    function moveSelectionFromPointer(pointer) {
+      var interaction = selectionState.interaction;
+      var startBox = interaction && interaction.startBox;
+      var startPointer = interaction && interaction.startPointer;
+      var mediaInfo = getMediaInfo();
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!pointer || !startBox || !startPointer || !width || !height) {
+        return null;
+      }
+      var left = clamp(startBox.l + pointer.x - startPointer.x, 0, Math.max(0, width - startBox.w));
+      var top = clamp(startBox.t + pointer.y - startPointer.y, 0, Math.max(0, height - startBox.h));
+      selectionState.box = normalizeSelectionBox({
+        l: left,
+        t: top,
+        w: startBox.w,
+        h: startBox.h,
+      }, null);
+      return selectionState.box;
+    }
+
+    function resizeSelectionFromPointer(handle, pointer) {
+      var interaction = selectionState.interaction;
+      var startBox = interaction && interaction.startBox;
+      var mediaInfo = getMediaInfo();
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!handle || !pointer || !startBox || !width || !height) {
+        return null;
+      }
+      var minSize = Math.max(1, Math.min(MIN_SELECTION_SIZE, width, height));
+      var left = startBox.l;
+      var top = startBox.t;
+      var right = startBox.x2;
+      var bottom = startBox.y2;
+
+      if (handle.indexOf("w") !== -1) {
+        left = clamp(pointer.x, 0, right - minSize);
+      }
+      if (handle.indexOf("e") !== -1) {
+        right = clamp(pointer.x, left + minSize, width);
+      }
+      if (handle.indexOf("n") !== -1) {
+        top = clamp(pointer.y, 0, bottom - minSize);
+      }
+      if (handle.indexOf("s") !== -1) {
+        bottom = clamp(pointer.y, top + minSize, height);
+      }
+      selectionState.box = normalizeSelectionBox({
+        l: left,
+        t: top,
+        w: right - left,
+        h: bottom - top,
+      }, null);
+      return selectionState.box;
     }
 
     function getActionPayload() {
@@ -737,15 +817,26 @@
         stateResolution.textContent = (state.media_info && state.media_info.resolution) || "未读取";
       }
       if (stateHint) {
-        stateHint.textContent = mode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
+        stateHint.textContent = mode === "box" ? "可播放视频并调整字幕区域" : "全屏去除将直接提交整帧";
       }
+      var safeSourceVideoUrl = safeMediaSrc(state.source_video_url);
       var safeThumbnailUrl = safeMediaSrc(state.thumbnail_url);
-      if (selectionImage && safeThumbnailUrl) {
-        selectionImage.src = safeThumbnailUrl;
-        selectionImage.hidden = false;
+      if (selectionVideo) {
+        if (safeSourceVideoUrl && selectionVideo.getAttribute("src") !== safeSourceVideoUrl) {
+          selectionVideo.src = safeSourceVideoUrl;
+        }
+        selectionVideo.hidden = !safeSourceVideoUrl;
+      }
+      if (selectionImage) {
+        if (!safeSourceVideoUrl && safeThumbnailUrl) {
+          selectionImage.src = safeThumbnailUrl;
+          selectionImage.hidden = false;
+        } else {
+          selectionImage.hidden = true;
+        }
       }
       if (selectionEmpty) {
-        selectionEmpty.hidden = !!safeThumbnailUrl;
+        selectionEmpty.hidden = !!(safeSourceVideoUrl || safeThumbnailUrl);
       }
       if (state.remove_mode) {
         modeInputs.forEach(function (input) {
@@ -756,12 +847,15 @@
           tile.classList.toggle("is-active", !!input && input.checked);
         });
       }
-      if (state.selection_box || state.position_payload) {
+      if (mode === "box" && (state.selection_box || state.position_payload)) {
         selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);
-        var imageRect = getContainedImageRect(selectionOverlay, state.media_info || getMediaInfo());
-        if (imageRect && selectionState.box) {
-          updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
-        }
+      }
+      if (mode === "box") {
+        ensureDefaultSelectionBox();
+        renderSelectionBoxFromState(state.media_info || getMediaInfo());
+      } else {
+        selectionState.box = null;
+        updateSelectionBoxDisplay(null);
       }
       var nextEraseType = isVolc ? ((state && state.erase_text_type) || "subtitle") : "";
       syncEraseType(nextEraseType);
@@ -781,6 +875,9 @@
       if (nextMode !== "box") {
         selectionState.box = null;
         updateSelectionBoxDisplay(null);
+      } else {
+        ensureDefaultSelectionBox();
+        renderSelectionBoxFromState();
       }
       modeInputs.forEach(function (input) {
         input.checked = input.value === nextMode;
@@ -796,7 +893,7 @@
         stateModeText.textContent = nextMode === "box" ? "框选去除" : "全屏去除";
       }
       if (stateHint) {
-        stateHint.textContent = nextMode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
+        stateHint.textContent = nextMode === "box" ? "可播放视频并调整字幕区域" : "全屏去除将直接提交整帧";
       }
       window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
         remove_mode: selectionState.mode,
@@ -869,85 +966,93 @@
       };
     }
 
-    function updateDragSelection(event) {
-      if (!selectionState.dragging) {
-        return;
-      }
-      var pointer = getPointerPosition(event);
-      selectionState.current = pointer;
-      var mediaInfo = getMediaInfo();
-      var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
-      if (!imageRect) {
-        return;
-      }
-      var box = computeSelectionBox(
-        {
-          startX: selectionState.start.x,
-          startY: selectionState.start.y,
-          endX: pointer.x,
-          endY: pointer.y,
-        },
-        imageRect,
-        mediaInfo
-      );
-      selectionState.box = box;
-      if (box) {
-        updateSelectionBoxDisplay(selectionBoxToOverlayRect(box, imageRect, mediaInfo));
-      }
-    }
-
-    function finishDragSelection() {
-      if (!selectionState.dragging) {
-        return;
-      }
-      selectionState.dragging = false;
-      var mediaInfo = getMediaInfo();
-      var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
-      if (!imageRect || !selectionState.box) {
-        updateSelectionBoxDisplay(null);
-        return;
-      }
-      updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, mediaInfo));
+    function updateInteractionState() {
       window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
         remove_mode: selectionState.mode,
         selection_box: selectionState.box,
       });
     }
 
-    if (selectionOverlay) {
-      selectionOverlay.addEventListener("pointerdown", function (event) {
-        if (selectionState.mode !== "box") {
-          return;
-        }
-        var mediaInfo = getMediaInfo();
-        var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
-        if (!imageRect) {
-          return;
-        }
-        var pointer = getPointerPosition(event);
-        if (!pointInsideRect(pointer, imageRect)) {
-          return;
-        }
-        selectionState.dragging = true;
-        selectionState.start = pointer;
-        selectionState.current = pointer;
-        selectionState.box = null;
-        selectionBoxEl.hidden = false;
-        selectionBoxEl.style.left = pointer.x + "px";
-        selectionBoxEl.style.top = pointer.y + "px";
-        selectionBoxEl.style.width = "0px";
-        selectionBoxEl.style.height = "0px";
-        event.preventDefault();
-      });
+    function mediaPointFromEvent(event) {
+      if (!selectionOverlay) {
+        return null;
+      }
+      var mediaInfo = getMediaInfo();
+      var mediaRect = getContainedMediaRect(selectionOverlay, mediaInfo);
+      return pointerToMediaPoint(getPointerPosition(event), mediaRect, mediaInfo);
+    }
 
-      selectionOverlay.addEventListener("pointermove", updateDragSelection);
-      selectionOverlay.addEventListener("pointerup", finishDragSelection);
-      selectionOverlay.addEventListener("pointercancel", finishDragSelection);
-      selectionOverlay.addEventListener("pointerleave", function () {
-        if (selectionState.dragging) {
-          finishDragSelection();
+    function startSelectionInteraction(event) {
+      if (selectionState.mode !== "box") {
+        return;
+      }
+      ensureDefaultSelectionBox();
+      if (!selectionState.box) {
+        return;
+      }
+      var pointer = mediaPointFromEvent(event);
+      if (!pointer) {
+        return;
+      }
+      var handle = event.target && event.target.getAttribute("data-selection-handle");
+      selectionState.dragging = true;
+      selectionState.start = pointer;
+      selectionState.current = pointer;
+      selectionState.interaction = {
+        type: handle ? "resize" : "move",
+        handle: handle || "",
+        startPointer: pointer,
+        startBox: Object.assign({}, selectionState.box),
+      };
+      if (selectionBoxEl.setPointerCapture && event.pointerId != null) {
+        selectionBoxEl.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    function updateSelectionInteraction(event) {
+      if (!selectionState.dragging) {
+        return;
+      }
+      var pointer = mediaPointFromEvent(event);
+      if (!pointer) {
+        return;
+      }
+      selectionState.current = pointer;
+      if (selectionState.interaction && selectionState.interaction.type === "resize") {
+        resizeSelectionFromPointer(selectionState.interaction.handle, pointer);
+      } else {
+        moveSelectionFromPointer(pointer);
+      }
+      renderSelectionBoxFromState();
+      updateInteractionState();
+      event.preventDefault();
+    }
+
+    function finishSelectionInteraction(event) {
+      if (!selectionState.dragging) {
+        return;
+      }
+      selectionState.dragging = false;
+      selectionState.interaction = null;
+      renderSelectionBoxFromState();
+      updateInteractionState();
+      if (event && event.pointerId != null && selectionBoxEl && selectionBoxEl.releasePointerCapture) {
+        try {
+          selectionBoxEl.releasePointerCapture(event.pointerId);
+        } catch (_) {
+          // Browser may have already released capture on pointerup.
         }
-      });
+      }
+    }
+
+    if (selectionBoxEl) {
+      selectionBoxEl.addEventListener("pointerdown", startSelectionInteraction);
+      selectionBoxEl.addEventListener("pointermove", updateSelectionInteraction);
+      selectionBoxEl.addEventListener("pointerup", finishSelectionInteraction);
+      selectionBoxEl.addEventListener("pointercancel", finishSelectionInteraction);
+      selectionBoxEl.addEventListener("lostpointercapture", finishSelectionInteraction);
     }
 
     modeInputs.forEach(function (input) {
@@ -1068,7 +1173,9 @@
       });
     }
 
-    window.computeSelectionBox = computeSelectionBox;
+    window.ensureDefaultSelectionBox = ensureDefaultSelectionBox;
+    window.moveSelectionFromPointer = moveSelectionFromPointer;
+    window.resizeSelectionFromPointer = resizeSelectionFromPointer;
     window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;
     window.renderSubtitleRemovalState = renderSubtitleRemovalState;
     window.refreshSubtitleRemovalState = refreshSubtitleRemovalState;
@@ -1086,13 +1193,25 @@
       socket.on("connect", joinFn);
     }
 
+    if (selectionVideo) {
+      selectionVideo.addEventListener("loadedmetadata", function () {
+        if (selectionState.mode === "box") {
+          ensureDefaultSelectionBox();
+          renderSelectionBoxFromState();
+        }
+      });
+    }
+    if (selectionImage) {
+      selectionImage.addEventListener("load", function () {
+        if (selectionState.mode === "box") {
+          ensureDefaultSelectionBox();
+          renderSelectionBoxFromState();
+        }
+      });
+    }
     renderSubtitleRemovalState(bootstrap);
     syncMode(selectionState.mode);
-    updateSelectionBoxDisplay(
-      selectionState.box && selectionOverlay
-        ? selectionBoxToOverlayRect(selectionState.box, getContainedImageRect(selectionOverlay, getMediaInfo()), getMediaInfo())
-        : null
-    );
+    renderSelectionBoxFromState();
     refreshSubtitleRemovalState();
   })();
 </script>

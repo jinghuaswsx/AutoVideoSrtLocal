@@ -341,6 +341,9 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "subtitle_backend: readUploadSubtitleBackend()" in scripts
     assert 'xhr.open("PUT", bootstrapData.upload_url, true)' in scripts
     assert "function safeMediaSrc(url)" in scripts
+    assert "var safeSourceVideoUrl = safeMediaSrc(state.source_video_url);" in scripts
+    assert "selectionVideo.src = safeSourceVideoUrl;" in scripts
+    assert "selectionVideo.src = state.source_video_url;" not in scripts
     assert "var safeThumbnailUrl = safeMediaSrc(state.thumbnail_url);" in scripts
     assert "selectionImage.src = safeThumbnailUrl;" in scripts
     assert "selectionImage.src = state.thumbnail_url;" not in scripts
@@ -627,7 +630,8 @@ def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
     assert "y2 = y1 + height;" in scripts
     assert "selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);" in scripts
     assert "window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;" in scripts
-    assert "return selectionState.box || normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload) || null;" in scripts
+    assert 'if ((bootstrap.remove_mode || "") === "box") {' in scripts
+    assert "return normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload);" in scripts
 
 
 def test_index_page_uses_simple_start_button_loading_state(authed_client_no_db):
@@ -1395,6 +1399,7 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     assert 'name="remove_mode"' in detail_body
     assert 'value="full"' in detail_body
     assert 'value="box"' in detail_body
+    assert 'id="srSelectionVideo"' in detail_body
     assert 'id="srSelectionCoords"' in detail_body
     assert 'id="srStateMode"' in detail_body
     assert 'id="srStateSelection"' in detail_body
@@ -1457,8 +1462,17 @@ def test_subtitle_removal_detail_shell_exposes_selection_stage_hooks(authed_clie
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
+    assert "srSelectionVideo" in body
     assert "srSelectionOverlay" in body
-    assert "computeSelectionBox" in body
+    assert "DEFAULT_SELECTION_TOP_RATIO = 0.7" in body
+    assert "DEFAULT_SELECTION_HEIGHT = 100" in body
+    assert "ensureDefaultSelectionBox" in body
+    assert "moveSelectionFromPointer" in body
+    assert "resizeSelectionFromPointer" in body
+    assert "sr-selection-handle-nw" in body
+    assert "sr-selection-handle-ne" in body
+    assert "sr-selection-handle-sw" in body
+    assert "sr-selection-handle-se" in body
     assert "提交去字幕任务" in body
     assert "全屏去除" in body
     assert "框选去除" in body
