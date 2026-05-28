@@ -639,6 +639,7 @@ def restart(task_id: str):
         source_language=raw_source_language,
         user_id=owner_id,
         runner=dialogue_pipeline_runner,
+        step_order=tuple(_dialogue_pipeline_step_names(task)),
     )
     return _json_response({"status": "restarted", "task": updated})
 

@@ -142,6 +142,81 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
     assert expected <= rules
 
 
+def test_dialogue_translate_restart_uses_dialogue_step_order(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-restart-steps"
+    task = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "dialogue_translate",
+        "video_path": "/tmp/dialogue-restart.mp4",
+        "task_dir": "/tmp/dialogue-restart-steps",
+        "source_language": "en",
+        "target_lang": "de",
+        "steps": {},
+    }
+    store.create(task_id, task["video_path"], task["task_dir"], user_id=1)
+    store.update(task_id, **task)
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "id": task_id,
+            "user_id": 1,
+            "original_filename": "dialogue.mp4",
+            "display_name": "Dialogue Restart",
+            "task_dir": task["task_dir"],
+            "state_json": json.dumps(task, ensure_ascii=False),
+            "status": "running",
+            "thumbnail_path": "",
+            "created_at": None,
+            "expires_at": None,
+            "deleted_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.recover_task_if_needed",
+        lambda *args, **kwargs: None,
+    )
+    dialogue_steps = [
+        "extract",
+        "asr",
+        "asr_clean",
+        "speaker_detect",
+        "voice_match_ab",
+        "alignment",
+        "translate",
+        "tts",
+        "subtitle",
+        "compose",
+        "export",
+    ]
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate._dialogue_pipeline_step_names",
+        lambda *args, **kwargs: dialogue_steps,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_restart_task(*args, **kwargs):
+        captured.update(kwargs)
+        return {"id": task_id, "steps": {step: "pending" for step in kwargs["step_order"]}}
+
+    monkeypatch.setattr("web.services.task_restart.restart_task", fake_restart_task)
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/restart",
+        json={"source_language": "en"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["runner"] is not None
+    assert captured["step_order"] == tuple(dialogue_steps)
+    assert "speaker_detect" in captured["step_order"]
+    assert "voice_match_ab" in captured["step_order"]
+    assert "voice_match" not in captured["step_order"]
+
+
 def test_dialogue_translate_post_requires_csrf_when_enabled(monkeypatch):
     monkeypatch.setenv("WTF_CSRF_ENABLED", "1")
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
