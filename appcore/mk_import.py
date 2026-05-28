@@ -832,6 +832,7 @@ def import_mk_video(
             cover_object_key=cover_object_key,
             lang="en",
             task_id=task_id,
+            skip_push=1,  # 默认不推送英文原始素材，避免干扰待推送列表
         )
         _append_step_result(
             step_results,
