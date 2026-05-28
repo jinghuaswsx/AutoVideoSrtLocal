@@ -982,3 +982,38 @@ def test_medias_product_copy_push_modal_matches_links_push_tabs_and_footer():
     assert "data-product-copy-panel" in script
     assert "renderProductCopyPushInfo" in script
     assert "productCopyPushRenderResponse" in script
+
+
+def test_build_product_localized_texts_push_preview_raises_when_no_match(monkeypatch):
+    from appcore import pushes
+    import pytest
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "lookup_mk_id", lambda code: (None, "no_match"))
+
+    with pytest.raises(pushes.ProductLocalizedTextsPayloadError) as exc_info:
+        pushes.build_product_localized_texts_push_preview({
+            "id": 10,
+            "product_code": "demo-rjc",
+            "listing_status": "上架",
+        })
+
+    assert "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。" in str(exc_info.value)
+
+
+def test_build_unsuitable_product_push_preview_raises_when_no_match(monkeypatch):
+    from appcore import pushes
+    import pytest
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "lookup_mk_id", lambda code: (None, "no_match"))
+
+    with pytest.raises(pushes.ProductLocalizedTextsPayloadError) as exc_info:
+        pushes.build_unsuitable_product_push_preview({
+            "id": 10,
+            "product_code": "demo-rjc",
+            "listing_status": "上架",
+        })
+
+    assert "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。" in str(exc_info.value)
+

@@ -820,9 +820,10 @@ def api_push_localized_texts(item_id: int):
         return _json_response({"error": "product_not_found"}, 404)
     if not medias.is_product_listed(product):
         return _json_response({"error": "product_not_listed"}, 409)
-    mk_id = product.get("mk_id")
-    if not mk_id:
-        return _json_response({"error": "mk_id_missing", "detail": "产品缺少 mk_id"}, 400)
+    try:
+        mk_id = pushes.get_exact_product_mk_id(product)
+    except Exception as exc:
+        return _json_response({"error": "localized_texts_payload_invalid", "message": str(exc)}, 400)
 
     target_url = pushes.build_localized_texts_target_url(mk_id)
     if not target_url:

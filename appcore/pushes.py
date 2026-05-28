@@ -168,6 +168,39 @@ def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
     return max(matched_ids), "ok"
 
 
+def get_exact_product_mk_id(product: dict) -> int:
+    """按 product_code 精准查询明空这边的 mk_id，如果查不到则报错提示需要先完成第一条视频推送。"""
+    product_code = (product.get("product_code") or "").strip()
+    try:
+        if product_code:
+            mk_id, status = lookup_mk_id(product_code)
+            if mk_id:
+                # 动态匹配成功，若与本地不一致则顺便回填本地 DB 进行自动纠偏
+                local_mk_id = product.get("mk_id")
+                if local_mk_id != mk_id:
+                    try:
+                        medias.update_product(product["id"], mk_id=mk_id)
+                    except Exception as exc:
+                        log.warning("update_product mk_id failed: %s", exc)
+                return mk_id
+
+            # 若精准查无此商品，则严格抛出“首条视频素材推送”拦截门禁
+            if status == "no_match":
+                raise ProductLocalizedTextsPayloadError("必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。")
+    except ProductLocalizedTextsPayloadError:
+        raise
+    except Exception as exc:
+        log.warning("get_exact_product_mk_id lookup failed: %s", exc)
+
+    # 兼容/回退分支：适用于测试环境（数据库不可用）、离线环境、未配置状态等场景
+    # 如果产品本身含有 mk_id，则安全回退
+    local_mk_id = int(product.get("mk_id") or 0)
+    if local_mk_id:
+        return local_mk_id
+
+    raise ProductLocalizedTextsPayloadError("必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。")
+
+
 def build_localized_texts_headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     auth = get_localized_texts_authorization()
@@ -1168,12 +1201,7 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
 
     source_handle = str(product.get("product_code") or "").strip()
     error_handle = _unsuitable_error_handle(source_handle)
-    try:
-        mk_id = int(product.get("mk_id") or 0)
-    except (TypeError, ValueError):
-        mk_id = 0
-    if not mk_id:
-        raise ProductLocalizedTextsPayloadError("mk_id_missing")
+    mk_id = get_exact_product_mk_id(product)
 
     text_target_url = build_localized_texts_target_url(mk_id)
     if not text_target_url:
@@ -1524,12 +1552,7 @@ def build_product_localized_texts_push_preview(product: dict | None) -> dict:
     if not product_id:
         raise ProductLocalizedTextsPayloadError("product_not_found")
 
-    try:
-        mk_id = int(product.get("mk_id") or 0)
-    except (TypeError, ValueError):
-        mk_id = 0
-    if not mk_id:
-        raise ProductLocalizedTextsPayloadError("mk_id_missing")
+    mk_id = get_exact_product_mk_id(product)
 
     target_url = build_localized_texts_target_url(mk_id)
     if not target_url:
