@@ -60,14 +60,14 @@
    * docs/superpowers/specs/2026-04-18-push-management-design.md
    * docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md
    */
-  --push-table-min-w: 1748px;
+  --push-table-min-w: 1776px;
   --push-col-thumb: 168px;
   --push-col-product: 144px;
   --push-col-main-image: 168px;
   --push-col-owner: 92px;
   --push-col-mk: 62px;
   --push-col-item: 182px;
-  --push-col-lang: 60px;
+  --push-col-lang: 88px;
   --push-col-ready: 290px;
   --push-col-audit: 230px;
   --push-col-status: 86px;
@@ -752,13 +752,30 @@
 
 /* ---------- 语种圆片 ---------- */
 .lang-pill {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: var(--oc-r-full);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: var(--oc-r-md, 6px);
   background: var(--oc-accent-subtle);
   color: var(--oc-accent);
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.35;
+  text-align: center;
+}
+.lang-pill .lang-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lang-pill .lang-code {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 1px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 /* ---------- 就绪文字（视频|封面|文案|链接） ---------- */
@@ -1073,14 +1090,14 @@
 /* ---------- 响应式 ---------- */
 @media (min-width: 769px) and (max-width: 1500px) {
   :root {
-    --push-table-min-w: 1384px;
+    --push-table-min-w: 1418px;
     --push-col-thumb: 140px;
     --push-col-product: 126px;
     --push-col-main-image: 140px;
     --push-col-owner: 76px;
     --push-col-mk: 52px;
     --push-col-item: 150px;
-    --push-col-lang: 50px;
+    --push-col-lang: 84px;
     --push-col-ready: 226px;
     --push-col-audit: 170px;
     --push-col-status: 70px;
@@ -1152,14 +1169,14 @@
 
 @media (min-width: 769px) and (orientation: portrait) {
   :root {
-    --push-table-min-w: 1100px;
+    --push-table-min-w: 1138px;
     --push-col-thumb: 100px;
     --push-col-product: 116px;
     --push-col-main-image: 100px;
     --push-col-owner: 54px;
     --push-col-mk: 42px;
     --push-col-item: 122px;
-    --push-col-lang: 42px;
+    --push-col-lang: 80px;
     --push-col-ready: 168px;
     --push-col-audit: 112px;
     --push-col-status: 58px;

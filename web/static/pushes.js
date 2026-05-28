@@ -138,17 +138,17 @@
 
   const langCountryMap = {
     'en': '英语',
-    'de': '德国',
-    'fr': '法国',
-    'es': '西班牙',
-    'it': '意大利',
-    'ja': '日本',
-    'ko': '韩国',
-    'pt': '葡萄牙',
-    'ru': '俄罗斯',
-    'nl': '荷兰',
-    'sv': '瑞典',
-    'fi': '芬兰'
+    'de': '德语',
+    'fr': '法语',
+    'es': '西班牙语',
+    'it': '意大利语',
+    'ja': '日语',
+    'ko': '韩语',
+    'pt': '葡萄牙语',
+    'ru': '俄语',
+    'nl': '荷兰语',
+    'sv': '瑞典语',
+    'fi': '芬兰语'
   };
 
   function formatLanguageLabel(code) {
@@ -162,6 +162,22 @@
     const lang = LANGUAGES.find(l => l && l.code === normalized);
     const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
     return name ? `${name} ${upper}` : upper || raw;
+  }
+
+  function renderLangPill(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    if (!normalized) return '';
+    const upper = normalized.toUpperCase();
+    let name = '';
+    if (langCountryMap[normalized]) {
+      name = langCountryMap[normalized];
+    } else {
+      const lang = LANGUAGES.find(l => l && l.code === normalized);
+      name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
+    }
+    name = name || upper || raw;
+    return `<span class="lang-pill"><span class="lang-name">${escapeHtml(name)}</span><span class="lang-code">${escapeHtml(upper)}</span></span>`;
   }
 
   async function copyText(text) {
@@ -1158,7 +1174,7 @@
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
-      <td class="push-lang-cell"><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
+      <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
       <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
       <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
@@ -1234,7 +1250,7 @@
           ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
         </div>
       </td>
-      <td class="push-lang-cell"><span class="lang-pill">${escapeHtml(formatLanguageLabel(it.lang))}</span></td>
+      <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
       <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
       <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
