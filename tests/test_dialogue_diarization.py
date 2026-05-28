@@ -84,7 +84,8 @@ def test_detect_uses_diarization_when_provider_speaker_confidence_is_low():
     assert [s["speaker_id"] for s in result["dialogue_segments"]] == ["A", "B"]
 
 
-def test_detect_raises_when_diarization_required_but_unavailable():
+def test_detect_raises_when_diarization_required_but_unavailable(monkeypatch):
+    monkeypatch.delenv("DIALOGUE_DIARIZATION_URL", raising=False)
     utterances = [{"text": "hello", "start_time": 0.0, "end_time": 1.0}]
 
     with pytest.raises(DiarizationUnavailable) as exc:
@@ -226,6 +227,8 @@ def test_http_diarization_client_accepts_positional_audio_path_and_task_id(monke
 @pytest.mark.parametrize(
     "payload",
     [
+        [],
+        {"segments": {"speaker": "x", "start_time": 0.0, "end_time": 1.0}},
         {"segments": []},
         {"segments": ["not-a-dict"]},
         {"segments": [{"start_time": 0.0, "end_time": 1.0}]},
