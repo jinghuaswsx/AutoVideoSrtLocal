@@ -277,6 +277,7 @@ def _serialize_row(
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "listing_status": row.get("listing_status") or "上架",
         "cover_url": cover_url,
+        "object_key": row.get("object_key"),
         "skip_push": bool(row.get("skip_push")),
         "skip_push_at": row["skip_push_at"].isoformat() if row.get("skip_push_at") else None,
     }

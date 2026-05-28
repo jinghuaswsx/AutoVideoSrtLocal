@@ -1945,4 +1945,135 @@
   box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
 }
 
+/* --- Proportionally display video cover thumbnails --- */
+.push-thumb-wrap {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  border-radius: var(--oc-r-md);
+  overflow: hidden;
+  background: var(--oc-bg-muted);
+  height: 144px;
+  vertical-align: middle;
+}
+
+.push-thumb-wrap .thumb {
+  height: 100%;
+  width: auto;
+  max-width: 144px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Play button overlay */
+.push-play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.push-thumb-wrap:hover .push-play-overlay {
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 1;
+}
+
+.push-play-btn-icon {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  color: #333;
+  transition: transform 0.2s ease;
+}
+
+.push-thumb-wrap:hover .push-play-btn-icon {
+  transform: scale(1.1);
+  color: var(--oc-accent);
+}
+
+/* Premium Video Playback Modal (270x480) */
+.push-video-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200; /* Higher than ect-modal-overlay (1100) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  animation: push-fade-in 0.2s ease-out;
+}
+
+.push-video-modal-container {
+  position: relative;
+  width: 270px;
+  height: 480px;
+  background: #000;
+  border-radius: var(--oc-r-lg);
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  animation: push-zoom-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.push-video-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 20px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.push-video-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.push-video-modal-content {
+  width: 100%;
+  height: 100%;
+}
+
+.push-video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@keyframes push-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes push-zoom-in {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+
 
