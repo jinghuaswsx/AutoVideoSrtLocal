@@ -31,6 +31,8 @@
     PRODUCT_LINKS_JSON: 'product-links-json',
     PRODUCT_LINKS: 'product-links',
   };
+  const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
+  const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
   const DEFAULT_FILTERS = {
@@ -399,6 +401,394 @@
     }
     wrap.appendChild(el('pre', { class: 'audit-detail-pre' }, formatAuditDetail(detail)));
     return wrap;
+  }
+
+  function aiEvaluationFailureReason(reason) {
+    const text = String(reason || '').trim();
+    return text || '服务器没有返回评估结果';
+  }
+
+  function aiEvaluationErrorMessage(err) {
+    if (!err) return '';
+    if (err.name === 'AbortError') return '';
+    if (err.body) {
+      try {
+        const parsed = JSON.parse(err.body);
+        const text = parsed.error || parsed.message || parsed.detail || '';
+        if (text) return String(text);
+      } catch (_) {
+        if (String(err.body).trim()) return String(err.body).trim();
+      }
+    }
+    const message = String(err.message || err || '').trim();
+    if (!message || message.includes('Unexpected end of JSON input')) return '';
+    return message;
+  }
+
+  function ensureAiEvaluationRequestModalStyle() {
+    if (document.getElementById('aiEvaluationRequestModalStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'aiEvaluationRequestModalStyle';
+    style.textContent = `
+      .ect-modal--ai-evaluating { max-width:min(1560px, calc(100vw - 48px)); min-height:min(820px, calc(100vh - 48px)); }
+      .ect-modal--ai-evaluating .ect-modal-body { display:flex; flex-direction:column; min-height:0; padding:0; overflow:hidden; }
+      .ect-ai-topbar { display:flex; align-items:center; justify-content:center; gap:24px; min-height:92px; padding:22px 20px; border-bottom:1px solid var(--oc-border); background:var(--oc-bg-subtle); }
+      .ect-ai-status { display:flex; align-items:center; justify-content:center; gap:14px; min-width:0; }
+      .ect-ai-status-dot { width:16px; height:16px; border-radius:50%; background:var(--oc-accent); box-shadow:0 0 0 7px var(--oc-accent-ring); }
+      .ect-ai-status-title { font-size:26px; line-height:1.3; font-weight:700; color:var(--oc-fg); }
+      .ect-ai-request-timer { display:inline-flex; align-items:center; height:44px; padding:0 16px; border-radius:999px; background:var(--oc-cyan-subtle); color:var(--oc-accent); font-size:22px; line-height:1.3; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ect-ai-tabs { display:flex; gap:8px; padding:12px 20px 0; background:var(--oc-bg); }
+      .ect-ai-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-size:13px; font-weight:600; cursor:pointer; }
+      .ect-ai-tab.active { background:var(--oc-bg); color:var(--oc-accent); border-color:var(--oc-accent); }
+      .ect-ai-panels { flex:1 1 auto; min-height:0; overflow:auto; padding:20px; }
+      .ect-ai-panel[hidden] { display:none !important; }
+      .ect-ai-grid { display:grid; grid-template-columns:minmax(320px, 420px) minmax(0, 1fr); gap:18px; align-items:start; }
+      .ect-ai-card { border:1px solid var(--oc-border); border-radius:12px; background:var(--oc-bg); padding:16px; }
+      .ect-ai-card h4 { margin:0 0 12px; font-size:14px; color:var(--oc-fg); }
+      .ect-ai-media { display:grid; gap:12px; justify-items:start; }
+      .ect-ai-cover { width:180px; height:180px; border:1px solid var(--oc-border); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-muted); font-size:13px; }
+      .ect-ai-cover img, .ect-ai-video video { width:100%; height:100%; object-fit:contain; display:block; background:var(--oc-bg-muted); }
+      .ect-ai-video-name { width:180px; min-height:58px; color:var(--oc-fg-muted); font-size:13px; line-height:1.45; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+      .ect-ai-video { width:180px; height:320px; border:1px solid var(--oc-border); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-muted); font-size:13px; }
+      .ect-ai-kv { display:grid; grid-template-columns:92px minmax(0, 1fr); gap:8px 12px; font-size:13px; line-height:1.55; }
+      .ect-ai-kv dt { color:var(--oc-fg-subtle); }
+      .ect-ai-kv dd { margin:0; min-width:0; overflow-wrap:anywhere; color:var(--oc-fg); }
+      .ect-ai-code { margin:0; max-height:260px; overflow:auto; padding:12px; border-radius:10px; background:var(--oc-bg-subtle); border:1px solid var(--oc-border); font:12px/1.55 var(--font-mono, ui-monospace, Consolas, monospace); white-space:pre-wrap; word-break:break-word; }
+      .ect-ai-actions { display:flex; gap:10px; align-items:center; justify-content:flex-end; margin-bottom:14px; }
+      .ect-ai-btn { height:32px; padding:0 12px; border-radius:8px; border:1px solid var(--oc-border-strong); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-weight:600; cursor:pointer; }
+      .ect-ai-btn.primary { background:var(--oc-accent); border-color:var(--oc-accent); color:var(--oc-accent-fg, #fff); }
+      .ect-ai-sections { margin-top:18px; }
+      .ect-ai-empty { min-height:280px; display:flex; align-items:center; justify-content:center; color:var(--oc-fg-muted); text-align:center; line-height:1.7; }
+      .ect-ai-detail-modal .ect-modal-body { padding:16px; }
+      .ect-ai-detail-modal .ect-modal-json { max-height:62vh; }
+      @media (max-width: 900px) { .ect-ai-grid { grid-template-columns:1fr; } .ect-ai-panels { min-height:420px; } }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function aiEvaluationElapsedSeconds(modalState) {
+    return Math.max(0, Math.floor((Date.now() - modalState.startedAt) / 1000));
+  }
+
+  function stopAiEvaluationTimers(modalState) {
+    if (!modalState) return;
+    if (modalState.timer) {
+      window.clearInterval(modalState.timer);
+      modalState.timer = null;
+    }
+    if (modalState.timeoutTimer) {
+      window.clearTimeout(modalState.timeoutTimer);
+      modalState.timeoutTimer = null;
+    }
+  }
+
+  function openAiEvaluationRequestModal(product) {
+    if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
+      throw new Error('AI评估弹窗组件未加载');
+    }
+    const titleText = product && product.name ? `AI评估 - ${product.name}` : 'AI评估';
+    ensureAiEvaluationRequestModalStyle();
+    const shell = window.EvalCountryTable.openModal('', { title: titleText });
+    const modalState = {
+      overlay: shell.overlay,
+      modal: shell.modal,
+      close: shell.close,
+      body: shell.modal.querySelector('.ect-modal-body'),
+      status: null,
+      statusTitle: null,
+      startedAt: Date.now(),
+      timer: null,
+      timeoutTimer: null,
+      done: false,
+      activeTab: 'request',
+      preview: null,
+      previewError: '',
+      resultHtml: '',
+      fullPayloadUrl: '',
+    };
+    modalState.modal.classList.add('ect-modal--ai-evaluating');
+
+    function updateElapsed() {
+      if (modalState.done) return;
+      if (modalState.status) {
+        modalState.status.textContent = `已请求 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
+      }
+    }
+    function close() {
+      stopAiEvaluationTimers(modalState);
+      document.removeEventListener('keydown', onKey);
+      shell.close();
+    }
+    function onKey(event) {
+      if (event.key === 'Escape') close();
+    }
+
+    shell.overlay.querySelectorAll('.ect-modal-close, .ect-modal-button').forEach((btn) => {
+      btn.addEventListener('click', close, { once: true });
+    });
+    shell.overlay.addEventListener('click', (event) => {
+      if (event.target === shell.overlay) close();
+    }, { capture: true, once: true });
+    document.addEventListener('keydown', onKey);
+    modalState.timer = window.setInterval(updateElapsed, 1000);
+    modalState.timeoutTimer = window.setTimeout(() => {
+      if (modalState.done) return;
+      setAiEvaluationModalFailure(modalState, '服务器没有返回评估结果');
+    }, AI_EVALUATION_TIMEOUT_MS);
+    renderAiEvaluationShell(modalState);
+    setAiEvaluationModalLoading(modalState);
+    return modalState;
+  }
+
+  function renderAiEvaluationShell(modalState) {
+    if (!modalState || !modalState.body) return;
+    modalState.body.innerHTML = `
+      <div class="ect-ai-topbar">
+        <div class="ect-ai-status">
+          <span class="ect-ai-status-dot"></span>
+          <span class="ect-ai-status-title" data-ai-eval-status-title>正在请求中</span>
+        </div>
+        <span class="ect-ai-request-timer" data-ai-eval-status>已请求 ${aiEvaluationElapsedSeconds(modalState)} 秒</span>
+      </div>
+      <div class="ect-ai-tabs" role="tablist">
+        <button type="button" class="ect-ai-tab active" data-ai-eval-tab="request">请求报文</button>
+        <button type="button" class="ect-ai-tab" data-ai-eval-tab="result">结果</button>
+      </div>
+      <div class="ect-ai-panels">
+        <section class="ect-ai-panel" data-ai-eval-panel="request"></section>
+        <section class="ect-ai-panel" data-ai-eval-panel="result" hidden></section>
+      </div>`;
+    modalState.status = modalState.body.querySelector('[data-ai-eval-status]');
+    modalState.statusTitle = modalState.body.querySelector('[data-ai-eval-status-title]');
+    modalState.body.querySelectorAll('[data-ai-eval-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => switchAiEvaluationTab(modalState, btn.dataset.aiEvalTab));
+    });
+    renderAiEvaluationRequestPreview(modalState);
+    renderAiEvaluationResultPanel(modalState);
+  }
+
+  function switchAiEvaluationTab(modalState, tab) {
+    modalState.activeTab = tab === 'result' ? 'result' : 'request';
+    modalState.body.querySelectorAll('[data-ai-eval-tab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.aiEvalTab === modalState.activeTab);
+    });
+    modalState.body.querySelectorAll('[data-ai-eval-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.aiEvalPanel !== modalState.activeTab;
+    });
+  }
+
+  async function loadAiEvaluationRequestPreview(modalState, pid) {
+    try {
+      const data = await fetchJSON(AI_EVAL_REQUEST_PREVIEW_ENDPOINT(pid));
+      modalState.preview = data.payload || null;
+      modalState.fullPayloadUrl = (modalState.preview && modalState.preview.full_payload_url)
+        || `/medias/api/products/${pid}/evaluate/request-payload`;
+      renderAiEvaluationRequestPreview(modalState);
+    } catch (err) {
+      modalState.previewError = aiEvaluationErrorMessage(err) || '加载请求报文失败';
+      renderAiEvaluationRequestPreview(modalState);
+    }
+  }
+
+  function renderAiEvaluationRequestPreview(modalState) {
+    const panel = modalState && modalState.body && modalState.body.querySelector('[data-ai-eval-panel="request"]');
+    if (!panel) return;
+    renderAiEvaluationRequestPreviewToPanel(panel, {
+      preview: modalState.preview,
+      previewError: modalState.previewError,
+      fullPayloadUrl: modalState.fullPayloadUrl,
+    });
+  }
+
+  function formatAiEvaluationVideoProcessing(video) {
+    const info = (video && video.processing) || {};
+    const parts = [];
+    if (video && video.clip_seconds) parts.push(`${video.clip_seconds}秒短片`);
+    if (info.max_height) parts.push(`${info.max_height}P`);
+    if (info.fps) parts.push(`${info.fps}帧`);
+    if (info.video_bitrate) parts.push(`${String(info.video_bitrate).toUpperCase()}码率`);
+    if (info.drop_audio === false && info.audio_bitrate) parts.push(`音频${info.audio_bitrate}`);
+    return parts.join(' / ') || '-';
+  }
+
+  function renderAiEvaluationRequestPreviewToPanel(panel, opts) {
+    const options = opts || {};
+    const preview = options.preview;
+    if (options.previewError) {
+      panel.innerHTML = `<div class="ect-ai-empty">请求报文加载失败：${escapeHtml(options.previewError)}</div>`;
+      return;
+    }
+    if (!preview) {
+      panel.innerHTML = '<div class="ect-ai-empty">正在加载请求报文、素材和提示词...</div>';
+      return;
+    }
+    const cover = (preview.media || []).find((item) => item.role === 'product_cover') || {};
+    const video = (preview.media || []).find((item) => item.role === 'english_video') || {};
+    const product = preview.product || {};
+    const productUrl = safeExternalHref(product.product_url);
+    const coverPreviewUrl = safeMediaSrc(cover.preview_url);
+    const videoPreviewUrl = safeMediaSrc(video.preview_url);
+    const videoDisplayName = video.submitted_filename || video.filename || video.object_key || '';
+    const originalVideoUrl = safeMediaSrc(video.original_preview_url);
+    panel.innerHTML = `
+      <div class="ect-ai-actions">
+        <button type="button" class="ect-ai-btn primary" data-ai-full-payload>请求报文</button>
+      </div>
+      <div class="ect-ai-grid">
+        <div class="ect-ai-card">
+          <h4>素材预览</h4>
+          <div class="ect-ai-media">
+            <div class="ect-ai-cover">${coverPreviewUrl ? `<img src="${escapeHtml(coverPreviewUrl)}" alt="商品主图">` : '暂无主图'}</div>
+            <div class="ect-ai-video-name" title="${escapeAttr(videoDisplayName || video.object_key || '')}">${escapeHtml(videoDisplayName || '暂无视频文件名')}</div>
+            <div class="ect-ai-video">${videoPreviewUrl ? `<video controls preload="metadata" src="${escapeHtml(videoPreviewUrl)}"></video>` : '暂无视频'}</div>
+          </div>
+        </div>
+        <div class="ect-ai-card">
+          <h4>请求关键元素</h4>
+          <dl class="ect-ai-kv">
+            <dt>产品</dt><dd>${escapeHtml(product.name || '-')} (#${escapeHtml(product.id || '-')})</dd>
+            <dt>产品 ID</dt><dd>${escapeHtml(product.product_code || '-')}</dd>
+            <dt>产品链接</dt><dd>${productUrl ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(product.product_url)}</a>` : escapeHtml(product.product_url || '-')}</dd>
+            <dt>主图</dt><dd>${escapeHtml(cover.object_key || '-')}</dd>
+            <dt>AI请求短片</dt><dd>${escapeHtml(formatAiEvaluationVideoProcessing(video))}</dd>
+            <dt>短片预览</dt><dd>${videoPreviewUrl ? `<a href="${escapeHtml(videoPreviewUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(videoPreviewUrl)}</a>` : '-'}</dd>
+            <dt>原始视频</dt><dd>${originalVideoUrl ? `<a href="${escapeHtml(originalVideoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(video.object_key || originalVideoUrl)}</a>` : escapeHtml(video.object_key || '-')}</dd>
+            <dt>语种</dt><dd>${escapeHtml((preview.languages || []).map((lang) => `${lang.name}(${lang.code})`).join('、') || '-')}</dd>
+            <dt>UseCase</dt><dd>${escapeHtml((preview.llm && preview.llm.use_case) || '-')}</dd>
+            <dt>Provider</dt><dd>${escapeHtml((preview.llm && preview.llm.provider) || '-')}</dd>
+            <dt>Model</dt><dd>${escapeHtml((preview.llm && preview.llm.model) || '-')}</dd>
+            <dt>Search</dt><dd>${preview.llm && preview.llm.google_search ? escapeHtml(JSON.stringify(preview.llm.tools || [])) : '-'}</dd>
+            <dt>参数</dt><dd>temperature=${escapeHtml(preview.llm && preview.llm.temperature)}, max_output_tokens=${escapeHtml(preview.llm && preview.llm.max_output_tokens)}</dd>
+          </dl>
+        </div>
+      </div>
+      ${renderAiEvaluationPromptSections(preview)}`;
+    const btn = panel.querySelector('[data-ai-full-payload]');
+    if (btn) {
+      btn.addEventListener('click', () => openAiEvaluationPayloadDetail({
+        fullPayloadUrl: options.fullPayloadUrl || preview.full_payload_url,
+      }));
+    }
+  }
+
+  function renderAiEvaluationPromptSections(preview) {
+    const prompts = (preview && preview.prompts) || {};
+    return `
+      <div class="ect-ai-grid ect-ai-sections">
+        <div class="ect-ai-card">
+          <h4>System Prompt</h4>
+          <pre class="ect-ai-code">${escapeHtml(prompts.system || '')}</pre>
+        </div>
+        <div class="ect-ai-card">
+          <h4>User Prompt</h4>
+          <pre class="ect-ai-code">${escapeHtml(prompts.user || '')}</pre>
+        </div>
+        <div class="ect-ai-card">
+          <h4>Response Schema</h4>
+          <pre class="ect-ai-code">${escapeHtml(JSON.stringify(preview.response_schema || {}, null, 2))}</pre>
+        </div>
+        <div class="ect-ai-card">
+          <h4>请求报文预览</h4>
+          <pre class="ect-ai-code">${escapeHtml(JSON.stringify(preview.request || {}, null, 2))}</pre>
+        </div>
+      </div>`;
+  }
+
+  function renderAiEvaluationResultPanel(modalState) {
+    const panel = modalState && modalState.body && modalState.body.querySelector('[data-ai-eval-panel="result"]');
+    if (!panel) return;
+    if (modalState.resultHtml) {
+      panel.innerHTML = modalState.resultHtml;
+      return;
+    }
+    panel.innerHTML = '<div class="ect-ai-empty">正在等待大模型返回结构化结果...</div>';
+  }
+
+  function simplifyAiEvaluationPayload(payload) {
+    return JSON.parse(JSON.stringify(payload || {}, (key, value) => {
+      if ((key === 'base64' || key === 'data_base64') && typeof value === 'string' && value.length > 160) {
+        return `${value.slice(0, 96)}...(${value.length} chars)`;
+      }
+      return value;
+    }));
+  }
+
+  async function copyAiEvaluationPayload(payload) {
+    const text = JSON.stringify(payload || {}, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+
+  async function openAiEvaluationPayloadDetail(modalState) {
+    if (!modalState.fullPayloadUrl) return;
+    const shell = window.EvalCountryTable.openModal('', { title: '报文详情' });
+    shell.modal.classList.add('ect-ai-detail-modal');
+    const body = shell.modal.querySelector('.ect-modal-body');
+    body.innerHTML = '<div class="ect-ai-empty">正在加载完整请求报文...</div>';
+    try {
+      const data = await fetchJSON(modalState.fullPayloadUrl);
+      const payload = data.payload || data;
+      body.innerHTML = `
+        <div class="ect-ai-actions"><button type="button" class="ect-ai-btn primary" data-ai-copy-payload>一键复制</button></div>
+        <pre class="ect-modal-json">${escapeHtml(JSON.stringify(simplifyAiEvaluationPayload(payload), null, 2))}</pre>`;
+      const copyBtn = body.querySelector('[data-ai-copy-payload]');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          await copyAiEvaluationPayload(payload);
+          copyBtn.textContent = '已复制';
+        });
+      }
+    } catch (err) {
+      body.innerHTML = `<div class="ect-ai-empty">完整报文加载失败：${escapeHtml(aiEvaluationErrorMessage(err) || err)}</div>`;
+    }
+  }
+
+  function setAiEvaluationModalResult(modalState, data) {
+    if (!modalState || !modalState.body) return;
+    modalState.done = true;
+    stopAiEvaluationTimers(modalState);
+    if (modalState.statusTitle) modalState.statusTitle.textContent = '评估完成';
+    if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
+    const result = data && data.result;
+    const detail = data && (
+      data.ai_evaluation_detail
+      || (result && (result.ai_evaluation_detail || result.detail))
+      || data.detail
+      || result
+      || data
+    );
+    if (window.EvalCountryTable && typeof window.EvalCountryTable.render === 'function') {
+      modalState.resultHtml = window.EvalCountryTable.render(detail);
+    } else {
+      modalState.resultHtml = `<pre class="audit-detail-pre">${escapeHtml(JSON.stringify(detail || {}, null, 2))}</pre>`;
+    }
+    renderAiEvaluationResultPanel(modalState);
+    switchAiEvaluationTab(modalState, 'result');
+  }
+
+  function setAiEvaluationModalLoading(modalState) {
+    if (!modalState || !modalState.body) return;
+    if (modalState.statusTitle) modalState.statusTitle.textContent = '正在请求中';
+    renderAiEvaluationResultPanel(modalState);
+  }
+
+  function setAiEvaluationModalFailure(modalState, reason) {
+    if (!modalState || !modalState.body) return;
+    modalState.done = true;
+    stopAiEvaluationTimers(modalState);
+    if (modalState.statusTitle) modalState.statusTitle.textContent = '评估失败';
+    if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
+    modalState.resultHtml = `<div class="ect-ai-empty"><strong>本次评估失败</strong><br>${escapeHtml(aiEvaluationFailureReason(reason))}</div>`;
+    renderAiEvaluationResultPanel(modalState);
+    switchAiEvaluationTab(modalState, 'result');
   }
 
   function renderAuditCell(it) {
@@ -1172,16 +1562,32 @@
 
     const auditCard = el('section', { class: 'pm-section audit-modal-section' }, [el('h4', {}, 'AI评估信息')]);
     const auditKV = el('div', { class: 'pm-kv' });
+    const productId = Number(item.product_id || 0);
+    const aiReevaluateBtn = el('button', {
+      type: 'button',
+      class: 'btn-mini pm-ai-reevaluate',
+      'data-action': 'ai-reevaluate',
+      title: '复用素材管理 AI评估，重新评估该产品',
+      disabled: !productId,
+    }, 'AI重评');
+    const auditDetailLabel = el('span', { class: 'k pm-audit-detail-key' }, [
+      el('span', {}, 'AI评估详情'),
+      aiReevaluateBtn,
+    ]);
     const addAuditKV = (k, v) => {
-      auditKV.appendChild(el('span', { class: 'k' }, k));
+      auditKV.appendChild(k instanceof Node ? k : el('span', { class: 'k' }, k));
       if (v instanceof Node) auditKV.appendChild(v);
       else auditKV.appendChild(el('span', { class: 'v' }, v));
     };
-    addAuditKV('上架', el('span', { class: 'v' }, [createListingStatusBadge(item.listing_status)]));
-    addAuditKV('AI评分', formatAuditScore(item.ai_score));
-    addAuditKV('AI评估结果', item.ai_evaluation_result || '未评估');
-    addAuditKV('备注说明', item.remark || '暂无备注');
-    addAuditKV('AI评估详情', renderAuditDetailNode(item.ai_evaluation_detail, { primaryLang: item.lang }));
+    function updateAuditPanel(sourceItem = item) {
+      clear(auditKV);
+      addAuditKV('上架', el('span', { class: 'v' }, [createListingStatusBadge(sourceItem.listing_status)]));
+      addAuditKV('AI评分', formatAuditScore(sourceItem.ai_score));
+      addAuditKV('AI评估结果', sourceItem.ai_evaluation_result || '未评估');
+      addAuditKV('备注说明', sourceItem.remark || '暂无备注');
+      addAuditKV(auditDetailLabel, renderAuditDetailNode(sourceItem.ai_evaluation_detail, { primaryLang: item.lang }));
+    }
+    updateAuditPanel(item);
     auditCard.appendChild(auditKV);
     body.appendChild(auditCard);
 
@@ -1352,6 +1758,73 @@
         }, false);
       }
     }
+
+    function applyAiEvaluationProduct(product) {
+      if (!product || typeof product !== 'object') return;
+      const updates = {
+        ai_score: product.ai_score !== undefined ? product.ai_score : item.ai_score,
+        ai_evaluation_result: product.ai_evaluation_result !== undefined ? product.ai_evaluation_result : item.ai_evaluation_result,
+        ai_evaluation_detail: product.ai_evaluation_detail !== undefined ? product.ai_evaluation_detail : item.ai_evaluation_detail,
+        listing_status: product.listing_status !== undefined ? product.listing_status : item.listing_status,
+        remark: product.remark !== undefined ? product.remark : item.remark,
+      };
+      Object.assign(item, updates);
+      state.items = state.items.map((row) => (
+        Number(row.id) === Number(itemId) ? { ...row, ...updates } : row
+      ));
+      updateAuditPanel(item);
+    }
+
+    async function retryMaterialAiEvaluation() {
+      if (!productId) return;
+      const originalText = aiReevaluateBtn.textContent;
+      const modalState = openAiEvaluationRequestModal({
+        id: productId,
+        name: item.product_name,
+        product_code: item.product_code,
+      });
+      loadAiEvaluationRequestPreview(modalState, productId);
+      const controller = window.AbortController ? new AbortController() : null;
+      aiReevaluateBtn.disabled = true;
+      aiReevaluateBtn.textContent = '评估中...';
+      const timeout = window.setTimeout(() => {
+        if (controller) controller.abort();
+      }, AI_EVALUATION_TIMEOUT_MS);
+      try {
+        const data = await fetchJSON(`/medias/api/products/${productId}/evaluate`, {
+          method: 'POST',
+          signal: controller ? controller.signal : undefined,
+        });
+        let freshProduct = null;
+        try {
+          const fresh = await fetchJSON(`/medias/api/products/${productId}`);
+          freshProduct = fresh && fresh.product;
+        } catch (_) {
+          freshProduct = null;
+        }
+        setAiEvaluationModalResult(modalState, freshProduct || data.result || data);
+        applyAiEvaluationProduct(freshProduct || data.result || data);
+        aiReevaluateBtn.textContent = '已完成';
+        load({ syncUrl: false }).catch(() => {});
+        window.setTimeout(() => {
+          aiReevaluateBtn.textContent = originalText;
+          aiReevaluateBtn.disabled = false;
+        }, 1200);
+      } catch (err) {
+        if (!modalState.done) {
+          setAiEvaluationModalFailure(modalState, aiEvaluationErrorMessage(err));
+        }
+        aiReevaluateBtn.textContent = originalText;
+        aiReevaluateBtn.disabled = false;
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    aiReevaluateBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      retryMaterialAiEvaluation();
+    });
 
     function showResponse(obj, isError, title) {
       respWrap.hidden = false;
