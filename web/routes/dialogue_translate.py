@@ -6,17 +6,20 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Blueprint, abort, render_template, request
 from flask_login import current_user, login_required
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import medias, task_state, translation_route_store
+from appcore.audio_loudness import validate_loudness_profile
+from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.omni_v2_config import current_fixed_plugin_config
-from appcore.project_state import save_project_state
+from appcore.project_state import save_project_state, update_project_state
 from appcore.runtime_dialogue import DialogueTranslateRunner
 from appcore.task_recovery import recover_project_if_needed, recover_task_if_needed
+from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
     SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
     SUPPORTED_LANGS,
@@ -25,9 +28,20 @@ from pipeline.languages.registry import (
 from web import store
 from web.auth import admin_required, permission_required
 from web.services import dialogue_pipeline_runner
+from web.services.artifact_download import serve_artifact_download
+from web.services.llm_debug import build_llm_debug_payload
+from web.services.task_alignment import confirm_task_alignment
+from web.services.task_retranslate import retranslate_task
+from web.services.task_translate import start_task_translate
+from web.services.task_translation_selection import select_task_translation
+from web.services.translate_detail_protocol import resolve_round_file_entry
 from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
+)
+from web.services.translate_step_reset import (
+    build_step_resume_reset_updates,
+    reset_step_names,
 )
 
 log = logging.getLogger(__name__)
@@ -234,6 +248,89 @@ def _dialogue_pipeline_step_names(
     )
 
 
+def _post_asr_step(step_names: list[str]) -> str:
+    for step in step_names:
+        if step in {"asr_clean", "asr_normalize"}:
+            return step
+    raise ValueError("dialogue pipeline missing post-ASR step")
+
+
+def _reset_steps_from(task_id: str, step_names: list[str], start_step: str) -> None:
+    started = False
+    for step in step_names:
+        if step == start_step:
+            started = True
+        if started:
+            store.set_step(task_id, step, "pending")
+            store.set_step_message(task_id, step, "waiting...")
+
+
+def _dialogue_resume_cleanup_updates(
+    task: dict,
+    step_names: list[str],
+    start_step: str,
+) -> dict:
+    updates = build_step_resume_reset_updates(task, step_names, start_step)
+    reset_set = set(reset_step_names(step_names, start_step))
+    if "speaker_detect" in reset_set:
+        updates.update(
+            dialogue_segments=[],
+            speaker_summary={},
+            speaker_sample_specs=[],
+            speaker_profiles={},
+            selected_voice_by_speaker={},
+        )
+    elif "voice_match_ab" in reset_set:
+        updates.update(
+            speaker_sample_specs=[],
+            speaker_profiles={},
+            selected_voice_by_speaker={},
+        )
+    if start_step in {"asr_clean", "asr_normalize"}:
+        source_language = str(task.get("source_language") or "en").strip()
+        if source_language not in ALLOWED_SOURCE_LANGUAGES:
+            raise ValueError(
+                f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
+            )
+        updates.update(source_language=source_language, user_specified_source_language=True)
+    return updates
+
+
+def _applied_loudness_profile(task: dict) -> tuple[str | None, int | None]:
+    tts_loudness = ((task.get("separation") or {}).get("tts_loudness") or {})
+    return tts_loudness.get("profile"), tts_loudness.get("manual_boost_pct")
+
+
+def _loudness_profile_needs_resume(
+    *,
+    selected_profile: str,
+    selected_manual_pct: int | None,
+    applied_profile: str | None,
+    applied_manual_pct: int | None,
+) -> bool:
+    if applied_profile != selected_profile:
+        return True
+    if selected_profile == "manual_boost":
+        return applied_manual_pct != selected_manual_pct
+    return False
+
+
+def _resolve_translate_pref(state: dict) -> str:
+    from appcore.api_keys import get_key
+    from appcore.runtime import _VALID_TRANSLATE_PREFS
+
+    for value in (
+        state.get("custom_translate_provider"),
+        state.get("translate_pref"),
+        get_key(current_user.id, "translate_pref"),
+        "openrouter",
+    ):
+        candidate = str(value or "").strip()
+        if candidate in _VALID_TRANSLATE_PREFS:
+            return candidate
+    return "openrouter"
+
+
 def _voice_id_from(value: object) -> str:
     if isinstance(value, dict):
         for key in ("voice_id", "elevenlabs_voice_id", "id"):
@@ -357,7 +454,7 @@ def detail(task_id: str):
         project=row,
         state=state,
         target_lang=state.get("target_lang") or "",
-        translate_pref="dialogue_translate.localize",
+        translate_pref=_resolve_translate_pref(state),
         pipeline_main_steps=pipeline_main_steps,
         pipeline_progress_steps=pipeline_progress_steps,
         pipeline_step_order=pipeline_step_order,
@@ -478,6 +575,450 @@ def get_task(task_id: str):
     if not task:
         return _json_response({"error": "Task not found"}, 404)
     return _json_response(task)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/subtitle-preview", methods=["GET"])
+@login_required
+@admin_required
+def subtitle_preview(task_id: str):
+    row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
+    if not row:
+        return _json_response({"error": "Task not found"}, 404)
+    payload = build_multi_translate_preview_payload(
+        task_id,
+        row.get("user_id") or current_user.id,
+        api_base="/api/dialogue-translate",
+    )
+    return _json_response(payload)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/llm-debug/<step>", methods=["GET"])
+@login_required
+@admin_required
+def get_llm_debug(task_id: str, step: str):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    payload = build_llm_debug_payload(task, step)
+    if not payload:
+        return _json_response({"error": "LLM debug data not found"}, 404)
+    return _json_response(payload)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/restart", methods=["POST"])
+@login_required
+@admin_required
+def restart(task_id: str):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
+
+    body = request.get_json(silent=True) or {}
+    raw_source_language = body.get("source_language", None)
+    if raw_source_language is not None:
+        raw_source_language = str(raw_source_language).strip()
+        if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+            return _json_response(
+                {"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"},
+                400,
+            )
+    from web.services.task_restart import restart_task
+
+    updated = restart_task(
+        task_id,
+        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
+        voice_gender=body.get("voice_gender", "male"),
+        subtitle_font=body.get("subtitle_font", "Impact"),
+        subtitle_size=body.get("subtitle_size", 14),
+        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
+        subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
+        source_language=raw_source_language,
+        user_id=owner_id,
+        runner=dialogue_pipeline_runner,
+    )
+    return _json_response({"status": "restarted", "task": updated})
+
+
+@bp.route("/api/dialogue-translate/<task_id>/source-language", methods=["PUT"])
+@login_required
+@admin_required
+def update_source_language(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
+    body = request.get_json(silent=True) or {}
+    raw_lang = str(body.get("source_language") or "").strip()
+    if raw_lang not in ALLOWED_SOURCE_LANGUAGES:
+        return _json_response(
+            {"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"},
+            400,
+        )
+
+    step_names = _dialogue_pipeline_step_names(task)
+    try:
+        start_step = _post_asr_step(step_names)
+        reset_task = dict(task)
+        reset_task["source_language"] = raw_lang
+        updates = _dialogue_resume_cleanup_updates(reset_task, step_names, start_step)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    updates.update(source_language=raw_lang, user_specified_source_language=True)
+    store.update(task_id, **updates)
+    _reset_steps_from(task_id, step_names, start_step)
+
+    dialogue_pipeline_runner.resume(task_id, start_step, user_id=owner_id)
+    return _json_response(
+        {
+            "status": "started",
+            "source_language": raw_lang,
+            "user_specified_source_language": True,
+        }
+    )
+
+
+@bp.route("/api/dialogue-translate/<task_id>/alignment", methods=["PUT"])
+@login_required
+@admin_required
+def update_alignment(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    source_language = (request.get_json(silent=True) or {}).get("source_language")
+    if source_language in ALLOWED_SOURCE_LANGUAGES:
+        store.update(task_id, source_language=source_language, user_specified_source_language=True)
+    outcome = confirm_task_alignment(
+        task_id,
+        task,
+        request.get_json(silent=True) or {},
+        user_id=task.get("_user_id") or current_user.id,
+        build_segments=build_script_segments,
+        runner=dialogue_pipeline_runner,
+    )
+    return _json_response(outcome.payload, outcome.status_code)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/segments", methods=["PUT"])
+@login_required
+@admin_required
+def update_segments(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
+
+    body = request.get_json(silent=True) or {}
+    segments = body.get("segments")
+    if segments:
+        variant = "normal"
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get(variant, {}))
+        localized_translation = dict(variant_state.get("localized_translation", {}))
+        localized_translation["sentences"] = [
+            {
+                "index": segment.get("index", index),
+                "text": segment.get("translated", ""),
+                "source_segment_indices": segment.get("source_segment_indices", [index]),
+            }
+            for index, segment in enumerate(segments)
+        ]
+        localized_translation["full_text"] = " ".join(
+            sentence["text"] for sentence in localized_translation["sentences"]
+        )
+        variant_state["localized_translation"] = localized_translation
+        variants[variant] = variant_state
+        store.update(
+            task_id,
+            variants=variants,
+            localized_translation=localized_translation,
+            _segments_confirmed=True,
+            evals_invalidated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    store.set_current_review_step(task_id, "")
+    dialogue_pipeline_runner.resume(task_id, "tts", user_id=owner_id)
+    return _json_response({"status": "ok"})
+
+
+@bp.route("/api/dialogue-translate/<task_id>/loudness-profile", methods=["POST"])
+@login_required
+@admin_required
+def set_loudness_profile(task_id: str):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+
+    body = request.get_json(silent=True)
+    if request.is_json and body is None:
+        return _json_response({"error": "invalid JSON body"}, 400)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return _json_response({"error": "JSON body must be an object"}, 400)
+    try:
+        profile, manual_pct = validate_loudness_profile(
+            body.get("profile"),
+            body.get("manual_boost_pct"),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+
+    applied_profile, applied_manual_pct = _applied_loudness_profile(task)
+    store.update(
+        task_id,
+        loudness_profile=profile,
+        loudness_manual_boost_pct=manual_pct,
+    )
+    return _json_response(
+        {
+            "status": "ok",
+            "profile": profile,
+            "manual_boost_pct": manual_pct,
+            "applied_profile": applied_profile,
+            "applied_manual_boost_pct": applied_manual_pct,
+            "needs_resume": _loudness_profile_needs_resume(
+                selected_profile=profile,
+                selected_manual_pct=manual_pct,
+                applied_profile=applied_profile,
+                applied_manual_pct=applied_manual_pct,
+            ),
+        }
+    )
+
+
+@bp.route("/api/dialogue-translate/<task_id>/resume", methods=["POST"])
+@login_required
+@admin_required
+def resume(task_id: str):
+    recover_task_if_needed(task_id)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    owner_id = task.get("_user_id") or current_user.id
+    body = request.get_json(silent=True) or {}
+    start_step = str(body.get("start_step") or "").strip()
+    step_names = _dialogue_pipeline_step_names(task)
+    if start_step not in step_names:
+        return _json_response(
+            {
+                "error": f"start_step {start_step!r} must be one of {step_names}",
+                "steps": step_names,
+            },
+            400,
+        )
+    try:
+        updates = _dialogue_resume_cleanup_updates(task, step_names, start_step)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+
+    store.update(task_id, **updates)
+    _reset_steps_from(task_id, step_names, start_step)
+    dialogue_pipeline_runner.resume(task_id, start_step, user_id=owner_id)
+    return _json_response({"status": "started", "start_step": start_step})
+
+
+@bp.route("/api/dialogue-translate/<task_id>/download/<file_type>")
+@login_required
+@admin_required
+def download(task_id: str, file_type: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    variant = request.args.get("variant", "normal")
+    return serve_artifact_download(task, task_id, file_type, variant=variant)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/visible-to-all", methods=["PUT"])
+@login_required
+@admin_required
+def toggle_visible_to_all(task_id: str):
+    if not getattr(current_user, "is_superadmin", False):
+        return _json_response({"error": "Only superadmin can change visibility"}, 403)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    value = bool(body.get("visible_to_all", False))
+    update_project_state(
+        task_id,
+        {"visible_to_all": value},
+        query_one_func=db_query_one,
+        execute_func=db_execute,
+    )
+    store.update(task_id, visible_to_all=value)
+    return _json_response({"visible_to_all": value})
+
+
+@bp.route("/api/dialogue-translate/<task_id>/artifact/<name>")
+@login_required
+@admin_required
+def get_artifact(task_id: str, name: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+
+    variant = request.args.get("variant") or None
+    from web.services.artifact_download import (
+        preview_artifact_tos_redirect,
+        safe_task_file_response,
+    )
+
+    tos_resp = preview_artifact_tos_redirect(task, name, variant=variant)
+    if tos_resp is not None:
+        return tos_resp
+
+    preview_files = task.get("preview_files") or {}
+    if variant:
+        preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
+    path = preview_files.get(name)
+    if not path and name in {"separation_vocals", "separation_accompaniment"}:
+        separation = task.get("separation") or {}
+        path = (
+            separation.get("vocals_path")
+            if name == "separation_vocals"
+            else separation.get("accompaniment_path")
+        )
+    if path:
+        return safe_task_file_response(task, path)
+    return _json_response({"error": "Artifact not found"}, 404)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/artifact-path")
+@login_required
+@admin_required
+def get_artifact_path(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    from web.services.artifact_download import safe_task_relative_file_response
+
+    return safe_task_relative_file_response(task, request.args.get("path"))
+
+
+_ALLOWED_ROUND_KINDS = {
+    "localized_translation": ("localized_translation.round_{r}.json", "application/json"),
+    "localized_rewrite_messages": (
+        "localized_rewrite_messages.round_{r}.json",
+        "application/json",
+    ),
+    "initial_translate_messages": ("localized_translate_messages.json", "application/json"),
+    "tts_script": ("tts_script.round_{r}.json", "application/json"),
+    "tts_full_audio": ("tts_full.round_{r}.mp3", "audio/mpeg"),
+}
+
+
+@bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>")
+@login_required
+@admin_required
+def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
+    if round_index not in (1, 2, 3, 4, 5) or attempt not in (1, 2, 3, 4, 5):
+        abort(404)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    filename = f"localized_translation.round_{round_index}.attempt_{attempt}.json"
+    path = os.path.join(task.get("task_dir", ""), filename)
+    from web.services.artifact_download import safe_task_file_response
+
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype="application/json",
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
+
+
+@bp.route("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>")
+@login_required
+@admin_required
+def get_round_file(task_id: str, round_index: int, kind: str):
+    try:
+        filename, mime = resolve_round_file_entry(
+            _ALLOWED_ROUND_KINDS,
+            round_index,
+            kind,
+        )
+    except KeyError:
+        abort(404)
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    path = os.path.join(task.get("task_dir", ""), filename)
+    from web.services.artifact_download import safe_task_file_response
+
+    return safe_task_file_response(
+        task,
+        path,
+        not_found_message="File not ready",
+        mimetype=mime,
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
+
+
+@bp.route("/api/dialogue-translate/<task_id>/analysis/run", methods=["POST"])
+@login_required
+@admin_required
+def run_ai_analysis(task_id: str):
+    if not _get_viewable_task(task_id):
+        return _json_response({"error": "Task not found"}, 404)
+    return _json_response({"error": "analysis not supported for dialogue_translate"}, 501)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/start-translate", methods=["POST"])
+@login_required
+@admin_required
+def start_translate(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    outcome = start_task_translate(
+        task_id,
+        task,
+        body,
+        user_id=task.get("_user_id") or current_user.id,
+        runner=dialogue_pipeline_runner,
+    )
+    return _json_response(outcome.payload, outcome.status_code)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/retranslate", methods=["POST"])
+@login_required
+@admin_required
+def retranslate(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    outcome = retranslate_task(
+        task_id,
+        task,
+        body,
+        user_id=task.get("_user_id") or current_user.id,
+    )
+    return _json_response(outcome.payload, outcome.status_code)
+
+
+@bp.route("/api/dialogue-translate/<task_id>/select-translation", methods=["PUT"])
+@login_required
+@admin_required
+def select_translation(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    outcome = select_task_translation(task_id, task, body)
+    return _json_response(outcome.payload, outcome.status_code)
 
 
 @bp.route("/api/dialogue-translate/<task_id>/confirm-voices", methods=["POST"])

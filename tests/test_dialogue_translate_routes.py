@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 
 from web import store
 
@@ -73,6 +74,303 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert "Dialogue Detail" in body
     assert "A/B 音色确认" in body
     assert "/api/dialogue-translate" in body
+    assert "dialogue_translate.localize" not in body
+
+
+def test_dialogue_translate_detail_deleted_task_renders_without_workbench(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-deleted-detail"
+    state = {
+        "id": task_id,
+        "type": "dialogue_translate",
+        "display_name": "Deleted Dialogue",
+        "target_lang": "de",
+        "source_language": "en",
+        "steps": {},
+    }
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "id": task_id,
+            "user_id": 1,
+            "original_filename": "deleted.mp4",
+            "display_name": "Deleted Dialogue",
+            "task_dir": "/tmp/dialogue-deleted-detail",
+            "state_json": json.dumps(state, ensure_ascii=False),
+            "status": "deleted",
+            "thumbnail_path": "",
+            "created_at": None,
+            "expires_at": None,
+            "deleted_at": "2026-05-28T10:00:00",
+        },
+    )
+
+    resp = authed_client_no_db.get(f"/dialogue-translate/{task_id}")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Deleted Dialogue" in body
+    assert "_task_workbench_scripts" not in body
+
+
+def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_db):
+    app = authed_client_no_db.application
+    rules = {(rule.rule, tuple(sorted(rule.methods))) for rule in app.url_map.iter_rules()}
+    expected = {
+        ("/api/dialogue-translate/<task_id>/source-language", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/subtitle-preview", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/alignment", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/segments", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/resume", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/artifact/<name>", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/artifact-path", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/download/<file_type>", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/start-translate", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/retranslate", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/select-translation", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/llm-debug/<step>", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/restart", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/visible-to-all", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/analysis/run", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/loudness-profile", ("OPTIONS", "POST")),
+    }
+
+    assert expected <= rules
+
+
+def test_dialogue_translate_post_requires_csrf_when_enabled(monkeypatch):
+    monkeypatch.setenv("WTF_CSRF_ENABLED", "1")
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: {
+            "id": 1,
+            "username": "admin",
+            "role": "admin",
+            "is_active": 1,
+        }
+        if int(user_id) == 1
+        else None,
+    )
+    from web.app import create_app
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+
+    resp = client.post("/api/dialogue-translate/task-csrf/resume", json={})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "csrf_required"
+
+
+def test_dialogue_translate_detail_rejects_admin_without_permission(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: {
+            "id": 1,
+            "username": "admin-without-dialogue",
+            "role": "admin",
+            "is_active": 1,
+            "permissions": json.dumps({"dialogue_translate": False}),
+        }
+        if int(user_id) == 1
+        else None,
+    )
+    from web.app import create_app
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+
+    resp = client.get("/dialogue-translate/forbidden-task", follow_redirects=False)
+
+    assert resp.status_code != 200
+
+
+def test_dialogue_translate_detail_js_does_not_interpolate_task_state_with_inner_html():
+    script = Path("web/static/js/dialogue_translate_detail.js").read_text(
+        encoding="utf-8",
+    )
+
+    assert "card.innerHTML" not in script
+
+
+def test_dialogue_translate_resume_from_speaker_detect_clears_speaker_state(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-resume-speaker-detect"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-resume-speaker-detect", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        steps={
+            "speaker_detect": "done",
+            "voice_match_ab": "done",
+            "alignment": "done",
+            "translate": "done",
+        },
+        dialogue_segments=[{"speaker_id": "A"}],
+        speaker_summary={"A": {"segment_count": 1}},
+        speaker_sample_specs=[{"speaker_id": "A"}],
+        speaker_profiles={"A": {"selected_voice": {"voice_id": "voice-a"}}},
+        selected_voice_by_speaker={"A": {"voice_id": "voice-a"}},
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate._dialogue_pipeline_step_names",
+        lambda task, include_analysis=False: [
+            "speaker_detect",
+            "voice_match_ab",
+            "alignment",
+            "translate",
+        ],
+    )
+    resumed = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda task_id, start_step, user_id=None: resumed.update(
+            {"task_id": task_id, "start_step": start_step, "user_id": user_id}
+        ),
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/resume",
+        json={"start_step": "speaker_detect"},
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["dialogue_segments"] == []
+    assert updated["speaker_summary"] == {}
+    assert updated["speaker_sample_specs"] == []
+    assert updated["speaker_profiles"] == {}
+    assert updated["selected_voice_by_speaker"] == {}
+    assert resumed == {"task_id": task_id, "start_step": "speaker_detect", "user_id": 1}
+
+
+def test_dialogue_translate_resume_after_alignment_preserves_confirmed_voices(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-resume-translate"
+    selected = {"A": {"voice_id": "voice-a"}, "B": {"voice_id": "voice-b"}}
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-resume-translate", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        steps={
+            "speaker_detect": "done",
+            "voice_match_ab": "done",
+            "alignment": "done",
+            "translate": "done",
+            "tts": "done",
+        },
+        dialogue_segments=[{"speaker_id": "A"}, {"speaker_id": "B"}],
+        speaker_summary={"A": {"segment_count": 1}, "B": {"segment_count": 1}},
+        speaker_sample_specs=[{"speaker_id": "A"}],
+        speaker_profiles={
+            "A": {"selected_voice": selected["A"]},
+            "B": {"selected_voice": selected["B"]},
+        },
+        selected_voice_by_speaker=selected,
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate._dialogue_pipeline_step_names",
+        lambda task, include_analysis=False: [
+            "speaker_detect",
+            "voice_match_ab",
+            "alignment",
+            "translate",
+            "tts",
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda *args, **kwargs: None,
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/resume",
+        json={"start_step": "translate"},
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["dialogue_segments"] == [{"speaker_id": "A"}, {"speaker_id": "B"}]
+    assert updated["speaker_profiles"]["A"]["selected_voice"]["voice_id"] == "voice-a"
+    assert updated["speaker_profiles"]["B"]["selected_voice"]["voice_id"] == "voice-b"
+    assert updated["selected_voice_by_speaker"] == selected
+
+
+def test_dialogue_translate_segments_updates_normal_localized_translation(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-segments"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-segments", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        variants={"normal": {"localized_translation": {"sentences": []}}},
+        steps={"translate": "waiting", "tts": "pending"},
+    )
+    resumed = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda task_id, start_step, user_id=None: resumed.update(
+            {"task_id": task_id, "start_step": start_step, "user_id": user_id}
+        ),
+    )
+
+    resp = authed_client_no_db.put(
+        f"/api/dialogue-translate/{task_id}/segments",
+        json={
+            "segments": [
+                {
+                    "index": 3,
+                    "translated": "Hallo",
+                    "source_segment_indices": [1, 2],
+                },
+                {"translated": "Welt"},
+            ]
+        },
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    translation = updated["variants"]["normal"]["localized_translation"]
+    assert translation["full_text"] == "Hallo Welt"
+    assert translation["sentences"] == [
+        {"index": 3, "text": "Hallo", "source_segment_indices": [1, 2]},
+        {"index": 1, "text": "Welt", "source_segment_indices": [1]},
+    ]
+    assert updated["localized_translation"] == translation
+    assert updated["_segments_confirmed"] is True
+    assert resumed == {"task_id": task_id, "start_step": "tts", "user_id": 1}
 
 
 def test_dialogue_translate_start_creates_task_and_starts_runner(

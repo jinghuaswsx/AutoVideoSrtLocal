@@ -137,28 +137,59 @@
     var card = document.createElement("article");
     card.className = "dialogue-speaker-card";
 
-    var reasonText = reviewReason(task, speaker);
-    var summaryHtml = "";
+    var header = document.createElement("header");
+    var titleWrap = document.createElement("div");
+    var title = document.createElement("h4");
+    title.textContent = "Speaker " + speaker;
+    var subtitle = document.createElement("small");
+    subtitle.textContent = "确认该说话人的目标音色";
+    var pill = document.createElement("span");
+    pill.className = "dialogue-speaker-pill";
+    pill.textContent = speaker;
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+    header.appendChild(titleWrap);
+    header.appendChild(pill);
+    card.appendChild(header);
+
+    var meta = document.createElement("div");
+    meta.className = "dialogue-speaker-meta";
     if (summary.segment_count != null) {
-      summaryHtml += '<span>片段 ' + summary.segment_count + "</span>";
+      var segmentCount = document.createElement("span");
+      segmentCount.textContent = "片段 " + summary.segment_count;
+      meta.appendChild(segmentCount);
     }
     if (summary.duration != null) {
-      summaryHtml += '<span>时长 ' + summary.duration + "s</span>";
+      var duration = document.createElement("span");
+      duration.textContent = "时长 " + summary.duration + "s";
+      meta.appendChild(duration);
+    }
+    if (!meta.children.length) {
+      var emptyMeta = document.createElement("span");
+      emptyMeta.textContent = "等待识别结果";
+      meta.appendChild(emptyMeta);
+    }
+    card.appendChild(meta);
+
+    var label = document.createElement("label");
+    label.appendChild(document.createTextNode("候选音色"));
+    var select = document.createElement("select");
+    select.dataset.speaker = speaker;
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "请选择音色";
+    select.appendChild(placeholder);
+    label.appendChild(select);
+    card.appendChild(label);
+
+    var reasonText = reviewReason(task, speaker);
+    if (reasonText) {
+      var reason = document.createElement("div");
+      reason.className = "dialogue-speaker-reason";
+      reason.textContent = reasonText;
+      card.appendChild(reason);
     }
 
-    card.innerHTML =
-      '<header>' +
-      '  <div>' +
-      '    <h4>Speaker ' + speaker + "</h4>" +
-      '    <small>确认该说话人的目标音色</small>' +
-      "  </div>" +
-      '  <span class="dialogue-speaker-pill">' + speaker + "</span>" +
-      "</header>" +
-      '<div class="dialogue-speaker-meta">' + (summaryHtml || "<span>等待识别结果</span>") + "</div>" +
-      '<label>候选音色<select data-speaker="' + speaker + '"><option value="">请选择音色</option></select></label>' +
-      (reasonText ? '<div class="dialogue-speaker-reason">' + reasonText + "</div>" : "");
-
-    var select = card.querySelector("select");
     var candidates = Array.isArray(profile.candidates) ? profile.candidates : [];
     candidates.forEach(function (candidate) {
       var voiceId = voiceIdOf(candidate);
