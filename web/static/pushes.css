@@ -1249,11 +1249,11 @@
   }
   .push-table th,
   .push-table td {
-    padding: 6px 3px;
-    line-height: 1.22;
+    padding: 10px 8px;
+    line-height: 1.4;
   }
   .push-table th {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0;
   }
   .thumb {
