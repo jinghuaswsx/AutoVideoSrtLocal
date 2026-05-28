@@ -31,41 +31,26 @@ def test_dialogue_step_names_replace_voice_match_with_speaker_detect_and_ab():
     assert names.index("alignment") < names.index("translate")
 
 
-def test_get_pipeline_steps_reuses_parent_steps_and_replaces_voice_match(monkeypatch):
+def test_get_pipeline_steps_builds_dialogue_steps_from_base_omni_config(monkeypatch):
     from appcore.events import EventBus
+    from appcore.omni_v2_config import OMNI_STANDARD_PLUGIN_CONFIG
     from appcore.runtime_dialogue import DialogueTranslateRunner
-    from appcore.runtime_omni_v2 import OmniV2TranslateRunner
 
-    sentinel_extract = object()
-    sentinel_voice_match = object()
-    sentinel_translate = object()
-
-    monkeypatch.setattr(
-        OmniV2TranslateRunner,
-        "_get_pipeline_steps",
-        lambda self, task_id, video_path, task_dir: [
-            ("extract", sentinel_extract),
-            ("voice_match", sentinel_voice_match),
-            ("translate", sentinel_translate),
-        ],
-    )
     monkeypatch.setattr(
         DialogueTranslateRunner,
-        "pipeline_step_names_for_task",
-        lambda self, task_id, include_analysis=None: ["extract", "voice_match", "translate"],
+        "_resolve_plugin_config",
+        lambda self, task_id: dict(OMNI_STANDARD_PLUGIN_CONFIG),
     )
 
     runner = DialogueTranslateRunner(bus=EventBus(), user_id=7)
     steps = runner._get_pipeline_steps("dialogue-parent", "/tmp/demo.mp4", "/tmp/task")
+    names = [name for name, _fn in steps]
 
-    assert [name for name, _fn in steps] == [
-        "extract",
-        "speaker_detect",
-        "voice_match_ab",
-        "translate",
-    ]
-    assert steps[0][1] is sentinel_extract
-    assert steps[3][1] is sentinel_translate
+    assert "voice_match" not in names
+    assert names[names.index("speaker_detect") + 1] == "voice_match_ab"
+    assert names.index("speaker_detect") < names.index("alignment")
+    assert names.index("voice_match_ab") < names.index("alignment")
+    assert names.index("alignment") < names.index("translate")
 
 
 def test_prepare_tts_segments_for_audio_gen_applies_selected_speaker_voices():

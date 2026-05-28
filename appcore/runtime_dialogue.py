@@ -122,8 +122,42 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
         )
         return _replace_voice_match_steps(names)
 
+    def _base_pipeline_step_names_for_task(
+        self,
+        task_id: str,
+        *,
+        include_analysis: bool | None = None,
+    ) -> list[str]:
+        if include_analysis is None:
+            include_analysis = self.include_analysis_in_main_flow
+        return OmniV2TranslateRunner.pipeline_step_names_for_config(
+            self._resolve_plugin_config(task_id),
+            include_analysis=include_analysis,
+        )
+
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        steps = super()._get_pipeline_steps(task_id, video_path, task_dir)
+        step_fns = {
+            "extract": lambda: self._step_extract(task_id, video_path, task_dir),
+            "asr": lambda: self._step_asr(task_id, task_dir),
+            "separate": lambda: self._step_separate(task_id, task_dir),
+            "shot_decompose": lambda: self._step_shot_decompose(task_id, video_path, task_dir),
+            "asr_clean": lambda: self.profile.post_asr(self, task_id),
+            "asr_normalize": lambda: self.profile.post_asr(self, task_id),
+            "voice_match": lambda: self._step_voice_match(task_id),
+            "alignment": lambda: self._step_alignment(task_id, video_path, task_dir),
+            "translate": lambda: self.profile.translate(self, task_id),
+            "tts": lambda: self.profile.tts(self, task_id, task_dir),
+            "av_sync_audit": lambda: self._step_av_sync_audit(task_id, video_path, task_dir),
+            "loudness_match": lambda: self._step_loudness_match(task_id, task_dir),
+            "subtitle": lambda: self.profile.subtitle(self, task_id, task_dir),
+            "compose": lambda: self._step_compose(task_id, video_path, task_dir),
+            "analysis": lambda: self._step_analysis(task_id),
+            "export": lambda: self._step_export(task_id, video_path, task_dir),
+        }
+        steps = [
+            (name, step_fns[name])
+            for name in self._base_pipeline_step_names_for_task(task_id)
+        ]
         out = []
         for name, fn in steps:
             if name == "voice_match":
