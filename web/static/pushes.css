@@ -1506,6 +1506,15 @@
   min-width: 0;
   width: 100%;
 }
+.pm-audit-detail-key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.pm-ai-reevaluate {
+  margin-top: 2px;
+}
 .pm-kv .v code, .pm-sub code, .pm-list code {
   font-family: "JetBrains Mono", "Geist Mono", ui-monospace, Consolas, monospace;
   font-size: 12px; background: var(--oc-bg-subtle);

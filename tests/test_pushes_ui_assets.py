@@ -343,3 +343,23 @@ def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
     assert "function openAuditDetailModal" not in pushes
     assert "function openAiEvaluationDetail(product)" not in medias
     assert "aiEvalDetailMask" not in medias
+
+
+def test_push_modal_can_rerun_material_ai_evaluation_in_place():
+    pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    open_modal_start = pushes.index("function openPushModal")
+
+    modal = pushes[
+        open_modal_start:
+        pushes.index("function showResponse", open_modal_start)
+    ]
+
+    assert "'data-action': 'ai-reevaluate'" in modal
+    assert "AI重评" in modal
+    assert "retryMaterialAiEvaluation" in modal
+    assert "updateAuditPanel" in modal
+    assert "loadAiEvaluationRequestPreview(modalState, productId)" in modal
+    assert "`/medias/api/products/${productId}/evaluate`" in modal
+    assert "`/medias/api/products/${productId}`" in modal
+    assert "setAiEvaluationModalResult(modalState, freshProduct || data.result || data)" in modal
+    assert "state.items = state.items.map" in modal
