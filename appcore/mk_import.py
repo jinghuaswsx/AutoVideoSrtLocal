@@ -592,12 +592,18 @@ def _build_create_product_payload(
         mk_detail.get("main_image"),
         mk_detail.get("image"),
     )
+    shopify_title = _first_non_empty(
+        meta.get("product_english_title"),
+        product_asset.get("product_english_title"),
+        product_asset.get("product_name"),
+    )
     return {
         "name": name[:255],
         "product_code": product_code,
         "product_link": _canonical_product_link(product_link, product_code),
         "main_image": main_image,
         "mk_id": meta.get("mk_id") or mk_detail.get("id"),
+        "shopify_title": shopify_title,
     }
 
 
@@ -670,8 +676,8 @@ def import_mk_video(
         try:
             product_id = execute(
                 "INSERT INTO media_products "
-                "(user_id, name, product_code, product_link, main_image, mk_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
+                "(user_id, name, product_code, product_link, main_image, mk_id, shopify_title) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     int(translator_id),
                     payload["name"],
@@ -679,6 +685,7 @@ def import_mk_video(
                     payload.get("product_link"),
                     payload.get("main_image"),
                     payload.get("mk_id"),
+                    payload.get("shopify_title"),
                 ),
             )
         except Exception as e:

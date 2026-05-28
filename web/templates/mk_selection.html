@@ -1641,6 +1641,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
         data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
         data-mki-product-code="${productHandle}"
+        data-mki-product-english-title="${escapeHtml(englishTitle)}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         data-mki-local-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-has-local-product="${hasLocalProduct ? '1' : ''}"
@@ -1825,6 +1826,7 @@ async function openDetail(mkId, mkName) {
             data-mki-cover-path="${escapeHtml(coverPath)}"
             data-mki-product-name="${escapeHtml(item.product_name || '')}"
             data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            data-mki-product-english-title="${escapeHtml(item.product_english_title || '')}"
             data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
             data-mki-main-image-object-key="${escapeHtml(item.product_main_image_object_key || '')}"
             data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
@@ -4976,6 +4978,7 @@ async function mkiHandleClick(btn) {
       mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
       media_product_id: localProductId > 0 ? localProductId : null,
       spends: btn.dataset.mkiSpends || '',
+      product_english_title: btn.dataset.mkiProductEnglishTitle || null,
     };
     mkiImportProgressButton = btn;
     mkiImportProgressOpen(meta);
