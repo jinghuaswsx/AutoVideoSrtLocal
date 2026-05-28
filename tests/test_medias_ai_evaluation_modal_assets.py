@@ -48,6 +48,20 @@ def test_medias_js_ai_evaluation_modal_has_request_and_result_tabs():
     assert "fullPayloadUrl" in script
 
 
+def test_medias_js_ai_evaluation_polls_country_progress():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "const AI_EVAL_STATUS_ENDPOINT" in script
+    assert "function pollAiEvaluationStatus(modalState, pid, runId, onComplete)" in script
+    assert "function renderAiEvaluationCountryProgress(modalState)" in script
+    assert "data-ai-country-progress" in script
+    assert "ect-ai-country-card" in script
+    assert "排队中" in script
+    assert "进行中" in script
+    assert "已完成" in script
+    assert "报错" in script
+
+
 def test_medias_js_ai_evaluation_preview_uses_fixed_media_sizes():
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
@@ -63,7 +77,7 @@ def test_medias_js_ai_evaluation_modal_panels_fill_available_height():
     assert ".ect-modal--ai-evaluating .ect-modal-body { display:flex; flex-direction:column; min-height:0;" in script
     assert ".ect-ai-panels { flex:1 1 auto; min-height:0; overflow:auto;" in script
     assert "height:calc(min(820px, 100vh - 48px) - 220px)" not in script
-    assert "video.filename || video.object_key || '暂无视频文件名'" in script
+    assert "video.submitted_filename || video.filename || video.object_key || ''" in script
 
 
 def test_medias_js_ai_evaluation_stops_timer_when_request_finishes():

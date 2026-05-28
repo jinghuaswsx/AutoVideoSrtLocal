@@ -361,5 +361,19 @@ def test_push_modal_can_rerun_material_ai_evaluation_in_place():
     assert "loadAiEvaluationRequestPreview(modalState, productId)" in modal
     assert "`/medias/api/products/${productId}/evaluate`" in modal
     assert "`/medias/api/products/${productId}`" in modal
-    assert "setAiEvaluationModalResult(modalState, freshProduct || data.result || data)" in modal
+    assert "setAiEvaluationModalResult(modalState, freshProduct || finalData.result || finalData)" in modal
     assert "state.items = state.items.map" in modal
+
+
+def test_push_ai_evaluation_modal_polls_country_progress():
+    pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "const AI_EVAL_STATUS_ENDPOINT" in pushes
+    assert "function pollAiEvaluationStatus(modalState, pid, runId, onComplete)" in pushes
+    assert "function renderAiEvaluationCountryProgress(modalState)" in pushes
+    assert "data-ai-country-progress" in pushes
+    assert "ect-ai-country-card" in pushes
+    assert "排队中" in pushes
+    assert "进行中" in pushes
+    assert "已完成" in pushes
+    assert "报错" in pushes

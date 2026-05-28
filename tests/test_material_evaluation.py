@@ -560,6 +560,79 @@ def test_evaluate_ready_product_invokes_llm_once_per_target_country(monkeypatch,
     assert updates["ai_score"] == 73.7
 
 
+def test_evaluate_countries_records_failed_country_and_continues(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    languages = [
+        {"code": "de", "name": "德语", "country": "德国"},
+        {"code": "fr", "name": "法语", "country": "法国"},
+        {"code": "en", "name": "英语", "country": "美国"},
+    ]
+    calls = []
+    progress_events = []
+
+    def fake_invoke(**kwargs):
+        enum = kwargs["response_schema"]["properties"]["countries"]["items"]["properties"]["lang"]["enum"]
+        code = enum[0]
+        calls.append(code)
+        if code == "fr":
+            raise RuntimeError("OpenRouter 429")
+        country = next(item["country"] for item in languages if item["code"] == code)
+        return {
+            "countries": [
+                {
+                    "lang": code,
+                    "country": country,
+                    "is_suitable": True,
+                    "score": 82,
+                    "risk_level": "low",
+                    "decision": "适合推广",
+                    "recommendation": "做",
+                    "summary": f"{country}市场可推广。",
+                    "reason": f"{country}素材匹配度高。",
+                    "suggestions": [],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        material_evaluation,
+        "_invoke_evaluation_llm_with_recovery",
+        fake_invoke,
+    )
+
+    normalized, recovery = material_evaluation._evaluate_countries_with_llm(
+        product={"id": 7, "user_id": 9},
+        product_id=7,
+        product_url="https://example.test/products/stem",
+        languages=languages,
+        system="system",
+        media=[tmp_path / "cover.jpg", tmp_path / "video.mp4"],
+        llm_config={
+            "provider": "openrouter",
+            "model": "google/gemini-3-flash-preview",
+            "search_enabled": False,
+            "search_tools": [],
+        },
+        progress_callback=progress_events.append,
+    )
+
+    assert calls == ["de", "fr", "en"]
+    assert [row["lang"] for row in normalized["countries"]] == ["de", "fr", "en"]
+    failed = next(row for row in normalized["countries"] if row["lang"] == "fr")
+    assert failed["is_suitable"] is False
+    assert failed["score"] == 50.0
+    assert normalized["ai_evaluation_result"] == "需人工复核"
+    assert recovery["fr"]["error"] == "OpenRouter 429"
+    assert any(
+        event["countries"][1]["status"] == "failed"
+        and event["countries"][2]["status"] == "queued"
+        for event in progress_events
+    )
+    assert progress_events[-1]["status"] == "partially_completed"
+    assert progress_events[-1]["failed_count"] == 1
+
+
 @pytest.mark.parametrize("provider", ["gemini_vertex", "gemini_aistudio"])
 def test_resolve_evaluation_llm_config_keeps_google_bindings(monkeypatch, provider):
     from appcore import material_evaluation

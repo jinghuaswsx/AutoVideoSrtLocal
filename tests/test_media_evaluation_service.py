@@ -75,6 +75,61 @@ def test_build_product_evaluation_response_returns_error_payload():
     }
 
 
+def test_build_product_evaluation_start_response_returns_async_status_url():
+    from web.services.media_evaluation import build_product_evaluation_start_response
+
+    calls = []
+
+    result = build_product_evaluation_start_response(
+        123,
+        start_evaluation_fn=lambda pid, **kwargs: calls.append((pid, kwargs)) or {
+            "run_id": "mat_eval_abc",
+            "status": "queued",
+            "progress": {"total_count": 2},
+        },
+    )
+
+    assert calls == [(123, {"media_item_id": None, "product_url_override": None})]
+    assert result.status_code == 202
+    assert result.payload == {
+        "ok": True,
+        "async": True,
+        "run_id": "mat_eval_abc",
+        "status": "queued",
+        "status_url": "/medias/api/products/123/evaluate/status?run_id=mat_eval_abc",
+        "progress": {"total_count": 2},
+    }
+
+
+def test_build_product_evaluation_status_response_returns_progress_payload():
+    from web.services.media_evaluation import build_product_evaluation_status_response
+
+    result = build_product_evaluation_status_response(
+        123,
+        "mat_eval_abc",
+        get_status_fn=lambda pid, run_id: {
+            "run_id": run_id,
+            "product_id": pid,
+            "status": "running",
+            "progress": {
+                "completed_count": 1,
+                "total_count": 3,
+                "countries": [
+                    {"lang": "de", "country": "德国", "status": "completed"},
+                    {"lang": "fr", "country": "法国", "status": "running"},
+                ],
+            },
+        },
+    )
+
+    assert result.status_code == 200
+    assert result.payload["ok"] is True
+    assert result.payload["async"] is True
+    assert result.payload["run_id"] == "mat_eval_abc"
+    assert result.payload["progress"]["completed_count"] == 1
+    assert result.payload["progress"]["countries"][1]["status"] == "running"
+
+
 def test_build_product_evaluation_preview_response_adds_full_payload_url():
     from web.services.media_evaluation import build_product_evaluation_preview_response
 

@@ -4,9 +4,9 @@
 """
 from __future__ import annotations
 
-import mimetypes
+from pathlib import Path
 
-from flask import abort, request, send_file
+from flask import abort, request
 from flask_login import login_required
 
 from appcore import material_evaluation, medias
@@ -18,8 +18,11 @@ from web.services.media_evaluation import (
     build_product_evaluation_payload_response as _build_product_evaluation_payload_response_impl,
     build_product_evaluation_preview_response as _build_product_evaluation_preview_response_impl,
     build_product_evaluation_response as _build_product_evaluation_response_impl,
+    build_product_evaluation_start_response as _build_product_evaluation_start_response_impl,
+    build_product_evaluation_status_response as _build_product_evaluation_status_response_impl,
     media_evaluation_flask_response as _media_evaluation_flask_response_impl,
 )
+from web.services.artifact_download import send_file_with_range
 
 
 def _routes_module():
@@ -69,6 +72,12 @@ def _response_kwargs() -> dict:
     return kwargs
 
 
+def _wants_sync_evaluation() -> bool:
+    payload = request.get_json(silent=True) or {} if request.method == "POST" else {}
+    raw = request.args.get("sync")
+    return str(raw or "").strip().lower() in {"1", "true", "yes"} or bool(payload.get("sync"))
+
+
 def _build_product_evaluation_response(
     pid: int,
     media_item_id: int | None = None,
@@ -81,6 +90,22 @@ def _build_product_evaluation_response(
         evaluate_product_fn=material_evaluation.evaluate_product_if_ready,
         material_evaluation_message_fn=_routes_module()._material_evaluation_message,
     )
+
+
+def _build_product_evaluation_start_response(
+    pid: int,
+    media_item_id: int | None = None,
+    product_url_override: str | None = None,
+):
+    return _build_product_evaluation_start_response_impl(
+        pid,
+        media_item_id=media_item_id,
+        product_url_override=product_url_override,
+    )
+
+
+def _build_product_evaluation_status_response(pid: int, run_id: str):
+    return _build_product_evaluation_status_response_impl(pid, run_id)
 
 
 def _build_product_evaluation_preview_response(
@@ -121,7 +146,22 @@ def api_product_evaluate(pid: int):
         abort(404)
     routes = _routes_module()
     kwargs = _response_kwargs()
-    result = routes._build_product_evaluation_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_response(pid)
+    if _wants_sync_evaluation():
+        result = routes._build_product_evaluation_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_response(pid)
+    else:
+        result = routes._build_product_evaluation_start_response(pid, **kwargs) if kwargs else routes._build_product_evaluation_start_response(pid)
+    return routes._media_evaluation_flask_response(result)
+
+
+@bp.route("/api/products/<int:pid>/evaluate/status", methods=["GET"])
+@login_required
+@admin_required
+def api_product_evaluate_status(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    routes = _routes_module()
+    result = routes._build_product_evaluation_status_response(pid, str(request.args.get("run_id") or ""))
     return routes._media_evaluation_flask_response(result)
 
 
@@ -163,8 +203,9 @@ def api_product_evaluate_clip(pid: int):
         )
     except ValueError:
         abort(404)
-    return send_file(
-        str(path),
-        mimetype=mimetypes.guess_type(str(path))[0] or "video/mp4",
-        conditional=True,
-    )
+    clip_path = Path(path)
+    if not clip_path.is_absolute():
+        clip_path = clip_path.resolve()
+    if not clip_path.is_file():
+        abort(404)
+    return send_file_with_range(str(clip_path))

@@ -291,7 +291,7 @@ def test_manual_ai_evaluate_returns_llm_error_to_frontend(authed_client_no_db, m
         },
     )
 
-    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate?sync=1")
 
     assert resp.status_code == 400
     body = resp.get_json()
@@ -316,7 +316,7 @@ def test_manual_ai_evaluate_returns_preflight_error_to_frontend(authed_client_no
         },
     )
 
-    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate?sync=1")
 
     assert resp.status_code == 400
     body = resp.get_json()
@@ -325,7 +325,35 @@ def test_manual_ai_evaluate_returns_preflight_error_to_frontend(authed_client_no
     assert body["result"]["status"] == "product_link_unavailable"
 
 
-def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, monkeypatch):
+def test_manual_ai_evaluate_starts_async_run_by_default(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+    from web.services.media_evaluation import MediaEvaluationResponse
+
+    calls = []
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_start_response",
+        lambda pid: calls.append(pid) or MediaEvaluationResponse({
+            "ok": True,
+            "async": True,
+            "run_id": "mat_eval_123",
+            "status_url": "/medias/api/products/123/evaluate/status?run_id=mat_eval_123",
+        }, 202),
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+
+    assert resp.status_code == 202
+    assert calls == [123]
+    body = resp.get_json()
+    assert body["async"] is True
+    assert body["run_id"] == "mat_eval_123"
+    assert body["status_url"].endswith("run_id=mat_eval_123")
+
+
+def test_manual_ai_evaluate_can_still_run_synchronously_for_compat(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
     calls = []
@@ -342,7 +370,7 @@ def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, mon
         },
     )
 
-    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate?sync=1")
 
     assert resp.status_code == 200
     assert calls == [(123, {"force": True, "manual": True})]
@@ -382,7 +410,7 @@ def test_product_evaluation_routes_delegate_flask_response(authed_client_no_db, 
         lambda pid: Result({"route": "payload", "pid": pid}, 209),
     )
 
-    evaluate_resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+    evaluate_resp = authed_client_no_db.post("/medias/api/products/123/evaluate?sync=1")
     preview_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-preview")
     payload_resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-payload")
 
@@ -396,6 +424,37 @@ def test_product_evaluation_routes_delegate_flask_response(authed_client_no_db, 
         {"route": "preview", "pid": 123},
         {"route": "payload", "pid": 123},
     ]
+
+
+def test_product_evaluation_status_route_delegates_flask_response(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    captured = []
+
+    class Result:
+        def __init__(self, payload, status_code):
+            self.payload = payload
+            self.status_code = status_code
+
+    monkeypatch.setattr(
+        r,
+        "_media_evaluation_flask_response",
+        lambda result: captured.append(result.payload) or ({"wrapped": result.payload}, result.status_code),
+    )
+    monkeypatch.setattr(
+        r,
+        "_build_product_evaluation_status_response",
+        lambda pid, run_id: Result({"route": "status", "pid": pid, "run_id": run_id}, 208),
+    )
+
+    resp = authed_client_no_db.get(
+        "/medias/api/products/123/evaluate/status?run_id=mat_eval_abc"
+    )
+
+    assert resp.status_code == 208
+    assert captured == [{"route": "status", "pid": 123, "run_id": "mat_eval_abc"}]
 
 
 def _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path):
@@ -468,7 +527,7 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["response_schema"]["type"] == "object"
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
     assert payload["llm"]["provider"] == "openrouter"
-    assert payload["llm"]["model"] == "google/gemini-3.5-flash"
+    assert payload["llm"]["model"] == "google/gemini-3-flash-preview"
     assert payload["llm"]["google_search"] is False
     assert payload["llm"]["tools"] == []
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
@@ -499,6 +558,38 @@ def test_manual_ai_evaluate_clip_serves_processed_eval_video(
     assert resp.mimetype == "video/mp4"
     assert resp.data == b"processed-video"
     assert calls == [(123, 456)]
+
+
+def test_manual_ai_evaluate_clip_resolves_relative_eval_clip_path(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from pathlib import Path
+    from web.routes import medias as r
+
+    relative_clip = Path("instance/eval_clips/123/456_30s_llm.mp4")
+    clip_path = tmp_path / relative_clip
+    clip_path.parent.mkdir(parents=True)
+    clip_path.write_bytes(b"processed-video")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "evaluation_clip_preview_file",
+        lambda pid, media_item_id=None: relative_clip,
+    )
+
+    resp = authed_client_no_db.get(
+        "/medias/api/products/123/evaluate/clip?media_item_id=456",
+        headers={"Range": "bytes=0-8"},
+    )
+
+    assert resp.status_code == 206
+    assert resp.mimetype == "video/mp4"
+    assert resp.headers["Content-Range"] == "bytes 0-8/15"
+    assert resp.headers["Accept-Ranges"] == "bytes"
+    assert resp.data == b"processed"
 
 
 def test_manual_ai_evaluate_clip_requires_admin(authed_user_client_no_db):
@@ -742,7 +833,7 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
     assert payload["request"]["provider"] == "openrouter"
-    assert payload["request"]["model"] == "google/gemini-3.5-flash"
+    assert payload["request"]["model"] == "google/gemini-3-flash-preview"
     assert payload["request"]["google_search"] is False
     assert payload["request"]["tools"] == []
 
