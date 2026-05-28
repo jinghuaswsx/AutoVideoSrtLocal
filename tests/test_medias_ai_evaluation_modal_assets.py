@@ -62,6 +62,36 @@ def test_medias_js_ai_evaluation_polls_country_progress():
     assert "报错" in script
 
 
+def test_medias_js_ai_evaluation_shows_summary_below_country_cards():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "function aiEvaluationResultDetail(data)" in script
+    assert "function renderAiEvaluationInlineSummary(modalState)" in script
+    assert "JSON.parse(detail)" in script
+
+    progress_block = script[
+        script.index("function renderAiEvaluationCountryProgress"):
+        script.index("function pollAiEvaluationStatus")
+    ]
+    assert "${renderAiEvaluationInlineSummary(modalState)}" in progress_block
+
+    summary_block = script[
+        script.index("function renderAiEvaluationInlineSummary"):
+        script.index("function renderAiEvaluationCountryProgress")
+    ]
+    assert "data-ai-eval-summary" in summary_block
+    assert "评估摘要" in summary_block
+    assert "rawScore === null || rawScore === undefined || rawScore === ''" in summary_block
+
+    result_block = script[
+        script.index("function setAiEvaluationModalResult"):
+        script.index("function setAiEvaluationModalLoading")
+    ]
+    assert "const detail = aiEvaluationResultDetail(data);" in result_block
+    assert "modalState.evaluationDetail = detail;" in result_block
+    assert "renderAiEvaluationCountryProgress(modalState)" in result_block
+
+
 def test_medias_js_ai_evaluation_preview_uses_fixed_media_sizes():
     script = Path("web/static/medias.js").read_text(encoding="utf-8")
 
