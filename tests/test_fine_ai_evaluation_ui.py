@@ -19,9 +19,9 @@ def test_fine_ai_button_switches_to_result_label_when_result_exists():
 
     assert "AI精细评估结果" in body
     assert "function mkiFineAiButtonLabel(result)" in body
-    assert "return mkiFineAiHasUsableResult(result) ? 'AI精细评估结果' : '精细AI评估';" in body
+    assert "if (!mkiFineAiHasUsableResult(result)) return '精细AI评估';" in body
     assert "const fineAiButtonLabel = mkiFineAiButtonLabel(fineAiResult);" in body
-    assert "${fineAiButtonLabel}" in body
+    assert "${escapeHtml(fineAiButtonLabel)}" in body
     assert "function mkiFineAiUpdateCardButtonLabels(card)" in body
     assert "mkiFineAiUpdateCardButtonLabels(card);" in body
 
@@ -50,7 +50,7 @@ def test_fine_ai_external_button_checks_archive_before_starting_new_run():
 
     assert "context.externalProductLink" not in open_latest.split("context.loadingLatest = true;", 1)[0]
     assert "await mkiFineAiStartRun(context);" not in open_latest.split("const loaded = await mkiFineAiLoadLatest", 1)[0]
-    assert "params.set('product_link', context.externalProductLink || context.productLink || '')" in body
+    assert "params.set('product_link', (context && (context.externalProductLink || context.productLink)) || '');" in body
     assert "params.set('card_video_path', context.cardVideoPath)" in body
     assert "mkiFineAiLatestEndpoint(context)" in load_latest
     assert "error.status = resp.status" in body

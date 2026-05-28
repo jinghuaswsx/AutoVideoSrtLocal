@@ -733,6 +733,9 @@ def _fine_ai_status_by_external_cards(items: list[dict[str, Any]]) -> dict[str, 
                     continue
                 if require_link_match and not (run_links and (run_links & card["links"])):
                     continue
+                if not require_link_match and run_links and card["links"] and not (run_links & card["links"]):
+                    # Both have links but no overlap; they are different products, prevent mismatch
+                    continue
                 matched[material_key] = row
                 run_ids.append(run_id)
                 matched_run_ids.add(run_id)

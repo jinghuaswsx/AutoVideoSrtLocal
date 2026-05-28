@@ -2277,7 +2277,7 @@ function mkiFineAiResultFromButton(btn) {
   if (direct) return direct;
   const card = btn && (btn.closest('.mk-video-card') || btn.closest('.mki-detail-video-card'));
   if (!card) return null;
-  const carrier = card.querySelector('[data-mki-fine-ai-run-id]');
+  const carrier = card.querySelector('[data-mki-fine-ai-run-id]:not([data-mki-fine-ai-run-id=""])');
   return mkiFineAiResultFromElement(carrier);
 }
 

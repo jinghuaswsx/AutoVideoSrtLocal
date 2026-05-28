@@ -510,7 +510,13 @@ def test_xuanpin_mk_fine_ai_result_button_uses_cached_result_before_latest_or_st
 def test_xuanpin_fine_ai_external_link_routes_delegate_to_service(authed_client_no_db, monkeypatch):
     calls = []
 
+    class FakeRepository:
+        def get_run(self, evaluation_run_id):
+            return {"evaluation_run_id": evaluation_run_id, "product_id": "0"}
+
     class FakeService:
+        repository = FakeRepository()
+
         def create_external_link_run(self, **kwargs):
             calls.append(("create_external", kwargs))
             return {

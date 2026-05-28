@@ -118,7 +118,7 @@ class FineAiEvaluationRepository:
         )
         if not row and str(card_video_path or "").strip():
             video_path = str(card_video_path or "").strip()
-            row = query_one(
+            fallback_row = query_one(
                 "SELECT * FROM ai_evaluation_runs WHERE product_id=0 "
                 "AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_type'))='external_product_link' "
                 "AND ("
@@ -129,6 +129,26 @@ class FineAiEvaluationRepository:
                 "ORDER BY created_at DESC, id DESC LIMIT 1",
                 (video_path, video_path, video_path),
             )
+            if fallback_row:
+                try:
+                    meta_json = fallback_row.get("metadata_json")
+                    metadata = json.loads(meta_json) if isinstance(meta_json, str) else (meta_json or {})
+                    if not isinstance(metadata, dict):
+                        metadata = {}
+                    link_check = metadata.get("link_check") or {}
+                    if not isinstance(link_check, dict):
+                        link_check = {}
+                    run_links = {
+                        str(metadata.get("external_product_link") or "").strip(),
+                        str(link_check.get("original_link") or "").strip(),
+                        str(link_check.get("selected_link") or "").strip(),
+                    }
+                    run_links = {l for l in run_links if l}
+                    if link and run_links and link not in run_links:
+                        fallback_row = None
+                except Exception:
+                    pass
+                row = fallback_row
         return _load_run(row) if row else None
 
     def update_run(self, evaluation_run_id: str, **fields) -> dict[str, Any]:
