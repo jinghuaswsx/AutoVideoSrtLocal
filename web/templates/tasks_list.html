@@ -1931,6 +1931,7 @@ async function tcRender() {
 }
 
 async function tcRenderTaskList(wrap, tab, bucket) {
+  const users = await tcLoadAssigneeFilterUsers();
   const kw = document.getElementById('tcKeyword').value.trim();
   const taskType = document.getElementById('tcTaskTypeFilter').value || 'all';
   const assigneeId = document.getElementById('tcAssigneeFilter').value || 'all';
@@ -1950,6 +1951,23 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   const rows = data.items.map(it => {
     const kind = tcTaskTypeLabel(it);
     const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
+    
+    const isTerminal = it.parent_task_id 
+      ? ['done', 'cancelled'].includes(it.status) 
+      : ['all_done', 'cancelled'].includes(it.status);
+
+    let assigneeSelector = '';
+    if (TC_IS_ADMIN && !isTerminal) {
+      const currentAssigneeId = it.assignee_id;
+      const options = users.map(u => {
+        const selected = Number(u.id) === Number(currentAssigneeId) ? 'selected' : '';
+        return `<option value="${u.id}" ${selected}>${tcEsc(u.display_name || u.username || ('#' + u.id))}</option>`;
+      }).join('');
+      assigneeSelector = `<select class="tc-input" style="padding: 2px 6px; font-size: 13px; min-width: 100px; height: 28px; width: auto;" onchange="tcChangeAssignee(${it.id}, this, ${currentAssigneeId})">${options}</select>`;
+    } else {
+      assigneeSelector = tcEsc(it.assignee_display_name || it.assignee_username || '—');
+    }
+
     return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
       <td>
         <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
@@ -1964,12 +1982,41 @@ async function tcRenderTaskList(wrap, tab, bucket) {
       <td>${tcEsc(kind)}</td>
       <td>${country}</td>
       <td>${tcTaskStatusCell(it)}</td>
-      <td>${tcEsc(it.assignee_display_name || it.assignee_username || '—')}</td>
+      <td>${assigneeSelector}</td>
       <td>${tcEsc(tcFormatTime(it.created_at))}</td>
       <td>${tcTaskRowAction(it)}</td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
+}
+
+async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
+  const newAssigneeId = parseInt(selectEl.value);
+  if (!newAssigneeId) return;
+  const newAssigneeName = selectEl.options[selectEl.selectedIndex].text;
+  if (!confirm(`确定要将该任务的负责人修改为【${newAssigneeName}】吗？`)) {
+    selectEl.value = oldAssigneeId;
+    return;
+  }
+  
+  try {
+    selectEl.disabled = true;
+    await tcFetchJson(`/tasks/api/${taskId}/assignee`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assignee_id: newAssigneeId }),
+    });
+    
+    if (TC_DETAIL_TASK_ID === taskId) {
+      tcLoadDetail(taskId, {forceRefresh: true, keepContent: true});
+    }
+    
+    tcRender();
+  } catch (e) {
+    alert('修改负责人失败：' + (e.message || 'unknown error'));
+    selectEl.value = oldAssigneeId;
+  } finally {
+    selectEl.disabled = false;
+  }
 }
 function tcRenderTaskPager(data, itemCount) {
   const page = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));

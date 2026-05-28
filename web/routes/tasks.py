@@ -820,3 +820,32 @@ def api_task_bind_items(tid: int):
         affected = medias_svc.update_item_task_id(iid, child_id)
         bound += affected
     return _json_response({"bound": bound})
+
+
+@bp.route("/api/<int:tid>/assignee", methods=["PATCH"])
+@login_required
+@admin_required
+def api_update_assignee(tid: int):
+    payload = request.get_json(silent=True) or {}
+    assignee_id_raw = payload.get("assignee_id")
+    if assignee_id_raw is None:
+        return _json_response({"error": "assignee_id 必填"}, 400)
+    try:
+        assignee_id = int(assignee_id_raw)
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid assignee_id"}, 400)
+
+    try:
+        tasks_svc.update_task_assignee(
+            task_id=tid,
+            assignee_id=assignee_id,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
+    except (ValueError, tasks_svc.StateError) as e:
+        return _json_response({"error": str(e)}, 400)
+
+    _audit_task_action(tid, "task_assignee_changed", {"assignee_id": assignee_id})
+    return _json_response({"ok": True})

@@ -786,6 +786,65 @@ def _row(task_id: int) -> dict | None:
     return query_one("SELECT * FROM tasks WHERE id=%s", (int(task_id),))
 
 
+def update_task_assignee(
+    *,
+    task_id: int,
+    assignee_id: int,
+    actor_user_id: int,
+    is_admin: bool,
+) -> None:
+    """超级管理员/管理员修改任务负责人"""
+    if not is_admin:
+        raise PermissionError("仅管理员可修改负责人")
+
+    row = _row(task_id)
+    if not row:
+        raise StateError("任务不存在")
+
+    current_status = row.get("status")
+    is_parent = row.get("parent_task_id") is None
+
+    # 校验终态
+    if is_parent:
+        if current_status in PARENT_TERMINAL:
+            raise StateError(f"父任务当前处于终态 '{current_status}'，无法修改负责人")
+    else:
+        if current_status in CHILD_TERMINAL:
+            raise StateError(f"子任务当前处于终态 '{current_status}'，无法修改负责人")
+
+    # 校验负责人 ID 是否在翻译或任务工作人员范围内
+    from appcore.users import ensure_translation_work_user
+    try:
+        ensure_translation_work_user(assignee_id)
+    except ValueError as exc:
+        raise ValueError(f"指派失败: {exc}")
+
+    old_assignee_id = row.get("assignee_id")
+    if old_assignee_id == assignee_id:
+        return
+
+    # 更新负责人
+    execute(
+        "UPDATE tasks SET assignee_id=%s, updated_at=NOW() WHERE id=%s",
+        (int(assignee_id), int(task_id)),
+    )
+
+    # 记录 assignee_changed 审计事件到 task_events
+    payload = {
+        "old_assignee_id": old_assignee_id,
+        "new_assignee_id": int(assignee_id),
+    }
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, 'assignee_changed', %s, %s)",
+        (
+            int(task_id),
+            int(actor_user_id),
+            json.dumps(payload, ensure_ascii=False),
+        ),
+    )
+
+
 def _product_name_for_notification(cur, product_id: int) -> str:
     cur.execute("SELECT name FROM media_products WHERE id=%s", (int(product_id),))
     row = cur.fetchone()
