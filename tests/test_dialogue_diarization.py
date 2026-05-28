@@ -20,6 +20,21 @@ class FakeDiarizationClient:
         ]
 
 
+class LowConfidenceFallbackClient:
+    def run(self, *, audio_path: str, task_id: str) -> list[dict]:
+        assert audio_path == "input.mp4"
+        assert task_id == "task-low-confidence"
+        return [
+            {"speaker": "s1", "start_time": 0.0, "end_time": 1.0, "confidence": 0.95},
+            {"speaker": "s2", "start_time": 1.1, "end_time": 2.0, "confidence": 0.94},
+        ]
+
+
+class FailingDiarizationClient:
+    def run(self, *, audio_path: str, task_id: str) -> list[dict]:
+        raise RuntimeError("diarizer crashed")
+
+
 def test_detect_uses_diarization_when_provider_is_unreliable():
     utterances = [
         {"text": "hello", "start_time": 0.0, "end_time": 1.0},
@@ -31,6 +46,23 @@ def test_detect_uses_diarization_when_provider_is_unreliable():
         audio_path="input.mp4",
         task_id="task-1",
         diarization_client=FakeDiarizationClient(),
+    )
+
+    assert result["speaker_strategy"] == "diarization"
+    assert [s["speaker_id"] for s in result["dialogue_segments"]] == ["A", "B"]
+
+
+def test_detect_uses_diarization_when_provider_speaker_confidence_is_low():
+    utterances = [
+        {"text": "hello", "start_time": 0.0, "end_time": 1.0, "speaker": "a", "speaker_confidence": 0.99},
+        {"text": "yes", "start_time": 1.1, "end_time": 2.0, "speaker": "b", "speaker_confidence": 0.2},
+    ]
+
+    result = detect_dialogue_segments(
+        utterances=utterances,
+        audio_path="input.mp4",
+        task_id="task-low-confidence",
+        diarization_client=LowConfidenceFallbackClient(),
     )
 
     assert result["speaker_strategy"] == "diarization"
@@ -51,6 +83,21 @@ def test_detect_raises_when_diarization_required_but_unavailable():
     assert "diarization fallback is required" in str(exc.value)
 
 
+def test_detect_wraps_diarization_client_failure_with_task_id():
+    utterances = [{"text": "hello", "start_time": 0.0, "end_time": 1.0}]
+
+    with pytest.raises(DiarizationUnavailable) as exc:
+        detect_dialogue_segments(
+            utterances=utterances,
+            audio_path="input.mp4",
+            task_id="task-failure",
+            diarization_client=FailingDiarizationClient(),
+        )
+
+    assert "diarization fallback failed for task task-failure" in str(exc.value)
+    assert "diarizer crashed" in str(exc.value)
+
+
 def test_resolve_diarization_client_requires_endpoint(monkeypatch):
     monkeypatch.delenv("DIALOGUE_DIARIZATION_URL", raising=False)
 
@@ -58,7 +105,7 @@ def test_resolve_diarization_client_requires_endpoint(monkeypatch):
         resolve_diarization_client()
 
 
-def test_http_diarization_client_posts_audio(monkeypatch):
+def test_http_diarization_client_posts_audio(monkeypatch, tmp_path):
     captured = {}
 
     class FakeResponse:
@@ -77,17 +124,12 @@ def test_http_diarization_client_posts_audio(monkeypatch):
         files["audio"].close()
         return FakeResponse()
 
-    audio = monkeypatch.context()
-    with audio:
-        import tempfile
+    path = tmp_path / "audio.mp4"
+    path.write_bytes(b"audio")
+    monkeypatch.setattr("requests.post", fake_post)
 
-        path = tempfile.NamedTemporaryFile(delete=False)
-        path.write(b"audio")
-        path.close()
-        monkeypatch.setattr("requests.post", fake_post)
-
-        client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
-        segments = client.run(audio_path=path.name, task_id="task-http")
+    client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
+    segments = client.run(audio_path=str(path), task_id="task-http")
 
     assert segments == [{"speaker": "x", "start_time": 0.0, "end_time": 1.0}]
     assert captured["url"] == "http://diarizer.local/run"
@@ -95,7 +137,7 @@ def test_http_diarization_client_posts_audio(monkeypatch):
     assert captured["timeout"] == 12
 
 
-def test_http_diarization_client_accepts_positional_audio_path_and_task_id(monkeypatch):
+def test_http_diarization_client_accepts_positional_audio_path_and_task_id(monkeypatch, tmp_path):
     class FakeResponse:
         def raise_for_status(self) -> None:
             return None
@@ -107,16 +149,44 @@ def test_http_diarization_client_accepts_positional_audio_path_and_task_id(monke
         files["audio"].close()
         return FakeResponse()
 
-    audio = monkeypatch.context()
-    with audio:
-        import tempfile
+    path = tmp_path / "audio.mp4"
+    path.write_bytes(b"audio")
+    monkeypatch.setattr("requests.post", fake_post)
 
-        path = tempfile.NamedTemporaryFile(delete=False)
-        path.write(b"audio")
-        path.close()
-        monkeypatch.setattr("requests.post", fake_post)
-
-        client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
-        segments = client.run(path.name, "task-http")
+    client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
+    segments = client.run(str(path), "task-http")
 
     assert segments == [{"speaker": "x", "start_time": 0.0, "end_time": 1.0}]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"segments": []},
+        {"segments": ["not-a-dict"]},
+        {"segments": [{"start_time": 0.0, "end_time": 1.0}]},
+        {"segments": [{"speaker": "x", "start_time": "bad", "end_time": 1.0}]},
+        {"segments": [{"speaker": "x", "start_time": 0.0, "end_time": "nan"}]},
+        {"segments": [{"speaker": "x", "start_time": 2.0, "end_time": 1.0}]},
+    ],
+)
+def test_http_diarization_client_rejects_empty_or_malformed_segments(monkeypatch, tmp_path, payload):
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return payload
+
+    def fake_post(url, files, data, timeout):
+        files["audio"].close()
+        return FakeResponse()
+
+    path = tmp_path / "audio.mp4"
+    path.write_bytes(b"audio")
+    monkeypatch.setattr("requests.post", fake_post)
+
+    client = HttpDiarizationClient(endpoint="http://diarizer.local/run", timeout_seconds=12)
+
+    with pytest.raises(DiarizationUnavailable):
+        client.run(str(path), "task-http")

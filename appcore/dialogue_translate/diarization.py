@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,43 @@ import requests
 
 class DiarizationUnavailable(RuntimeError):
     pass
+
+
+_SPEAKER_KEYS = ("speaker_id", "speaker", "speaker_label", "channel_tag")
+
+
+def _speaker_label(segment: dict) -> str:
+    for key in _SPEAKER_KEYS:
+        value = str(segment.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _finite_float(value: object) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise DiarizationUnavailable(f"invalid diarization time: {value!r}") from exc
+    if not math.isfinite(parsed):
+        raise DiarizationUnavailable(f"invalid diarization time: {value!r}")
+    return parsed
+
+
+def _validate_segments(segments: list) -> list[dict]:
+    if not segments:
+        raise DiarizationUnavailable("diarization response contains no segments")
+
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            raise DiarizationUnavailable(f"diarization segment {index} must be an object")
+        if not _speaker_label(segment):
+            raise DiarizationUnavailable(f"diarization segment {index} missing speaker label")
+        start_time = _finite_float(segment.get("start_time"))
+        end_time = _finite_float(segment.get("end_time"))
+        if end_time <= start_time:
+            raise DiarizationUnavailable(f"diarization segment {index} must have positive duration")
+    return segments
 
 
 @dataclass(frozen=True)
@@ -42,7 +80,7 @@ class HttpDiarizationClient:
         segments = payload.get("segments")
         if not isinstance(segments, list):
             raise DiarizationUnavailable("diarization response missing segments list")
-        return segments
+        return _validate_segments(segments)
 
 
 def resolve_diarization_client() -> HttpDiarizationClient:

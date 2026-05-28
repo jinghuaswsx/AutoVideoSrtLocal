@@ -230,7 +230,11 @@ def detect_dialogue_segments(
     diarization_client: object | None = None,
 ) -> dict:
     provider_result = build_dialogue_segments(utterances)
-    if provider_result["speaker_strategy"] != "needs_diarization":
+    provider_low_confidence = any(
+        REVIEW_LOW_CONFIDENCE in str(segment.get("review_reason", "")).split(",")
+        for segment in provider_result.get("dialogue_segments", [])
+    )
+    if provider_result["speaker_strategy"] != "needs_diarization" and not provider_low_confidence:
         return provider_result
 
     try:
@@ -243,7 +247,10 @@ def detect_dialogue_segments(
     if not hasattr(client, "run"):
         raise DiarizationUnavailable(f"diarization fallback is required for task {task_id}: client has no run method")
 
-    diarization_segments = client.run(audio_path=audio_path, task_id=task_id)
+    try:
+        diarization_segments = client.run(audio_path=audio_path, task_id=task_id)
+    except Exception as exc:
+        raise DiarizationUnavailable(f"diarization fallback failed for task {task_id}: {exc}") from exc
     result = join_diarization_to_utterances(utterances, diarization_segments)
     result["dialogue_warnings"] = provider_result.get("dialogue_warnings", []) + result.get("dialogue_warnings", [])
     return result
