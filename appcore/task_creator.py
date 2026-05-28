@@ -360,6 +360,7 @@ def run_material_ingest(state: dict, *, user_id: int = 0) -> None:
         file_size=file_size,
         cover_object_key=None,
         lang="en",
+        skip_push=1,  # 传入 skip_push=1 表示本英文原始素材默认不推送
     )
 
     # 7. Store result
