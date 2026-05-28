@@ -60,9 +60,10 @@
    * docs/superpowers/specs/2026-04-18-push-management-design.md
    * docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md
    */
-  --push-table-min-w: 1508px;
-  --push-col-thumb: 96px;
+  --push-table-min-w: 1748px;
+  --push-col-thumb: 168px;
   --push-col-product: 144px;
+  --push-col-main-image: 168px;
   --push-col-owner: 92px;
   --push-col-mk: 62px;
   --push-col-item: 182px;
@@ -296,6 +297,7 @@
 }
 .push-col-thumb { width: var(--push-col-thumb); }
 .push-col-product { width: var(--push-col-product); }
+.push-col-main-image { width: var(--push-col-main-image); }
 .push-col-owner { width: var(--push-col-owner); }
 .push-col-mk { width: var(--push-col-mk); }
 .push-col-item { width: var(--push-col-item); }
@@ -338,8 +340,8 @@
 
 /* ---------- 缩略图 ---------- */
 .thumb {
-  width: 72px;
-  height: 72px;
+  width: 144px;
+  height: 144px;
   object-fit: cover;
   border-radius: var(--oc-r-md);
   display: block;
@@ -1071,9 +1073,10 @@
 /* ---------- 响应式 ---------- */
 @media (min-width: 769px) and (max-width: 1500px) {
   :root {
-    --push-table-min-w: 1180px;
-    --push-col-thumb: 76px;
+    --push-table-min-w: 1384px;
+    --push-col-thumb: 140px;
     --push-col-product: 126px;
+    --push-col-main-image: 140px;
     --push-col-owner: 76px;
     --push-col-mk: 52px;
     --push-col-item: 150px;
@@ -1127,8 +1130,8 @@
     padding: 9px var(--oc-sp-2);
   }
   .thumb {
-    width: 58px;
-    height: 58px;
+    width: 116px;
+    height: 116px;
   }
   .audit-cell-wrap {
     min-width: 0;
@@ -1150,8 +1153,9 @@
 @media (min-width: 769px) and (orientation: portrait) {
   :root {
     --push-table-min-w: 1100px;
-    --push-col-thumb: 52px;
+    --push-col-thumb: 100px;
     --push-col-product: 116px;
+    --push-col-main-image: 100px;
     --push-col-owner: 54px;
     --push-col-mk: 42px;
     --push-col-item: 122px;
@@ -1251,8 +1255,8 @@
     letter-spacing: 0;
   }
   .thumb {
-    width: 44px;
-    height: 44px;
+    width: 88px;
+    height: 88px;
     border-radius: var(--oc-r);
   }
   .product-name,
@@ -1357,7 +1361,7 @@
   .push-table-shell { overflow-x: auto; }
   .push-table th,
   .push-table td { padding: var(--oc-sp-2); }
-  .thumb { width: 56px; height: 56px; }
+  .thumb { width: 112px; height: 112px; }
   .drawer { width: 100%; }
 }
 
@@ -1366,7 +1370,7 @@
   .push-table { font-size: 12px; }
   .push-table th,
   .push-table td { padding: 8px 10px; white-space: nowrap; }
-  .thumb { width: 48px; height: 48px; }
+  .thumb { width: 96px; height: 96px; }
   .audit-cell-wrap { min-width: 200px; max-width: 240px; }
   .audit-cell-wrap .audit-cell { white-space: normal; }
   /* 让 cell 包含的多行文字能换行 */

@@ -143,7 +143,7 @@
     const lang = LANGUAGES.find(l => l && l.code === normalized);
     const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
     const upper = normalized.toUpperCase();
-    return name ? `${name} (${upper})` : upper || raw;
+    return name ? `${name} ${upper}` : upper || raw;
   }
 
   async function copyText(text) {
@@ -1077,12 +1077,31 @@
     const thumb = thumbUrl
       ? `<img class="thumb" src="${escapeAttr(thumbUrl)}" alt="">`
       : `<div class="thumb thumb-empty"></div>`;
+    const mainImageUrl = `/medias/cover/${it.product_id}`;
+    const mainImage = `<div class="main-image-wrap">` +
+                      `<img class="thumb" src="${escapeAttr(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">` +
+                      `<div class="thumb thumb-empty" style="display:none;"></div>` +
+                      `</div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const productPageUrl = safeExternalHref(it.product_page_url);
+    const copyProductNameBtn = it.product_name
+      ? `<button type="button" class="product-copy-btn" data-copy-product-name="${escapeAttr(it.product_name)}" title="复制产品中文名" style="margin-left: 6px; display: inline-flex; vertical-align: middle; width: 22px; height: 22px; align-items: center; justify-content: center; flex-shrink: 0;">
+           <svg class="icon-copy" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+           </svg>
+         </button>`
+      : '';
     const productNameHtml = productPageUrl
-      ? `<a class="product-name product-link product-name-line" href="${escapeAttr(productPageUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
-      : `<div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>`;
+      ? `<div class="product-name-row" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0;">
+           <a class="product-name product-link product-name-line" href="${escapeAttr(productPageUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>
+           ${copyProductNameBtn}
+         </div>`
+      : `<div class="product-name-row" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0;">
+           <div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>
+           ${copyProductNameBtn}
+         </div>`;
     const productCode = it.product_code || '';
     const productBothContent = `${it.product_name || ''}\n${productCode}`;
     const productCodeHtml = productCode
@@ -1111,6 +1130,7 @@
         ${productNameHtml}
         ${productCodeHtml}
       </td>
+      <td class="push-main-image-cell">${mainImage}</td>
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
       <td class="push-item-cell">
@@ -1120,7 +1140,7 @@
           ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
         </div>
       </td>
-      <td class="push-lang-cell"><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
+      <td class="push-lang-cell"><span class="lang-pill">${escapeHtml(formatLanguageLabel(it.lang))}</span></td>
       <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
       <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
@@ -2471,7 +2491,7 @@
 
   document.addEventListener('click', async ev => {
     const copyBtn = ev.target.closest(
-      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag], button[data-copy-both]',
+      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag], button[data-copy-both], button[data-copy-product-name]',
     );
     if (!copyBtn) return;
     try {
@@ -2480,6 +2500,7 @@
           || copyBtn.getAttribute('data-copy-modal-product-code')
           || copyBtn.getAttribute('data-copy-payload-tag')
           || copyBtn.getAttribute('data-copy-both')
+          || copyBtn.getAttribute('data-copy-product-name')
           || '',
       );
       flashCopyButton(copyBtn, '已复制');

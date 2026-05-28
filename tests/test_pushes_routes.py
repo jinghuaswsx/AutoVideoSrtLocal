@@ -2181,7 +2181,7 @@ def test_pushes_assets_include_rework_modal_controls():
     assert "pm-rework-overlay" in script
     assert "pm-rework-overlay" in style
     assert "btn-rework" in style
-    assert "gap: 100px" in style
+    assert "gap: 20px" in style
 
 
 def test_pushes_modal_material_push_button_is_larger_than_rework_button():
@@ -2195,7 +2195,7 @@ def test_pushes_modal_material_push_button_is_larger_than_rework_button():
     assert ".btn-push.btn-modal-material-push" in style
     assert "height: 64px" in style
     assert "padding: 0 28px" in style
-    assert ".pm-footer {\n  display: flex;\n  gap: 100px;\n  justify-content: flex-end;\n  align-items: center;" in style
+    assert ".pm-footer {\n  display: flex;\n  gap: 20px;\n  justify-content: flex-end;\n  align-items: center;" in style
     assert ".btn-push.btn-rework {\n  background: var(--oc-danger);\n  color: #fff;" in style
 
 

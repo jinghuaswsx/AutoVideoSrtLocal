@@ -77,6 +77,7 @@
     <colgroup>
       <col class="push-col-thumb">
       <col class="push-col-product">
+      <col class="push-col-main-image">
       <col class="push-col-owner">
       <col class="push-col-mk">
       <col class="push-col-item">
@@ -91,6 +92,7 @@
       <tr>
         <th>缩略图</th>
         <th>产品</th>
+        <th>商品主图</th>
         <th>产品负责人</th>
         <th>mk_id</th>
         <th>素材</th>
@@ -102,7 +104,7 @@
         {% if is_admin %}<th>操作</th>{% endif %}
       </tr>
     </thead>
-    <tbody id="push-tbody"><tr><td colspan="{{ 11 if is_admin else 10 }}">加载中…</td></tr></tbody>
+    <tbody id="push-tbody"><tr><td colspan="{{ 12 if is_admin else 11 }}">加载中…</td></tr></tbody>
   </table>
 </div>
 
