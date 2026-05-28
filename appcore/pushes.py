@@ -1004,12 +1004,37 @@ def build_product_links_push_preview(product: dict | None) -> dict:
     if not handle.lower().endswith("-rjc"):
         raise ProductLinksPayloadError("product_code_must_end_with_rjc")
 
+    product_id = product.get("id")
+    # 获取该产品下所有活跃的素材
+    all_items = medias.list_items(product_id) if product_id else []
+
+    # 统计哪些语种具有满足待推送状态的素材
+    pending_langs = set()
+    for item in all_items:
+        item_lang = str(item.get("lang") or "en").strip().lower()
+        # 计算素材的状态
+        readiness = compute_readiness(item, product)
+        status = compute_status_from_readiness(item, product, readiness)
+        if status == STATUS_PENDING:
+            pending_langs.add(item_lang)
+
+    # 过滤出符合条件的语种代码列表
+    # 英语 (en) 保持必推，小语种必须具有待推送状态的素材
+    enabled_langs = _enabled_product_link_langs()
+    filtered_langs = []
+    for lang in enabled_langs:
+        lang_lower = lang.strip().lower()
+        if lang_lower == "en":
+            filtered_langs.append(lang)
+        elif lang_lower in pending_langs:
+            filtered_langs.append(lang)
+
     rows: list[dict[str, str]] = []
     links: list[str] = []
     seen_links: set[str] = set()
     rows_by_lang = [
         (lang, resolve_product_page_urls(lang, product))
-        for lang in _enabled_product_link_langs()
+        for lang in filtered_langs
     ]
     domain_order: list[str] = []
     for _lang, url_rows in rows_by_lang:

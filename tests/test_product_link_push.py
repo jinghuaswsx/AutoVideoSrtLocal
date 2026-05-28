@@ -20,6 +20,28 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
             {"id": 2, "domain": "omurio.com"},
         ],
     )
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_items",
+        lambda product_id: [
+            {"id": 101, "product_id": 10, "lang": "de", "object_key": "obj_de", "cover_object_key": "cov_de"},
+            {"id": 102, "product_id": 10, "lang": "fr", "object_key": "obj_fr", "cover_object_key": "cov_fr"},
+            {"id": 103, "product_id": 10, "lang": "ja", "object_key": "obj_ja", "cover_object_key": "cov_ja"},
+        ],
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product, **kwargs: {
+            "is_listed": True,
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
     product = {
         "id": 10,
         "product_code": "demo-rjc",
@@ -50,6 +72,67 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
         "language_name": "en",
         "domain": "newjoyloo.com",
         "url": "https://newjoyloo.com/products/demo-rjc",
+    }
+
+
+def test_build_product_links_push_preview_filters_small_langs_without_pending_materials(monkeypatch):
+    from appcore import pushes
+
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_enabled_language_codes",
+        lambda: ["en", "de", "fr", "ja"],
+    )
+    monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
+    monkeypatch.setattr(pushes.system_settings, "get_setting", lambda key: None)
+    monkeypatch.setattr(
+        pushes.product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+        ],
+    )
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_items",
+        lambda product_id: [
+            # de: 具有 pending 状态素材
+            {"id": 101, "product_id": 10, "lang": "de", "object_key": "obj_de"},
+            # fr: 素材已推送 (pushed_at 已设置) -> 状态为 STATUS_PUSHED (非 pending)
+            {"id": 102, "product_id": 10, "lang": "fr", "object_key": "obj_fr", "pushed_at": "2026-05-28"},
+            # ja: 无任何素材 (通过只在返回列表中包含 de/fr 模拟)
+        ],
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product, **kwargs: {
+            "is_listed": True,
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    product = {
+        "id": 10,
+        "product_code": "demo-rjc",
+    }
+
+    preview = pushes.build_product_links_push_preview(product)
+
+    # en 应保留 (不作为小语种进行 pending 限制)
+    # de 应保留 (具有 pending 状态素材)
+    # fr 应被过滤 (虽有素材，但非 pending)
+    # ja 应被过滤 (完全无素材)
+    assert preview["payload"] == {
+        "handle": "demo-rjc",
+        "product_links": [
+            "https://newjoyloo.com/products/demo-rjc",
+            "https://newjoyloo.com/de/products/demo-rjc",
+        ],
     }
 
 
@@ -346,6 +429,26 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
     monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
     monkeypatch.setattr(pushes.medias, "list_enabled_language_codes", lambda: ["en", "de"])
     monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
+    monkeypatch.setattr(
+        pushes.medias,
+        "list_items",
+        lambda product_id: [
+            {"id": 101, "product_id": 10, "lang": "de", "object_key": "obj_de", "cover_object_key": "cov_de"},
+        ],
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product, **kwargs: {
+            "is_listed": True,
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
     monkeypatch.setattr(
         pushes.product_link_domains,
         "list_enabled_product_domains",
