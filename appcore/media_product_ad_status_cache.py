@@ -163,7 +163,7 @@ LEFT JOIN (
     SUM(COALESCE(spend_usd, 0)) AS ad_spend_usd,
     SUM(
       CASE
-        WHEN COALESCE(meta_business_date, report_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        WHEN DATE(COALESCE(meta_business_date, report_date)) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
         THEN COALESCE(spend_usd, 0)
         ELSE 0
       END
@@ -225,7 +225,7 @@ LEFT JOIN (
     SUM(matched.purchase_value_usd) AS purchase_value_usd,
     SUM(
       CASE
-        WHEN matched.activity_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        WHEN DATE(matched.activity_date) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
         THEN matched.spend_usd
         ELSE 0
       END
