@@ -621,6 +621,7 @@ def list_task_center_items(
     task_type: str = "",
     assignee_id: int | None = None,
     parent_only: bool = False,
+    urgency: str = "",
 ) -> dict:
     page_size = max(1, int(page_size))
     requested_page = max(1, int(page))
@@ -643,6 +644,12 @@ def list_task_center_items(
     if assignee_id:
         where.append("t.assignee_id=%s")
         args.append(int(assignee_id))
+    if urgency == "urgent":
+        where.append("t.is_urgent=1")
+    elif urgency == "normal":
+        where.append("t.is_urgent=0")
+    elif urgency:
+        raise ValueError("invalid urgency")
 
     if task_id:
         where.append("t.id=%s")
@@ -698,7 +705,7 @@ def list_task_center_items(
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {where_sql} "
-        "ORDER BY t.created_at DESC, t.id DESC "
+        "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*count_args, page_size, offset))
@@ -720,6 +727,7 @@ def list_task_center_items(
                     row.get("assignee_display_name") or row["assignee_username"]
                 ),
                 "status": row["status"],
+                "is_urgent": bool(row.get("is_urgent")),
                 "high_level": high_level_status(row["status"]),
                 "created_at": (
                     row["created_at"].isoformat() if row.get("created_at") else None
@@ -1007,6 +1015,61 @@ class ConflictError(RuntimeError):
 
 class StateError(RuntimeError):
     """Invalid state transition / precondition violation."""
+
+
+def set_task_urgency(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    is_urgent: bool,
+) -> dict:
+    """Set an independent urgent flag for one task and audit actual changes."""
+    target = bool(is_urgent)
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, is_urgent FROM tasks WHERE id=%s FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("task not found")
+                previous = bool(row.get("is_urgent"))
+                if previous == target:
+                    conn.commit()
+                    return {
+                        "changed": False,
+                        "is_urgent": target,
+                        "previous_is_urgent": previous,
+                    }
+                cur.execute(
+                    "UPDATE tasks SET is_urgent=%s, updated_at=NOW() WHERE id=%s",
+                    (1 if target else 0, int(task_id)),
+                )
+                _write_event(
+                    cur,
+                    int(task_id),
+                    "urgent_marked",
+                    int(actor_user_id),
+                    {
+                        "is_urgent": target,
+                        "previous_is_urgent": previous,
+                    },
+                )
+            conn.commit()
+            return {
+                "changed": True,
+                "is_urgent": target,
+                "previous_is_urgent": previous,
+            }
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
 
 
 def _normalize_language_assignments(

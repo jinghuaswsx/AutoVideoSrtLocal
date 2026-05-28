@@ -396,6 +396,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "assignee_username": "translator",
                 "assignee_display_name": "顾倩",
                 "status": tasks.CHILD_DONE,
+                "is_urgent": 0,
                 "created_at": datetime(2026, 5, 7, 10, 0, 0),
                 "updated_at": datetime(2026, 5, 7, 10, 5, 0),
                 "claimed_at": None,
@@ -432,6 +433,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "assignee_username": "translator",
                 "assignee_display_name": "顾倩",
                 "status": tasks.CHILD_DONE,
+                "is_urgent": False,
                 "high_level": "completed",
                 "created_at": "2026-05-07T10:00:00",
                 "updated_at": "2026-05-07T10:05:00",
@@ -455,7 +457,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "u.display_name AS assignee_display_name" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
-    assert "ORDER BY t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
@@ -708,6 +710,202 @@ def test_list_task_center_items_filters_by_assignee_id(monkeypatch):
     assert captured["count_args"] == (7,)
     assert "t.assignee_id=%s" in captured["list_sql"]
     assert captured["list_args"] == (7, 20, 0)
+
+
+def test_list_task_center_items_orders_urgent_before_created(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+
+    assert "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert captured["args"] == (20, 0)
+
+
+def test_list_task_center_items_filters_urgent_and_normal(monkeypatch):
+    from appcore import tasks
+
+    captured = []
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("count", sql, args))
+        return {"total": 0}
+
+    def fake_query_all(sql, args=()):
+        captured.append(("list", sql, args))
+        return []
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        urgency="urgent",
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    assert tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+        urgency="normal",
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+
+    assert "t.is_urgent=1" in captured[0][1]
+    assert captured[0][2] == ()
+    assert captured[1][2] == (20, 0)
+    assert "t.is_urgent=0" in captured[2][1]
+    assert captured[2][2] == ()
+    assert captured[3][2] == (20, 0)
+
+
+def test_list_task_center_items_returns_urgent_boolean(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks, total=1)
+
+    def fake_query_all(sql, args=()):
+        return [
+            {
+                "id": 42,
+                "parent_task_id": None,
+                "media_product_id": 9,
+                "media_item_id": 8,
+                "product_name": "测试产品",
+                "product_code": "P-42",
+                "source_media_filename": "source.mp4",
+                "child_country_codes": "DE,FR",
+                "country_code": None,
+                "assignee_id": 7,
+                "assignee_username": "op",
+                "assignee_display_name": "运营",
+                "status": tasks.PARENT_RAW_IN_PROGRESS,
+                "created_at": datetime(2026, 5, 28, 10, 0, 0),
+                "updated_at": None,
+                "claimed_at": None,
+                "completed_at": None,
+                "cancelled_at": None,
+                "last_reason": None,
+                "is_urgent": 1,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    payload = tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+    )
+
+    assert payload["items"][0]["is_urgent"] is True
+
+
+def test_set_task_urgency_updates_task_and_writes_event(monkeypatch):
+    import json
+
+    from appcore import tasks
+
+    sequence = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            normalized = " ".join(str(sql).split())
+            if normalized.startswith("SELECT id, is_urgent FROM tasks"):
+                sequence.append(("select", args))
+                return
+            if normalized.startswith("UPDATE tasks SET is_urgent=%s"):
+                sequence.append(("update", args))
+                return
+            if normalized.startswith("INSERT INTO task_events"):
+                payload = json.loads(args[3])
+                sequence.append(("event", args[0], args[1], args[2], payload))
+                return
+            sequence.append(("other", normalized, args))
+
+        def fetchone(self):
+            return {"id": 44, "is_urgent": 0}
+
+    class FakeConn:
+        def begin(self):
+            sequence.append(("begin",))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            sequence.append(("commit",))
+
+        def rollback(self):
+            sequence.append(("rollback",))
+
+        def close(self):
+            sequence.append(("close",))
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+
+    assert tasks.set_task_urgency(
+        task_id=44,
+        actor_user_id=1,
+        is_urgent=True,
+    ) == {"changed": True, "is_urgent": True, "previous_is_urgent": False}
+
+    assert sequence == [
+        ("begin",),
+        ("select", (44,)),
+        ("update", (1, 44)),
+        (
+            "event",
+            44,
+            "urgent_marked",
+            1,
+            {"is_urgent": True, "previous_is_urgent": False},
+        ),
+        ("commit",),
+        ("close",),
+    ]
 
 
 def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypatch):

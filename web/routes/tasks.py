@@ -241,6 +241,7 @@ def api_list():
     high_status = (request.args.get("status") or "").strip()
     bucket = (request.args.get("bucket") or "").strip()
     task_type = (request.args.get("task_type") or "").strip()
+    urgency = (request.args.get("urgency") or "").strip()
     raw_assignee_id = (request.args.get("assignee_id") or "").strip()
     page = max(1, int(request.args.get("page") or 1))
     page_size = min(100, max(1, int(request.args.get("page_size") or TASK_CENTER_DEFAULT_PAGE_SIZE)))
@@ -277,6 +278,10 @@ def api_list():
         task_type = ""
     if task_type and task_type not in {"raw", "translate"}:
         return _json_response({"error": "invalid task_type"}, 400)
+    if urgency == "all":
+        urgency = ""
+    if urgency and urgency not in {"urgent", "normal"}:
+        return _json_response({"error": "invalid urgency"}, 400)
 
     return _json_response(
         tasks_svc.list_task_center_items(
@@ -291,6 +296,7 @@ def api_list():
             task_id=task_id,
             task_type=task_type,
             assignee_id=assignee_id,
+            urgency=urgency,
         )
     )
 
@@ -595,6 +601,25 @@ def api_parent_bind_item(tid: int):
         return _json_response({"error": str(exc)}, 400)
     _audit_task_action(tid, "task_parent_bound_item", {"media_item_id": int(item_id)})
     return _json_response({"ok": True})
+
+
+@bp.route("/api/<int:tid>/urgency", methods=["POST"])
+@login_required
+@admin_required
+def api_task_urgency(tid: int):
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get("is_urgent"), bool):
+        return _json_response({"error": "is_urgent must be boolean"}, 400)
+    try:
+        result = tasks_svc.set_task_urgency(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_urgent=payload["is_urgent"],
+        )
+    except tasks_svc.StateError as e:
+        return _json_response({"error": str(e)}, 404)
+    _audit_task_action(tid, "task_urgency_changed", result)
+    return _json_response({"ok": True, **result})
 
 
 @bp.route("/api/child/<int:tid>/submit", methods=["POST"])
