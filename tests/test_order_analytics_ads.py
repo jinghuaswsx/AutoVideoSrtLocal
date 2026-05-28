@@ -1432,9 +1432,10 @@ def test_get_ads_level_list_filters_adsets_by_campaign_parent(monkeypatch):
         "code": "sonic-lens-refresher-rjc",
     }
     union_query = next(q for q in captured if "UNION ALL" in q["sql"])
-    assert "AND normalized_campaign_code = %s" in union_query["sql"]
+    assert "AND normalized_adset_code LIKE %s" in union_query["sql"]
     assert "AND m.normalized_campaign_code = %s" in union_query["sql"]
-    assert union_query["args"].count("sonic-lens-refresher-rjc") == 2
+    assert "sonic-lens-refresher-rjc%" in union_query["args"]
+    assert "sonic-lens-refresher-rjc" in union_query["args"]
 
 
 def test_get_ads_level_list_filters_ads_by_adset_parent(monkeypatch):
@@ -1467,10 +1468,10 @@ def test_get_ads_level_list_filters_ads_by_adset_parent(monkeypatch):
     }
     total_query = captured[0]
     list_query = captured[1]
-    assert "normalized_adset_code = %s" in total_query["sql"]
-    assert total_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc")
-    assert "normalized_adset_code = %s" in list_query["sql"]
-    assert list_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc", 50, 0)
+    assert "normalized_ad_code LIKE %s" in total_query["sql"]
+    assert total_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc%")
+    assert "normalized_ad_code LIKE %s" in list_query["sql"]
+    assert list_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc%", 50, 0)
 
 
 def test_get_ads_level_list_rejects_invalid_parent_filter():

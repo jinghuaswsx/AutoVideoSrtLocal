@@ -1039,7 +1039,8 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "name_col": "adset_name",
         "parent_filters": {
             "campaign": {
-                "daily_col": "normalized_campaign_code",
+                "daily_col": "normalized_adset_code",
+                "daily_match": "prefix",
                 "realtime_col": "normalized_campaign_code",
             },
         },
@@ -1054,11 +1055,13 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "name_col": "ad_name",
         "parent_filters": {
             "campaign": {
-                "daily_col": "normalized_campaign_code",
+                "daily_col": "normalized_ad_code",
+                "daily_match": "prefix",
                 "realtime_col": "normalized_campaign_code",
             },
             "adset": {
-                "daily_col": "normalized_adset_code",
+                "daily_col": "normalized_ad_code",
+                "daily_match": "prefix",
                 "realtime_col": "normalized_adset_code",
             },
         },
@@ -1164,6 +1167,7 @@ def _resolve_ads_parent_filter(
         "level": parent_level_norm,
         "code": parent_code_clean,
         "daily_col": parent_cfg["daily_col"],
+        "daily_match": parent_cfg.get("daily_match", "exact"),
         "realtime_col": parent_cfg["realtime_col"],
     }
 
@@ -1270,13 +1274,19 @@ def get_ads_level_list(
     account_filter = _normalize_ad_account_filter(ad_account_id)
     account_clause = "AND ad_account_id = %s " if account_filter else ""
     account_args: tuple[str, ...] = (account_filter,) if account_filter else ()
-    parent_daily_clause = (
-        f"AND {parent_filter['daily_col']} = %s " if parent_filter else ""
-    )
-    parent_realtime_clause = (
-        f"AND m.{parent_filter['realtime_col']} = %s " if parent_filter else ""
-    )
-    parent_args: tuple[str, ...] = (parent_filter["code"],) if parent_filter else ()
+    parent_daily_clause = ""
+    parent_daily_args: tuple[str, ...] = ()
+    parent_realtime_clause = ""
+    parent_realtime_args: tuple[str, ...] = ()
+    if parent_filter:
+        if parent_filter["daily_match"] == "prefix":
+            parent_daily_clause = f"AND {parent_filter['daily_col']} LIKE %s "
+            parent_daily_args = (f"{parent_filter['code']}%",)
+        else:
+            parent_daily_clause = f"AND {parent_filter['daily_col']} = %s "
+            parent_daily_args = (parent_filter["code"],)
+        parent_realtime_clause = f"AND m.{parent_filter['realtime_col']} = %s "
+        parent_realtime_args = (parent_filter["code"],)
 
     today = current_meta_business_date()
     use_union = supports_realtime and end >= today
@@ -1293,7 +1303,7 @@ def get_ads_level_list(
             f"{parent_daily_clause}"
         )
         hist_end = min(end, today - timedelta(days=1))
-        hist_args = (start, hist_end) + account_args + parent_args
+        hist_args = (start, hist_end) + account_args + parent_daily_args
 
         # 子查询 2: 实时表的今日最新快照
         real_account_clause = "AND m.ad_account_id = %s " if account_filter else ""
@@ -1321,7 +1331,7 @@ def get_ads_level_list(
             f"{real_account_clause}"
             f"{parent_realtime_clause}"
         )
-        real_args = (today, today) + account_args + parent_args
+        real_args = (today, today) + account_args + parent_realtime_args
 
         table = f"( {hist_table_sql} UNION ALL {realtime_sql} ) AS combined_t"
         code_col = "code"
@@ -1339,7 +1349,7 @@ def get_ads_level_list(
             f"{account_clause}"
             f"{parent_daily_clause}"
         )
-        where_args = (start, end) + account_args + parent_args
+        where_args = (start, end) + account_args + parent_daily_args
 
     search_clause = ""
     search_args: tuple[str, ...] = ()
