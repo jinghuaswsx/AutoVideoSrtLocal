@@ -52,12 +52,13 @@ def test_sync_localized_videos_reconciles_output_relative_paths(monkeypatch, tmp
     assert summary["errors"] == []
 
 
-def test_sync_localized_videos_reports_invalid_or_missing_paths(monkeypatch, tmp_path):
+def test_sync_localized_videos_marks_missing_local_video_for_retry(monkeypatch, tmp_path):
     from appcore.meta_hot_posts import tos_sync
 
     output_dir = tmp_path / "output"
     monkeypatch.setattr(tos_sync.config, "OUTPUT_DIR", str(output_dir))
     monkeypatch.setattr(tos_sync.tos_backup_storage, "is_enabled", lambda: True)
+    marked = []
 
     def fake_query(sql, params=()):
         return [
@@ -65,16 +66,23 @@ def test_sync_localized_videos_reports_invalid_or_missing_paths(monkeypatch, tmp
             {"id": 2, "local_video_path": "meta_hot_posts/videos/missing.mp4"},
         ]
 
+    def fake_mark_missing(post_id, **kwargs):
+        marked.append((post_id, kwargs))
+        return 1
+
     summary = tos_sync.sync_localized_videos_to_tos(
         limit=0,
         query_fn=fake_query,
         reconcile_fn=lambda local_path: (_ for _ in ()).throw(AssertionError("must not reconcile")),
+        mark_missing_video_fn=fake_mark_missing,
     )
 
     assert summary["files_checked"] == 2
-    assert summary["actions"] == {"failed": 2}
-    assert summary["failed"] == 2
-    assert {item["id"] for item in summary["errors"]} == {1, 2}
+    assert summary["actions"] == {"local_video_missing_marked_failed": 2}
+    assert summary["failed"] == 0
+    assert summary["errors"] == []
+    assert [item[0] for item in marked] == [1, 2]
+    assert all(item[1]["error_message"].startswith("local video file missing during TOS sync") for item in marked)
 
 
 def test_run_scheduled_tos_video_sync_records_failed_summary(monkeypatch):

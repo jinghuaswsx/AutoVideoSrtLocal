@@ -8,12 +8,14 @@ from typing import Any, Callable
 import config
 from appcore import scheduled_tasks, tos_backup_storage
 from appcore.db import query
+from appcore.meta_hot_posts import store
 
 TASK_CODE = "meta_hot_posts_tos_video_sync_tick"
 DEFAULT_SCHEDULED_LIMIT = 200
 
 QueryFn = Callable[[str, tuple[Any, ...]], list[dict[str, Any]]]
 ReconcileFn = Callable[[str | Path], tos_backup_storage.SyncResult]
+MarkMissingVideoFn = Callable[..., int]
 
 
 def resolve_output_relative_path(
@@ -80,11 +82,31 @@ def _failed_error(
     }
 
 
+def _mark_missing_local_video(
+    row: dict[str, Any],
+    missing_path: str,
+    *,
+    mark_missing_video_fn: MarkMissingVideoFn,
+) -> bool:
+    post_id = int(row.get("id") or 0)
+    if post_id <= 0:
+        return False
+    affected = mark_missing_video_fn(
+        post_id,
+        local_video_path=None,
+        local_video_duration_seconds=None,
+        local_video_cover_path=None,
+        error_message=f"local video file missing during TOS sync: {str(missing_path or '')[:900]}",
+    )
+    return int(affected or 0) > 0
+
+
 def sync_localized_videos_to_tos(
     *,
     limit: int | None = DEFAULT_SCHEDULED_LIMIT,
     query_fn: QueryFn = query,
     reconcile_fn: ReconcileFn = tos_backup_storage.reconcile_local_file,
+    mark_missing_video_fn: MarkMissingVideoFn = store.finish_local_video_download,
 ) -> dict[str, Any]:
     if not tos_backup_storage.is_enabled():
         return {
@@ -109,13 +131,63 @@ def sync_localized_videos_to_tos(
             files_checked += 1
             path = resolve_output_relative_path(relative_path)
             if path is None:
+                if field == "local_video_path":
+                    try:
+                        marked = _mark_missing_local_video(
+                            row,
+                            relative_path,
+                            mark_missing_video_fn=mark_missing_video_fn,
+                        )
+                    except Exception as exc:
+                        marked = False
+                        mark_error = str(exc)
+                    else:
+                        mark_error = ""
+                    if marked:
+                        actions["local_video_missing_marked_failed"] += 1
+                        continue
+                    errors.append(
+                        _failed_error(
+                            row,
+                            relative_path,
+                            "",
+                            mark_error or f"invalid {field}",
+                            field=field,
+                        )
+                    )
+                else:
+                    errors.append(_failed_error(row, relative_path, "", f"invalid {field}", field=field))
                 actions["failed"] += 1
-                errors.append(_failed_error(row, relative_path, "", f"invalid {field}", field=field))
                 continue
             object_key = tos_backup_storage.backup_object_key_for_local_path(path)
             if not path.is_file():
+                if field == "local_video_path":
+                    try:
+                        marked = _mark_missing_local_video(
+                            row,
+                            str(path),
+                            mark_missing_video_fn=mark_missing_video_fn,
+                        )
+                    except Exception as exc:
+                        marked = False
+                        mark_error = str(exc)
+                    else:
+                        mark_error = ""
+                    if marked:
+                        actions["local_video_missing_marked_failed"] += 1
+                        continue
+                    errors.append(
+                        _failed_error(
+                            row,
+                            str(path),
+                            object_key,
+                            mark_error or "local file missing",
+                            field=field,
+                        )
+                    )
+                else:
+                    errors.append(_failed_error(row, str(path), object_key, "local file missing", field=field))
                 actions["failed"] += 1
-                errors.append(_failed_error(row, str(path), object_key, "local file missing", field=field))
                 continue
             try:
                 result = reconcile_fn(path)

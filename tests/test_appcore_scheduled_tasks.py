@@ -4,13 +4,14 @@ import pytest
 
 
 def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
-    from appcore import scheduled_tasks
+    from appcore import feishu_alerts, scheduled_tasks
 
     monkeypatch.setattr(
         scheduled_tasks,
         "_should_dispatch_failure_alert_for_run",
         lambda row: True,
     )
+    monkeypatch.setattr(feishu_alerts, "failure_alert_record", lambda task_code: None)
     monkeypatch.setattr(
         scheduled_tasks,
         "latest_run",
@@ -47,6 +48,69 @@ def test_latest_failure_alert_suppresses_unworthy_failed_latest_run(monkeypatch)
     )
 
     assert scheduled_tasks.latest_failure_alert() is None
+
+
+def test_latest_failure_alert_suppresses_latest_run_inside_recorded_cooldown(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    latest = {
+        "id": 22,
+        "task_code": "shopifyid",
+        "task_name": "Shopify ID 获取",
+        "status": "failed",
+        "started_at": "2026-05-28 11:30:00",
+    }
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_should_dispatch_failure_alert_for_run",
+        lambda row: True,
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "latest_run",
+        lambda task_code: latest if task_code == "shopifyid" else {"status": "success"},
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "failure_alert_record",
+        lambda task_code: {"run_id": 21, "alerted_at": "2026-05-28T00:00:00"},
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "failure_alert_cooldown_allows",
+        lambda task_code, *, current_run_id=None, reference_at=None: False,
+    )
+
+    assert scheduled_tasks.latest_failure_alert() is None
+
+
+def test_latest_failure_alert_returns_latest_run_recorded_as_alerted(monkeypatch):
+    from appcore import feishu_alerts, scheduled_tasks
+
+    latest = {
+        "id": 22,
+        "task_code": "shopifyid",
+        "task_name": "Shopify ID 获取",
+        "status": "failed",
+        "started_at": "2026-05-28 12:30:00",
+    }
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_should_dispatch_failure_alert_for_run",
+        lambda row: True,
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "latest_run",
+        lambda task_code: latest if task_code == "shopifyid" else {"status": "success"},
+    )
+    monkeypatch.setattr(
+        feishu_alerts,
+        "failure_alert_record",
+        lambda task_code: {"run_id": 22, "alerted_at": "2026-05-28T12:30:00"},
+    )
+
+    assert scheduled_tasks.latest_failure_alert() == latest
 
 
 def _failure_run_row_mock(sql, params=()):

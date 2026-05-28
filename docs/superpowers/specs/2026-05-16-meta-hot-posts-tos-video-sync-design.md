@@ -1,6 +1,6 @@
 # Meta Hot Posts TOS Video Sync Design
 
-Last updated: 2026-05-18
+Last updated: 2026-05-28
 
 ## Background
 
@@ -48,6 +48,12 @@ The summary follows existing backup conventions:
 - `actions`
 - `failed`
 - `errors`
+
+If the primary `local_video_path` is invalid or the resolved local MP4 is missing, the sync treats the
+`downloaded` state as stale instead of failing the TOS job. It marks that Meta hot-post row as
+`local_video_status='failed'` with a TOS-sync error message, so the existing local-video queue can retry it
+after its normal retry delay. Missing cover files still count as TOS sync failures because the primary video
+file is intact and the row should remain visible for operator follow-up.
 
 The manual script uses `limit=0` to mean "all localized videos"; the scheduled job uses a bounded batch so new
 downloads are uploaded without waiting for the daily full backup.

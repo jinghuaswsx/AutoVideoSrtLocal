@@ -1161,9 +1161,13 @@ def _dispatch_failure_alert(run_id: int) -> None:
         from appcore import feishu_alerts
 
         if _is_immediate_failure_alert_task(task_code):
-            should_send = True
             streak = feishu_alerts.consecutive_failure_count(
                 task_code, current_run_id=run_id
+            )
+            should_send = streak > 0 and feishu_alerts.failure_alert_cooldown_allows(
+                task_code,
+                current_run_id=run_id,
+                reference_at=row.get("started_at"),
             )
         else:
             should_send, streak = feishu_alerts.should_dispatch_failure(
@@ -1180,7 +1184,13 @@ def _dispatch_failure_alert(run_id: int) -> None:
             return
         if streak >= 2:
             row["consecutive_failures"] = streak
-        feishu_alerts.send_scheduled_task_failure(row)
+        result = feishu_alerts.send_scheduled_task_failure(row)
+        if isinstance(result, dict):
+            feishu_alerts.record_failure_alert_sent(
+                task_code,
+                run_id=run_id,
+                alerted_at=row.get("started_at"),
+            )
     except Exception:
         log.warning("failed to dispatch scheduled task failure alert", exc_info=True)
 
@@ -1446,6 +1456,38 @@ def _should_dispatch_failure_alert_for_run(row: dict[str, Any]) -> bool:
         task_code, current_run_id=_non_negative_int(row.get("id")) or None
     )
     return streak >= FAILURE_ALERT_MIN_CONSECUTIVE_RUNS
+
+
+def _should_surface_failure_alert_for_run(row: dict[str, Any]) -> bool:
+    if not _should_dispatch_failure_alert_for_run(row):
+        return False
+    task_code = str(row.get("task_code") or "")
+    if not task_code:
+        return False
+    try:
+        from appcore import feishu_alerts
+
+        record = feishu_alerts.failure_alert_record(task_code)
+        if not record:
+            return True
+        current_run_id = _non_negative_int(row.get("id"))
+        recorded_run_id = _non_negative_int(record.get("run_id"))
+        if current_run_id and recorded_run_id:
+            if current_run_id == recorded_run_id:
+                return True
+            return feishu_alerts.failure_alert_cooldown_allows(
+                task_code,
+                current_run_id=current_run_id,
+                reference_at=row.get("started_at"),
+            )
+        return feishu_alerts.failure_alert_cooldown_allows(
+            task_code,
+            current_run_id=current_run_id,
+            reference_at=row.get("started_at"),
+        )
+    except Exception:
+        log.warning("failed to apply scheduled task alert cooldown", exc_info=True)
+        return True
 
 
 def _prior_failure_streak_has_sample_alert(row: dict[str, Any]) -> bool:
@@ -1769,7 +1811,7 @@ def latest_failure_alert() -> dict[str, Any] | None:
             continue
         if row and row.get("status") == "failed":
             try:
-                if _should_dispatch_failure_alert_for_run(row):
+                if _should_surface_failure_alert_for_run(row):
                     return row
             except Exception:
                 log.warning("failed to apply scheduled task alert rule", exc_info=True)

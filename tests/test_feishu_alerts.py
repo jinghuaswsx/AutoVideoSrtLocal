@@ -165,6 +165,66 @@ def test_should_dispatch_failure_fires_at_twentieth_consecutive_failure(monkeypa
     assert (should_send, streak) == (True, 20)
 
 
+def test_should_dispatch_failure_suppresses_repeat_inside_twelve_hour_cooldown(monkeypatch):
+    from appcore import feishu_alerts
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "_query_recent_run_statuses",
+        lambda task_code: [
+            {
+                "id": run_id,
+                "status": "failed",
+                "started_at": "2026-05-28 11:30:00" if run_id == 30 else "2026-05-28 10:00:00",
+            }
+            for run_id in range(30, 10, -1)
+        ]
+        + [{"id": 10, "status": "success"}],
+    )
+    _stub_settings(
+        monkeypatch,
+        **{
+            "feishu_alerts.failure_repeat_every": "5",
+            "feishu_alerts.failure_last_alert.roi_hourly_sync": '{"run_id": 29, "alerted_at": "2026-05-28T00:00:00"}',
+        },
+    )
+
+    should_send, streak = feishu_alerts.should_dispatch_failure(
+        "roi_hourly_sync", current_run_id=30
+    )
+    assert (should_send, streak) == (False, 20)
+
+
+def test_should_dispatch_failure_allows_repeat_after_twelve_hour_cooldown(monkeypatch):
+    from appcore import feishu_alerts
+
+    monkeypatch.setattr(
+        feishu_alerts,
+        "_query_recent_run_statuses",
+        lambda task_code: [
+            {
+                "id": run_id,
+                "status": "failed",
+                "started_at": "2026-05-28 13:01:00" if run_id == 30 else "2026-05-28 10:00:00",
+            }
+            for run_id in range(30, 10, -1)
+        ]
+        + [{"id": 10, "status": "success"}],
+    )
+    _stub_settings(
+        monkeypatch,
+        **{
+            "feishu_alerts.failure_repeat_every": "5",
+            "feishu_alerts.failure_last_alert.roi_hourly_sync": '{"run_id": 29, "alerted_at": "2026-05-28T00:00:00"}',
+        },
+    )
+
+    should_send, streak = feishu_alerts.should_dispatch_failure(
+        "roi_hourly_sync", current_run_id=30
+    )
+    assert (should_send, streak) == (True, 20)
+
+
 def test_should_dispatch_failure_floors_repeat_interval_to_twenty(monkeypatch):
     from appcore import feishu_alerts
 
