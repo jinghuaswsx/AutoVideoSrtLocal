@@ -52,6 +52,7 @@ def api_product_translate(pid: int):
         body=body,
         ip=request.remote_addr or "",
         user_agent=request.headers.get("User-Agent", "") or "",
+        is_admin=_routes_module()._is_admin(),
     )
     routes = _routes_module()
     response = routes._build_product_translate_response(result)

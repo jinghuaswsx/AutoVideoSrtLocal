@@ -297,6 +297,7 @@ def test_start_product_translation_passes_task_center_child_id(monkeypatch):
     from web.services import media_product_translate as svc
 
     created = {}
+    resolved = {}
     monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [])
     monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang == "de")
     monkeypatch.setattr(
@@ -319,10 +320,52 @@ def test_start_product_translation_passes_task_center_child_id(monkeypatch):
         },
         ip="10.0.0.1",
         user_agent="pytest-UA",
+        resolve_child_task_id_fn=lambda **kwargs: resolved.update(kwargs) or 456,
     )
 
     assert result.ok is True
+    assert resolved == {
+        "task_id": 456,
+        "product_id": 123,
+        "lang": "de",
+        "actor_user_id": 7,
+        "is_admin": False,
+    }
     assert created["task_center_task_id"] == 456
+
+
+def test_start_product_translation_rejects_task_center_child_id_language_mismatch(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [])
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang in {"de", "fr"})
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("create not reached")),
+    )
+
+    def reject_mismatch(**kwargs):
+        raise svc.tasks_svc.StateError("child task language mismatch")
+
+    result = svc.start_product_translation(
+        user_id=238,
+        user_name="operator",
+        product_id=532,
+        body={
+            "raw_ids": [],
+            "target_langs": ["fr"],
+            "content_types": ["copywriting"],
+            "task_center_task_id": 247,
+        },
+        ip="10.0.0.1",
+        user_agent="pytest-UA",
+        resolve_child_task_id_fn=reject_mismatch,
+    )
+
+    assert result.ok is False
+    assert result.status_code == 400
+    assert result.error == "child task language mismatch"
 
 
 def test_start_product_translation_rejects_task_center_id_with_multiple_langs(monkeypatch):

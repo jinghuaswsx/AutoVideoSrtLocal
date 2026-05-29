@@ -62,6 +62,16 @@ def test_translate_modal_payload_carries_task_center_child_id():
     assert "task_center_task_id" in source
 
 
+def test_translate_modal_locks_language_when_opened_from_task_center():
+    source = (ROOT / "web" / "static" / "medias_translate_modal.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bridgeLang && lang.code !== bridgeLang" in source
+    assert "mt-choice--bridge-locked" in source
+    assert "来自任务中心，只能提交当前子任务语种" in source
+
+
 def test_medias_item_upload_payload_carries_task_center_child_id():
     source = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
