@@ -1368,7 +1368,7 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     assert events[-1] == ("complete", {"task_id": 44, "actor_user_id": 2})
 
 
-def test_submit_child_step_manual_output_appends_video_item_even_when_same_product_lang_exists(monkeypatch):
+def test_submit_child_step_manual_output_appends_video_item_even_when_same_product_lang_was_pushed(monkeypatch):
     from appcore import medias, tasks
 
     events = []
@@ -1393,6 +1393,8 @@ def test_submit_child_step_manual_output_appends_video_item_even_when_same_produ
                 "filename": "older-task-result.mp4",
                 "object_key": "1/medias/older-task-result.mp4",
                 "task_id": 41,
+                "pushed_at": "2026-05-29 10:00:00",
+                "latest_push_id": 77,
             }
         return None
 
