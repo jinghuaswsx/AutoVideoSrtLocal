@@ -533,9 +533,13 @@
     });
     const lines = ordered.map((code) => {
       const c = coverageMap[code] || { items: 0, copy: 0, cover: false };
-      if (!Number(c.items || 0)) return '';
       const summary = langSummary[code] || {};
-      const pushed = Number(summary.pushed_video_count || 0);
+      const pushed = Number(summary.pushed_video_count || 0) || 0;
+      if (code === 'en') {
+        if (pushed <= 0) return '';
+      } else if (!Number(c.items || 0)) {
+        return '';
+      }
       const pushedClass = pushed === 0 ? 'oc-lang-push-zero' : 'oc-lang-push-count';
       const roas = fmtAdRoas(summary.ad_roas);
       const spend = fmtAdSpend(summary.ad_spend_usd);
@@ -2667,7 +2671,7 @@
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
-          <th>语种覆盖</th>
+          <th>语种和投放情况</th>
           <th>投放情况</th>
           <th>修改时间</th>
           <th>投放推送</th>
