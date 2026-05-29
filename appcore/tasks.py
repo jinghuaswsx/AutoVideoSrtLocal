@@ -1087,7 +1087,7 @@ def create_parent_task(
                             int(media_product_id),
                             int(media_item_id) if media_item_id is not None else None,
                             int(raw_processor_id) if raw_processor_id is not None else None,
-                            PARENT_ALL_DONE,
+                            PARENT_RAW_DONE,
                             urgent_value,
                             int(created_by),
                         ),
@@ -1432,7 +1432,7 @@ def complete_raw_parent_if_ready(
                     "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
                     (
-                        PARENT_ALL_DONE,
+                        PARENT_RAW_DONE,
                         int(task_id),
                         PARENT_RAW_REVIEW,
                     ),
@@ -1929,8 +1929,51 @@ def _load_review_media_item(media_item_id: Any) -> dict | None:
     )
 
 
+def _parent_review_video_item(row: dict, item: dict | None) -> dict | None:
+    if not item:
+        return None
+    task_id = _positive_int(row.get("id"))
+    if task_id is None:
+        return item
+    event = query_one(
+        "SELECT id, event_type, payload_json FROM task_events "
+        "WHERE task_id=%s AND event_type IN (%s,%s) "
+        "ORDER BY id DESC LIMIT 1",
+        (task_id, "raw_niuma_done", "raw_manual_uploaded"),
+    )
+    if not event:
+        return item
+
+    payload = _parse_event_payload_obj(event.get("payload_json"))
+    event_type = str(event.get("event_type") or "").strip()
+    object_key = ""
+    if event_type == "raw_niuma_done":
+        object_key = str(payload.get("result_object_key") or "").strip()
+    elif event_type == "raw_manual_uploaded":
+        object_key = str(
+            payload.get("object_key")
+            or payload.get("result_object_key")
+            or item.get("object_key")
+            or ""
+        ).strip()
+    if not object_key:
+        return item
+
+    review_item = dict(item)
+    review_item["object_key"] = object_key
+    filename = str(payload.get("result_filename") or "").strip()
+    if filename:
+        review_item["filename"] = filename
+        review_item["display_name"] = filename
+    file_size = payload.get("result_size", payload.get("new_size"))
+    if file_size is not None:
+        review_item["file_size"] = file_size
+    return review_item
+
+
 def _parent_review_assets_payload(row: dict) -> dict:
     item = _load_review_media_item(row.get("media_item_id"))
+    item = _parent_review_video_item(row, item)
     asset = _review_video_asset(item, label="去字幕原始视频素材")
     assets = [asset] if asset else []
     review_target = row.get("status") == PARENT_RAW_REVIEW
@@ -2962,7 +3005,7 @@ def get_child_readiness(task_id: int) -> dict:
 
 
 def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -> dict:
-    """Mark a translation child task done once its material is push-ready."""
+    """Submit a ready translation child task for review; admin approval marks it done."""
     row = query_one(
         "SELECT * FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -2971,7 +3014,14 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
         raise StateError("child task not found")
     if row["status"] == CHILD_DONE:
         return {"completed": True, "already_completed": True, "missing": []}
-    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+    if row["status"] == CHILD_REVIEW:
+        return {
+            "completed": False,
+            "submitted": False,
+            "status": CHILD_REVIEW,
+            "missing": [],
+        }
+    if row["status"] != CHILD_ASSIGNED:
         return {
             "completed": False,
             "status": row["status"],
@@ -2998,16 +3048,16 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, "
-                    "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
-                    "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN (%s,%s)",
-                    (CHILD_DONE, int(task_id), CHILD_ASSIGNED, CHILD_REVIEW),
+                    "updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
+                    (CHILD_REVIEW, int(task_id), CHILD_ASSIGNED),
                 )
                 if cur.rowcount == 0:
-                    raise StateError("child not completable")
+                    raise StateError("child not submittable")
                 _write_event(
                     cur,
                     task_id,
-                    "auto_completed",
+                    "submitted",
                     actor_user_id,
                     {"reason": "push_ready"},
                 )
@@ -3017,7 +3067,12 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
             raise
     finally:
         conn.close()
-    return {"completed": True, "missing": []}
+    return {
+        "completed": False,
+        "submitted": True,
+        "status": CHILD_REVIEW,
+        "missing": [],
+    }
 
 
 def confirm_child_step(
@@ -3381,7 +3436,7 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
         task_id=int(task_id),
         actor_user_id=int(actor_user_id),
     )
-    if not result.get("completed"):
+    if not result.get("completed") and not result.get("submitted"):
         missing = result.get("missing") or []
         raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
 

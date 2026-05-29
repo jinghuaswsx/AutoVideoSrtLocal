@@ -26,6 +26,8 @@ def test_parent_raw_review_assets_attach_video_to_raw_steps(monkeypatch):
                 "file_size": 26214400,
                 "lang": "en",
             }
+        if "FROM task_events" in sql:
+            return None
         raise AssertionError(sql)
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
@@ -47,6 +49,55 @@ def test_parent_raw_review_assets_attach_video_to_raw_steps(monkeypatch):
     assert asset["url"] == "/medias/object?object_key=1%2Fmedias%2F7%2Fraw%20final.mp4"
     assert asset["filename"] == "raw-final.mp4"
     assert asset["file_size"] == 26214400
+
+
+def test_parent_raw_review_assets_prefer_latest_niuma_result(monkeypatch):
+    from appcore import tasks
+
+    def fake_query_one(sql, args=()):
+        if "FROM tasks t JOIN media_products p" in sql:
+            return {
+                "id": 41,
+                "parent_task_id": None,
+                "media_product_id": 7,
+                "media_item_id": 88,
+                "country_code": None,
+                "status": tasks.PARENT_RAW_REVIEW,
+                "product_code": "SKU-7",
+                "product_name": "Demo",
+            }
+        if "FROM media_items" in sql:
+            return {
+                "id": 88,
+                "filename": "2026.04.09-raw.mp4",
+                "display_name": "2026.04.09-raw.mp4",
+                "object_key": "1/medias/7/original.mp4",
+                "cover_object_key": "1/medias/7/raw-cover.jpg",
+                "file_size": 1000,
+                "lang": "en",
+            }
+        if "FROM task_events" in sql:
+            return {
+                "id": 701,
+                "event_type": "raw_niuma_done",
+                "payload_json": {
+                    "result_object_key": "1/medias/7/processed-by-niuma.mp4",
+                    "result_filename": "2026.04.09-raw.mp4",
+                    "result_size": 2000,
+                },
+            }
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "query_all", lambda sql, args=(): [])
+
+    payload = tasks.get_task_review_assets(41)
+
+    steps = {step["event_type"]: step for step in payload["steps"]}
+    asset = steps["raw_uploaded"]["assets"][0]
+    assert asset["url"] == "/medias/object?object_key=1%2Fmedias%2F7%2Fprocessed-by-niuma.mp4"
+    assert asset["filename"] == "2026.04.09-raw.mp4"
+    assert asset["file_size"] == 2000
 
 
 def test_child_review_assets_attach_video_cover_and_detail_images(monkeypatch):

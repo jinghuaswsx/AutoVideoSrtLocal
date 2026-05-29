@@ -599,7 +599,7 @@ def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
         args for sql, args in conn.cursor_obj.executed
         if sql.startswith("INSERT INTO tasks")
     ]
-    assert inserts[0][2:4] == (88, tasks.PARENT_ALL_DONE)
+    assert inserts[0][2:4] == (88, tasks.PARENT_RAW_DONE)
     assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_ASSIGNED)
     assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_ASSIGNED)
     events = [
@@ -837,7 +837,7 @@ def test_approve_raw_unblocks_children(
     tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
 
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_ALL_DONE
+    assert parent["status"] == tasks.PARENT_RAW_DONE
 
     children = query_all(
         "SELECT * FROM tasks WHERE parent_task_id=%s", (parent_id,)
@@ -1059,7 +1059,7 @@ def test_submit_child_passes_with_ready(
 
     tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     row = query_one("SELECT * FROM tasks WHERE id=%s", (child_id,))
-    assert row["status"] == tasks.CHILD_DONE
+    assert row["status"] == tasks.CHILD_REVIEW
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
@@ -1442,7 +1442,7 @@ def test_submit_child_step_manual_output_allows_done_status_and_updates_item(mon
     assert sql_args[6] == 301 # 旧 item id
 
 
-def test_submit_child_marks_done_when_readiness_ready(monkeypatch):
+def test_submit_child_moves_ready_task_to_review(monkeypatch):
     from appcore import tasks
 
     class FakeCursor:
@@ -1533,15 +1533,15 @@ def test_submit_child_marks_done_when_readiness_ready(monkeypatch):
 
     assert any(
         "UPDATE tasks SET status=%s" in sql
-        and args == (tasks.CHILD_DONE, 44, tasks.CHILD_ASSIGNED, tasks.CHILD_REVIEW)
+        and args == (tasks.CHILD_REVIEW, 44, tasks.CHILD_ASSIGNED)
         for sql, args in conn.cursor_obj.executed
     )
-    assert any(
+    assert not any(
         "completed_at=COALESCE(completed_at, NOW())" in sql
         for sql, _args in conn.cursor_obj.executed
     )
     assert any(
-        "INSERT INTO task_events" in sql and args[1] == "auto_completed"
+        "INSERT INTO task_events" in sql and args[1] == "submitted"
         for sql, args in conn.cursor_obj.executed
     )
 
@@ -1778,7 +1778,7 @@ def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(mo
 
     assert result == {"completed": True, "raw_source_id": 301}
     assert "raw_source_ready" in sequence
-    assert ("parent_done", tasks.PARENT_ALL_DONE, 501) in sequence
+    assert ("parent_done", tasks.PARENT_RAW_DONE, 501) in sequence
     assert ("children_assigned", tasks.CHILD_ASSIGNED, (701, 702)) in sequence
     assert ("event", 501, "auto_completed") in sequence
 
@@ -1889,7 +1889,11 @@ def test_submit_child_auto_done_keeps_parent_raw_task_completed(
     tasks.submit_child(task_id=de_id, actor_user_id=db_user_translator)
     tasks.submit_child(task_id=fr_id, actor_user_id=db_user_translator)
     children = query_all("SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,))
-    assert all(child["status"] == tasks.CHILD_DONE for child in children)
+    assert all(child["status"] == tasks.CHILD_REVIEW for child in children)
+    tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin)
+    parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_RAW_DONE
+    tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
     assert parent["status"] == tasks.PARENT_ALL_DONE
     assert parent["completed_at"] is not None
@@ -1949,7 +1953,7 @@ def test_cancel_child_does_not_change_parent(
     de = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
     assert de["status"] == tasks.CHILD_CANCELLED
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_ALL_DONE
+    assert parent["status"] == tasks.PARENT_RAW_DONE
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
