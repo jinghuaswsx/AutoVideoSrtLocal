@@ -86,8 +86,39 @@
 .tc-action-link--primary { background:var(--tc-accent); border-color:var(--tc-accent); color:#fff; }
 .tc-action-link--primary:hover { background:var(--tc-accent-hover); }
 .tc-action-link--disabled { color:var(--tc-fg-muted); background:var(--tc-bg-muted); cursor:not-allowed; }
-.tc-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; min-width:180px; }
-.tc-row-actions .tc-btn { min-width:72px; padding:0 10px; }
+.tc-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:nowrap; }
+.tc-row-actions .tc-btn {
+  min-width: 80px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--tc-accent);
+  color: #fff;
+  border: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.tc-row-actions .tc-btn:hover {
+  background: var(--tc-accent-hover);
+}
+.tc-row-actions .tc-btn--danger {
+  background: var(--tc-danger);
+}
+.tc-row-actions .tc-btn--danger:hover {
+  background: oklch(50% 0.17 25);
+}
+.tc-row-actions .tc-btn:disabled {
+  background: var(--tc-bg-muted);
+  border: 1px solid var(--tc-border);
+  color: var(--tc-fg-muted);
+  opacity: .72;
+  cursor: not-allowed;
+}
+.tc-row-actions .tc-btn:disabled:hover {
+  background: var(--tc-bg-muted);
+}
 .tc-manual-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
 .tc-manual-action { display:inline-flex; align-items:center; justify-content:center; min-height:26px; height:auto; padding:4px 9px; font-size:12px; line-height:1.2; text-decoration:none; white-space:nowrap; }
 .tc-manual-confirmed { color:var(--tc-success-fg); background:var(--tc-success-bg); border-color:var(--tc-success-bg); cursor:default; }
@@ -96,7 +127,7 @@
 .tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
 .tc-manual-modal-status.is-ok { color:var(--tc-success-fg); }
 .tc-manual-modal-status.is-error { color:var(--tc-danger-fg); }
-.tc-table-scroll { overflow-x:auto; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
+.tc-table-scroll { overflow:visible; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
 .tc-table td { padding:10px 12px; border-bottom:1px solid var(--tc-border); }
@@ -374,6 +405,8 @@
   .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
   .tc-readiness-portrait-card { width:min(270px, 100%); height:auto; aspect-ratio:9 / 16; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
+  .tc-table-scroll { overflow-x: auto; }
+  .tc-table th { position: static !important; }
   .tc-table { font-size: 12px; }
   .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
 }
@@ -2259,7 +2292,7 @@ function tcDisabledTaskAction(label) {
 }
 function tcArchiveTaskAction(id) {
   if (!TC_IS_ADMIN) return '';
-  return `<button class="tc-btn" onclick="tcArchiveTask(${Number(id || 0)})">归档</button>`;
+  return `<button class="tc-btn tc-btn--danger" onclick="tcArchiveTask(${Number(id || 0)})">归档</button>`;
 }
 function tcCanHandleRawTask(it) {
   const assigneeId = Number(it && it.assignee_id || 0);
@@ -2276,65 +2309,90 @@ function tcTaskRowAction(it) {
   const status = it.status;
   const isParent = !it.parent_task_id;
   if (!id) return tcDisabledTaskAction('不可处理');
-  const urgencyAction = tcTaskUrgencyAction(it);
-  const actions = urgencyAction ? [urgencyAction] : [];
+
+  const actions = [];
+
+  // 1. Urgency button (Admin only)
+  if (TC_IS_ADMIN) {
+    const isTerminal = isParent
+      ? ['all_done', 'cancelled'].includes(status)
+      : ['done', 'cancelled'].includes(status);
+    if (!isTerminal) {
+      const nextUrgent = !it.is_urgent;
+      const label = it.is_urgent ? '取消紧急' : '标记紧急';
+      actions.push(`<button class="tc-btn" onclick="tcSetTaskUrgency(${id}, ${nextUrgent ? 'true' : 'false'})">${label}</button>`);
+    } else {
+      actions.push(`<button class="tc-btn" disabled>标记紧急</button>`);
+    }
+  }
+
+  // 2. Main Action button (去处理 / 审核 / 查看结果 / disabled placeholder)
+  let mainBtn = '';
   if (isParent) {
     if (status === 'pending') {
-      actions.push(tcDetailTaskAction(id));
-      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
-      return tcTaskActionGroup(actions);
+      mainBtn = `<button class="tc-btn" disabled>去处理</button>`;
+    } else if (status === 'raw_in_progress') {
+      if (tcCanHandleRawTask(it)) {
+        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">去处理</button>`;
+      } else {
+        mainBtn = `<button class="tc-btn" disabled title="去字幕原始视频素材处理中">去处理</button>`;
+      }
+    } else if (status === 'raw_review') {
+      if (TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0)) {
+        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">审核</button>`;
+      } else {
+        mainBtn = `<button class="tc-btn" disabled title="等待审核">审核</button>`;
+      }
+    } else if (status === 'raw_done' || status === 'all_done') {
+      mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">查看结果</button>`;
+    } else {
+      mainBtn = `<button class="tc-btn" disabled>去处理</button>`;
     }
-    if (status === 'raw_in_progress') {
-      actions.push(tcCanHandleRawTask(it) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中'));
-      actions.push(tcDetailTaskAction(id));
-      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
-      return tcTaskActionGroup(actions);
+  } else {
+    if (status === 'blocked') {
+      mainBtn = `<button class="tc-btn" disabled title="阻塞中">去处理</button>`;
+    } else if (status === 'assigned') {
+      if (TC_CAPS.can_translate || TC_IS_ADMIN) {
+        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">去处理</button>`;
+      } else {
+        mainBtn = `<button class="tc-btn" disabled title="无处理权限">去处理</button>`;
+      }
+    } else if (status === 'review') {
+      if (TC_IS_ADMIN) {
+        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">审核</button>`;
+      } else {
+        mainBtn = `<button class="tc-btn" disabled title="等待审核">审核</button>`;
+      }
+    } else if (status === 'done') {
+      mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">查看结果</button>`;
+    } else {
+      mainBtn = `<button class="tc-btn" disabled>去处理</button>`;
     }
-    if (status === 'raw_review') {
-      actions.push((TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0))
-        ? tcActiveTaskAction(id, '审核', true)
-        : tcDisabledTaskAction('等待审核'));
-      actions.push(tcDetailTaskAction(id));
-      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-      if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
-      return tcTaskActionGroup(actions);
+  }
+  actions.push(mainBtn);
+
+  // 3. View Detail button (always active)
+  actions.push(`<button class="tc-btn" onclick="tcOpenDetailAction(${id})">查看详情</button>`);
+
+  // 4. Archive button (Admin only)
+  if (TC_IS_ADMIN) {
+    if (!it.archived_at) {
+      actions.push(tcArchiveTaskAction(id));
+    } else {
+      actions.push(`<button class="tc-btn tc-btn--danger" disabled>归档</button>`);
     }
-    if (status === 'raw_done' || status === 'all_done') {
-      actions.push(tcActiveTaskAction(id, '查看结果', false));
+  }
+
+  // 5. Cancel button (Admin only)
+  if (TC_IS_ADMIN) {
+    if (tcCanCancelTask(it, isParent)) {
+      const kind = isParent ? 'parent' : 'child';
+      actions.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('${kind}', ${id}, 'cancel')">取消任务</button>`);
+    } else {
+      actions.push(`<button class="tc-btn tc-btn--danger" disabled>取消任务</button>`);
     }
-    actions.push(tcDetailTaskAction(id));
-    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
-    return tcTaskActionGroup(actions);
   }
-  if (status === 'blocked') {
-    const blockedActions = actions.concat([tcDetailTaskAction(id)]);
-    if (!it.archived_at) blockedActions.push(tcArchiveTaskAction(id));
-    if (tcCanCancelTask(it, isParent)) blockedActions.push(tcCancelTaskAction('child', id));
-    return tcTaskActionGroup(blockedActions);
-  }
-  if (status === 'assigned') {
-    actions.push((TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限'));
-    actions.push(tcDetailTaskAction(id));
-    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
-    return tcTaskActionGroup(actions);
-  }
-  if (status === 'review') {
-    actions.push(TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核'));
-    actions.push(tcDetailTaskAction(id));
-    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-    if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
-    return tcTaskActionGroup(actions);
-  }
-  if (status === 'done') {
-    actions.push(tcActiveTaskAction(id, '查看结果', false));
-  }
-  actions.push(tcDetailTaskAction(id));
-  if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
-  if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
+
   return tcTaskActionGroup(actions);
 }
 async function tcRenderDispatchPool(wrap) {
