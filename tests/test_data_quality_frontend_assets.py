@@ -1,6 +1,7 @@
 """数据质量状态条前端资产静态校验。
 
 Docs-anchor: docs/analytics-data-quality-guardrails.md
+Docs-anchor: docs/superpowers/specs/2026-05-29-data-quality-bar-compact-disclosure.md
 """
 from pathlib import Path
 
@@ -46,6 +47,15 @@ def test_data_quality_bar_uses_design_tokens_only(bar_template: str) -> None:
 
 def test_data_quality_bar_exposes_render_helper(bar_template: str) -> None:
     assert "window.renderDataQualityBar" in bar_template
+
+
+def test_data_quality_bar_defaults_to_compact_disclosure(bar_template: str) -> None:
+    assert 'data-dq-summary' in bar_template
+    assert 'aria-expanded="false"' in bar_template
+    assert 'data-dq-details hidden' in bar_template
+    assert 'data-dq-toggle-icon' in bar_template
+    assert 'data-dq-sub' not in bar_template
+    assert 'details.hidden = false' not in bar_template
 
 
 def test_pages_invoke_render_data_quality_bar() -> None:
