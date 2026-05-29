@@ -634,7 +634,6 @@
 .mki-xiao-lang-card--disabled,
 .mki-xiao-lang-pill:has(.mki-xiao-lang-card--disabled) {
   cursor: not-allowed !important;
-  pointer-events: none;
 }
 .mki-xiao-lang-card--disabled {
   opacity: 0.65;
@@ -5472,7 +5471,7 @@ async function mkiXiaoOpenModal(options = {}) {
     var labelText = isExisting ? label + ' (已有任务)' : label;
     var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
     var forceBtnHtml = isExisting
-      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center;">强制创建</button>'
+      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center; pointer-events: auto !important;">强制创建</button>'
       : '';
     return '<label class="mki-xiao-lang-pill">'
       + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'

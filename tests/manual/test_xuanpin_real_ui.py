@@ -112,6 +112,39 @@ def run_real_ui_test():
         assert disabled_count == 2, "Should have exactly 2 disabled duplicate languages (DE, ES)"
         assert enabled_count == 2, "Should have exactly 2 enabled languages (FR, IT)"
         
+        # 6. Click the "强制创建" button for DE
+        safe_print("[UI Test] Locating '强制创建' button for DE...")
+        de_card = page.query_selector("[data-mki-ai-lang-card='DE']")
+        assert de_card is not None, "DE card not found"
+        force_btn = de_card.query_selector(".mki-xiao-force-btn")
+        assert force_btn is not None, "DE force button not found"
+        
+        safe_print("[UI Test] Clicking the '强制创建' button for DE...")
+        force_btn.click()
+        time.sleep(1) # Wait for click handler to execute
+        
+        # 7. Re-verify DE card state after clicking force button
+        safe_print("[UI Test] Re-verifying DE card state after clicking force button...")
+        de_input = de_card.query_selector("input")
+        de_card_class = de_card.get_attribute("class")
+        de_label_span = de_card.querySelector(".mki-xiao-lang-main") if hasattr(de_card, "querySelector") else de_card.query_selector(".mki-xiao-lang-main")
+        de_label = de_label_span.inner_text() if de_label_span else ""
+        
+        is_disabled = de_input.is_disabled()
+        is_checked = de_input.is_checked()
+        
+        safe_print(f"  - DE Card Class after force: '{de_card_class}'")
+        safe_print(f"  - DE Input is_disabled after force: {is_disabled}")
+        safe_print(f"  - DE Input is_checked after force: {is_checked}")
+        safe_print(f"  - DE Label after force: '{de_label}'")
+        
+        assert "mki-xiao-lang-card--disabled" not in de_card_class, "DE Card should no longer have disabled class"
+        assert not is_disabled, "DE input checkbox should no longer be disabled"
+        assert is_checked, "DE input checkbox should be checked"
+        assert "强创" in de_label or "强选" in de_label, "DE label should be updated to show force create state"
+        
+        safe_print("[UI Test] Force button click verification PASSED successfully!")
+        
         # Close the modal
         safe_print("[UI Test] Closing modal...")
         page.click("#mkiXiaoCancel")
