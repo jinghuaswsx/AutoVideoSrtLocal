@@ -15,6 +15,10 @@ def test_classify_meta_login_state_detects_login_and_human_checks():
         "Enter authentication code",
     ) == "needs_human"
     assert autofill.classify_meta_login_state(
+        "https://www.facebook.com/two_step_verification/two_factor/",
+        "",
+    ) == "needs_human"
+    assert autofill.classify_meta_login_state(
         "https://adsmanager.facebook.com/adsmanager/manage/campaigns",
         "Campaigns",
     ) == "logged_in"
@@ -136,3 +140,97 @@ def test_ensure_meta_login_fills_and_reports_success(monkeypatch):
     assert ("fill", "input[name=email]", "user@example.com", 10000) in fake_page.calls
     assert ("fill", "input[name=pass]", "secret", 10000) in fake_page.calls
     assert marked == [("success", None)]
+
+
+def test_ensure_meta_login_clicks_chinese_continue_and_reports_two_factor(monkeypatch):
+    from appcore import meta_login_autofill as autofill
+
+    class FakeCredential:
+        username = "user@example.com"
+        password = "secret"
+
+    class FakeEventInfo:
+        def __init__(self, value):
+            self.value = value
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeContext:
+        def __init__(self, popup):
+            self.popup = popup
+
+        def expect_event(self, event, timeout=None):
+            assert event == "page"
+            assert timeout == 10000
+            return FakeEventInfo(self.popup)
+
+    class FakeLocator:
+        def __init__(self, page, selector, count=0):
+            self.page = page
+            self.selector = selector
+            self._count = count
+            self.first = self
+
+        def count(self):
+            return self._count
+
+        def click(self):
+            self.page.calls.append(("click", self.selector))
+
+        def fill(self, value, timeout=None):
+            raise AssertionError("should not fill credentials on two-factor page")
+
+        def press(self, key):
+            raise AssertionError("should not submit credentials on two-factor page")
+
+        def inner_text(self, timeout=None):
+            return self.page.body_text
+
+    class FakePage:
+        url = "https://business.facebook.com/business/loginpage/"
+        body_text = "登录广告管理工具\n用 Facebook 继续"
+        title_value = "Meta for Business"
+
+        def __init__(self):
+            self.calls = []
+            self.popup = SimpleNamespace(
+                url="https://www.facebook.com/two_step_verification/two_factor/",
+                body_text="",
+                wait_for_load_state=lambda *args, **kwargs: None,
+                title=lambda: "Facebook",
+            )
+            self.context = FakeContext(self.popup)
+
+        def locator(self, selector):
+            if selector == 'div[role=button]:has-text("用 Facebook 继续")':
+                return FakeLocator(self, selector, count=1)
+            return FakeLocator(self, selector)
+
+        def title(self):
+            return self.title_value
+
+    fake_page = FakePage()
+    marked = []
+    monkeypatch.setattr(
+        autofill.browser_login_credentials,
+        "get_credential",
+        lambda env_code, provider: FakeCredential(),
+    )
+    monkeypatch.setattr(
+        autofill.browser_login_credentials,
+        "mark_login_result",
+        lambda env_code, provider, status, error=None: marked.append((status, error)),
+    )
+
+    result = autofill.ensure_meta_login(
+        "http://127.0.0.1:9222",
+        page_factory=lambda: fake_page,
+    )
+
+    assert result["status"] == "needs_human"
+    assert fake_page.calls == [('click', 'div[role=button]:has-text("用 Facebook 继续")')]
+    assert marked == [("needs_human", "checkpoint_required")]

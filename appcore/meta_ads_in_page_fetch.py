@@ -240,6 +240,47 @@ def _select_session_account():
     return accounts[0]
 
 
+def _safe_page_body_text(page: Any) -> str:
+    try:
+        return page.locator("body").inner_text(timeout=3000)
+    except Exception:
+        return ""
+
+
+def _ensure_ads_manager_login_state(page: Any, *, page_url: str) -> None:
+    """Detect login redirects before in-page fetches hit CORS-style failures."""
+    from appcore import browser_login_credentials, meta_login_autofill
+
+    state = meta_login_autofill.classify_meta_login_state(
+        getattr(page, "url", ""),
+        _safe_page_body_text(page),
+    )
+    if state == "logged_in":
+        return
+
+    login_report = meta_login_autofill._ensure_meta_login_on_page(
+        page,
+        env_code=browser_login_credentials.DEFAULT_ENV_CODE,
+        provider=browser_login_credentials.DEFAULT_PROVIDER,
+        target_url=page_url,
+    )
+    status = str(login_report.get("status") or "failed")
+    if status in {"success", "already_logged_in"}:
+        return
+
+    body = json.dumps(login_report, ensure_ascii=False, default=str)[:1500]
+    current_url = str(login_report.get("current_url") or getattr(page, "url", ""))
+    if status == "needs_human":
+        raise MetaAdsInPageFetchError(
+            f"Meta Ads Manager login requires human verification: {current_url[:300]}",
+            body=body,
+        )
+    raise MetaAdsInPageFetchError(
+        f"Meta Ads Manager login required but autofill failed: {status}",
+        body=body,
+    )
+
+
 def _harvest_token_from_existing_page(
     page: Any,
     *,
@@ -358,6 +399,7 @@ def _setup_session_in_thread(
                 page.wait_for_timeout(1000)
             except Exception:  # noqa: BLE001
                 pass
+            _ensure_ads_manager_login_state(page, page_url=page_url)
         else:
             token = _harvest_token_from_existing_page(
                 page,
@@ -530,6 +572,7 @@ def open_meta_ads_session(
                             page.wait_for_timeout(1000)
                         except Exception:  # noqa: BLE001
                             pass
+                        _ensure_ads_manager_login_state(page, page_url=page_url)
                     else:
                         token = _harvest_token_from_existing_page(
                             page,
