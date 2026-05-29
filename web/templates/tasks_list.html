@@ -1925,7 +1925,7 @@ async function tcSubmitManualOutput() {
       const taskId = ctx.taskId;
       tcCloseManualSubmit();
       if (TC_DETAIL_TASK_ID === taskId) tcOpenDetail(taskId);
-      tcRender();
+      tcRefreshTaskRow(taskId);
     }, 500);
   } catch (e) {
     btn.disabled = false;
@@ -2109,48 +2109,83 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     return; 
   }
   const rows = data.items.map(it => {
-    const kind = tcTaskTypeLabel(it);
-    const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
-    
-    const isTerminal = it.parent_task_id 
-      ? ['done', 'cancelled'].includes(it.status) 
-      : ['all_done', 'cancelled'].includes(it.status);
-
-    let assigneeSelector = '';
-    if (TC_IS_ADMIN && !isTerminal) {
-      const currentAssigneeId = it.assignee_id;
-      const options = users.map(u => {
-        const selected = Number(u.id) === Number(currentAssigneeId) ? 'selected' : '';
-        return `<option value="${u.id}" ${selected}>${tcEsc(u.display_name || u.username || ('#' + u.id))}</option>`;
-      }).join('');
-      assigneeSelector = `<select class="tc-input" style="padding: 2px 6px; font-size: 13px; min-width: 100px; height: 28px; width: auto;" onchange="tcChangeAssignee(${it.id}, this, ${currentAssigneeId})">${options}</select>`;
-    } else {
-      assigneeSelector = tcEsc(it.assignee_display_name || it.assignee_username || '—');
-    }
-
-    return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
-      <td>
-        <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
-          <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
-          ${tcUrgentBadge(it)}
-          ${tcCopyIconButton(it.product_name, '复制产品中文名', 'tc-task-name-copy')}
-        </div>
-        <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
-          <span>#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</span>
-          ${it.product_code ? tcCopyIconButton(it.product_code, '复制产品Code', 'tc-task-code-copy') : ''}
-        </div>
-      </td>
-      <td>${tcEsc(kind)}</td>
-      <td>${country}</td>
-      <td>${tcTaskStatusCell(it)}</td>
-      <td>${assigneeSelector}</td>
-      <td>${tcEsc(tcFormatTime(it.created_at))}</td>
-      <td>${tcTaskRowAction(it)}</td>
-    </tr>`;
+    return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">${tcBuildTaskRowHtml(it, users)}</tr>`;
   }).join('');
   wrap.innerHTML = tcRenderTaskPager(data, data.items.length, true)
     + `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`
     + tcRenderTaskPager(data, data.items.length, false);
+}
+
+function tcBuildTaskRowHtml(it, users) {
+  const kind = tcTaskTypeLabel(it);
+  const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
+  
+  const isTerminal = it.parent_task_id 
+    ? ['done', 'cancelled'].includes(it.status) 
+    : ['all_done', 'cancelled'].includes(it.status);
+
+  let assigneeSelector = '';
+  if (TC_IS_ADMIN && !isTerminal) {
+    const currentAssigneeId = it.assignee_id;
+    const options = users.map(u => {
+      const selected = Number(u.id) === Number(currentAssigneeId) ? 'selected' : '';
+      return `<option value="${u.id}" ${selected}>${tcEsc(u.display_name || u.username || ('#' + u.id))}</option>`;
+    }).join('');
+    assigneeSelector = `<select class="tc-input" style="padding: 2px 6px; font-size: 13px; min-width: 100px; height: 28px; width: auto;" onchange="tcChangeAssignee(${it.id}, this, ${currentAssigneeId})">${options}</select>`;
+  } else {
+    assigneeSelector = tcEsc(it.assignee_display_name || it.assignee_username || '—');
+  }
+
+  return `
+    <td>
+      <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
+        <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
+        ${tcUrgentBadge(it)}
+        ${tcCopyIconButton(it.product_name, '复制产品中文名', 'tc-task-name-copy')}
+      </div>
+      <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+        <span>#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</span>
+        ${it.product_code ? tcCopyIconButton(it.product_code, '复制产品Code', 'tc-task-code-copy') : ''}
+      </div>
+    </td>
+    <td>${tcEsc(kind)}</td>
+    <td>${country}</td>
+    <td>${tcTaskStatusCell(it)}</td>
+    <td>${assigneeSelector}</td>
+    <td>${tcEsc(tcFormatTime(it.created_at))}</td>
+    <td>${tcTaskRowAction(it)}</td>
+  `;
+}
+
+async function tcRefreshTaskRow(id) {
+  const numericId = Number(id || 0);
+  if (!numericId) return;
+  const rowEl = document.querySelector(`tr[data-task-id="${numericId}"]`);
+  if (!rowEl) {
+    await tcRender();
+    return;
+  }
+  try {
+    const task = await tcFetchDetailTask(numericId, true);
+    if (!task) {
+      await tcRender();
+      return;
+    }
+    TC_TASK_CACHE.set(numericId, task);
+    
+    // If task is archived but the current view filters out archived tasks, remove it from list
+    if (task.archived_at && TC_CURRENT_BUCKET !== 'archived') {
+      rowEl.remove();
+      return;
+    }
+    
+    const users = await tcLoadAssigneeFilterUsers();
+    rowEl.innerHTML = tcBuildTaskRowHtml(task, users);
+    rowEl.setAttribute('data-parent', task.parent_task_id ?? '');
+  } catch (e) {
+    console.error('Failed to refresh row locally:', e);
+    await tcRender();
+  }
 }
 
 async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
@@ -2173,7 +2208,7 @@ async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
       tcLoadDetail(taskId, {forceRefresh: true, keepContent: true});
     }
     
-    tcRender();
+    await tcRefreshTaskRow(taskId);
   } catch (e) {
     alert('修改负责人失败：' + (e.message || 'unknown error'));
     selectEl.value = oldAssigneeId;
@@ -2244,7 +2279,7 @@ async function tcArchiveTask(id) {
     method: 'POST',
     body: JSON.stringify({}),
   });
-  tcRender();
+  await tcRefreshTaskRow(id);
 }
 function tcTaskActionGroup(actions) {
   const visible = (actions || []).filter(Boolean);
@@ -2275,7 +2310,7 @@ async function tcSetTaskUrgency(id, isUrgent) {
       method: 'POST',
       body: JSON.stringify({is_urgent: !!isUrgent}),
     });
-    await tcRender();
+    await tcRefreshTaskRow(id);
     if (Number(TC_DETAIL_TASK_ID || 0) === Number(id || 0)) {
       await tcLoadDetail(id, {forceRefresh: true, keepContent: true});
     }
@@ -2774,7 +2809,7 @@ function tcCanForceRerunNiuma(task, isParent) {
 async function tcAction(kind, id, action) {
   try {
     await tcFetchJson(`/tasks/api/${kind}/${id}/${action}`, {method:'POST', body:'{}'});
-    tcRender();
+    await tcRefreshTaskRow(id);
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) {
     if (e.message === 'readiness_failed') {
@@ -2792,7 +2827,7 @@ async function tcForceRerunNiuma(id) {
       method: 'POST',
       body: '{}',
     });
-    tcRender();
+    await tcRefreshTaskRow(id);
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) {
     alert('强制重跑失败：' + (e.message || 'unknown'));
@@ -2835,7 +2870,7 @@ function tcCloseManualRawResult() {
   TC_MANUAL_RAW_TASK_ID = null;
   TC_MANUAL_RAW_SUBMITTED = false;
   if (shouldRefresh) {
-    tcRender();
+    tcRefreshTaskRow(taskId);
     tcOpenDetail(taskId);
   }
 }
@@ -2905,7 +2940,7 @@ async function tcSubmitReason() {
     });
     const id = TC_REASON_CTX.id;
     tcCloseReason();
-    tcRender();
+    await tcRefreshTaskRow(id);
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) { alert('失败：' + e.message); }
 }
