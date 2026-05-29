@@ -87,7 +87,13 @@
     if (!normalized) return '';
     const l = (LANGUAGES || []).find(x => x && x.code === normalized);
     const upper = normalized.toUpperCase();
-    if (l && l.name_zh) return `${l.name_zh} (${upper})`;
+    if (l && l.name_zh) {
+      let nameZh = l.name_zh;
+      if (normalized !== 'en' && nameZh.length > 0) {
+        nameZh = nameZh.charAt(0);
+      }
+      return `${nameZh} (${upper})`;
+    }
     return upper || raw;
   }
 
@@ -532,14 +538,14 @@
       
       const statusRaw = String(summary.delivery_status || 'never').toLowerCase();
       const statusMeta = DELIVERY_STATUS_META[statusRaw] || DELIVERY_STATUS_META.never;
-      const statusLabel = statusRaw === 'stopped' ? '投放终止' : statusMeta.label;
+      const statusLabel = statusRaw === 'stopped' ? '终' : statusMeta.label;
       const statusPill = `<span class="oc-lang-status-pill ${statusMeta.cls}">${statusLabel}</span>`;
       
       const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'} / 状态 ${statusLabel}`;
       return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
         + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}${statusPill}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
-        + `<span class="oc-lang-roas">ROAS ${roas} / 消耗 ${spend}</span>`
+        + `<span class="oc-lang-roas"><span class="oc-lang-label">ROAS</span><strong>${roas}</strong><span class="oc-lang-label" style="margin-left:6px;">消耗</span><strong>${spend}</strong></span>`
         + `</div>`;
     }).filter(Boolean);
     const body = lines.length
@@ -547,17 +553,17 @@
       : '<div class="oc-lang-empty muted">—</div>';
     return `<div class="oc-lang-bar">`
       + `<div class="oc-lang-summary">`
-      + `<span>总体ROAS<strong>${fmtAdRoas(productSummary.overall_roas)}</strong></span>`
-      + `<span>总消耗<strong>${fmtAdSpend(productSummary.ad_spend_usd)}</strong></span>`
+      + `<span><span class="oc-lang-label">总体ROAS</span><strong>${fmtAdRoas(productSummary.overall_roas)}</strong></span>`
+      + `<span><span class="oc-lang-label">总消耗</span><strong>${fmtAdSpend(productSummary.ad_spend_usd)}</strong></span>`
       + `</div>`
       + body
       + `</div>`;
   }
 
   const DELIVERY_STATUS_META = {
-    active: { label: '投放中', cls: 'active' },
-    stopped: { label: '终止投放', cls: 'stopped' },
-    never: { label: '未投', cls: 'never' },
+    active: { label: '投', cls: 'active' },
+    stopped: { label: '终', cls: 'stopped' },
+    never: { label: '未', cls: 'never' },
   };
 
   function renderDeliveryStatus(p) {
@@ -2615,7 +2621,6 @@
         <col style="width:300px">
         <col style="width:92px">
         <col style="width:92px">
-        <col style="width:180px">
         <col style="width:104px">
         <col style="width:240px">
       </colgroup>
@@ -2636,7 +2641,6 @@
           <th>语种覆盖</th>
           <th>投放情况</th>
           <th>修改时间</th>
-          <th>产品链接</th>
           <th>投放推送</th>
           <th>操作</th>
         </tr>
@@ -3146,7 +3150,6 @@
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
-        <td class="oc-domain-cell" data-pid="${p.id}">${renderProductLinkCell(p)}</td>
         <td class="product-push-cell">
           <div class="product-push-actions">
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">

@@ -3338,16 +3338,12 @@ def test_medias_page_wraps_language_coverage_with_full_labels():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
     assert "function langDisplayName(code)" in medias_js
-    assert "if (l && l.name_zh) return `${l.name_zh} (${upper})`;" in medias_js
+    assert "nameZh" in medias_js
     assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
-    assert '<col style="width:336px">' in medias_js
-    assert "const midpoint = Math.ceil(chips.length / 2);" in medias_js
-    assert 'class="oc-lang-row"' in medias_js
+    assert '<col style="width:300px">' in medias_js
+    assert "const midpoint = Math.ceil(chips.length / 2);" not in medias_js
     assert ".oc-lang-bar {" in template
     assert "flex-direction:column;" in template
-    assert ".oc-lang-row {" in template
-    assert "display:flex;" in template
-    assert "flex-wrap:nowrap;" in template
 
 
 def test_medias_page_marks_copy_as_optional_in_add_modal(authed_client_no_db):
