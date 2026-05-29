@@ -2092,5 +2092,86 @@
   to { transform: scale(1); opacity: 1; }
 }
 
+/* ================================================================
+ * Premium Pager Style (Copied from medias_list.html)
+ * ================================================================ */
+.oc-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--oc-sp-1);
+  padding: var(--oc-sp-6) 0 var(--oc-sp-2);
+}
+.oc-pager[hidden] {
+  display: none;
+}
+.oc-pager button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-size: 13px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: all var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-pager button:hover {
+  border-color: var(--oc-accent);
+  color: var(--oc-accent);
+}
+.oc-pager button.active {
+  background: var(--oc-accent);
+  border-color: var(--oc-accent);
+  color: #fff;
+}
+.oc-pager button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.oc-pager button:disabled:hover {
+  border-color: var(--oc-border-strong);
+  color: var(--oc-fg);
+}
+.oc-vm-page-summary {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--oc-sp-2);
+  color: var(--oc-fg-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.oc-vm-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-sp-1);
+  height: 32px;
+  margin-left: var(--oc-sp-2);
+  color: var(--oc-fg-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.oc-vm-page-jump input {
+  width: 72px;
+  height: 32px;
+  padding: 0 var(--oc-sp-2);
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.oc-vm-page-jump input:focus {
+  outline: 2px solid var(--oc-accent-ring);
+  border-color: var(--oc-accent);
+}
+
 
 

@@ -297,6 +297,7 @@
         <span>页</span>
       </label>
     `);
+    buttons.push(`<span class="oc-vm-page-summary">共 ${total} 条数据</span>`);
     pagers.forEach(pager => {
       pager.hidden = false;
       pager.innerHTML = buttons.join('');
