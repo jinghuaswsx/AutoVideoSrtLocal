@@ -3473,14 +3473,27 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
         raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
 
 
-def approve_child(*, task_id: int, actor_user_id: int) -> None:
-    """管理员审核通过翻译；若该父任务下所有子都 done/cancelled 且至少一条 done，
+def approve_child(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:
+    """处理人或管理员审核通过翻译；若该父任务下所有子都 done/cancelled 且至少一条 done，
     则父任务自动 all_done。"""
     conn = get_conn()
     try:
         conn.begin()
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, parent_task_id, status, assignee_id "
+                    "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("child task not found")
+                if row["status"] != CHILD_REVIEW:
+                    raise StateError("child not in review")
+                if not is_admin and int(row.get("assignee_id") or 0) != int(actor_user_id):
+                    raise PermissionError("only assignee or admin can approve")
+
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, "
                     "completed_at=NOW(), updated_at=NOW() "
@@ -3491,11 +3504,7 @@ def approve_child(*, task_id: int, actor_user_id: int) -> None:
                     raise StateError("child not in review")
                 _write_event(cur, task_id, "approved", actor_user_id, None)
 
-                cur.execute(
-                    "SELECT parent_task_id FROM tasks WHERE id=%s",
-                    (int(task_id),),
-                )
-                parent_id = cur.fetchone()["parent_task_id"]
+                parent_id = row["parent_task_id"]
                 cur.execute(
                     "SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,)
                 )

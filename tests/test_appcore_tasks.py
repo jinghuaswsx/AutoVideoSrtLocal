@@ -2021,10 +2021,10 @@ def test_submit_child_auto_done_keeps_parent_raw_task_completed(
     tasks.submit_child(task_id=fr_id, actor_user_id=db_user_translator)
     children = query_all("SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,))
     assert all(child["status"] == tasks.CHILD_REVIEW for child in children)
-    tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin)
+    tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin, is_admin=True)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
     assert parent["status"] == tasks.PARENT_RAW_DONE
-    tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin)
+    tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin, is_admin=True)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
     assert parent["status"] == tasks.PARENT_ALL_DONE
     assert parent["completed_at"] is not None
@@ -2059,6 +2059,63 @@ def test_reject_child_returns_to_assigned(
     assert "DE 文案翻译有错" in row["last_reason"]
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_approve_child_rejects_non_assignee_without_admin(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            if "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE" in sql:
+                self.rows = [{
+                    "id": 44,
+                    "parent_task_id": 10,
+                    "status": tasks.CHILD_REVIEW,
+                    "assignee_id": 2,
+                }]
+                return
+            raise AssertionError(sql)
+
+        def fetchone(self):
+            return self.rows.pop(0) if self.rows else None
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+            self.rolled_back = False
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            raise AssertionError("commit should not be reached")
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            pass
+
+    conn = FakeConn()
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+
+    with pytest.raises(PermissionError, match="only assignee or admin can approve"):
+        tasks.approve_child(task_id=44, actor_user_id=3, is_admin=False)
+
+    assert conn.rolled_back is True
 
 
 def test_cancel_child_does_not_change_parent(

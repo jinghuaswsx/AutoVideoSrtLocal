@@ -1263,6 +1263,12 @@ function tcCanReviewRawTask(task) {
   if (TC_IS_ADMIN) return true;
   return Number(task.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0);
 }
+function tcCanReviewChildTask(task) {
+  if (!task || !task.parent_task_id) return false;
+  if (task.status !== 'review') return false;
+  if (TC_IS_ADMIN) return true;
+  return Number(task.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0);
+}
 function tcRenderRawSelfReviewActions(task, event, anchorEventType) {
   if (!tcCanReviewRawTask(task)) return '';
   if (String(event && event.event_type || '') !== String(anchorEventType || '')) return '';
@@ -2416,7 +2422,7 @@ function tcTaskRowAction(it) {
         mainBtn = `<button class="tc-btn" disabled title="无处理权限">去处理</button>`;
       }
     } else if (status === 'review') {
-      if (TC_IS_ADMIN) {
+      if (tcCanReviewChildTask(it)) {
         mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">审核</button>`;
       } else {
         mainBtn = `<button class="tc-btn" disabled title="等待审核">审核</button>`;
@@ -2805,6 +2811,9 @@ function tcDetailButtons(task, isParent) {
       btns.push(`<button class="tc-btn" onclick="tcChildJumpTranslate(${id}, '${country}', ${productId}, '${productCode}')">翻译</button>`);
       btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${country}', ${productId}, '${productCode}')">翻译任务记录</button>`);
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'submit')">提交完成</button>`);
+    }
+    if (status === 'review' && !TC_IS_ADMIN && tcCanReviewChildTask(task)) {
+      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'approve')">通过</button>`);
     }
     if (status === 'review' && TC_IS_ADMIN) {
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'approve')">通过</button>`);

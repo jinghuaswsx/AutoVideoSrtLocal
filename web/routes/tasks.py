@@ -686,10 +686,15 @@ def api_child_submit(tid: int):
 
 @bp.route("/api/child/<int:tid>/approve", methods=["POST"])
 @login_required
-@admin_required
 def api_child_approve(tid: int):
     try:
-        tasks_svc.approve_child(task_id=tid, actor_user_id=int(current_user.id))
+        tasks_svc.approve_child(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
     except tasks_svc.StateError as e:
         return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_approved")

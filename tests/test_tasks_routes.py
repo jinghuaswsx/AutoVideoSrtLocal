@@ -1648,10 +1648,59 @@ def test_child_action_routes_registered_admin(authed_client_no_db):
     assert rsp.status_code in (200, 400, 500)
 
 
-def test_child_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
-    """Non-admin user gets 403 on admin-only child endpoints."""
-    rsp = authed_user_client_no_db.post("/tasks/api/child/9999/approve")
+def test_child_approve_allows_non_admin_service_authorized_assignee(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+    audit_calls = []
+
+    def fake_approve_child(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_child",
+        fake_approve_child,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    rsp = authed_user_client_no_db.post("/tasks/api/child/44/approve")
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True}
+    assert captured == {
+        "task_id": 44,
+        "actor_user_id": 2,
+        "is_admin": False,
+    }
+    assert audit_calls == [(44, "task_child_approved", None)]
+
+
+def test_child_approve_maps_service_permission_denied_for_non_assignee(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    def fake_approve_child(**kwargs):
+        raise PermissionError("only assignee or admin can approve")
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_child",
+        fake_approve_child,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.post("/tasks/api/child/44/approve")
+
     assert rsp.status_code == 403
+    assert rsp.get_json() == {"error": "only assignee or admin can approve"}
+
+
+def test_child_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
+    """Non-admin user gets 403 on child endpoints that still require admin."""
     rsp = authed_user_client_no_db.post("/tasks/api/child/9999/reject", json={"reason": "x"})
     assert rsp.status_code == 403
     rsp = authed_user_client_no_db.post("/tasks/api/child/9999/cancel", json={"reason": "x"})
