@@ -1049,6 +1049,7 @@ def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeyp
         "raw_processor_id": 8,
         "created_by": 1,
         "force": False,
+        "is_urgent": False,
     }
     assert sorted(ensure_calls) == [8, 9, 10]
     assert audit_calls == [
@@ -1062,9 +1063,45 @@ def test_create_parent_accepts_language_assignments(authed_client_no_db, monkeyp
                 "translator_id": None,
                 "raw_processor_id": 8,
                 "language_assignments": {"DE": 9, "FR": 10},
+                "is_urgent": False,
             },
         )
     ]
+
+
+def test_create_parent_passes_urgent_flag(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    monkeypatch.setattr("web.routes.tasks.ensure_translation_work_user", lambda user_id: None)
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.create_parent_task",
+        lambda **kwargs: captured.update(kwargs) or 321,
+    )
+    monkeypatch.setattr(
+        "appcore.task_raw_video_processing.start_niuma_processing_for_parent_task",
+        lambda **kwargs: {"status": "submitted"},
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+
+    resp = authed_client_no_db.post(
+        "/tasks/api/parent",
+        json={
+            "media_product_id": 1,
+            "media_item_id": 2,
+            "countries": ["DE"],
+            "translator_id": 9,
+            "raw_processor_id": 8,
+            "is_urgent": True,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["is_urgent"] is True
+    assert audit_calls[0][2]["is_urgent"] is True
 
 
 def test_create_parent_rejects_missing_language_assignments(authed_client_no_db, monkeypatch):
@@ -1181,6 +1218,7 @@ def test_create_parent_starts_raw_niuma_processing(authed_client_no_db, monkeypa
             "countries": ["DE"],
             "translator_id": 9,
             "raw_processor_id": 8,
+            "is_urgent": False,
         })
     ]
     assert evaluation_calls == [

@@ -361,6 +361,7 @@ def api_create_parent():
         raw_processor_id = int(payload["raw_processor_id"])
         product_url_override = str(payload.get("product_link") or "").strip() or None
         force = bool(payload.get("force"))
+        is_urgent = payload.get("is_urgent") is True
     except (KeyError, TypeError, ValueError) as e:
         return _json_response({"error": f"参数错误: {e}"}, 400)
     try:
@@ -386,6 +387,7 @@ def api_create_parent():
             "raw_processor_id": raw_processor_id,
             "created_by": int(current_user.id),
             "force": force,
+            "is_urgent": is_urgent,
         }
         if raw_source_reuse:
             create_kwargs["reused_raw_source_id"] = int(raw_source_reuse["id"])
@@ -425,6 +427,7 @@ def api_create_parent():
             "countries": countries,
             "translator_id": translator_id,
             "raw_processor_id": raw_processor_id,
+            "is_urgent": is_urgent,
             **({"product_link": product_url_override} if product_url_override else {}),
             **(
                 {"reused_raw_source_id": int(raw_source_reuse["id"])}

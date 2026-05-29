@@ -402,6 +402,7 @@ def test_create_parent_task_supports_per_language_assignments(monkeypatch):
 
     conn = FakeConn()
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "get_existing_task_languages_for_item", lambda media_item_id: [])
     monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
     monkeypatch.setattr(
         tasks,
@@ -434,6 +435,91 @@ def test_create_parent_task_supports_per_language_assignments(monkeypatch):
     ]
     assert inserts[1][3:6] == ("DE", 9, tasks.CHILD_BLOCKED)
     assert inserts[2][3:6] == ("FR", 10, tasks.CHILD_BLOCKED)
+
+
+def test_create_parent_task_marks_parent_and_children_urgent(monkeypatch):
+    from appcore import tasks
+
+    class FakeCursor:
+        def __init__(self):
+            self.lastrowid = 100
+            self._next_id = 100
+            self.executed = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            self.executed.append((sql, args))
+            if sql.startswith("INSERT INTO tasks"):
+                self.lastrowid = self._next_id
+                self._next_id += 1
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    conn = FakeConn()
+    monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "get_existing_task_languages_for_item", lambda media_item_id: [])
+    monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
+    monkeypatch.setattr(
+        tasks,
+        "notifications_svc",
+        type(
+            "FakeNotifications",
+            (),
+            {
+                "notify_parent_assigned": staticmethod(lambda *args, **kwargs: None),
+                "notify_pending_raw_task": staticmethod(lambda *args, **kwargs: None),
+                "notify_child_blocked": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+        raising=False,
+    )
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=7,
+        media_item_id=8,
+        countries=["DE", "FR"],
+        language_assignments={"DE": 9, "FR": 10},
+        raw_processor_id=88,
+        created_by=1,
+        is_urgent=True,
+    )
+
+    assert parent_id == 100
+    inserts = [
+        (sql, args) for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO tasks")
+    ]
+    assert all("is_urgent" in sql for sql, _args in inserts)
+    assert inserts[0][1][4] == 1
+    assert inserts[1][1][6] == 1
+    assert inserts[2][1][6] == 1
+    event_payloads = [
+        args[3] for sql, args in conn.cursor_obj.executed
+        if sql.startswith("INSERT INTO task_events") and args[1] == "created"
+    ]
+    assert '"is_urgent": true' in event_payloads[0]
 
 
 def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
@@ -480,6 +566,7 @@ def test_create_parent_task_reuses_ready_raw_source(monkeypatch):
     notifications = []
     conn = FakeConn()
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "get_existing_task_languages_for_item", lambda media_item_id: [])
     monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
     monkeypatch.setattr(
         tasks,
