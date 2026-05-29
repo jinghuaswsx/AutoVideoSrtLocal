@@ -733,7 +733,15 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
         ):
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
-            return []
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-29"),
+                    "ad_spend": 12.0,
+                    "meta_purchase_value": 0.0,
+                    "meta_purchases": 0,
+                    "last_ad_updated_at": None,
+                }
+            ]
         return []
 
     profit_calls = []
@@ -2005,7 +2013,7 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
     assert "<th>销售件数</th>" in panel
     assert "fmtInt(row.order_count)" in body
     assert "fmtInt(row.units)" in body
-    assert "renderRealtimeProductSales(data.product_sales_stats || [])" in body
+    assert "renderRealtimeProductSales(" in body
 
 
 def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):

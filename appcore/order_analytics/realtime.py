@@ -160,7 +160,7 @@ def resolve_ad_product_match(campaign_name: str) -> dict[str, Any] | None:
     """Realtime-local campaign product resolver using this module's DB facade."""
     for code in product_code_candidates_for_ad_campaign(campaign_name):
         rows = query(
-            "SELECT id, product_code, name FROM media_products "
+            "SELECT id, product_code, name, shopify_title FROM media_products "
             "WHERE product_code=%s AND deleted_at IS NULL "
             "LIMIT 1",
             (code,),
@@ -172,7 +172,7 @@ def resolve_ad_product_match(campaign_name: str) -> dict[str, Any] | None:
     if not normalized:
         return None
     rows = query(
-        "SELECT o.product_id AS id, o.product_code, m.name "
+        "SELECT o.product_id AS id, o.product_code, m.name, m.shopify_title "
         "FROM campaign_product_overrides o "
         "LEFT JOIN media_products m ON m.id = o.product_id AND m.deleted_at IS NULL "
         "WHERE o.normalized_campaign_code = %s "
@@ -182,7 +182,12 @@ def resolve_ad_product_match(campaign_name: str) -> dict[str, Any] | None:
     if not rows:
         return None
     row = rows[0]
-    return {"id": row["id"], "product_code": row.get("product_code"), "name": row.get("name")}
+    return {
+        "id": row["id"],
+        "product_code": row.get("product_code"),
+        "name": row.get("name"),
+        "shopify_title": row.get("shopify_title")
+    }
 
 
 def _normalize_positive_int(value: Any, default: int, *, max_value: int | None = None) -> int:
@@ -1570,11 +1575,13 @@ def _annotate_campaign_allocation(
             item["matched_product_id"] = product_id
             item["matched_product_code"] = match.get("product_code")
             item["matched_product_name"] = match.get("name") or match.get("product_name")
+            item["matched_shopify_title"] = match.get("shopify_title")
             product_ids.add(product_id)
         else:
             item["matched_product_id"] = None
             item["matched_product_code"] = None
             item["matched_product_name"] = None
+            item["matched_shopify_title"] = None
         annotated.append(item)
 
     units_by_product = _load_profit_units_for_products(date_from, date_to, product_ids)
@@ -2550,6 +2557,8 @@ def _build_realtime_overview_for_range(
         )
         if include_details else []
     )
+    campaign_allocation = _annotate_campaign_allocation(campaign_details, start, end)
+    campaign_details = campaign_allocation["campaigns"]
 
     return {
         "period": {
@@ -2599,8 +2608,8 @@ def _build_realtime_overview_for_range(
         "order_profit_details_page": _order_profit_page_info(order_profit_total, page, page_size),
         "order_profit_summary": profit_summary,
         "campaigns": campaign_details,
-        "unallocated_campaigns": [],
-        "unallocated_campaign_summary": {"count": 0, "spend_usd": 0.0},
+        "unallocated_campaigns": campaign_allocation["unallocated_campaigns"],
+        "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
         "product_sales_stats": get_dianxiaomi_product_sales_stats(
             start,
             end,
