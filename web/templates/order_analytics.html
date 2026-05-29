@@ -1894,13 +1894,13 @@
           <thead>
             <tr>
               <th>产品</th>
-              <th>ROAS</th>
               <th>产品主图</th>
               <th>订单数</th>
               <th>销售件数</th>
               <th>商品净销售额</th>
               <th>运费</th>
               <th>总销售额</th>
+              <th>ROAS</th>
             </tr>
           </thead>
           <tbody id="realtimeProductSalesBody"></tbody>
@@ -2077,7 +2077,7 @@
   <div class="oar-subpanel" id="nplSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>ROAS</th><th>产品主图</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th><th>ROAS</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubCampaigns">
@@ -4486,7 +4486,7 @@
   function setNewProductLaunchLoading() {
     setNewProductLaunchTable('nplOrderBody', 11, '加载中...');
     setNewProductLaunchTable('nplOrderProfitBody', 18, '加载中...');
-    setNewProductLaunchTable('nplProductSalesBody', 6, '加载中...');
+    setNewProductLaunchTable('nplProductSalesBody', 8, '加载中...');
     setNewProductLaunchTable('nplCampaignBody', 10, '加载中...');
     setNewProductLaunchTable('nplHourlyBody', 8, '加载中...');
   }
@@ -4494,7 +4494,7 @@
   function setNewProductLaunchError(message) {
     setNewProductLaunchTable('nplOrderBody', 11, message);
     setNewProductLaunchTable('nplOrderProfitBody', 18, message);
-    setNewProductLaunchTable('nplProductSalesBody', 6, message);
+    setNewProductLaunchTable('nplProductSalesBody', 8, message);
     setNewProductLaunchTable('nplCampaignBody', 10, message);
     setNewProductLaunchTable('nplHourlyBody', 8, message);
     var note = document.getElementById('nplRangeNote');
@@ -4693,9 +4693,6 @@
       var tr = document.createElement('tr');
       addTextCell(tr, (row.product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : ''), 'oar-product-cell');
       
-      var spend = spendMap[row.product_id] || 0;
-      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
-      addTextCell(tr, roas);
       addCoverImageCell(tr, row.product_id);
 
       addTextCell(tr, fmtInt(row.order_count));
@@ -4703,6 +4700,11 @@
       addTextCell(tr, fmtMoney(row.product_net_sales));
       addTextCell(tr, fmtMoney(row.shipping));
       addTextCell(tr, fmtMoney(row.total_sales));
+
+      var spend = spendMap[row.product_id] || 0;
+      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      addTextCell(tr, roas);
+
       body.appendChild(tr);
     });
     if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 8, '暂无产品销量数据');
@@ -4963,7 +4965,7 @@
     if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
     if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">加载中...</td></tr>';
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
-    if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+    if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
     resetRealtimeProfitPage();
     realtimeState.orderLoading = true;
@@ -4977,7 +4979,7 @@
       if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
       if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
-      if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+      if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
       return;
     }
@@ -5051,7 +5053,7 @@
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
-        if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="4">' + escapeHtml(err.message) + '</td></tr>';
+        if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
         renderRealtimeOrderPagination(null, 0);
         renderRealtimeOrderProfitPagination(null, 0);
@@ -5400,9 +5402,6 @@
       var tr = document.createElement('tr');
       addTextCell(tr, product, 'oar-product-cell');
       
-      var spend = spendMap[row.product_id] || 0;
-      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
-      addTextCell(tr, roas);
       addCoverImageCell(tr, row.product_id);
 
       addTextCell(tr, fmtInt(row.order_count));
@@ -5410,6 +5409,11 @@
       addTextCell(tr, fmtMoney(row.product_net_sales));
       addTextCell(tr, fmtMoney(row.shipping));
       addTextCell(tr, fmtMoney(row.total_sales));
+
+      var spend = spendMap[row.product_id] || 0;
+      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      addTextCell(tr, roas);
+
       body.appendChild(tr);
     });
     if (!body.children.length) {
