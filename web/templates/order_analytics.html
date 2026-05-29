@@ -1894,6 +1894,8 @@
           <thead>
             <tr>
               <th>产品</th>
+              <th>ROAS</th>
+              <th>产品主图</th>
               <th>订单数</th>
               <th>销售件数</th>
               <th>商品净销售额</th>
@@ -1922,6 +1924,8 @@
           <thead>
             <tr>
               <th>广告计划</th>
+              <th>对应产品</th>
+              <th>商品主图</th>
               <th>账户</th>
               <th>消耗</th>
               <th>结果数</th>
@@ -2073,13 +2077,13 @@
   <div class="oar-subpanel" id="nplSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>ROAS</th><th>产品主图</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubCampaigns">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">广告计划数据</div></div>
-      <div class="oa-table-scroll"><table class="oa-table oar-compact-table oar-campaign-table"><thead><tr><th>Campaign</th><th>广告账户</th><th>花费</th><th>结果</th><th>购买金额</th><th>Meta ROAS</th><th>展示</th><th>点击</th><th>分摊状态</th><th>Campaign ID</th></tr></thead><tbody id="nplCampaignBody"></tbody></table></div>
+      <div class="oa-table-scroll"><table class="oa-table oar-compact-table oar-campaign-table"><thead><tr><th>Campaign</th><th>对应产品</th><th>商品主图</th><th>广告账户</th><th>花费</th><th>结果</th><th>购买金额</th><th>Meta ROAS</th><th>展示</th><th>点击</th><th>分摊状态</th><th>Campaign ID</th></tr></thead><tbody id="nplCampaignBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubTrend">
@@ -4595,7 +4599,7 @@
     if (note) note.textContent = '新品投放分析 · 当前范围：' + newProductLaunchState.scope;
     renderNewProductLaunchOrders(data.order_details || []);
     renderNewProductLaunchOrderProfitDetails(data.order_profit_details || []);
-    renderNewProductLaunchProductSales(data.product_sales_stats || []);
+    renderNewProductLaunchProductSales(data.product_sales_stats || [], data.campaigns || []);
     renderNewProductLaunchCampaigns(data.campaigns || []);
     renderNewProductLaunchRoas(data);
   }
@@ -4675,13 +4679,25 @@
     setRealtimeProfitText('nplProfitPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
   }
 
-  function renderNewProductLaunchProductSales(rows) {
+  function renderNewProductLaunchProductSales(rows, campaigns) {
     var body = document.getElementById('nplProductSalesBody');
     if (!body) return;
     body.innerHTML = '';
+    var spendMap = {};
+    (campaigns || []).forEach(function(c) {
+      if (c.matched_product_id) {
+        spendMap[c.matched_product_id] = (spendMap[c.matched_product_id] || 0) + Number(c.spend_usd || 0);
+      }
+    });
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, (row.product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : ''), 'oar-product-cell');
+      
+      var spend = spendMap[row.product_id] || 0;
+      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      addTextCell(tr, roas);
+      addCoverImageCell(tr, row.product_id);
+
       addTextCell(tr, fmtInt(row.order_count));
       addTextCell(tr, fmtInt(row.units));
       addTextCell(tr, fmtMoney(row.product_net_sales));
@@ -4689,7 +4705,7 @@
       addTextCell(tr, fmtMoney(row.total_sales));
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 6, '暂无产品销量数据');
+    if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 8, '暂无产品销量数据');
   }
 
   function renderNewProductLaunchCampaigns(rows) {
@@ -4699,6 +4715,10 @@
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
+      
+      addCampaignMatchedProductCell(tr, row);
+      addCoverImageCell(tr, row.matched_product_id);
+
       addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
       addTextCell(tr, fmtMoney(row.spend_usd));
       addTextCell(tr, fmtInt(row.result_count || 0));
@@ -4710,7 +4730,7 @@
       addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplCampaignBody', 10, '暂无广告计划数据');
+    if (!body.children.length) setNewProductLaunchTable('nplCampaignBody', 12, '暂无广告计划数据');
   }
 
   function renderNewProductLaunchRoas(data) {
@@ -4986,7 +5006,7 @@
         renderRealtimeOrderPagination(data.order_details_page || {}, (data.order_details || []).length);
         renderRealtimeOrderProfitDetails(data.order_profit_details || []);
         renderRealtimeOrderProfitPagination(data.order_profit_details_page || {}, (data.order_profit_details || []).length);
-        renderRealtimeProductSales(data.product_sales_stats || []);
+        renderRealtimeProductSales(data.product_sales_stats || [], data.campaigns || []);
         realtimeLastCampaignRows = data.campaigns || [];
         renderRealtimeCampaigns(realtimeLastCampaignRows);
         hourlyBody.innerHTML = '';
@@ -5364,15 +5384,27 @@
       });
   }
 
-  function renderRealtimeProductSales(rows) {
+  function renderRealtimeProductSales(rows, campaigns) {
     var body = document.getElementById('realtimeProductSalesBody');
     if (!body) return;
     body.innerHTML = '';
+    var spendMap = {};
+    (campaigns || []).forEach(function(c) {
+      if (c.matched_product_id) {
+        spendMap[c.matched_product_id] = (spendMap[c.matched_product_id] || 0) + Number(c.spend_usd || 0);
+      }
+    });
     (rows || []).forEach(function(row) {
       var product = (row.product_name || '未知商品') +
         (row.product_code ? ' · ' + row.product_code : '');
       var tr = document.createElement('tr');
       addTextCell(tr, product, 'oar-product-cell');
+      
+      var spend = spendMap[row.product_id] || 0;
+      var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      addTextCell(tr, roas);
+      addCoverImageCell(tr, row.product_id);
+
       addTextCell(tr, fmtInt(row.order_count));
       addTextCell(tr, fmtInt(row.units));
       addTextCell(tr, fmtMoney(row.product_net_sales));
@@ -5381,7 +5413,7 @@
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="6">暂无产品销量数据</td></tr>';
+      body.innerHTML = '<tr><td colspan="8">暂无产品销量数据</td></tr>';
     }
   }
 
@@ -5424,6 +5456,10 @@
     visibleRows.forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
+      
+      addCampaignMatchedProductCell(tr, row);
+      addCoverImageCell(tr, row.matched_product_id);
+
       addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
       addTextCell(tr, fmtMoney(row.spend_usd));
       addTextCell(tr, fmtInt(row.result_count || 0));
@@ -5437,8 +5473,8 @@
     });
     if (!body.children.length) {
       body.innerHTML = realtimeState.campaignFilter === 'unallocated'
-        ? '<tr><td colspan="10">暂无未分摊广告费计划</td></tr>'
-        : '<tr><td colspan="10">暂无广告计划数据</td></tr>';
+        ? '<tr><td colspan="12">暂无未分摊广告费计划</td></tr>'
+        : '<tr><td colspan="12">暂无广告计划数据</td></tr>';
     }
   }
 
@@ -5530,6 +5566,52 @@
       cn.className = 'oar-product-name-cn';
       cn.textContent = cnText;
       stack.appendChild(cn);
+    }
+
+    td.appendChild(stack);
+    tr.appendChild(td);
+  }
+
+  function addCampaignMatchedProductCell(tr, row) {
+    var td = document.createElement('td');
+    td.className = 'oar-product-cell';
+    if (!row.matched_product_id) {
+      td.textContent = '-';
+      tr.appendChild(td);
+      return;
+    }
+    
+    var stack = document.createElement('div');
+    stack.className = 'oar-product-name-stack';
+
+    // 1. English Name (Shopify title)
+    var enText = String(row.matched_shopify_title || '').trim();
+    if (enText) {
+      var en = document.createElement('div');
+      en.className = 'oar-product-name-en';
+      en.textContent = enText;
+      stack.appendChild(en);
+    }
+
+    // 2. Chinese Name (Product name)
+    var cnText = String(row.matched_product_name || '').trim();
+    if (cnText) {
+      var cn = document.createElement('div');
+      cn.className = 'oar-product-name-cn';
+      cn.textContent = cnText;
+      stack.appendChild(cn);
+    }
+
+    // 3. Product Code (Product code/handle)
+    var codeText = String(row.matched_product_code || '').trim();
+    if (codeText) {
+      var code = document.createElement('div');
+      code.className = 'oar-product-code-sub';
+      code.style.fontSize = '11px';
+      code.style.color = 'var(--fg-muted)';
+      code.style.marginTop = '2px';
+      code.textContent = codeText;
+      stack.appendChild(code);
     }
 
     td.appendChild(stack);
