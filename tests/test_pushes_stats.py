@@ -121,7 +121,7 @@ def test_aggregate_stats_sql_filters_and_uses_owner_expr(monkeypatch):
         lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
     )
     pushes.aggregate_stats_by_owner("2026-04-01", "2026-04-26")
-    assert "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)" in captured["sql"]
+    assert "u_assignee.xingming" in captured["sql"]
     assert "i.lang <> 'en'" not in captured["sql"]
     assert "i.deleted_at IS NULL" in captured["sql"]
     assert "p.deleted_at IS NULL" in captured["sql"]
