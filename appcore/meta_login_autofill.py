@@ -98,12 +98,48 @@ def _ensure_meta_login_on_page(
         browser_login_credentials.mark_login_result(env_code, provider, "failed", "missing_credential")
         return {"status": "missing_credential", "error": "missing_credential", "current_url": getattr(page, "url", "")}
 
-    fill_facebook_login_page(page, credential.username, credential.password)
+    # 1. Handle "Continue with Facebook" button if it exists on page
+    continue_btn = page.locator('div[role=button]:has-text("Continue with Facebook")')
+    login_page = page
+    if hasattr(continue_btn, "count") and continue_btn.count() > 0:
+        try:
+            context = page.context
+            # Clicking this opens a popup window
+            with context.expect_event("page", timeout=10000) as event_info:
+                continue_btn.first.click()
+            popup_page = event_info.value
+            popup_page.wait_for_load_state("domcontentloaded")
+            login_page = popup_page
+        except Exception as exc:
+            log.warning("failed to click Continue with Facebook or wait for popup: %s", exc)
+
+    # 2. Check if the login_page (which could be the popup) has "Use another profile"
+    use_another = login_page.locator('div[aria-label="Use another profile"]')
+    if hasattr(use_another, "count") and use_another.count() > 0:
+        try:
+            use_another.first.evaluate("el => el.click()")
+            email_locator = login_page.locator("input[name=email]")
+            if hasattr(email_locator, "wait_for"):
+                email_locator.wait_for(state="visible", timeout=10000)
+        except Exception as exc:
+            log.warning("failed to click Use another profile: %s", exc)
+
+    # 3. Fill the credentials on the login_page (popup or original page)
+    fill_facebook_login_page(login_page, credential.username, credential.password)
     try:
-        page.wait_for_timeout(10000)
+        login_page.wait_for_timeout(10000)
     except Exception:
         pass
-    if target_url and classify_meta_login_state(getattr(page, "url", ""), _page_body_text(page)) == "logged_in":
+
+    # 4. If we used a popup_page, close it after login attempt so we don't leak pages
+    if login_page is not page:
+        try:
+            login_page.close()
+        except Exception:
+            pass
+
+    # 5. Check if the original page is now logged in, or try navigating to target_url
+    if target_url:
         try:
             page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(8000)
