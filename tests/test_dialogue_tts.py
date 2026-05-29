@@ -101,6 +101,69 @@ def test_apply_speaker_voices_treats_malformed_selected_voice_mapping_as_empty()
     assert mapped == [{"tts_text": "first", "voice_id": "existing", "speaker_id": "speaker_a"}]
 
 
+def test_sentence_reconcile_initial_state_carries_dialogue_voice_metadata():
+    from pipeline import duration_reconcile, duration_reconcile_v2
+
+    for module in (duration_reconcile, duration_reconcile_v2):
+        current = module._initial_sentence_state(
+            position=0,
+            av_sentence={
+                "asr_index": 7,
+                "text": "Hallo",
+                "start_time": 1.0,
+                "end_time": 2.0,
+                "target_duration": 1.0,
+            },
+            tts_by_index={
+                7: {
+                    "tts_path": "speaker-a.mp3",
+                    "tts_duration": 0.9,
+                    "speaker_id": "A",
+                    "voice_id": "voice-a",
+                    "voice_name": "Voice A",
+                }
+            },
+            max_rewrite_rounds=3,
+            max_tts_regenerate_attempts=3,
+        )
+
+        assert current["speaker_id"] == "A"
+        assert current["voice_id"] == "voice-a"
+        assert current["voice_name"] == "Voice A"
+
+
+def test_av_tts_segments_keep_dialogue_speaker_voice_metadata():
+    from appcore.runtime._av_helpers import _build_av_tts_segments
+
+    segments = _build_av_tts_segments(
+        [
+            {
+                "asr_index": 3,
+                "text": "Hallo",
+                "speaker_id": "B",
+                "voice_id": "voice-b",
+                "voice_name": "Voice B",
+            }
+        ]
+    )
+
+    assert segments[0]["speaker_id"] == "B"
+    assert segments[0]["voice_id"] == "voice-b"
+    assert segments[0]["voice_name"] == "Voice B"
+
+
+def test_sentence_reconcile_strategies_apply_dialogue_segment_voice_hook():
+    for path in (
+        Path("appcore/tts_strategies/sentence_reconcile.py"),
+        Path("appcore/tts_strategies/sentence_reconcile_v2.py"),
+    ):
+        source = path.read_text(encoding="utf-8")
+        hook_pos = source.index("runner._prepare_tts_segments_for_audio_gen")
+        synth_pos = source.index("tts_engine.synthesize_full")
+
+        assert hook_pos < synth_pos
+
+
 def test_generate_full_audio_with_segment_voices_uses_each_segment_voice(monkeypatch, tmp_path):
     from pipeline import tts
 

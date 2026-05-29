@@ -409,6 +409,9 @@ def _initial_sentence_state(
         "tts_path": tts_segment.get("tts_path"),
         "tts_base_path": tts_base_path,
         "tts_duration": float(tts_segment.get("tts_duration", 0.0) or 0.0),
+        "speaker_id": tts_segment.get("speaker_id"),
+        "voice_id": tts_segment.get("voice_id"),
+        "voice_name": tts_segment.get("voice_name"),
         "speed": 1.0,
         "rewrite_rounds": 0,
         "text_rewrite_attempts": 0,
@@ -462,6 +465,9 @@ def _reconcile_one_sentence(
     ffmpeg_tempo_enabled: bool,
     on_progress: Callable[[dict], None] | None,
 ) -> dict:
+    sentence_voice_id = str(current.get("voice_id") or voice_id or "").strip()
+    if sentence_voice_id:
+        current["voice_id"] = sentence_voice_id
     _emit_sentence_progress(on_progress, position=position, current=current, phase="initial_measure")
     status = current["status"]
     asr_index = int(current.get("asr_index", position))
@@ -501,7 +507,7 @@ def _reconcile_one_sentence(
                         current["target_chars_range"],
                         current["target_duration"],
                         current["tts_duration"],
-                        voice_id,
+                        sentence_voice_id,
                         target_language,
                         before_text,
                     )
@@ -525,7 +531,7 @@ def _reconcile_one_sentence(
                         script_segments=script_segments,
                         shot_notes=shot_notes,
                         av_inputs=av_inputs,
-                        voice_id=voice_id,
+                        voice_id=sentence_voice_id,
                         user_id=user_id,
                         project_id=project_id,
                         attempt_number=rewrite_round,
@@ -577,7 +583,7 @@ def _reconcile_one_sentence(
                     coverage_ok = True
                 
                 # === 优化三：本地声学时长预测沙盒测速 ===
-                predicted_duration = predict_tts_duration(new_text, voice_id, target_language)
+                predicted_duration = predict_tts_duration(new_text, sentence_voice_id, target_language)
                 
                 current["text"] = new_text
                 current["est_chars"] = len(new_text)
@@ -666,7 +672,7 @@ def _reconcile_one_sentence(
                 }
                 path, real_duration = _regenerate_segment(
                     sentence=temp_sentence,
-                    voice_id=voice_id,
+                    voice_id=sentence_voice_id,
                     target_language=target_language,
                     suffix=_candidate_suffix("rewrite_v2_final", c["round"]),
                 )
