@@ -2693,7 +2693,6 @@ async function tcRefreshDetail(id, btn) {
 function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; TC_DETAIL_CURRENT_TASK = null; }
 
 function tcRenderDetailIdentityRows(task, isParent) {
-  if (isParent) return '';
   const filename = String(task.source_media_filename || '').trim();
   const productCode = String(task.product_code || '').trim();
   return `<div class="tc-detail-ident">
