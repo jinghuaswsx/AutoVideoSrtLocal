@@ -270,7 +270,410 @@
     outline: 2px solid var(--oc-accent-ring, rgba(59, 130, 246, 0.2));
     border-color: var(--oc-accent, #3b82f6);
   }
+  
+  /* ────────── Custom Payload Modal ────────── */
+  .btn-payload-trigger:hover {
+    border-color: var(--primary-color, #3b82f6) !important;
+    color: var(--primary-color, #3b82f6) !important;
+    background: rgba(59, 130, 246, 0.05) !important;
+  }
+  .custom-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+  }
+  .custom-modal-overlay.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .custom-modal-container {
+    background: var(--bg-card, #ffffff);
+    width: min(850px, 94vw);
+    max-height: 88vh;
+    border-radius: 16px;
+    border: 1px solid var(--border-main, #e5e7eb);
+    box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.95) translateY(10px);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .custom-modal-overlay.show .custom-modal-container {
+    transform: scale(1) translateY(0);
+  }
+  .custom-modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-main, #e5e7eb);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-card, #ffffff);
+  }
+  .custom-modal-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main, #111827);
+    display: flex;
+    align-items: center;
+  }
+  .custom-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    color: var(--oc-fg-subtle, #9ca3af);
+    cursor: pointer;
+    line-height: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .custom-modal-close:hover {
+    background: var(--bg-user-badge, #f3f4f6);
+    color: var(--text-main, #111827);
+  }
+  .custom-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    background: var(--bg-body, #f2f4f8);
+  }
+  
+  .structured-section, .raw-section {
+    background: var(--bg-card, #ffffff);
+    border-radius: 12px;
+    border: 1px solid var(--border-main, #e5e7eb);
+    padding: 20px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  }
+  
+  .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main, #111827);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary-color, #3b82f6);
+    display: inline-block;
+  }
+  
+  .structured-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .structured-grid .grid-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--bg-body, #f2f4f8);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main, #e5e7eb);
+  }
+  .structured-grid .grid-item.full-width {
+    grid-column: 1 / -1;
+  }
+  .structured-grid .grid-label {
+    font-size: 11px;
+    color: var(--oc-fg-subtle, #9ca3af);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .structured-grid .grid-value {
+    font-size: 13px;
+    color: var(--text-main, #111827);
+    font-weight: 500;
+    word-break: break-all;
+  }
+  
+  .sub-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main, #111827);
+    margin: 18px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .materials-list, .copywritings-list, .links-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .modal-material-card {
+    display: flex;
+    gap: 16px;
+    background: var(--bg-body, #f2f4f8);
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main, #e5e7eb);
+  }
+  .modal-material-thumb {
+    width: 60px;
+    height: 90px;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border: 1px solid var(--border-main, #e5e7eb);
+  }
+  .modal-material-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .modal-material-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+    min-width: 0;
+  }
+  .modal-material-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main, #111827);
+    word-break: break-all;
+    line-height: 1.4;
+  }
+  .modal-material-meta {
+    font-size: 11px;
+    color: var(--oc-fg-subtle, #9ca3af);
+    display: flex;
+    gap: 12px;
+  }
+  .modal-material-links {
+    margin-top: 4px;
+  }
+  .modal-material-links a {
+    font-size: 12px;
+    color: var(--primary-color, #3b82f6);
+    text-decoration: none;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .modal-material-links a:hover {
+    text-decoration: underline;
+  }
+
+  .modal-text-card {
+    background: var(--bg-body, #f2f4f8);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .modal-text-lang {
+    align-self: flex-start;
+    background: var(--primary-color, #3b82f6);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .modal-text-row {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-main, #111827);
+  }
+  .modal-text-row strong {
+    font-weight: 600;
+    color: var(--oc-fg-subtle, #4b5563);
+    margin-right: 6px;
+    display: inline-block;
+    min-width: 42px;
+  }
+
+  .modal-link-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-body, #f2f4f8);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main, #e5e7eb);
+    gap: 12px;
+  }
+  .modal-link-url {
+    font-size: 12px;
+    color: var(--primary-color, #3b82f6);
+    text-decoration: none;
+    word-break: break-all;
+    flex: 1;
+    font-weight: 500;
+  }
+  .modal-link-url:hover {
+    text-decoration: underline;
+  }
+  .btn-mini-copy {
+    background: transparent;
+    border: 1px solid var(--border-main, #e5e7eb);
+    color: var(--text-user-badge, #374151);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1;
+    background: var(--bg-card, #ffffff);
+    transition: all 0.2s;
+  }
+  .btn-mini-copy:hover {
+    border-color: var(--primary-color, #3b82f6);
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .raw-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .btn-copy-json {
+    background: var(--primary-gradient, linear-gradient(135deg, #2563eb, #0ea5e9));
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s;
+  }
+  .btn-copy-json:hover {
+    opacity: 0.9;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+  }
+  .raw-json-textarea {
+    width: 100%;
+    height: 180px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--bg-body, #f2f4f8);
+    color: var(--text-main, #111827);
+    border: 1px solid var(--border-main, #e5e7eb);
+    border-radius: 8px;
+    padding: 12px;
+    resize: vertical;
+    outline: none;
+  }
+  .raw-json-textarea:focus {
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  }
 </style>
+
+<!-- Modal for Push Payload -->
+<div id="payload-modal" class="custom-modal-overlay">
+  <div class="custom-modal-container">
+    <div class="custom-modal-header">
+      <div class="custom-modal-title">
+        <span style="font-size: 20px; margin-right: 8px;">📋</span>
+        <span>推送视频素材报文</span>
+      </div>
+      <button type="button" class="custom-modal-close" id="btn-close-payload-modal" aria-label="关闭">&times;</button>
+    </div>
+    <div class="custom-modal-body">
+      <!-- Top Section: Structured Data -->
+      <div class="structured-section">
+        <h3 class="section-title">📊 结构化数据展示</h3>
+        
+        <div class="structured-grid">
+          <div class="grid-item">
+            <span class="grid-label">商品名称</span>
+            <span class="grid-value" id="struct-product-name">-</span>
+          </div>
+          <div class="grid-item">
+            <span class="grid-label">推送语种</span>
+            <span class="grid-value" id="struct-lang">-</span>
+          </div>
+          <div class="grid-item">
+            <span class="grid-label">重要级别</span>
+            <span class="grid-value" id="struct-level">-</span>
+          </div>
+          <div class="grid-item">
+            <span class="grid-label">首选平台</span>
+            <span class="grid-value" id="struct-platforms">-</span>
+          </div>
+          <div class="grid-item">
+            <span class="grid-label">操作人</span>
+            <span class="grid-value" id="struct-author">-</span>
+          </div>
+          <div class="grid-item">
+            <span class="grid-label">保本 ROAS</span>
+            <span class="grid-value" id="struct-roas">-</span>
+          </div>
+          <div class="grid-item full-width">
+            <span class="grid-label">商品卖点</span>
+            <span class="grid-value" id="struct-selling-points">-</span>
+          </div>
+        </div>
+
+        <!-- Video Materials Section -->
+        <h4 class="sub-section-title">🎬 视频素材信息</h4>
+        <div id="struct-videos-container" class="materials-list"></div>
+
+        <!-- Copywriting Section -->
+        <h4 class="sub-section-title">✍️ 关联广告文案</h4>
+        <div id="struct-texts-container" class="copywritings-list"></div>
+
+        <!-- Links Section -->
+        <h4 class="sub-section-title">🔗 投放推广链接</h4>
+        <div id="struct-links-container" class="links-list"></div>
+      </div>
+
+      <!-- Bottom Section: Raw JSON Payloads -->
+      <div class="raw-section">
+        <div class="raw-header">
+          <h3 class="section-title" style="margin-bottom: 0;">💻 完整 JSON 报文</h3>
+          <button id="btn-copy-raw-json" class="btn-copy-json" type="button">
+            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            复制 JSON
+          </button>
+        </div>
+        <textarea id="raw-json-textarea" readonly class="raw-json-textarea" placeholder="暂无报文数据..."></textarea>
+      </div>
+    </div>
+  </div>
+</div>
 
 <link rel="stylesheet" href="/static/pushes.css">
 
@@ -684,6 +1087,10 @@
             </td>
             <td style="padding:10px; text-align:center; vertical-align:middle; white-space: nowrap;">
               <a class="btn-mini" href="/pushes/material-ads/${it.item_id}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:4px 10px; height:28px; white-space: nowrap;">分析广告</a>
+              <button class="btn-payload-trigger" data-log-id="${it.log_id}" style="display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; height:28px; white-space: nowrap; margin-left: 6px; cursor: pointer; border: 1px solid var(--border-main, #e5e7eb); background: var(--bg-card, #fff); color: var(--text-main, #111827); border-radius: 6px; font-size: 11px; font-weight: 600; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; color: var(--primary-color, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                推送报文
+              </button>
             </td>
           </tr>`;
         }).join('');
@@ -703,6 +1110,19 @@
           ev.preventDefault();
           ev.stopPropagation();
           copyTextWithTextFeedback(btn.dataset.text, btn);
+        });
+      });
+
+      // 绑定推送报文按钮事件
+      tbody.querySelectorAll('.btn-payload-trigger').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const logId = Number(btn.dataset.logId);
+          const record = state.items.find(x => x.log_id === logId);
+          if (record) {
+            showPayloadModal(record);
+          }
         });
       });
 
@@ -853,6 +1273,136 @@
   });
   document.getElementById('f-date-to').addEventListener('change', () => {
     updateShortcutActiveState('');
+  });
+
+  // ────────── Modal Logic ──────────
+  function showPayloadModal(record) {
+    const payload = record.request_payload || {};
+    
+    // Fill top structured data
+    document.getElementById('struct-product-name').textContent = record.product_name || '-';
+    document.getElementById('struct-lang').textContent = formatLanguageLabel(record.lang);
+    document.getElementById('struct-level').textContent = payload.level !== undefined ? payload.level : '-';
+    document.getElementById('struct-platforms').textContent = (payload.platforms || []).join(', ') || '-';
+    document.getElementById('struct-author').textContent = payload.author || '-';
+    document.getElementById('struct-roas').textContent = payload.roas !== undefined ? payload.roas : '-';
+    document.getElementById('struct-selling-points').textContent = payload.selling_point || '-';
+
+    // Render Videos
+    const videosContainer = document.getElementById('struct-videos-container');
+    videosContainer.innerHTML = '';
+    const videos = payload.videos || [];
+    if (videos.length === 0) {
+      videosContainer.innerHTML = '<span style="color:var(--oc-fg-subtle, #9ca3af); font-size:12px; padding: 4px 8px;">(无视频数据)</span>';
+    } else {
+      videos.forEach(v => {
+        const sizeFormatted = v.size ? (v.size / (1024 * 1024)).toFixed(2) + ' MB' : '-';
+        const urlLink = v.url ? `<div class="modal-material-links"><a href="${escapeHtml(v.url)}" target="_blank">🔗 打开视频素材</a></div>` : '';
+        const coverImg = v.image_url ? `<img src="${escapeHtml(v.image_url)}">` : '<span style="color:var(--oc-fg-subtle, #9ca3af); font-size:20px;">🎞</span>';
+        
+        videosContainer.innerHTML += `
+          <div class="modal-material-card">
+            <div class="modal-material-thumb">
+              ${coverImg}
+            </div>
+            <div class="modal-material-info">
+              <div class="modal-material-name">${escapeHtml(v.name || '-')}</div>
+              <div class="modal-material-meta">
+                <span>大小: ${sizeFormatted}</span>
+                <span>尺寸: ${v.width || '-'}x${v.height || '-'}</span>
+              </div>
+              ${urlLink}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Render Copywritings
+    const textsContainer = document.getElementById('struct-texts-container');
+    textsContainer.innerHTML = '';
+    const texts = payload.texts || [];
+    if (texts.length === 0) {
+      textsContainer.innerHTML = '<span style="color:var(--oc-fg-subtle, #9ca3af); font-size:12px; padding: 4px 8px;">(无关联文案)</span>';
+    } else {
+      texts.forEach(t => {
+        textsContainer.innerHTML += `
+          <div class="modal-text-card">
+            <span class="modal-text-lang">${escapeHtml(t.lang || '-')}</span>
+            <div class="modal-text-row"><strong>标题</strong> ${escapeHtml(t.title || '-')}</div>
+            <div class="modal-text-row"><strong>文案</strong> ${escapeHtml(t.message || '-')}</div>
+            <div class="modal-text-row"><strong>描述</strong> ${escapeHtml(t.description || '-')}</div>
+          </div>
+        `;
+      });
+    }
+
+    // Render Links
+    const linksContainer = document.getElementById('struct-links-container');
+    linksContainer.innerHTML = '';
+    const links = payload.product_links || [];
+    if (links.length === 0) {
+      linksContainer.innerHTML = '<span style="color:var(--oc-fg-subtle, #9ca3af); font-size:12px; padding: 4px 8px;">(无投放链接)</span>';
+    } else {
+      links.forEach(l => {
+        linksContainer.innerHTML += `
+          <div class="modal-link-item">
+            <a href="${escapeHtml(l)}" target="_blank" class="modal-link-url">${escapeHtml(l)}</a>
+            <button class="btn-mini-copy" data-text="${escapeHtml(l)}" type="button">
+              <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              复制
+            </button>
+          </div>
+        `;
+      });
+      // 绑定复制投放链接按钮事件
+      linksContainer.querySelectorAll('.btn-mini-copy').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          copyTextToClipboard(btn.dataset.text, btn);
+        });
+      });
+    }
+
+    // Fill Bottom raw JSON text box
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const textarea = document.getElementById('raw-json-textarea');
+    textarea.value = jsonStr;
+
+    // Show modal
+    const modal = document.getElementById('payload-modal');
+    modal.classList.add('show');
+  }
+
+  function closePayloadModal() {
+    const modal = document.getElementById('payload-modal');
+    modal.classList.remove('show');
+  }
+
+  // Bind close buttons
+  document.getElementById('btn-close-payload-modal').addEventListener('click', closePayloadModal);
+
+  // Close modal when clicking outside of the container
+  document.getElementById('payload-modal').addEventListener('click', function(ev) {
+    if (ev.target === this) {
+      closePayloadModal();
+    }
+  });
+
+  // ESC key to close modal
+  window.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' || ev.key === 'Esc') {
+      closePayloadModal();
+    }
+  });
+
+  // Bind copy raw JSON button
+  document.getElementById('btn-copy-raw-json').addEventListener('click', function(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const textarea = document.getElementById('raw-json-textarea');
+    copyTextWithTextFeedback(textarea.value, this);
   });
 
   // Init
