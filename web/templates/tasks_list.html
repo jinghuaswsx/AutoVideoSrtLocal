@@ -396,61 +396,97 @@
   }
   #tcReasonText { height: 160px !important; }
 }
+
+/* ── 顶部粘性固定及表头对齐 ── */
+.tc-sticky-top {
+  position: sticky;
+  top: 56px;
+  z-index: 40;
+  background: var(--bg-body);
+  margin: -28px -28px 16px -28px;
+  padding: 28px 28px 12px 28px;
+  border-bottom: 1px solid var(--border-main);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.tc-sticky-top.is-stuck {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  border-bottom-color: var(--border-main);
+}
+.tc-table th {
+  position: sticky;
+  top: calc(56px + var(--tc-sticky-top-height, 192px));
+  z-index: 30;
+  background: var(--tc-bg-subtle);
+  border-bottom: 2px solid var(--tc-border);
+  box-shadow: 0 1px 0 var(--tc-border);
+}
+@media (max-width: 768px) {
+  .tc-sticky-top {
+    top: 52px;
+    margin: -14px -12px 12px -12px;
+    padding: 14px 12px 10px 12px;
+  }
+  .tc-table th {
+    top: calc(52px + var(--tc-sticky-top-height, 192px));
+  }
+}
 {% endblock %}
 {% block content %}
 <div id="tcRoot" class="tc">
-  <div class="tc-header">
-    <div>
-      <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
-      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
-    </div>
-  </div>
-
-  <div class="tc-tabs">
-    <button class="tc-tab active" data-section-tab="overview" id="tcTabOverview">任务总览</button>
-  </div>
-
-  <div id="tcOverviewPanel">
-    <div class="tc-overview-head">
+  <div class="tc-sticky-top">
+    <div class="tc-header">
       <div>
-        <div class="tc-overview-title">任务列表</div>
-        <div class="tc-overview-note">默认按创建时间倒序展示。</div>
+        <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
+        <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
       </div>
     </div>
-    <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
-      <button class="tc-subtab active" type="button" data-bucket="all">任务总览</button>
-      <button class="tc-subtab" type="button" data-bucket="todo">待处理任务</button>
-      <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
-      <button class="tc-subtab" type="button" data-bucket="blocked">阻塞中任务</button>
-      <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
-      <button class="tc-subtab" type="button" data-bucket="archived">已归档</button>
-    </div>
-  </div>
 
-  <div class="tc-filters" id="tcFilters">
-    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
-    <select id="tcTaskTypeFilter" class="tc-input tc-select" aria-label="任务类型筛选">
-      <option value="all" selected>全部</option>
-      <option value="raw">去字幕任务</option>
-      <option value="translate">翻译任务</option>
-    </select>
-    <select id="tcUrgencyFilter" class="tc-input tc-select" aria-label="紧急状态筛选">
-      <option value="all" selected>全部紧急状态</option>
-      <option value="urgent">紧急</option>
-      <option value="normal">非紧急</option>
-    </select>
-    <select id="tcAssigneeFilter" class="tc-input tc-select" aria-label="负责人筛选">
-      <option value="all" selected>全部负责人</option>
-    </select>
-    <select id="tcStatusFilter" class="tc-input tc-select" aria-label="任务状态筛选">
-      <option value="all" selected>全部状态</option>
-      <option value="todo">待处理</option>
-      <option value="review">待审核</option>
-      <option value="blocked">阻塞</option>
-      <option value="done">已完成</option>
-      <option value="cancelled">已取消</option>
-    </select>
-    <button class="tc-btn" id="tcRefresh">刷新</button>
+    <div class="tc-tabs">
+      <button class="tc-tab active" data-section-tab="overview" id="tcTabOverview">任务总览</button>
+    </div>
+
+    <div id="tcOverviewPanel">
+      <div class="tc-overview-head">
+        <div>
+          <div class="tc-overview-title">任务列表</div>
+          <div class="tc-overview-note">默认按创建时间倒序展示。</div>
+        </div>
+      </div>
+      <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
+        <button class="tc-subtab active" type="button" data-bucket="all">任务总览</button>
+        <button class="tc-subtab" type="button" data-bucket="todo">待处理任务</button>
+        <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
+        <button class="tc-subtab" type="button" data-bucket="blocked">阻塞中任务</button>
+        <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
+        <button class="tc-subtab" type="button" data-bucket="archived">已归档</button>
+      </div>
+    </div>
+
+    <div class="tc-filters" id="tcFilters">
+      <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名 / 产品编码" style="width:240px;">
+      <select id="tcTaskTypeFilter" class="tc-input tc-select" aria-label="任务类型筛选">
+        <option value="all" selected>全部</option>
+        <option value="raw">去字幕任务</option>
+        <option value="translate">翻译任务</option>
+      </select>
+      <select id="tcUrgencyFilter" class="tc-input tc-select" aria-label="紧急状态筛选">
+        <option value="all" selected>全部紧急状态</option>
+        <option value="urgent">紧急</option>
+        <option value="normal">非紧急</option>
+      </select>
+      <select id="tcAssigneeFilter" class="tc-input tc-select" aria-label="负责人筛选">
+        <option value="all" selected>全部负责人</option>
+      </select>
+      <select id="tcStatusFilter" class="tc-input tc-select" aria-label="任务状态筛选">
+        <option value="all" selected>全部状态</option>
+        <option value="todo">待处理</option>
+        <option value="review">待审核</option>
+        <option value="blocked">阻塞</option>
+        <option value="done">已完成</option>
+        <option value="cancelled">已取消</option>
+      </select>
+      <button class="tc-btn" id="tcRefresh">刷新</button>
+    </div>
   </div>
 
   <div id="tcTableWrap"></div>
@@ -2793,8 +2829,36 @@ function tcInitialDetailTaskId() {
   const match = String(window.location.pathname || '').match(/^\/tasks\/detail\/(\d+)\/?$/);
   return match ? parseInt(match[1] || '0') : 0;
 }
+function tcSetupStickyHeader() {
+  const stickyTop = document.querySelector('.tc-sticky-top');
+  if (!stickyTop) return;
+
+  const updateHeight = () => {
+    const height = stickyTop.offsetHeight;
+    document.documentElement.style.setProperty('--tc-sticky-top-height', `${height}px`);
+  };
+
+  updateHeight();
+  window.addEventListener('resize', updateHeight);
+
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(stickyTop);
+  }
+
+  window.addEventListener('scroll', () => {
+    const threshold = window.innerWidth <= 768 ? 52 : 56;
+    const rect = stickyTop.getBoundingClientRect();
+    if (rect.top <= threshold + 1) {
+      stickyTop.classList.add('is-stuck');
+    } else {
+      stickyTop.classList.remove('is-stuck');
+    }
+  });
+}
 async function tcInitialRender() {
   await tcRender();
+  tcSetupStickyHeader();
   var dlTaskId = tcInitialDetailTaskId();
   if (dlTaskId) tcOpenDetail(dlTaskId);
 }
