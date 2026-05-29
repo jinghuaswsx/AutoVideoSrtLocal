@@ -21,6 +21,8 @@ LOGIN_MARKERS = (
 )
 HUMAN_REQUIRED_MARKERS = (
     "checkpoint",
+    "two_step_verification",
+    "two_factor",
     "two-factor",
     "two factor",
     "authentication code",
@@ -28,6 +30,10 @@ HUMAN_REQUIRED_MARKERS = (
     "captcha",
     "confirm your identity",
     "secure your account",
+)
+CONTINUE_WITH_FACEBOOK_LABELS = (
+    "Continue with Facebook",
+    "用 Facebook 继续",
 )
 
 
@@ -98,10 +104,12 @@ def _ensure_meta_login_on_page(
         browser_login_credentials.mark_login_result(env_code, provider, "failed", "missing_credential")
         return {"status": "missing_credential", "error": "missing_credential", "current_url": getattr(page, "url", "")}
 
-    # 1. Handle "Continue with Facebook" button if it exists on page
-    continue_btn = page.locator('div[role=button]:has-text("Continue with Facebook")')
+    # 1. Handle localized "Continue with Facebook" button if it exists on page
     login_page = page
-    if hasattr(continue_btn, "count") and continue_btn.count() > 0:
+    for label in CONTINUE_WITH_FACEBOOK_LABELS:
+        continue_btn = page.locator(f'div[role=button]:has-text("{label}")')
+        if not (hasattr(continue_btn, "count") and continue_btn.count() > 0):
+            continue
         try:
             context = page.context
             # Clicking this opens a popup window
@@ -110,8 +118,17 @@ def _ensure_meta_login_on_page(
             popup_page = event_info.value
             popup_page.wait_for_load_state("domcontentloaded")
             login_page = popup_page
+            break
         except Exception as exc:
             log.warning("failed to click Continue with Facebook or wait for popup: %s", exc)
+
+    post_continue_state = classify_meta_login_state(
+        getattr(login_page, "url", ""),
+        _page_body_text(login_page),
+    )
+    if post_continue_state == "needs_human":
+        browser_login_credentials.mark_login_result(env_code, provider, "needs_human", "checkpoint_required")
+        return {"status": "needs_human", "error": "checkpoint_required", "current_url": getattr(login_page, "url", "")}
 
     # 2. Check if the login_page (which could be the popup) has "Use another profile"
     use_another = login_page.locator('div[aria-label="Use another profile"]')

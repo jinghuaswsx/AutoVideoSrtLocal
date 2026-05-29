@@ -83,7 +83,7 @@ google-chrome-stable \
   "$START_URL" >"$LOG_DIR/chrome.log" 2>&1 &
 echo $! >"$RUNTIME_DIR/chrome.pid"
 
-x11vnc -display "$DISPLAY" -listen 127.0.0.1 -rfbport "$VNC_PORT" -forever -shared -nopw -noxdamage -no6 >"$LOG_DIR/x11vnc.log" 2>&1 &
+x11vnc -display "$DISPLAY" -listen 127.0.0.1 -rfbport "$VNC_PORT" -forever -shared -nopw -noxdamage -no6 -noipv6 >"$LOG_DIR/x11vnc.log" 2>&1 &
 echo $! >"$RUNTIME_DIR/x11vnc.pid"
 websockify --web="$NOVNC_RUNTIME_WEB_DIR" "0.0.0.0:${NOVNC_PORT}" "127.0.0.1:${VNC_PORT}" >"$LOG_DIR/websockify.log" 2>&1 &
 echo $! >"$RUNTIME_DIR/websockify.pid"

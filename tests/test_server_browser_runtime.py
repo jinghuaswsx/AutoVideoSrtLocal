@@ -220,6 +220,7 @@ def test_visible_dxm_environment_services_and_watchdog_ports():
 
     assert "Xvfb" in runner
     assert "websockify" in runner
+    assert "-noipv6" in runner
     assert "DXM_NOVNC_PORT=6092" in dxm01
     assert "DXM_CDP_PORT=9222" in dxm01
     assert "DXM_NOVNC_PORT=6093" in dxm02

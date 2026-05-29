@@ -281,6 +281,55 @@ def test_open_session_closes_page_even_on_exception(fake_lock):
     assert page.closed is True
 
 
+def test_open_session_reports_human_login_required_after_cached_token_redirect(fake_lock, monkeypatch):
+    from appcore import meta_login_autofill
+    from appcore.meta_ads_in_page_fetch import MetaAdsInPageFetchError, open_meta_ads_session
+
+    class LoginRedirectPage(_FakePage):
+        url = ""
+        body_text = ""
+
+        def goto(self, url, **kwargs):
+            super().goto(url, **kwargs)
+            self.url = "https://business.facebook.com/business/loginpage/"
+            self.body_text = "登录广告管理工具\n用 Facebook 继续"
+
+        def locator(self, selector):
+            page = self
+
+            class FakeLocator:
+                def inner_text(self, timeout=None):
+                    return page.body_text
+
+            return FakeLocator()
+
+    page = LoginRedirectPage()
+    account = SimpleNamespace(account_id="111", business_id="222", code="x")
+    calls = []
+
+    def fake_ensure(page_arg, *, env_code, provider, target_url):
+        calls.append((page_arg, env_code, provider, target_url))
+        return {
+            "status": "needs_human",
+            "error": "checkpoint_required",
+            "current_url": page_arg.url,
+        }
+
+    monkeypatch.setattr(meta_login_autofill, "_ensure_meta_login_on_page", fake_ensure)
+
+    with pytest.raises(MetaAdsInPageFetchError, match="requires human verification"):
+        with open_meta_ads_session(
+            select_account=lambda: account,
+            playwright_factory=lambda: _FakeSyncPlaywrightCM(page),
+            token_provider=lambda: "cached-token",
+        ):
+            pass
+
+    assert page.closed is True
+    assert len(calls) == 1
+    assert calls[0][3].startswith("https://adsmanager.facebook.com/adsmanager/manage/campaigns?")
+
+
 def test_open_session_raises_when_no_enabled_accounts(fake_lock, monkeypatch):
     from appcore.meta_ads_in_page_fetch import open_meta_ads_session
 
