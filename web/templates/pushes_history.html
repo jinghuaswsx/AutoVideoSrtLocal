@@ -18,7 +18,7 @@
       <option value="">全部语种</option>
     </select>
   </div>
-  <div class="filter-group" style="min-width: 450px;">
+  <div class="filter-group filter-group-capsules">
     <label>广告投放计划筛选</label>
     <div class="ad-plan-capsules" style="display: flex; gap: 6px; background: var(--oc-bg-subtle, #f3f4f6); padding: 4px; border-radius: 9999px; border: 1px solid var(--oc-border, #e5e7eb); width: fit-content;">
       <button type="button" class="plan-capsule active" data-value="all" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: var(--oc-accent, #3b82f6); color: #fff;">全部</button>
@@ -27,7 +27,7 @@
       <button type="button" class="plan-capsule" data-value="none_3d" style="padding: 6px 14px; border: none; border-radius: 9999px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--oc-fg-muted, #4b5563);">超过3天无广告计划</button>
     </div>
   </div>
-  <div class="filter-group filter-group-range" style="min-width: 480px;">
+  <div class="filter-group filter-group-range">
     <label>推送日期区间</label>
     <div style="display: flex; flex-direction: column; gap: 8px;">
       <div class="date-range">
@@ -55,24 +55,24 @@
 <div class="oc-pager" id="history-pagination-top" style="margin-bottom: 16px;"></div>
 
 <div class="push-table-shell" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 12px; overflow-x: auto; border: 1px solid var(--oc-border, #e5e7eb); background: #fff;">
-  <table class="push-table" style="width: 100%; border-collapse: collapse; text-align: left; table-layout: auto;">
+  <table class="push-table" style="width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed; min-width: var(--hist-table-min-w);">
     <thead>
       <tr style="background: var(--oc-bg-subtle, #f9fafb); border-bottom: 1px solid var(--oc-border, #e5e7eb);">
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px; white-space: nowrap;">视频快照</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">视频文件名</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 100px; white-space: nowrap;">商品中文名</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">产品Code</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 130px; white-space: nowrap;">商品主图</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 80px; white-space: nowrap;">投放语种</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); width: 300px; max-width: 300px; white-space: nowrap;">文案快照</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); min-width: 180px; white-space: nowrap;">投放链接</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">推送时间</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">产品负责人</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">操作账号</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); white-space: nowrap;">广告状态</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); text-align: right; white-space: nowrap;">消耗广告费</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); text-align: right; white-space: nowrap;">广告ROAS</th>
-        <th style="padding: 14px 10px; font-size: 13px; font-weight: 600; color: var(--oc-fg, #111827); text-align: center; white-space: nowrap;">操作</th>
+        <th class="col-snapshot">视频快照</th>
+        <th class="col-filename">视频文件名</th>
+        <th class="col-product-name">商品中文名</th>
+        <th class="col-product-code">产品Code</th>
+        <th class="col-main-image">商品主图</th>
+        <th class="col-lang">投放语种</th>
+        <th class="col-texts">文案快照</th>
+        <th class="col-links">投放链接</th>
+        <th class="col-time">推送时间</th>
+        <th class="col-owner">产品负责人</th>
+        <th class="col-operator">操作账号</th>
+        <th class="col-status">广告状态</th>
+        <th class="col-spend">消耗广告费</th>
+        <th class="col-roas">广告ROAS</th>
+        <th class="col-actions">操作</th>
       </tr>
     </thead>
     <tbody id="history-tbody">
@@ -86,6 +86,62 @@
 <div class="oc-pager" id="history-pagination" style="margin-top: 20px;"></div>
 
 <style>
+  :root {
+    --hist-col-snapshot: 80px;
+    --hist-col-filename: 180px;
+    --hist-col-product-name: 120px;
+    --hist-col-product-code: 160px;
+    --hist-col-main-image: 130px;
+    --hist-col-lang: 80px;
+    --hist-col-texts: 260px;
+    --hist-col-links: 180px;
+    --hist-col-time: 130px;
+    --hist-col-owner: 90px;
+    --hist-col-operator: 90px;
+    --hist-col-status: 100px;
+    --hist-col-spend: 100px;
+    --hist-col-roas: 80px;
+    --hist-col-actions: 180px;
+    --hist-table-min-w: 1800px;
+  }
+
+  /* Base styles for columns using CSS variables */
+  .push-table th, .push-table td {
+    padding: 12px 10px;
+    vertical-align: top;
+  }
+  .col-snapshot { width: var(--hist-col-snapshot); }
+  .col-filename { min-width: var(--hist-col-filename); }
+  .col-product-name { min-width: var(--hist-col-product-name); }
+  .col-product-code { min-width: var(--hist-col-product-code); }
+  .col-main-image { width: var(--hist-col-main-image); }
+  .col-lang { width: var(--hist-col-lang); white-space: nowrap; }
+  .col-texts { width: var(--hist-col-texts); max-width: var(--hist-col-texts); overflow: hidden; }
+  .col-links { min-width: var(--hist-col-links); }
+  .col-time { width: var(--hist-col-time); white-space: nowrap; }
+  .col-owner { width: var(--hist-col-owner); white-space: nowrap; }
+  .col-operator { width: var(--hist-col-operator); white-space: nowrap; }
+  .col-status { width: var(--hist-col-status); white-space: nowrap; vertical-align: middle !important; }
+  .col-spend { width: var(--hist-col-spend); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
+  .col-roas { width: var(--hist-col-roas); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
+  .col-actions { width: var(--hist-col-actions); text-align: center; white-space: nowrap; vertical-align: middle !important; }
+
+  /* New Product Badge Styling */
+  .badge-new-product {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+    white-space: nowrap;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   .date-shortcut-btn {
     padding: 4px 10px;
     border: 1px solid var(--oc-border-strong, #d1d5db);
@@ -599,6 +655,122 @@
     border-color: var(--primary-color, #3b82f6);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
   }
+  /* Portrait/Secondary Screen Adaptations */
+  @media (max-width: 1200px) or (orientation: portrait) {
+    :root {
+      --hist-col-snapshot: 56px;
+      --hist-col-filename: 120px;
+      --hist-col-product-name: 80px;
+      --hist-col-product-code: 100px;
+      --hist-col-main-image: 60px;
+      --hist-col-lang: 60px;
+      --hist-col-texts: 180px;
+      --hist-col-links: 120px;
+      --hist-col-time: 90px;
+      --hist-col-owner: 60px;
+      --hist-col-operator: 60px;
+      --hist-col-status: 75px;
+      --hist-col-spend: 75px;
+      --hist-col-roas: 55px;
+      --hist-col-actions: 130px;
+      --hist-table-min-w: 1310px;
+    }
+    
+    .push-toolbar {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 12px !important;
+      padding: 12px !important;
+      margin-bottom: 16px !important;
+    }
+    
+    .push-toolbar .filter-group {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+    
+    .push-toolbar .filter-group-keyword {
+      grid-column: span 1 !important;
+    }
+    .push-toolbar .filter-group-lang {
+      grid-column: span 1 !important;
+    }
+    .push-toolbar .filter-group-capsules {
+      grid-column: span 2 !important;
+    }
+    .push-toolbar .filter-group-range {
+      grid-column: span 2 !important;
+    }
+    
+    .ad-plan-capsules {
+      display: flex;
+      flex-wrap: wrap !important;
+      gap: 6px;
+      padding: 6px !important;
+      border-radius: 12px !important;
+      width: 100% !important;
+    }
+    .ad-plan-capsules button {
+      flex: 1 1 auto;
+      text-align: center;
+      padding: 6px 10px !important;
+    }
+    
+    .push-toolbar .filter-actions {
+      grid-column: span 2 !important;
+      justify-content: flex-end !important;
+      margin-top: 8px !important;
+      align-self: flex-end !important;
+    }
+
+    .push-table {
+      font-size: 11px !important;
+    }
+    .push-table th,
+    .push-table td {
+      padding: 8px 6px !important;
+    }
+    
+    .history-video-thumb {
+      width: 42px !important;
+      height: 75px !important;
+    }
+    .history-main-image-thumb {
+      width: 60px !important;
+      height: 60px !important;
+    }
+    
+    .badge-new-product {
+      padding: 2px 6px !important;
+      font-size: 10px !important;
+      border-radius: 4px !important;
+    }
+    
+    .oc-pager {
+      gap: 4px !important;
+      padding: 8px 0 !important;
+    }
+    .oc-vm-page-summary {
+      font-size: 11px !important;
+      height: 28px !important;
+    }
+    .oc-pager button {
+      height: 28px !important;
+      min-width: 28px !important;
+      padding: 0 8px !important;
+      font-size: 11px !important;
+    }
+    .oc-vm-page-jump {
+      height: 28px !important;
+      font-size: 11px !important;
+      margin-left: 4px !important;
+    }
+    .oc-vm-page-jump input {
+      width: 44px !important;
+      height: 28px !important;
+      padding: 0 4px !important;
+    }
+  }
 </style>
 
 <!-- Modal for Push Payload -->
@@ -1025,14 +1197,14 @@
           const pushedDate = it.pushed_at ? it.pushed_at.replace('T', ' ').slice(0, 16) : '-';
 
           const newProductBadge = it.is_new_product_push
-            ? `<span style="background: #2563eb; color: #ffffff; padding: 6px 18px; border-radius: 12px; font-size: 33px; font-weight: 600; margin-left: 6px; white-space: nowrap; line-height: 1; display: inline-flex; align-items: center; justify-content: center;">新品</span>`
+            ? `<span class="badge-new-product">新品</span>`
             : '';
 
           return `<tr class="history-row">
-            <td style="padding:10px; vertical-align: top; width: 80px;">
+            <td class="col-snapshot">
               ${thumb}
             </td>
-            <td style="padding:10px; vertical-align: top; min-width: 180px;">
+            <td class="col-filename">
               <div style="font-size:13px; color:var(--oc-fg, #111827); word-break:break-all; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:6px;">
                 <span style="flex:1;">${escapeHtml(it.filename)}</span>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top: 2px; flex-shrink:0;" title="复制视频文件名">
@@ -1043,10 +1215,10 @@
                 ${(it.file_size / (1024 * 1024)).toFixed(1)} M
               </div>
             </td>
-            <td style="padding:10px; vertical-align: top; min-width: 100px;">
+            <td class="col-product-name">
               <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
             </td>
-            <td style="padding:10px; vertical-align: top; min-width: 180px;">
+            <td class="col-product-code">
               <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
                 <code style="background: var(--oc-bg-subtle, #f3f4f6); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 500; word-break: break-all;">${escapeHtml(it.product_code)}</code>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; flex-shrink:0;" title="复制商品Code">
@@ -1055,37 +1227,37 @@
                 ${newProductBadge}
               </div>
             </td>
-            <td style="padding:10px; vertical-align: top; width: 130px;">
+            <td class="col-main-image">
               ${mainImage}
             </td>
-            <td style="padding:10px; vertical-align: top; width: 80px; white-space: nowrap;">
+            <td class="col-lang">
               ${renderLangPill(it.lang)}
             </td>
-            <td style="padding:10px; vertical-align: top; width: 300px; max-width: 300px; overflow: hidden;">
+            <td class="col-texts">
               ${textsHtml}
             </td>
-            <td style="padding:10px; vertical-align: top; min-width: 180px;">
+            <td class="col-links">
               ${linksHtml}
             </td>
-            <td style="padding:10px; vertical-align: top; white-space: nowrap;">
+            <td class="col-time">
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-variant-numeric:tabular-nums; font-weight:500;">${escapeHtml(pushedDate)}</span>
             </td>
-            <td style="padding:10px; vertical-align: top; white-space: nowrap;">
+            <td class="col-owner">
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.product_owner_name)}</span>
             </td>
-            <td style="padding:10px; vertical-align: top; white-space: nowrap;">
+            <td class="col-operator">
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.operator_username)}</span>
             </td>
-            <td style="padding:10px; vertical-align:middle; white-space: nowrap;">
+            <td class="col-status">
               ${renderStatusBadge(it.has_ad_plan, it.ad_campaign_count)}
             </td>
-            <td style="padding:10px; text-align:right; font-variant-numeric:tabular-nums; vertical-align:middle; white-space: nowrap;">
+            <td class="col-spend">
               ${adSpendText}
             </td>
-            <td style="padding:10px; text-align:right; font-variant-numeric:tabular-nums; vertical-align:middle; white-space: nowrap;">
+            <td class="col-roas">
               ${adRoasText}
             </td>
-            <td style="padding:10px; text-align:center; vertical-align:middle; white-space: nowrap;">
+            <td class="col-actions">
               <a class="btn-mini" href="/pushes/material-ads/${it.item_id}" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; padding:4px 10px; height:28px; white-space: nowrap;">分析广告</a>
               <button class="btn-payload-trigger" data-log-id="${it.log_id}" style="display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; height:28px; white-space: nowrap; margin-left: 6px; cursor: pointer; border: 1px solid var(--border-main, #e5e7eb); background: var(--bg-card, #fff); color: var(--text-main, #111827); border-radius: 6px; font-size: 11px; font-weight: 600; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                 <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; color: var(--primary-color, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
