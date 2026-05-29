@@ -628,6 +628,14 @@ def test_build_item_payload_includes_english_product_link_without_db(monkeypatch
         }],
     )
     monkeypatch.setattr(
+        "appcore.pushes.resolve_filtered_product_link_langs",
+        lambda product: ["en", "de"],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_localized_text_payload",
+        lambda item: None,
+    )
+    monkeypatch.setattr(
         "appcore.pushes.resolve_push_texts",
         lambda product_id: [{"title": "T", "message": "M", "description": "D"}],
     )
@@ -661,6 +669,98 @@ def test_build_item_payload_includes_english_product_link_without_db(monkeypatch
         "https://newjoyloo.com/products/demo-rjc",
         "https://newjoyloo.com/de/products/demo-rjc",
     ]
+
+
+def test_build_item_payload_with_localized_texts(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        "appcore.pushes.medias.list_enabled_language_codes",
+        lambda: ["en", "de"],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_product_page_urls",
+        lambda lang, product: [],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_filtered_product_link_langs",
+        lambda product: ["en", "de"],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.build_media_public_url",
+        lambda key: f"https://local/{key}" if key else None,
+    )
+
+    de_text = {
+        "title": "DE Title",
+        "message": "DE Message",
+        "description": "DE Description",
+        "lang": "德语 DE",
+    }
+
+    en_text = {
+        "title": "EN Title",
+        "message": "EN Message",
+        "description": "EN Description",
+        "lang": "英语 EN",
+    }
+
+    resolved = {}
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_localized_text_payload",
+        lambda item: resolved.get(item.get("lang")),
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_push_texts",
+        lambda product_id: [en_text],
+    )
+
+    # 1. 德语有文案时，优先使用德语文案
+    resolved["de"] = de_text
+    payload = pushes.build_item_payload(
+        {
+            "id": 1,
+            "product_id": 10,
+            "lang": "de",
+            "display_name": "demo.mp4",
+            "filename": "demo.mp4",
+            "file_size": 123,
+            "object_key": "video.mp4",
+            "cover_object_key": "cover.jpg",
+        },
+        {
+            "id": 10,
+            "name": "Demo",
+            "product_code": "demo-rjc",
+            "importance": 3,
+            "selling_points": "",
+            "listing_status": "上架",
+        },
+    )
+    assert payload["texts"] == [de_text]
+
+    # 2. 德语文案不存在时，防呆兜底使用英文文案
+    resolved["de"] = None
+    payload2 = pushes.build_item_payload(
+        {
+            "id": 1,
+            "product_id": 10,
+            "lang": "de",
+            "display_name": "demo.mp4",
+            "filename": "demo.mp4",
+            "file_size": 123,
+            "object_key": "video.mp4",
+            "cover_object_key": "cover.jpg",
+        },
+        {
+            "id": 10,
+            "name": "Demo",
+            "product_code": "demo-rjc",
+            "importance": 3,
+            "selling_points": "",
+            "listing_status": "上架",
+        },
+    )
+    assert payload2["texts"] == [en_text]
 
 
 def test_resolve_localized_text_payload_returns_first_current_lang_copy(monkeypatch):

@@ -1656,7 +1656,11 @@ def build_item_payload(item: dict, product: dict) -> dict:
             seen_product_links.add(url)
             product_links.append(url)
 
-    texts = resolve_push_texts(product["id"])
+    localized_text = resolve_localized_text_payload(item)
+    if localized_text:
+        texts = [localized_text]
+    else:
+        texts = resolve_push_texts(product["id"])
 
     return {
         "mode": "create",
