@@ -161,7 +161,7 @@
     const upper = normalized.toUpperCase();
     if (l && l.name_zh) {
       let nameZh = l.name_zh;
-      if (normalized !== 'en' && nameZh.length > 0) {
+      if (nameZh.length > 0) {
         nameZh = nameZh.charAt(0);
       }
       return `${nameZh} (${upper})`;
