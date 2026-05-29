@@ -5269,26 +5269,36 @@ function mkiXiaoApplyAiSuggestions(detail, state = '') {
     const box = card.querySelector('.mki-xiao-lang-pill-box');
     const small = card.querySelector('.mki-xiao-ai-suggestion');
     if (!small) return;
+    const textNode = small.querySelector('.mki-xiao-ai-suggestion-text') || small;
+    
+    // If the checkbox has already been forced-unlocked, preserve its state
+    const cb = card.querySelector('.mki-xiao-lang-check');
+    if (cb && cb.getAttribute('data-mki-force') === '1') {
+      return;
+    }
+
     const row = countryIndex[code];
     mkiXiaoSetSuggestionCardTone(card, '');
     if (row) {
       const tone = useFineAi ? mkiXiaoFineAiSuggestionTone(row) : mkiXiaoAiSuggestionTone(row);
       const title = useFineAi ? mkiXiaoFineAiSuggestionTitle(row) : mkiAiSuggestionTitle(row);
-      small.textContent = useFineAi ? mkiXiaoFineAiSuggestionText(row, tone) : mkiXiaoAiSuggestionText(row, tone);
+      textNode.textContent = useFineAi ? mkiXiaoFineAiSuggestionText(row, tone) : mkiXiaoAiSuggestionText(row, tone);
       mkiXiaoSetSuggestionCardTone(card, tone);
       card.title = title;
       if (box) box.title = title;
     } else if (state === 'loading') {
-      small.textContent = 'AI建议：加载中';
+      textNode.textContent = 'AI建议：加载中';
       card.title = '正在加载 AI 评估结果';
       if (box) box.title = '正在加载 AI 评估结果';
     } else {
-      small.textContent = 'AI建议：暂无';
-      card.title = '当前还没有 AI 评估结果';
-      if (box) box.title = '当前还没有 AI 评估结果';
+      const isExisting = cb && cb.getAttribute('data-mki-existing') === '1';
+      textNode.textContent = isExisting ? '已有任务' : 'AI建议：暂无';
+      card.title = isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果';
+      if (box) box.title = isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果';
     }
   });
 }
+
 
 async function mkiXiaoLoadAiSuggestions(productId) {
   const pid = Number(productId || 0);
@@ -5471,7 +5481,7 @@ async function mkiXiaoOpenModal(options = {}) {
       + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
       + '</span>'
       + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
-      + (isExisting ? '已有任务' : 'AI建议：暂无')
+      + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
       + forceBtnHtml
       + '</small>'
       + '</span></label>';

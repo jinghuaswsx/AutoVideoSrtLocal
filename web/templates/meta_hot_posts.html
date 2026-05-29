@@ -2415,7 +2415,7 @@ async function mkiXiaoOpenModal(options = {}) {
       + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
       + '</span>'
       + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
-      + (isExisting ? '已有任务' : 'AI建议：暂无')
+      + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
       + forceBtnHtml
       + '</small>'
       + '</span></label>';
