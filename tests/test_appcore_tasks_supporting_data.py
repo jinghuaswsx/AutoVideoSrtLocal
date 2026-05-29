@@ -450,6 +450,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
         "page": 2,
         "page_size": 5,
         "total": 6,
+        "total_all": 0,
         "total_pages": 2,
     }
     assert "FROM tasks t" in captured["sql"]
@@ -475,7 +476,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     )
 
 
-def test_list_task_center_items_archived_bucket_filters_archived_rows(monkeypatch):
+def test_list_task_center_items_archived_bucket_can_filter_pre_archive_status(monkeypatch):
     from appcore import tasks
 
     captured = {}
@@ -496,14 +497,16 @@ def test_list_task_center_items_archived_bucket_filters_archived_rows(monkeypatc
         keyword="",
         high_status="",
         bucket="",
+        task_status="review",
         archived=True,
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.archived_at IS NOT NULL" in captured["sql"]
     assert "t.archived_at IS NULL" not in captured["sql"]
-    assert captured["args"] == (20, 0)
+    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert captured["args"] == (tasks.PARENT_RAW_REVIEW, tasks.CHILD_REVIEW, 20, 0)
 
 
 def test_list_task_center_items_can_skip_archive_filter_for_exact_detail_fetch(monkeypatch):
@@ -531,7 +534,7 @@ def test_list_task_center_items_can_skip_archive_filter_for_exact_detail_fetch(m
         page=1,
         page_size=1,
         task_id=44,
-    ) == {"items": [], "page": 1, "page_size": 1, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 1, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.archived_at IS NULL" not in captured["sql"]
     assert "t.archived_at IS NOT NULL" not in captured["sql"]
@@ -573,8 +576,10 @@ def test_archive_task_marks_completed_task_and_records_event(monkeypatch):
     assert calls[1][1] == (44, "archived", 7, None)
 
 
-def test_archive_task_rejects_unfinished_task(monkeypatch):
+def test_archive_task_marks_unfinished_task_and_records_event(monkeypatch):
     from appcore import tasks
+
+    calls = []
 
     monkeypatch.setattr(
         tasks,
@@ -585,14 +590,22 @@ def test_archive_task_rejects_unfinished_task(monkeypatch):
             "archived_at": None,
         },
     )
-    monkeypatch.setattr(
-        tasks,
-        "execute",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unfinished task should not be archived")),
-    )
 
-    with pytest.raises(tasks.StateError, match="only completed tasks can be archived"):
-        tasks.archive_task(task_id=44, actor_user_id=7, is_admin=True)
+    def fake_execute(sql, args=()):
+        calls.append((sql, args))
+        if sql.startswith("UPDATE tasks SET archived_at=NOW()"):
+            return 1
+        return 99
+
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+
+    assert tasks.archive_task(task_id=44, actor_user_id=7, is_admin=True) is True
+    assert calls[0] == (
+        "UPDATE tasks SET archived_at=NOW(), archived_by=%s, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NULL",
+        (7, 44),
+    )
+    assert calls[1][1] == (44, "archived", 7, None)
 
 
 def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch):
@@ -603,6 +616,10 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
 
     def fake_query_one(sql, args=()):
+        if "COUNT(*) AS total_all" in sql:
+            captured_count["base_sql"] = sql
+            captured_count["base_args"] = args
+            return {"total_all": 0}
         captured_count["sql"] = sql
         captured_count["args"] = args
         return {"total": 12}
@@ -631,6 +648,7 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
         "page": 3,
         "page_size": 5,
         "total": 12,
+        "total_all": 0,
         "total_pages": 3,
     }
     assert "COUNT(*) AS total" in captured_count["sql"]
@@ -677,7 +695,7 @@ def test_list_task_center_items_done_bucket_includes_raw_done_and_product_code_s
         bucket="done",
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
@@ -716,7 +734,7 @@ def test_list_task_center_items_can_filter_exact_task_id_for_deep_links(monkeypa
         page=1,
         page_size=20,
         task_id=442,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.id=%s" in captured["sql"]
     assert captured["args"] == (442, 20, 0)
@@ -746,7 +764,7 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
         page=1,
         page_size=20,
         parent_only=True,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured["sql"]
     assert "t.status IN (%s, %s)" in captured["sql"]
@@ -781,7 +799,7 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
         page=1,
         page_size=20,
         task_type="raw",
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
     assert tasks.list_task_center_items(
         tab="all",
         user_id=1,
@@ -792,7 +810,7 @@ def test_list_task_center_items_filters_by_task_type(monkeypatch):
         page=1,
         page_size=20,
         task_type="translate",
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured[0]["sql"]
     assert captured[0]["args"] == (20, 0)
@@ -807,6 +825,10 @@ def test_list_task_center_items_filters_by_assignee_id(monkeypatch):
     monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
 
     def fake_query_one(sql, args=()):
+        if "COUNT(*) AS total_all" in sql:
+            captured["base_count_sql"] = sql
+            captured["base_count_args"] = args
+            return {"total_all": 0}
         captured["count_sql"] = sql
         captured["count_args"] = args
         return {"total": 0}
@@ -829,7 +851,7 @@ def test_list_task_center_items_filters_by_assignee_id(monkeypatch):
         page=1,
         page_size=20,
         assignee_id=7,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.assignee_id=%s" in captured["count_sql"]
     assert captured["count_args"] == (7,)
@@ -860,7 +882,7 @@ def test_list_task_center_items_orders_urgent_before_created(monkeypatch):
         bucket="",
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (20, 0)
@@ -893,7 +915,7 @@ def test_list_task_center_items_filters_urgent_and_normal(monkeypatch):
         page=1,
         page_size=20,
         urgency="urgent",
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
     assert tasks.list_task_center_items(
         tab="all",
         user_id=1,
@@ -904,14 +926,16 @@ def test_list_task_center_items_filters_urgent_and_normal(monkeypatch):
         page=1,
         page_size=20,
         urgency="normal",
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
-    assert "t.is_urgent=1" in captured[0][1]
-    assert captured[0][2] == ()
-    assert captured[1][2] == (20, 0)
-    assert "t.is_urgent=0" in captured[2][1]
-    assert captured[2][2] == ()
-    assert captured[3][2] == (20, 0)
+    main_counts = [item for item in captured if item[0] == "count" and "COUNT(*) AS total_all" not in item[1]]
+    list_calls = [item for item in captured if item[0] == "list"]
+    assert "t.is_urgent=1" in main_counts[0][1]
+    assert main_counts[0][2] == ()
+    assert list_calls[0][2] == (20, 0)
+    assert "t.is_urgent=0" in main_counts[1][1]
+    assert main_counts[1][2] == ()
+    assert list_calls[1][2] == (20, 0)
 
 
 def test_list_task_center_items_returns_urgent_boolean(monkeypatch):
@@ -1056,7 +1080,7 @@ def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypat
         bucket="todo",
         page=1,
         page_size=20,
-    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_pages": 1}
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.assignee_id=%s" in captured["sql"]
     assert "t.parent_task_id IS NULL AND t.status=%s" not in captured["sql"]

@@ -11,15 +11,16 @@
 
 ## 背景
 
-任务中心当前状态子 TAB 包含任务总览、待处理任务、待审核任务、已完成任务。已完成任务长期留在默认总览和已完成列表里，会干扰日常处理视图。用户需要把已完成任务手动归档：归档后不再出现在任务总览、待处理、待审核、已完成，仅出现在新的已归档 TAB。
+任务中心当前状态子 TAB 包含任务总览、待处理任务、待审核任务、已完成任务。长期无需继续处理的任务留在默认总览和各状态列表里，会干扰日常处理视图。用户需要把任意状态任务手动归档：归档后不再出现在任务总览、待处理、待审核、已完成，仅出现在新的已归档 TAB。
 
 ## 目标
 
 1. 任务中心状态子 TAB 新增“已归档”。
-2. 已完成任务的操作区新增“归档”按钮。
+2. 任意未归档任务的操作区新增“归档”按钮。
 3. 点击归档后，任务持久标记为归档，并刷新当前列表。
 4. 未归档列表默认隐藏已归档任务；已归档 TAB 只显示已归档任务。
-5. 归档不改变任务原有 `status`，详情、审计和统计仍能看到真实完成状态。
+5. 归档不改变任务原有 `status`，详情、审计和统计仍能看到真实任务状态。
+6. 已归档 TAB 中的“任务状态”筛选按归档前保留的 `status` 分组过滤。
 
 ## 数据模型
 
@@ -54,12 +55,12 @@ archived_by INT DEFAULT NULL
 | 待处理任务 | `todo` | 未归档 | `raw_in_progress` / `assigned` |
 | 待审核任务 | `review` | 未归档 | `raw_review` / `review` |
 | 已完成任务 | `done` | 未归档 | `raw_done` / `all_done` / `done` |
-| 已归档 | `archived` | 已归档 | 无 |
+| 已归档 | `archived` | 已归档 | 默认无；任务状态筛选按归档前保留的 `status` 过滤 |
 
 新增 `archive_task(task_id, actor_user_id, is_admin)`：
 
 - 仅管理员可归档。
-- 仅允许 `raw_done` / `all_done` / `done`。
+- 任意状态任务均可归档，归档不改 `status`。
 - 已归档任务重复归档不报错，保持幂等。
 - 首次归档写 `archived_at=NOW(), archived_by=<actor>`，并写 `task_events(event_type='archived')`。
 
@@ -81,12 +82,11 @@ POST /tasks/api/<task_id>/archive
 已归档
 ```
 
-完成态行的操作区展示两个按钮：
+任意未归档任务行的操作区展示“归档”按钮：
 
-- `查看结果`：进入详情页。
 - `归档`：管理员可见，调用 `POST /tasks/api/<id>/archive`。
 
-归档成功后刷新当前列表。如果当前在“已完成任务”，该行消失；如果当前在“已归档”，刷新后留在已归档列表中。
+已归档 TAB 复用页面顶部“任务状态”筛选，下拉选项仍按业务状态分组（待处理、待审核、阻塞、已完成、已取消），实际过滤归档前保留的 `status`。归档成功后刷新当前列表；在未归档列表中该行消失，在已归档 TAB 中可通过状态筛选找回。
 
 ## 不做范围
 
@@ -100,11 +100,11 @@ POST /tasks/api/<task_id>/archive
 1. `tests/test_appcore_tasks_supporting_data.py`
    - 默认列表追加 `t.archived_at IS NULL`。
    - `archived=True` 列表追加 `t.archived_at IS NOT NULL`。
-   - 归档已完成任务写字段和 `task_events`。
+   - 任意状态任务可归档并写字段和 `task_events`。
 2. `tests/test_tasks_routes.py`
    - 模板包含“已归档” TAB 和 `bucket=archived`。
-   - 已完成任务操作区包含归档按钮与 `/tasks/api/<id>/archive` 请求。
-   - `/tasks/api/list?bucket=archived` 将 `archived=True` 传入服务层。
+   - 任意未归档任务操作区包含归档按钮与 `/tasks/api/<id>/archive` 请求。
+   - `/tasks/api/list?bucket=archived&task_status=<status>` 将 `archived=True` 和归档前任务状态筛选传入服务层。
    - `/tasks/api/list?task_id=<id>&include_archived=1` 将 `archived=None` 传入服务层。
    - 归档路由调用服务层并返回成功。
 3. `python -m compileall appcore/tasks.py web/routes/tasks.py`
