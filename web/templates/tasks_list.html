@@ -420,6 +420,9 @@
   border-bottom: 2px solid var(--tc-border);
   box-shadow: 0 1px 0 var(--tc-border);
 }
+.tc-stats-table th {
+  position: static !important;
+}
 @media (max-width: 768px) {
   .tc-sticky-top {
     top: 52px;
@@ -1975,6 +1978,9 @@ async function tcRender() {
   const filters = document.getElementById('tcFilters');
   const overview = document.getElementById('tcOverviewPanel');
   const isOverview = TC_CURRENT_SECTION === 'overview';
+  if (TC_CURRENT_SECTION === 'stats' && !TC_IS_ADMIN) {
+    TC_CURRENT_SECTION = 'overview';
+  }
   if (filters) filters.style.display = isOverview ? 'flex' : 'none';
   if (overview) overview.style.display = isOverview ? 'block' : 'none';
   wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
@@ -2015,7 +2021,7 @@ async function tcRenderStatsTab(wrap) {
     
     wrap.innerHTML = `
       <div class="tc-table-scroll" style="margin-top: 10px;">
-        <table class="tc-table">
+        <table class="tc-table tc-stats-table">
           <thead>
             <tr>
               <th>员工中文名</th>
