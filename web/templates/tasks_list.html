@@ -2274,7 +2274,7 @@ function tcOpenDetailAction(id) {
 async function tcArchiveTask(id) {
   const taskId = Number(id || 0);
   if (!taskId) return;
-  if (!confirm('确认归档这个已完成任务？')) return;
+  if (!confirm('确认归档这个任务？')) return;
   await tcFetchJson('/tasks/api/' + encodeURIComponent(String(id)) + '/archive', {
     method: 'POST',
     body: JSON.stringify({}),
@@ -2349,8 +2349,8 @@ function tcTaskRowAction(it) {
 
   // 1. Urgency button (Admin only)
   if (TC_IS_ADMIN) {
-    const isTerminal = isParent 
-      ? ['all_done', 'cancelled'].includes(status) 
+    const isTerminal = isParent
+      ? ['all_done', 'cancelled'].includes(status)
       : ['done', 'cancelled'].includes(status);
     if (!isTerminal) {
       const nextUrgent = !it.is_urgent;
@@ -2411,9 +2411,8 @@ function tcTaskRowAction(it) {
 
   // 4. Archive button (Admin only)
   if (TC_IS_ADMIN) {
-    const isCompleted = isParent ? ['raw_done', 'all_done'].includes(status) : status === 'done';
-    if (isCompleted && !it.archived_at) {
-      actions.push(`<button class="tc-btn tc-btn--danger" onclick="tcArchiveTask(${id})">归档</button>`);
+    if (!it.archived_at) {
+      actions.push(tcArchiveTaskAction(id));
     } else {
       actions.push(`<button class="tc-btn tc-btn--danger" disabled>归档</button>`);
     }

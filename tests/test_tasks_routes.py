@@ -278,18 +278,25 @@ def test_task_center_overview_has_assignee_filter_after_task_type(authed_client_
     assert "tcAssigneeFilter').addEventListener('change'" in body
 
 
-def test_task_center_completed_rows_expose_archive_action(authed_client_no_db):
+def test_task_center_rows_expose_archive_action_for_any_unarchived_task(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
 
     assert "function tcArchiveTask" in body
     assert "'/tasks/api/' + encodeURIComponent(String(id)) + '/archive'" in body
+    assert "确认归档这个任务？" in body
+    assert "确认归档这个已完成任务？" not in body
     assert "function tcTaskActionGroup(actions)" in body
     assert "tcArchiveTask(${Number(id || 0)})" in body
     assert "归档" in body
 
     assert "actions.push(mainBtn);" in body
-    assert "tcArchiveTaskAction(id)" in body
+    archive_start = body.index("// 4. Archive button")
+    archive_end = body.index("// 5. Cancel button", archive_start)
+    archive_block = body[archive_start:archive_end]
+    assert "const isCompleted" not in archive_block
+    assert "if (!it.archived_at)" in archive_block
+    assert "actions.push(tcArchiveTaskAction(id));" in archive_block
 
 
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
@@ -681,11 +688,12 @@ def test_api_list_accepts_archived_bucket(authed_client_no_db, monkeypatch):
         raising=False,
     )
 
-    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&bucket=archived")
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&bucket=archived&task_status=review")
 
     assert rsp.status_code == 200
     assert captured["bucket"] == ""
     assert captured["archived"] is True
+    assert captured["task_status"] == "review"
 
 
 def test_api_list_accepts_blocked_bucket(authed_client_no_db, monkeypatch):
