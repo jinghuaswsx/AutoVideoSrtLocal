@@ -1567,7 +1567,7 @@
       
       if (lang !== 'en' && !isGifItem(it)) {
         const status = it.eval_status || 'pending';
-        let showRetranslate = false;
+        let showRetranslate = true;
 
         if (it.is_retranslating) {
           bannerHTML = `<div class="oc-detail-image-eval-banner eval-blue">重译中...</div>`;
@@ -2259,14 +2259,10 @@
       showDetailQualityCheckModal(item);
     }
 
-    async function onDetailImageRetranslateClick(e) {
-      e.stopPropagation();
-      const card = e.currentTarget.closest('.oc-detail-image');
-      if (!card) return;
-      const imgId = Number(card.dataset.id);
-      if (!imgId) return;
-      const item = items.find(it => it.id === imgId);
+    async function triggerDetailImageRetranslate(item) {
       if (!item) return;
+      const imgId = Number(item.id);
+      if (!imgId) return;
 
       const hasDraft = !!item.has_retranslate_draft;
       if (!hasDraft) {
@@ -2383,12 +2379,25 @@
       }
     }
 
+    async function onDetailImageRetranslateClick(e) {
+      e.stopPropagation();
+      const card = e.currentTarget.closest('.oc-detail-image');
+      if (!card) return;
+      const imgId = Number(card.dataset.id);
+      if (!imgId) return;
+      const item = items.find(it => it.id === imgId);
+      if (!item) return;
+
+      await triggerDetailImageRetranslate(item);
+    }
+
     // 质检 Modal 事件监听器
     const qCheckMask = $('edDetailQualityCheckMask');
     if (qCheckMask) {
       const closeBtn = $('edDetailQualityCheckClose');
       const doneBtn = $('edDetailQualityDoneBtn');
       const recheckBtn = $('edDetailQualityRecheckBtn');
+      const retranslateBtn = $('edDetailQualityRetranslateBtn');
 
       const hideQModal = () => { qCheckMask.hidden = true; currentEvalItem = null; };
       if (closeBtn) closeBtn.addEventListener('click', hideQModal);
@@ -2397,6 +2406,15 @@
         recheckBtn.addEventListener('click', () => {
           if (currentEvalItem) {
             triggerDetailQualityCheckAPI(currentEvalItem);
+          }
+        });
+      }
+      if (retranslateBtn) {
+        retranslateBtn.addEventListener('click', () => {
+          if (currentEvalItem) {
+            const item = currentEvalItem;
+            hideQModal();
+            triggerDetailImageRetranslate(item);
           }
         });
       }
