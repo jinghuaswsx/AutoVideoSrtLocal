@@ -317,6 +317,16 @@ def api_list():
     )
 
 
+@bp.route("/api/stats", methods=["GET"])
+@login_required
+@admin_required
+def api_stats():
+    from datetime import datetime
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    stats = tasks_svc.get_employee_task_stats(today_str)
+    return _json_response({"stats": stats})
+
+
 @bp.route("/api/<int:tid>/archive", methods=["POST"])
 @login_required
 @admin_required

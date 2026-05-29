@@ -443,6 +443,9 @@
 
     <div class="tc-tabs">
       <button class="tc-tab active" data-section-tab="overview" id="tcTabOverview">任务总览</button>
+      {% if is_admin %}
+      <button class="tc-tab" data-section-tab="stats" id="tcTabStats">任务统计</button>
+      {% endif %}
     </div>
 
     <div id="tcOverviewPanel">
@@ -1979,6 +1982,8 @@ async function tcRender() {
     await tcLoadLanguageLabels();
     if (TC_CURRENT_SECTION === 'dispatch') {
       await tcRenderDispatchPool(wrap);
+    } else if (TC_CURRENT_SECTION === 'stats') {
+      await tcRenderStatsTab(wrap);
     } else {
       await tcRenderTaskList(wrap, TC_IS_ADMIN ? 'all' : 'mine', TC_CURRENT_BUCKET);
     }
@@ -1986,6 +1991,52 @@ async function tcRender() {
     wrap.innerHTML = `<div class="tc-empty">加载失败：${tcEsc(e.message)}</div>`;
   }
 }
+
+async function tcRenderStatsTab(wrap) {
+  wrap.innerHTML = '<div class="tc-empty">统计数据加载中...</div>';
+  try {
+    const data = await tcFetchJson('/tasks/api/stats');
+    const stats = data.stats || [];
+    if (!stats.length) {
+      wrap.innerHTML = '<div class="tc-empty">暂无统计数据</div>';
+      return;
+    }
+    
+    const rows = stats.map(item => {
+      return `<tr>
+        <td style="font-weight: 600;">${tcEsc(item.employee_name)}</td>
+        <td style="color: var(--tc-success-fg); font-weight: 600;">${item.today_completed}</td>
+        <td style="color: var(--tc-warning-fg); font-weight: 600;">${item.today_pending}</td>
+        <td style="font-weight: 600;">${item.total_tasks}</td>
+        <td>${item.raw_tasks}</td>
+        <td>${item.translate_tasks}</td>
+      </tr>`;
+    }).join('');
+    
+    wrap.innerHTML = `
+      <div class="tc-table-scroll" style="margin-top: 10px;">
+        <table class="tc-table">
+          <thead>
+            <tr>
+              <th>员工中文名</th>
+              <th>今天已完成</th>
+              <th>今天待完成</th>
+              <th>任务总数</th>
+              <th>去字幕任务</th>
+              <th>翻译任务</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    wrap.innerHTML = `<div class="tc-empty">加载统计失败：${tcEsc(e.message)}</div>`;
+  }
+}
+
 
 async function tcRenderTaskList(wrap, tab, bucket) {
   const users = await tcLoadAssigneeFilterUsers();

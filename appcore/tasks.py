@@ -3629,3 +3629,53 @@ def on_product_owner_changed(
     保留该函数避免历史调用方崩溃，但不再读写 tasks。
     """
     return 0
+
+
+def get_employee_task_stats(today_str: str) -> list[dict]:
+    """获取当前所有被指派了任务的员工的任务统计数据。
+
+    返回字段：
+      - assignee_id (int)
+      - employee_name (str)
+      - today_completed (int)
+      - today_pending (int)
+      - total_tasks (int)
+      - raw_tasks (int)
+      - translate_tasks (int)
+    """
+    expr = _user_display_name_expr("u")
+    sql = (
+        "SELECT "
+        "  t.assignee_id, "
+        f"  {expr} AS employee_name, "
+        "  SUM(CASE WHEN DATE(t.completed_at) = %s AND ("
+        "      (t.parent_task_id IS NULL AND t.status IN ('raw_done', 'all_done')) OR "
+        "      (t.parent_task_id IS NOT NULL AND t.status = 'done')"
+        "  ) THEN 1 ELSE 0 END) AS today_completed, "
+        "  SUM(CASE WHEN ("
+        "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
+        "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
+        "  ) THEN 1 ELSE 0 END) AS today_pending, "
+        "  COUNT(t.id) AS total_tasks, "
+        "  SUM(CASE WHEN t.parent_task_id IS NULL THEN 1 ELSE 0 END) AS raw_tasks, "
+        "  SUM(CASE WHEN t.parent_task_id IS NOT NULL THEN 1 ELSE 0 END) AS translate_tasks "
+        "FROM tasks t "
+        "JOIN users u ON u.id = t.assignee_id "
+        "WHERE t.assignee_id IS NOT NULL "
+        "GROUP BY t.assignee_id, employee_name "
+        "ORDER BY total_tasks DESC"
+    )
+    rows = query_all(sql, (today_str,))
+    return [
+        {
+            "assignee_id": int(row["assignee_id"]),
+            "employee_name": str(row["employee_name"]),
+            "today_completed": int(row["today_completed"]),
+            "today_pending": int(row["today_pending"]),
+            "total_tasks": int(row["total_tasks"]),
+            "raw_tasks": int(row["raw_tasks"]),
+            "translate_tasks": int(row["translate_tasks"]),
+        }
+        for row in rows
+    ]
+
