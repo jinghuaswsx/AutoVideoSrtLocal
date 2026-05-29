@@ -1510,6 +1510,55 @@
     display: none !important;
   }
 }
+
+/* ── 订单盈亏详情弹窗与链接样式 ────────────────────────── */
+.oar-profit-link {
+  transition: opacity var(--duration-fast) var(--ease);
+}
+.oar-profit-link:hover {
+  opacity: 0.8;
+}
+.order-profit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.order-profit-section {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-xs);
+}
+.order-profit-section-title {
+  font-size: var(--text-md);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+  color: var(--fg);
+  border-bottom: 1.5px solid var(--border-strong);
+  padding-bottom: var(--space-2);
+}
+.order-profit-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+  border-bottom: 1px dashed var(--border);
+}
+.order-profit-item:last-child {
+  border-bottom: 0;
+}
+.order-profit-label {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.order-profit-value {
+  font-weight: 600;
+  color: var(--fg);
+  text-align: right;
+}
 {% endblock %}
 
 {% block content %}
@@ -1738,6 +1787,7 @@
               <th>商品销售额</th>
               <th>运费</th>
               <th>总销售额</th>
+              <th>订单盈亏</th>
             </tr>
           </thead>
           <tbody id="realtimeOrderBody"></tbody>
@@ -2011,7 +2061,7 @@
   <div class="oar-subpanel is-active" id="nplSubOrders">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">订单明细 <span class="oar-page-info" id="nplOrderPageInfo">加载中...</span></div></div>
-      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>主图</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
+      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>主图</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th><th>订单盈亏</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubProfitDetails">
@@ -2981,6 +3031,24 @@
       </button>
     </div>
     <div class="oam-modal-body" id="oamModalBody">
+      <div class="oam-modal-loading">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 订单盈亏详情弹窗 -->
+<div class="oam-modal-overlay" id="orderProfitDetailModal" hidden>
+  <div class="oam-modal-card" role="dialog" aria-labelledby="orderProfitModalTitle" style="max-width: 800px;">
+    <div class="oam-modal-header">
+      <div>
+        <div class="oam-modal-title" id="orderProfitModalTitle">订单盈亏详情</div>
+        <div class="oam-modal-subtitle" id="orderProfitModalSubtitle"></div>
+      </div>
+      <button type="button" class="oam-modal-close" id="orderProfitModalClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="oam-modal-body" id="orderProfitModalBody">
       <div class="oam-modal-loading">加载中…</div>
     </div>
   </div>
@@ -4549,9 +4617,30 @@
       addTextCell(tr, fmtMoney(row.product_revenue));
       addTextCell(tr, fmtMoney(row.shipping_revenue));
       addTextCell(tr, fmtMoney(row.total_revenue));
+
+      var profitDetail = row.profit_detail;
+      var profitCell = document.createElement('td');
+      if (profitDetail) {
+        var profitVal = Number(profitDetail.order_profit_with_estimate_usd);
+        var profitLink = document.createElement('a');
+        profitLink.href = 'javascript:void(0);';
+        profitLink.className = 'oar-profit-link ' + (profitVal < 0 ? 'oar-profit-loss' : 'oar-profit-ok');
+        profitLink.style.textDecoration = 'underline';
+        profitLink.style.fontWeight = 'bold';
+        profitLink.textContent = fmtMoney(profitVal);
+        profitLink.onclick = function() {
+          showOrderProfitDetailModal(row);
+        };
+        profitCell.appendChild(profitLink);
+      } else {
+        profitCell.textContent = '未核算';
+        profitCell.style.color = 'var(--fg-subtle)';
+      }
+      tr.appendChild(profitCell);
+
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 11, '暂无订单数据');
+    if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 12, '暂无订单数据');
     setRealtimeProfitText('nplOrderPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
   }
 
@@ -4976,10 +5065,31 @@
       addTextCell(tr, fmtMoney(row.product_revenue));
       addTextCell(tr, fmtMoney(row.shipping_revenue));
       addTextCell(tr, fmtMoney(row.total_revenue));
+
+      var profitDetail = row.profit_detail;
+      var profitCell = document.createElement('td');
+      if (profitDetail) {
+        var profitVal = Number(profitDetail.order_profit_with_estimate_usd);
+        var profitLink = document.createElement('a');
+        profitLink.href = 'javascript:void(0);';
+        profitLink.className = 'oar-profit-link ' + (profitVal < 0 ? 'oar-profit-loss' : 'oar-profit-ok');
+        profitLink.style.textDecoration = 'underline';
+        profitLink.style.fontWeight = 'bold';
+        profitLink.textContent = fmtMoney(profitVal);
+        profitLink.onclick = function() {
+          showOrderProfitDetailModal(row);
+        };
+        profitCell.appendChild(profitLink);
+      } else {
+        profitCell.textContent = '未核算';
+        profitCell.style.color = 'var(--fg-subtle)';
+      }
+      tr.appendChild(profitCell);
+
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="11">暂无订单数据</td></tr>';
+      body.innerHTML = '<tr><td colspan="12">暂无订单数据</td></tr>';
     }
   }
 
@@ -7075,6 +7185,102 @@
   function escAttr(s) {
     return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
   }
+
+  // ── 订单盈亏详情弹窗 ───────────────────────────
+  var profitModalEl = document.getElementById('orderProfitDetailModal');
+  var profitModalCloseBtn = document.getElementById('orderProfitModalClose');
+  var profitModalBody = document.getElementById('orderProfitModalBody');
+  var profitModalTitle = document.getElementById('orderProfitModalTitle');
+  var profitModalSubtitle = document.getElementById('orderProfitModalSubtitle');
+
+  function closeOrderProfitDetailModal() {
+    if (profitModalEl) profitModalEl.hidden = true;
+  }
+  if (profitModalCloseBtn) profitModalCloseBtn.addEventListener('click', closeOrderProfitDetailModal);
+  if (profitModalEl) {
+    profitModalEl.addEventListener('click', function(ev) {
+      if (ev.target === profitModalEl) closeOrderProfitDetailModal();
+    });
+  }
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape' && profitModalEl && !profitModalEl.hidden) closeOrderProfitDetailModal();
+  });
+
+  window.showOrderProfitDetailModal = function(row) {
+    if (!profitModalEl || !profitModalBody) return;
+
+    var detail = row.profit_detail;
+    if (!detail) return;
+
+    if (profitModalSubtitle) {
+      profitModalSubtitle.innerHTML = '订单号：<strong>' + escapeHtml(row.dxm_order_id || row.dxm_package_id || '-') + '</strong> · ' +
+                           '店铺：<strong>' + escapeHtml(row.site_code || '-') + '</strong> · ' +
+                           '下单时间：<strong>' + escapeHtml(formatShortDateTime(row.order_time)) + '</strong>';
+    }
+
+    var html = '';
+    
+    // Grid container
+    html += '<div class="order-profit-grid">';
+    
+    // Panel 1: Basic & Status
+    html += '<div class="order-profit-section">';
+    html += '<div class="order-profit-section-title">订单基本信息</div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">包裹号</span><span class="order-profit-value">' + escapeHtml(row.dxm_package_id || '-') + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">国家</span><span class="order-profit-value">' + escapeHtml((row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : '')) + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">商品 SKU</span><span class="order-profit-value oar-id-cell" style="word-break: break-all; white-space: normal; text-align: right;">' + escapeHtml(row.skus || '-') + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">销售数量</span><span class="order-profit-value">' + fmtInt(row.units || 0) + ' 件</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">利润状态</span><span class="order-profit-value ' + (detail.profit_status === 'ok' ? 'oar-profit-ok' : 'oar-profit-loss') + '">' + escapeHtml(detail.status_label || '-') + '</span></div>';
+    html += '</div>';
+
+    // Panel 2: Shopify Platform Fees
+    html += '<div class="order-profit-section">';
+    html += '<div class="order-profit-section-title">Shopify 平台手续费</div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">平台交易费 (Platform Fee)</span><span class="order-profit-value">' + fmtMoney(detail.shopify_platform_fee_usd) + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">信用卡费 (Card Fee)</span><span class="order-profit-value">' + fmtMoney(detail.international_card_fee_usd) + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">汇兑转换费 (Exchange Fee)</span><span class="order-profit-value">' + fmtMoney(detail.currency_conversion_fee_usd) + '</span></div>';
+    html += '<div class="order-profit-item" style="border-top: 1px solid var(--border); margin-top: var(--space-2); padding-top: var(--space-2);"><span class="order-profit-label" style="font-weight:700;">合计手续费</span><span class="order-profit-value" style="font-weight:700;">' + fmtMoney(detail.shopify_fee_total_usd) + '</span></div>';
+    html += '</div>';
+
+    // Panel 3: Revenues & Costs (Spanning full width)
+    html += '<div class="order-profit-section" style="grid-column: span 2;">';
+    html += '<div class="order-profit-section-title">收入、成本与利润明细</div>';
+    
+    html += '<div class="order-profit-item"><span class="order-profit-label">商品销售额 (Product Revenue)</span><span class="order-profit-value">' + fmtMoney(row.product_revenue) + '</span></div>';
+    html += '<div class="order-profit-item"><span class="order-profit-label">客户运费收入 (Shipping Revenue)</span><span class="order-profit-value">' + fmtMoney(row.shipping_revenue) + '</span></div>';
+    html += '<div class="order-profit-item" style="border-bottom: 2px solid var(--border-strong); font-weight:700;"><span class="order-profit-label" style="color:var(--fg);">总销售收入 (Total Revenue)</span><span class="order-profit-value" style="color:var(--fg);">' + fmtMoney(row.total_revenue) + '</span></div>';
+    
+    html += '<div class="order-profit-item"><span class="order-profit-label">退款扣减 (Refund Deduction)</span><span class="order-profit-value" style="color: var(--danger);">' + fmtMoney(detail.refund_deduction_usd) + '</span></div>';
+    
+    var purchaseText = fmtMoney(detail.purchase_cost_usd);
+    if (detail.purchase_cost_missing && Number(detail.purchase_estimate_usd) > 0) {
+      purchaseText += ' <span style="color:var(--danger); font-size:11px;">(缺失估算: ' + fmtMoney(detail.purchase_estimate_usd) + ')</span>';
+    }
+    html += '<div class="order-profit-item"><span class="order-profit-label">采购商品成本 (Purchase Cost)</span><span class="order-profit-value">' + purchaseText + '</span></div>';
+    
+    var logisticsText = fmtMoney(detail.logistics_cost_usd);
+    if (detail.logistics_cost_missing && Number(detail.logistics_estimate_usd) > 0) {
+      logisticsText += ' <span style="color:var(--danger); font-size:11px;">(缺失估算: ' + fmtMoney(detail.logistics_estimate_usd) + ')</span>';
+    }
+    html += '<div class="order-profit-item"><span class="order-profit-label">实际物流成本 (Logistics Cost)</span><span class="order-profit-value">' + logisticsText + '</span></div>';
+    
+    html += '<div class="order-profit-item"><span class="order-profit-label">广告费分摊 (Allocated Ad Cost)</span><span class="order-profit-value">' + fmtMoney(detail.ad_cost_usd) + '</span></div>';
+    
+    var finalProfit = Number(detail.order_profit_with_estimate_usd);
+    var profitClass = finalProfit < 0 ? 'oar-profit-loss' : 'oar-profit-ok';
+    
+    html += '<div class="order-profit-item" style="border-top: 2px solid var(--border-strong); margin-top: var(--space-3); padding-top: var(--space-3); font-size: 16px; font-weight:700;">';
+    html += '<span class="order-profit-label" style="color:var(--fg);">订单净利润 (Net Profit)</span>';
+    html += '<span class="order-profit-value ' + profitClass + '">' + fmtMoney(finalProfit) + '</span>';
+    html += '</div>';
+    
+    html += '</div>'; // End section 3
+    html += '</div>'; // End grid
+
+    profitModalBody.innerHTML = html;
+    profitModalEl.removeAttribute('hidden');
+    profitModalEl.hidden = false;
+  };
 
   // ── 查看素材详情弹窗 ───────────────────────────
   var modalEl = document.getElementById('oamProductDetailModal');

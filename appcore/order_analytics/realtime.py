@@ -341,7 +341,7 @@ def _build_order_profit_summary(
         - summary["purchase_cost_with_estimate_usd"]
         - summary["logistics_cost_with_estimate_usd"]
         - summary["shopify_fee_total_usd"]
-        - summary["total_ad_spend_usd"]
+        - (summary["ad_cost_usd"] + summary["unallocated_ad_spend_usd"])
     )
     for key, value in list(summary.items()):
         if value is None:
@@ -469,6 +469,85 @@ def _order_profit_page_info(total: int, page: int, page_size: int) -> dict[str, 
         default_size=ORDER_PROFIT_PAGE_SIZE,
         max_size=ORDER_PROFIT_MAX_PAGE_SIZE,
     )
+
+
+def _attach_profit_details_to_order_details(
+    details: list[dict[str, Any]],
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+) -> None:
+    if not details:
+        return
+
+    package_ids = [r["dxm_package_id"] for r in details if r.get("dxm_package_id")]
+    if not package_ids:
+        return
+
+    placeholders = ", ".join(["%s"] * len(package_ids))
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+
+    rows = query(
+        "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
+        "COUNT(*) AS line_count, "
+        "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
+        "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
+        "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
+        "SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "SUM(" + _CANONICAL_REVENUE_SQL + ") AS total_revenue, "
+        "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd, "
+        "SUM(COALESCE(p.return_reserve_usd, 0)) AS return_reserve_usd, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.purchase_usd, 0) END) AS purchase_cost, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.10 ELSE 0 END) AS purchase_estimate, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 0 ELSE COALESCE(p.shipping_cost_usd, 0) END) AS logistics_cost, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.20 ELSE 0 END) AS logistics_estimate, "
+        "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
+        "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
+        "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
+        "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        f"WHERE d.dxm_package_id IN ({placeholders}) "
+        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "d.buyer_country, d.buyer_country_name, " + order_time_expr + " ",
+        tuple(package_ids),
+    )
+
+    profit_details = []
+    for row in rows:
+        business_date = row.get("meta_business_date")
+        day_start = compute_meta_business_window_bj(business_date)[0] if business_date else None
+        if not day_start:
+            continue
+        for detail in _format_realtime_order_profit_rows([row], day_start):
+            detail["meta_business_date"] = business_date
+            profit_details.append(detail)
+
+    if product_ids is None and not unmatched_ads:
+        if date_from and date_to:
+            _apply_realtime_ad_cost_adjustments(
+                profit_details,
+                date_from=date_from,
+                date_to=date_to,
+                product_id=product_id,
+            )
+
+    profit_by_pkg = {r["dxm_package_id"]: r for r in profit_details}
+
+    for r in details:
+        pkg_id = r.get("dxm_package_id")
+        if pkg_id and pkg_id in profit_by_pkg:
+            r["profit_detail"] = profit_by_pkg[pkg_id]
+        else:
+            r["profit_detail"] = None
 
 
 def _get_realtime_order_details(
@@ -2551,7 +2630,7 @@ def _build_realtime_overview_for_range(
         if include_details else []
     )
 
-    return {
+    res = {
         "period": {
             "start_date": start,
             "end_date": end,
@@ -2612,6 +2691,16 @@ def _build_realtime_overview_for_range(
             ),
         ) if include_details else [],
     }
+    if res.get("order_details"):
+        _attach_profit_details_to_order_details(
+            res["order_details"],
+            date_from=start,
+            date_to=end,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+        )
+    return res
 
 
 def get_realtime_roas_overview(
@@ -2773,6 +2862,15 @@ def get_realtime_roas_overview(
                 page_size=normalized_order_page_size,
                 site_codes=normalized_site_codes,
             ) if include_details else []
+            if order_details:
+                _attach_profit_details_to_order_details(
+                    order_details,
+                    date_from=target,
+                    date_to=target,
+                    product_id=normalized_product_id,
+                    product_ids=launch_product_ids,
+                    unmatched_ads=launch_scope_unmatched,
+                )
             order_profit_total = (
                 _count_realtime_order_profit_details(
                     target,
@@ -2902,6 +3000,15 @@ def get_realtime_roas_overview(
             page_size=normalized_order_page_size,
             site_codes=normalized_site_codes,
         ) if include_details else []
+        if order_details:
+            _attach_profit_details_to_order_details(
+                order_details,
+                date_from=target,
+                date_to=target,
+                product_id=normalized_product_id,
+                product_ids=launch_product_ids,
+                unmatched_ads=launch_scope_unmatched,
+            )
         order_profit_total = (
             _count_realtime_order_profit_details(
                 target,
@@ -3250,7 +3357,7 @@ def get_realtime_roas_overview(
         target,
     )
     campaign_details = campaign_allocation["campaigns"]
-    return {
+    res = {
         "period": {
             "date": target,
             "timezone": META_ATTRIBUTION_TIMEZONE,
@@ -3319,6 +3426,16 @@ def get_realtime_roas_overview(
             site_codes=normalized_site_codes,
         ) if include_details else [],
     }
+    if res.get("order_details"):
+        _attach_profit_details_to_order_details(
+            res["order_details"],
+            date_from=target,
+            date_to=target,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+        )
+    return res
 
 
 def get_true_roas_summary(start_date: str, end_date: str) -> dict:
