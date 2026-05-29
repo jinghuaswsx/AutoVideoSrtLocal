@@ -229,17 +229,21 @@
       return;
     }
     pruneCompletedSelectedLangs();
+    const bridgeLang = taskBridgeLang();
     langList.innerHTML = langs.map((lang) => {
       const stats = selectedRawTranslationStats(lang.code);
       const checkVideoCompletion = state.selectedContentTypes.has('videos');
-      const disabled = checkVideoCompletion && stats.complete;
-      const statusText = !checkVideoCompletion
+      const bridgeLocked = bridgeLang && lang.code !== bridgeLang;
+      const disabled = bridgeLocked || (checkVideoCompletion && stats.complete);
+      const statusText = bridgeLocked
+        ? '来自任务中心，只能提交当前子任务语种'
+        : (!checkVideoCompletion
         ? lang.code.toUpperCase()
         : (stats.complete
         ? `已完成 ${stats.translated}/${stats.total}，本次跳过`
-        : (stats.partial ? `已完成 ${stats.translated}/${stats.total}，仅补未完成` : '未翻译'));
+        : (stats.partial ? `已完成 ${stats.translated}/${stats.total}，仅补未完成` : '未翻译')));
       return `
-      <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''}">
+      <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''} ${bridgeLocked ? 'mt-choice--bridge-locked' : ''}">
         <input type="checkbox" value="${lang.code}" ${state.selectedLangs.has(lang.code) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
         <span class="mt-choice__body">
           <strong>${esc(languageName(lang.code))}</strong>

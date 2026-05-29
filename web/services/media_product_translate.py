@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from flask import jsonify
 
-from appcore import bulk_translate_projection, bulk_translate_runtime, medias
+from appcore import bulk_translate_projection, bulk_translate_runtime, medias, tasks as tasks_svc
 from web.routes.bulk_translate import start_bulk_scheduler_background
 
 
@@ -125,6 +125,8 @@ def start_product_translation(
     body: dict,
     ip: str,
     user_agent: str,
+    is_admin: bool = False,
+    resolve_child_task_id_fn: Callable[..., int] | None = None,
 ) -> ProductTranslateResult:
     if product is not None and not medias.is_product_listed(product):
         return ProductTranslateResult(
@@ -170,6 +172,24 @@ def start_product_translation(
     for content_type in content_types:
         if content_type not in ALLOWED_CONTENT_TYPES:
             return _validation_error(f"content_types 不支持: {content_type}")
+
+    if task_center_task_id is not None:
+        resolve_child_task_id = (
+            resolve_child_task_id_fn
+            or tasks_svc.resolve_child_task_for_media_item_upload
+        )
+        try:
+            task_center_task_id = int(resolve_child_task_id(
+                task_id=task_center_task_id,
+                product_id=product_id,
+                lang=str(target_langs[0] or "").strip().lower(),
+                actor_user_id=user_id,
+                is_admin=is_admin,
+            ))
+        except PermissionError as exc:
+            return ProductTranslateResult(ok=False, status_code=403, error=str(exc))
+        except (ValueError, RuntimeError, tasks_svc.StateError) as exc:
+            return _validation_error(str(exc))
 
     initiator = {
         "user_id": user_id,
