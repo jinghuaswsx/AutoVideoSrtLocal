@@ -939,12 +939,22 @@ function tcEventFacts(payload, event) {
     if (value === undefined || value === null || value === '') return;
     facts.push({label, value: String(value)});
   };
+  const addHtml = (label, value, htmlValue) => {
+    if (value === undefined || value === null || value === '') return;
+    facts.push({label, value: String(value), htmlValue});
+  };
   if (Array.isArray(payload.countries)) add('目标国家', payload.countries.map(tcLanguageLabel).join('、'));
   add('目标国家', tcLanguageLabel(payload.country));
   add('翻译员', tcEventPayloadUserDisplay(event, payload, 'translator_id'));
   add('任务 ID', payload.task_id);
   add('素材 ID', payload.media_item_id);
   add('原始素材 ID', payload.raw_source_id);
+  if (event && event.event_type === 'raw_source_reused') {
+    const filename = event.payload_context && event.payload_context.raw_source_filename;
+    if (filename) {
+      addHtml('原始视频素材库文件名', filename, tcEsc(filename) + ' ' + tcCopyButton(filename, '复制原始素材库文件名'));
+    }
+  }
   if (Array.isArray(payload.issue_labels)) add('问题点', payload.issue_labels.join('、'));
   add('处理人', tcEventPayloadUserDisplay(event, payload, 'assignee_id'));
   add('上次字幕任务', payload.previous_subtitle_task_id);
@@ -1322,6 +1332,16 @@ function tcRenderCurrentReviewEntry(reviewAssets) {
     + action
     + '</div>';
 }
+function tcRenderReusedRawSourceContext(event) {
+  if (!event || event.event_type !== 'raw_source_reused') return '';
+  const context = event.payload_context;
+  const videoUrl = context && context.raw_source_video_url;
+  if (!videoUrl) return '';
+  return '<div class="tc-reused-raw-source-player" style="margin-top:10px; max-width:480px; padding:10px 12px; background:var(--tc-bg-subtle); border-radius:6px; border:1px solid var(--tc-border);">'
+    + '<div style="font-weight:600; font-size:12px; color:var(--tc-fg-muted); margin-bottom:6px;">🎦 原始视频素材库文件预览</div>'
+    + '<video style="width:100%; border-radius:6px; background:#000;" controls preload="metadata" src="' + tcAttr(videoUrl) + '"></video>'
+    + '</div>';
+}
 function tcRenderEventTimeline(task, events, reviewAssets) {
   if (!events.length) {
     return '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无审核流程记录</div>';
@@ -1352,9 +1372,11 @@ function tcRenderEventTimeline(task, events, reviewAssets) {
       : tcRenderReviewAssetList(reviewStep);
     const subtitleRemovalHtml = tcRenderSubtitleRemovalContext(event);
     const rawSelfReviewHtml = tcRenderRawSelfReviewActions(task, event, rawSelfReviewAnchor);
+    const reusedRawSourceHtml = tcRenderReusedRawSourceContext(event);
     const facts = h.facts.length
       ? '<div class="tc-event-facts">' + h.facts.map(function(fact) {
-          return '<div class="tc-event-fact"><strong>' + tcEsc(fact.label) + '</strong><span>' + tcEsc(fact.value) + '</span></div>';
+          const valHtml = fact.htmlValue ? fact.htmlValue : tcEsc(fact.value);
+          return '<div class="tc-event-fact"><strong>' + tcEsc(fact.label) + '</strong><span>' + valHtml + '</span></div>';
         }).join('') + '</div>'
       : '';
     const tech = h.tech
@@ -1374,6 +1396,7 @@ function tcRenderEventTimeline(task, events, reviewAssets) {
       + subtitleRemovalHtml
       + reviewAssetsHtml
       + rawSelfReviewHtml
+      + reusedRawSourceHtml
       + tech
       + '</div>';
   }).join('') + '</div>';

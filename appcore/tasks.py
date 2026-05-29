@@ -552,6 +552,7 @@ def list_task_events(task_id: int) -> list[dict]:
     payload_by_event_id: dict[int, dict] = {}
     payload_user_ids: set[int] = set()
     payload_subtitle_task_ids: set[str] = set()
+    raw_source_ids: set[int] = set()
     for row in rows:
         payload = _parse_event_payload_obj(row.get("payload_json"))
         payload_by_event_id[int(row["id"])] = payload
@@ -562,9 +563,24 @@ def list_task_events(task_id: int) -> list[dict]:
         )
         if subtitle_task_id:
             payload_subtitle_task_ids.add(subtitle_task_id)
+        if row.get("event_type") == "raw_source_reused":
+            rs_id = payload.get("raw_source_id")
+            if rs_id:
+                raw_source_ids.add(int(rs_id))
 
     user_context = _load_user_display_context(payload_user_ids)
     subtitle_context = _load_subtitle_removal_context(payload_subtitle_task_ids)
+
+    raw_source_filenames: dict[int, str] = {}
+    if raw_source_ids:
+        placeholders = ", ".join(["%s"] * len(raw_source_ids))
+        rs_rows = query_all(
+            f"SELECT id, display_name FROM media_raw_sources WHERE id IN ({placeholders})",
+            tuple(raw_source_ids),
+        )
+        for rs_row in rs_rows:
+            raw_source_filenames[int(rs_row["id"])] = rs_row.get("display_name") or ""
+
     events = []
     for row in rows:
         event_id = int(row["id"])
@@ -601,6 +617,11 @@ def list_task_events(task_id: int) -> list[dict]:
                 payload=payload,
                 state=subtitle_context.get(subtitle_task_id, {}),
             )
+        if row.get("event_type") == "raw_source_reused":
+            rs_id = payload.get("raw_source_id")
+            if rs_id and int(rs_id) in raw_source_filenames:
+                context["raw_source_filename"] = raw_source_filenames[int(rs_id)]
+                context["raw_source_video_url"] = f"/medias/raw-sources/{int(rs_id)}/video"
         if context:
             item["payload_context"] = context
         events.append(item)
