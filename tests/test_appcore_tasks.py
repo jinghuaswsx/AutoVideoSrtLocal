@@ -1039,8 +1039,8 @@ def test_submit_child_passes_with_ready(
         (parent_id,),
     )["id"]
     # Stub readiness: 假装产物齐全 + 假装目标语种 item 存在
-    monkeypatch.setattr(tasks, "_find_target_lang_item",
-                        lambda product_id, lang: {"id": 1, "object_key": "x", "cover_object_key": "c", "lang": lang, "product_id": product_id})
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item",
+                        lambda **kwargs: {"id": 1, "object_key": "x", "cover_object_key": "c", "lang": "de", "product_id": db_product["product_id"]})
     monkeypatch.setattr("appcore.pushes.compute_readiness",
                         lambda i, p: {"has_object": True, "has_cover": True,
                                       "has_copywriting": True, "has_push_texts": True,
@@ -1082,8 +1082,8 @@ def test_submit_child_fails_when_not_ready(
         "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
         (parent_id,),
     )["id"]
-    monkeypatch.setattr(tasks, "_find_target_lang_item",
-                        lambda product_id, lang: {"id": 1, "lang": lang, "product_id": product_id})
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item",
+                        lambda **kwargs: {"id": 1, "lang": "de", "product_id": db_product["product_id"]})
     monkeypatch.setattr("appcore.pushes.compute_readiness",
                         lambda i, p: {"has_video": True, "has_cover": False,
                                       "has_copywriting": False})
@@ -1124,13 +1124,13 @@ def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
 
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 1,
             "object_key": "x",
             "cover_object_key": "c",
-            "lang": lang,
-            "product_id": product_id,
+            "lang": "de",
+            "product_id": 9,
         },
     )
     monkeypatch.setattr(
@@ -1186,13 +1186,13 @@ def test_submit_child_ignores_manual_confirmations_when_step_result_missing(monk
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 1,
             "object_key": "x",
             "cover_object_key": "c",
-            "lang": lang,
-            "product_id": product_id,
+            "lang": "de",
+            "product_id": 9,
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
@@ -1328,6 +1328,8 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
 
     events = []
     def fake_query_one(sql, args=()):
+        if "FROM media_items" in sql and "WHERE id=%s" in sql:
+            return {"id": 1093, "source_raw_id": 251}
         if "media_items" in sql:
             return None
         return {
@@ -1366,7 +1368,80 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     assert events[-1] == ("complete", {"task_id": 44, "actor_user_id": 2})
 
 
-def test_submit_child_step_manual_output_allows_done_status_and_updates_item(monkeypatch):
+def test_submit_child_step_manual_output_appends_video_item_even_when_same_product_lang_exists(monkeypatch):
+    from appcore import medias, tasks
+
+    events = []
+
+    def fake_query_one(sql, args=()):
+        if "FROM tasks" in sql:
+            return {
+                "id": 44,
+                "assignee_id": 2,
+                "status": tasks.CHILD_ASSIGNED,
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+            }
+        if "FROM media_items" in sql and "WHERE id=%s" in sql:
+            return {"id": 1093, "source_raw_id": 251}
+        if "FROM media_items" in sql:
+            return {
+                "id": 301,
+                "product_id": 9,
+                "lang": "de",
+                "filename": "older-task-result.mp4",
+                "object_key": "1/medias/older-task-result.mp4",
+                "task_id": 41,
+            }
+        return None
+
+    def fake_create_item(*args, **kwargs):
+        events.append(("media_item", args, kwargs))
+        return 999
+
+    def fake_execute(sql, args=()):
+        events.append(("execute", sql, args))
+        return 1
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+    monkeypatch.setattr(medias, "create_item", fake_create_item)
+    monkeypatch.setattr(
+        tasks,
+        "_record_manual_output_event",
+        lambda **kwargs: events.append(("event", kwargs)),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_child_if_ready",
+        lambda **kwargs: events.append(("complete", kwargs)) or {"completed": True, "missing": []},
+    )
+
+    result = tasks.submit_child_step_manual_output(
+        task_id=44,
+        step_key="translated_video",
+        actor_user_id=2,
+        files=[{"filename": "same-name.mp4", "object_key": "1/medias/same-name.mp4", "file_size": 123}],
+    )
+
+    assert result["media_item_id"] == 999
+    media_events = [event for event in events if event[0] == "media_item"]
+    assert len(media_events) == 1
+    assert media_events[0][2]["task_id"] == 44
+    assert media_events[0][2]["lang"] == "de"
+    assert not [
+        event for event in events
+        if event[0] == "execute" and "UPDATE media_items SET filename" in event[1]
+    ]
+    assert (
+        "execute",
+        "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+        (251, 999),
+    ) in events
+
+
+def test_submit_child_step_manual_output_allows_done_status_and_appends_item(monkeypatch):
     from appcore import medias, tasks
 
     events = []
@@ -1374,6 +1449,17 @@ def test_submit_child_step_manual_output_allows_done_status_and_updates_item(mon
     # 模拟 query_one 寻找 existing_item 或者是任务详情
     # 查找已有 item (假设之前有一条 id=301 的旧 item 记录)
     def fake_query_one(sql, args=()):
+        if "FROM tasks" in sql:
+            return {
+                "id": 44,
+                "assignee_id": 2,
+                "status": tasks.CHILD_DONE,
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+            }
+        if "FROM media_items" in sql and "id=%s" in sql:
+            return {"id": 1093, "source_raw_id": 251}
         if "media_items" in sql:
             return {
                 "id": 301,
@@ -1382,14 +1468,13 @@ def test_submit_child_step_manual_output_allows_done_status_and_updates_item(mon
                 "filename": "old-manual.mp4",
                 "object_key": "1/medias/old-manual.mp4",
             }
-        return {
-            "id": 44,
-            "assignee_id": 2,
-            "status": tasks.CHILD_DONE,
-            "media_product_id": 9,
-            "country_code": "DE",
-        }
+        return None
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(
+        medias,
+        "create_item",
+        lambda *args, **kwargs: events.append(("media_item", args, kwargs)) or 302,
+    )
 
     # 拦截 execute，记录是否被 UPDATE 了，并且检查 `deleted_at=NULL` 和 `id=301` 传参
     monkeypatch.setattr(
@@ -1427,19 +1512,63 @@ def test_submit_child_step_manual_output_allows_done_status_and_updates_item(mon
         files=[{"filename": "new-manual.mp4", "object_key": "1/medias/new-manual.mp4", "file_size": 456}],
     )
 
-    # 验证返回值
-    assert result["media_item_id"] == 301 # 正确地被复用了已有的 ID！
+    assert result["media_item_id"] == 302
     assert result["object_key"] == "1/medias/new-manual.mp4"
-    
+    media_events = [ev for ev in events if ev[0] == "media_item"]
+    assert len(media_events) == 1
+    assert media_events[0][2]["task_id"] == 44
+
     # 检查数据库是否执行了 UPDATE 覆盖更新和 un-soft-delete 动作
-    updates = [ev for ev in events if ev[0] == "execute" and "UPDATE media_items SET" in ev[1]]
-    assert len(updates) == 1
-    sql_stmt, sql_args = updates[0][1], updates[0][2]
-    assert "deleted_at=NULL" in sql_stmt
-    assert sql_args[0] == "new-manual.mp4" # 新文件名
-    assert sql_args[2] == "1/medias/new-manual.mp4" # 新 object_key
-    assert sql_args[3] == 456 # 新大小
-    assert sql_args[6] == 301 # 旧 item id
+    filename_updates = [
+        ev for ev in events
+        if ev[0] == "execute" and "UPDATE media_items SET filename" in ev[1]
+    ]
+    assert filename_updates == []
+    assert (
+        "execute",
+        "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+        (251, 302),
+    ) in events
+
+
+def test_submit_child_step_manual_cover_does_not_use_other_task_video(monkeypatch):
+    import pytest
+    from appcore import tasks
+
+    def fake_query_one(sql, args=()):
+        if "FROM tasks" in sql:
+            return {
+                "id": 44,
+                "assignee_id": 2,
+                "status": tasks.CHILD_ASSIGNED,
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+            }
+        if "FROM media_items" in sql:
+            return None
+        return None
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(
+        tasks,
+        "_find_target_lang_item",
+        lambda product_id, lang: {
+            "id": 301,
+            "product_id": product_id,
+            "lang": lang,
+            "task_id": 41,
+            "object_key": "other-task.mp4",
+        },
+    )
+
+    with pytest.raises(ValueError, match="target media item required before cover"):
+        tasks.submit_child_step_manual_output(
+            task_id=44,
+            step_key="translated_cover",
+            actor_user_id=2,
+            files=[{"filename": "cover.png", "object_key": "1/medias/cover.png", "file_size": 123}],
+        )
 
 
 def test_submit_child_moves_ready_task_to_review(monkeypatch):
@@ -1494,13 +1623,13 @@ def test_submit_child_moves_ready_task_to_review(monkeypatch):
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 1,
             "object_key": "x",
             "cover_object_key": "c",
-            "lang": lang,
-            "product_id": product_id,
+            "lang": "de",
+            "product_id": 9,
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
@@ -1837,7 +1966,7 @@ def test_submit_child_fails_when_target_lang_item_missing(
         "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
         (parent_id,),
     )["id"]
-    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda *a, **k: None)
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item", lambda **kwargs: None)
     with pytest.raises(tasks.NotReadyError, match="lang_item_missing|missing"):
         tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
@@ -1858,13 +1987,13 @@ def test_submit_child_auto_done_keeps_parent_raw_task_completed(
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
-    monkeypatch.setattr(tasks, "_find_target_lang_item",
-                        lambda product_id, lang: {
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item",
+                        lambda **kwargs: {
                             "id": 1,
                             "object_key": "x",
                             "cover_object_key": "c",
-                            "lang": lang,
-                            "product_id": product_id,
+                            "lang": "de",
+                            "product_id": db_product["product_id"],
                         })
     monkeypatch.setattr("appcore.pushes.compute_readiness",
                         lambda i, p: {"has_object": True, "has_cover": True,

@@ -186,6 +186,23 @@ def test_build_item_delete_response_soft_deletes_and_exposes_object_key():
     assert result.object_key == "1/medias/123/demo.mp4"
 
 
+def test_build_item_delete_response_rejects_target_language_video_items():
+    from web.services.media_items import build_item_delete_response
+
+    calls = []
+
+    result = build_item_delete_response(
+        44,
+        {"id": 44, "lang": "fr", "object_key": "1/medias/123/demo-fr.mp4"},
+        soft_delete_item_fn=lambda item_id: calls.append(item_id) or 1,
+    )
+
+    assert calls == []
+    assert result.status_code == 409
+    assert result.payload["error"] == "target_language_video_append_only"
+    assert result.object_key is None
+
+
 def test_build_item_bootstrap_response_validates_and_reserves_upload():
     from web.services.media_items import (
         ItemUploadValidation,
