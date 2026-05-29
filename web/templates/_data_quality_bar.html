@@ -1,5 +1,6 @@
 {# 数据质量状态条共享组件
    Docs-anchor: docs/analytics-data-quality-guardrails.md
+   Docs-anchor: docs/superpowers/specs/2026-05-29-data-quality-bar-compact-disclosure.md
 
    用法：
    1. 在页面里 ``{% include "_data_quality_bar.html" %}``。
@@ -7,10 +8,11 @@
       传入接口顶层 ``data_quality`` 对象。``data_quality`` 缺失时按 unknown 处理。
 #}
 <style>
-  .dq-bar { margin: 0 0 var(--space-4); }
+  .dq-bar { margin: 0 0 var(--space-3); }
+  .dq-bar [hidden] { display: none !important; }
   .dq-bar__shell {
-    display: flex; align-items: flex-start; gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 8px var(--space-3);
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--bg-subtle);
@@ -22,14 +24,20 @@
   .dq-bar__shell.is-error    { background: var(--danger-bg);  border-color: transparent; }
   .dq-bar__shell.is-unknown  { background: var(--bg-muted);   border-color: var(--border); }
   .dq-bar__icon {
-    width: 18px; height: 18px; flex: 0 0 18px; margin-top: 2px;
+    width: 14px; height: 14px; flex: 0 0 14px; font-size: 12px;
     display: inline-flex; align-items: center; justify-content: center;
   }
   .dq-bar__body { flex: 1 1 auto; min-width: 0; }
+  .dq-bar__summary {
+    display: flex; align-items: center; gap: var(--space-2);
+    min-width: 0; flex-wrap: nowrap;
+  }
   .dq-bar__title {
     font-weight: 600; font-size: var(--text-sm);
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap;
   }
+  .dq-bar__title [data-dq-status-label] { flex: 0 0 auto; }
   .dq-bar__shell.is-ok       .dq-bar__title { color: var(--success-fg); }
   .dq-bar__shell.is-warning  .dq-bar__title,
   .dq-bar__shell.is-stale    .dq-bar__title { color: var(--warning-fg); }
@@ -40,13 +48,25 @@
     display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
     border-radius: var(--radius-md); font-size: var(--text-xs); font-weight: 500;
     background: rgba(255,255,255,0.55); color: inherit;
+    flex: 0 1 auto; min-width: 0;
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .dq-bar__message,
   .dq-bar__sub {
-    margin-top: 4px; color: var(--fg-muted);
+    color: var(--fg-muted);
     font-size: var(--text-xs); line-height: var(--leading-tight);
   }
+  .dq-bar__message {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dq-bar__sub { margin-top: 4px; }
+  .dq-bar__shell.is-mismatch .dq-bar__message,
+  .dq-bar__shell.is-error    .dq-bar__message,
   .dq-bar__shell.is-mismatch .dq-bar__sub,
   .dq-bar__shell.is-error    .dq-bar__sub { color: var(--danger-fg); }
+  .dq-bar__shell.is-warning  .dq-bar__message,
+  .dq-bar__shell.is-stale    .dq-bar__message,
   .dq-bar__shell.is-warning  .dq-bar__sub,
   .dq-bar__shell.is-stale    .dq-bar__sub { color: var(--warning-fg); }
   .dq-bar__details {
@@ -60,9 +80,25 @@
   .dq-bar__details dt { font-weight: 500; }
   .dq-bar__details dd { margin: 0; font-variant-numeric: tabular-nums; }
   .dq-bar__toggle {
-    background: transparent; border: 0; padding: 0; cursor: pointer;
-    color: inherit; font: inherit; text-decoration: underline;
-    text-underline-offset: 2px;
+    display: inline-flex; align-items: center; gap: 4px;
+    flex: 0 0 auto; background: rgba(255,255,255,0.5);
+    border: 0; border-radius: var(--radius-sm);
+    padding: 2px 7px; cursor: pointer;
+    color: inherit; font: inherit; font-size: var(--text-xs);
+    line-height: 18px; white-space: nowrap;
+  }
+  .dq-bar__toggle-icon { font-size: 10px; line-height: 1; }
+  @media (max-width: 640px) {
+    .dq-bar { margin-bottom: var(--space-2); }
+    .dq-bar__shell { padding: 7px 10px; gap: 7px; }
+    .dq-bar__title { gap: 6px; }
+    .dq-bar__chip { max-width: 30vw; padding: 0 6px; }
+    .dq-bar__message { max-width: 24vw; }
+    .dq-bar__toggle { padding-inline: 6px; }
+  }
+  @media (max-width: 420px) {
+    .dq-bar__message { display: none; }
+    .dq-bar__chip { max-width: 31vw; }
   }
 </style>
 
@@ -70,14 +106,19 @@
   <div class="dq-bar__shell is-unknown" data-dq-shell>
     <span class="dq-bar__icon" aria-hidden="true">●</span>
     <div class="dq-bar__body">
-      <div class="dq-bar__title">
-        <span data-dq-status-label>数据质量</span>
-        <span class="dq-bar__chip" data-dq-source>—</span>
-        <span class="dq-bar__chip" data-dq-range hidden></span>
-        <button type="button" class="dq-bar__toggle" data-dq-toggle hidden>展开详情</button>
+      <div class="dq-bar__summary" data-dq-summary>
+        <div class="dq-bar__title">
+          <span data-dq-status-label>数据质量</span>
+          <span class="dq-bar__chip" data-dq-source>—</span>
+          <span class="dq-bar__chip" data-dq-range hidden></span>
+        </div>
+        <span class="dq-bar__message" data-dq-message></span>
+        <button type="button" class="dq-bar__toggle" data-dq-toggle hidden aria-expanded="false" aria-controls="dq-bar-details">
+          <span data-dq-toggle-label>详情</span>
+          <span class="dq-bar__toggle-icon" data-dq-toggle-icon aria-hidden="true">v</span>
+        </button>
       </div>
-      <div class="dq-bar__sub" data-dq-sub></div>
-      <dl class="dq-bar__details" data-dq-details hidden></dl>
+      <dl class="dq-bar__details" id="dq-bar-details" data-dq-details hidden></dl>
     </div>
   </div>
 </section>
@@ -86,9 +127,9 @@
 (function () {
   const STATUS_LABELS = {
     ok: '数据已校验',
-    warning: '数据已展示（带未分摊或实时兜底）',
-    stale: '派生数据滞后',
-    mismatch: '跨表对账失败',
+    warning: '数据提示',
+    stale: '数据滞后',
+    mismatch: '对账失败',
     error: '校验异常',
     unknown: '数据质量未知',
   };
@@ -155,8 +196,10 @@
     const statusLabel = root.querySelector('[data-dq-status-label]');
     const sourceChip = root.querySelector('[data-dq-source]');
     const rangeChip = root.querySelector('[data-dq-range]');
-    const sub = root.querySelector('[data-dq-sub]');
+    const message = root.querySelector('[data-dq-message]');
     const toggle = root.querySelector('[data-dq-toggle]');
+    const toggleLabel = root.querySelector('[data-dq-toggle-label]');
+    const toggleIcon = root.querySelector('[data-dq-toggle-icon]');
     const details = root.querySelector('[data-dq-details]');
 
     const dq = payload && typeof payload === 'object'
@@ -183,7 +226,9 @@
     } else {
       rangeChip.hidden = true;
     }
-    sub.textContent = buildSubtext(dq);
+    const summaryText = buildSubtext(dq);
+    message.textContent = summaryText;
+    message.title = summaryText;
 
     const watermarkRows = summarizeWatermarks(dq.watermarks);
     if (watermarkRows.length) {
@@ -192,16 +237,22 @@
           + `<dd>${row.date} <span style="opacity:.7">/ ${row.ts}</span></dd></div>`
       ).join('');
       toggle.hidden = false;
+      details.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      if (toggleLabel) toggleLabel.textContent = '详情';
+      if (toggleIcon) toggleIcon.textContent = 'v';
       toggle.onclick = () => {
-        const expanded = !details.hidden;
-        details.hidden = expanded;
-        toggle.textContent = expanded ? '展开详情' : '收起详情';
+        const nextExpanded = details.hidden;
+        details.hidden = !nextExpanded;
+        toggle.setAttribute('aria-expanded', String(nextExpanded));
+        if (toggleLabel) toggleLabel.textContent = nextExpanded ? '收起' : '详情';
+        if (toggleIcon) toggleIcon.textContent = nextExpanded ? '^' : 'v';
       };
-      if (details.hidden) toggle.textContent = '展开详情';
     } else {
       details.hidden = true;
       details.innerHTML = '';
       toggle.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
     }
   }
 
