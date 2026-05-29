@@ -735,6 +735,27 @@ def list_task_center_items(
     count_args = tuple(args)
     total_row = query_one(count_sql, count_args) or {}
     total = int(total_row.get("total") or 0)
+
+    # Calculate base tasks count (only tab & archived filter applied)
+    base_where = ["1=1"]
+    base_args = []
+    if tab == "mine":
+        base_where.append("t.assignee_id=%s")
+        base_args.append(int(user_id))
+    if archived is True:
+        base_where.append("t.archived_at IS NOT NULL")
+    elif archived is False:
+        base_where.append("t.archived_at IS NULL")
+
+    base_where_sql = " AND ".join(base_where)
+    base_count_sql = (
+        "SELECT COUNT(*) AS total_all "
+        "FROM tasks t "
+        "JOIN media_products p ON p.id=t.media_product_id "
+        f"WHERE {base_where_sql}"
+    )
+    base_total_row = query_one(base_count_sql, tuple(base_args)) or {}
+    total_all = int(base_total_row.get("total_all") or 0)
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = min(requested_page, total_pages)
     offset = (page - 1) * page_size
@@ -807,6 +828,7 @@ def list_task_center_items(
         "page": page,
         "page_size": page_size,
         "total": total,
+        "total_all": total_all,
         "total_pages": total_pages,
     }
 

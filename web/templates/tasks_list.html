@@ -451,6 +451,7 @@
       <option value="cancelled">已取消</option>
     </select>
     <button class="tc-btn" id="tcRefresh">刷新</button>
+    <span id="tcFilterStats" style="margin-left: var(--tc-sp-3); font-size: 13px; color: var(--tc-fg-muted); display: inline-flex; align-items: center;"></span>
   </div>
 
   <div id="tcTableWrap"></div>
@@ -1971,7 +1972,16 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   const data = await tcFetchJson('/tasks/api/list?' + params.toString());
   TC_TASK_PAGE = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
   TC_TASK_CACHE = new Map((data.items || []).map(it => [Number(it.id || 0), it]));
-  if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0); return; }
+
+  const statsEl = document.getElementById('tcFilterStats');
+  if (statsEl) {
+    statsEl.innerHTML = `一共 <strong>${data.total_all || 0}</strong> 个任务，根据筛选逻辑筛选出来的任务量: <strong>${data.total || 0}</strong>`;
+  }
+
+  if (!data.items.length) { 
+    wrap.innerHTML = '<div class="tc-empty">暂无任务</div>' + tcRenderTaskPager(data, 0, false); 
+    return; 
+  }
   const rows = data.items.map(it => {
     const kind = tcTaskTypeLabel(it);
     const country = it.country_code ? tcEsc(tcLanguageLabel(it.country_code)) : '—';
@@ -2012,7 +2022,9 @@ async function tcRenderTaskList(wrap, tab, bucket) {
       <td>${tcTaskRowAction(it)}</td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>${tcRenderTaskPager(data, data.items.length)}`;
+  wrap.innerHTML = tcRenderTaskPager(data, data.items.length, true)
+    + `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    + tcRenderTaskPager(data, data.items.length, false);
 }
 
 async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
@@ -2043,7 +2055,7 @@ async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
     selectEl.disabled = false;
   }
 }
-function tcRenderTaskPager(data, itemCount) {
+function tcRenderTaskPager(data, itemCount, isTop = false) {
   const page = Math.max(1, Number(data.page || TC_TASK_PAGE || 1));
   const pageSize = Math.max(1, Number(data.page_size || TC_TASK_PAGE_SIZE));
   const total = Math.max(0, Number(data.total || 0));
@@ -2051,7 +2063,10 @@ function tcRenderTaskPager(data, itemCount) {
   const totalPages = explicitPages || Math.max(1, total ? Math.ceil(total / pageSize) : page);
   const hasPrev = page > 1;
   const hasNext = page < totalPages || (!explicitPages && itemCount >= pageSize);
-  return `<div class="tc-pager" aria-label="任务列表分页">
+  const suffix = isTop ? 'Top' : 'Bottom';
+  const customMargin = isTop ? 'margin-bottom: var(--tc-sp-3); margin-top: 0;' : '';
+
+  return `<div class="tc-pager" aria-label="任务列表分页" style="${customMargin}">
     <span class="tc-pager__summary">共 ${total} 条 · 每页 ${pageSize} 条 · 第 ${page} / ${totalPages} 页</span>
     <div class="tc-pager__controls">
       <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskGotoPage(1)">第一页</button>
@@ -2059,8 +2074,8 @@ function tcRenderTaskPager(data, itemCount) {
       <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskPage(1)">下一页</button>
       <button type="button" class="tc-btn" ${hasNext ? '' : 'disabled'} onclick="tcTaskGotoPage(${totalPages})">最后一页</button>
       <form class="tc-pager__jump" onsubmit="return tcTaskJumpPage(event, ${totalPages})">
-        <label for="tcTaskPageJump">去</label>
-        <input id="tcTaskPageJump" class="tc-input tc-pager__input" type="number" min="1" max="${totalPages}" value="${page}" data-task-page-jump aria-label="跳转页码">
+        <label for="tcTaskPageJump${suffix}">去</label>
+        <input id="tcTaskPageJump${suffix}" class="tc-input tc-pager__input" type="number" min="1" max="${totalPages}" value="${page}" data-task-page-jump aria-label="跳转页码">
         <span>页</span>
         <button type="submit" class="tc-btn">跳转</button>
       </form>
