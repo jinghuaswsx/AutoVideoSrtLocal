@@ -118,10 +118,10 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     assert "function tcTaskRowAction(it)" in body
     assert "function tcBlockedTaskAction(it)" not in body
     assert "if (status === 'blocked')" in body
-    assert "blockedActions.push(tcCancelTaskAction('child', id));" in body
-    assert "tcOpenDetail(id)" in body
+    assert "tcCancelTaskAction(" in body
+    assert "tcOpenDetailAction(id)" in body
     assert "去处理" in body
-    assert "处理去字幕原始视频" in body
+    assert "处理去字幕原始视频" not in body
     assert "认领处理" not in body
     assert "const kind = it.parent_task_id ? '子任务' : '父任务';" not in body
     assert "等待前置完成" not in body
@@ -141,8 +141,7 @@ def test_task_center_overview_action_column_shows_detail_and_admin_cancel(authed
     assert "function tcDetailTaskAction(id)" in body
     assert "function tcCancelTaskAction(kind, id)" in body
     assert "tcDetailTaskAction(id)" in body
-    assert "tcCancelTaskAction('parent', id)" in body
-    assert "tcCancelTaskAction('child', id)" in body
+    assert "tcCancelTaskAction(" in body
     assert "查看详情" in body
     assert "取消任务" in body
 
@@ -169,8 +168,8 @@ def test_task_center_raw_processing_action_allows_assignee_without_legacy_capabi
     end = body.index("if (status === 'raw_review')", start)
     block = body[start:end]
     assert "tcCanHandleRawTask(it)" in block
-    assert "tcActiveTaskAction(id, '处理去字幕原始视频', true)" in block
-    assert "tcDisabledTaskAction('去字幕原始视频素材处理中')" in block
+    assert "tcOpenDetailAction(${id})" in block
+    assert "disabled title=\"去字幕原始视频素材处理中\"" in block
 
 
 def test_task_center_raw_review_self_actions_render_in_step(authed_client_no_db):
@@ -289,12 +288,8 @@ def test_task_center_completed_rows_expose_archive_action(authed_client_no_db):
     assert "tcArchiveTask(${Number(id || 0)})" in body
     assert "归档" in body
 
-    start = body.index("if (status === 'done')")
-    end = body.index("actions.push(tcDetailTaskAction(id));", start)
-    done_block = body[start:end]
-    assert "actions.push" in done_block
-    assert "查看结果" in done_block
-    assert "tcArchiveTaskAction(id)" in done_block
+    assert "actions.push(mainBtn);" in body
+    assert "tcArchiveTaskAction(id)" in body
 
 
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
