@@ -89,6 +89,10 @@ class SentenceReconcileStrategyV2(TtsConvergenceStrategy):
 
             runner._set_step(task_id, "tts", "running", f"正在生成{target_language_name}首轮配音...")
             tts_input_segments = _build_av_tts_segments(av_sentences)
+            tts_input_segments = runner._prepare_tts_segments_for_audio_gen(
+                task,
+                tts_input_segments,
+            )
             initial_rate_info = _resolve_speech_rate_reference(tts_voice_id, target_language)
             initial_char_count = sum(
                 len(str(segment.get("tts_text") or segment.get("translated") or segment.get("text") or ""))

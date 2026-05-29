@@ -36,7 +36,10 @@ from web.services.task_alignment import confirm_task_alignment
 from web.services.task_retranslate import retranslate_task
 from web.services.task_translate import start_task_translate
 from web.services.task_translation_selection import select_task_translation
-from web.services.translate_detail_protocol import resolve_round_file_entry
+from web.services.translate_detail_protocol import (
+    build_voice_library_payload,
+    resolve_round_file_entry,
+)
 from web.services.translate_route_responses import (
     build_translate_route_payload_response,
     translate_route_flask_response,
@@ -76,7 +79,9 @@ def _task_belongs_to_current_user(task: dict) -> bool:
 
 
 def _can_view_task(task: dict) -> bool:
-    return _is_admin_user() or _task_belongs_to_current_user(task)
+    if _is_admin_user() or _task_belongs_to_current_user(task):
+        return True
+    return bool(task.get("visible_to_all"))
 
 
 def _task_from_project_row(row: dict | None) -> dict:
@@ -470,6 +475,27 @@ def _voice_name_from(value: object, voice_id: str) -> str:
     return voice_id
 
 
+def _voice_payload_from_candidate(value: object, voice_id: str) -> dict:
+    payload = {
+        "voice_id": voice_id,
+        "name": _voice_name_from(value, voice_id),
+    }
+    if isinstance(value, dict):
+        for key in (
+            "voice_name",
+            "gender",
+            "language",
+            "description",
+            "descriptive",
+            "preview_url",
+            "preview_audio",
+            "preview_local_url",
+        ):
+            if value.get(key) is not None:
+                payload[key] = value[key]
+    return payload
+
+
 def _normalize_voice_selection_payload(body: dict) -> dict[str, str]:
     raw = body.get("selected_voice_by_speaker") or {}
     if not isinstance(raw, dict):
@@ -492,21 +518,73 @@ def _selected_voice_payload(
     requested_voice_id: str,
     *,
     speaker: str,
+    target_lang: str | None = None,
 ) -> dict:
     requested_voice_id = str(requested_voice_id or "").strip()
     candidates = profile.get("candidates") or []
-    if not candidates:
-        raise ValueError(f"Speaker {speaker} has no voice candidates")
     for candidate in candidates:
         if _voice_id_from(candidate) == requested_voice_id:
-            payload = {
-                "voice_id": requested_voice_id,
-                "name": _voice_name_from(candidate, requested_voice_id),
-            }
-            if isinstance(candidate, dict) and candidate.get("voice_name"):
-                payload["voice_name"] = candidate["voice_name"]
-            return payload
-    raise ValueError(f"voice_id is not a candidate for Speaker {speaker}")
+            return _voice_payload_from_candidate(candidate, requested_voice_id)
+
+    if target_lang:
+        from appcore.voice_library_browse import fetch_voice_by_id
+
+        voice_row = fetch_voice_by_id(language=target_lang, voice_id=requested_voice_id)
+        if voice_row:
+            return _voice_payload_from_candidate(voice_row, requested_voice_id)
+
+    if not candidates:
+        raise ValueError(f"Speaker {speaker} has no voice candidates and voice_id is not in library")
+    raise ValueError(f"voice_id is not a candidate or library voice for Speaker {speaker}")
+
+
+def _append_candidate_if_missing(profile: dict, voice_payload: dict) -> None:
+    voice_id = _voice_id_from(voice_payload)
+    if not voice_id:
+        return
+    candidates = [
+        dict(candidate) if isinstance(candidate, dict) else candidate
+        for candidate in (profile.get("candidates") or [])
+    ]
+    if not any(_voice_id_from(candidate) == voice_id for candidate in candidates):
+        candidates.append(dict(voice_payload))
+    profile["candidates"] = candidates
+
+
+def _speaker_selected_voice_id(state: dict, speaker: str, profile: dict) -> str:
+    selected_by_speaker = state.get("selected_voice_by_speaker") or {}
+    return (
+        _voice_id_from(selected_by_speaker.get(speaker))
+        or _voice_id_from(profile.get("selected_voice"))
+    )
+
+
+def _speaker_voice_library_state(state: dict, speaker: str, profile: dict) -> dict:
+    steps = state.get("steps") or {}
+    voice_match_ab = steps.get("voice_match_ab") or "pending"
+    return {
+        "target_lang": state.get("target_lang"),
+        "steps": {
+            "extract": steps.get("extract", "pending"),
+            "asr": steps.get("asr", "pending"),
+            "voice_match": voice_match_ab,
+        },
+        "voice_match_candidates": profile.get("candidates") or [],
+        "selected_voice_id": _speaker_selected_voice_id(state, speaker, profile),
+        "voice_ai_auto_select_enabled": False,
+    }
+
+
+def _parse_voice_library_paging() -> tuple[int, int]:
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(200, int(request.args.get("page_size") or 30)))
+    except (TypeError, ValueError):
+        page_size = 30
+    return page, page_size
 
 
 def _copy_source_video_for_duplicate(
@@ -1375,6 +1453,57 @@ def select_translation(task_id: str):
     return _json_response(outcome.payload, outcome.status_code)
 
 
+@bp.route("/api/dialogue-translate/<task_id>/voice-library", methods=["GET"])
+@login_required
+def voice_library_for_speaker(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    try:
+        state = json.loads(row.get("state_json") or "{}")
+    except Exception:
+        state = {}
+    lang = state.get("target_lang")
+    if not lang:
+        return _json_response({"error": "task has no target_lang"}, 400)
+
+    speaker = str(request.args.get("speaker") or "A").strip().upper()
+    if speaker not in {"A", "B"}:
+        return _json_response({"error": "speaker must be A or B"}, 400)
+
+    from appcore.voice_library_browse import list_voices
+
+    page, page_size = _parse_voice_library_paging()
+    gender = request.args.get("gender") or None
+    q = request.args.get("q") or None
+    try:
+        data = list_voices(
+            language=lang,
+            gender=gender,
+            q=q,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+
+    profiles = state.get("speaker_profiles") or {}
+    profile = profiles.get(speaker) if isinstance(profiles, dict) else {}
+    if not isinstance(profile, dict):
+        profile = {}
+    payload = build_voice_library_payload(
+        state=_speaker_voice_library_state(state, speaker, profile),
+        owner_user_id=row.get("user_id") or current_user.id,
+        items=data.get("items", []),
+        total=data.get("total", 0),
+        page=data.get("page", page),
+        page_size=data.get("page_size", page_size),
+    )
+    payload["speaker"] = speaker
+    payload["selected_voice"] = profile.get("selected_voice")
+    return _json_response(payload)
+
+
 @bp.route("/api/dialogue-translate/<task_id>/confirm-voices", methods=["POST"])
 @login_required
 def confirm_voices(task_id: str):
@@ -1400,6 +1529,7 @@ def confirm_voices(task_id: str):
         speaker: dict(profile) if isinstance(profile, dict) else {}
         for speaker, profile in (state.get("speaker_profiles") or {}).items()
     }
+    target_lang = str(state.get("target_lang") or "").strip()
     selected_voice_by_speaker: dict[str, dict] = {}
     for speaker in ("A", "B"):
         profile = speaker_profiles.get(speaker) or {}
@@ -1408,10 +1538,12 @@ def confirm_voices(task_id: str):
                 profile,
                 selected_voice_ids[speaker],
                 speaker=speaker,
+                target_lang=target_lang,
             )
         except ValueError as exc:
             return _json_response({"error": str(exc)}, 400)
         profile["selected_voice"] = selected_voice
+        _append_candidate_if_missing(profile, selected_voice)
         speaker_profiles[speaker] = profile
         selected_voice_by_speaker[speaker] = selected_voice
 

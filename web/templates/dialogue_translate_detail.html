@@ -102,6 +102,37 @@
     padding: 0 10px;
     font: inherit;
   }
+  .dialogue-voice-library-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .dialogue-voice-library-tools input {
+    min-height: 34px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 10px;
+    background: var(--bg-body);
+    color: var(--text-main);
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .dialogue-voice-library-tools button {
+    min-height: 34px;
+    border: 1px solid var(--border-main);
+    border-radius: 10px;
+    background: var(--bg-body);
+    color: var(--text-main);
+    padding: 0 12px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .dialogue-voice-library-meta {
+    font-size: 12px;
+    color: #6b7280;
+  }
   .dialogue-speaker-meta {
     display: flex;
     gap: 8px;

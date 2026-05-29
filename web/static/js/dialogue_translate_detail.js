@@ -13,6 +13,11 @@
 
   var pollTimer = null;
   var selection = { A: "", B: "" };
+  var libraryState = {
+    A: { q: "", items: [], loaded: false, loading: false, error: "", total: 0 },
+    B: { q: "", items: [], loaded: false, loading: false, error: "", total: 0 }
+  };
+  var lastTask = null;
   var isSubmitting = false;
 
   function csrfToken() {
@@ -64,6 +69,18 @@
     var voiceId = voiceIdOf(candidate);
     var name = voiceNameOf(candidate, voiceId);
     return name && name !== voiceId ? name + " (" + voiceId + ")" : (name || voiceId || "未命名音色");
+  }
+
+  function mergeVoiceOptions(candidates, libraryItems) {
+    var merged = [];
+    var seen = {};
+    (candidates || []).concat(libraryItems || []).forEach(function (item) {
+      var voiceId = voiceIdOf(item);
+      if (!voiceId || seen[voiceId]) return;
+      seen[voiceId] = true;
+      merged.push(item);
+    });
+    return merged;
   }
 
   function reviewReason(task, speaker) {
@@ -123,6 +140,45 @@
     option.value = selectedId;
     option.textContent = voiceNameOf(profile && profile.selected_voice, selectedId);
     select.appendChild(option);
+  }
+
+  async function loadVoiceLibrary(speaker) {
+    var state = libraryState[speaker];
+    if (!state || state.loading) return;
+    state.loading = true;
+    state.error = "";
+    render(lastTask || {});
+    try {
+      var params = new URLSearchParams({
+        speaker: speaker,
+        page: "1",
+        page_size: "200"
+      });
+      if (state.q) {
+        params.set("q", state.q);
+      }
+      var response = await fetch(
+        apiBase + "/" + encodeURIComponent(taskId) + "/voice-library?" + params.toString(),
+        { credentials: "same-origin" }
+      );
+      var payload = {};
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = {};
+      }
+      if (!response.ok) {
+        throw new Error(payload.error || ("HTTP " + response.status));
+      }
+      state.items = Array.isArray(payload.items) ? payload.items : [];
+      state.total = Number(payload.total || state.items.length || 0);
+      state.loaded = true;
+    } catch (error) {
+      state.error = error && error.message ? error.message : "音色库加载失败";
+    } finally {
+      state.loading = false;
+      render(lastTask || {});
+    }
   }
 
   function renderSpeakerCard(task, speaker) {
@@ -190,7 +246,11 @@
       card.appendChild(reason);
     }
 
-    var candidates = Array.isArray(profile.candidates) ? profile.candidates : [];
+    var speakerLibrary = libraryState[speaker] || {};
+    var candidates = mergeVoiceOptions(
+      Array.isArray(profile.candidates) ? profile.candidates : [],
+      speakerLibrary.items || []
+    );
     candidates.forEach(function (candidate) {
       var voiceId = voiceIdOf(candidate);
       if (!voiceId) return;
@@ -207,10 +267,49 @@
       updateConfirmState();
     });
 
+    var tools = document.createElement("div");
+    tools.className = "dialogue-voice-library-tools";
+    var search = document.createElement("input");
+    search.type = "search";
+    search.placeholder = "搜索完整音色库";
+    search.value = speakerLibrary.q || "";
+    search.addEventListener("input", function () {
+      libraryState[speaker].q = search.value.trim();
+    });
+    search.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        loadVoiceLibrary(speaker);
+      }
+    });
+    var loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.textContent = speakerLibrary.loading ? "加载中..." : "查音色库";
+    loadBtn.disabled = !!speakerLibrary.loading;
+    loadBtn.addEventListener("click", function () {
+      libraryState[speaker].q = search.value.trim();
+      loadVoiceLibrary(speaker);
+    });
+    tools.appendChild(search);
+    tools.appendChild(loadBtn);
+    card.appendChild(tools);
+
+    var libraryMeta = document.createElement("div");
+    libraryMeta.className = "dialogue-voice-library-meta";
+    if (speakerLibrary.error) {
+      libraryMeta.textContent = speakerLibrary.error;
+    } else if (speakerLibrary.loaded) {
+      libraryMeta.textContent = "已加载 " + (speakerLibrary.items || []).length + " / " + (speakerLibrary.total || (speakerLibrary.items || []).length) + " 个音色";
+    } else {
+      libraryMeta.textContent = "自动候选不合适时，可搜索完整音色库。";
+    }
+    card.appendChild(libraryMeta);
+
     return card;
   }
 
   function render(task) {
+    lastTask = task || {};
     updateStatus(task || {});
     gridEl.innerHTML = "";
     ["A", "B"].forEach(function (speaker) {

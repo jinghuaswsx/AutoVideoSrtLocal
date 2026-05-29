@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from web import store
 
@@ -134,6 +135,7 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
         ("/api/dialogue-translate/<task_id>/start-translate", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/retranslate", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/select-translation", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/voice-library", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/llm-debug/<step>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>", ("GET", "HEAD", "OPTIONS")),
@@ -144,6 +146,77 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
     }
 
     assert expected <= rules
+
+
+def test_dialogue_list_query_includes_visible_to_all_for_permitted_users(
+    authed_user_client_no_db,
+):
+    with patch("web.routes.dialogue_translate.db_query", return_value=[]) as mock_query, \
+         patch("web.routes.dialogue_translate.medias.list_enabled_language_codes", return_value=["de", "en"]), \
+         patch("appcore.settings.get_retention_hours", return_value=72):
+        resp = authed_user_client_no_db.get("/dialogue-translate")
+
+    assert resp.status_code == 200
+    sql, args = mock_query.call_args.args
+    assert (
+        "p.user_id = %s OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.visible_to_all')) = 'true'"
+        in sql
+    )
+    assert args == (2,)
+
+
+def test_dialogue_detail_allows_visible_to_all_for_permitted_user(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-visible-to-all"
+    state = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "dialogue_translate",
+        "display_name": "Shared Dialogue",
+        "source_language": "en",
+        "target_lang": "de",
+        "visible_to_all": True,
+        "steps": {"speaker_detect": "done", "voice_match_ab": "waiting"},
+    }
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.recover_project_if_needed",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate._dialogue_pipeline_step_names",
+        lambda task, include_analysis=False: [
+            "extract",
+            "speaker_detect",
+            "voice_match_ab",
+            "alignment",
+            "export",
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "id": task_id,
+            "user_id": 1,
+            "original_filename": "shared.mp4",
+            "display_name": "Shared Dialogue",
+            "task_dir": "/tmp/dialogue-visible-to-all",
+            "state_json": json.dumps(state, ensure_ascii=False),
+            "status": "running",
+            "thumbnail_path": "",
+            "created_at": None,
+            "expires_at": None,
+            "deleted_at": None,
+        },
+    )
+
+    resp = authed_user_client_no_db.get(f"/dialogue-translate/{task_id}")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Shared Dialogue" in body
+    assert "A/B 音色确认" in body
 
 
 def test_dialogue_translate_list_template_uses_omni_project_management_shell():
@@ -1054,6 +1127,110 @@ def test_dialogue_translate_confirm_voices_rejects_non_candidate_voice(
 
     assert resp.status_code == 400
     assert "Speaker A" in resp.get_json()["error"]
+
+
+def test_dialogue_translate_voice_library_returns_speaker_candidates(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-voice-library"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-voice-library", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        speaker_profiles={
+            "A": {"candidates": [{"voice_id": "voice-a", "name": "Candidate A"}]},
+            "B": {"candidates": [{"voice_id": "voice-b", "name": "Candidate B"}]},
+        },
+        selected_voice_by_speaker={"A": {"voice_id": "voice-a", "name": "Candidate A"}},
+        steps={"extract": "done", "asr": "done", "voice_match_ab": "waiting"},
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+
+    def fake_list_voices(**kwargs):
+        assert kwargs["language"] == "de"
+        assert kwargs["gender"] == "female"
+        assert kwargs["q"] == "anna"
+        return {
+            "items": [{"voice_id": "voice-a", "name": "Candidate A"}],
+            "total": 1,
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+        }
+
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", fake_list_voices)
+
+    resp = authed_client_no_db.get(
+        f"/api/dialogue-translate/{task_id}/voice-library?speaker=A&gender=female&q=anna",
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["speaker"] == "A"
+    assert payload["selected_voice_id"] == "voice-a"
+    assert payload["voice_match_ready"] is True
+    assert payload["candidates"] == [{"voice_id": "voice-a", "name": "Candidate A"}]
+
+
+def test_dialogue_translate_confirm_voices_accepts_library_voice(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-confirm-library-voice"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-confirm-library-voice", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        speaker_profiles={
+            "A": {"candidates": []},
+            "B": {"candidates": [{"voice_id": "voice-b", "name": "Voice B"}]},
+        },
+        selected_voice_by_speaker={},
+        current_review_step="voice_match_ab",
+        steps={"voice_match_ab": "waiting", "alignment": "pending"},
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.fetch_voice_by_id",
+        lambda language, voice_id: (
+            {"voice_id": voice_id, "name": "Library A", "gender": "female"}
+            if language == "de" and voice_id == "voice-library-a"
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.save_project_state",
+        lambda saved_task_id, state, **kwargs: store.update(saved_task_id, **state),
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda *args, **kwargs: None,
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/confirm-voices",
+        json={"selected_voice_by_speaker": {"A": "voice-library-a", "B": "voice-b"}},
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["selected_voice_by_speaker"]["A"]["voice_id"] == "voice-library-a"
+    assert updated["selected_voice_by_speaker"]["A"]["name"] == "Library A"
+    assert updated["speaker_profiles"]["A"]["candidates"][0]["voice_id"] == "voice-library-a"
 
 
 def test_dialogue_translate_confirm_voices_persists_selection_and_resumes_alignment(
