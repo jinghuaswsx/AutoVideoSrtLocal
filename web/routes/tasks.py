@@ -282,7 +282,7 @@ def api_list():
     elif bucket == "archived":
         archived = True
         bucket = ""
-    if bucket and bucket not in {"todo", "review", "done"}:
+    if bucket and bucket not in {"todo", "review", "blocked", "done"}:
         return _json_response({"error": "invalid bucket"}, 400)
     if task_type == "all":
         task_type = ""

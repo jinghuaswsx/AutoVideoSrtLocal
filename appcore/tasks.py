@@ -698,6 +698,9 @@ def list_task_center_items(
     elif bucket == "review":
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
+    elif bucket == "blocked":
+        where.append("t.status = %s")
+        args.append(CHILD_BLOCKED)
     elif bucket == "done":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])

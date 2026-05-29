@@ -225,10 +225,12 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert 'data-section-tab="overview"' in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
+    assert 'data-bucket="blocked"' in body
     assert 'data-bucket="done"' in body
     assert 'data-bucket="archived"' in body
     assert "待处理任务" in body
     assert "待审核任务" in body
+    assert "阻塞中任务" in body
     assert "已完成任务" in body
     assert "已归档" in body
     assert "function tcRenderTaskPager" in body
@@ -689,6 +691,25 @@ def test_api_list_accepts_archived_bucket(authed_client_no_db, monkeypatch):
     assert rsp.status_code == 200
     assert captured["bucket"] == ""
     assert captured["archived"] is True
+
+
+def test_api_list_accepts_blocked_bucket(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&bucket=blocked")
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == "blocked"
 
 
 def test_api_list_allows_exact_detail_fetch_to_include_archived(authed_client_no_db, monkeypatch):
@@ -1693,6 +1714,7 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert '>任务总览</button>' in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
+    assert 'data-bucket="blocked"' in body
     assert 'data-bucket="done"' in body
     assert "<th>创建时间</th>" in body
     assert "<th>更新时间</th>" not in body
