@@ -1239,6 +1239,7 @@ def api_history():
             "ad_spend_total": spend_total,
             "ad_roas": ad_roas,
             "is_new_product_push": bool(r.get("is_new_product_push")),
+            "request_payload": payload,
         }
         history_items.append(history_item)
 
