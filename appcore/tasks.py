@@ -41,7 +41,6 @@ CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 TASK_ARCHIVED_EVENT = "archived"
-TASK_ARCHIVABLE_STATUSES = (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE)
 FINAL_MATERIAL_CONFIRM_LABEL = "最终素材和链接确认"
 FINAL_MATERIAL_CONFIRM_HINT = (
     "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
@@ -834,7 +833,7 @@ def list_task_center_items(
 
 
 def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
-    """Hide a completed task from active task-center lists."""
+    """Hide a task from active task-center lists."""
     if not is_admin:
         raise PermissionError("only admin can archive tasks")
     row = query_one(
@@ -843,8 +842,6 @@ def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
     )
     if not row:
         raise StateError("task not found")
-    if row.get("status") not in TASK_ARCHIVABLE_STATUSES:
-        raise StateError("only completed tasks can be archived")
     if row.get("archived_at"):
         return False
 
@@ -3678,4 +3675,3 @@ def get_employee_task_stats(today_str: str) -> list[dict]:
         }
         for row in rows
     ]
-

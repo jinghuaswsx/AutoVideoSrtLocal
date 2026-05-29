@@ -2206,7 +2206,7 @@ function tcOpenDetailAction(id) {
 async function tcArchiveTask(id) {
   const taskId = Number(id || 0);
   if (!taskId) return;
-  if (!confirm('确认归档这个已完成任务？')) return;
+  if (!confirm('确认归档这个任务？')) return;
   await tcFetchJson('/tasks/api/' + encodeURIComponent(String(id)) + '/archive', {
     method: 'POST',
     body: JSON.stringify({}),
@@ -2281,12 +2281,14 @@ function tcTaskRowAction(it) {
   if (isParent) {
     if (status === 'pending') {
       actions.push(tcDetailTaskAction(id));
+      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
       if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
       return tcTaskActionGroup(actions);
     }
     if (status === 'raw_in_progress') {
       actions.push(tcCanHandleRawTask(it) ? tcActiveTaskAction(id, '处理去字幕原始视频', true) : tcDisabledTaskAction('去字幕原始视频素材处理中'));
       actions.push(tcDetailTaskAction(id));
+      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
       if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
       return tcTaskActionGroup(actions);
     }
@@ -2295,39 +2297,43 @@ function tcTaskRowAction(it) {
         ? tcActiveTaskAction(id, '审核', true)
         : tcDisabledTaskAction('等待审核'));
       actions.push(tcDetailTaskAction(id));
+      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
       if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
       return tcTaskActionGroup(actions);
     }
     if (status === 'raw_done' || status === 'all_done') {
       actions.push(tcActiveTaskAction(id, '查看结果', false));
-      if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
     }
     actions.push(tcDetailTaskAction(id));
+    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
     if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('parent', id));
     return tcTaskActionGroup(actions);
   }
   if (status === 'blocked') {
     const blockedActions = actions.concat([tcDetailTaskAction(id)]);
+    if (!it.archived_at) blockedActions.push(tcArchiveTaskAction(id));
     if (tcCanCancelTask(it, isParent)) blockedActions.push(tcCancelTaskAction('child', id));
     return tcTaskActionGroup(blockedActions);
   }
   if (status === 'assigned') {
     actions.push((TC_CAPS.can_translate || TC_IS_ADMIN) ? tcActiveTaskAction(id, '去处理', true) : tcDisabledTaskAction('无处理权限'));
     actions.push(tcDetailTaskAction(id));
+    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
     if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
     return tcTaskActionGroup(actions);
   }
   if (status === 'review') {
     actions.push(TC_IS_ADMIN ? tcActiveTaskAction(id, '审核', true) : tcDisabledTaskAction('等待审核'));
     actions.push(tcDetailTaskAction(id));
+    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
     if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
     return tcTaskActionGroup(actions);
   }
   if (status === 'done') {
     actions.push(tcActiveTaskAction(id, '查看结果', false));
-    if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
   }
   actions.push(tcDetailTaskAction(id));
+  if (!it.archived_at) actions.push(tcArchiveTaskAction(id));
   if (tcCanCancelTask(it, isParent)) actions.push(tcCancelTaskAction('child', id));
   return tcTaskActionGroup(actions);
 }
