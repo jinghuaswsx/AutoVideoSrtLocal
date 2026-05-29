@@ -1758,6 +1758,52 @@ def list_item_logs(item_id: int, limit: int = 50) -> list[dict]:
 
 # ---------- 列表查询 ----------
 
+def _media_push_owner_exprs() -> tuple[str, str]:
+    """返回用于推送管理的负责人的 (owner_id_expr, owner_name_expr)。
+    
+    逻辑：
+    - 优先找直接关联的 task_id，或者匹配 product+lang 的子任务（parent_task_id IS NOT NULL）的负责人
+    - 若无子任务（如 en），回推到父任务（parent_task_id IS NULL）的负责人
+    - 最终回退到产品本身的归属人
+    """
+    has_xingming = "xingming" in medias._media_product_owner_name_expr()
+    if has_xingming:
+        display_expr = "COALESCE(NULLIF(TRIM(u_assignee.xingming), ''), u_assignee.username)"
+        product_owner_display_expr = "COALESCE(NULLIF(TRIM(u_product.xingming), ''), u_product.username)"
+    else:
+        display_expr = "u_assignee.username"
+        product_owner_display_expr = "u_product.username"
+
+    owner_id_expr = (
+        "COALESCE("
+        "  (SELECT t_child.assignee_id FROM tasks t_child "
+        "   WHERE t_child.id = i.task_id "
+        "      OR (i.task_id IS NULL AND t_child.media_product_id = i.product_id AND LOWER(TRIM(COALESCE(t_child.country_code, ''))) = LOWER(TRIM(i.lang)) AND t_child.parent_task_id IS NOT NULL) "
+        "   ORDER BY (t_child.id = i.task_id) DESC, t_child.id DESC LIMIT 1), "
+        "  (SELECT t_parent.assignee_id FROM tasks t_parent "
+        "   WHERE t_parent.media_product_id = i.product_id AND t_parent.parent_task_id IS NULL "
+        "   ORDER BY t_parent.id DESC LIMIT 1), "
+        "  p.user_id"
+        ")"
+    )
+
+    owner_name_expr = (
+        f"COALESCE("
+        f"  (SELECT {display_expr} FROM tasks t_child "
+        f"   LEFT JOIN users u_assignee ON u_assignee.id = t_child.assignee_id "
+        f"   WHERE t_child.id = i.task_id "
+        f"      OR (i.task_id IS NULL AND t_child.media_product_id = i.product_id AND LOWER(TRIM(COALESCE(t_child.country_code, ''))) = LOWER(TRIM(i.lang)) AND t_child.parent_task_id IS NOT NULL) "
+        f"   ORDER BY (t_child.id = i.task_id) DESC, t_child.id DESC LIMIT 1), "
+        f"  (SELECT {display_expr} FROM tasks t_parent "
+        f"   LEFT JOIN users u_assignee ON u_assignee.id = t_parent.assignee_id "
+        f"   WHERE t_parent.media_product_id = i.product_id AND t_parent.parent_task_id IS NULL "
+        f"   ORDER BY t_parent.id DESC LIMIT 1), "
+        f"  (SELECT {product_owner_display_expr} FROM users u_product WHERE u_product.id = p.user_id)"
+        f")"
+    )
+    return owner_id_expr, owner_name_expr
+
+
 def list_items_for_push(
     langs: list[str] | None = None,
     keyword: str = "",
@@ -1778,6 +1824,8 @@ def list_items_for_push(
     where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
     args: list[Any] = []
 
+    owner_id_expr, owner_name_expr = _media_push_owner_exprs()
+
     if langs:
         placeholders = ",".join(["%s"] * len(langs))
         where.append(f"i.lang IN ({placeholders})")
@@ -1791,7 +1839,7 @@ def list_items_for_push(
         like = f"%{product_term}%"
         args.extend([like, like])
     if owner_id is not None:
-        where.append("p.user_id = %s")
+        where.append(f"{owner_id_expr} = %s")
         args.append(int(owner_id))
     audit_result = (audit_result or "").strip()
     if audit_result:
@@ -1822,7 +1870,6 @@ def list_items_for_push(
     )
     total = int((total_row or {}).get("c") or 0)
 
-    owner_name_expr = medias._media_product_owner_name_expr()
     order_direction = "ASC" if sort == "created_at_asc" else "DESC"
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
@@ -1869,7 +1916,7 @@ def aggregate_stats_by_owner(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict:
-    """按产品负责人聚合「素材提交数 / 已推送 / 未推送 / 推送率」。
+    """按翻译/raw任务负责人聚合「素材提交数 / 已推送 / 未推送 / 推送率」。
 
     Args:
         date_from: 'YYYY-MM-DD'，含；None → 当月 1 日。
@@ -1890,21 +1937,20 @@ def aggregate_stats_by_owner(
     from_dt = _datetime.combine(df, _datetime.min.time())
     to_dt = _datetime.combine(dt + _timedelta(days=1), _datetime.min.time())
 
-    owner_name_expr = medias._media_product_owner_name_expr()
+    owner_id_expr, owner_name_expr = _media_push_owner_exprs()
     sql = (
         "SELECT "
-        "  u.id AS user_id, "
-        f" COALESCE({owner_name_expr}, '未指派') AS owner_name, "
+        f"  ({owner_id_expr}) AS user_id, "
+        f"  COALESCE({owner_name_expr}, '未指派') AS owner_name, "
         "  COUNT(*) AS submitted, "
         "  SUM(CASE WHEN i.pushed_at IS NOT NULL THEN 1 ELSE 0 END) AS pushed "
         "FROM media_items i "
         "JOIN media_products p ON p.id = i.product_id "
-        "LEFT JOIN users u ON u.id = p.user_id "
         "WHERE i.deleted_at IS NULL "
         "  AND p.deleted_at IS NULL "
         "  AND i.created_at >= %s "
         "  AND i.created_at <  %s "
-        "GROUP BY u.id, owner_name "
+        "GROUP BY user_id, owner_name "
         "ORDER BY submitted DESC, owner_name ASC"
     )
     rows = query(sql, (from_dt, to_dt))
@@ -1942,3 +1988,4 @@ def aggregate_stats_by_owner(
         "date_from": df.strftime("%Y-%m-%d"),
         "date_to": dt.strftime("%Y-%m-%d"),
     }
+
