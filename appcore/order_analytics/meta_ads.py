@@ -412,7 +412,11 @@ def _aggregate_meta_ad_summary_rows(metric_rows: list[dict]) -> list[dict]:
         if campaign_name:
             row["_campaign_names"].append(campaign_name)
         for field in _META_AD_SUMMARY_NUMERIC_FIELDS:
-            row[field] += metric.get(field) or 0
+            val = metric.get(field) or 0
+            if field in ("spend_usd", "purchase_value_usd"):
+                row[field] += float(val)
+            else:
+                row[field] += int(val)
 
     rows: list[dict] = []
     for row in grouped.values():
