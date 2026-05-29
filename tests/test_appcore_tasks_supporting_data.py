@@ -1110,7 +1110,7 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         }
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
-    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda product_id, lang: None)
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item", lambda **kwargs: None)
     monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
 
     payload = tasks.get_child_readiness(44)
@@ -1179,11 +1179,11 @@ def test_get_child_readiness_computes_payload(monkeypatch):
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 5,
-            "product_id": product_id,
-            "lang": lang,
+            "product_id": 9,
+            "lang": "de",
             "filename": "robot-kit-de.mp4",
             "display_name": "德语视频",
             "object_key": "1/medias/9/robot kit de.mp4",
@@ -1470,6 +1470,72 @@ def test_copywriting_evidence_preserves_three_structured_lines(monkeypatch):
     assert "..." not in "".join(line["value"] for line in evidence[0]["lines"])
 
 
+def test_get_child_readiness_uses_task_specific_video_item(monkeypatch):
+    from appcore import pushes, tasks
+
+    seen = {}
+
+    def fake_query_one(sql, args=()):
+        if "FROM tasks t JOIN media_products" in sql:
+            return {
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+                "status": tasks.CHILD_ASSIGNED,
+                "product_code": "robot-kit-rjc",
+                "ad_supported_langs": "de",
+            }
+        if "FROM media_items" in sql and "task_id=%s" in sql:
+            return {
+                "id": 44,
+                "product_id": 9,
+                "lang": "de",
+                "filename": "task-specific.mp4",
+                "display_name": "Task specific",
+                "object_key": "media/task-specific.mp4",
+            }
+        if "FROM media_items" in sql:
+            return {
+                "id": 999,
+                "product_id": 9,
+                "lang": "de",
+                "filename": "other-task.mp4",
+                "object_key": "media/other-task.mp4",
+            }
+        return None
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(tasks, "_latest_push_rework_rejection", lambda task_id: {})
+    monkeypatch.setattr(tasks, "_detail_images_status", lambda product_id, lang: {"ok": True, "required": False, "reason": ""})
+    monkeypatch.setattr(tasks, "_product_link_availability_status", lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []})
+    monkeypatch.setattr(tasks, "_copywriting_evidence", lambda product_id, lang: [])
+    monkeypatch.setattr(tasks, "_detail_image_preview_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_shopify_image_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_product_link_evidence", lambda *args, **kwargs: [])
+    monkeypatch.setattr(tasks, "_recent_copywriting_translate_task_id", lambda *args, **kwargs: "")
+    monkeypatch.setattr(tasks, "_recent_detail_image_translate_task_id", lambda *args, **kwargs: "")
+    def fake_compute_readiness(item, product):
+        seen["item_id"] = item["id"]
+        return {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        }
+
+    monkeypatch.setattr(pushes, "compute_readiness", fake_compute_readiness)
+
+    payload = tasks.get_child_readiness(44)
+
+    assert payload["media_item_id"] == 44
+    assert seen["item_id"] == 44
+
+
 def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monkeypatch):
     from appcore import pushes, tasks
 
@@ -1484,11 +1550,11 @@ def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monke
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 5,
-            "product_id": product_id,
-            "lang": lang,
+            "product_id": 9,
+            "lang": "de",
             "filename": "robot-kit-de.mp4",
             "object_key": "1/medias/9/robot-kit-de.mp4",
         },
@@ -1552,11 +1618,11 @@ def test_get_child_readiness_labels_unconfirmed_final_material_step(monkeypatch)
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 5,
-            "product_id": product_id,
-            "lang": lang,
+            "product_id": 9,
+            "lang": "de",
             "filename": "robot-kit-de.mp4",
             "object_key": "1/medias/9/robot-kit-de.mp4",
         },
@@ -1629,11 +1695,11 @@ def test_get_child_readiness_marks_push_rework_rejected_checks_red(monkeypatch):
     )
     monkeypatch.setattr(
         tasks,
-        "_find_target_lang_item",
-        lambda product_id, lang: {
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
             "id": 5,
-            "product_id": product_id,
-            "lang": lang,
+            "product_id": 9,
+            "lang": "de",
             "filename": "robot-kit-de.mp4",
             "display_name": "德语视频",
             "object_key": "1/medias/9/robot-kit-de.mp4",

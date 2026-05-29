@@ -241,12 +241,13 @@ def api_delete_item(item_id: int):
         abort(404)
     routes = _routes()
     result = routes._build_item_delete_response(item_id, it)
-    routes._audit_media_item_deleted(it)
-    try:
-        if result.object_key:
-            _delete_media_object(result.object_key)
-    except Exception:
-        pass
+    if result.status_code < 400:
+        routes._audit_media_item_deleted(it)
+        try:
+            if result.object_key:
+                _delete_media_object(result.object_key)
+        except Exception:
+            pass
     return routes._media_item_flask_response(result)
 
 

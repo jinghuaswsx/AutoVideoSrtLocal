@@ -1590,6 +1590,51 @@ def _find_target_lang_item(product_id: int, lang: str) -> dict | None:
     )
 
 
+def _source_raw_id_for_child_task_row(row: dict) -> int | None:
+    raw_id = _positive_int((row or {}).get("source_raw_id"))
+    if raw_id is not None:
+        return raw_id
+    source_item_id = _positive_int((row or {}).get("media_item_id"))
+    if source_item_id is None:
+        return None
+    source_item = query_one(
+        "SELECT id, source_raw_id FROM media_items WHERE id=%s",
+        (source_item_id,),
+    )
+    return _positive_int((source_item or {}).get("source_raw_id"))
+
+
+def _find_child_task_target_lang_item(
+    *,
+    task_id: int,
+    row: dict,
+    allow_source_fallback: bool = False,
+) -> dict | None:
+    product_id = _positive_int((row or {}).get("media_product_id"))
+    lang = str((row or {}).get("country_code") or "").strip().lower()
+    if product_id is None or not lang:
+        return None
+    item = query_one(
+        "SELECT * FROM media_items "
+        "WHERE task_id=%s AND product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (int(task_id), product_id, lang),
+    )
+    if item and _positive_int((item or {}).get("id")) is not None:
+        return item
+    if not allow_source_fallback:
+        return None
+    source_raw_id = _source_raw_id_for_child_task_row(row)
+    if source_raw_id is None:
+        return None
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE product_id=%s AND lang=%s AND source_raw_id=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (product_id, lang, source_raw_id),
+    )
+
+
 def _find_product(product_id: int) -> dict | None:
     return query_one(
         "SELECT * FROM media_products WHERE id=%s", (int(product_id),)
@@ -2889,7 +2934,7 @@ def _child_readiness_payload_for_row(
 ) -> dict:
     from appcore import pushes
 
-    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
+    item = _find_child_task_target_lang_item(task_id=int(task_id), row=row)
     if not item:
         return _child_acceptance_payload(
             task_id=int(task_id),
@@ -2926,7 +2971,8 @@ def _child_readiness_payload_for_row(
 
 def get_child_readiness(task_id: int) -> dict:
     row = query_one(
-        "SELECT t.media_product_id, t.country_code, t.status, p.product_code, p.ad_supported_langs "
+        "SELECT t.media_product_id, t.media_item_id, t.country_code, t.status, "
+        "p.product_code, p.ad_supported_langs "
         "FROM tasks t JOIN media_products p ON p.id=t.media_product_id "
         "WHERE t.id=%s AND t.parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -3125,7 +3171,7 @@ def submit_child_step_manual_output(
         raise ValueError("step does not accept manual output")
 
     row = query_one(
-        "SELECT id, assignee_id, status, media_product_id, country_code "
+        "SELECT id, assignee_id, status, media_product_id, media_item_id, country_code "
         "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
     )
@@ -3158,42 +3204,24 @@ def submit_child_step_manual_output(
         object_key = str(file_info["object_key"])
         display_name = filename
 
-        # 查找是否存在同 product_id + 同 lang 的 media_item（即使被软删除了也取最新的一条，将其重新复用）
-        existing_item = query_one(
-            "SELECT * FROM media_items WHERE product_id=%s AND lang=%s ORDER BY id DESC LIMIT 1",
-            (product_id, lang),
+        # Manual task outputs are append-only; task_id distinguishes each result.
+        item_id = medias.create_item(
+            product_id,
+            int(actor_user_id),
+            filename,
+            object_key,
+            display_name=display_name,
+            file_size=file_info.get("file_size"),
+            lang=lang,
+            task_id=int(task_id),
         )
-        if existing_item:
-            item_id = int(existing_item["id"])
-            medias._ensure_video_filename_no_spaces(filename)
-            medias._ensure_video_filename_no_spaces(object_key)
-            medias._ensure_video_filename_no_spaces(display_name)
+        source_raw_id = _source_raw_id_for_child_task_row(row)
+        if source_raw_id is not None:
             execute(
-                "UPDATE media_items SET "
-                "filename=%s, display_name=%s, object_key=%s, file_size=%s, "
-                "user_id=%s, task_id=%s, deleted_at=NULL "
-                "WHERE id=%s",
-                (
-                    filename,
-                    display_name,
-                    object_key,
-                    file_info.get("file_size"),
-                    int(actor_user_id),
-                    int(task_id),
-                    item_id,
-                ),
+                "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+                (source_raw_id, int(item_id)),
             )
-        else:
-            item_id = medias.create_item(
-                product_id,
-                int(actor_user_id),
-                filename,
-                object_key,
-                display_name=display_name,
-                file_size=file_info.get("file_size"),
-                lang=lang,
-                task_id=int(task_id),
-            )
+            result["source_raw_id"] = source_raw_id
         result["media_item_id"] = int(item_id)
         result["object_key"] = object_key
 
@@ -3223,7 +3251,11 @@ def submit_child_step_manual_output(
     elif kind == "image":
         if len(file_items) != 1:
             raise ValueError("one image file required")
-        item = _find_target_lang_item(product_id, lang)
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=row,
+            allow_source_fallback=False,
+        )
         if not item or not item.get("object_key"):
             raise ValueError("target media item required before cover")
         file_info = file_items[0]

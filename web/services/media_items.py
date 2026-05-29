@@ -289,6 +289,15 @@ def build_item_delete_response(
     *,
     soft_delete_item_fn: Callable[[int], int] = medias.soft_delete_item,
 ) -> MediaItemResponse:
+    lang = str((item or {}).get("lang") or "").strip().lower()
+    if lang and lang != "en":
+        return MediaItemResponse(
+            {
+                "error": "target_language_video_append_only",
+                "message": "Target-language video items are append-only and cannot be deleted.",
+            },
+            409,
+        )
     soft_delete_item_fn(item_id)
     return MediaItemResponse({"ok": True}, 200, object_key=(item.get("object_key") or None))
 
