@@ -2027,7 +2027,7 @@ def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
     assert 'id="realtimeOrderProfitBody"' in panel
 
 
-def test_realtime_summary_has_profit_card_and_time_row(authed_client_no_db):
+def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -2044,8 +2044,9 @@ def test_realtime_summary_has_profit_card_and_time_row(authed_client_no_db):
 
     main_row_start = summary.index('class="oar-summary-row oar-summary-row-main"')
     time_row_start = summary.index('class="oar-summary-row oar-summary-row-time"')
-    main_row = summary[main_row_start:time_row_start]
-    time_row = summary[time_row_start:]
+    assert time_row_start < main_row_start
+    time_row = summary[time_row_start:main_row_start]
+    main_row = summary[main_row_start:]
 
     assert main_row.index("商品件数") < main_row.index("利润")
     assert "订单最新时间" not in main_row
