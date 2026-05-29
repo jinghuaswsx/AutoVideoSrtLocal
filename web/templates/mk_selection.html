@@ -579,13 +579,10 @@
 .mki-progress-step.error .mki-progress-step-mark { border-color: oklch(55% .18 25); background: oklch(55% .18 25); }
 .mki-progress-step.error .mki-progress-step-mark::after { content: "!"; font-weight: 800; }
 .mki-progress-step.error .mki-progress-step-status { background: oklch(92% .07 25); color: oklch(42% .14 25); }
-.mki-progress-error, .mki-progress-result {
+.mki-progress-error {
   margin-top: 14px; padding: 12px; border-radius: var(--oc-r); font-size: 13px; line-height: 1.55;
 }
 .mki-progress-error { border: 1px solid oklch(76% .13 25); background: oklch(97% .04 25); color: oklch(40% .14 25); overflow-wrap: anywhere; }
-.mki-progress-result { border: 1px solid oklch(76% .12 160); background: oklch(97% .03 160); color: var(--oc-success-fg); }
-.mki-progress-result-title { font-weight: 800; margin-bottom: 4px; color: var(--oc-fg); }
-.mki-progress-result p { margin: 6px 0 0; color: var(--oc-fg); }
 .mki-progress-domains {
   margin-top: 14px; padding: 12px; border: 1px solid var(--oc-border);
   border-radius: var(--oc-r); background: #fff;
@@ -697,7 +694,9 @@
   border-color: #fecaca; background: #fef2f2; color: #7f1d1d;
 }
 .mki-xiao-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
+.mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 22px; }
+.mki-xiao-urgent-toggle { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--oc-fg); font-size: 13px; font-weight: 800; cursor: pointer; }
+.mki-xiao-urgent-check { width: 16px; height: 16px; accent-color: var(--oc-danger); }
 @keyframes mkiProgressSpin { to { transform: rotate(360deg); } }
 @media (max-width: 560px) {
   .mki-progress-backdrop { padding: 12px; }
@@ -4533,8 +4532,6 @@ function mkiImportProgressOpen(meta) {
   mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   document.getElementById('mkiImportProgressError').hidden = true;
   document.getElementById('mkiImportProgressError').textContent = '';
-  document.getElementById('mkiImportProgressResult').hidden = true;
-  document.getElementById('mkiImportProgressResultText').textContent = '';
   mkiImportProgressHideRetryActions();
   mkiImportProgressHideNextActions();
   const continueBtn = document.getElementById('mkiImportProgressContinue');
@@ -4620,6 +4617,16 @@ function mkiImportProgressRenderStepResults(data) {
   Object.entries(grouped).forEach(([stepKey, results]) => {
     if (!Array.isArray(results)) return;
     results.forEach(result => mkiImportProgressAppendStepResult(stepKey, result));
+  });
+}
+
+function mkiImportProgressRenderStoreCompletion(productId, itemId) {
+  mkiImportProgressAppendStepResult('store', {
+    key: 'store_complete',
+    title: '入库完成',
+    status: 'done',
+    message: `产品 #${productId}，素材 #${itemId} 已入库。请确认该产品的发布域名。`,
+    logs: ['下一步创建小语种任务；原视频处理人指派后会自动提交牛马去字幕，并进入人工审核。'],
   });
 }
 
@@ -4894,6 +4901,7 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressRenderStepResults(data);
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
+  mkiImportProgressRenderStoreCompletion(productId, itemId);
   if (data?.is_new_product) {
     mkiImportProgressSetStep('productOwner', 'done', '新品产品负责人已写入素材管理');
   } else {
@@ -4902,12 +4910,6 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressSetStep('domains', 'running', '正在加载产品发布域名');
   mkiImportProgressSetStep('next', 'pending', '确认发布域名后创建小语种任务');
 
-  const resultEl = document.getElementById('mkiImportProgressResult');
-  const textEl = document.getElementById('mkiImportProgressResultText');
-  if (textEl) {
-    textEl.textContent = `产品 #${productId}，素材 #${itemId} 已入库。请确认该产品的发布域名。`;
-  }
-  if (resultEl) resultEl.hidden = false;
   mkiImportProgressSetMediasHref(btn);
   mkiImportProgressHideNextActions();
   mkiImportProgressHideRetryActions();
@@ -4986,7 +4988,8 @@ async function mkiImportProgressCreateSmallLangTask() {
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
         countries: selection.countries,
-        force: !!selection.force
+        force: !!selection.force,
+        is_urgent: !!selection.isUrgent
       })
     });
     const data = await rsp.json().catch(() => ({}));
@@ -5494,6 +5497,8 @@ async function mkiXiaoOpenModal(options = {}) {
   }
 
   mkiXiaoHideStatus();
+  const urgentEl = document.getElementById('mkiXiaoUrgent');
+  if (urgentEl) urgentEl.checked = false;
   mkiXiaoSetBusy(false);
   document.getElementById('mkiXiaoModal').style.display = 'flex';
   return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
@@ -5513,9 +5518,10 @@ function mkiXiaoOK() {
   if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
   if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
   if (!countries.length) { alert('请选择目标国家'); return; }
+  var urgentEl = document.getElementById('mkiXiaoUrgent');
   mkiXiaoSetBusy(true);
   mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
-  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries, force: mkiXiaoIsForce()}); mkiXiaoResolve = null; }
+  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries, force: mkiXiaoIsForce(), isUrgent: urgentEl ? !!urgentEl.checked : false}); mkiXiaoResolve = null; }
 }
 
 function mkiXiaoCancel() {
@@ -5570,7 +5576,8 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
         raw_processor_id: selection.rawProcessorId,
         language_assignments: mkiXiaoLanguageAssignments(selection),
         countries: selection.countries,
-        force: !!selection.force
+        force: !!selection.force,
+        is_urgent: !!selection.isUrgent
       })
     });
     var data = await rsp.json().catch(function() { return {}; });
@@ -5639,11 +5646,6 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
       <section id="mkiImportProgressFineAi" class="mki-progress-fine-ai" aria-label="AI 精细评估建议"></section>
       <ol id="mkiImportProgressSteps" class="mki-progress-steps"></ol>
       <div id="mkiImportProgressError" class="mki-progress-error" hidden></div>
-      <div id="mkiImportProgressResult" class="mki-progress-result" hidden>
-        <div class="mki-progress-result-title">入库完成</div>
-        <div id="mkiImportProgressResultText"></div>
-        <p>下一步创建小语种任务；原视频处理人指派后会自动提交牛马去字幕，并进入人工审核。</p>
-      </div>
     </div>
   </div>
 </div>
@@ -5668,6 +5670,10 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     </div>
     <div id="mkiXiaoStatus" class="mki-xiao-status" hidden></div>
     <div class="mki-xiao-actions">
+      <label class="mki-xiao-urgent-toggle" for="mkiXiaoUrgent">
+        <input id="mkiXiaoUrgent" class="mki-xiao-urgent-check" type="checkbox">
+        <span>紧急任务</span>
+      </label>
       <button id="mkiXiaoCancel" class="oc-btn oc-btn--ghost" onclick="mkiXiaoCancel()">取消</button>
       <button id="mkiXiaoConfirm" class="oc-btn oc-btn--primary" onclick="mkiXiaoOK()">确认创建</button>
     </div>

@@ -393,6 +393,30 @@ def test_xuanpin_mk_uses_create_small_language_task_labels(authed_client_no_db):
     assert "中文名 + 国家代码" not in body
 
 
+def test_xuanpin_mk_small_language_modal_has_urgent_checkbox(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="mkiXiaoUrgent"' in body
+    assert 'type="checkbox"' in body
+    assert "紧急任务" in body
+    assert "isUrgent: urgentEl ? !!urgentEl.checked : false" in body
+    assert "is_urgent: !!selection.isUrgent" in body
+    assert 'id="mkiXiaoUrgent" class="mki-xiao-urgent-check" type="checkbox" checked' not in body
+
+
+def test_xuanpin_mk_import_completion_lives_in_store_card(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function mkiImportProgressRenderStoreCompletion" in body
+    assert "mkiImportProgressAppendStepResult('store'" in body
+    assert 'id="mkiImportProgressResult"' not in body
+    assert 'mki-progress-result-title">入库完成' not in body
+
+
 def test_xuanpin_mk_small_language_task_requires_imported_material(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

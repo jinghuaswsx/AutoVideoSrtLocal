@@ -1010,6 +1010,7 @@ def create_parent_task(
     reused_raw_source_id: int | None = None,
     created_by: int,
     force: bool = False,
+    is_urgent: bool = False,
 ) -> int:
     """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
     if not countries:
@@ -1030,6 +1031,7 @@ def create_parent_task(
         language_assignments=language_assignments,
     )
     reuse_raw_source_id = _positive_int(reused_raw_source_id)
+    urgent_value = 1 if is_urgent else 0
 
     conn = get_conn()
     try:
@@ -1039,44 +1041,48 @@ def create_parent_task(
                 if reuse_raw_source_id is not None:
                     cur.execute(
                         "INSERT INTO tasks "
-                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, completed_at, created_by) "
-                        "VALUES (NULL, %s, %s, %s, %s, NOW(), NOW(), %s)",
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, is_urgent, claimed_at, completed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, %s, NOW(), NOW(), %s)",
                         (
                             int(media_product_id),
                             int(media_item_id) if media_item_id is not None else None,
                             int(raw_processor_id) if raw_processor_id is not None else None,
                             PARENT_ALL_DONE,
+                            urgent_value,
                             int(created_by),
                         ),
                     )
                 elif raw_processor_id is not None:
                     cur.execute(
                         "INSERT INTO tasks "
-                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, claimed_at, created_by) "
-                        "VALUES (NULL, %s, %s, %s, %s, NOW(), %s)",
+                        "(parent_task_id, media_product_id, media_item_id, assignee_id, status, is_urgent, claimed_at, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, %s, NOW(), %s)",
                         (
                             int(media_product_id),
                             int(media_item_id) if media_item_id is not None else None,
                             int(raw_processor_id),
                             PARENT_RAW_IN_PROGRESS,
+                            urgent_value,
                             int(created_by),
                         ),
                     )
                 else:
                     cur.execute(
                         "INSERT INTO tasks "
-                        "(parent_task_id, media_product_id, media_item_id, status, created_by) "
-                        "VALUES (NULL, %s, %s, %s, %s)",
+                        "(parent_task_id, media_product_id, media_item_id, status, is_urgent, created_by) "
+                        "VALUES (NULL, %s, %s, %s, %s, %s)",
                         (
                             int(media_product_id),
                             int(media_item_id) if media_item_id is not None else None,
                             PARENT_PENDING,
+                            urgent_value,
                             int(created_by),
                         ),
                     )
                 parent_id = cur.lastrowid
                 created_payload = {
                     "countries": norm_countries,
+                    "is_urgent": bool(is_urgent),
                 }
                 if translator_id is not None:
                     created_payload["translator_id"] = int(translator_id)
@@ -1119,15 +1125,15 @@ def create_parent_task(
                     cur.execute(
                         "INSERT INTO tasks "
                         "(parent_task_id, media_product_id, media_item_id, "
-                        " country_code, assignee_id, status, created_by) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        " country_code, assignee_id, status, is_urgent, created_by) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (parent_id, int(media_product_id),
                          int(media_item_id) if media_item_id is not None else None,
-                         country, child_assignee_id, child_status, int(created_by)),
+                         country, child_assignee_id, child_status, urgent_value, int(created_by)),
                     )
                     child_id = cur.lastrowid
                     _write_event(cur, child_id, "created", created_by,
-                                 {"country": country})
+                                 {"country": country, "is_urgent": bool(is_urgent)})
                     if reuse_raw_source_id is not None:
                         notifications_svc.notify_child_assigned(
                             cur,
