@@ -1346,6 +1346,11 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
         lambda *args, **kwargs: events.append(("media_item", args, kwargs)) or 301,
     )
     monkeypatch.setattr(
+        medias,
+        "find_current_item_by_source",
+        lambda **kwargs: events.append(("find_current", kwargs)) and None,
+    )
+    monkeypatch.setattr(
         tasks,
         "_record_manual_output_event",
         lambda **kwargs: events.append(("event", kwargs)),
@@ -1368,7 +1373,7 @@ def test_submit_child_step_manual_output_reconciles_completion(monkeypatch):
     assert events[-1] == ("complete", {"task_id": 44, "actor_user_id": 2})
 
 
-def test_submit_child_step_manual_output_appends_video_item_even_when_same_product_lang_exists(monkeypatch):
+def test_submit_child_step_manual_output_archives_and_replaces_same_source_lang(monkeypatch):
     from appcore import medias, tasks
 
     events = []
@@ -1385,20 +1390,23 @@ def test_submit_child_step_manual_output_appends_video_item_even_when_same_produ
             }
         if "FROM media_items" in sql and "WHERE id=%s" in sql:
             return {"id": 1093, "source_raw_id": 251}
-        if "FROM media_items" in sql:
-            return {
-                "id": 301,
-                "product_id": 9,
-                "lang": "de",
-                "filename": "older-task-result.mp4",
-                "object_key": "1/medias/older-task-result.mp4",
-                "task_id": 41,
-            }
         return None
 
     def fake_create_item(*args, **kwargs):
-        events.append(("media_item", args, kwargs))
-        return 999
+        raise AssertionError("same source/lang should replace the current media item")
+
+    def fake_find_current_item_by_source(**kwargs):
+        events.append(("find_current", kwargs))
+        return {
+            "id": 301,
+            "product_id": 9,
+            "lang": "de",
+            "source_raw_id": 251,
+        }
+
+    def fake_archive_and_replace_item_version(item_id, **kwargs):
+        events.append(("archive_replace", item_id, kwargs))
+        return {"version_id": 77, "media_item_id": item_id, "version_no": 2}
 
     def fake_execute(sql, args=()):
         events.append(("execute", sql, args))
@@ -1406,6 +1414,8 @@ def test_submit_child_step_manual_output_appends_video_item_even_when_same_produ
 
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
     monkeypatch.setattr(tasks, "execute", fake_execute)
+    monkeypatch.setattr(medias, "find_current_item_by_source", fake_find_current_item_by_source)
+    monkeypatch.setattr(medias, "archive_and_replace_item_version", fake_archive_and_replace_item_version)
     monkeypatch.setattr(medias, "create_item", fake_create_item)
     monkeypatch.setattr(
         tasks,
@@ -1425,23 +1435,30 @@ def test_submit_child_step_manual_output_appends_video_item_even_when_same_produ
         files=[{"filename": "same-name.mp4", "object_key": "1/medias/same-name.mp4", "file_size": 123}],
     )
 
-    assert result["media_item_id"] == 999
-    media_events = [event for event in events if event[0] == "media_item"]
-    assert len(media_events) == 1
-    assert media_events[0][2]["task_id"] == 44
-    assert media_events[0][2]["lang"] == "de"
+    assert result["media_item_id"] == 301
+    assert result["archived_version_id"] == 77
+    assert result["source_raw_id"] == 251
+    assert ("find_current", {"product_id": 9, "lang": "de", "source_raw_id": 251}) in events
+    assert (
+        "archive_replace",
+        301,
+        {
+            "actor_user_id": 2,
+            "filename": "same-name.mp4",
+            "object_key": "1/medias/same-name.mp4",
+            "display_name": "same-name.mp4",
+            "file_size": 123,
+            "task_id": 44,
+        },
+    ) in events
+    assert not [event for event in events if event[0] == "media_item"]
     assert not [
         event for event in events
-        if event[0] == "execute" and "UPDATE media_items SET filename" in event[1]
+        if event[0] == "execute" and "UPDATE media_items SET source_raw_id" in event[1]
     ]
-    assert (
-        "execute",
-        "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
-        (251, 999),
-    ) in events
 
 
-def test_submit_child_step_manual_output_allows_done_status_and_appends_item(monkeypatch):
+def test_submit_child_step_manual_output_allows_done_status_and_creates_item_without_current_source_version(monkeypatch):
     from appcore import medias, tasks
 
     events = []
@@ -1460,16 +1477,13 @@ def test_submit_child_step_manual_output_allows_done_status_and_appends_item(mon
             }
         if "FROM media_items" in sql and "id=%s" in sql:
             return {"id": 1093, "source_raw_id": 251}
-        if "media_items" in sql:
-            return {
-                "id": 301,
-                "product_id": 9,
-                "lang": "de",
-                "filename": "old-manual.mp4",
-                "object_key": "1/medias/old-manual.mp4",
-            }
         return None
     monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(
+        medias,
+        "find_current_item_by_source",
+        lambda **kwargs: events.append(("find_current", kwargs)) and None,
+    )
     monkeypatch.setattr(
         medias,
         "create_item",
@@ -1514,6 +1528,7 @@ def test_submit_child_step_manual_output_allows_done_status_and_appends_item(mon
 
     assert result["media_item_id"] == 302
     assert result["object_key"] == "1/medias/new-manual.mp4"
+    assert result["source_raw_id"] == 251
     media_events = [ev for ev in events if ev[0] == "media_item"]
     assert len(media_events) == 1
     assert media_events[0][2]["task_id"] == 44
@@ -1569,6 +1584,64 @@ def test_submit_child_step_manual_cover_does_not_use_other_task_video(monkeypatc
             actor_user_id=2,
             files=[{"filename": "cover.png", "object_key": "1/medias/cover.png", "file_size": 123}],
         )
+
+
+def test_submit_child_step_manual_cover_updates_current_task_video_cover(monkeypatch):
+    from appcore import medias, tasks
+
+    events = []
+
+    def fake_query_one(sql, args=()):
+        if "FROM tasks" in sql:
+            return {
+                "id": 44,
+                "assignee_id": 2,
+                "status": tasks.CHILD_ASSIGNED,
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+            }
+        if "FROM media_items" in sql and "task_id=%s" in sql:
+            return {
+                "id": 302,
+                "product_id": 9,
+                "lang": "de",
+                "task_id": 44,
+                "object_key": "1/medias/current-task-video.mp4",
+            }
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+    monkeypatch.setattr(
+        medias,
+        "update_item_cover",
+        lambda item_id, object_key: events.append(("cover", item_id, object_key)) or 1,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_record_manual_output_event",
+        lambda **kwargs: events.append(("event", kwargs)),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_child_if_ready",
+        lambda **kwargs: events.append(("complete", kwargs)) or {"completed": False, "missing": []},
+    )
+    monkeypatch.setattr(
+        "appcore.pushes._refresh_push_status_cache_for_item_safely",
+        lambda item_id: events.append(("refresh_cache", item_id)),
+    )
+
+    result = tasks.submit_child_step_manual_output(
+        task_id=44,
+        step_key="translated_cover",
+        actor_user_id=2,
+        files=[{"filename": "cover.png", "object_key": "1/medias/current-task-cover.png"}],
+    )
+
+    assert result["media_item_id"] == 302
+    assert result["object_key"] == "1/medias/current-task-cover.png"
+    assert ("cover", 302, "1/medias/current-task-cover.png") in events
 
 
 def test_submit_child_moves_ready_task_to_review(monkeypatch):

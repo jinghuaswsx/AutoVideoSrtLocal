@@ -277,6 +277,18 @@ def test_medias_edit_items_render_translation_source_badge():
     assert ".oc-vitem .vsource" in template
 
 
+def test_medias_edit_items_render_history_versions_entry_and_modal_endpoints():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'data-act="history"' in script
+    assert "function edOpenItemHistory(itemId)" in script
+    assert "function edDeleteItemVersion(versionId, itemId)" in script
+    assert "`/medias/api/items/${itemId}/versions`" in script
+    assert "`/medias/api/item-versions/${versionId}`" in script
+    assert "await fetchJSON('/medias/api/items/' + itemId" in script
+    assert "历史版本" in script
+
+
 def test_medias_edit_item_filename_uses_validation_modal_and_two_line_layout():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")

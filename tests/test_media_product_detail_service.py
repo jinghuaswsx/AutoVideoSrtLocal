@@ -51,6 +51,7 @@ def test_build_product_detail_response_enriches_product_items_and_raw_sources():
         list_xmyc_unit_prices_fn=list_xmyc_unit_prices,
         list_copywritings_fn=lambda pid: [{"id": 9, "title": "copy"}],
         get_configured_rmb_per_usd_fn=lambda: 7.2,
+        count_item_versions_fn=lambda item_ids: {},
         serialize_product_fn=serialize_product,
         serialize_item_fn=serialize_item,
     )
@@ -94,6 +95,7 @@ def test_build_product_detail_response_skips_raw_sources_when_items_do_not_need_
         list_xmyc_unit_prices_fn=lambda skus: {},
         list_copywritings_fn=lambda pid: [],
         get_configured_rmb_per_usd_fn=lambda: 6.83,
+        count_item_versions_fn=lambda item_ids: {},
         serialize_product_fn=lambda row, *args, **kwargs: {"id": row["id"]},
         serialize_item_fn=lambda item, raw_sources_by_id: {
             "id": item["id"],
@@ -103,3 +105,39 @@ def test_build_product_detail_response_skips_raw_sources_when_items_do_not_need_
 
     assert raw_source_calls == []
     assert payload["items"] == [{"id": 11, "raw_sources_by_id": {}}]
+
+
+def test_build_product_detail_response_includes_item_versions_count():
+    from web.services.media_product_detail import build_product_detail_response
+
+    count_calls = []
+
+    payload = build_product_detail_response(
+        123,
+        product={"id": 123, "name": "Demo"},
+        get_product_covers_fn=lambda pid: {},
+        list_items_fn=lambda pid: [
+            {
+                "id": 44,
+                "product_id": 123,
+                "lang": "fr",
+                "filename": "v.mp4",
+                "object_key": "k/v.mp4",
+                "created_at": None,
+            }
+        ],
+        list_raw_sources_fn=lambda pid: [],
+        list_product_skus_fn=lambda pid: [],
+        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_copywritings_fn=lambda pid: [],
+        get_configured_rmb_per_usd_fn=lambda: 6.83,
+        count_item_versions_fn=lambda item_ids: count_calls.append(list(item_ids)) or {44: 2},
+        serialize_product_fn=lambda row, *args, **kwargs: {"id": row["id"]},
+        serialize_item_fn=lambda item, raw_sources_by_id: {
+            "id": item["id"],
+            "versions_count": item["versions_count"],
+        },
+    )
+
+    assert count_calls == [[44]]
+    assert payload["items"] == [{"id": 44, "versions_count": 2}]

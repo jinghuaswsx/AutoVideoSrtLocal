@@ -57,6 +57,7 @@ def build_product_detail_response(
     list_xmyc_unit_prices_fn=None,
     list_copywritings_fn=None,
     get_configured_rmb_per_usd_fn=None,
+    count_item_versions_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
     serialize_item_fn: SerializeItemFn | None = None,
 ) -> dict:
@@ -66,6 +67,7 @@ def build_product_detail_response(
     list_product_skus_fn = list_product_skus_fn or medias.list_product_skus
     list_xmyc_unit_prices_fn = list_xmyc_unit_prices_fn or medias.list_xmyc_unit_prices
     list_copywritings_fn = list_copywritings_fn or medias.list_copywritings
+    count_item_versions_fn = count_item_versions_fn or medias.count_item_versions
     get_configured_rmb_per_usd_fn = (
         get_configured_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd
     )
@@ -81,6 +83,16 @@ def build_product_detail_response(
             for row in list_raw_sources_fn(product_id)
             if row.get("id") is not None
         }
+    item_ids = [int(item["id"]) for item in items if item.get("id") is not None]
+    version_counts = count_item_versions_fn(item_ids)
+    items = [
+        {
+            **item,
+            "versions_count": int(version_counts.get(int(item["id"]), 0))
+            if item.get("id") is not None else 0,
+        }
+        for item in items
+    ]
     skus = list_product_skus_fn(product_id)
     xmyc_index = list_xmyc_unit_prices_fn(
         [sku.get("dianxiaomi_sku") or "" for sku in skus]

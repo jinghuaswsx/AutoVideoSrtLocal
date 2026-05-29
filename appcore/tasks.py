@@ -3279,24 +3279,44 @@ def submit_child_step_manual_output(
         filename = str(file_info.get("filename") or "manual-video.mp4")
         object_key = str(file_info["object_key"])
         display_name = filename
-
-        # Manual task outputs are append-only; task_id distinguishes each result.
-        item_id = medias.create_item(
-            product_id,
-            int(actor_user_id),
-            filename,
-            object_key,
-            display_name=display_name,
-            file_size=file_info.get("file_size"),
-            lang=lang,
-            task_id=int(task_id),
-        )
         source_raw_id = _source_raw_id_for_child_task_row(row)
+        existing_item = None
         if source_raw_id is not None:
-            execute(
-                "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
-                (source_raw_id, int(item_id)),
+            existing_item = medias.find_current_item_by_source(
+                product_id=product_id,
+                lang=lang,
+                source_raw_id=source_raw_id,
             )
+
+        if existing_item:
+            replacement = medias.archive_and_replace_item_version(
+                int(existing_item["id"]),
+                actor_user_id=int(actor_user_id),
+                filename=filename,
+                object_key=object_key,
+                display_name=display_name,
+                file_size=file_info.get("file_size"),
+                task_id=int(task_id),
+            )
+            item_id = int(existing_item["id"])
+            result["archived_version_id"] = replacement.get("version_id")
+        else:
+            item_id = medias.create_item(
+                product_id,
+                int(actor_user_id),
+                filename,
+                object_key,
+                display_name=display_name,
+                file_size=file_info.get("file_size"),
+                lang=lang,
+                task_id=int(task_id),
+            )
+            if source_raw_id is not None:
+                execute(
+                    "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+                    (source_raw_id, int(item_id)),
+                )
+        if source_raw_id is not None:
             result["source_raw_id"] = source_raw_id
         result["media_item_id"] = int(item_id)
         result["object_key"] = object_key
