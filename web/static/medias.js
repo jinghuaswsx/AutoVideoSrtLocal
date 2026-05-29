@@ -508,7 +508,11 @@
   function fmtAdSpend(value) {
     if (value === null || value === undefined || value === '') return '<span class="muted">&mdash;</span>';
     const num = Number(value);
-    return isFinite(num) ? `$${Math.round(num).toLocaleString('en-US')}` : '<span class="muted">&mdash;</span>';
+    if (!isFinite(num)) return '<span class="muted">&mdash;</span>';
+    if (num >= 10000) {
+      return `$${(num / 10000).toFixed(2)}万`;
+    }
+    return `$${Math.round(num).toLocaleString('en-US')}`;
   }
 
   function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
@@ -545,16 +549,23 @@
       return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
         + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}${statusPill}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
-        + `<span class="oc-lang-roas"><span class="oc-lang-label">ROAS</span><strong>${roas}</strong><span class="oc-lang-label" style="margin-left:6px;">消耗</span><strong>${spend}</strong></span>`
+        + `<span class="oc-lang-roas">`
+        + `<div class="oc-lang-roas-block"><span class="oc-lang-label">ROAS</span><strong>${roas}</strong></div>`
+        + `<div class="oc-lang-spend-block"><span class="oc-lang-label">消耗</span><strong>${spend}</strong></div>`
+        + `</span>`
         + `</div>`;
     }).filter(Boolean);
     const body = lines.length
       ? lines.join('')
       : '<div class="oc-lang-empty muted">—</div>';
     return `<div class="oc-lang-bar">`
-      + `<div class="oc-lang-summary">`
-      + `<span><span class="oc-lang-label">总体ROAS</span><strong>${fmtAdRoas(productSummary.overall_roas)}</strong></span>`
-      + `<span><span class="oc-lang-label">总消耗</span><strong>${fmtAdSpend(productSummary.ad_spend_usd)}</strong></span>`
+      + `<div class="oc-lang-summary" style="display: grid; grid-template-columns: minmax(80px, 1fr) minmax(48px, auto) 140px; width: 100%; gap: 6px;">`
+      + `<div></div>`
+      + `<div></div>`
+      + `<div class="oc-lang-roas">`
+      + `<div class="oc-lang-roas-block"><span class="oc-lang-label">总体ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
+      + `<div class="oc-lang-spend-block"><span class="oc-lang-label">总消耗</span><strong style="color: #2563eb;">${fmtAdSpend(productSummary.ad_spend_usd)}</strong></div>`
+      + `</div>`
       + `</div>`
       + body
       + `</div>`;
