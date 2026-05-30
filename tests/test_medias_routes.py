@@ -92,6 +92,90 @@ def test_products_list_delegates_to_response_builder(authed_client_no_db, monkey
     }
 
 
+def test_item_versions_route_returns_versions(authed_client_no_db, monkeypatch):
+    from datetime import datetime
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_item", lambda item_id: {"id": item_id, "product_id": 42})
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_item_versions",
+        lambda item_id: [
+            {
+                "id": 7,
+                "media_item_id": item_id,
+                "version_no": 1,
+                "filename": "old.mp4",
+                "display_name": "old.mp4",
+                "object_key": "1/medias/old.mp4",
+                "cover_object_key": "1/medias/old.jpg",
+                "archived_at": datetime(2026, 5, 29, 12, 30),
+            }
+        ],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/items/44/versions")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["item_id"] == 44
+    assert data["versions"][0]["video_url"] == "/medias/item-versions/7/video"
+    assert data["versions"][0]["cover_url"] == "/medias/item-versions/7/cover"
+    assert data["versions"][0]["can_delete"] is True
+
+
+def test_delete_item_version_route_deletes_video_and_cover(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    deleted_objects = []
+    version = {
+        "id": 7,
+        "product_id": 42,
+        "object_key": "1/medias/old.mp4",
+        "cover_object_key": "1/medias/old.jpg",
+    }
+
+    monkeypatch.setattr(r.medias, "get_item_version", lambda version_id: version)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "soft_delete_item_version",
+        lambda version_id, *, deleted_by: {
+            "id": version_id,
+            "object_key": "1/medias/old.mp4",
+            "cover_object_key": "1/medias/old.jpg",
+        },
+    )
+    monkeypatch.setattr(r, "_delete_media_object", lambda object_key: deleted_objects.append(object_key))
+
+    resp = authed_client_no_db.delete("/medias/api/item-versions/7")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert deleted_objects == ["1/medias/old.mp4", "1/medias/old.jpg"]
+
+
+def test_item_version_video_route_streams_history_object(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_item_version",
+        lambda version_id: {"id": version_id, "product_id": 42, "object_key": "1/medias/old.mp4"},
+    )
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r, "_send_media_object", lambda object_key: ("sent:" + object_key, 200))
+
+    resp = authed_client_no_db.get("/medias/item-versions/7/video")
+
+    assert resp.status_code == 200
+    assert resp.get_data(as_text=True) == "sent:1/medias/old.mp4"
+
+
 def test_product_detail_page_bootstraps_requested_initial_lang(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

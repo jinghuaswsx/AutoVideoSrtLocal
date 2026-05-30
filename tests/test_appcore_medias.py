@@ -390,6 +390,174 @@ def test_update_item_thumbnail_metadata_updates_thumbnail_and_duration(monkeypat
     assert captured["args"] == ("media_thumbs/123/77.jpg", 12.5, 77)
 
 
+def test_find_current_item_by_source_uses_product_source_and_lang(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return {"id": 301}
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+
+    row = medias.find_current_item_by_source(product_id=9, lang="DE", source_raw_id=251)
+
+    assert row == {"id": 301}
+    assert "WHERE product_id=%s AND lang=%s AND source_raw_id=%s AND deleted_at IS NULL" in captured["sql"]
+    assert captured["args"] == (9, "de", 251)
+
+
+def test_archive_and_replace_item_version_archives_cover_and_clears_current_cover(monkeypatch):
+    calls = []
+
+    old_item = {
+        "id": 301,
+        "product_id": 9,
+        "lang": "de",
+        "source_raw_id": 251,
+        "filename": "old.mp4",
+        "display_name": "old display.mp4",
+        "object_key": "1/medias/old.mp4",
+        "cover_object_key": "1/medias/old.jpg",
+        "file_url": None,
+        "thumbnail_path": "media_thumbs/9/301.jpg",
+        "duration_seconds": 12.5,
+        "file_size": 123,
+        "task_id": 41,
+    }
+
+    class FakeCursor:
+        lastrowid = 77
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            calls.append(("execute", sql, args))
+
+        def fetchone(self):
+            last_sql = calls[-1][1]
+            if "SELECT * FROM media_items" in last_sql:
+                return old_item
+            if "COALESCE(MAX(version_no)" in last_sql:
+                return {"next_version_no": 3}
+            raise AssertionError(last_sql)
+
+    class FakeConn:
+        def begin(self):
+            calls.append(("begin", None, None))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit", None, None))
+
+        def rollback(self):
+            calls.append(("rollback", None, None))
+
+        def close(self):
+            calls.append(("close", None, None))
+
+    monkeypatch.setattr(medias, "get_conn", lambda: FakeConn())
+
+    result = medias.archive_and_replace_item_version(
+        301,
+        actor_user_id=2,
+        filename="new.mp4",
+        object_key="1/medias/new.mp4",
+        display_name="new-display.mp4",
+        file_size=456,
+        task_id=44,
+    )
+
+    assert result == {
+        "version_id": 77,
+        "media_item_id": 301,
+        "version_no": 3,
+        "old_object_key": "1/medias/old.mp4",
+        "old_cover_object_key": "1/medias/old.jpg",
+    }
+    insert_call = next(call for call in calls if call[0] == "execute" and "INSERT INTO media_item_versions" in call[1])
+    assert "cover_object_key" in insert_call[1]
+    assert "1/medias/old.jpg" in insert_call[2]
+    update_call = next(call for call in calls if call[0] == "execute" and "UPDATE media_items SET" in call[1])
+    assert "cover_object_key=NULL" in update_call[1]
+    assert "thumbnail_path=NULL" in update_call[1]
+    assert update_call[2] == ("new.mp4", "new-display.mp4", "1/medias/new.mp4", 456, 44, 2, 301)
+    assert ("commit", None, None) in calls
+
+
+def test_list_and_count_item_versions_filter_deleted(monkeypatch):
+    captured = []
+
+    def fake_query(sql, args=()):
+        captured.append((sql, args))
+        if "GROUP BY media_item_id" in sql:
+            return [{"media_item_id": 301, "c": 2}]
+        return [{"id": 9, "media_item_id": 301}]
+
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    assert medias.list_item_versions(301) == [{"id": 9, "media_item_id": 301}]
+    assert medias.count_item_versions([301, 302]) == {301: 2}
+    assert "deleted_at IS NULL" in captured[0][0]
+    assert captured[0][1] == (301,)
+    assert captured[1][1] == (301, 302)
+
+
+def test_soft_delete_item_version_records_deleted_video_and_cover(monkeypatch):
+    calls = []
+    version = {
+        "id": 8,
+        "object_key": "1/medias/old.mp4",
+        "cover_object_key": "1/medias/old.jpg",
+    }
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            calls.append(("execute", sql, args))
+
+        def fetchone(self):
+            return version
+
+    class FakeConn:
+        def begin(self):
+            calls.append(("begin", None, None))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit", None, None))
+
+        def rollback(self):
+            calls.append(("rollback", None, None))
+
+        def close(self):
+            calls.append(("close", None, None))
+
+    monkeypatch.setattr(medias, "get_conn", lambda: FakeConn())
+
+    result = medias.soft_delete_item_version(8, deleted_by=2)
+
+    assert result == version
+    update_call = next(call for call in calls if call[0] == "execute" and "UPDATE media_item_versions" in call[1])
+    assert "deleted_object_key=%s" in update_call[1]
+    assert "deleted_cover_object_key=%s" in update_call[1]
+    assert update_call[2] == ("1/medias/old.mp4", "1/medias/old.jpg", 2, 8)
+    assert ("commit", None, None) in calls
+
+
 def test_create_item_rejects_filename_with_space_before_db(monkeypatch):
     calls = []
     monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)

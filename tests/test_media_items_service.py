@@ -184,9 +184,10 @@ def test_build_item_delete_response_soft_deletes_and_exposes_object_key():
     assert result.status_code == 200
     assert result.payload == {"ok": True}
     assert result.object_key == "1/medias/123/demo.mp4"
+    assert result.object_keys == ("1/medias/123/demo.mp4",)
 
 
-def test_build_item_delete_response_rejects_target_language_video_items():
+def test_build_item_delete_response_rejects_target_language_video_items_for_non_admin():
     from web.services.media_items import build_item_delete_response
 
     calls = []
@@ -201,6 +202,157 @@ def test_build_item_delete_response_rejects_target_language_video_items():
     assert result.status_code == 409
     assert result.payload["error"] == "target_language_video_append_only"
     assert result.object_key is None
+    assert result.object_keys == ()
+
+
+def test_build_item_delete_response_allows_admin_to_delete_target_language_video_group():
+    from web.services.media_items import build_item_delete_response
+
+    calls = []
+
+    result = build_item_delete_response(
+        44,
+        {
+            "id": 44,
+            "lang": "fr",
+            "object_key": "1/medias/123/demo-fr.mp4",
+            "cover_object_key": "1/medias/123/demo-fr-cover.jpg",
+        },
+        is_admin=True,
+        soft_delete_item_fn=lambda item_id: calls.append(item_id) or 1,
+    )
+
+    assert calls == [44]
+    assert result.status_code == 200
+    assert result.payload == {"ok": True}
+    assert result.object_key == "1/medias/123/demo-fr.mp4"
+    assert result.object_keys == (
+        "1/medias/123/demo-fr.mp4",
+        "1/medias/123/demo-fr-cover.jpg",
+    )
+
+
+def test_route_item_delete_response_passes_current_admin_flag(monkeypatch):
+    from types import SimpleNamespace
+    from web.routes.medias import items as route_items
+
+    captured = {}
+
+    def fake_impl(item_id, item, **kwargs):
+        captured["item_id"] = item_id
+        captured["item"] = item
+        captured["is_admin"] = kwargs.get("is_admin")
+        from web.services.media_items import MediaItemResponse
+        return MediaItemResponse({"ok": True}, 200)
+
+    monkeypatch.setattr(route_items, "current_user", SimpleNamespace(is_admin=True))
+    monkeypatch.setattr(route_items, "_build_item_delete_response_impl", fake_impl)
+
+    result = route_items._build_item_delete_response(
+        44,
+        {"id": 44, "lang": "fr"},
+    )
+
+    assert result.status_code == 200
+    assert captured == {
+        "item_id": 44,
+        "item": {"id": 44, "lang": "fr"},
+        "is_admin": True,
+    }
+
+
+def test_build_item_versions_response_serializes_preview_urls_and_admin_delete_flag():
+    from datetime import datetime
+    from web.services.media_items import build_item_versions_response
+
+    result = build_item_versions_response(
+        44,
+        [
+            {
+                "id": 7,
+                "media_item_id": 44,
+                "version_no": 2,
+                "filename": "old.mp4",
+                "display_name": "old-display.mp4",
+                "object_key": "1/medias/old.mp4",
+                "cover_object_key": "1/medias/old.jpg",
+                "file_size": 123,
+                "duration_seconds": 12.5,
+                "task_id": 41,
+                "archived_at": datetime(2026, 5, 29, 12, 30),
+            }
+        ],
+        is_admin=True,
+    )
+
+    assert result.status_code == 200
+    assert result.payload == {
+        "item_id": 44,
+        "versions": [
+            {
+                "id": 7,
+                "version_no": 2,
+                "filename": "old.mp4",
+                "display_name": "old-display.mp4",
+                "object_key": "1/medias/old.mp4",
+                "cover_object_key": "1/medias/old.jpg",
+                "video_url": "/medias/item-versions/7/video",
+                "cover_url": "/medias/item-versions/7/cover",
+                "file_size": 123,
+                "duration_seconds": 12.5,
+                "task_id": 41,
+                "archived_at": "2026-05-29T12:30:00",
+                "can_delete": True,
+            }
+        ],
+    }
+
+
+def test_build_item_version_delete_response_rejects_non_admin():
+    from web.services.media_items import build_item_version_delete_response
+
+    calls = []
+    result = build_item_version_delete_response(
+        7,
+        {"id": 7, "object_key": "1/medias/old.mp4"},
+        is_admin=False,
+        deleted_by=2,
+        soft_delete_item_version_fn=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    assert result.status_code == 403
+    assert result.payload["error"] == "admin_required"
+    assert result.object_keys == ()
+    assert calls == []
+
+
+def test_build_item_version_delete_response_deletes_history_video_and_cover_for_admin():
+    from web.services.media_items import build_item_version_delete_response
+
+    calls = []
+    result = build_item_version_delete_response(
+        7,
+        {
+            "id": 7,
+            "object_key": "1/medias/old.mp4",
+            "cover_object_key": "1/medias/old.jpg",
+        },
+        is_admin=True,
+        deleted_by=1,
+        soft_delete_item_version_fn=lambda version_id, *, deleted_by: calls.append(
+            (version_id, deleted_by)
+        )
+        or {
+            "id": version_id,
+            "object_key": "1/medias/old.mp4",
+            "cover_object_key": "1/medias/old.jpg",
+        },
+    )
+
+    assert calls == [(7, 1)]
+    assert result.status_code == 200
+    assert result.payload == {"ok": True}
+    assert result.object_keys == ("1/medias/old.mp4", "1/medias/old.jpg")
 
 
 def test_build_item_bootstrap_response_validates_and_reserves_upload():

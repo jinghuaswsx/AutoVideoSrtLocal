@@ -974,6 +974,177 @@ def find_item_by_keys(product_id: int, lang: str, filename: str) -> dict | None:
     )
 
 
+def find_current_item_by_source(*, product_id: int, lang: str, source_raw_id: int) -> dict | None:
+    raw_id = int(source_raw_id)
+    if raw_id <= 0:
+        return None
+    lang_code = normalize_language_code(lang)
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE product_id=%s AND lang=%s AND source_raw_id=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (int(product_id), lang_code, raw_id),
+    )
+
+
+def archive_and_replace_item_version(
+    item_id: int,
+    *,
+    actor_user_id: int,
+    filename: str,
+    object_key: str,
+    display_name: str | None,
+    file_size: int | None,
+    task_id: int | None,
+    archive_reason: str = "manual_task_video_overwrite",
+) -> dict:
+    _ensure_video_filename_no_spaces(filename)
+    _ensure_video_filename_no_spaces(object_key)
+    if display_name:
+        _ensure_video_filename_no_spaces(display_name)
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM media_items WHERE id=%s AND deleted_at IS NULL FOR UPDATE",
+                    (int(item_id),),
+                )
+                old_item = cur.fetchone()
+                if not old_item:
+                    raise ValueError("media item not found")
+
+                cur.execute(
+                    "SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version_no "
+                    "FROM media_item_versions WHERE media_item_id=%s",
+                    (int(item_id),),
+                )
+                version_row = cur.fetchone() or {}
+                version_no = int(version_row.get("next_version_no") or 1)
+
+                cur.execute(
+                    "INSERT INTO media_item_versions "
+                    "(media_item_id, product_id, lang, source_raw_id, version_no, "
+                    "filename, display_name, object_key, cover_object_key, file_url, "
+                    "thumbnail_path, duration_seconds, file_size, task_id, archived_by, archive_reason) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        int(item_id),
+                        int(old_item["product_id"]),
+                        old_item.get("lang") or "en",
+                        old_item.get("source_raw_id"),
+                        version_no,
+                        old_item["filename"],
+                        old_item.get("display_name") or old_item["filename"],
+                        old_item["object_key"],
+                        old_item.get("cover_object_key"),
+                        old_item.get("file_url"),
+                        old_item.get("thumbnail_path"),
+                        old_item.get("duration_seconds"),
+                        old_item.get("file_size"),
+                        old_item.get("task_id"),
+                        int(actor_user_id),
+                        archive_reason,
+                    ),
+                )
+                version_id = int(cur.lastrowid or 0)
+                cur.execute(
+                    "UPDATE media_items SET filename=%s, display_name=%s, object_key=%s, "
+                    "file_url=NULL, thumbnail_path=NULL, cover_object_key=NULL, duration_seconds=NULL, "
+                    "file_size=%s, task_id=%s, user_id=%s, pushed_at=NULL, latest_push_id=NULL, "
+                    "auto_translated=0, source_ref_id=NULL, bulk_task_id=NULL "
+                    "WHERE id=%s",
+                    (
+                        filename,
+                        display_name or filename,
+                        object_key,
+                        file_size,
+                        task_id,
+                        int(actor_user_id),
+                        int(item_id),
+                    ),
+                )
+            conn.commit()
+            return {
+                "version_id": version_id,
+                "media_item_id": int(item_id),
+                "version_no": version_no,
+                "old_object_key": old_item["object_key"],
+                "old_cover_object_key": old_item.get("cover_object_key"),
+            }
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
+def list_item_versions(item_id: int) -> list[dict]:
+    return query(
+        "SELECT * FROM media_item_versions "
+        "WHERE media_item_id=%s AND deleted_at IS NULL "
+        "ORDER BY version_no DESC, id DESC",
+        (int(item_id),),
+    )
+
+
+def count_item_versions(item_ids: list[int]) -> dict[int, int]:
+    normalized_ids = [int(item_id) for item_id in item_ids if int(item_id)]
+    if not normalized_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(normalized_ids))
+    rows = query(
+        f"SELECT media_item_id, COUNT(*) AS c FROM media_item_versions "
+        f"WHERE media_item_id IN ({placeholders}) AND deleted_at IS NULL "
+        f"GROUP BY media_item_id",
+        tuple(normalized_ids),
+    )
+    return {int(row["media_item_id"]): int(row["c"]) for row in rows}
+
+
+def get_item_version(version_id: int) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_item_versions WHERE id=%s AND deleted_at IS NULL",
+        (int(version_id),),
+    )
+
+
+def soft_delete_item_version(version_id: int, *, deleted_by: int | None) -> dict | None:
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM media_item_versions WHERE id=%s AND deleted_at IS NULL FOR UPDATE",
+                    (int(version_id),),
+                )
+                version = cur.fetchone()
+                if not version:
+                    conn.commit()
+                    return None
+                cur.execute(
+                    "UPDATE media_item_versions SET deleted_at=NOW(), "
+                    "deleted_object_key=%s, deleted_cover_object_key=%s, deleted_by=%s "
+                    "WHERE id=%s",
+                    (
+                        version.get("object_key"),
+                        version.get("cover_object_key"),
+                        int(deleted_by) if deleted_by is not None else None,
+                        int(version_id),
+                    ),
+                )
+            conn.commit()
+            return version
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
 def soft_delete_item(item_id: int) -> int:
     return execute("UPDATE media_items SET deleted_at=NOW() WHERE id=%s", (item_id,))
 

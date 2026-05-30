@@ -8356,6 +8356,10 @@
       const sourceHtml = sourceLabel
         ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
         : '';
+      const versionsCount = Number(it.versions_count || 0);
+      const historyHtml = versionsCount > 0
+        ? `<button class="oc-btn text sm" type="button" data-act="history" title="历史版本">${icon('film', 12)}<span>历史版本 (${versionsCount})</span></button>`
+        : '';
       const playBtnHtml = coverSrc
         ? `<button type="button" class="mk-video-play-btn" data-act="play-video" aria-label="播放视频" title="播放视频"></button>`
         : '';
@@ -8387,6 +8391,7 @@
         </div>
         <div class="vactions">
           <button class="oc-btn text sm" data-act="cover">${icon('edit', 12)}<span>换封面</span></button>
+          ${historyHtml}
           <button class="oc-btn text sm danger-txt" data-act="del">${icon('trash', 12)}<span>删除</span></button>
         </div>
         <div class="vactions vactions-vr">
@@ -8420,6 +8425,10 @@
       }
       card.querySelector('[data-act="del"]').addEventListener('click', () => edRemoveItem(id, card));
       card.querySelector('[data-act="cover"]').addEventListener('click', () => edPickItemCover(id));
+      const historyBtn = card.querySelector('[data-act="history"]');
+      if (historyBtn) {
+        historyBtn.addEventListener('click', () => edOpenItemHistory(id));
+      }
       const vrRunBtn = card.querySelector('[data-act="vr-run"]');
       if (vrRunBtn && window.VideoAiReview) {
         vrRunBtn.addEventListener('click', () => window.VideoAiReview.triggerForMediaItem(id));
@@ -8609,15 +8618,133 @@
 
   async function edRemoveItem(itemId, card) {
     if (!confirm('确认删除该素材？')) return;
-    await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
-    card.remove();
-    $('edItemsBadge').textContent = $('edItemsGrid').children.length;
-    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
-    if (pid) {
-      const full = await fetchJSON('/medias/api/products/' + pid);
-      edSetProductData(full);
-      edRenderLangTabs();
-      edRenderActiveLangView();
+    try {
+      await fetchJSON('/medias/api/items/' + itemId, {
+        method: 'DELETE',
+        headers: csrfHeaders(),
+      });
+      card.remove();
+      $('edItemsBadge').textContent = $('edItemsGrid').children.length;
+      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+      if (pid) {
+        const full = await fetchJSON('/medias/api/products/' + pid);
+        edSetProductData(full);
+        edRenderLangTabs();
+        edRenderActiveLangView();
+      }
+    } catch (e) {
+      alert('删除素材失败：' + (e.message || ''));
+    }
+  }
+
+  function edEnsureItemHistoryModal() {
+    let mask = $('edItemHistoryMask');
+    if (mask) return mask;
+    mask = document.createElement('div');
+    mask.id = 'edItemHistoryMask';
+    mask.hidden = true;
+    mask.setAttribute('style',
+      'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:10020;'
+      + 'display:flex;align-items:center;justify-content:center;padding:20px;');
+    mask.innerHTML = `
+      <div role="dialog" aria-modal="true" style="background:#fff;border-radius:8px;
+           width:min(960px, calc(100vw - 40px));max-height:min(86vh, 820px);
+           overflow:hidden;display:flex;flex-direction:column;box-shadow:0 18px 42px rgba(15,23,42,.25);">
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:14px 16px;border-bottom:1px solid #e5e7eb;">
+          <h3 style="margin:0;font-size:16px;color:#111827;">历史版本</h3>
+          <button type="button" class="oc-icon-btn" data-history-close aria-label="关闭">${icon('close', 16)}</button>
+        </div>
+        <div data-history-body style="overflow:auto;padding:14px 16px;"></div>
+      </div>
+    `;
+    mask.addEventListener('click', (event) => {
+      if (event.target === mask || event.target.closest('[data-history-close]')) {
+        edCloseItemHistoryModal();
+      }
+    });
+    document.body.appendChild(mask);
+    return mask;
+  }
+
+  function edCloseItemHistoryModal() {
+    const mask = $('edItemHistoryMask');
+    if (mask) mask.hidden = true;
+  }
+
+  function edRenderItemHistoryModal(itemId, versions) {
+    const mask = edEnsureItemHistoryModal();
+    const body = mask.querySelector('[data-history-body]');
+    const rows = Array.isArray(versions) ? versions : [];
+    if (!rows.length) {
+      body.innerHTML = '<div class="oc-state"><p class="title">暂无历史版本</p></div>';
+    } else {
+      body.innerHTML = rows.map(version => {
+        const videoUrl = safeMediaSrc(version.video_url || '');
+        const coverUrl = safeMediaSrc(version.cover_url || '');
+        const versionNo = Number(version.version_no || 0);
+        const taskId = version.task_id ? `任务 #${escapeHtml(version.task_id)}` : '无任务号';
+        const archivedAt = fmtDate(version.archived_at) || '';
+        const deleteHtml = version.can_delete
+          ? `<button type="button" class="oc-btn text sm danger-txt" data-version-delete="${escapeHtml(version.id)}">${icon('trash', 12)}<span>删除</span></button>`
+          : '';
+        return `
+          <div class="oc-vitem" style="margin-bottom:12px;">
+            <div class="vname">
+              <div class="vname-text" title="${escapeHtml(version.display_name || version.filename || '')}">
+                V${versionNo || '-'} · ${escapeHtml(version.display_name || version.filename || '')}
+              </div>
+            </div>
+            <div class="vsource">${escapeHtml(taskId)}${archivedAt ? ` · ${escapeHtml(archivedAt)}` : ''}</div>
+            <div style="display:grid;grid-template-columns:minmax(180px, 260px) 1fr;gap:12px;align-items:start;">
+              <div class="vpane active" style="min-height:180px;">
+                ${coverUrl ? `<img src="${escapeHtml(coverUrl)}" loading="lazy" alt="">` : `<div class="thumb-ph">${icon('film', 20)}</div>`}
+              </div>
+              <div class="vpane active" style="min-height:180px;">
+                ${videoUrl ? `<video controls preload="metadata" src="${escapeHtml(videoUrl)}"></video>` : '<div class="vvideo-ph">视频不可用</div>'}
+              </div>
+            </div>
+            <div class="vactions" style="justify-content:flex-end;">${deleteHtml}</div>
+          </div>
+        `;
+      }).join('');
+      body.querySelectorAll('[data-version-delete]').forEach(btn => {
+        btn.addEventListener('click', () => edDeleteItemVersion(Number(btn.dataset.versionDelete), itemId));
+      });
+    }
+    mask.hidden = false;
+  }
+
+  async function edOpenItemHistory(itemId) {
+    const mask = edEnsureItemHistoryModal();
+    const body = mask.querySelector('[data-history-body]');
+    body.innerHTML = '<div class="oc-state"><p class="title">加载中...</p></div>';
+    mask.hidden = false;
+    try {
+      const data = await fetchJSON(`/medias/api/items/${itemId}/versions`);
+      edRenderItemHistoryModal(itemId, data.versions || []);
+    } catch (e) {
+      body.innerHTML = `<div class="oc-state"><p class="title">加载失败</p><p class="desc">${escapeHtml(e.message || '')}</p></div>`;
+    }
+  }
+
+  async function edDeleteItemVersion(versionId, itemId) {
+    if (!versionId || !confirm('确认删除该历史版本？')) return;
+    try {
+      await fetchJSON(`/medias/api/item-versions/${versionId}`, {
+        method: 'DELETE',
+        headers: csrfHeaders(),
+      });
+      await edOpenItemHistory(itemId);
+      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+      if (pid) {
+        const full = await fetchJSON('/medias/api/products/' + pid);
+        edSetProductData(full);
+        edRenderLangTabs();
+        edRenderActiveLangView();
+      }
+    } catch (e) {
+      alert('删除历史版本失败：' + (e.message || ''));
     }
   }
 

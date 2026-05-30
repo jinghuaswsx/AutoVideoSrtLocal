@@ -20,6 +20,8 @@ from web.services.media_items import (
     build_item_complete_response as _build_item_complete_response_impl,
     build_item_thumbnail as _build_item_thumbnail_impl,
     build_item_delete_response as _build_item_delete_response_impl,
+    build_item_version_delete_response as _build_item_version_delete_response_impl,
+    build_item_versions_response as _build_item_versions_response_impl,
     build_item_update_response as _build_item_update_response_impl,
     cache_item_cover_object as _cache_item_cover_object_impl,
     media_item_flask_response as _media_item_flask_response_impl,
@@ -51,6 +53,10 @@ def _download_media_object(object_key, destination):
 
 def _delete_media_object(object_key):
     return _routes()._delete_media_object(object_key)
+
+
+def _send_media_object(object_key):
+    return _routes()._send_media_object(object_key)
 
 
 def _reserve_local_media_upload(object_key):
@@ -179,7 +185,26 @@ def _build_item_delete_response(item_id: int, item: dict):
     return _build_item_delete_response_impl(
         item_id,
         item,
+        is_admin=bool(getattr(current_user, "is_admin", False)),
         soft_delete_item_fn=medias.soft_delete_item,
+    )
+
+
+def _build_item_versions_response(item_id: int, versions: list[dict]):
+    return _build_item_versions_response_impl(
+        item_id,
+        versions,
+        is_admin=bool(getattr(current_user, "is_admin", False)),
+    )
+
+
+def _build_item_version_delete_response(version_id: int, version: dict | None):
+    return _build_item_version_delete_response_impl(
+        version_id,
+        version,
+        is_admin=bool(getattr(current_user, "is_admin", False)),
+        deleted_by=getattr(current_user, "id", None),
+        soft_delete_item_version_fn=medias.soft_delete_item_version,
     )
 
 
@@ -244,11 +269,75 @@ def api_delete_item(item_id: int):
     if result.status_code < 400:
         routes._audit_media_item_deleted(it)
         try:
-            if result.object_key:
-                _delete_media_object(result.object_key)
+            keys = getattr(result, "object_keys", None) or (
+                (result.object_key,) if result.object_key else ()
+            )
+            for object_key in keys:
+                _delete_media_object(object_key)
         except Exception:
             pass
     return routes._media_item_flask_response(result)
+
+
+@bp.route("/api/items/<int:item_id>/versions", methods=["GET"])
+@login_required
+def api_item_versions(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    routes = _routes()
+    result = routes._build_item_versions_response(
+        item_id,
+        medias.list_item_versions(item_id),
+    )
+    return routes._media_item_flask_response(result)
+
+
+@bp.route("/api/item-versions/<int:version_id>", methods=["DELETE"])
+@login_required
+def api_delete_item_version(version_id: int):
+    version = medias.get_item_version(version_id)
+    if not version:
+        abort(404)
+    p = medias.get_product(version["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    routes = _routes()
+    result = routes._build_item_version_delete_response(version_id, version)
+    if result.status_code < 400:
+        try:
+            for object_key in result.object_keys:
+                _delete_media_object(object_key)
+        except Exception:
+            pass
+    return routes._media_item_flask_response(result)
+
+
+@bp.route("/item-versions/<int:version_id>/video", methods=["GET"])
+@login_required
+def item_version_video(version_id: int):
+    version = medias.get_item_version(version_id)
+    if not version or not version.get("object_key"):
+        abort(404)
+    p = medias.get_product(version["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    return _send_media_object(version["object_key"])
+
+
+@bp.route("/item-versions/<int:version_id>/cover", methods=["GET"])
+@login_required
+def item_version_cover(version_id: int):
+    version = medias.get_item_version(version_id)
+    if not version or not version.get("cover_object_key"):
+        abort(404)
+    p = medias.get_product(version["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    return _send_media_object(version["cover_object_key"])
 
 
 # ---- AI 视频分析（手动触发，多模态 ADC 通道）----

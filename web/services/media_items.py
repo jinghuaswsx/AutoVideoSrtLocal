@@ -40,6 +40,7 @@ class MediaItemResponse:
     payload: dict
     status_code: int
     object_key: str | None = None
+    object_keys: tuple[str, ...] = ()
 
 
 def media_item_flask_response(result: MediaItemResponse):
@@ -287,19 +288,107 @@ def build_item_delete_response(
     item_id: int,
     item: dict,
     *,
+    is_admin: bool = False,
     soft_delete_item_fn: Callable[[int], int] = medias.soft_delete_item,
 ) -> MediaItemResponse:
     lang = str((item or {}).get("lang") or "").strip().lower()
-    if lang and lang != "en":
+    if lang and lang != "en" and not is_admin:
         return MediaItemResponse(
             {
                 "error": "target_language_video_append_only",
-                "message": "Target-language video items are append-only and cannot be deleted.",
+                "message": "Target-language video items can only be deleted by an admin.",
             },
             409,
         )
     soft_delete_item_fn(item_id)
-    return MediaItemResponse({"ok": True}, 200, object_key=(item.get("object_key") or None))
+    object_key = (item.get("object_key") or None)
+    object_keys = tuple(
+        key for key in dict.fromkeys(
+            key for key in (
+                object_key,
+                item.get("cover_object_key") or None,
+            )
+            if key
+        )
+    )
+    return MediaItemResponse(
+        {"ok": True},
+        200,
+        object_key=object_key,
+        object_keys=object_keys,
+    )
+
+
+def build_item_versions_response(
+    item_id: int,
+    versions: list[dict],
+    *,
+    is_admin: bool = False,
+) -> MediaItemResponse:
+    return MediaItemResponse(
+        {
+            "item_id": int(item_id),
+            "versions": [
+                _serialize_item_version(version, is_admin=is_admin)
+                for version in versions
+            ],
+        },
+        200,
+    )
+
+
+def build_item_version_delete_response(
+    version_id: int,
+    version: dict | None,
+    *,
+    is_admin: bool = False,
+    deleted_by: int | None = None,
+    soft_delete_item_version_fn: Callable[..., dict | None] = medias.soft_delete_item_version,
+) -> MediaItemResponse:
+    if not version:
+        return MediaItemResponse({"error": "version_not_found"}, 404)
+    if not is_admin:
+        return MediaItemResponse(
+            {
+                "error": "admin_required",
+                "message": "Only admins can delete media item history versions.",
+            },
+            403,
+        )
+    deleted = soft_delete_item_version_fn(int(version_id), deleted_by=deleted_by)
+    if not deleted:
+        return MediaItemResponse({"error": "version_not_found"}, 404)
+    object_keys = tuple(
+        key for key in dict.fromkeys(
+            key for key in (
+                deleted.get("object_key") or version.get("object_key") or None,
+                deleted.get("cover_object_key") or version.get("cover_object_key") or None,
+            )
+            if key
+        )
+    )
+    return MediaItemResponse({"ok": True}, 200, object_keys=object_keys)
+
+
+def _serialize_item_version(version: dict, *, is_admin: bool) -> dict:
+    version_id = int(version["id"])
+    archived_at = version.get("archived_at")
+    return {
+        "id": version_id,
+        "version_no": int(version.get("version_no") or 0),
+        "filename": version.get("filename") or "",
+        "display_name": version.get("display_name") or version.get("filename") or "",
+        "object_key": version.get("object_key"),
+        "cover_object_key": version.get("cover_object_key"),
+        "video_url": f"/medias/item-versions/{version_id}/video",
+        "cover_url": f"/medias/item-versions/{version_id}/cover"
+        if version.get("cover_object_key") else None,
+        "file_size": version.get("file_size"),
+        "duration_seconds": version.get("duration_seconds"),
+        "task_id": version.get("task_id"),
+        "archived_at": archived_at.isoformat() if hasattr(archived_at, "isoformat") else archived_at,
+        "can_delete": bool(is_admin),
+    }
 
 
 def _client_filename_basename(value) -> str:
