@@ -27,7 +27,7 @@ from .order_profit_aggregation import (
     _load_realtime_ad_cost_adjustments,
     get_order_profit_status_summary,
 )
-from .product_ad_launch import normalize_product_launch_scope
+from .product_ad_launch import normalize_product_launch_scope, normalize_product_launch_window_days
 from .shopify_fee import split_shopify_fee_for_order
 
 ORDER_DETAIL_PAGE_SIZE = 30
@@ -2727,15 +2727,20 @@ def get_realtime_roas_overview(
     page_size: int = ORDER_PROFIT_PAGE_SIZE,
     site_codes: list[str] | tuple[str, ...] | None = None,
     product_launch_scope: str | None = None,
+    product_launch_window_days: int | str | None = None,
 ) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
     normalized_product_id = int(product_id) if product_id else None
     normalized_site_codes = _normalize_site_codes(site_codes)
     normalized_launch_scope = normalize_product_launch_scope(product_launch_scope)
+    normalized_launch_window_days = normalize_product_launch_window_days(product_launch_window_days)
     launch_product_ids: tuple[int, ...] | None = None
     launch_scope_unmatched = normalized_launch_scope == "unmatched"
     if normalized_launch_scope in {"new", "old"}:
-        launch_product_ids = _facade().get_product_ids_for_launch_scope(normalized_launch_scope)
+        launch_product_ids = _facade().get_product_ids_for_launch_scope(
+            normalized_launch_scope,
+            window_days=normalized_launch_window_days,
+        )
     site_filter_active = not _site_codes_use_default(normalized_site_codes)
     allowed_account_ids = _resolve_ad_account_ids_for_sites(normalized_site_codes)
     normalized_page = _normalize_positive_int(page, 1)
@@ -2934,6 +2939,7 @@ def get_realtime_roas_overview(
                     "stores": list(normalized_site_codes),
                     "product_id": normalized_product_id,
                     "product_launch_scope": normalized_launch_scope,
+                    "product_launch_window_days": normalized_launch_window_days,
                     "product_launch_product_count": len(launch_product_ids or ()),
                     "ad_platforms": ["meta"],
                     "order_source": "dianxiaomi",
@@ -3087,6 +3093,7 @@ def get_realtime_roas_overview(
                 "stores": list(normalized_site_codes),
                 "product_id": normalized_product_id,
                 "product_launch_scope": normalized_launch_scope,
+                "product_launch_window_days": normalized_launch_window_days,
                 "product_launch_product_count": len(launch_product_ids or ()),
                 "ad_platforms": ["meta"],
                 "order_source": "dianxiaomi",
@@ -3381,6 +3388,7 @@ def get_realtime_roas_overview(
             "stores": list(normalized_site_codes),
             "product_id": normalized_product_id,
             "product_launch_scope": normalized_launch_scope,
+            "product_launch_window_days": normalized_launch_window_days,
             "product_launch_product_count": len(launch_product_ids or ()),
             "ad_platforms": ["meta"],
             "order_source": "dianxiaomi",

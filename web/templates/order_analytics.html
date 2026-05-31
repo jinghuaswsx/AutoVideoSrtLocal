@@ -1640,6 +1640,16 @@
           {% endfor %}
         </select>
       </div>
+      <div class="oar-site-filter oar-launch-window-filter">
+        <label class="oar-site-filter-label" for="realtimeLaunchWindowDays">新品范围：</label>
+        <select id="realtimeLaunchWindowDays" aria-label="新品范围">
+          <option value="3">近 3 天</option>
+          <option value="7" selected>近 7 天</option>
+          <option value="15">近 15 天</option>
+          <option value="30">近 30 天</option>
+          <option value="60">近 60 天</option>
+        </select>
+      </div>
     </div>
     <div class="oa-product-picker oar-product-picker" id="realtimeProductPicker" style="display:none;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/></svg>
@@ -1696,7 +1706,7 @@
             <h3 class="oar-scope-title" id="realtimeNewScopeTitle">新品数据</h3>
             <div class="oar-scope-source" id="realtimeNewSource">上广告时间近 7 天内 · 与新品投放分析一致</div>
           </div>
-          <span class="oar-scope-chip">新品</span>
+          <span class="oar-scope-chip" id="realtimeNewScopeChip">新品 7 天</span>
         </div>
         <div class="oar-scope-metrics">
           <div class="oar-scope-metric"><div class="oa-stat-label">商品销售额</div><div class="oa-stat-value" id="realtimeNewRevenue">$0.00</div><div class="oa-stat-sub" id="realtimeNewRevenueSub">订单 0 单</div></div>
@@ -1717,7 +1727,7 @@
             <h3 class="oar-scope-title" id="realtimeOldScopeTitle">老品数据</h3>
             <div class="oar-scope-source" id="realtimeOldSource">上广告时间 7 天前 · 与新品投放分析一致</div>
           </div>
-          <span class="oar-scope-chip">老品</span>
+          <span class="oar-scope-chip" id="realtimeOldScopeChip">老品 7 天前</span>
         </div>
         <div class="oar-scope-metrics">
           <div class="oar-scope-metric"><div class="oa-stat-label">商品销售额</div><div class="oa-stat-value" id="realtimeOldRevenue">$0.00</div><div class="oa-stat-sub" id="realtimeOldRevenueSub">订单 0 单</div></div>
@@ -2009,6 +2019,16 @@
           {% for option in realtime_store_options or [] %}
           <option value="{{ option.code }}">{{ option.label }}</option>
           {% endfor %}
+        </select>
+      </div>
+      <div class="oar-site-filter oar-launch-window-filter">
+        <label class="oar-site-filter-label" for="nplLaunchWindowDays">新品范围：</label>
+        <select id="nplLaunchWindowDays" aria-label="新品投放分析新品范围">
+          <option value="3">近 3 天</option>
+          <option value="7" selected>近 7 天</option>
+          <option value="15">近 15 天</option>
+          <option value="30">近 30 天</option>
+          <option value="60">近 60 天</option>
         </select>
       </div>
     </div>
@@ -4148,7 +4168,8 @@
     profitLoading: false,
     profitHasMore: true,
     campaignFilter: '',
-    unallocatedAd: 0
+    unallocatedAd: 0,
+    launchWindowDays: '7'
   };
   var realtimeProductSearchTimer = null;
   var realtimeLastCampaignRows = [];
@@ -4156,8 +4177,34 @@
   var newProductLaunchState = {
     range: 'today',
     scope: 'new',
-    siteCode: ''
+    siteCode: '',
+    launchWindowDays: '7'
   };
+
+  function normalizeLaunchWindowDays(value) {
+    var allowed = ['3', '7', '15', '30', '60'];
+    var normalized = String(value || '7');
+    return allowed.indexOf(normalized) >= 0 ? normalized : '7';
+  }
+
+  function syncLaunchWindowSelects() {
+    var value = normalizeLaunchWindowDays(realtimeState.launchWindowDays || newProductLaunchState.launchWindowDays || '7');
+    realtimeState.launchWindowDays = value;
+    newProductLaunchState.launchWindowDays = value;
+    var realtimeSelect = document.getElementById('realtimeLaunchWindowDays');
+    var nplSelect = document.getElementById('nplLaunchWindowDays');
+    if (realtimeSelect) realtimeSelect.value = value;
+    if (nplSelect) nplSelect.value = value;
+    setRealtimeProfitText('realtimeNewScopeChip', '新品 ' + value + ' 天');
+    setRealtimeProfitText('realtimeOldScopeChip', '老品 ' + value + ' 天前');
+  }
+
+  function setLaunchWindowDays(value) {
+    var normalized = normalizeLaunchWindowDays(value);
+    realtimeState.launchWindowDays = normalized;
+    newProductLaunchState.launchWindowDays = normalized;
+    syncLaunchWindowSelects();
+  }
 
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
@@ -4197,6 +4244,14 @@
   if (realtimeSiteFilter) {
     realtimeSiteFilter.addEventListener('change', function() {
       realtimeState.siteCode = realtimeSiteFilter.value || '';
+      resetRealtimeProfitPage();
+      loadRealtimeOverview();
+    });
+  }
+  var realtimeLaunchWindowDays = document.getElementById('realtimeLaunchWindowDays');
+  if (realtimeLaunchWindowDays) {
+    realtimeLaunchWindowDays.addEventListener('change', function() {
+      setLaunchWindowDays(realtimeLaunchWindowDays.value || '7');
       resetRealtimeProfitPage();
       loadRealtimeOverview();
     });
@@ -4250,6 +4305,13 @@
       loadNewProductLaunchOverview();
     });
   }
+  var nplLaunchWindowDays = document.getElementById('nplLaunchWindowDays');
+  if (nplLaunchWindowDays) {
+    nplLaunchWindowDays.addEventListener('change', function() {
+      setLaunchWindowDays(nplLaunchWindowDays.value || '7');
+      loadNewProductLaunchOverview();
+    });
+  }
   document.querySelectorAll('[data-new-product-scope]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       setNewProductLaunchScope(btn.dataset.newProductScope);
@@ -4265,6 +4327,7 @@
   function initActiveOrderAnalyticsTab() {
     setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
     setNewProductLaunchRange('today', true);
+    syncLaunchWindowSelects();
     if (initialTab === 'analytics') {
       initAnalytics();
     } else if (initialTab === 'ads') {
@@ -4389,6 +4452,8 @@
         nplSite.value = realtimeSite.value || '';
         newProductLaunchState.siteCode = nplSite.value || '';
       }
+      newProductLaunchState.launchWindowDays = realtimeState.launchWindowDays || newProductLaunchState.launchWindowDays || '7';
+      syncLaunchWindowSelects();
       syncNewProductLaunchRangeSelection();
       newProductLaunchInited = true;
     }
@@ -4468,6 +4533,7 @@
     params.set('include_details', '1');
     params.set('include_profit_summary', '1');
     params.set('product_launch_scope', newProductLaunchState.scope || 'new');
+    params.set('product_launch_window_days', newProductLaunchState.launchWindowDays || '7');
     if (newProductLaunchState.siteCode) params.set('site_code', newProductLaunchState.siteCode);
     setNewProductLaunchLoading();
     fetch('/order-analytics/realtime-overview?' + params.toString())
@@ -4784,6 +4850,7 @@
     params.set('include_profit_summary', '1');
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
     if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+    params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
     var baseParams = params;
     setRealtimeScopeCardsLoading();
     Promise.all([
@@ -4840,6 +4907,12 @@
     return 'realtimeGlobalSource';
   }
 
+  function realtimeScopeChipId(scope) {
+    if (scope === 'new') return 'realtimeNewScopeChip';
+    if (scope === 'old') return 'realtimeOldScopeChip';
+    return '';
+  }
+
   function realtimeScopeSourceText(scope, data) {
     var scopeInfo = (data && data.scope) || {};
     if (scope === 'global') {
@@ -4850,8 +4923,17 @@
     }
     var count = Number(scopeInfo.product_launch_product_count);
     var countText = Number.isFinite(count) ? ' · 范围产品 ' + fmtInt(count) + ' 个' : '';
-    var launchWindowText = scope === 'new' ? '上广告时间近 7 天内' : '上广告时间 7 天前';
+    var windowDays = String(scopeInfo.product_launch_window_days || realtimeState.launchWindowDays || '7');
+    var launchWindowText = scope === 'new' ? '上广告时间近 ' + windowDays + ' 天内' : '上广告时间 ' + windowDays + ' 天前';
     return launchWindowText + countText + ' · 与新品投放分析一致';
+  }
+
+  function realtimeScopeChipText(scope, data) {
+    var scopeInfo = (data && data.scope) || {};
+    var windowDays = String(scopeInfo.product_launch_window_days || realtimeState.launchWindowDays || '7');
+    if (scope === 'new') return '新品 ' + windowDays + ' 天';
+    if (scope === 'old') return '老品 ' + windowDays + ' 天前';
+    return '';
   }
 
   function setRealtimeScopeTone(id, value, isNumber) {
@@ -4914,6 +4996,9 @@
     setRealtimeProfitText(prefix + 'RevenueWithShipping', fmtMoney(revenueWithShipping));
     setRealtimeProfitText(prefix + 'Window', '截止 ' + formatShortDateTime(((data && data.period) || {}).data_until_at));
     setRealtimeProfitText(realtimeScopeSourceId(scope), realtimeScopeSourceText(scope, data));
+    if (realtimeScopeChipId(scope)) {
+      setRealtimeProfitText(realtimeScopeChipId(scope), realtimeScopeChipText(scope, data));
+    }
 
     var profitSummary = (data && data.order_profit_summary) || {};
     var globalBreakEvenRoasValue = Number(profitSummary.global_break_even_roas);

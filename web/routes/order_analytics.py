@@ -696,6 +696,17 @@ def realtime_overview():
                 detail="product_launch_scope must be one of new, old, unmatched",
             ), 400
         kwargs["product_launch_scope"] = product_launch_scope
+    product_launch_window_days = (request.args.get("product_launch_window_days") or "").strip()
+    if product_launch_window_days:
+        try:
+            kwargs["product_launch_window_days"] = oa.normalize_product_launch_window_days(
+                product_launch_window_days
+            )
+        except ValueError:
+            return _json_response(
+                error="invalid_param",
+                detail="product_launch_window_days must be one of 3, 7, 15, 30, 60",
+            ), 400
     if "page" in request.args:
         page = request.args.get("page", type=int)
         if not page or page <= 0:

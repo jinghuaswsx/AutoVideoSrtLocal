@@ -90,6 +90,24 @@ def test_new_product_launch_store_filter_uses_realtime_option_code():
     assert 'value="{{ option.value }}"' not in store_filter
 
 
+def test_launch_window_selectors_render_shared_allowed_options():
+    realtime_panel = _realtime_panel_source()
+    npl_panel = _new_product_launch_panel_source()
+
+    for panel, select_id in (
+        (realtime_panel, "realtimeLaunchWindowDays"),
+        (npl_panel, "nplLaunchWindowDays"),
+    ):
+        select = panel[
+            panel.index(f'id="{select_id}"'):
+            panel.index("</select>", panel.index(f'id="{select_id}"'))
+        ]
+        assert "新品范围" in panel
+        for days in ("3", "7", "15", "30", "60"):
+            assert f'value="{days}"' in select
+        assert 'value="7" selected' in select
+
+
 def test_new_product_launch_renders_data_quality_without_realtime_dom_conflict():
     template = _template_source()
     panel = _new_product_launch_panel_source()
@@ -176,9 +194,13 @@ def test_realtime_scope_cards_explain_launch_window_in_business_terms():
         template.index("function setRealtimeScopeTone")
     ]
 
-    assert "上广告时间近 7 天内" in scope_text_block
-    assert "上广告时间 7 天前" in scope_text_block
+    assert "product_launch_window_days" in scope_text_block
+    assert "'上广告时间近 ' + windowDays + ' 天内'" in scope_text_block
+    assert "'上广告时间 ' + windowDays + ' 天前'" in scope_text_block
     assert "范围产品" in scope_text_block
+    assert 'id="realtimeNewScopeChip">新品 7 天' in template
+    assert 'id="realtimeOldScopeChip">老品 7 天前' in template
+    assert "function realtimeScopeChipText" in template
 
 
 def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
@@ -192,11 +214,24 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
     assert "fetchRealtimeScopeSummary(baseParams, 'new')" in load_block
     assert "fetchRealtimeScopeSummary(baseParams, 'old')" in load_block
     assert "fetchRealtimeScopeSummary(baseParams, 'unmatched')" in load_block
+    assert "params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');" in load_block
     assert "params.set('product_launch_scope', scope);" in load_block
     assert "renderRealtimeScopeSummary('new'" in load_block
     assert "renderRealtimeScopeSummary('old'" in load_block
     assert "renderRealtimeScopeSummary('unmatched'" in load_block
     assert "product_id 为空订单同口径核算" in load_block
+
+
+def test_new_product_launch_request_includes_launch_window_days():
+    template = _template_source()
+    load_block = template[
+        template.index("function loadNewProductLaunchOverview"):
+        template.index("function setNewProductLaunchLoading")
+    ]
+
+    assert "launchWindowDays: '7'" in template
+    assert "params.set('product_launch_window_days', newProductLaunchState.launchWindowDays || '7');" in load_block
+    assert "syncLaunchWindowSelects" in template
 
 
 def test_realtime_order_detail_product_cell_renders_cn_name_after_english_name():

@@ -44,6 +44,21 @@ def test_launch_scope_cutoff_classifies_last_7_calendar_days():
     assert pal.classify_launch_date(date(2026, 5, 19), today=today) == "old"
 
 
+def test_launch_scope_accepts_configured_window_days():
+    from appcore.order_analytics import product_ad_launch as pal
+
+    today = date(2026, 5, 27)
+
+    assert pal.normalize_product_launch_window_days(None) == 7
+    assert pal.normalize_product_launch_window_days(" 15 ") == 15
+    assert pal.launch_cutoff(today, window_days=3) == date(2026, 5, 24)
+    assert pal.classify_launch_date(date(2026, 5, 12), today=today, window_days=15) == "new"
+    assert pal.classify_launch_date(date(2026, 5, 11), today=today, window_days=15) == "old"
+
+    with pytest.raises(ValueError):
+        pal.normalize_product_launch_window_days("10")
+
+
 def test_normalize_product_launch_scope_accepts_expected_values():
     from appcore.order_analytics import product_ad_launch as pal
 
@@ -245,19 +260,21 @@ def test_get_product_ids_for_launch_scope_seeds_fallback_and_queries_cutoff(monk
     from appcore.order_analytics import product_ad_launch as pal
 
     calls: list[str] = []
+    args_seen: list[tuple] = []
 
     monkeypatch.setattr(pal, "seed_missing_fallback_launch_dates", lambda: calls.append("seed") or 0)
     monkeypatch.setattr(
         oa,
         "query",
-        lambda sql, args=(): calls.append(sql) or [{"product_id": 101}, {"product_id": 102}],
+        lambda sql, args=(): calls.append(sql) or args_seen.append(args) or [{"product_id": 101}, {"product_id": 102}],
     )
 
-    ids = pal.get_product_ids_for_launch_scope("new", today=date(2026, 5, 27))
+    ids = pal.get_product_ids_for_launch_scope("new", today=date(2026, 5, 27), window_days=15)
 
     assert calls[0] == "seed"
     assert ids == (101, 102)
     assert "ad_launch_date >= %s" in calls[1]
+    assert args_seen[0] == (date(2026, 5, 12),)
 
 
 def test_get_product_ids_for_launch_scope_unmatched_returns_empty_without_query(monkeypatch):

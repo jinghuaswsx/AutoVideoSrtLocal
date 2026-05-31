@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+import pytest
 from flask import Flask
 
 from appcore import order_analytics as oa
@@ -26,7 +27,7 @@ def _call_realtime_overview(query_string: str = ""):
 def test_new_launch_scope_limits_order_and_daily_ad_queries(monkeypatch):
     calls: list[tuple[str, tuple]] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101, 102))
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: (101, 102))
     monkeypatch.setattr(oa, "query", lambda sql, args=(): calls.append((sql, args)) or [])
 
     result = oa.get_realtime_roas_overview(
@@ -42,10 +43,33 @@ def test_new_launch_scope_limits_order_and_daily_ad_queries(monkeypatch):
     assert not any("FROM roi_daily_roas_nodes" in sql for sql, _ in calls)
 
 
+def test_launch_window_days_passes_to_product_scope_and_response(monkeypatch):
+    captured: dict = {}
+
+    def fake_scope(scope, **kwargs):
+        captured["scope"] = scope
+        captured.update(kwargs)
+        return (101,)
+
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", fake_scope)
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [])
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-09",
+        now=datetime(2026, 5, 10, 12, 0),
+        product_launch_scope="new",
+        product_launch_window_days=15,
+    )
+
+    assert captured["scope"] == "new"
+    assert captured["window_days"] == 15
+    assert result["scope"]["product_launch_window_days"] == 15
+
+
 def test_new_launch_scope_roas_points_use_scoped_realtime_campaigns(monkeypatch):
     calls: list[tuple[str, tuple]] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101,))
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: (101,))
     monkeypatch.setattr(
         realtime_oa,
         "resolve_ad_product_match",
@@ -170,7 +194,7 @@ def test_unmatched_launch_scope_includes_null_product_orders_and_unmatched_ads(m
 def test_empty_new_scope_does_not_fall_back_to_all_products(monkeypatch):
     calls: list[str] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: ())
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: ())
     monkeypatch.setattr(oa, "query", lambda sql, args=(): calls.append(sql) or [])
 
     result = oa.get_realtime_roas_overview(
@@ -188,7 +212,7 @@ def test_empty_new_scope_does_not_fall_back_to_all_products(monkeypatch):
 def test_product_id_and_launch_scope_take_intersection(monkeypatch):
     calls: list[str] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101, 102))
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: (101, 102))
     monkeypatch.setattr(oa, "query", lambda sql, args=(): calls.append(sql) or [])
 
     result = oa.get_realtime_roas_overview(
@@ -206,7 +230,7 @@ def test_product_id_and_launch_scope_take_intersection(monkeypatch):
 def test_product_sales_stats_uses_product_id_and_scope_intersection(monkeypatch):
     captured: list[list[int] | None] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101, 102))
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: (101, 102))
     monkeypatch.setattr(oa, "query", lambda sql, args=(): [])
     monkeypatch.setattr(
         realtime_oa,
@@ -325,7 +349,7 @@ def test_scoped_roas_points_read_realtime_campaign_rows_once(monkeypatch):
 def test_range_launch_scope_applies_product_filters(monkeypatch):
     calls: list[tuple[str, tuple]] = []
 
-    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope: (101,))
+    monkeypatch.setattr(oa, "get_product_ids_for_launch_scope", lambda scope, **kwargs: (101,))
     monkeypatch.setattr(oa, "query", lambda sql, args=(): calls.append((sql, args)) or [])
 
     result = oa.get_realtime_roas_overview(
@@ -425,6 +449,18 @@ def test_route_rejects_invalid_product_launch_scope():
     assert response.get_json()["error"] == "invalid_param"
 
 
+def test_route_rejects_invalid_product_launch_window_days(monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.order_analytics.oa.get_realtime_roas_overview",
+        lambda *args, **kwargs: pytest.fail("invalid launch window should be rejected before query"),
+    )
+
+    response, status = _call_realtime_overview("?product_launch_scope=new&product_launch_window_days=10")
+
+    assert status == 400
+    assert response.get_json()["error"] == "invalid_param"
+
+
 def test_route_passes_product_launch_scope_to_overview(monkeypatch):
     captured: dict = {}
 
@@ -434,6 +470,7 @@ def test_route_passes_product_launch_scope_to_overview(monkeypatch):
             "period": {"date": date(2026, 5, 9)},
             "scope": {
                 "product_launch_scope": kwargs.get("product_launch_scope"),
+                "product_launch_window_days": kwargs.get("product_launch_window_days"),
                 "ad_source": "meta_ad_daily_campaign_metrics",
             },
             "summary": {},
@@ -443,10 +480,11 @@ def test_route_passes_product_launch_scope_to_overview(monkeypatch):
     monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
     monkeypatch.setattr("web.routes.order_analytics._attach_realtime_data_quality", lambda result: result)
 
-    response = _call_realtime_overview("?product_launch_scope=old")
+    response = _call_realtime_overview("?product_launch_scope=old&product_launch_window_days=15")
 
     assert response.status_code == 200
     assert captured["product_launch_scope"] == "old"
+    assert captured["product_launch_window_days"] == 15
 
 
 def test_data_quality_includes_product_launch_scope(monkeypatch):

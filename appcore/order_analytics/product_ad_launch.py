@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from ._constants import META_ATTRIBUTION_TIMEZONE
 
 NEW_PRODUCT_WINDOW_DAYS = 7
+VALID_PRODUCT_LAUNCH_WINDOW_DAYS = frozenset({3, 7, 15, 30, 60})
 VALID_PRODUCT_LAUNCH_SCOPES = frozenset({"new", "old", "unmatched"})
 AD_MATCH_SOURCE = "ad_match"
 FALLBACK_SOURCE = "created_at_fallback"
@@ -38,12 +39,30 @@ def beijing_today(now: datetime | None = None) -> date:
     return value.date()
 
 
-def launch_cutoff(today: date | None = None) -> date:
-    return (today or beijing_today()) - timedelta(days=NEW_PRODUCT_WINDOW_DAYS)
+def normalize_product_launch_window_days(value: Any) -> int:
+    if value in (None, ""):
+        return NEW_PRODUCT_WINDOW_DAYS
+    try:
+        days = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError("product_launch_window_days must be one of 3/7/15/30/60") from None
+    if days not in VALID_PRODUCT_LAUNCH_WINDOW_DAYS:
+        raise ValueError("product_launch_window_days must be one of 3/7/15/30/60")
+    return days
 
 
-def classify_launch_date(ad_launch_date: date, *, today: date | None = None) -> str:
-    return "new" if ad_launch_date >= launch_cutoff(today) else "old"
+def launch_cutoff(today: date | None = None, *, window_days: int | None = None) -> date:
+    days = normalize_product_launch_window_days(window_days)
+    return (today or beijing_today()) - timedelta(days=days)
+
+
+def classify_launch_date(
+    ad_launch_date: date,
+    *,
+    today: date | None = None,
+    window_days: int | None = None,
+) -> str:
+    return "new" if ad_launch_date >= launch_cutoff(today, window_days=window_days) else "old"
 
 
 def normalize_product_launch_scope(value: Any) -> str | None:
@@ -218,6 +237,7 @@ def get_product_ids_for_launch_scope(
     scope: str,
     *,
     today: date | None = None,
+    window_days: int | None = None,
 ) -> tuple[int, ...]:
     normalized = normalize_product_launch_scope(scope)
     if normalized == "unmatched":
@@ -225,7 +245,7 @@ def get_product_ids_for_launch_scope(
     if normalized not in {"new", "old"}:
         raise ValueError("product_launch_scope must be one of new/old/unmatched")
     seed_missing_fallback_launch_dates()
-    cutoff = launch_cutoff(today)
+    cutoff = launch_cutoff(today, window_days=window_days)
     op = ">=" if normalized == "new" else "<"
     rows = query(
         f"SELECT product_id FROM product_ad_launch_dates WHERE ad_launch_date {op} %s ORDER BY product_id",
