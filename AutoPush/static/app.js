@@ -205,6 +205,30 @@ function buildLocalizedPushRequest(pushContext) {
   };
 }
 
+function formatWorkflowDetail(detail) {
+  if (detail === undefined || detail === null || detail === "") return "";
+  if (typeof detail === "string") return detail;
+  return JSON.stringify(detail, null, 2);
+}
+
+function resolveWorkflowMkId(pushContext, materialResponse) {
+  const candidates = [
+    pushContext?.mkId,
+    materialResponse?.mk_id,
+    materialResponse?.mkId,
+    materialResponse?.data?.mk_id,
+    materialResponse?.data?.mkId,
+    materialResponse?.upstream?.mk_id,
+    materialResponse?.upstream?.mkId,
+    materialResponse?.upstream?.data?.mk_id,
+    materialResponse?.upstream?.data?.mkId,
+  ];
+  const value = candidates.find((candidate) => (
+    candidate !== null && candidate !== undefined && String(candidate).trim()
+  ));
+  return value === undefined ? null : value;
+}
+
 /* ---------- 状态文案映射 ---------- */
 
 const STATUS_LABELS = {
@@ -286,8 +310,13 @@ function openPushModal(item, opts = {}) {
   ]);
   const payloadStatus = el("p", { class: "ap-empty" }, "加载中...");
   const confirmPane = el("div", { class: "ap-modal-pane" });
-  const payloadBox = el("div", {});
-  confirmPane.appendChild(payloadBox);
+  const workflowGrid = el("div", { class: "ap-workflow-grid" });
+  const materialWorkflow = createWorkflowPanel("material", "素材推送", "等待载荷加载");
+  const copywritingWorkflow = createWorkflowPanel("copywriting", "文案推送", "等待 MKID");
+  workflowGrid.appendChild(materialWorkflow.root);
+  workflowGrid.appendChild(copywritingWorkflow.root);
+  confirmPane.appendChild(workflowGrid);
+  const payloadBox = materialWorkflow.preview;
   const jsonPre = el("pre", { class: "ap-json ap-modal-json-full ap-modal-pane", hidden: true });
   const localizedPane = el("div", { class: "ap-modal-pane", hidden: true });
   const localizedJsonPre = el("pre", { class: "ap-json ap-modal-json-full ap-modal-pane", hidden: true });
@@ -349,6 +378,21 @@ function openPushModal(item, opts = {}) {
   btnCancel.addEventListener("click", close);
   btnFooterClose.addEventListener("click", close);
 
+  function createWorkflowPanel(kind, title, initialStatus) {
+    const status = el("span", { class: "ap-workflow-status waiting" }, initialStatus);
+    const preview = el("div", { class: "ap-workflow-preview" });
+    const log = el("div", { class: "ap-workflow-log" });
+    const root = el("section", { class: `ap-workflow-panel ${kind}` }, [
+      el("div", { class: "ap-workflow-head" }, [
+        el("h4", {}, title),
+        status,
+      ]),
+      preview,
+      log,
+    ]);
+    return { root, status, preview, log };
+  }
+
   function currentLocalizedTexts() {
     return buildLocalizedPushRequest(pushContext).texts;
   }
@@ -375,8 +419,14 @@ function openPushModal(item, opts = {}) {
           : "推送";
       return;
     }
+    if (materialPushed && !localizedTextPushed) {
+      const localizedError = getLocalizedTextError();
+      btnPush.disabled = Boolean(localizedError);
+      btnPush.textContent = localizedError ? "文案无法推送" : "重试文案推送";
+      return;
+    }
     btnPush.disabled = materialPushed || !pushContext.payload;
-    btnPush.textContent = materialPushed ? "素材已推送" : "推送";
+    btnPush.textContent = materialPushed ? "已完成" : "推送素材并自动推文案";
   }
 
   function setMode(mode) {
@@ -399,6 +449,39 @@ function openPushModal(item, opts = {}) {
     respPre.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
     respPre.style.color = isError ? "var(--oc-danger-fg)" : "var(--oc-fg)";
     respPre.style.borderColor = isError ? "var(--oc-danger)" : "var(--oc-border)";
+  }
+
+  function setWorkflowStatus(panel, state, text) {
+    panel.status.className = `ap-workflow-status ${state}`;
+    panel.status.textContent = text;
+  }
+
+  function appendWorkflowLog(panel, direction, title, detail) {
+    const row = el("div", { class: `ap-workflow-log-row ${direction}` });
+    row.appendChild(el("div", { class: "ap-workflow-log-meta" }, [
+      el("span", {}, new Date().toLocaleTimeString("zh-CN", { hour12: false })),
+      el("strong", {}, title),
+    ]));
+    const formatted = formatWorkflowDetail(detail);
+    if (formatted) {
+      row.appendChild(el("pre", { class: "ap-workflow-log-body" }, formatted));
+    }
+    panel.log.appendChild(row);
+    panel.log.scrollTop = panel.log.scrollHeight;
+  }
+
+  function renderCopywritingPreview() {
+    clear(copywritingWorkflow.preview);
+    copywritingWorkflow.preview.appendChild(renderLocalizedTargetInfo(
+      pushContext.mkId,
+      pushContext.localizedTargetUrl,
+    ));
+    const localizedTexts = buildLocalizedDisplayTexts(pushContext);
+    if (!localizedTexts.length) {
+      copywritingWorkflow.preview.appendChild(el("p", { class: "ap-empty" }, "当前暂无可推送小语种文案"));
+      return;
+    }
+    copywritingWorkflow.preview.appendChild(renderLocalizedTextView(localizedTexts));
   }
 
   function renderLocalizedPane() {
@@ -453,52 +536,125 @@ function openPushModal(item, opts = {}) {
       localizedJsonPre.textContent = JSON.stringify(buildLocalizedRequestPreview(pushContext), null, 2);
       clear(payloadBox);
       payloadBox.appendChild(renderPayloadView(payload));
+      appendWorkflowLog(materialWorkflow, "response", "载荷加载响应", context || { payload });
+      appendWorkflowLog(copywritingWorkflow, "info", "小语种文案请求预览", buildLocalizedRequestPreview(pushContext));
+      setWorkflowStatus(materialWorkflow, "ready", "素材载荷已就绪");
+      setWorkflowStatus(
+        copywritingWorkflow,
+        pushContext.mkId ? "ready" : "waiting",
+        pushContext.mkId ? "文案载荷已就绪" : "等待 MKID",
+      );
+      renderCopywritingPreview();
       renderLocalizedPane();
       payloadStatus.remove();
       syncPushButton();
       setMode(PUSH_MODAL_MODES.CONFIRM);
     } catch (err) {
+      setWorkflowStatus(materialWorkflow, "error", "载荷加载失败");
+      appendWorkflowLog(materialWorkflow, "error", "载荷加载失败", err.payload || { message: err.message });
       payloadStatus.replaceWith(el("p", { class: "ap-error" }, err.message || "载荷加载失败"));
     }
   })();
 
+  async function pushMaterialStep() {
+    const errs = validatePayload(pushContext.payload);
+    if (errs.length > 0) {
+      setWorkflowStatus(materialWorkflow, "error", "素材校验失败");
+      appendWorkflowLog(materialWorkflow, "error", "素材 payload 校验失败", { details: errs });
+      throw Object.assign(new Error("素材 payload 校验失败"), { payload: { details: errs } });
+    }
+    setWorkflowStatus(materialWorkflow, "running", "素材推送中");
+    appendWorkflowLog(materialWorkflow, "request", "素材推送请求", {
+      url: pushContext.itemId ? `/api/push-items/${pushContext.itemId}/push` : "/api/push/medias",
+      body: pushContext.payload,
+    });
+    const body = pushContext.itemId
+      ? await api.pushItem(pushContext.itemId, pushContext.payload)
+      : await api.push(pushContext.payload);
+    appendWorkflowLog(materialWorkflow, "response", "素材推送响应", body);
+    showResponse(body, false, "素材推送响应");
+    materialPushed = true;
+    anyPushSucceeded = true;
+    setWorkflowStatus(
+      materialWorkflow,
+      body.writeback_error ? "warning" : "success",
+      body.writeback_error ? "素材已推送，写回告警" : "素材推送成功",
+    );
+    return body;
+  }
+
+  async function pushCopywritingStep(materialResponse = null) {
+    const mkId = resolveWorkflowMkId(pushContext, materialResponse);
+    if (mkId) {
+      pushContext.mkId = mkId;
+      pushContext.localizedTargetUrl = buildLocalizedPushTargetUrl(mkId);
+      mkIdValue.textContent = String(mkId || "-");
+      localizedJsonPre.textContent = JSON.stringify(buildLocalizedRequestPreview(pushContext), null, 2);
+      renderCopywritingPreview();
+      renderLocalizedPane();
+    }
+    const localizedError = getLocalizedTextError();
+    if (localizedError) {
+      setWorkflowStatus(copywritingWorkflow, "blocked", localizedError);
+      appendWorkflowLog(copywritingWorkflow, "info", "文案推送未启动", { message: localizedError });
+      return { skipped: true, message: localizedError };
+    }
+    const body = buildLocalizedPushRequest(pushContext);
+    setWorkflowStatus(copywritingWorkflow, "running", "文案推送中");
+    appendWorkflowLog(copywritingWorkflow, "request", "小语种文案推送请求", {
+      url: `/api/marketing/medias/${pushContext.mkId}/texts`,
+      target_url: pushContext.localizedTargetUrl,
+      body,
+    });
+    const response = await api.pushLocalizedTexts(pushContext.mkId, body);
+    appendWorkflowLog(copywritingWorkflow, "response", "小语种文案推送响应", response);
+    showResponse(response, false, "小语种文案推送响应");
+    localizedTextPushed = true;
+    anyPushSucceeded = true;
+    setWorkflowStatus(copywritingWorkflow, "success", "文案推送成功");
+    return response;
+  }
+
+  async function runMaterialAndCopywritingWorkflow() {
+    const materialResponse = await pushMaterialStep();
+    await pushCopywritingStep(materialResponse);
+  }
+
+  async function retryCopywritingOnly() {
+    await pushCopywritingStep();
+  }
+
   btnPush.addEventListener("click", async () => {
     if (!pushContext.payload) return;
+    const copywritingOnly = isLocalizedMode() || (materialPushed && !localizedTextPushed);
     btnPush.disabled = true;
-    btnPush.textContent = "推送中...";
+    btnPush.textContent = "执行中...";
     btnCancel.disabled = true;
     try {
       if (isLocalizedMode()) {
-        const localizedError = getLocalizedTextError();
-        if (localizedError) {
-          throw Object.assign(new Error(localizedError), {
-            payload: { message: localizedError },
-          });
-        }
-        const body = await api.pushLocalizedTexts(pushContext.mkId, buildLocalizedPushRequest(pushContext));
-        showResponse(body, false, "小语种文案推送响应");
-        localizedTextPushed = true;
-        anyPushSucceeded = true;
+        await retryCopywritingOnly();
+      } else if (materialPushed && !localizedTextPushed) {
+        await retryCopywritingOnly();
       } else {
-        const errs = validatePayload(pushContext.payload);
-        if (errs.length > 0) {
-          showResponse({ error: "校验失败", details: errs }, true, "素材推送响应");
-          syncPushButton();
-          return;
-        }
-        const body = pushContext.itemId
-          ? await api.pushItem(pushContext.itemId, pushContext.payload)
-          : await api.push(pushContext.payload);
-        showResponse(body, false, "素材推送响应");
-        materialPushed = true;
-        anyPushSucceeded = true;
+        await runMaterialAndCopywritingWorkflow();
       }
     } catch (err) {
+      const localizedFailure = copywritingOnly || (materialPushed && !localizedTextPushed);
       showResponse(
         err.payload || { message: err.message },
         true,
-        isLocalizedMode() ? "小语种文案推送响应" : "素材推送响应",
+        localizedFailure ? "小语种文案推送响应" : "素材推送响应",
       );
+      setWorkflowStatus(
+        localizedFailure ? copywritingWorkflow : materialWorkflow,
+        "error",
+        err.message || "推送失败",
+      );
+      if (localizedFailure) {
+        appendWorkflowLog(copywritingWorkflow, "error", "小语种文案推送失败", err.payload || { message: err.message });
+      } else {
+        appendWorkflowLog(materialWorkflow, "error", "素材推送失败", err.payload || { message: err.message });
+      }
     } finally {
       btnCancel.disabled = false;
       syncPushButton();
