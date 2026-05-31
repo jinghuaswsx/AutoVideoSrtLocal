@@ -161,12 +161,24 @@ def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
     assert "未匹配广告和订单" in panel
     assert "未匹配广告和订单同口径核算" in panel
     assert "无新品/老品过滤" in panel
-    assert "product_launch_scope=new" in panel
-    assert "product_launch_scope=old" in panel
+    assert "上广告时间近 7 天内" in panel
+    assert "上广告时间 7 天前" in panel
     assert "product_launch_scope=unmatched" in panel
     assert 'id="realtimeNewRevenue"' in panel
     assert 'id="realtimeOldRevenue"' in panel
     assert 'id="realtimeUnmatchedSpend"' in panel
+
+
+def test_realtime_scope_cards_explain_launch_window_in_business_terms():
+    template = _template_source()
+    scope_text_block = template[
+        template.index("function realtimeScopeSourceText"):
+        template.index("function setRealtimeScopeTone")
+    ]
+
+    assert "上广告时间近 7 天内" in scope_text_block
+    assert "上广告时间 7 天前" in scope_text_block
+    assert "范围产品" in scope_text_block
 
 
 def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():

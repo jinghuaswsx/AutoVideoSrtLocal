@@ -1694,7 +1694,7 @@
         <div class="oar-scope-card-head">
           <div>
             <h3 class="oar-scope-title" id="realtimeNewScopeTitle">新品数据</h3>
-            <div class="oar-scope-source" id="realtimeNewSource">product_launch_scope=new · 与新品投放分析一致</div>
+            <div class="oar-scope-source" id="realtimeNewSource">上广告时间近 7 天内 · 与新品投放分析一致</div>
           </div>
           <span class="oar-scope-chip">新品</span>
         </div>
@@ -1715,7 +1715,7 @@
         <div class="oar-scope-card-head">
           <div>
             <h3 class="oar-scope-title" id="realtimeOldScopeTitle">老品数据</h3>
-            <div class="oar-scope-source" id="realtimeOldSource">product_launch_scope=old · 与新品投放分析一致</div>
+            <div class="oar-scope-source" id="realtimeOldSource">上广告时间 7 天前 · 与新品投放分析一致</div>
           </div>
           <span class="oar-scope-chip">老品</span>
         </div>
@@ -4848,10 +4848,10 @@
     if (scope === 'unmatched') {
       return 'product_launch_scope=unmatched · 未匹配广告 + product_id 为空订单同口径核算';
     }
-    var scopeLabel = scope === 'new' ? '新品' : '老品';
     var count = Number(scopeInfo.product_launch_product_count);
     var countText = Number.isFinite(count) ? ' · 范围产品 ' + fmtInt(count) + ' 个' : '';
-    return 'product_launch_scope=' + scope + ' · 与新品投放分析' + scopeLabel + '数据一致' + countText;
+    var launchWindowText = scope === 'new' ? '上广告时间近 7 天内' : '上广告时间 7 天前';
+    return launchWindowText + countText + ' · 与新品投放分析一致';
   }
 
   function setRealtimeScopeTone(id, value, isNumber) {
