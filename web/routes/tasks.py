@@ -207,11 +207,17 @@ def _validate_translation_targets(
     ensure_translation_work_user(translator_id)
 
 
-def _render_task_center(initial_task_id: int | None = None):
+def _render_task_center(
+    initial_task_id: int | None = None,
+    section: str = "overview",
+    bucket: str = "all",
+):
     return render_template(
         "tasks_list.html",
         is_admin=_is_admin(),
         initial_task_id=int(initial_task_id or 0),
+        active_section=section,
+        active_bucket=bucket,
         capabilities={
             "can_process_raw_video": _has_capability("can_process_raw_video"),
             "can_translate": _has_capability("can_translate"),
@@ -223,14 +229,34 @@ def _render_task_center(initial_task_id: int | None = None):
 @login_required
 @permission_required("task_center")
 def index():
-    return _render_task_center()
+    return _render_task_center(section="overview", bucket="all")
+
+
+@bp.route("/stats")
+@login_required
+@permission_required("task_center")
+def stats():
+    if not _is_admin():
+        from flask import redirect, url_for
+        return redirect(url_for("tasks.index"))
+    return _render_task_center(section="stats", bucket="all")
+
+
+@bp.route("/overview/<bucket>")
+@login_required
+@permission_required("task_center")
+def overview_bucket(bucket: str):
+    if bucket not in {"all", "todo", "review", "blocked", "done", "archived"}:
+        from flask import abort
+        abort(404)
+    return _render_task_center(section="overview", bucket=bucket)
 
 
 @bp.route("/detail/<int:task_id>")
 @login_required
 @permission_required("task_center")
 def detail(task_id: int):
-    return _render_task_center(task_id)
+    return _render_task_center(task_id, section="overview", bucket="all")
 
 
 @bp.route("/api/list", methods=["GET"])

@@ -2112,3 +2112,27 @@ def test_manual_output_upload_filename_preserves_chinese_material_name():
     )
 
     assert tasks._manual_upload_filename(filename) == filename
+
+
+def test_stats_route_renders_for_admin(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/stats")
+    assert rsp.status_code == 200
+    assert "任务统计".encode("utf-8") in rsp.data
+
+
+def test_stats_route_redirects_for_non_admin(authed_user_client_no_db):
+    rsp = authed_user_client_no_db.get("/tasks/stats", follow_redirects=False)
+    assert rsp.status_code == 302
+    assert rsp.headers["Location"].endswith("/tasks/")
+
+
+def test_overview_bucket_route_renders_for_admin(authed_client_no_db):
+    for bucket in ["all", "todo", "review", "blocked", "done", "archived"]:
+        rsp = authed_client_no_db.get(f"/tasks/overview/{bucket}")
+        assert rsp.status_code == 200
+        assert "任务中心".encode("utf-8") in rsp.data
+
+
+def test_overview_invalid_bucket_returns_404(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/overview/invalid_bucket")
+    assert rsp.status_code == 404

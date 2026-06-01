@@ -478,9 +478,9 @@
     </div>
 
     <div class="tc-tabs">
-      <button class="tc-tab active" data-section-tab="overview" id="tcTabOverview">任务总览</button>
+      <button class="tc-tab {% if active_section == 'overview' %}active{% endif %}" data-section-tab="overview" id="tcTabOverview">任务总览</button>
       {% if is_admin %}
-      <button class="tc-tab" data-section-tab="stats" id="tcTabStats">任务统计</button>
+      <button class="tc-tab {% if active_section == 'stats' %}active{% endif %}" data-section-tab="stats" id="tcTabStats">任务统计</button>
       {% endif %}
     </div>
 
@@ -492,12 +492,12 @@
         </div>
       </div>
       <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
-        <button class="tc-subtab active" type="button" data-bucket="all">任务总览</button>
-        <button class="tc-subtab" type="button" data-bucket="todo">待处理任务</button>
-        <button class="tc-subtab" type="button" data-bucket="review">待审核任务</button>
-        <button class="tc-subtab" type="button" data-bucket="blocked">阻塞中任务</button>
-        <button class="tc-subtab" type="button" data-bucket="done">已完成任务</button>
-        <button class="tc-subtab" type="button" data-bucket="archived">已归档</button>
+        <button class="tc-subtab {% if active_bucket == 'all' %}active{% endif %}" type="button" data-bucket="all">任务总览</button>
+        <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">待处理任务</button>
+        <button class="tc-subtab {% if active_bucket == 'review' %}active{% endif %}" type="button" data-bucket="review">待审核任务</button>
+        <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中任务</button>
+        <button class="tc-subtab {% if active_bucket == 'done' %}active{% endif %}" type="button" data-bucket="done">已完成任务</button>
+        <button class="tc-subtab {% if active_bucket == 'archived' %}active{% endif %}" type="button" data-bucket="archived">已归档</button>
       </div>
     </div>
 
@@ -592,8 +592,8 @@ const TC_CAPS = {
   can_process_raw_video: {{ 'true' if capabilities.can_process_raw_video else 'false' }},
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
 };
-let TC_CURRENT_SECTION = 'overview';
-let TC_CURRENT_BUCKET = 'all';
+let TC_CURRENT_SECTION = '{{ active_section|default("overview") }}';
+let TC_CURRENT_BUCKET = '{{ active_bucket|default("all") }}';
 let TC_TASK_PAGE = 1;
 const TC_TASK_PAGE_SIZE = 50;
 let TC_TASK_CACHE = new Map();
@@ -2007,20 +2007,18 @@ async function tcLoadAssigneeFilterUsers() {
 
 document.querySelectorAll('[data-section-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-section-tab]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    TC_CURRENT_SECTION = btn.dataset.sectionTab || 'overview';
-    TC_TASK_PAGE = 1;
-    tcRender();
+    const section = btn.dataset.sectionTab || 'overview';
+    if (section === 'stats') {
+      window.location.href = '/tasks/stats';
+    } else {
+      window.location.href = '/tasks/overview/all';
+    }
   });
 });
 document.querySelectorAll('[data-bucket]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-bucket]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    TC_CURRENT_BUCKET = btn.dataset.bucket || 'all';
-    TC_TASK_PAGE = 1;
-    tcRender();
+    const bucket = btn.dataset.bucket || 'all';
+    window.location.href = `/tasks/overview/${bucket}`;
   });
 });
 document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_PAGE = 1; tcRender(); });
