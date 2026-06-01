@@ -1450,13 +1450,74 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     assert calls["upload"][0]["task_id"] == 44
     assert calls["upload"][0]["actor_user_id"] == 2
     assert calls["upload"][0]["uploaded_file"].filename == "fixed.mp4"
-    assert calls["upload"][0]["allowed_statuses"] == ("raw_in_progress", "raw_review")
+    assert calls["upload"][0]["allowed_statuses"] == ("raw_in_progress", "raw_review", "raw_done", "all_done")
     assert calls["upload"][0]["mark_uploaded_after"] is False
     assert calls["mark_uploaded"] == [(44, 2)]
     assert calls["approve"] == [{"task_id": 44, "actor_user_id": 2, "is_admin": False}]
     assert calls["audit"] == [
         (44, "task_parent_manual_result_uploaded", {"new_size": 12}),
     ]
+
+
+def test_parent_manual_result_uploads_video_on_completed_status(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    calls = {"upload": [], "approve": [], "audit": [], "reset_to_raw_review": []}
+
+    def fake_replace_processed_video(**kwargs):
+        calls["upload"].append(kwargs)
+        return 15
+
+    def fake_approve_raw(**kwargs):
+        calls["approve"].append(kwargs)
+
+    def fake_row(tid):
+        return {"id": tid, "status": "raw_done"}
+
+    def fake_reset_to_raw_review(task_id, actor_user_id):
+        calls["reset_to_raw_review"].append((task_id, actor_user_id))
+
+    monkeypatch.setattr(
+        "web.routes.tasks.rvp_svc.replace_processed_video",
+        fake_replace_processed_video,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc._row",
+        fake_row,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.reset_to_raw_review",
+        fake_reset_to_raw_review,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_raw",
+        fake_approve_raw,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: calls["audit"].append((task_id, action, detail)),
+    )
+
+    rsp = authed_user_client_no_db.post(
+        "/tasks/api/parent/44/manual_result",
+        data={"file": (io.BytesIO(b"new-video"), "new_fixed.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True, "new_size": 15}
+    assert calls["upload"][0]["task_id"] == 44
+    assert calls["upload"][0]["actor_user_id"] == 2
+    assert calls["upload"][0]["uploaded_file"].filename == "new_fixed.mp4"
+    assert "raw_done" in calls["upload"][0]["allowed_statuses"]
+    assert "all_done" in calls["upload"][0]["allowed_statuses"]
+    assert calls["reset_to_raw_review"] == [(44, 2)]
+    assert calls["approve"] == [{"task_id": 44, "actor_user_id": 2, "is_admin": False}]
 
 
 def test_parent_admin_endpoints_forbid_non_admin(authed_user_client_no_db):

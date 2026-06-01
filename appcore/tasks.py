@@ -418,6 +418,18 @@ def resolve_child_task_media_source(
     if source_lang != "en":
         raise StateError("child task source media language mismatch")
     source_raw_id = _positive_int(row.get("source_raw_id"))
+    if source_raw_id is not None:
+        raw_exists = query_one(
+            "SELECT id FROM media_raw_sources WHERE id=%s AND deleted_at IS NULL",
+            (source_raw_id,),
+        )
+        if not raw_exists:
+            from appcore import task_raw_source_bridge
+            refound = task_raw_source_bridge.find_ready_raw_source_for_media_item(source_media_item_id)
+            if refound:
+                source_raw_id = int(refound["id"])
+            else:
+                source_raw_id = None
     if source_raw_id is None:
         raise StateError("child task source raw missing")
     return {
@@ -1620,6 +1632,39 @@ def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
                     (PARENT_RAW_REVIEW, int(task_id)),
                 )
                 _write_event(cur, task_id, "raw_uploaded", actor_user_id, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
+def reset_to_raw_review(*, task_id: int, actor_user_id: int) -> None:
+    """把已完成的任务状态重置为 raw_review，重新走审核流程。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT status, assignee_id, media_item_id "
+                    "FROM tasks WHERE id=%s AND parent_task_id IS NULL FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("parent task not found")
+                if row["assignee_id"] != int(actor_user_id):
+                    raise StateError("only assignee can reset task status")
+                if row["media_item_id"] is None:
+                    raise StateError("media_item not bound")
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+                    "WHERE id=%s",
+                    (PARENT_RAW_REVIEW, int(task_id)),
+                )
+                _write_event(cur, task_id, "raw_reuploaded", actor_user_id, None)
             conn.commit()
         except Exception:
             conn.rollback()
