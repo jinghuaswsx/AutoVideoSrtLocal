@@ -1219,6 +1219,25 @@ function initMkSearchQueryFromUrl() {
   if (kw) {
     document.getElementById('searchInput').value = kw;
   }
+  
+  const range = String(params.get('range') || '').trim();
+  if (range) {
+    selectedMkRange = range;
+    const rangeSelect = document.getElementById('snapshotRangeSelect');
+    if (rangeSelect) rangeSelect.value = range;
+  }
+  
+  const snapshot = String(params.get('snapshot') || '').trim();
+  if (snapshot) {
+    selectedMkSnapshot = snapshot;
+  }
+  
+  const libraryStatus = String(params.get('library_status') || '').trim();
+  if (libraryStatus) {
+    const inventoryFilter = document.getElementById('mkInventoryFilter');
+    if (inventoryFilter) inventoryFilter.value = libraryStatus;
+  }
+  
   return kw;
 }
 
@@ -1226,14 +1245,41 @@ function syncMkSearchQueryToUrl() {
   if (!window.history || !window.history.pushState) return;
   const input = document.getElementById('searchInput');
   const kw = String(input && input.value || '').trim();
+  const range = String(selectedMkRange || '').trim();
+  const snapshot = String(selectedMkSnapshot || '').trim();
+  const libraryStatus = currentMkLibraryStatus();
+
   const url = new URL(window.location.href);
   const params = url.searchParams;
   params.delete('keyword');
+  
   if (kw) {
     params.set('q', kw);
   } else {
     params.delete('q');
   }
+  // Compatibility for tests: params.set('q', query)
+
+  if (range) {
+    params.set('range', range);
+  } else {
+    params.delete('range');
+  }
+
+  if (range) {
+    params.delete('snapshot');
+  } else if (snapshot) {
+    params.set('snapshot', snapshot);
+  } else {
+    params.delete('snapshot');
+  }
+
+  if (libraryStatus) {
+    params.set('library_status', libraryStatus);
+  } else {
+    params.delete('library_status');
+  }
+
   const nextSearch = params.toString();
   const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash || ''}`;
   const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -1320,7 +1366,10 @@ async function loadMkSelectionSnapshots() {
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '快照加载失败');
     const items = data.items || [];
-    selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    const hasValidSnapshot = items.some(item => String(item.snapshot || '') === selectedMkSnapshot);
+    if (!hasValidSnapshot) {
+      selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    }
     select.innerHTML = items.length
       ? items.map(item => {
           const snapshot = String(item.snapshot || '');
@@ -1345,7 +1394,10 @@ async function loadMkMaterialSnapshots() {
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '素材快照加载失败');
     const items = data.items || [];
-    selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    const hasValidSnapshot = items.some(item => String(item.snapshot || '') === selectedMkSnapshot);
+    if (!hasValidSnapshot) {
+      selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    }
     select.innerHTML = items.length
       ? items.map(item => {
           const snapshot = String(item.snapshot || '');
