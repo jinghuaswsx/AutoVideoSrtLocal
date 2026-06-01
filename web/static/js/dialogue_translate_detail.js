@@ -65,6 +65,19 @@
     return voiceIdOf(fromTask) || voiceIdOf(fromProfile) || "";
   }
 
+  function voiceMatchStatus(task) {
+    var steps = task && task.steps ? task.steps : {};
+    return String(steps.voice_match_ab || "pending");
+  }
+
+  function canEditVoices(task) {
+    return voiceMatchStatus(task) === "waiting";
+  }
+
+  function isVoiceMatchDone(task) {
+    return voiceMatchStatus(task) === "done";
+  }
+
   function optionLabel(candidate) {
     var voiceId = voiceIdOf(candidate);
     var name = voiceNameOf(candidate, voiceId);
@@ -97,7 +110,7 @@
   function updateStatus(task) {
     var currentReviewStep = String((task && task.current_review_step) || "");
     var steps = task && task.steps ? task.steps : {};
-    var voiceStatus = String(steps.voice_match_ab || "pending");
+    var voiceStatus = voiceMatchStatus(task);
     var speakerStatus = String(steps.speaker_detect || "pending");
     if (voiceStatus === "waiting") {
       statusEl.textContent = "A/B 候选音色已就绪，确认后将从 alignment 继续。";
@@ -108,7 +121,7 @@
       return;
     }
     if (voiceStatus === "done") {
-      statusEl.textContent = "A/B 音色已确认，任务会继续推进后续步骤。";
+      statusEl.textContent = "A/B 音色已自动匹配，任务会继续推进后续步骤。";
       return;
     }
     if (speakerStatus === "failed" || voiceStatus === "failed") {
@@ -127,7 +140,9 @@
   }
 
   function updateConfirmState() {
-    confirmBtn.disabled = isSubmitting || !selection.A || !selection.B;
+    var editable = canEditVoices(lastTask || {});
+    confirmBtn.hidden = isVoiceMatchDone(lastTask || {});
+    confirmBtn.disabled = isSubmitting || !editable || !selection.A || !selection.B;
   }
 
   function ensureSelectedOption(select, selectedId, profile) {
@@ -186,6 +201,7 @@
     var profile = profiles[speaker] || {};
     var summary = task && task.speaker_summary ? (task.speaker_summary[speaker] || {}) : {};
     var selectedId = selectedVoiceId(task, speaker, profile);
+    var editable = canEditVoices(task);
     if (!selection[speaker]) {
       selection[speaker] = selectedId;
     }
@@ -198,7 +214,7 @@
     var title = document.createElement("h4");
     title.textContent = "Speaker " + speaker;
     var subtitle = document.createElement("small");
-    subtitle.textContent = "确认该说话人的目标音色";
+    subtitle.textContent = "该说话人的目标音色";
     var pill = document.createElement("span");
     pill.className = "dialogue-speaker-pill";
     pill.textContent = speaker;
@@ -235,6 +251,7 @@
     placeholder.value = "";
     placeholder.textContent = "请选择音色";
     select.appendChild(placeholder);
+    select.disabled = !editable;
     label.appendChild(select);
     card.appendChild(label);
 
@@ -273,6 +290,7 @@
     search.type = "search";
     search.placeholder = "搜索完整音色库";
     search.value = speakerLibrary.q || "";
+    search.disabled = !editable;
     search.addEventListener("input", function () {
       libraryState[speaker].q = search.value.trim();
     });
@@ -285,7 +303,7 @@
     var loadBtn = document.createElement("button");
     loadBtn.type = "button";
     loadBtn.textContent = speakerLibrary.loading ? "加载中..." : "查音色库";
-    loadBtn.disabled = !!speakerLibrary.loading;
+    loadBtn.disabled = !editable || !!speakerLibrary.loading;
     loadBtn.addEventListener("click", function () {
       libraryState[speaker].q = search.value.trim();
       loadVoiceLibrary(speaker);
@@ -339,7 +357,7 @@
   }
 
   confirmBtn.addEventListener("click", async function () {
-    if (isSubmitting || !selection.A || !selection.B) {
+    if (isSubmitting || !canEditVoices(lastTask || {}) || !selection.A || !selection.B) {
       return;
     }
     isSubmitting = true;

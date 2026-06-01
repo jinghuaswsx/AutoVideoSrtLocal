@@ -73,8 +73,8 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Dialogue Detail" in body
-    assert "A/B 音色确认" in body
-    assert body.index("A/B 音色确认") < body.index("处理进度")
+    assert "A/B 音色匹配" in body
+    assert body.index("A/B 音色匹配") < body.index("处理进度")
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
@@ -217,7 +217,7 @@ def test_dialogue_detail_allows_visible_to_all_for_permitted_user(
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Shared Dialogue" in body
-    assert "A/B 音色确认" in body
+    assert "A/B 音色匹配" in body
 
 
 def test_dialogue_translate_list_template_uses_omni_project_management_shell():
@@ -560,6 +560,8 @@ def test_dialogue_translate_detail_js_does_not_interpolate_task_state_with_inner
     )
 
     assert "card.innerHTML" not in script
+    assert "confirmBtn.hidden = isVoiceMatchDone" in script
+    assert "!canEditVoices(lastTask || {})" in script
 
 
 def test_dialogue_translate_layout_and_workbench_labels_are_registered():
@@ -574,7 +576,7 @@ def test_dialogue_translate_layout_and_workbench_labels_are_registered():
     assert "has_permission('dialogue_translate')" in layout
     assert "/dialogue-translate" in layout
     assert 'speaker_detect: "说话人识别"' in workbench
-    assert 'voice_match_ab: "A/B 音色确认"' in workbench
+    assert 'voice_match_ab: "A/B 音色匹配"' in workbench
     assert "restartHeaders['X-CSRFToken']" in shell
 
 

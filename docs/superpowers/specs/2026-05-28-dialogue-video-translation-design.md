@@ -52,7 +52,6 @@ extract
   -> asr
   -> speaker_detect
   -> voice_match_ab
-  -> confirm_voice_ab
   -> translate
   -> tts_ab
   -> subtitle
@@ -60,7 +59,7 @@ extract
   -> export
 ```
 
-`confirm_voice_ab` 是人工确认门禁：A/B 两个音色都确认前，任务不能进入 TTS。Speaker 标签本身不是人工标注主流程；人工只用于少量纠错、低置信度复核和音色确认。
+`voice_match_ab` 是自动音色匹配门禁：系统按 Speaker A / B 的时间范围提取各自原声音频，复用 Omni 候选匹配和 `voice_selection.assess` 大模型排序，分别选择 `llm_rank=1` 的音色后进入后续步骤。Speaker 标签本身不是人工标注主流程；人工只用于少量纠错和失败兜底。
 
 ## 说话人识别
 
@@ -105,6 +104,10 @@ extract
 
 ## A/B 音色匹配
 
+### 2026-06-01 自动音色选择修正
+
+`voice_match_ab` 不再把 A/B 候选音色作为必经人工门禁。该步骤必须为每个有效 speaker 保留原声抽样时间窗与样本音频，复用 Omni 全能视频翻译的音色候选匹配与 `voice_selection.assess` 大模型排名逻辑，并直接选择每个 speaker 的 `llm_rank=1` 音色。A/B 均选定后，`voice_match_ab` 标记为 `done`，清空 `current_review_step`，流水线继续进入实际下一步；只有缺少样本、缺少候选或自动选择失败时才停在错误态等待处理。
+
 `voice_match_ab` 复用现有音色库、embedding 和语速辅助排序能力，但按 speaker 分组执行：
 
 1. 对 A/B 各自聚合高置信度原声时间窗。
@@ -122,33 +125,25 @@ extract
       "sample_path": "speaker_A_sample.wav",
       "sample_windows": [[1.23, 5.67]],
       "candidates": [{"voice_id": "voice-a", "name": "Candidate A"}],
-      "selected_voice": null,
+      "voice_ai_rankings": [{"voice_id": "voice-a", "llm_rank": 1}],
+      "selected_voice": {"voice_id": "voice-a", "name": "Voice A", "llm_rank": 1},
       "match_warnings": []
     },
     "B": {
       "sample_path": "speaker_B_sample.wav",
       "sample_windows": [[8.9, 12.34]],
       "candidates": [{"voice_id": "voice-b", "name": "Candidate B"}],
-      "selected_voice": null,
+      "voice_ai_rankings": [{"voice_id": "voice-b", "llm_rank": 1}],
+      "selected_voice": {"voice_id": "voice-b", "name": "Voice B", "llm_rank": 1},
       "match_warnings": []
     }
   },
-  "selected_voice_by_speaker": {}
-}
-```
-
-用户必须在详情页确认：
-
-```json
-{
   "selected_voice_by_speaker": {
     "A": {"voice_id": "voice-a", "name": "Voice A"},
     "B": {"voice_id": "voice-b", "name": "Voice B"}
   }
 }
 ```
-
-确认后 `confirm_voice_ab` 完成，才能继续 TTS。
 
 ## TTS 与音画对齐
 
@@ -203,14 +198,14 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 - 创建项目流程复刻 Omni：上传视频、选择目标语言、选择源语言、填写项目名、超级管理员可选系统级 preset；提交时保存生效的 `plugin_config` 快照。已有任务不回查 preset。
 - 生命周期端点复刻 Omni：详情、状态、失败恢复、强制重启、复制、删除、下载结果、artifact、round file、source-language、alignment、segments、resume、loudness-profile、visible-to-all、LLM debug。
 - 路由必须保持 `@login_required + @admin_required`，并通过 `dialogue_translate` 权限门禁；所有 mutating 请求必须带 `X-CSRFToken`。
-- 详情页继续复用 `_translate_detail_shell.html` 和 Omni workbench。唯一 UI 差异是 `voice_match` 阶段替换为 Speaker A / Speaker B 双音色确认面板；不能暴露单音色确认作为主路径。
+- 详情页继续复用 `_translate_detail_shell.html` 和 Omni workbench。唯一 UI 差异是 `voice_match` 阶段替换为 Speaker A / Speaker B 双音色匹配面板；不能暴露单音色确认作为主路径。
 - 运行主干复用 Omni step 生命周期，`voice_match` 在 dialogue 中替换为 `speaker_detect` 和 `voice_match_ab`，后续从实际 step 顺序的下一步继续，不能硬编码只从 `alignment` 继续。
 
 详情页复用现有视频翻译 workbench 结构，新增“说话人”面板：
 
-- A/B 摘要：语音时长、句数、匹配状态、确认音色。
+- A/B 摘要：语音时长、句数、匹配状态、已选音色。
 - A/B 样本试听：播放原声样本，便于判断候选是否贴近。
-- A/B 候选音色：每个 speaker 一组候选，必须分别确认。
+- A/B 候选音色：每个 speaker 一组候选，默认由大模型自动选择 rank 1。
 - 句级时间线：后台显示 speaker、原文、译文、时间窗、置信度、复核标记。
 - 少量纠错：允许用户修改某句 `speaker_id`。修改后清空受影响的 A/B 音色匹配和下游 TTS/合成状态，要求重跑。
 
@@ -254,7 +249,7 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 
 - 新增 dialogue 入口、runner/profile、任务步骤。
 - 实现 provider speaker 字段 adapter 和统一 `dialogue_segments`。
-- 实现 A/B 音色匹配、确认门禁、状态展示。
+- 实现 A/B 音色匹配、自动选择、状态展示。
 - TTS 支持 per-segment voice override，并复用 Omni 对齐主干。
 
 ### Phase 2：独立 diarization 服务
@@ -289,7 +284,7 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 - 单元测试：per-segment voice TTS 调用按句使用正确 voice_id。
 - 单元测试：TTS 溢出窗口时标记复核，不覆盖下一句。
 - 路由测试：未登录访问新页面 302；登录后 200；新 API 有 `login_required` 和 `admin_required`。
-- 前端静态测试：详情页显示 A/B 面板、候选音色、确认门禁、后台 speaker 时间线。
+- 前端静态测试：详情页显示 A/B 面板、候选音色、自动完成态、后台 speaker 时间线。
 - 回归测试：现有 Omni/Multi/V2 创建与详情页不出现 dialogue 字段依赖。
 
 涉及数据库或线上数据验证时，遵守项目规则：不连接 Windows 本机 MySQL `127.0.0.1:3306`，数据库状态以测试服务器或线上服务器环境为准。

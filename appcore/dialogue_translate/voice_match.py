@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import math
 import subprocess
 from pathlib import Path
@@ -9,7 +10,10 @@ from typing import Any, Iterable
 INSUFFICIENT_SAMPLE_REASON = "insufficient_speaker_sample"
 MALFORMED_SEGMENT_REASON = "malformed_dialogue_segment"
 NO_VOICE_CANDIDATES_REASON = "no_voice_candidates"
+VOICE_AI_SELECTION_FAILED_REASON = "voice_ai_selection_failed"
 _SPEAKERS = ("A", "B")
+
+log = logging.getLogger(__name__)
 
 
 def _safe_float(value: object) -> float | None:
@@ -267,6 +271,210 @@ def match_voices_for_speakers(
         profiles[speaker] = profile
 
     return profiles
+
+
+def _voice_id_from(value: object) -> str:
+    if isinstance(value, dict):
+        for key in ("voice_id", "elevenlabs_voice_id", "id"):
+            voice_id = str(value.get(key) or "").strip()
+            if voice_id:
+                return voice_id
+    elif value:
+        return str(value).strip()
+    return ""
+
+
+def _voice_name_from(value: object, voice_id: str) -> str:
+    if isinstance(value, dict):
+        for key in ("name", "voice_name", "label"):
+            name = str(value.get(key) or "").strip()
+            if name:
+                return name
+    return voice_id
+
+
+def _rank_from(value: object) -> int | None:
+    try:
+        rank = int(value)
+    except (TypeError, ValueError):
+        return None
+    return rank if rank > 0 else None
+
+
+def _selected_voice_from_candidate(candidate: object) -> dict | None:
+    voice_id = _voice_id_from(candidate)
+    if not voice_id:
+        return None
+
+    selected = {
+        "voice_id": voice_id,
+        "name": _voice_name_from(candidate, voice_id),
+    }
+    if not isinstance(candidate, dict):
+        return selected
+
+    for key in (
+        "voice_name",
+        "elevenlabs_voice_id",
+        "id",
+        "language",
+        "gender",
+        "similarity",
+        "preview_url",
+        "provider",
+        "llm_rank",
+        "llm_reason_summary",
+    ):
+        value = candidate.get(key)
+        if value not in (None, ""):
+            selected[key] = value
+    reason = candidate.get("reason_summary")
+    if reason and not selected.get("llm_reason_summary"):
+        selected["llm_reason_summary"] = reason
+    return selected
+
+
+def _merge_ranking_row(candidate: object, row: dict) -> dict:
+    merged = dict(candidate) if isinstance(candidate, dict) else {}
+    voice_id = str(row.get("voice_id") or "").strip()
+    if voice_id:
+        merged.setdefault("voice_id", voice_id)
+    rank = _rank_from(row.get("llm_rank", row.get("rank")))
+    if rank is not None:
+        merged["llm_rank"] = rank
+    reason = row.get("reason_summary") or row.get("reason")
+    if reason and not merged.get("llm_reason_summary"):
+        merged["llm_reason_summary"] = reason
+    return merged
+
+
+def _llm_rank_one_candidate(candidates: Iterable[dict], rankings: Iterable[dict]) -> dict | None:
+    candidate_rows = [dict(candidate) for candidate in candidates or [] if isinstance(candidate, dict)]
+    for candidate in candidate_rows:
+        if _rank_from(candidate.get("llm_rank")) == 1 and _voice_id_from(candidate):
+            return candidate
+
+    by_voice_id = {
+        _voice_id_from(candidate): candidate
+        for candidate in candidate_rows
+        if _voice_id_from(candidate)
+    }
+    for row in rankings or []:
+        if not isinstance(row, dict):
+            continue
+        if _rank_from(row.get("llm_rank", row.get("rank"))) != 1:
+            continue
+        voice_id = str(row.get("voice_id") or "").strip()
+        if not voice_id:
+            continue
+        return _merge_ranking_row(by_voice_id.get(voice_id) or {}, row)
+    return None
+
+
+def _speaker_task_for_voice_ai(task: dict, speaker: str, profile: dict, dialogue_segments: list[dict]) -> dict:
+    speaker_segments = _speaker_utterances(dialogue_segments, speaker)
+    speaker_task = dict(task or {})
+    speaker_task["dialogue_speaker_id"] = speaker
+    speaker_task["dialogue_speaker_sample_path"] = profile.get("sample_path")
+    speaker_task["dialogue_speaker_sample_windows"] = profile.get("sample_windows") or []
+    speaker_task["dialogue_segments"] = speaker_segments
+    speaker_task["utterances"] = speaker_segments
+    speaker_task["utterances_en"] = speaker_segments
+    return speaker_task
+
+
+def auto_select_speaker_voices_with_ai(
+    *,
+    task_id: str,
+    task: dict,
+    profiles: dict[str, dict],
+    task_dir: str | Path,
+    dialogue_segments: list[dict],
+    user_id: int | None = None,
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Run the normal voice AI ranking once per dialogue speaker and select rank 1."""
+    from appcore.voice_ai_ranking import rank_voice_candidates
+
+    normalized_profiles: dict[str, dict] = {
+        speaker: dict(profile) if isinstance(profile, dict) else {}
+        for speaker, profile in (profiles or {}).items()
+    }
+    selected_by_speaker: dict[str, dict] = {}
+    base_task_dir = Path(task_dir or ".")
+
+    for speaker in _SPEAKERS:
+        profile = normalized_profiles.setdefault(speaker, {})
+        candidates = profile.get("candidates") or []
+        sample_path = str(profile.get("sample_path") or "").strip()
+        warnings = list(profile.get("match_warnings") or [])
+
+        if not candidates or not sample_path:
+            _append_warning(warnings, VOICE_AI_SELECTION_FAILED_REASON)
+            profile.update(
+                {
+                    "match_warnings": warnings,
+                    "voice_ai_rank_status": "skipped",
+                    "voice_ai_rankings": [],
+                    "selected_voice": None,
+                }
+            )
+            continue
+
+        speaker_task = _speaker_task_for_voice_ai(task, speaker, profile, dialogue_segments)
+        ai_result: dict
+        try:
+            ai_result = rank_voice_candidates(
+                task_id=task_id,
+                task=speaker_task,
+                candidates=candidates,
+                source_audio_path=sample_path,
+                task_dir=base_task_dir / "dialogue_voice_ai" / f"speaker_{speaker}",
+                user_id=user_id,
+            )
+        except Exception as exc:
+            log.exception("dialogue voice AI ranking failed task=%s speaker=%s: %s", task_id, speaker, exc)
+            _append_warning(warnings, VOICE_AI_SELECTION_FAILED_REASON)
+            profile.update(
+                {
+                    "match_warnings": warnings,
+                    "voice_ai_rank_status": "failed",
+                    "voice_ai_rankings": [],
+                    "voice_ai_rank_debug": {
+                        "status": "failed",
+                        "use_case": "voice_selection.assess",
+                        "request": {"visual": {"media": [], "candidates": candidates[:10]}, "raw": {}},
+                        "result": {"visual": {"rankings": []}, "raw": {"error": str(exc)[:500]}},
+                    },
+                    "selected_voice": None,
+                }
+            )
+            continue
+
+        ranked_candidates = ai_result.get("candidates") or candidates
+        rankings = ai_result.get("rankings") or []
+        selected_candidate = _llm_rank_one_candidate(ranked_candidates, rankings)
+        selected_voice = _selected_voice_from_candidate(selected_candidate)
+        if selected_voice is None:
+            _append_warning(warnings, VOICE_AI_SELECTION_FAILED_REASON)
+
+        profile.update(
+            {
+                "candidates": ranked_candidates,
+                "match_warnings": warnings,
+                "voice_ai_rank_status": ai_result.get("status") or "",
+                "voice_ai_rankings": rankings,
+                "voice_ai_rank_model": ai_result.get("model"),
+                "voice_ai_rank_provider": ai_result.get("provider"),
+                "voice_ai_rank_candidate_limit": ai_result.get("candidate_limit"),
+                "voice_ai_rank_usage_log_id": ai_result.get("usage_log_id"),
+                "voice_ai_rank_debug": ai_result.get("debug"),
+                "selected_voice": selected_voice,
+            }
+        )
+        if selected_voice is not None:
+            selected_by_speaker[speaker] = selected_voice
+
+    return normalized_profiles, selected_by_speaker
 
 
 def _window_duration(window: Any) -> float:
