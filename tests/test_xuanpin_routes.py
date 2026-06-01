@@ -218,7 +218,10 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "winner.mp4" in body
     assert "投放热度" in body
     assert "mk-detail-heat-panel" in body
-    assert "mk-detail-heat-badge mk-detail-heat-badge--high" in body
+    assert "mk-detail-heat-badge high" in body
+    assert ".mk-detail-heat-badge.high { background:var(--oc-success-bg); color:var(--oc-success-fg); }" in body
+    assert ".mk-detail-heat-badge.med { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }" in body
+    assert ".mk-detail-heat-badge.low { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }" in body
     assert "广告数 16" in body
     assert "90天消耗 1.28万" in body
     assert "mk-detail-media-grid" in body
