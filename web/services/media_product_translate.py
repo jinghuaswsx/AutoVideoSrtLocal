@@ -127,6 +127,7 @@ def start_product_translation(
     user_agent: str,
     is_admin: bool = False,
     resolve_child_task_id_fn: Callable[..., int] | None = None,
+    resolve_child_task_media_source_fn: Callable[..., dict] | None = None,
 ) -> ProductTranslateResult:
     if product is not None and not medias.is_product_listed(product):
         return ProductTranslateResult(
@@ -145,8 +146,6 @@ def start_product_translation(
     if task_center_error:
         return task_center_error
 
-    if ("videos" in content_types or "video_covers" in content_types) and not raw_ids:
-        return _validation_error("raw_ids 不能为空")
     if not target_langs:
         return _validation_error("target_langs 不能为空")
     if task_center_task_id is not None and len(target_langs) != 1:
@@ -159,11 +158,9 @@ def start_product_translation(
     if error:
         return error
 
-    rows = medias.list_raw_sources(product_id)
-    valid_ids = {int(r["id"]) for r in rows}
-    bad = [rid for rid in raw_ids_int if rid not in valid_ids]
-    if bad:
-        return _validation_error(f"raw_ids 不属于该产品或已删除: {bad}")
+    needs_raw_source = "videos" in content_types or "video_covers" in content_types
+    if task_center_task_id is None and needs_raw_source and not raw_ids_int:
+        return _validation_error("raw_ids 不能为空")
 
     for lang in target_langs:
         if lang == "en" or not medias.is_valid_language(lang):
@@ -174,22 +171,47 @@ def start_product_translation(
             return _validation_error(f"content_types 不支持: {content_type}")
 
     if task_center_task_id is not None:
-        resolve_child_task_id = (
-            resolve_child_task_id_fn
-            or tasks_svc.resolve_child_task_for_media_item_upload
-        )
+        resolver_kwargs = {
+            "task_id": task_center_task_id,
+            "product_id": product_id,
+            "lang": str(target_langs[0] or "").strip().lower(),
+            "actor_user_id": user_id,
+            "is_admin": is_admin,
+        }
         try:
-            task_center_task_id = int(resolve_child_task_id(
-                task_id=task_center_task_id,
-                product_id=product_id,
-                lang=str(target_langs[0] or "").strip().lower(),
-                actor_user_id=user_id,
-                is_admin=is_admin,
-            ))
+            if needs_raw_source and (
+                resolve_child_task_media_source_fn is not None
+                or resolve_child_task_id_fn is None
+            ):
+                resolve_media_source = (
+                    resolve_child_task_media_source_fn
+                    or tasks_svc.resolve_child_task_media_source
+                )
+                source_info = resolve_media_source(**resolver_kwargs) or {}
+                task_center_task_id = int(source_info.get("task_id") or task_center_task_id)
+                source_raw_id = int(source_info.get("source_raw_id") or 0)
+                if source_raw_id <= 0:
+                    raise tasks_svc.StateError("child task source raw missing")
+                raw_ids_int = [source_raw_id]
+            else:
+                resolve_child_task_id = (
+                    resolve_child_task_id_fn
+                    or tasks_svc.resolve_child_task_for_media_item_upload
+                )
+                task_center_task_id = int(resolve_child_task_id(**resolver_kwargs))
         except PermissionError as exc:
             return ProductTranslateResult(ok=False, status_code=403, error=str(exc))
         except (ValueError, RuntimeError, tasks_svc.StateError) as exc:
             return _validation_error(str(exc))
+
+    if needs_raw_source and not raw_ids_int:
+        return _validation_error("raw_ids 不能为空")
+
+    rows = medias.list_raw_sources(product_id)
+    valid_ids = {int(r["id"]) for r in rows}
+    bad = [rid for rid in raw_ids_int if rid not in valid_ids]
+    if bad:
+        return _validation_error(f"raw_ids 不属于该产品或已删除: {bad}")
 
     initiator = {
         "user_id": user_id,

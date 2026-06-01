@@ -369,6 +369,58 @@ def test_start_product_translation_task_center_recreates_video_covers(monkeypatc
     assert created["force_retranslate"] is True
 
 
+def test_start_product_translation_task_center_uses_bound_raw_source(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    created = {}
+    resolved = {}
+    monkeypatch.setattr(
+        svc.medias,
+        "list_raw_sources",
+        lambda product_id: [{"id": 88}, {"id": 999}],
+    )
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang == "it")
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: created.update(kwargs) or "task-bound-source",
+    )
+    monkeypatch.setattr(svc.bulk_translate_runtime, "start_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr(svc, "start_bulk_scheduler_background", lambda *args, **kwargs: True)
+
+    result = svc.start_product_translation(
+        user_id=7,
+        user_name="operator",
+        product_id=123,
+        body={
+            "raw_ids": ["999"],
+            "target_langs": ["it"],
+            "content_types": ["video_covers", "videos"],
+            "task_center_task_id": "456",
+        },
+        ip="10.0.0.1",
+        user_agent="pytest-UA",
+        resolve_child_task_media_source_fn=lambda **kwargs: resolved.update(kwargs)
+        or {
+            "task_id": 456,
+            "media_item_id": 1679,
+            "source_raw_id": 88,
+            "cover_object_key": "77/medias/123/item-cover.png",
+        },
+    )
+
+    assert result.ok is True
+    assert resolved == {
+        "task_id": 456,
+        "product_id": 123,
+        "lang": "it",
+        "actor_user_id": 7,
+        "is_admin": False,
+    }
+    assert created["raw_source_ids"] == [88]
+    assert created["task_center_task_id"] == 456
+
+
 def test_start_product_translation_rejects_task_center_child_id_language_mismatch(monkeypatch):
     from web.services import media_product_translate as svc
 

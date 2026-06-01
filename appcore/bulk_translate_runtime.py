@@ -1475,6 +1475,35 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
     return child_task_id, "image_translate", "running"
 
 
+def _task_center_source_cover_object_key(
+    parent_state: dict,
+    *,
+    product_id: int,
+    source_raw_id: int,
+) -> str:
+    task_id = _positive_int_or_none((parent_state or {}).get("task_center_task_id"))
+    if not task_id or int(product_id or 0) <= 0 or int(source_raw_id or 0) <= 0:
+        return ""
+    row = query_one(
+        """
+        SELECT mi.cover_object_key
+        FROM tasks t
+        JOIN media_items mi
+          ON mi.id = t.media_item_id
+         AND mi.deleted_at IS NULL
+        WHERE t.id = %s
+          AND t.parent_task_id IS NOT NULL
+          AND t.media_product_id = %s
+          AND mi.product_id = %s
+          AND mi.lang = %s
+          AND mi.source_raw_id = %s
+        LIMIT 1
+        """,
+        (int(task_id), int(product_id), int(product_id), "en", int(source_raw_id)),
+    )
+    return str((row or {}).get("cover_object_key") or "").strip()
+
+
 def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from appcore import image_translate_settings as its
     from appcore.task_state import create_image_translate
@@ -1496,15 +1525,25 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)
     os.makedirs(task_dir, exist_ok=True)
     prompt = its.get_prompt("cover", lang).replace("{target_language_name}", target_language_name)
-    items = [
-        {
-            "idx": idx,
-            "filename": os.path.basename(row.get("cover_object_key") or "") or f"raw_cover_{idx}.png",
-            "src_tos_key": row["cover_object_key"],
-            "source_bucket": "media",
-        }
-        for idx, row in enumerate(raw_rows)
-    ]
+    items = []
+    for idx, row in enumerate(raw_rows):
+        row_raw_id = int(row.get("id") or source_raw_ids[idx] or 0)
+        cover_object_key = (
+            _task_center_source_cover_object_key(
+                parent_state,
+                product_id=product_id,
+                source_raw_id=row_raw_id,
+            )
+            or row["cover_object_key"]
+        )
+        items.append(
+            {
+                "idx": idx,
+                "filename": os.path.basename(cover_object_key or "") or f"raw_cover_{idx}.png",
+                "src_tos_key": cover_object_key,
+                "source_bucket": "media",
+            }
+        )
     medias_context = {
         "entry": "bulk_translate_video_cover",
         "parent_task_id": parent_id,

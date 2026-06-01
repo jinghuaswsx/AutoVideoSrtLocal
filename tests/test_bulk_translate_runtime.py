@@ -212,6 +212,79 @@ def test_create_detail_images_child_skips_gif_sources(runtime_env, monkeypatch, 
     assert started == [("img-child-1", 1)]
 
 
+def test_create_video_cover_child_uses_task_center_source_item_cover(
+    runtime_env,
+    monkeypatch,
+    tmp_path,
+):
+    mod, _fake_db = runtime_env
+    created = {}
+    started = []
+
+    monkeypatch.setattr(mod, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_ensure_child_identity", lambda parent_id, item: "cover-child-1")
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda lang: "意大利语")
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "cover_object_key": "238/medias/322/raw_sources/raw-cover.png",
+        },
+    )
+
+    def fake_query_one(sql, args=None):
+        normalized = " ".join(str(sql).split())
+        if "FROM tasks" in normalized and "media_items" in normalized:
+            return {"cover_object_key": "77/medias/322/item-cover.png"}
+        raise AssertionError(f"unexpected query_one: {sql}")
+
+    monkeypatch.setattr(mod, "query_one", fake_query_one)
+
+    import appcore.image_translate_settings as its
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(its, "get_prompt", lambda preset, lang: "翻成 {target_language_name}")
+    monkeypatch.setattr(
+        task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kwargs: created.update(
+            {"task_id": task_id, "task_dir": task_dir, **kwargs}
+        ) or {"id": task_id},
+    )
+    monkeypatch.setattr(
+        mod.runner_dispatch,
+        "start_image_translate_runner",
+        lambda task_id, user_id: started.append((task_id, user_id)) or True,
+    )
+
+    child_task_id, child_type, child_status = mod._create_video_cover_child(
+        "parent-1",
+        _item(0, kind="video_covers", lang="it", ref={"source_raw_ids": [301]}),
+        {
+            "product_id": 322,
+            "task_center_task_id": 456,
+            "initiator": {"user_id": 7},
+        },
+    )
+
+    assert (child_task_id, child_type, child_status) == (
+        "cover-child-1",
+        "image_translate",
+        "running",
+    )
+    assert created["items"] == [
+        {
+            "idx": 0,
+            "filename": "item-cover.png",
+            "src_tos_key": "77/medias/322/item-cover.png",
+            "source_bucket": "media",
+        }
+    ]
+    assert created["medias_context"]["source_raw_ids"] == [301]
+    assert started == [("cover-child-1", 7)]
+
+
 def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(

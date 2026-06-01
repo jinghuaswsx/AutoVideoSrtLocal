@@ -359,6 +359,73 @@ def resolve_child_task_for_media_item_upload(
     return task_id_int
 
 
+def resolve_child_task_media_source(
+    *,
+    task_id: int,
+    product_id: int,
+    lang: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> dict:
+    task_id_int = _positive_int(task_id)
+    product_id_int = _positive_int(product_id)
+    lang_norm = str(lang or "").strip().lower()
+    if not task_id_int:
+        raise ValueError("task_id invalid")
+    if not product_id_int:
+        raise ValueError("product_id invalid")
+    if not lang_norm:
+        raise ValueError("lang invalid")
+
+    row = query_one(
+        """
+        SELECT
+          t.id,
+          t.assignee_id,
+          t.status,
+          t.media_product_id,
+          t.country_code,
+          mi.id AS source_media_item_id,
+          mi.lang AS source_lang,
+          mi.source_raw_id AS source_raw_id,
+          mi.cover_object_key AS source_cover_object_key
+        FROM tasks t
+        LEFT JOIN media_items mi
+          ON mi.id = t.media_item_id
+         AND mi.deleted_at IS NULL
+        WHERE t.id=%s AND t.parent_task_id IS NOT NULL
+        """,
+        (task_id_int,),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if int(row.get("media_product_id") or 0) != product_id_int:
+        raise StateError("child task product mismatch")
+    task_lang = str(row.get("country_code") or "").strip().lower()
+    if task_lang != lang_norm:
+        raise StateError("child task language mismatch")
+    if row.get("status") not in (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE):
+        raise StateError("child task not accepting output")
+    if not is_admin and int(row.get("assignee_id") or 0) != int(actor_user_id):
+        raise PermissionError("forbidden")
+
+    source_media_item_id = _positive_int(row.get("source_media_item_id"))
+    if source_media_item_id is None:
+        raise StateError("child task source media missing")
+    source_lang = str(row.get("source_lang") or "").strip().lower()
+    if source_lang != "en":
+        raise StateError("child task source media language mismatch")
+    source_raw_id = _positive_int(row.get("source_raw_id"))
+    if source_raw_id is None:
+        raise StateError("child task source raw missing")
+    return {
+        "task_id": task_id_int,
+        "media_item_id": source_media_item_id,
+        "source_raw_id": source_raw_id,
+        "cover_object_key": str(row.get("source_cover_object_key") or "").strip(),
+    }
+
+
 def _payload_user_ids(payload: dict) -> set[int]:
     ids: set[int] = set()
     for key in ("translator_id", "assignee_id", "old", "new"):

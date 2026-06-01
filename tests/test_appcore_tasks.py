@@ -205,6 +205,44 @@ def test_resolve_child_task_for_media_item_upload_accepts_matching_assignee(monk
     assert captured["args"] == (30,)
 
 
+def test_resolve_child_task_media_source_returns_task_bound_item(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["sql"] = " ".join(str(sql).split())
+        captured["args"] = args
+        return {
+            "id": 30,
+            "assignee_id": 77,
+            "status": tasks.CHILD_DONE,
+            "media_product_id": 599,
+            "country_code": "DE",
+            "source_media_item_id": 1679,
+            "source_lang": "en",
+            "source_raw_id": 33,
+            "source_cover_object_key": "77/medias/599/item-cover.png",
+        }
+
+    monkeypatch.setattr(tasks, "query_one", fake_query_one)
+
+    result = tasks.resolve_child_task_media_source(
+        task_id="30",
+        product_id=599,
+        lang="de",
+        actor_user_id=77,
+        is_admin=False,
+    )
+
+    assert "media_items" in captured["sql"]
+    assert captured["args"] == (30,)
+    assert result == {
+        "task_id": 30,
+        "media_item_id": 1679,
+        "source_raw_id": 33,
+        "cover_object_key": "77/medias/599/item-cover.png",
+    }
+
+
 def test_resolve_child_task_for_media_item_upload_rejects_other_assignee(monkeypatch):
     monkeypatch.setattr(
         tasks,
