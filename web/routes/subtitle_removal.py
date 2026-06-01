@@ -294,6 +294,67 @@ def _coerce_timestamp_seconds(value) -> float:
         return 0.0
 
 
+def _coerce_timestamp_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(microsecond=0)
+    if isinstance(value, (int, float)):
+        if float(value) <= 0:
+            return None
+        return datetime.fromtimestamp(float(value)).replace(microsecond=0)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        numeric = float(raw)
+        if numeric <= 0:
+            return None
+        return datetime.fromtimestamp(numeric).replace(microsecond=0)
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed.replace(microsecond=0)
+
+
+def _subtitle_result_returned_at(task: dict) -> datetime | None:
+    result_info = dict(task.get("result_object_info") or {})
+    for value in (
+        task.get("result_returned_at"),
+        task.get("completed_at"),
+        result_info.get("result_returned_at"),
+        result_info.get("fetched_at"),
+        result_info.get("saved_at"),
+        result_info.get("completed_at"),
+    ):
+        parsed = _coerce_timestamp_datetime(value)
+        if parsed:
+            return parsed
+    if (task.get("status") or "").strip().lower() == "done":
+        return _coerce_timestamp_datetime(task.get("last_polled_at"))
+    return None
+
+
+def _subtitle_removal_timing_payload(task: dict, project_row: dict | None = None) -> dict:
+    submitted_at = (
+        _coerce_timestamp_datetime(task.get("provider_task_submitted_at"))
+        or _coerce_timestamp_datetime(task.get("submitted_at"))
+        or _coerce_timestamp_datetime((project_row or {}).get("created_at"))
+    )
+    returned_at = _subtitle_result_returned_at(task)
+    elapsed_seconds = None
+    if submitted_at and returned_at:
+        elapsed_seconds = max(0, int((returned_at - submitted_at).total_seconds()))
+    return {
+        "task_submitted_at": submitted_at.isoformat(timespec="seconds") if submitted_at else "",
+        "result_returned_at": returned_at.isoformat(timespec="seconds") if returned_at else "",
+        "processing_elapsed_seconds": elapsed_seconds,
+    }
+
+
 def _submission_age_seconds(task_id: str, task: dict) -> float:
     submitted_at = _coerce_timestamp_seconds(task.get("provider_task_submitted_at"))
     if submitted_at <= 0:
@@ -578,7 +639,11 @@ def _ensure_source_thumbnail(task_id: str, task: dict) -> str:
     return thumbnail_path
 
 
-def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
+def _subtitle_removal_state_payload(
+    task: dict,
+    task_id: str | None = None,
+    project_row: dict | None = None,
+) -> dict:
     task_id = task_id or task.get("id") or ""
     thumbnail_path = _ensure_source_thumbnail(task_id, task)
     video_path = (task.get("video_path") or "").strip()
@@ -628,6 +693,7 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "detail_url": url_for("subtitle_removal.detail_page", task_id=task_id),
         "state_api_url": url_for("subtitle_removal.get_state", task_id=task_id),
     }
+    payload.update(_subtitle_removal_timing_payload(task, project_row))
     return payload
 
 
@@ -662,7 +728,7 @@ def detail_page(task_id: str):
     return render_template(
         "subtitle_removal_detail.html",
         project=row,
-        state=_subtitle_removal_state_payload(state, task_id),
+        state=_subtitle_removal_state_payload(state, task_id, row),
         task_id=task_id,
     )
 

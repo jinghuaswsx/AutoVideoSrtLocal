@@ -1526,6 +1526,74 @@ def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client
     assert "download/result" in body
 
 
+def test_subtitle_removal_state_payload_exposes_result_timing_to_seconds(authed_client_no_db):
+    task = store.create_subtitle_removal(
+        "sr-result-timing",
+        "uploads/sr-result-timing.mp4",
+        "output/sr-result-timing",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        provider_task_id="provider-task-1",
+        provider_task_submitted_at="2026-05-30T10:00:05",
+        result_video_path="output/sr-result-timing/result.cleaned.mp4",
+        result_object_info={"storage_backend": "local", "saved_at": "2026-05-30T10:03:15"},
+    )
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-result-timing")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["task_submitted_at"] == "2026-05-30T10:00:05"
+    assert data["result_returned_at"] == "2026-05-30T10:03:15"
+    assert data["processing_elapsed_seconds"] == 190
+
+
+def test_subtitle_removal_detail_shell_exposes_result_timing_hooks(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-result-timing-shell",
+        "uploads/sr-result-timing-shell.mp4",
+        "output/sr-result-timing-shell",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        provider_task_id="provider-task-1",
+        result_video_path="output/sr-result-timing-shell/result.cleaned.mp4",
+        result_object_info={"storage_backend": "local", "saved_at": "2026-05-30T10:03:15"},
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": datetime(2026, 5, 30, 9, 58, 0),
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-result-timing-shell")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="srStateTaskSubmittedAt"' in body
+    assert 'id="srStateResultReturnedAt"' in body
+    assert 'id="srStateProcessingElapsed"' in body
+    assert "task_submitted_at" in body
+    assert "2026-05-30T09:58:00" in body
+    assert "result_returned_at" in body
+    assert "2026-05-30T10:03:15" in body
+    assert 'if (value == null || value === "")' in body
+
+
 def test_subtitle_removal_detail_exposes_task_center_rerun_for_tcraw_niuma(authed_client_no_db, monkeypatch):
     task_id = "tcraw-120-7adfa023"
     state = {
