@@ -71,29 +71,48 @@ def _canonical_product_link(product_link: str | None, product_code: str) -> str:
 def _probe_product_link(url: str) -> tuple[bool, str | None]:
     if not url:
         return False, "empty url"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    head_ok = False
+    head_status = None
     try:
-        resp = requests.head(url, timeout=_PRODUCT_LINK_HEAD_TIMEOUT_SECONDS, allow_redirects=True)
-    except requests.RequestException as exc:
-        return False, str(exc)
-    if 200 <= resp.status_code < 400:
+        resp = requests.head(url, headers=headers, timeout=_PRODUCT_LINK_HEAD_TIMEOUT_SECONDS, allow_redirects=True)
+        head_status = resp.status_code
+        if 200 <= head_status < 400:
+            head_ok = True
+    except requests.RequestException:
+        pass
+
+    if head_ok:
         return True, None
-    if resp.status_code in {403, 405}:
-        try:
-            get_resp = requests.get(
-                url,
-                timeout=_PRODUCT_LINK_GET_TIMEOUT_SECONDS,
-                allow_redirects=True,
-                stream=True,
-            )
-        except requests.RequestException as exc:
-            return False, str(exc)
-        try:
-            if 200 <= get_resp.status_code < 400:
-                return True, None
-            return False, f"HTTP {get_resp.status_code}"
-        finally:
-            get_resp.close()
-    return False, f"HTTP {resp.status_code}"
+
+    # Fallback to GET for any non-success HEAD status or exception
+    try:
+        get_resp = requests.get(
+            url,
+            headers=headers,
+            timeout=_PRODUCT_LINK_GET_TIMEOUT_SECONDS,
+            allow_redirects=True,
+            stream=True,
+        )
+    except requests.RequestException as exc:
+        if head_status is not None:
+            return False, f"HTTP {head_status} (GET failed: {exc})"
+        return False, str(exc)
+
+    try:
+        if 200 <= get_resp.status_code < 400:
+            return True, None
+        if head_status is not None and get_resp.status_code != head_status:
+            return False, f"HTTP {get_resp.status_code} (HEAD: {head_status})"
+        return False, f"HTTP {get_resp.status_code}"
+    finally:
+        get_resp.close()
 
 
 def _product_link_warning(url: str) -> dict | None:

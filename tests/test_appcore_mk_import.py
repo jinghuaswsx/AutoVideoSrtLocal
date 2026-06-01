@@ -675,6 +675,36 @@ def test_probe_product_link_uses_short_timeouts(monkeypatch):
     assert captured[0]["timeout"] <= 3
 
 
+def test_probe_product_link_falls_back_to_get_on_head_failure(monkeypatch):
+    head_calls = []
+    get_calls = []
+
+    class FakeResponse:
+        def __init__(self, status_code):
+            self.status_code = status_code
+        def close(self):
+            pass
+
+    def fake_head(url, **kwargs):
+        head_calls.append((url, kwargs))
+        return FakeResponse(404)
+
+    def fake_get(url, **kwargs):
+        get_calls.append((url, kwargs))
+        return FakeResponse(200)
+
+    monkeypatch.setattr(mk_import.requests, "head", fake_head)
+    monkeypatch.setattr(mk_import.requests, "get", fake_get)
+
+    ok, err = mk_import._probe_product_link("https://example.test/products/fallback-get")
+    assert ok is True
+    assert err is None
+    assert len(head_calls) == 1
+    assert len(get_calls) == 1
+    assert "User-Agent" in head_calls[0][1]["headers"]
+    assert "User-Agent" in get_calls[0][1]["headers"]
+
+
 import pytest
 from appcore.db import execute, query_one
 
