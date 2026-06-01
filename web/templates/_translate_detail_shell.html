@@ -393,6 +393,7 @@
   {% endif %}
 </p>
 {% endif %}
+{% block detail_before_workbench %}{% endblock %}
 {% if detail_mode in ('multi', 'ja', 'av_sync') %}
 {% include "_voice_selector_multi.html" %}
 {% endif %}
