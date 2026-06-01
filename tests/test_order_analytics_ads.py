@@ -1101,6 +1101,22 @@ def test_ads_level_search_queries_bottom_list_without_dropdown(authed_client_no_
     assert "'&q=' + encodeURIComponent(query)" in body
 
 
+def test_ads_analysis_page_has_unmatched_campaigns_subtab(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-01-ads-unmatched-campaign-tab-design.md"""
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-ads-subtab="unmatched-campaigns"' in body
+    assert 'data-subpanel="unmatched-campaigns"' in body
+    assert 'id="adUnmatchedSearchInput"' in body
+    assert 'data-ads-account-filter="unmatched-campaigns"' in body
+    assert 'id="adUnmatchedRefresh"' in body
+    assert "function loadAdUnmatchedCampaigns()" in body
+    assert "function renderAdUnmatchedCampaigns(rows)" in body
+    assert "openAdMatchModal(row)" in body
+
+
 def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 

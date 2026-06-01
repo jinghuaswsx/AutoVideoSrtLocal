@@ -3264,6 +3264,7 @@
 <div class="oa-panel {% if active_tab == 'ads' %}active{% endif %}" id="panelAds">
   <nav class="oa-subtabs" id="adsSubtabs" role="tablist" aria-label="广告分析子 Tab">
     <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="overview" aria-pressed="true">概览</button>
+    <button type="button" class="oa-subtab-btn" data-ads-subtab="unmatched-campaigns" aria-pressed="false">未匹配广告计划</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="campaign" aria-pressed="false">Campaign</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="adset" aria-pressed="false">Ad Set</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="ad" aria-pressed="false">Ad</button>
@@ -3342,6 +3343,57 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 未匹配广告计划 sub-panel：仅展示素材管理库里没有相关产品的 Campaign -->
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-01-ads-unmatched-campaign-tab-design.md -->
+  <div class="oa-subpanel" data-subpanel="unmatched-campaigns">
+    <div class="oad-toolbar">
+      <div class="oad-toolbar-row">
+        <div class="oa-search-box ads-level-search">
+          <input type="text" id="adUnmatchedSearchInput" placeholder="搜索未匹配 Campaign..." autocomplete="off">
+        </div>
+        <label class="oad-account-filter">
+          <span>广告户</span>
+          <select id="adUnmatchedAccountFilter" data-ads-account-filter="unmatched-campaigns" aria-label="未匹配广告户筛选">
+            <option value="">全部广告户</option>
+          </select>
+        </label>
+        <div class="oad-range-presets" role="group" aria-label="未匹配广告计划时间范围">
+          <button type="button" class="oad-seg is-active" data-ad-unmatched-range="today" aria-pressed="true">今天</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="yesterday" aria-pressed="false">昨天</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="thisWeek" aria-pressed="false">本周</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="lastWeek" aria-pressed="false">上周</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="thisMonth" aria-pressed="false">本月</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="lastMonth" aria-pressed="false">上月</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="thisYear" aria-pressed="false">今年</button>
+          <button type="button" class="oad-seg" data-ad-unmatched-range="lastYear" aria-pressed="false">去年</button>
+        </div>
+        <div class="oad-date-range-field" role="group" aria-label="未匹配广告计划自定义日期范围">
+          <input type="date" id="adUnmatchedStartDate" aria-label="开始日期">
+          <span class="oad-date-range-sep">至</span>
+          <input type="date" id="adUnmatchedEndDate" aria-label="结束日期">
+        </div>
+        <button type="button" class="oad-btn-primary" id="adUnmatchedRefresh">查询</button>
+      </div>
+    </div>
+    <div id="adUnmatchedCampaignsError" class="oa-warning-banner" style="display:none;"></div>
+    <div id="adUnmatchedCampaignsEmpty" class="oa-empty" style="display:none;">
+      <div>当前筛选范围内没有未匹配广告计划。</div>
+    </div>
+    <div class="oa-table-wrap" id="adUnmatchedCampaignsWrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">未匹配广告计划</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table" id="adUnmatchedCampaignsTable">
+          <thead><tr id="adUnmatchedCampaignsHead"></tr></thead>
+          <tbody id="adUnmatchedCampaignsBody">
+            <tr><td colspan="5" class="oad-loading">加载中...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -3658,6 +3710,10 @@
     range: 'today'
   };
   var adRangeState = {
+    range: 'today'
+  };
+  var adUnmatchedInited = false;
+  var adUnmatchedRangeState = {
     range: 'today'
   };
 
@@ -6749,6 +6805,7 @@
       });
     }
     loadAdStats();
+    initAdUnmatchedCampaigns();
     loadAdSummary();
   }
 
@@ -6919,6 +6976,157 @@
       body.appendChild(tr);
     });
     wrap.style.display = '';
+  }
+
+  function setAdUnmatchedRange(range, skipLoad) {
+    var bounds = resolveCountryRange(range || 'today');
+    adUnmatchedRangeState.range = range || 'today';
+    setInputValue('adUnmatchedStartDate', formatDateInput(bounds.start));
+    setInputValue('adUnmatchedEndDate', formatDateInput(bounds.end));
+    syncAdUnmatchedRangeSelection();
+    if (!skipLoad) loadAdUnmatchedCampaigns();
+  }
+
+  function syncAdUnmatchedRangeSelection() {
+    var start = document.getElementById('adUnmatchedStartDate');
+    var end = document.getElementById('adUnmatchedEndDate');
+    var currentStart = start ? start.value : '';
+    var currentEnd = end ? end.value : '';
+    var matchedRange = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisYear', 'lastYear'].some(function(range) {
+      var bounds = resolveCountryRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matchedRange = range;
+        return true;
+      }
+      return false;
+    });
+    adUnmatchedRangeState.range = matchedRange || 'custom';
+    document.querySelectorAll('[data-ad-unmatched-range]').forEach(function(btn) {
+      var isActive = btn.dataset.adUnmatchedRange === matchedRange;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function getAdUnmatchedDateRange() {
+    var start = document.getElementById('adUnmatchedStartDate').value;
+    var end = document.getElementById('adUnmatchedEndDate').value;
+    if (!start || !end) throw new Error('请选择开始日期和结束日期');
+    if (end < start) throw new Error('结束日期不能早于开始日期');
+    return {start: start, end: end};
+  }
+
+  function showAdUnmatchedError(msg) {
+    var box = document.getElementById('adUnmatchedCampaignsError');
+    if (!box) return;
+    box.textContent = msg || '';
+    box.style.display = msg ? '' : 'none';
+  }
+
+  function loadAdUnmatchedCampaigns() {
+    var range;
+    try {
+      range = getAdUnmatchedDateRange();
+    } catch (err) {
+      showAdUnmatchedError(err.message);
+      return;
+    }
+    showAdUnmatchedError('');
+    var searchInput = document.getElementById('adUnmatchedSearchInput');
+    var query = searchInput ? searchInput.value.trim() : '';
+    var url = '/order-analytics/ad-summary?start_date=' + encodeURIComponent(range.start) +
+      '&end_date=' + encodeURIComponent(range.end);
+    if (query) {
+      url += '&q=' + encodeURIComponent(query);
+    }
+    var accountId = getSelectedAdsAccountId('#adUnmatchedAccountFilter');
+    if (accountId) {
+      url += '&ad_account_id=' + encodeURIComponent(accountId);
+    }
+    var body = document.getElementById('adUnmatchedCampaignsBody');
+    if (body) body.innerHTML = '<tr><td colspan="5" class="oad-loading">加载中...</td></tr>';
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        renderAdUnmatchedCampaigns((data && data.unmatched) || []);
+      })
+      .catch(function(e) {
+        showAdUnmatchedError('未匹配广告计划加载失败：' + e.message);
+      });
+  }
+
+  function renderAdUnmatchedCampaigns(rows) {
+    var wrap = document.getElementById('adUnmatchedCampaignsWrap');
+    var empty = document.getElementById('adUnmatchedCampaignsEmpty');
+    var head = document.getElementById('adUnmatchedCampaignsHead');
+    var body = document.getElementById('adUnmatchedCampaignsBody');
+    if (!wrap || !head || !body) return;
+    head.innerHTML = '';
+    ['广告计划', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
+      addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
+    });
+    if (!rows.length) {
+      body.innerHTML = '';
+      wrap.style.display = 'none';
+      if (empty) empty.style.display = '';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    wrap.style.display = '';
+    body.innerHTML = '';
+    rows.forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTd(tr, 'oa-col-product', row.campaign_name || row.normalized_campaign_code || '未知');
+      addTd(tr, 'oa-col-num', fmtMoney(row.spend_usd));
+      addTd(tr, 'oa-col-num', fmtInt(row.result_count));
+      addTd(tr, 'oa-col-num', fmtMoney(row.purchase_value_usd));
+
+      var actionTd = document.createElement('td');
+      actionTd.className = 'oa-col-num';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'oam-detail-btn';
+      btn.textContent = '配对';
+      btn.addEventListener('click', function() { openAdMatchModal(row); });
+      actionTd.appendChild(btn);
+      tr.appendChild(actionTd);
+
+      body.appendChild(tr);
+    });
+  }
+
+  function initAdUnmatchedCampaigns() {
+    if (adUnmatchedInited) return;
+    adUnmatchedInited = true;
+    setAdUnmatchedRange('today', true);
+    document.querySelectorAll('[data-ad-unmatched-range]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        setAdUnmatchedRange(btn.dataset.adUnmatchedRange);
+      });
+    });
+    ['adUnmatchedStartDate', 'adUnmatchedEndDate'].forEach(function(id) {
+      var input = document.getElementById(id);
+      if (input) input.addEventListener('change', syncAdUnmatchedRangeSelection);
+    });
+    var accountFilter = document.getElementById('adUnmatchedAccountFilter');
+    if (accountFilter) accountFilter.addEventListener('change', loadAdUnmatchedCampaigns);
+    var refresh = document.getElementById('adUnmatchedRefresh');
+    if (refresh) refresh.addEventListener('click', function() {
+      if (adUnmatchedRangeState.range && adUnmatchedRangeState.range !== 'custom') {
+        setAdUnmatchedRange(adUnmatchedRangeState.range, true);
+      }
+      loadAdUnmatchedCampaigns();
+    });
+    var search = document.getElementById('adUnmatchedSearchInput');
+    if (search) {
+      search.addEventListener('keydown', function(evt) {
+        if (evt.key === 'Enter') {
+          evt.preventDefault();
+          loadAdUnmatchedCampaigns();
+        }
+      });
+    }
   }
 
   // ── 广告系列人工配对弹窗 ──────────────────────────
@@ -7936,6 +8144,9 @@
           adsLoadDetail(target);
         }
       }
+    } else if (target === 'unmatched-campaigns') {
+      initAdUnmatchedCampaigns();
+      loadAdUnmatchedCampaigns();
     }
   }
 
