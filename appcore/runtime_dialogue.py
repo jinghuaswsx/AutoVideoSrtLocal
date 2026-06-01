@@ -168,6 +168,7 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
         return out
 
     def _step_speaker_detect(self, task_id: str) -> None:
+        from appcore.dialogue_translate.segment_audio import build_dialogue_segment_audio_assets
         from appcore.dialogue_translate.speaker_detection import detect_dialogue_segments
 
         task = task_state.get(task_id) or {}
@@ -182,6 +183,21 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             )
         except DiarizationUnavailable as exc:
             message = str(exc)
+            task_state.update(task_id, status="error", error=message)
+            self._set_step(task_id, "speaker_detect", "failed", message)
+            return
+
+        try:
+            if result.get("dialogue_segments"):
+                result.update(
+                    build_dialogue_segment_audio_assets(
+                        video_path=audio_path,
+                        task_dir=str(task.get("task_dir") or ""),
+                        dialogue_segments=result.get("dialogue_segments") or [],
+                    )
+                )
+        except Exception as exc:
+            message = f"dialogue sentence audio extraction failed for task {task_id}: {exc}"
             task_state.update(task_id, status="error", error=message)
             self._set_step(task_id, "speaker_detect", "failed", message)
             return

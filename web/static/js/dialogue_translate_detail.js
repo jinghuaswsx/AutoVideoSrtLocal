@@ -5,9 +5,10 @@
   var panel = document.getElementById("dialogueVoicePanel");
   var statusEl = document.getElementById("dialogueVoiceStatus");
   var gridEl = document.getElementById("dialogueVoiceGrid");
+  var timelineEl = document.getElementById("dialogueSegmentTimeline");
   var feedbackEl = document.getElementById("dialogueVoiceFeedback");
   var confirmBtn = document.getElementById("dialogueVoiceConfirmBtn");
-  if (!panel || !taskId || !statusEl || !gridEl || !feedbackEl || !confirmBtn) {
+  if (!panel || !taskId || !statusEl || !gridEl || !timelineEl || !feedbackEl || !confirmBtn) {
     return;
   }
 
@@ -82,6 +83,30 @@
     var voiceId = voiceIdOf(candidate);
     var name = voiceNameOf(candidate, voiceId);
     return name && name !== voiceId ? name + " (" + voiceId + ")" : (name || voiceId || "未命名音色");
+  }
+
+  function artifactPathUrl(relpath) {
+    return apiBase + "/" + encodeURIComponent(taskId) + "/artifact-path?path=" + encodeURIComponent(relpath);
+  }
+
+  function formatTime(value) {
+    var number = Number(value);
+    if (!Number.isFinite(number) || number < 0) {
+      number = 0;
+    }
+    var minutes = Math.floor(number / 60);
+    var seconds = number - minutes * 60;
+    return String(minutes).padStart(2, "0") + ":" + seconds.toFixed(3).padStart(6, "0");
+  }
+
+  function segmentTranslation(segment) {
+    return String(
+      segment.translated_text ||
+      segment.translated ||
+      segment.target_text ||
+      segment.tts_text ||
+      ""
+    ).trim();
   }
 
   function mergeVoiceOptions(candidates, libraryItems) {
@@ -243,6 +268,16 @@
     }
     card.appendChild(meta);
 
+    var tracks = task && task.speaker_audio_tracks ? task.speaker_audio_tracks : {};
+    var track = tracks && tracks[speaker] ? tracks[speaker] : {};
+    if (track.relative_path) {
+      var trackAudio = document.createElement("audio");
+      trackAudio.controls = true;
+      trackAudio.preload = "metadata";
+      trackAudio.src = artifactPathUrl(track.relative_path);
+      card.appendChild(trackAudio);
+    }
+
     var label = document.createElement("label");
     label.appendChild(document.createTextNode("候选音色"));
     var select = document.createElement("select");
@@ -326,6 +361,96 @@
     return card;
   }
 
+  function renderSegmentTimeline(task) {
+    var segments = Array.isArray(task && task.dialogue_segments) ? task.dialogue_segments : [];
+    timelineEl.innerHTML = "";
+
+    var head = document.createElement("div");
+    head.className = "dialogue-segment-timeline-head";
+    var titleWrap = document.createElement("div");
+    var title = document.createElement("h4");
+    title.textContent = "逐句说话人时间线";
+    var subtitle = document.createElement("small");
+    subtitle.textContent = "每句保留原声试听和 A/B 标记";
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+    head.appendChild(titleWrap);
+    timelineEl.appendChild(head);
+
+    if (!segments.length) {
+      var empty = document.createElement("div");
+      empty.className = "dialogue-segment-empty";
+      empty.textContent = "speaker_detect 完成后显示逐句原声。";
+      timelineEl.appendChild(empty);
+      return;
+    }
+
+    var list = document.createElement("ol");
+    list.className = "dialogue-segment-list";
+    segments.forEach(function (segment, position) {
+      if (!segment || typeof segment !== "object") {
+        return;
+      }
+      var item = document.createElement("li");
+      item.className = "dialogue-segment-item";
+
+      var header = document.createElement("header");
+      var speaker = document.createElement("span");
+      speaker.className = "dialogue-segment-speaker";
+      speaker.textContent = "Speaker " + (segment.speaker_id || "?");
+      header.appendChild(speaker);
+
+      var time = document.createElement("span");
+      time.className = "dialogue-segment-meta";
+      time.textContent = formatTime(segment.start_time) + " - " + formatTime(segment.end_time);
+      header.appendChild(time);
+
+      if (segment.speaker_confidence != null) {
+        var confidence = document.createElement("span");
+        confidence.className = "dialogue-segment-meta";
+        confidence.textContent = "置信度 " + Math.round(Number(segment.speaker_confidence || 0) * 100) + "%";
+        header.appendChild(confidence);
+      }
+
+      if (segment.review_reason) {
+        var review = document.createElement("span");
+        review.className = "dialogue-segment-meta";
+        review.textContent = String(segment.review_reason);
+        header.appendChild(review);
+      }
+      item.appendChild(header);
+
+      var text = document.createElement("p");
+      text.className = "dialogue-segment-text";
+      text.textContent = String(segment.text || segment.source_text || "第 " + (position + 1) + " 句");
+      item.appendChild(text);
+
+      var translated = segmentTranslation(segment);
+      if (translated) {
+        var translatedEl = document.createElement("p");
+        translatedEl.className = "dialogue-segment-translation";
+        translatedEl.textContent = translated;
+        item.appendChild(translatedEl);
+      }
+
+      if (segment.source_audio_relpath) {
+        var audio = document.createElement("audio");
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.src = artifactPathUrl(segment.source_audio_relpath);
+        item.appendChild(audio);
+      } else {
+        var missing = document.createElement("div");
+        missing.className = "dialogue-segment-empty";
+        missing.textContent = "该句原声尚未生成。";
+        item.appendChild(missing);
+      }
+
+      list.appendChild(item);
+    });
+    timelineEl.appendChild(list);
+  }
+
   function render(task) {
     lastTask = task || {};
     updateStatus(task || {});
@@ -333,6 +458,7 @@
     ["A", "B"].forEach(function (speaker) {
       gridEl.appendChild(renderSpeakerCard(task || {}, speaker));
     });
+    renderSegmentTimeline(task || {});
     updateConfirmState();
   }
 

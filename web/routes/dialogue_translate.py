@@ -400,6 +400,8 @@ def _dialogue_resume_cleanup_updates(
     if "speaker_detect" in reset_set:
         updates.update(
             dialogue_segments=[],
+            dialogue_segment_audio_manifest={},
+            speaker_audio_tracks={},
             speaker_summary={},
             speaker_sample_specs=[],
             speaker_profiles={},
@@ -825,6 +827,8 @@ def upload_and_start():
         steps=steps,
         step_messages=step_messages,
         dialogue_segments=[],
+        dialogue_segment_audio_manifest={},
+        speaker_audio_tracks={},
         speaker_profiles={},
         selected_voice_by_speaker={},
     )
@@ -939,6 +943,8 @@ def duplicate(task_id: str):
         steps=steps,
         step_messages=step_messages,
         dialogue_segments=[],
+        dialogue_segment_audio_manifest={},
+        speaker_audio_tracks={},
         speaker_summary={},
         speaker_sample_specs=[],
         speaker_profiles={},
@@ -1043,6 +1049,8 @@ def restart(task_id: str):
         step_order=tuple(_dialogue_pipeline_step_names(task)),
         extra_reset_fields={
             "dialogue_segments": [],
+            "dialogue_segment_audio_manifest": {},
+            "speaker_audio_tracks": {},
             "speaker_summary": {},
             "speaker_sample_specs": [],
             "speaker_profiles": {},
