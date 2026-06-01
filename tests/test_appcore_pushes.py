@@ -1066,6 +1066,81 @@ def test_list_items_for_push_selects_product_ai_review_fields(monkeypatch):
     assert "p.listing_status" in sql
 
 
+def test_list_items_for_push_selects_new_product_push_flag(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    sql = captured["sql"]
+    assert "is_new_product_for_push" in sql
+    assert "NOT EXISTS" in sql
+    assert "media_push_logs" in sql
+    assert "success" in sql
+    assert "pushed_item.product_id = p.id" in sql
+    assert "pushed_item.deleted_at" not in sql
+
+
+def test_pushes_serialize_row_includes_new_product_push_flag():
+    from web.routes.pushes import _serialize_row
+
+    row = {
+        "id": 77,
+        "task_id": 123,
+        "product_id": 7,
+        "product_name": "Demo",
+        "product_code": "demo-rjc",
+        "owner_name": "Owner",
+        "mk_id": 3897,
+        "localized_links_json": None,
+        "ad_supported_langs": "de",
+        "shopify_image_status_json": None,
+        "selling_points": "",
+        "importance": 3,
+        "remark": "",
+        "ai_score": None,
+        "ai_evaluation_result": "",
+        "ai_evaluation_detail": "",
+        "listing_status": "上架",
+        "lang": "de",
+        "filename": "demo.mp4",
+        "display_name": "demo.mp4",
+        "duration_seconds": 12.3,
+        "file_size": 456,
+        "created_at": datetime(2026, 6, 1, 8, 30),
+        "pushed_at": None,
+        "cover_object_key": "covers/demo.jpg",
+        "object_key": "videos/demo.mp4",
+        "skip_push": 0,
+        "skip_push_at": None,
+        "is_new_product_for_push": 1,
+    }
+
+    serialized = _serialize_row(
+        row,
+        status_cache={
+            "status": "pending",
+            "readiness": {"has_object": True, "has_cover": True},
+        },
+    )
+
+    assert serialized["is_new_product_for_push"] is True
+
+
 def test_list_items_for_push_selects_product_owner_name(monkeypatch):
     captured = {}
 
@@ -1087,7 +1162,8 @@ def test_list_items_for_push_selects_product_owner_name(monkeypatch):
     assert rows == []
     assert total == 0
     sql = captured["sql"]
-    assert "u.username AS owner_name" in sql
+    assert " AS owner_name" in sql
+    assert "u_product.username" in sql
     assert "LEFT JOIN users u ON u.id = p.user_id" in sql
 
 

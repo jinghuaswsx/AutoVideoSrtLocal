@@ -1183,6 +1183,12 @@
     </div>`;
   }
 
+  function renderNewProductTag(it) {
+    return it && it.is_new_product_for_push
+      ? '<span class="push-new-product-tag">新品</span>'
+      : '';
+  }
+
   function showAuditDetail(itemId) {
     const item = state.items.find(i => Number(i.id) === Number(itemId));
     if (!item) return;
@@ -1234,6 +1240,7 @@
           <span class="product-code">${escapeHtml(it.product_code || '')}</span>
         </div>
       </td>
+      <td class="push-product-tag-cell">${renderNewProductTag(it)}</td>
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
@@ -1308,6 +1315,7 @@
         ${productNameHtml}
         ${productCodeHtml}
       </td>
+      <td class="push-product-tag-cell">${renderNewProductTag(it)}</td>
       <td class="push-main-image-cell">${mainImage}</td>
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
@@ -1332,7 +1340,7 @@
       syncUrlFromFilters(options.urlMode || 'push');
     }
     const tbody = document.getElementById('push-tbody');
-    const colspan = window.PUSH_IS_ADMIN ? 11 : 10;
+    const colspan = window.PUSH_IS_ADMIN ? 13 : 12;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());

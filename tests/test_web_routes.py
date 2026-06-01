@@ -3950,6 +3950,41 @@ def test_pushes_scripts_format_language_as_chinese_plus_code():
     assert "addKV('语种', formatLanguageLabel(item.lang));" in pushes_js
 
 
+def test_pushes_list_template_contains_new_product_tag_column():
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "web"
+        / "templates"
+        / "pushes_list.html"
+    ).read_text(encoding="utf-8")
+
+    assert '<col class="push-col-product-tag">' in template
+    assert "<th>标签</th>" in template
+
+
+def test_pushes_scripts_render_new_product_tag():
+    pushes_js = (
+        Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.js"
+    ).read_text(encoding="utf-8")
+
+    assert "function renderNewProductTag" in pushes_js
+    assert "it.is_new_product_for_push" in pushes_js
+    assert '<td class="push-product-tag-cell">${renderNewProductTag(it)}</td>' in pushes_js
+    assert "push-new-product-tag" in pushes_js
+    assert "新品" in pushes_js
+
+
+def test_pushes_css_styles_new_product_tag():
+    pushes_css = (
+        Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.css"
+    ).read_text(encoding="utf-8")
+
+    assert "--push-col-product-tag" in pushes_css
+    assert ".push-new-product-tag" in pushes_css
+    assert "font-size: 2em" in pushes_css
+    assert "color: #0088cc" in pushes_css
+
+
 def test_medias_scripts_format_language_as_chinese_plus_code():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 

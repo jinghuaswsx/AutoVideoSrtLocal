@@ -60,9 +60,10 @@
    * docs/superpowers/specs/2026-04-18-push-management-design.md
    * docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md
    */
-  --push-table-min-w: 1776px;
+  --push-table-min-w: 1864px;
   --push-col-thumb: 168px;
   --push-col-product: 144px;
+  --push-col-product-tag: 88px;
   --push-col-main-image: 168px;
   --push-col-owner: 92px;
   --push-col-mk: 62px;
@@ -297,6 +298,7 @@
 }
 .push-col-thumb { width: var(--push-col-thumb); }
 .push-col-product { width: var(--push-col-product); }
+.push-col-product-tag { width: var(--push-col-product-tag); }
 .push-col-main-image { width: var(--push-col-main-image); }
 .push-col-owner { width: var(--push-col-owner); }
 .push-col-mk { width: var(--push-col-mk); }
@@ -480,8 +482,16 @@
   white-space: nowrap;
 }
 .push-item-cell,
-.push-product-cell {
+.push-product-cell,
+.push-product-tag-cell {
   min-width: 0;
+}
+.push-new-product-tag {
+  color: #0088cc;
+  font-size: 2em;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 .push-item-cell .item-name {
   display: -webkit-box;
@@ -1090,9 +1100,10 @@
 /* ---------- 响应式 ---------- */
 @media (min-width: 769px) and (max-width: 1500px) {
   :root {
-    --push-table-min-w: 1418px;
+    --push-table-min-w: 1490px;
     --push-col-thumb: 140px;
     --push-col-product: 126px;
+    --push-col-product-tag: 72px;
     --push-col-main-image: 140px;
     --push-col-owner: 76px;
     --push-col-mk: 52px;
@@ -1169,9 +1180,10 @@
 
 @media (min-width: 769px) and (orientation: portrait) {
   :root {
-    --push-table-min-w: 1138px;
+    --push-table-min-w: 1198px;
     --push-col-thumb: 100px;
     --push-col-product: 116px;
+    --push-col-product-tag: 60px;
     --push-col-main-image: 100px;
     --push-col-owner: 54px;
     --push-col-mk: 42px;
@@ -1372,7 +1384,7 @@
 
 @media (max-width: 768px) {
   :root {
-    --push-table-min-w: 1100px;
+    --push-table-min-w: 1160px;
   }
   .push-toolbar { flex-direction: column; align-items: stretch; }
   .filter-group { min-width: 0; width: 100%; }
