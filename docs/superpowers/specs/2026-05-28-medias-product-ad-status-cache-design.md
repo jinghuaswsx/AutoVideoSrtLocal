@@ -33,6 +33,7 @@ language_ad_roas = SUM(meta_ad_daily_ad_metrics.purchase_value_usd)
 
 - `media_items.product_id = meta_ad_daily_ad_metrics.product_id`
 - 且广告名称或归一化广告名包含 `media_items.filename` 或 `media_items.display_name`
+- 当素材文件名曾经调整导致名称不再精确包含时，允许用 `meta_ad_daily_ad_metrics.market_country` 映射到 `media_items.lang` 做语种兜底
 - 只统计 `spend_usd > 0` 的广告行
 - 同一个广告明细行如果匹配到同一语种多个素材，只计一次，避免重复加总
 

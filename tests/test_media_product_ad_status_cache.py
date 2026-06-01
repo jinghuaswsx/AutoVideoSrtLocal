@@ -151,6 +151,16 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     assert "INTERVAL 6 DAY" not in joined
 
 
+def test_language_refresh_falls_back_to_market_country_when_material_filename_changes():
+    from appcore import media_product_ad_status_cache as cache
+
+    sql = cache._LANG_REFRESH_SQL
+
+    assert "LOWER(i.lang) = CASE UPPER(m.market_country)" in sql
+    assert "WHEN 'DE' THEN 'de'" in sql
+    assert "WHEN 'FR' THEN 'fr'" in sql
+
+
 def test_migration_declares_cache_tables_and_indexes():
     body = (
         ROOT

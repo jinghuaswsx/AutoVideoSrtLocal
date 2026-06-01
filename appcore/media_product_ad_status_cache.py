@@ -250,6 +250,32 @@ LEFT JOIN (
        OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
        OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
        OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+       OR (
+         m.market_country IS NOT NULL
+         AND m.market_country <> ''
+         AND LOWER(i.lang) = CASE UPPER(m.market_country)
+           WHEN 'US' THEN 'en'
+           WHEN 'GB' THEN 'en'
+           WHEN 'UK' THEN 'en'
+           WHEN 'AU' THEN 'en'
+           WHEN 'CA' THEN 'en'
+           WHEN 'IE' THEN 'en'
+           WHEN 'NZ' THEN 'en'
+           WHEN 'DE' THEN 'de'
+           WHEN 'AT' THEN 'de'
+           WHEN 'FR' THEN 'fr'
+           WHEN 'ES' THEN 'es'
+           WHEN 'IT' THEN 'it'
+           WHEN 'NL' THEN 'nl'
+           WHEN 'SE' THEN 'sv'
+           WHEN 'FI' THEN 'fi'
+           WHEN 'JP' THEN 'ja'
+           WHEN 'KR' THEN 'ko'
+           WHEN 'BR' THEN 'pt-br'
+           WHEN 'PT' THEN 'pt'
+           ELSE NULL
+         END
+       )
      )
     WHERE i.deleted_at IS NULL
   ) matched
