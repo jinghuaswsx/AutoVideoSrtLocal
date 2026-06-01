@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import math
+import struct
+import wave
+
 import pytest
 
 from appcore.dialogue_translate.speaker_detection import (
@@ -7,8 +11,26 @@ from appcore.dialogue_translate.speaker_detection import (
     REVIEW_LOW_CONFIDENCE,
     REVIEW_OVERLAP,
     build_dialogue_segments,
+    detect_dialogue_segments,
     join_diarization_to_utterances,
 )
+
+
+def _write_tone_wav(path, frequencies: list[float], *, seconds_per_tone: float = 1.0) -> None:
+    sample_rate = 16000
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        for frequency in frequencies:
+            frame_count = int(sample_rate * seconds_per_tone)
+            for sample_index in range(frame_count):
+                value = int(
+                    0.35
+                    * 32767
+                    * math.sin(2.0 * math.pi * frequency * sample_index / sample_rate)
+                )
+                wav.writeframesraw(struct.pack("<h", value))
 
 
 def test_provider_speaker_fields_normalize_to_a_b_when_reliable():
@@ -39,6 +61,39 @@ def test_provider_low_coverage_requests_diarization():
     assert result["speaker_strategy"] == "needs_diarization"
     assert result["dialogue_segments"] == []
     assert "asr_provider_speaker_coverage_below_threshold" in result["dialogue_warnings"]
+
+
+def test_detect_dialogue_segments_uses_local_acoustic_fallback_when_diarization_is_unconfigured(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.delenv("DIALOGUE_DIARIZATION_URL", raising=False)
+    audio_path = tmp_path / "dialogue.wav"
+    _write_tone_wav(audio_path, [220.0, 880.0, 220.0, 880.0])
+    utterances = [
+        {"index": 0, "text": "a first", "start_time": 0.0, "end_time": 1.0},
+        {"index": 1, "text": "b first", "start_time": 1.0, "end_time": 2.0},
+        {"index": 2, "text": "a second", "start_time": 2.0, "end_time": 3.0},
+        {"index": 3, "text": "b second", "start_time": 3.0, "end_time": 4.0},
+    ]
+
+    result = detect_dialogue_segments(
+        utterances=utterances,
+        audio_path=str(audio_path),
+        task_id="local-acoustic-fallback",
+    )
+
+    assert result["speaker_strategy"] == "local_acoustic_diarization"
+    assert [segment["speaker_id"] for segment in result["dialogue_segments"]] == [
+        "A",
+        "B",
+        "A",
+        "B",
+    ]
+    assert {segment["speaker_source"] for segment in result["dialogue_segments"]} == {
+        "local_acoustic_diarization"
+    }
+    assert "local_acoustic_diarization_fallback" in result["dialogue_warnings"]
 
 
 def test_extra_speakers_keep_top_two_and_mark_rest_for_review():

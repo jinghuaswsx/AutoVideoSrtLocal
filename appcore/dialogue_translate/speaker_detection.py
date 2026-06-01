@@ -6,6 +6,7 @@ from typing import Iterable
 
 from appcore.dialogue_translate.diarization import (
     DiarizationUnavailable,
+    local_acoustic_diarization_segments,
     resolve_diarization_client,
     validate_diarization_segments,
 )
@@ -241,12 +242,37 @@ def detect_dialogue_segments(
     if provider_result["speaker_strategy"] != "needs_diarization" and not provider_low_confidence:
         return provider_result
 
+    def local_fallback(exc: Exception) -> dict:
+        try:
+            diarization_segments = local_acoustic_diarization_segments(
+                audio_path=audio_path,
+                utterances=utterances,
+                task_id=task_id,
+            )
+            result = join_diarization_to_utterances(utterances, diarization_segments)
+        except Exception as local_exc:
+            warnings = ", ".join(provider_result.get("dialogue_warnings", []))
+            detail = f" provider warnings: {warnings}" if warnings else ""
+            raise DiarizationUnavailable(
+                f"diarization fallback is required for task {task_id}:{detail}; "
+                f"local acoustic fallback failed: {local_exc}"
+            ) from local_exc
+        result["speaker_strategy"] = "local_acoustic_diarization"
+        for segment in result.get("dialogue_segments", []):
+            segment["speaker_source"] = "local_acoustic_diarization"
+        result["dialogue_warnings"] = (
+            provider_result.get("dialogue_warnings", [])
+            + ["local_acoustic_diarization_fallback"]
+            + result.get("dialogue_warnings", [])
+        )
+        return result
+
     try:
         client = diarization_client if diarization_client is not None else resolve_diarization_client()
     except DiarizationUnavailable as exc:
-        warnings = ", ".join(provider_result.get("dialogue_warnings", []))
-        detail = f" provider warnings: {warnings}" if warnings else ""
-        raise DiarizationUnavailable(f"diarization fallback is required for task {task_id}:{detail}") from exc
+        if diarization_client is None:
+            return local_fallback(exc)
+        raise
 
     if not hasattr(client, "run"):
         raise DiarizationUnavailable(f"diarization fallback is required for task {task_id}: client has no run method")
@@ -256,6 +282,8 @@ def detect_dialogue_segments(
         diarization_segments = validate_diarization_segments(diarization_segments)
         result = join_diarization_to_utterances(utterances, diarization_segments)
     except Exception as exc:
+        if diarization_client is None:
+            return local_fallback(exc)
         raise DiarizationUnavailable(f"diarization fallback failed for task {task_id}: {exc}") from exc
     result["dialogue_warnings"] = provider_result.get("dialogue_warnings", []) + result.get("dialogue_warnings", [])
     return result

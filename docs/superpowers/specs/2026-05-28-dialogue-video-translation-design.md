@@ -92,9 +92,10 @@ extract
 
 1. 优先读取 ASR provider 自带 speaker 字段。不同 provider 的字段名由 adapter 统一映射成 `speaker_id`、`confidence` 和 `speaker_source`。
 2. 如果 ASR provider 没有可靠 speaker 标签，或标签覆盖率/置信度不达标，则调用独立 diarization 服务。
-3. diarization 服务输出时间段后，按时间重叠比例 join 回 ASR utterance。每句只允许落到 A/B 其中一个 speaker；争议句标记复核。
-4. 如果识别出超过 2 个 speaker，首版只保留主时长最长的两个作为 A/B，其余句段标记 `review_required=true`，原因是 `unsupported_extra_speaker`。
-5. 如果检测到重叠说话，句段标记 `overlap=true` 和 `review_required=true`，首版不生成双轨重叠配音。
+3. 如果独立 diarization 服务未配置或临时不可用，不能直接让任务死在 `speaker_detect`。系统必须提供本地自动兜底：基于每句 ASR 时间窗从原视频音轨切分声学特征，将句段自动聚类为两组 speaker，再 join 回 ASR utterance。该兜底不要求达到专用 diarization 服务精度，但必须产出 A/B 时间线并用 `dialogue_warnings` 标记 `local_acoustic_diarization_fallback`，让用户能继续试听和判断。
+4. diarization 服务或本地兜底输出时间段后，按时间重叠比例 join 回 ASR utterance。每句只允许落到 A/B 其中一个 speaker；争议句标记复核。
+5. 如果识别出超过 2 个 speaker，首版只保留主时长最长的两个作为 A/B，其余句段标记 `review_required=true`，原因是 `unsupported_extra_speaker`。
+6. 如果检测到重叠说话，句段标记 `overlap=true` 和 `review_required=true`，首版不生成双轨重叠配音。
 
 可靠性门槛建议：
 
@@ -206,7 +207,7 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 - A/B 摘要：语音时长、句数、匹配状态、已选音色。
 - A/B 样本试听：播放原声样本，便于判断候选是否贴近。
 - A/B 候选音色：每个 speaker 一组候选，默认由大模型自动选择 rank 1。
-- 句级时间线：后台显示 speaker、原文、译文、时间窗、置信度、复核标记。
+- 句级时间线：后台显示 speaker、原文、译文、时间窗、置信度、复核标记，并给每一句生成原声试听音频。每个 `dialogue_segments[]` 应保存 `source_audio_relpath`，详情页通过受权限保护的 artifact-path API 播放该句原声音频；同时保存 `speaker_audio_tracks` 或等价 manifest，方便按 A/B 连续试听样本。
 - 少量纠错：允许用户修改某句 `speaker_id`。修改后清空受影响的 A/B 音色匹配和下游 TTS/合成状态，要求重跑。
 
 最终视频字幕：
@@ -220,6 +221,9 @@ TTS engine 层需要支持“同一个任务、不同句段使用不同 voice_id
 任务状态新增或约定以下字段：
 
 - `dialogue_segments`：句级 speaker 标注后的源文本时间线。
+- `dialogue_segments[].source_audio_relpath`：该句原声试听片段，相对 `task_dir` 的安全路径。
+- `dialogue_segment_audio_manifest`：句级原声片段清单，记录 index、speaker、时间窗、相对路径和提取状态。
+- `speaker_audio_tracks`：按 A/B 聚合的原声音轨或样本路径，用于快速判断每个说话人的整体音色。
 - `speaker_profiles`：A/B 样本、候选音色、匹配诊断、确认音色。
 - `selected_voice_by_speaker`：A/B 最终 voice_id。
 - `review_required_segments`：需要复核的句段索引和原因。

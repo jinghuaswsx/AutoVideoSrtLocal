@@ -75,6 +75,7 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert "Dialogue Detail" in body
     assert "A/B 音色匹配" in body
     assert body.index("A/B 音色匹配") < body.index("处理进度")
+    assert 'id="dialogueSegmentTimeline"' in body
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
@@ -241,6 +242,15 @@ def test_dialogue_translate_list_template_uses_omni_project_management_shell():
     assert "/api/omni-translate" not in html
 
 
+def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
+    js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
+
+    assert "dialogueSegmentTimeline" in js
+    assert "source_audio_relpath" in js
+    assert "artifact-path?path=" in js
+    assert "audio.controls = true" in js
+
+
 def test_dialogue_translate_restart_uses_dialogue_step_order(
     authed_client_no_db,
     monkeypatch,
@@ -313,6 +323,8 @@ def test_dialogue_translate_restart_uses_dialogue_step_order(
     assert captured["step_order"] == tuple(dialogue_steps)
     assert captured["extra_reset_fields"] == {
         "dialogue_segments": [],
+        "dialogue_segment_audio_manifest": {},
+        "speaker_audio_tracks": {},
         "speaker_summary": {},
         "speaker_sample_specs": [],
         "speaker_profiles": {},
@@ -336,6 +348,8 @@ def test_dialogue_translate_restart_clears_dialogue_state_before_start(
         target_lang="de",
         steps={"speaker_detect": "done", "voice_match_ab": "done"},
         dialogue_segments=[{"speaker_id": "A"}],
+        dialogue_segment_audio_manifest={"segments": [{"index": 0}]},
+        speaker_audio_tracks={"A": {"relative_path": "old.wav"}},
         speaker_summary={"A": {"segment_count": 1}},
         speaker_sample_specs=[{"speaker_id": "A"}],
         speaker_profiles={"A": {"selected_voice": {"voice_id": "voice-a"}}},
@@ -362,6 +376,8 @@ def test_dialogue_translate_restart_clears_dialogue_state_before_start(
     assert resp.status_code == 200
     updated = store.get(task_id)
     assert updated["dialogue_segments"] == []
+    assert updated["dialogue_segment_audio_manifest"] == {}
+    assert updated["speaker_audio_tracks"] == {}
     assert updated["speaker_summary"] == {}
     assert updated["speaker_sample_specs"] == []
     assert updated["speaker_profiles"] == {}
@@ -596,6 +612,8 @@ def test_dialogue_translate_resume_from_speaker_detect_clears_speaker_state(
             "translate": "done",
         },
         dialogue_segments=[{"speaker_id": "A"}],
+        dialogue_segment_audio_manifest={"segments": [{"index": 0}]},
+        speaker_audio_tracks={"A": {"relative_path": "old.wav"}},
         speaker_summary={"A": {"segment_count": 1}},
         speaker_sample_specs=[{"speaker_id": "A"}],
         speaker_profiles={"A": {"selected_voice": {"voice_id": "voice-a"}}},
@@ -626,6 +644,8 @@ def test_dialogue_translate_resume_from_speaker_detect_clears_speaker_state(
     assert resp.status_code == 200
     updated = store.get(task_id)
     assert updated["dialogue_segments"] == []
+    assert updated["dialogue_segment_audio_manifest"] == {}
+    assert updated["speaker_audio_tracks"] == {}
     assert updated["speaker_summary"] == {}
     assert updated["speaker_sample_specs"] == []
     assert updated["speaker_profiles"] == {}
@@ -844,6 +864,8 @@ def test_dialogue_translate_start_creates_task_and_starts_runner(
         "export",
     ]
     assert task["dialogue_segments"] == []
+    assert task["dialogue_segment_audio_manifest"] == {}
+    assert task["speaker_audio_tracks"] == {}
     assert task["speaker_profiles"] == {}
     assert task["selected_voice_by_speaker"] == {}
     assert payload["redirect_url"] == f"/dialogue-translate/{payload['task_id']}"

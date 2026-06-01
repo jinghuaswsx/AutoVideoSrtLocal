@@ -188,6 +188,88 @@
   .dialogue-voice-feedback[data-state="success"] {
     color: #15803d;
   }
+  .dialogue-segment-timeline {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--border-main);
+    border-radius: 12px;
+    padding: 14px;
+    background: var(--bg-card);
+  }
+  .dialogue-segment-timeline-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .dialogue-segment-timeline-head h4 {
+    margin: 0;
+    font-size: 15px;
+  }
+  .dialogue-segment-timeline-head small {
+    color: #6b7280;
+    font-size: 12px;
+  }
+  .dialogue-segment-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 420px;
+    overflow: auto;
+  }
+  .dialogue-segment-item {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--border-main);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--bg-body);
+  }
+  .dialogue-segment-item header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .dialogue-segment-speaker {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    border-radius: 999px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--primary-color);
+    color: #fff;
+  }
+  .dialogue-segment-meta {
+    font-size: 12px;
+    color: #64748b;
+  }
+  .dialogue-segment-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-main);
+  }
+  .dialogue-segment-translation {
+    margin: -2px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #475569;
+  }
+  .dialogue-segment-item audio {
+    width: 100%;
+    min-height: 34px;
+  }
+  .dialogue-segment-empty {
+    font-size: 13px;
+    color: #6b7280;
+    padding: 10px 0;
+  }
   @media (max-width: 960px) {
     .dialogue-voice-grid {
       grid-template-columns: 1fr;
@@ -212,6 +294,7 @@
   </div>
   <div id="dialogueVoiceStatus" class="dialogue-voice-status">正在加载 A/B 音色状态...</div>
   <div id="dialogueVoiceGrid" class="dialogue-voice-grid"></div>
+  <div id="dialogueSegmentTimeline" class="dialogue-segment-timeline"></div>
   <div class="dialogue-voice-actions">
     <button id="dialogueVoiceConfirmBtn" type="button" disabled>确认 A/B 音色并继续</button>
     <span id="dialogueVoiceFeedback" class="dialogue-voice-feedback" aria-live="polite"></span>
