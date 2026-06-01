@@ -1,6 +1,9 @@
 (function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialPage = parseInt(urlParams.get('page') || '1', 10);
+
   const state = {
-    page: 1,
+    page: isNaN(initialPage) ? 1 : initialPage,
     pageSize: 100,
     loaded: false,
     languages: [],
@@ -108,6 +111,17 @@
     return state.languages;
   }
 
+  function syncVideoPageToAddressBar() {
+    if (!window.history || !window.history.replaceState || !window.location) return;
+    const url = new URL(window.location.href);
+    if (state.page > 1) {
+      url.searchParams.set('page', state.page);
+    } else {
+      url.searchParams.delete('page');
+    }
+    window.history.replaceState(null, '', url);
+  }
+
   function videoParams() {
     const params = new URLSearchParams({
       page: String(state.page),
@@ -134,6 +148,7 @@
     state.loaded = true;
     renderVideoSkeleton();
     try {
+      syncVideoPageToAddressBar();
       await ensureLanguages();
       const data = await fetchJSON('/medias/api/video-materials?' + videoParams().toString());
       state.items = data.items || [];

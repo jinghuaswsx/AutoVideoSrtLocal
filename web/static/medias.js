@@ -1,6 +1,8 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
-  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null, roasController: null };
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialPage = parseInt(urlParams.get('page') || '1', 10);
+  const state = { page: isNaN(initialPage) ? 1 : initialPage, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null, roasController: null };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const AI_EVAL_STATUS_ENDPOINT = (pid, runId) => `/medias/api/products/${pid}/evaluate/status?run_id=${encodeURIComponent(runId || '')}`;
@@ -2544,6 +2546,7 @@
     const grid = $('grid');
     const pager = $('pager');
     if (!kwInput || !grid || !pager) return;
+    syncSearchQueryToAddressBar();
     const requestSeq = ++state.listRequestSeq;
     const kw = kwInput.value.trim();
     const params = new URLSearchParams({ page: state.page });
@@ -2592,6 +2595,11 @@
       url.searchParams.set('q', kw);
     } else {
       url.searchParams.delete('q');
+    }
+    if (state.page > 1) {
+      url.searchParams.set('page', state.page);
+    } else {
+      url.searchParams.delete('page');
     }
     window.history.replaceState(null, '', url);
   }
