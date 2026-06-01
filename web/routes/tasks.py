@@ -594,7 +594,12 @@ def api_parent_manual_result(tid: int):
             task_id=tid,
             actor_user_id=int(current_user.id),
             uploaded_file=uploaded,
-            allowed_statuses=(tasks_svc.PARENT_RAW_IN_PROGRESS, tasks_svc.PARENT_RAW_REVIEW),
+            allowed_statuses=(
+                tasks_svc.PARENT_RAW_IN_PROGRESS,
+                tasks_svc.PARENT_RAW_REVIEW,
+                tasks_svc.PARENT_RAW_DONE,
+                tasks_svc.PARENT_ALL_DONE,
+            ),
             mark_uploaded_after=False,
         )
         _audit_task_action(
@@ -604,8 +609,11 @@ def api_parent_manual_result(tid: int):
         )
         # Check current task status; if it is raw_in_progress, transition to raw_review first!
         task_row = tasks_svc._row(tid) or {}
-        if task_row.get("status") == tasks_svc.PARENT_RAW_IN_PROGRESS:
+        status = task_row.get("status")
+        if status == tasks_svc.PARENT_RAW_IN_PROGRESS:
             tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
+        elif status in (tasks_svc.PARENT_RAW_DONE, tasks_svc.PARENT_ALL_DONE):
+            tasks_svc.reset_to_raw_review(task_id=tid, actor_user_id=int(current_user.id))
 
         # 直接执行审核通过，使其自动入库并结束审核流程
         tasks_svc.approve_raw(

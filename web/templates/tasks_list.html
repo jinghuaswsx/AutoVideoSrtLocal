@@ -2797,7 +2797,7 @@ function tcDetailButtons(task, isParent) {
     if (tcCanForceRerunNiuma(task, isParent)) {
       btns.push(`<button class="tc-btn" onclick="tcForceRerunNiuma(${id})">强制重跑</button>`);
     }
-    if (status === 'raw_in_progress') {
+    if (['raw_in_progress', 'raw_review', 'raw_done', 'all_done'].includes(status)) {
       const assigneeId = Number(task.assignee_id || 0);
       if (TC_IS_ADMIN || (assigneeId && assigneeId === Number(TC_CURRENT_USER_ID || 0))) {
         btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcOpenManualRawResult(${id})">手动上传结果视频</button>`);
