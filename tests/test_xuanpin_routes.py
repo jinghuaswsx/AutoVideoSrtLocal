@@ -1029,6 +1029,31 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
     }
 
 
+def test_xuanpin_mk_material_library_snapshots_api_reads_material_runs(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_list_material_snapshot_options(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{"snapshot": "2026-06-01", "material_count": 4920}],
+            "default_snapshot": "2026-06-01",
+        }
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_material_snapshot_options",
+        fake_list_material_snapshot_options,
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/mk-material-library/snapshots?limit=60")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["default_snapshot"] == "2026-06-01"
+    assert captured == {"limit": "60"}
+
+
 def test_xuanpin_mk_yesterday_top300_api_reads_archive(
     authed_client_no_db,
     monkeypatch,

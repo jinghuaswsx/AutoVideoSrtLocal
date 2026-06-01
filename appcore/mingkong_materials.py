@@ -1177,6 +1177,28 @@ def _material_keyword_condition(alias: str, keyword: str) -> tuple[str, list[Any
     return "(" + " OR ".join(clauses) + ")", args
 
 
+def _material_live_search_terms(keyword: str) -> list[str]:
+    kw = str(keyword or "").strip()
+    if not kw:
+        return []
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str) -> None:
+        normalized = str(term or "").strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            terms.append(normalized)
+            seen.add(key)
+
+    add(kw)
+    stripped = _strip_rjc(kw)
+    add(stripped)
+    if stripped:
+        add(f"{stripped}-rjc")
+    return terms
+
+
 def material_key_for(product_code: str, mk_product_id: int | str | None, video_path: str) -> str:
     normalized_path = normalize_mk_media_path(video_path)
     raw = "|".join(
@@ -1623,6 +1645,43 @@ def _material_snapshot_identity(
     }
 
 
+def list_material_snapshot_options(*, limit: int | str | None = 60) -> dict[str, Any]:
+    guard_against_windows_local_mysql()
+    safe_limit = min(365, max(1, _as_int(limit, 60)))
+    rows = query(
+        """
+        SELECT r.snapshot_date, r.snapshot_at, r.snapshot_slot, r.material_count
+        FROM mingkong_material_sync_runs r
+        JOIN (
+            SELECT snapshot_date, MAX(snapshot_at) AS snapshot_at
+            FROM mingkong_material_sync_runs
+            WHERE status = 'success'
+            GROUP BY snapshot_date
+        ) latest
+          ON latest.snapshot_date = r.snapshot_date
+         AND latest.snapshot_at = r.snapshot_at
+        WHERE r.status = 'success'
+        ORDER BY r.snapshot_at DESC, r.id DESC
+        LIMIT %s
+        """,
+        (safe_limit,),
+    )
+    items = [
+        {
+            "snapshot": _coerce_date(row.get("snapshot_date")),
+            "snapshot_at": _coerce_datetime(row.get("snapshot_at")),
+            "snapshot_slot": str(row.get("snapshot_slot") or _snapshot_slot_for(row.get("snapshot_at"))),
+            "material_count": _as_int(row.get("material_count")),
+        }
+        for row in rows or []
+        if _coerce_date(row.get("snapshot_date"))
+    ]
+    return {
+        "items": items,
+        "default_snapshot": items[0]["snapshot"] if items else "",
+    }
+
+
 def _run_summary(snapshot_date: str, snapshot_at: str | None = None) -> dict[str, Any] | None:
     if snapshot_at:
         row = query_one(
@@ -1693,6 +1752,218 @@ def _group_items_by_snapshot(items: list[dict[str, Any]]) -> dict[tuple[str, str
         key = (str(item.get("snapshot_date") or ""), str(item.get("snapshot_at") or ""))
         grouped.setdefault(key, []).append(item)
     return grouped
+
+
+def _mingkong_live_item_key(item: dict[str, Any]) -> str:
+    item_id = _as_int(item.get("id"))
+    if item_id > 0:
+        return f"id:{item_id}"
+    codes = sorted(_mingkong_result_product_codes(item))
+    if codes:
+        return "code:" + "|".join(codes)
+    return "name:" + str(item.get("product_name") or item.get("name") or "").strip().lower()
+
+
+def _source_product_from_mingkong_item(
+    item: dict[str, Any],
+    *,
+    fallback_keyword: str,
+) -> dict[str, Any]:
+    links = [
+        str(link or "").strip()
+        for link in (item.get("product_links") or [])
+        if str(link or "").strip()
+    ]
+    codes: list[str] = []
+    for key in ("product_code", "code", "handle"):
+        value = str(item.get(key) or "").strip().lower()
+        if value:
+            codes.append(value)
+    for link in links:
+        raw = _raw_product_handle(link)
+        if raw:
+            codes.append(raw)
+    product_code = next((code for code in codes if code), _strip_rjc(fallback_keyword))
+    product_url = links[0] if links else ""
+    return {
+        "product_code": product_code,
+        "rank_position": _as_int(item.get("rank_position") or item.get("rank")),
+        "shopify_product_id": str(item.get("shopify_product_id") or ""),
+        "product_name": item.get("product_name") or item.get("name") or product_code,
+        "product_url": product_url,
+    }
+
+
+def _list_all_historical_material_library(
+    *,
+    keyword: str,
+    page_num: int,
+    size: int,
+    offset: int,
+    status_filter: str,
+) -> dict[str, Any]:
+    where = ["r.status = 'success'"]
+    args: list[Any] = []
+    keyword_sql, keyword_args = _material_keyword_condition("s", keyword)
+    if keyword_sql:
+        where.append(keyword_sql)
+        args.extend(keyword_args)
+    where_sql = " AND ".join(where)
+
+    count_row = {}
+    if not status_filter:
+        count_row = query_one(
+            f"""
+            SELECT COUNT(*) AS cnt
+            FROM (
+              SELECT s.material_key
+              FROM mingkong_material_daily_snapshots s
+              JOIN mingkong_material_sync_runs r ON r.id = s.run_id
+              WHERE {where_sql}
+              GROUP BY s.material_key
+            ) deduped
+            """,
+            tuple(args),
+        ) or {}
+
+    limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
+    query_args = args + ([] if status_filter else [size, offset])
+    rows = query(
+        f"""
+        SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
+                 AS product_total_90_spend
+        FROM mingkong_material_daily_snapshots s
+        JOIN mingkong_material_sync_runs r ON r.id = s.run_id AND r.status = 'success'
+        JOIN (
+          SELECT s.material_key, MAX(s.snapshot_at) AS latest_snapshot_at
+          FROM mingkong_material_daily_snapshots s
+          JOIN mingkong_material_sync_runs r ON r.id = s.run_id
+          WHERE {where_sql}
+          GROUP BY s.material_key
+        ) latest ON latest.material_key = s.material_key AND latest.latest_snapshot_at = s.snapshot_at
+        LEFT JOIN mingkong_material_products mp
+          ON mp.run_id = s.run_id AND mp.product_code = s.product_code
+        LEFT JOIN (
+          SELECT s2.snapshot_at, s2.product_code, SUM(s2.cumulative_90_spend) AS product_total_90_spend
+          FROM mingkong_material_daily_snapshots s2
+          JOIN mingkong_material_sync_runs r2 ON r2.id = s2.run_id
+          WHERE r2.status = 'success'
+          GROUP BY s2.snapshot_at, s2.product_code
+        ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
+        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+        {limit_clause}
+        """,
+        tuple(query_args),
+    )
+    serialized = [_serialize_material_row(row) for row in rows or []]
+    for grouped_items in _group_items_by_snapshot(serialized).values():
+        first = grouped_items[0]
+        _enrich_material_yesterday_delta(
+            grouped_items,
+            snapshot_date=first.get("snapshot_date") or "",
+            snapshot_at=first.get("snapshot_at"),
+        )
+    items = _filter_by_library_status(_enrich_cached_ad_statuses(serialized), status_filter)
+    total = len(items) if status_filter else _as_int(count_row.get("cnt"))
+    page_items = items[offset : offset + size] if status_filter else items
+    return {
+        "items": page_items,
+        "snapshot": "",
+        "snapshot_at": "",
+        "snapshot_slot": "",
+        "range": "all",
+        "range_start": "",
+        "range_end": "",
+        "total": total,
+        "page": page_num,
+        "page_size": size,
+        "run_summary": None,
+    }
+
+
+def _list_live_mingkong_material_library(
+    *,
+    keyword: str,
+    page_num: int,
+    size: int,
+    offset: int,
+    status_filter: str,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    headers = _mk_headers()
+    base_url = _mk_base_url()
+    session = requests.Session()
+    products_by_key: dict[str, dict[str, Any]] = {}
+    try:
+        for term in _material_live_search_terms(keyword):
+            for item in _search_mingkong_items(
+                session,
+                base_url=base_url,
+                headers=headers,
+                product_code=term,
+                timeout_seconds=timeout_seconds,
+            ):
+                key = _mingkong_live_item_key(item)
+                if key:
+                    products_by_key.setdefault(key, dict(item))
+
+        rows: list[dict[str, Any]] = []
+        for product in products_by_key.values():
+            detail = _fetch_mingkong_product_detail(
+                session,
+                base_url=base_url,
+                headers=headers,
+                mk_product=product,
+                timeout_seconds=timeout_seconds,
+            )
+            rows.extend(
+                flatten_materials_for_product(
+                    source_product=_source_product_from_mingkong_item(
+                        detail,
+                        fallback_keyword=keyword,
+                    ),
+                    mk_product=detail,
+                )
+            )
+    finally:
+        session.close()
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = str(row.get("material_key") or "")
+        previous = deduped.get(key)
+        if previous is None or (
+            _as_float(row.get("cumulative_90_spend")),
+            _as_int(row.get("video_ads_count")),
+        ) > (
+            _as_float(previous.get("cumulative_90_spend")),
+            _as_int(previous.get("video_ads_count")),
+        ):
+            deduped[key] = row
+    sorted_rows = sorted(
+        deduped.values(),
+        key=lambda item: (
+            _as_float(item.get("cumulative_90_spend")),
+            _as_int(item.get("video_ads_count")),
+            _as_int(item.get("mk_product_id")),
+        ),
+        reverse=True,
+    )
+    items = _filter_by_library_status(_enrich_cached_ad_statuses(sorted_rows), status_filter)
+    total = len(items)
+    return {
+        "items": items[offset : offset + size],
+        "snapshot": "",
+        "snapshot_at": "",
+        "snapshot_slot": "",
+        "range": "all",
+        "range_start": "",
+        "range_end": "",
+        "total": total,
+        "page": page_num,
+        "page_size": size,
+        "run_summary": None,
+    }
 
 
 def _enrich_material_yesterday_delta(
@@ -1925,6 +2196,28 @@ def list_material_library(
     library_status: str = "",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
+    normalized_range_key = str(range_key or "").strip().lower().replace("-", "_")
+    page_num, size, offset = _page_bounds(page, page_size)
+    kw = str(keyword or "").strip()
+    status_filter = _normalize_library_status_filter(library_status)
+
+    if normalized_range_key == "all":
+        if kw:
+            return _list_live_mingkong_material_library(
+                keyword=kw,
+                page_num=page_num,
+                size=size,
+                offset=offset,
+                status_filter=status_filter,
+            )
+        return _list_all_historical_material_library(
+            keyword=kw,
+            page_num=page_num,
+            size=size,
+            offset=offset,
+            status_filter=status_filter,
+        )
+
     range_bounds = _material_range_bounds(range_key)
     identity = (
         {"snapshot_date": "", "snapshot_at": "", "snapshot_slot": ""}
@@ -1938,9 +2231,6 @@ def list_material_library(
     selected_snapshot_at = identity["snapshot_at"]
     if not range_bounds and not snapshot:
         return {"items": [], "snapshot": "", "snapshot_at": "", "total": 0, "run_summary": None}
-    page_num, size, offset = _page_bounds(page, page_size)
-    kw = str(keyword or "").strip()
-    status_filter = _normalize_library_status_filter(library_status)
 
     if range_bounds:
         range_start, range_end = range_bounds

@@ -757,15 +757,16 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
-      <select id="snapshotSelect" class="oc-input oc-select" aria-label="历史快照" onchange="onMkSnapshotChange()">
-        <option value="">最新快照</option>
-      </select>
       <select id="snapshotRangeSelect" class="oc-input oc-select" aria-label="时间范围" onchange="onMkRangeChange()">
         <option value="">单日</option>
+        <option value="all">全部</option>
         <option value="this_week">本周</option>
         <option value="last_week">上周</option>
         <option value="this_month">本月</option>
         <option value="last_month">上月</option>
+      </select>
+      <select id="snapshotSelect" class="oc-input oc-select" aria-label="历史快照" onchange="onMkSnapshotChange()">
+        <option value="">最新快照</option>
       </select>
       <select id="mkInventoryFilter" class="oc-input oc-select oc-select--inventory" aria-label="入库状态" onchange="onMkInventoryFilterChange()">
         <option value="">全部入库状态</option>
@@ -877,6 +878,7 @@ let mkYesterdayTop100Page = 1;
 let mkYesterdayTop100Loaded = false;
 let selectedMkSnapshot = '';
 let selectedMkRange = '';
+let selectedMkSnapshotSource = '';
 let activeMkProductCode = '';
 const PAGE_SIZE = 50;
 const MK_VIDEO_PAGE_SIZE = 100;
@@ -1211,13 +1213,14 @@ function renderMkMaterialDetailHref(r) {
   return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
 }
 
-function runMkSearch(options = {}) {
+async function runMkSearch(options = {}) {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
   if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {
     activeMkProductCode = '';
   }
+  await ensureMkSnapshotOptionsForTab(currentMkLibraryTab);
   if (currentMkLibraryTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top300') {
@@ -1231,6 +1234,10 @@ function resetMkSearch() {
   document.getElementById('searchInput').value = '';
   const inventoryFilter = document.getElementById('mkInventoryFilter');
   if (inventoryFilter) inventoryFilter.value = '';
+  const rangeSelect = document.getElementById('snapshotRangeSelect');
+  selectedMkRange = '';
+  if (rangeSelect) rangeSelect.value = '';
+  syncMkSnapshotModeControls();
   activeMkProductCode = '';
   runMkSearch();
 }
@@ -1267,6 +1274,13 @@ function mkRangeQueryParam() {
   return selectedMkRange ? `&range=${encodeURIComponent(selectedMkRange)}` : '';
 }
 
+function syncMkSnapshotModeControls() {
+  const snapshotSelect = document.getElementById('snapshotSelect');
+  if (!snapshotSelect) return;
+  snapshotSelect.hidden = Boolean(selectedMkRange);
+  snapshotSelect.disabled = Boolean(selectedMkRange);
+}
+
 async function loadMkSelectionSnapshots() {
   const select = document.getElementById('snapshotSelect');
   try {
@@ -1283,9 +1297,54 @@ async function loadMkSelectionSnapshots() {
         }).join('')
       : '<option value="">最新快照</option>';
     select.value = selectedMkSnapshot;
+    selectedMkSnapshotSource = 'products';
   } catch (e) {
     selectedMkSnapshot = '';
     select.innerHTML = '<option value="">最新快照</option>';
+    selectedMkSnapshotSource = 'products';
+  }
+  syncMkSnapshotModeControls();
+}
+
+async function loadMkMaterialSnapshots() {
+  const select = document.getElementById('snapshotSelect');
+  try {
+    const resp = await fetch('/xuanpin/api/mk-material-library/snapshots?limit=60');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '素材快照加载失败');
+    const items = data.items || [];
+    selectedMkSnapshot = data.default_snapshot || (items[0] && items[0].snapshot) || '';
+    select.innerHTML = items.length
+      ? items.map(item => {
+          const snapshot = String(item.snapshot || '');
+          const count = Number(item.material_count || 0).toLocaleString();
+          return `<option value="${escapeHtml(snapshot)}">${escapeHtml(snapshot)} · 视频 ${count}</option>`;
+        }).join('')
+      : '<option value="">最新素材快照</option>';
+    select.value = selectedMkSnapshot;
+    selectedMkSnapshotSource = 'materials';
+  } catch (e) {
+    selectedMkSnapshot = '';
+    select.innerHTML = '<option value="">最新素材快照</option>';
+    selectedMkSnapshotSource = 'materials';
+  }
+  syncMkSnapshotModeControls();
+}
+
+function mkSnapshotSourceForTab(tab) {
+  return tab === 'products' ? 'products' : 'materials';
+}
+
+async function ensureMkSnapshotOptionsForTab(tab = currentMkLibraryTab) {
+  const source = mkSnapshotSourceForTab(tab);
+  if (selectedMkSnapshotSource === source) {
+    syncMkSnapshotModeControls();
+    return;
+  }
+  if (source === 'products') {
+    await loadMkSelectionSnapshots();
+  } else {
+    await loadMkMaterialSnapshots();
   }
 }
 
@@ -1294,6 +1353,7 @@ function onMkSnapshotChange() {
   selectedMkRange = '';
   const rangeSelect = document.getElementById('snapshotRangeSelect');
   if (rangeSelect) rangeSelect.value = '';
+  syncMkSnapshotModeControls();
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
@@ -1302,6 +1362,7 @@ function onMkSnapshotChange() {
 
 function onMkRangeChange() {
   selectedMkRange = document.getElementById('snapshotRangeSelect').value || '';
+  syncMkSnapshotModeControls();
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
@@ -1324,12 +1385,13 @@ function applyMkLibraryTabState() {
   document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top300';
 }
 
-function switchMkLibraryTab(tab, options = {}) {
+async function switchMkLibraryTab(tab, options = {}) {
   currentMkLibraryTab = normalizeMkLibraryTab(tab);
   if (options.updateHash !== false) {
     location.hash = currentMkLibraryTab;
   }
   applyMkLibraryTabState();
+  await ensureMkSnapshotOptionsForTab(currentMkLibraryTab);
   if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top300' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
@@ -1349,12 +1411,11 @@ function openProductMaterialLibrary(productCode, productName) {
   const code = String(productCode || '').trim();
   if (!code) return;
   activeMkProductCode = code;
-  mkVideoMaterialsLoaded = true;
+  mkVideoMaterialsLoaded = false;
   document.getElementById('searchInput').value = code;
-  switchMkLibraryTab('videos', {preserveProductCode: true});
+  switchMkLibraryTab('videos', {preserveProductCode: true, forceLoad: true});
   const label = String(productName || code).trim();
   document.getElementById('mkVideoLibraryStatus').textContent = `正在搜索 ${label} 的本地素材快照...`;
-  loadMkLocalMaterialLibrary(1);
 }
 
 async function loadData(page) {
@@ -1436,10 +1497,11 @@ async function loadMkLocalMaterialLibrary(page) {
   const pagerIds = ['mkVideoPagerTop', 'mkVideoPagerBottom'];
   grid.innerHTML = '<div class="oc-empty">加载本地视频素材快照中...</div>';
   clearMkArchivePager(pagerIds);
-  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索本地素材...` : '正在读取本地素材快照...';
+  const loadingScope = selectedMkRange === 'all' ? '明空全部素材池' : '本地素材快照';
+  status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索${loadingScope}...` : `正在读取${loadingScope}...`;
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkLibraryStatusQueryParam()}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1447,7 +1509,10 @@ async function loadMkLocalMaterialLibrary(page) {
     document.getElementById('totalCount').textContent = total + ' 条';
     const rangeLabel = data.range_start && data.range_end ? `${data.range_start} ~ ${data.range_end}` : '';
     const snapshotLabel = rangeLabel || data.snapshot_at || data.snapshot || '最新';
-    const scopeText = activeMkProductCode ? `产品 code ${activeMkProductCode}` : `本地素材快照 ${snapshotLabel}`;
+    const allScope = String(data.range || '') === 'all';
+    const scopeText = activeMkProductCode
+      ? `${allScope ? '全部素材池' : '本地素材快照'} · 产品 code ${activeMkProductCode}`
+      : (allScope ? '全部素材池' : `本地素材快照 ${snapshotLabel}`);
     const statusLabel = currentMkLibraryStatusLabel();
     status.textContent = `${scopeText}${statusLabel ? ` · ${statusLabel}` : ''} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
@@ -2046,7 +2111,7 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 (async function initMkSelection() {
   restoreMkCardZoom();
   const initialTab = initMkLibraryTabFromHash();
-  await loadMkSelectionSnapshots();
+  await ensureMkSnapshotOptionsForTab(initialTab);
   if (initialTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
   } else if (initialTab === 'yesterday-top300') {
