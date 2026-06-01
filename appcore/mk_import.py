@@ -185,6 +185,7 @@ from appcore.medias import (
     create_item as _medias_create_item,
     replace_copywritings as _medias_replace_copywritings,
     set_product_cover as _medias_set_product_cover,
+    get_user_display_name as _medias_get_user_display_name,
 )
 
 
@@ -1036,6 +1037,7 @@ def import_mk_video(
         "is_new_product": is_new,
         "duration_ms": duration_ms,
         "step_results": step_results,
+        "product_owner_name": _medias_get_user_display_name(owner_uid),
     }
     if warnings:
         result["warnings"] = warnings

@@ -4684,7 +4684,7 @@ function mkiImportProgressSetStep(stepKey, status, detail) {
   stepEl.classList.remove('pending', 'running', 'done', 'warning', 'error');
   stepEl.classList.add(status || 'pending');
   const detailEl = stepEl.querySelector('[data-mki-progress-detail]');
-  if (detailEl && detail !== undefined) detailEl.textContent = detail || '';
+  if (detailEl && detail !== undefined) detailEl.innerHTML = detail || '';
   const statusEl = stepEl.querySelector('[data-mki-progress-status]');
   if (statusEl) statusEl.textContent = mkiImportProgressStatusText(status);
 }
@@ -4862,7 +4862,8 @@ function mkiImportProgressConfirmProductOwner() {
     return;
   }
   mkiImportProgressProductOwnerId = ownerId;
-  mkiImportProgressSetStep('productOwner', 'done', '产品负责人已确认：' + (select.options[select.selectedIndex]?.textContent || ('#' + ownerId)));
+  const ownerName = select.options[select.selectedIndex]?.textContent || ('#' + ownerId);
+  mkiImportProgressSetStep('productOwner', 'done', '产品负责人已确认：' + `<span style="color: #007bff; font-size: 2em; font-weight: bold; margin-left: 8px; display: inline-block; vertical-align: middle;">${escapeHtml(ownerName)}</span>`);
   mkiImportProgressSetProductOwnerNotice('产品负责人已确认。');
   const panel = document.getElementById('mkiImportProgressProductOwner');
   if (panel) panel.hidden = true;
@@ -5014,10 +5015,12 @@ function mkiImportProgressComplete(data, btn) {
   mkiImportProgressSetStep('download', 'done', '明空原视频已下载到服务端并校验完成');
   mkiImportProgressSetStep('store', 'done', '英文素材已写入素材库，素材 ID：' + itemId);
   mkiImportProgressRenderStoreCompletion(productId, itemId);
+  const ownerName = data?.product_owner_name || '';
+  const ownerLabel = ownerName ? `：<span style="color: #007bff; font-size: 2em; font-weight: bold; margin-left: 8px; display: inline-block; vertical-align: middle;">${escapeHtml(ownerName)}</span>` : '';
   if (data?.is_new_product) {
-    mkiImportProgressSetStep('productOwner', 'done', '新品产品负责人已写入素材管理');
+    mkiImportProgressSetStep('productOwner', 'done', '新品产品负责人已写入素材管理' + ownerLabel);
   } else {
-    mkiImportProgressSetStep('productOwner', 'done', '老品已沿用素材管理现有产品负责人');
+    mkiImportProgressSetStep('productOwner', 'done', '老品已沿用素材管理现有产品负责人' + ownerLabel);
   }
   mkiImportProgressSetStep('domains', 'running', '正在加载产品发布域名');
   mkiImportProgressSetStep('next', 'pending', '确认发布域名后创建小语种任务');
