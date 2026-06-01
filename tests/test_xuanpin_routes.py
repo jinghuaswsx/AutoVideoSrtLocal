@@ -216,6 +216,11 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     body = resp.get_data(as_text=True)
     assert "明空视频素材详情" in body
     assert "winner.mp4" in body
+    assert "投放热度" in body
+    assert "mk-detail-heat-panel" in body
+    assert "mk-detail-heat-badge mk-detail-heat-badge--high" in body
+    assert "广告数 16" in body
+    assert "90天消耗 1.28万" in body
     assert "mk-detail-media-grid" in body
     assert "mk-detail-cover-frame" in body
     assert "mk-detail-video-frame" in body
