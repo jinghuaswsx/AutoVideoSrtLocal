@@ -155,3 +155,14 @@ def test_product_profit_unmatched_summary_links_to_global_ads_scope():
     assert "var globalUnmatchedAdsMode = false;" in TEMPLATE
     assert "ads_scope=unmatched" in TEMPLATE
     assert "ppd-ads-unmatched-details" in TEMPLATE
+
+
+def test_product_profit_unallocated_ads_copy_is_not_ambiguous():
+    """Docs-anchor: docs/superpowers/specs/2026-06-01-ad-allocation-label-clarity-design.md"""
+    assert "未分摊广告" in TEMPLATE
+    assert "未分摊 campaign" in TEMPLATE
+    assert "分摊原因" in TEMPLATE
+    assert "function formatAdAllocationReason(row)" in TEMPLATE
+    assert "已匹配产品但无可分摊订单" in TEMPLATE
+    assert "未匹配广告</span>" not in TEMPLATE
+    assert "未匹配 campaign <span" not in TEMPLATE

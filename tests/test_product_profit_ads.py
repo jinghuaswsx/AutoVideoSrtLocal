@@ -262,6 +262,7 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
             "spend_usd": Decimal("5.00"),
             "result_count": 1,
             "purchase_value_usd": Decimal("8.00"),
+            "allocation_reason": "unmatched_product",
         },
         {
             "report_date": date(2026, 5, 6),
@@ -272,6 +273,7 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
             "spend_usd": Decimal("2.00"),
             "result_count": 2,
             "purchase_value_usd": Decimal("6.00"),
+            "allocation_reason": "unmatched_product",
         },
         {
             "report_date": date(2026, 5, 5),
@@ -282,6 +284,10 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
             "spend_usd": Decimal("9.00"),
             "result_count": 3,
             "purchase_value_usd": Decimal("18.00"),
+            "allocation_reason": "matched_no_units",
+            "matched_product_id": 200,
+            "matched_product_code": "known-rjc",
+            "matched_product_name": "Known Product",
         },
     ]
 
@@ -299,6 +305,10 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
     row = result["unmatched"][0]
     assert row["normalized_campaign_code"] == "known-rjc"
     assert row["spend_usd"] == 9.0
+    assert row["allocation_reason"] == "matched_no_units"
+    assert row["allocation_label"] == "已匹配产品但无可分摊订单"
+    assert row["matched_product_id"] == 200
+    assert row["matched_product_code"] == "known-rjc"
 
     row = result["unmatched"][1]
     assert row["normalized_campaign_code"] == "mystery"
@@ -310,6 +320,8 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
     assert row["purchase_value_usd"] == 14.0
     assert row["roas_meta"] == 2.0
     assert row["last_seen"] == "2026-05-06"
+    assert row["allocation_reason"] == "unmatched_product"
+    assert row["allocation_label"] == "未匹配产品"
 
 
 def test_generate_unmatched_ads_report_uses_realtime_for_open_business_day():

@@ -3264,7 +3264,7 @@
 <div class="oa-panel {% if active_tab == 'ads' %}active{% endif %}" id="panelAds">
   <nav class="oa-subtabs" id="adsSubtabs" role="tablist" aria-label="广告分析子 Tab">
     <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="overview" aria-pressed="true">概览</button>
-    <button type="button" class="oa-subtab-btn" data-ads-subtab="unmatched-campaigns" aria-pressed="false">未匹配广告计划</button>
+    <button type="button" class="oa-subtab-btn" data-ads-subtab="unmatched-campaigns" aria-pressed="false">未匹配产品广告计划</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="campaign" aria-pressed="false">Campaign</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="adset" aria-pressed="false">Ad Set</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="ad" aria-pressed="false">Ad</button>
@@ -3334,7 +3334,7 @@
 
         <div class="oa-table-wrap" id="adUnmatchedWrap" style="display:none;">
           <div class="oa-table-header">
-            <div class="oa-table-title">未匹配广告系列</div>
+            <div class="oa-table-title">未匹配产品广告系列</div>
           </div>
           <div class="oa-table-scroll">
             <table class="oa-table">
@@ -3347,21 +3347,22 @@
     </div>
   </div>
 
-  <!-- 未匹配广告计划 sub-panel：仅展示素材管理库里没有相关产品的 Campaign -->
+  <!-- 未匹配产品广告计划 sub-panel：仅展示素材管理库里没有相关产品的 Campaign -->
   <!-- Docs-anchor: docs/superpowers/specs/2026-06-01-ads-unmatched-campaign-tab-design.md -->
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-01-ad-allocation-label-clarity-design.md -->
   <div class="oa-subpanel" data-subpanel="unmatched-campaigns">
     <div class="oad-toolbar">
       <div class="oad-toolbar-row">
         <div class="oa-search-box ads-level-search">
-          <input type="text" id="adUnmatchedSearchInput" placeholder="搜索未匹配 Campaign..." autocomplete="off">
+          <input type="text" id="adUnmatchedSearchInput" placeholder="搜索未匹配产品 Campaign..." autocomplete="off">
         </div>
         <label class="oad-account-filter">
           <span>广告户</span>
-          <select id="adUnmatchedAccountFilter" data-ads-account-filter="unmatched-campaigns" aria-label="未匹配广告户筛选">
+          <select id="adUnmatchedAccountFilter" data-ads-account-filter="unmatched-campaigns" aria-label="未匹配产品广告户筛选">
             <option value="">全部广告户</option>
           </select>
         </label>
-        <div class="oad-range-presets" role="group" aria-label="未匹配广告计划时间范围">
+        <div class="oad-range-presets" role="group" aria-label="未匹配产品广告计划时间范围">
           <button type="button" class="oad-seg is-active" data-ad-unmatched-range="today" aria-pressed="true">今天</button>
           <button type="button" class="oad-seg" data-ad-unmatched-range="yesterday" aria-pressed="false">昨天</button>
           <button type="button" class="oad-seg" data-ad-unmatched-range="thisWeek" aria-pressed="false">本周</button>
@@ -3371,7 +3372,7 @@
           <button type="button" class="oad-seg" data-ad-unmatched-range="thisYear" aria-pressed="false">今年</button>
           <button type="button" class="oad-seg" data-ad-unmatched-range="lastYear" aria-pressed="false">去年</button>
         </div>
-        <div class="oad-date-range-field" role="group" aria-label="未匹配广告计划自定义日期范围">
+        <div class="oad-date-range-field" role="group" aria-label="未匹配产品广告计划自定义日期范围">
           <input type="date" id="adUnmatchedStartDate" aria-label="开始日期">
           <span class="oad-date-range-sep">至</span>
           <input type="date" id="adUnmatchedEndDate" aria-label="结束日期">
@@ -3381,11 +3382,12 @@
     </div>
     <div id="adUnmatchedCampaignsError" class="oa-warning-banner" style="display:none;"></div>
     <div id="adUnmatchedCampaignsEmpty" class="oa-empty" style="display:none;">
-      <div>当前筛选范围内没有未匹配广告计划。</div>
+      <div>当前筛选范围内没有未匹配产品广告计划。</div>
     </div>
     <div class="oa-table-wrap" id="adUnmatchedCampaignsWrap">
       <div class="oa-table-header">
-        <div class="oa-table-title">未匹配广告计划</div>
+        <div class="oa-table-title">未匹配产品广告计划</div>
+        <div class="oar-note">只包含素材管理库里无法解析到产品的 Campaign；不包含已匹配但未分摊的广告费。</div>
       </div>
       <div class="oa-table-scroll">
         <table class="oa-table" id="adUnmatchedCampaignsTable">
@@ -6951,7 +6953,7 @@
     if (!rows.length) { wrap.style.display = 'none'; return; }
     var head = document.getElementById('adUnmatchedHead');
     head.innerHTML = '';
-    ['广告系列', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
+    ['未匹配产品广告系列', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
       addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
     });
     var body = document.getElementById('adUnmatchedBody');
@@ -7052,7 +7054,7 @@
         renderAdUnmatchedCampaigns((data && data.unmatched) || []);
       })
       .catch(function(e) {
-        showAdUnmatchedError('未匹配广告计划加载失败：' + e.message);
+        showAdUnmatchedError('未匹配产品广告计划加载失败：' + e.message);
       });
   }
 
@@ -7063,7 +7065,7 @@
     var body = document.getElementById('adUnmatchedCampaignsBody');
     if (!wrap || !head || !body) return;
     head.innerHTML = '';
-    ['广告计划', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
+    ['未匹配产品广告计划', '花费', 'Meta购买', '购物价值', '操作'].forEach(function(text, idx) {
       addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
     });
     if (!rows.length) {

@@ -40,6 +40,16 @@ from .meta_ads import resolve_ad_product_match
 
 log = logging.getLogger(__name__)
 
+_ALLOCATION_REASON_LABELS = {
+    "unmatched_product": "未匹配产品",
+    "matched_no_units": "已匹配产品但无可分摊订单",
+    "mixed": "多原因未分摊",
+}
+
+
+def _allocation_reason_label(reason: str | None) -> str:
+    return _ALLOCATION_REASON_LABELS.get((reason or "").strip(), "未分摊")
+
 
 # ---------------------------------------------------------------------------
 # DB facade（同 product_profit_list.py / campaign_overrides.py 模式）
@@ -684,7 +694,7 @@ def generate_unmatched_ads_report(
     date_to: date,
     country: str | None = None,
 ) -> dict[str, Any]:
-    """生成全局未匹配广告列表，给 Tab ④ 的 summary 跳转入口使用。"""
+    """生成全局未分摊广告列表，给 Tab ④ 的 summary 跳转入口使用。"""
     from ._open_day_freshness import ensure_open_day_profit_lines_fresh
 
     ensure_open_day_profit_lines_fresh(date_from, date_to)
@@ -706,6 +716,7 @@ def generate_unmatched_ads_report(
             "matched_product_id": None,
             "matched_product_code": None,
             "matched_product_name": None,
+            "matched_profit_units": None,
         }
     )
 
@@ -729,6 +740,8 @@ def generate_unmatched_ads_report(
             bucket["matched_product_id"] = r.get("matched_product_id")
             bucket["matched_product_code"] = r.get("matched_product_code")
             bucket["matched_product_name"] = r.get("matched_product_name")
+        if bucket["matched_profit_units"] is None and r.get("matched_profit_units") is not None:
+            bucket["matched_profit_units"] = int(r.get("matched_profit_units") or 0)
         report_date = r.get("report_date")
         if report_date is not None and (
             bucket["last_seen"] is None or report_date > bucket["last_seen"]
@@ -741,6 +754,7 @@ def generate_unmatched_ads_report(
         purchase_value = item["purchase_value"]
         last_seen = item["last_seen"]
         reasons = sorted(item["allocation_reasons"])
+        reason = reasons[0] if len(reasons) == 1 else "mixed"
         unmatched_list.append({
             "normalized_campaign_code": norm,
             "campaign_name": item["campaign_name"],
@@ -751,10 +765,12 @@ def generate_unmatched_ads_report(
             "purchase_value_usd": float(purchase_value),
             "roas_meta": float(purchase_value / spend) if spend > 0 and purchase_value > 0 else None,
             "last_seen": last_seen.isoformat() if hasattr(last_seen, "isoformat") else last_seen,
-            "allocation_reason": reasons[0] if len(reasons) == 1 else "mixed",
+            "allocation_reason": reason,
+            "allocation_label": _allocation_reason_label(reason),
             "matched_product_id": item["matched_product_id"],
             "matched_product_code": item["matched_product_code"],
             "matched_product_name": item["matched_product_name"],
+            "matched_profit_units": item["matched_profit_units"],
         })
     unmatched_list.sort(key=lambda x: -x["spend_usd"])
     total_unmatched_spend = sum(float(item["spend_usd"] or 0) for item in unmatched_list)

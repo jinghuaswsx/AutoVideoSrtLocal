@@ -1221,11 +1221,12 @@
         <div class="ppd-empty" id="ppd-ads-daily-empty" style="display:none">无日数据。</div>
       </details>
 
-      <!-- 未匹配折叠区 -->
+      <!-- 未分摊广告折叠区 -->
+      <!-- Docs-anchor: docs/superpowers/specs/2026-06-01-ad-allocation-label-clarity-design.md -->
       <details class="ppd-orders" id="ppd-ads-unmatched-details">
         <summary style="cursor:pointer; font-size:14px; font-weight:600; color:var(--text-main); padding:4px 0;">
-          未匹配 campaign <span id="ppd-ads-unmatched-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span>
-          <span style="font-size:11px; color:var(--text-user-badge); font-weight:400; margin-left:8px;">花费有进、但 normalized_campaign_code 解析不出产品。可手动归到本产品。</span>
+          未分摊 campaign <span id="ppd-ads-unmatched-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span>
+          <span style="font-size:11px; color:var(--text-user-badge); font-weight:400; margin-left:8px;">广告费未进入产品利润分摊，原因见“分摊原因”。</span>
         </summary>
         <div class="ppd-table-wrap" id="ppd-ads-unmatched-wrap" style="margin-top:10px; display:none">
           <table class="ppd-table" id="ppd-ads-unmatched-table">
@@ -1238,6 +1239,7 @@
                 <th class="ppd-num">结果</th>
                 <th class="ppd-num">购买价值<span class="col-unit">USD</span></th>
                 <th class="ppd-num">Meta ROAS</th>
+                <th>分摊原因</th>
                 <th>最后日期</th>
                 <th>操作</th>
               </tr>
@@ -1245,7 +1247,7 @@
             <tbody></tbody>
           </table>
         </div>
-        <div class="ppd-empty" id="ppd-ads-unmatched-empty" style="display:none">无未匹配 campaign。</div>
+        <div class="ppd-empty" id="ppd-ads-unmatched-empty" style="display:none">无未分摊 campaign。</div>
       </details>
 
     </div>
@@ -2000,7 +2002,7 @@
     var profitCls = profitVal == null ? '' : (profitVal >= 0 ? 'is-positive' : 'is-negative');
     var unallocatedAd = Number(summary.unallocated_ad_spend_usd) || 0;
     var unmatchedAdHtml = unallocatedAd > 0
-      ? '<button type="button" class="ppd-summary-value ppd-unmatched-ad-link" onclick="showGlobalUnmatchedAds()" title="查看未匹配广告明细">' + money(unallocatedAd) + '</button>'
+      ? '<button type="button" class="ppd-summary-value ppd-unmatched-ad-link" onclick="showGlobalUnmatchedAds()" title="查看未分摊广告明细">' + money(unallocatedAd) + '</button>'
       : '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span>';
     listSummary.innerHTML = ''
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">产品数</span>'
@@ -2011,7 +2013,7 @@
       + '<span class="ppd-summary-value">' + money(summary.total_revenue_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总广告费</span>'
       + '<span class="ppd-summary-value">' + money(summary.total_ad_spend_usd) + '</span></span>'
-      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未匹配广告</span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未分摊广告</span>'
       + unmatchedAdHtml + '</span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
       + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>'
@@ -2314,7 +2316,7 @@
       + '<span class="ppd-summary-value">' + money(summary.total_revenue_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总广告费</span>'
       + '<span class="ppd-summary-value">' + money(summary.total_ad_spend_usd) + '</span></span>'
-      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未匹配广告</span>'
+      + '<span class="ppd-summary-item"><span class="ppd-summary-label">未分摊广告</span>'
       + '<span class="ppd-summary-value">' + money(summary.unallocated_ad_spend_usd) + '</span></span>'
       + '<span class="ppd-summary-item"><span class="ppd-summary-label">总利润</span>'
       + '<span class="ppd-summary-value ' + profitCls + '">' + money(profitVal) + '</span></span>';
@@ -2814,6 +2816,27 @@
     tbody.innerHTML = html;
   }
 
+  function formatAdAllocationReason(row) {
+    var reason = row.allocation_reason || '';
+    var label = row.allocation_label || '';
+    if (!label) {
+      if (reason === 'matched_no_units') {
+        label = '已匹配产品但无可分摊订单';
+      } else if (reason === 'mixed') {
+        label = '多原因未分摊';
+      } else {
+        label = '未匹配产品';
+      }
+    }
+    var productBits = [];
+    if (row.matched_product_code) productBits.push(row.matched_product_code);
+    if (row.matched_product_name) productBits.push(row.matched_product_name);
+    return {
+      label: label,
+      detail: productBits.length ? ('已匹配：' + productBits.join(' / ')) : ''
+    };
+  }
+
   function renderAdsUnmatched(unmatched) {
     var wrap = $('ppd-ads-unmatched-wrap');
     var emptyEl = $('ppd-ads-unmatched-empty');
@@ -2834,6 +2857,7 @@
       var code = u.normalized_campaign_code || '';
       var roasText = u.roas_meta == null ? '—' : Number(u.roas_meta).toFixed(2);
       var accountText = u.ad_account_name || u.ad_account_id || '';
+      var reasonInfo = formatAdAllocationReason(u);
       var canMatchToCurrentProduct = !globalUnmatchedAdsMode && getSelectedProductId() && getSelectedProductId() !== '0' && getSelectedProductId() !== 'ALL';
       tr.innerHTML =
           '<td style="text-align:left; font-family:var(--font-sans, sans-serif);">' + escHtml(code) + '</td>'
@@ -2843,10 +2867,14 @@
         + '<td class="ppd-num">' + (u.result_count || 0).toLocaleString() + '</td>'
         + '<td class="ppd-num">' + money(u.purchase_value_usd) + '</td>'
         + '<td class="ppd-num">' + roasText + '</td>'
+        + '<td style="text-align:left; max-width:220px; white-space:normal;">'
+        + '<div>' + escHtml(reasonInfo.label) + '</div>'
+        + (reasonInfo.detail ? '<div style="font-size:11px; color:var(--text-user-badge); margin-top:2px;">' + escHtml(reasonInfo.detail) + '</div>' : '')
+        + '</td>'
         + '<td>' + escHtml(u.last_seen || '') + '</td>'
         + '<td></td>';
       var actionTd = tr.lastElementChild;
-      if (canMatchToCurrentProduct) {
+      if (canMatchToCurrentProduct && u.allocation_reason !== 'matched_no_units') {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'ppd-btn';
@@ -2855,6 +2883,8 @@
           manualMatchCampaign(code, btn);
         });
         actionTd.appendChild(btn);
+      } else if (u.allocation_reason === 'matched_no_units') {
+        actionTd.innerHTML = '<span style="color:var(--text-user-badge);">已匹配产品</span>';
       } else {
         actionTd.innerHTML = '<span style="color:var(--text-user-badge);">先选产品后配对</span>';
       }

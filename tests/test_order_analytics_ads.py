@@ -1115,6 +1115,8 @@ def test_ads_analysis_page_has_unmatched_campaigns_subtab(authed_client_no_db):
     assert "function loadAdUnmatchedCampaigns()" in body
     assert "function renderAdUnmatchedCampaigns(rows)" in body
     assert "openAdMatchModal(row)" in body
+    assert "未匹配产品广告计划" in body
+    assert "只包含素材管理库里无法解析到产品的 Campaign" in body
 
 
 def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no_db):
