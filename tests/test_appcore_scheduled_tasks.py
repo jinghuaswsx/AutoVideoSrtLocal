@@ -741,6 +741,11 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["task_center_raw_niuma_watch"]["schedule"] == "每 1 分钟"
     assert definitions["task_center_raw_niuma_watch"]["runner"] == "appcore.task_center_raw_niuma_scheduler.tick_once"
     assert definitions["task_center_raw_niuma_watch"]["log_table"] == "task_events"
+    assert definitions["task_center_auto_archive"]["source_type"] == "apscheduler"
+    assert definitions["task_center_auto_archive"]["schedule"] == "每天 06:00"
+    assert definitions["task_center_auto_archive"]["runner"] == "appcore.task_center_auto_archive_scheduler.tick_once"
+    assert definitions["task_center_auto_archive"]["log_table"] == "scheduled_task_runs"
+    assert "2026-06-01-task-center-auto-archive-design.md" in definitions["task_center_auto_archive"]["description"]
     assert definitions["tts_convergence_stats"]["source_type"] == "cron"
 
 

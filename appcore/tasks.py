@@ -41,6 +41,8 @@ CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 TASK_ARCHIVED_EVENT = "archived"
+TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
+TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
 FINAL_MATERIAL_CONFIRM_LABEL = "最终素材和链接确认"
 FINAL_MATERIAL_CONFIRM_HINT = (
     "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
@@ -879,6 +881,243 @@ def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
         (int(task_id), TASK_ARCHIVED_EVENT, int(actor_user_id), None),
     )
     return True
+
+
+def _auto_archive_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _csv_ints(value: Any) -> list[int]:
+    if value is None:
+        return []
+    result: list[int] = []
+    for part in str(value).split(","):
+        parsed = _positive_int(part.strip())
+        if parsed is not None:
+            result.append(parsed)
+    return result
+
+
+def _auto_archive_child_candidates(limit: int | None) -> list[dict]:
+    args: list[Any] = [CHILD_DONE]
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT %s"
+        args.append(int(limit))
+    return query_all(
+        """
+        SELECT t.id AS task_id, t.status AS task_status,
+               mi.id AS media_item_id, mi.pushed_at
+        FROM tasks t
+        JOIN (
+            SELECT task_id, MAX(id) AS media_item_id
+            FROM media_items
+            WHERE task_id IS NOT NULL
+              AND deleted_at IS NULL
+            GROUP BY task_id
+        ) latest ON latest.task_id=t.id
+        JOIN media_items mi ON mi.id=latest.media_item_id
+        WHERE t.parent_task_id IS NOT NULL
+          AND t.status=%s
+          AND t.archived_at IS NULL
+          AND mi.pushed_at IS NOT NULL
+        ORDER BY t.completed_at ASC, t.id ASC
+        """ + limit_sql,
+        tuple(args),
+    )
+
+
+def _auto_archive_parent_candidates(limit: int | None) -> list[dict]:
+    args: list[Any] = [CHILD_DONE, PARENT_ALL_DONE, CHILD_DONE]
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT %s"
+        args.append(int(limit))
+    return query_all(
+        """
+        SELECT p.id AS task_id, p.status AS task_status,
+               COUNT(c.id) AS child_count,
+               GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS child_task_ids,
+               GROUP_CONCAT(mi.id ORDER BY c.id SEPARATOR ',') AS child_media_item_ids
+        FROM tasks p
+        JOIN tasks c ON c.parent_task_id=p.id AND c.status=%s
+        JOIN (
+            SELECT task_id, MAX(id) AS media_item_id
+            FROM media_items
+            WHERE task_id IS NOT NULL
+              AND deleted_at IS NULL
+            GROUP BY task_id
+        ) pushed ON pushed.task_id=c.id
+        JOIN media_items mi ON mi.id=pushed.media_item_id
+        WHERE p.parent_task_id IS NULL
+          AND p.status=%s
+          AND p.archived_at IS NULL
+          AND mi.pushed_at IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM tasks c2
+              LEFT JOIN (
+                  SELECT task_id, MAX(id) AS media_item_id
+                  FROM media_items
+                  WHERE task_id IS NOT NULL
+                    AND deleted_at IS NULL
+                  GROUP BY task_id
+              ) latest2 ON latest2.task_id=c2.id
+              LEFT JOIN media_items mi2 ON mi2.id=latest2.media_item_id
+              WHERE c2.parent_task_id=p.id
+                AND c2.status=%s
+                AND (mi2.id IS NULL OR mi2.pushed_at IS NULL)
+          )
+        GROUP BY p.id, p.status
+        ORDER BY p.completed_at ASC, p.id ASC
+        """ + limit_sql,
+        tuple(args),
+    )
+
+
+def _write_auto_archive_event(cur, task_id: int, payload: dict) -> None:
+    _write_event(
+        cur,
+        int(task_id),
+        TASK_AUTO_ARCHIVED_EVENT,
+        None,
+        payload,
+    )
+
+
+def _auto_archive_task(task_id: int, payload: dict) -> bool:
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, status, archived_at FROM tasks WHERE id=%s FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("task not found")
+                if row.get("archived_at"):
+                    conn.rollback()
+                    return False
+                event_payload = dict(payload or {})
+                event_payload["task_status"] = row.get("status")
+                cur.execute(
+                    "UPDATE tasks SET archived_at=NOW(), archived_by=NULL, updated_at=NOW() "
+                    "WHERE id=%s AND archived_at IS NULL",
+                    (int(task_id),),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return False
+                _write_auto_archive_event(cur, int(task_id), event_payload)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+    return True
+
+
+def _auto_archive_summary() -> dict:
+    return {
+        "scanned_children": 0,
+        "archived_children": 0,
+        "scanned_parents": 0,
+        "archived_parents": 0,
+        "skipped_already_archived": 0,
+        "errors": 0,
+        "task_ids": [],
+        "error_items": [],
+    }
+
+
+def _append_auto_archive_error(summary: dict, task_id: Any, exc: Exception) -> None:
+    summary["errors"] += 1
+    summary["error_items"].append({
+        "task_id": _positive_int(task_id),
+        "error": str(exc)[:500],
+    })
+
+
+def _child_auto_archive_payload(row: dict) -> dict:
+    return {
+        "source": TASK_AUTO_ARCHIVE_SOURCE,
+        "reason": "child_done_and_material_pushed",
+        "media_item_id": _positive_int((row or {}).get("media_item_id")),
+        "pushed_at": _auto_archive_value((row or {}).get("pushed_at")),
+    }
+
+
+def _parent_auto_archive_payload(row: dict) -> dict:
+    child_task_ids = _csv_ints((row or {}).get("child_task_ids"))
+    child_media_item_ids = _csv_ints((row or {}).get("child_media_item_ids"))
+    return {
+        "source": TASK_AUTO_ARCHIVE_SOURCE,
+        "reason": "parent_all_done_and_children_pushed",
+        "child_count": _positive_int((row or {}).get("child_count")) or len(child_task_ids),
+        "child_task_ids": child_task_ids,
+        "child_media_item_ids": child_media_item_ids,
+    }
+
+
+def auto_archive_completed_pushed_tasks(limit: int | None = None) -> dict:
+    """Archive completed task-center tasks whose material has been pushed."""
+    safe_limit = None
+    if limit is not None:
+        try:
+            safe_limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            safe_limit = None
+    summary = _auto_archive_summary()
+    if safe_limit == 0:
+        return summary
+
+    child_rows = _auto_archive_child_candidates(safe_limit)
+    for row in child_rows:
+        task_id = _positive_int((row or {}).get("task_id"))
+        summary["scanned_children"] += 1
+        if task_id is None:
+            continue
+        try:
+            archived = _auto_archive_task(task_id, _child_auto_archive_payload(row))
+        except Exception as exc:
+            _append_auto_archive_error(summary, task_id, exc)
+            continue
+        if archived:
+            summary["archived_children"] += 1
+            summary["task_ids"].append(task_id)
+        else:
+            summary["skipped_already_archived"] += 1
+
+    remaining = None
+    if safe_limit is not None:
+        remaining = max(0, safe_limit - len(summary["task_ids"]))
+        if remaining == 0:
+            return summary
+    parent_rows = _auto_archive_parent_candidates(remaining)
+    for row in parent_rows:
+        task_id = _positive_int((row or {}).get("task_id"))
+        summary["scanned_parents"] += 1
+        if task_id is None:
+            continue
+        try:
+            archived = _auto_archive_task(task_id, _parent_auto_archive_payload(row))
+        except Exception as exc:
+            _append_auto_archive_error(summary, task_id, exc)
+            continue
+        if archived:
+            summary["archived_parents"] += 1
+            summary["task_ids"].append(task_id)
+        else:
+            summary["skipped_already_archived"] += 1
+    return summary
 
 
 def bind_parent_media_item(

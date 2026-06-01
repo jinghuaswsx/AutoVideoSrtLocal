@@ -327,8 +327,11 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "add('翻译员'," in body
     assert "/tasks/api/translation-work-users" in body
     assert "push_material_approved" in body
+    assert "auto_archived" in body
+    assert "系统自动归档" in body
     assert "管理员审核通过" in body
     assert "已推送" in body
+    assert "推送时间" in body
     assert "管理员审核拒绝" in body
     assert "继续完善素材内容" in body
     assert "问题点" in body
