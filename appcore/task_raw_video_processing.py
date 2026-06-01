@@ -389,7 +389,9 @@ def attach_niuma_result_to_parent_task(
     )
     from appcore import tasks as tasks_svc
 
-    tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+    if payload.get("status") == PARENT_RAW_IN_PROGRESS:
+        tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+
 
 
 def _load_inflight_niuma_submissions(

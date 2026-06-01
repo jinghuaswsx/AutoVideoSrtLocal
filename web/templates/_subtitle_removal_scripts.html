@@ -668,6 +668,44 @@
     function enterResubmitMode() {
       pendingActionMode = "resubmit";
       setEraseTypeDisabled(false);
+
+      // Enable remove mode selection and cards
+      var modeSelect = document.querySelector(".sr-mode-select");
+      if (modeSelect) {
+        modeSelect.classList.remove("sr-mode-readonly");
+      }
+      var modeInputs = document.querySelectorAll("input[name='remove_mode']");
+      modeInputs.forEach(function (input) {
+        input.removeAttribute("disabled");
+      });
+
+      // Reset result panel display to ready state
+      if (resultPanel) {
+        resultPanel.innerHTML = [
+          '<div class="sr-result-empty">',
+          '<div class="sr-selection-empty-title">暂无处理结果</div>',
+          '<div class="sr-hint">提交后会在这里显示预览和下载入口。</div>',
+          '</div>',
+        ].join("");
+      }
+
+      // Hide comparison and preview cards
+      if (compareCard) {
+        compareCard.hidden = true;
+        compareCard.classList.add("sr-hidden");
+        compareOriginalPanel.innerHTML = "";
+        compareResultPanel.innerHTML = "";
+      }
+
+      // Reset state and status display in right side panel
+      if (stateStatus) {
+        stateStatus.textContent = "ready";
+      }
+      var statusChip = document.querySelector('[data-role="sr-status-chip"]');
+      if (statusChip) {
+        statusChip.textContent = "ready";
+      }
+
       updateActionAvailability(bootstrap);
     }
 
