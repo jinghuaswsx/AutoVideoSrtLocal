@@ -1339,6 +1339,65 @@ def test_push_manual_link_confirmation_skips_probe_and_posts(
     assert captured["payload"] == {"mode": "create", "item_id": 7}
 
 
+def test_push_first_mk_pairing_marks_response_for_auto_localized_texts_no_db(
+    authed_client_no_db,
+    monkeypatch,
+):
+    import appcore.db as db
+
+    item = {"id": 7, "product_id": 18, "lang": "de", "pushed_at": None}
+    product = {"id": 18, "product_code": "first-pair-rjc", "mk_id": None}
+    updates = {}
+    executed = []
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "http://downstream.invalid/push",
+    )
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_product",
+        lambda product_id, **fields: updates.update(fields) or 1,
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.compute_readiness", lambda item, product: {"ready": True})
+    monkeypatch.setattr("web.routes.pushes.pushes.is_ready", lambda readiness: True)
+    monkeypatch.setattr("web.routes.pushes.pushes.build_product_link", lambda lang, code: "https://ad.example/item")
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr("web.routes.pushes.pushes.build_item_payload", lambda item, product: {"mode": "create"})
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.post_json_payload",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "upstream_status": 200,
+            "response_body": '{"ok":true}',
+            "response_body_full": '{"ok":true}',
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.record_push_success", lambda **kwargs: 101)
+    monkeypatch.setattr("web.routes.pushes.pushes.lookup_mk_id", lambda product_code: (5678, "ok"))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_target_url",
+        lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+    monkeypatch.setattr(db, "query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr(db, "execute", lambda sql, params=None: executed.append((sql, params)))
+
+    response = authed_client_no_db.post("/pushes/api/items/7/push")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["mk_id_match"]["status"] == "ok"
+    assert body["mk_id_match"]["mk_id"] == 5678
+    assert body["mk_id_match"]["first_pairing"] is True
+    assert body["mk_id_match"]["localized_push_target_url"] == (
+        "https://os.wedev.vip/api/marketing/medias/5678/texts"
+    )
+    assert updates["mk_id"] == 5678
+    assert executed == [("UPDATE media_push_logs SET is_new_product_push = 1 WHERE id = %s", (101,))]
+
+
 def test_push_success_marks_pushed(logged_in_client, seeded_item, monkeypatch):
     pid, item_id = seeded_item
     _seed_en_push_texts(pid)
@@ -2233,6 +2292,20 @@ def test_pushes_modal_previews_localize_media_object_urls_to_current_origin():
     assert "const posterSrc = previewMediaSrc(previewCoverUrl || (video && video.image_url) || '');" in script
 
 
+def test_pushes_modal_auto_pushes_localized_texts_after_first_mk_pairing():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "async function pushLocalizedTexts()" in script
+    assert "function canPushLocalizedTexts()" in script
+    assert "async function autoPushLocalizedTextsAfterFirstMkPairing(materialBody)" in script
+    assert "if (!match || !match.first_pairing || !match.mk_id) return;" in script
+    assert "setMode(PUSH_MODAL_MODES.LOCALIZED_TEXT);" in script
+    assert "await pushLocalizedTexts();" in script
+    assert "await autoPushLocalizedTextsAfterFirstMkPairing(body);" in script
+
+
 # ================================================================
 # mk_id 回填（推送成功 → lookup_mk_id → 写回 media_products）
 # ================================================================
@@ -2289,6 +2362,7 @@ def test_push_mk_id_match_writes_back(logged_in_client, seeded_item, monkeypatch
     assert body["ok"] is True
     assert body["mk_id_match"]["status"] == "ok"
     assert body["mk_id_match"]["mk_id"] == id_large  # 取 id 最大
+    assert body["mk_id_match"]["first_pairing"] is True
 
     # DB 已回填
     assert medias.get_product(pid)["mk_id"] == id_large

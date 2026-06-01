@@ -543,6 +543,9 @@ def api_push(item_id: int):
     if item.get("pushed_at"):
         return _json_response({"error": "already_pushed"}, 409)
 
+    existing_mk_id = product.get("mk_id")
+    had_no_mk_id = existing_mk_id is None or str(existing_mk_id).strip() in ("", "0")
+
     # Check if this product has ever been successfully pushed before
     from appcore.db import query_one as db_query_one
     exist_row = db_query_one(
@@ -638,7 +641,11 @@ def api_push(item_id: int):
                 )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
-        mk_id_match: dict[str, Any] = {"status": "skipped", "mk_id": None}
+        mk_id_match: dict[str, Any] = {
+            "status": "skipped",
+            "mk_id": None,
+            "first_pairing": False,
+        }
         try:
             matched_mk_id, status = pushes.lookup_mk_id(product_code)
         except Exception as exc:  # defensive — 任何异常都不能破坏推送成功响应
@@ -650,6 +657,7 @@ def api_push(item_id: int):
         if matched_mk_id:
             try:
                 medias.update_product(product["id"], mk_id=int(matched_mk_id))
+                mk_id_match["first_pairing"] = had_no_mk_id
                 if had_no_success_push:
                     from appcore.db import execute as db_execute
                     db_execute(

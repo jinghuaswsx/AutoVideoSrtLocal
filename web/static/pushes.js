@@ -2611,6 +2611,31 @@
     manualLinkConfirmBtn.addEventListener('click', retryPayloadWithManualLinkConfirmation);
     loadPayload();
 
+    function canPushLocalizedTexts() {
+      return !!(payloadData && mkId && localizedTargetUrl && localizedTexts.length && !localizedPushed);
+    }
+
+    async function pushLocalizedTexts() {
+      const body = await fetchJSON(`/pushes/api/items/${itemId}/push-localized-texts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      showResponse(body, false, '文案推送响应');
+      localizedPushed = true;
+      anyPushSucceeded = true;
+      return body;
+    }
+
+    async function autoPushLocalizedTextsAfterFirstMkPairing(materialBody) {
+      const match = materialBody && materialBody.mk_id_match;
+      if (!match || !match.first_pairing || !match.mk_id) return;
+      setMode(PUSH_MODAL_MODES.LOCALIZED_TEXT);
+      if (!canPushLocalizedTexts()) return;
+      btnPush.disabled = true;
+      btnPush.textContent = '推送中…';
+      await pushLocalizedTexts();
+    }
+
     btnPush.addEventListener('click', async () => {
       if (!payloadData) return;
       const reworkDisabledBeforePush = btnRework.disabled;
@@ -2626,13 +2651,7 @@
           showResponse(body, !body.ok, body.ok ? '推送链接响应' : '推送链接失败');
           productLinksPushed = !!body.ok;
         } else if (isLocalizedMode()) {
-          const body = await fetchJSON(`/pushes/api/items/${itemId}/push-localized-texts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          });
-          showResponse(body, false, '文案推送响应');
-          localizedPushed = true;
-          anyPushSucceeded = true;
+          await pushLocalizedTexts();
         } else {
           const body = await fetchJSON(`/pushes/api/items/${itemId}/push`, {
             method: 'POST',
@@ -2659,6 +2678,7 @@
             }, null, 2);
             syncPushButton();
           }
+          await autoPushLocalizedTextsAfterFirstMkPairing(body);
         }
       } catch (err) {
         showResponse(describeError(err), true,
