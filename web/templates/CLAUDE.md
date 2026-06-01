@@ -10,7 +10,8 @@ Jinja 模板专属规则。改本目录任何 `*.html` 前必读。
 - detail 模板要在 `_translate_detail_shell.html` 渲染出的页面上追加内容（asr-normalize-card 等）必须：
   - `{% extends "_translate_detail_shell.html" %}`
   - 用 `{% block detail_extra %}…{% endblock %}` 包裹要追加的 HTML/script/style
-- `detail_extra` 占位符位置：`_translate_detail_shell.html` 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。新增第四个 detail_mode（如 av_sync 之外的）沿用同一 block。
+- `detail_before_workbench` 占位符位置：`_translate_detail_shell.html` 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之前；只放必须高可见度的复核卡片，例如对话式 A/B 音色确认。
+- `detail_extra` 占位符位置：`_translate_detail_shell.html` 的 `{% block content %}` 内、`{% include "_task_workbench.html" %}` 之后、`{% endif %}` 之前。新增第四个 detail_mode（如 av_sync 之外的）默认沿用此 block。
 
 ### 反模式（禁止）
 - `{% include "_translate_detail_shell.html" %}` 之后再追加任何 raw HTML / `<script>` / `<style>`。

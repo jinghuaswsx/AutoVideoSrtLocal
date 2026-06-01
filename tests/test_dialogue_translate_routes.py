@@ -74,6 +74,7 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     body = resp.get_data(as_text=True)
     assert "Dialogue Detail" in body
     assert "A/B 音色确认" in body
+    assert body.index("A/B 音色确认") < body.index("处理进度")
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body

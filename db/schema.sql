@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE TABLE IF NOT EXISTS projects (
     id               VARCHAR(36) PRIMARY KEY,
     user_id          INT NOT NULL,
-    type             ENUM('translation','de_translate','fr_translate','copywriting','video_creation','video_review','text_translate','subtitle_removal','translate_lab','image_translate','multi_translate','bulk_translate','copywriting_translate','link_check','ja_translate','omni_translate','video_cover','english_redub') NOT NULL DEFAULT 'translation',
+    type             ENUM('translation','de_translate','fr_translate','copywriting','video_creation','video_review','text_translate','subtitle_removal','translate_lab','image_translate','multi_translate','bulk_translate','copywriting_translate','link_check','ja_translate','omni_translate','video_cover','english_redub','task_creator','omni_translate_v2','dialogue_translate') NOT NULL DEFAULT 'translation',
     original_filename VARCHAR(255),
     display_name     VARCHAR(255),
     thumbnail_path   VARCHAR(512),

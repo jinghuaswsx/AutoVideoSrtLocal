@@ -196,8 +196,7 @@
 </style>
 {% endblock %}
 
-{% block detail_extra %}
-<a class="back-link" href="/dialogue-translate">返回对话式视频翻译列表</a>
+{% block detail_before_workbench %}
 {% if not project.deleted_at %}
 <section
   id="dialogueVoicePanel"
@@ -219,6 +218,10 @@
   </div>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block detail_extra %}
+<a class="back-link" href="/dialogue-translate">返回对话式视频翻译列表</a>
 {% endblock %}
 
 {% block scripts %}
