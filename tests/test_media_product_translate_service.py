@@ -334,6 +334,41 @@ def test_start_product_translation_passes_task_center_child_id(monkeypatch):
     assert created["task_center_task_id"] == 456
 
 
+def test_start_product_translation_task_center_recreates_video_covers(monkeypatch):
+    from web.services import media_product_translate as svc
+
+    created = {}
+    monkeypatch.setattr(svc.medias, "list_raw_sources", lambda product_id: [{"id": 88}])
+    monkeypatch.setattr(svc.medias, "is_valid_language", lambda lang: lang == "it")
+    monkeypatch.setattr(
+        svc.bulk_translate_runtime,
+        "create_bulk_translate_task",
+        lambda **kwargs: created.update(kwargs) or "task-task-center-cover",
+    )
+    monkeypatch.setattr(svc.bulk_translate_runtime, "start_task", lambda *args, **kwargs: None)
+    monkeypatch.setattr(svc, "start_bulk_scheduler_background", lambda *args, **kwargs: True)
+
+    result = svc.start_product_translation(
+        user_id=7,
+        user_name="operator",
+        product_id=123,
+        body={
+            "raw_ids": ["88"],
+            "target_langs": ["it"],
+            "content_types": ["video_covers", "videos"],
+            "force_retranslate": False,
+            "task_center_task_id": "456",
+        },
+        ip="10.0.0.1",
+        user_agent="pytest-UA",
+        resolve_child_task_id_fn=lambda **kwargs: 456,
+    )
+
+    assert result.ok is True
+    assert created["task_center_task_id"] == 456
+    assert created["force_retranslate"] is True
+
+
 def test_start_product_translation_rejects_task_center_child_id_language_mismatch(monkeypatch):
     from web.services import media_product_translate as svc
 

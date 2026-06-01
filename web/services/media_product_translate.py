@@ -198,12 +198,16 @@ def start_product_translation(
         "user_agent": user_agent or "",
         "source": "medias_raw_translate",
     }
+    force_retranslate = bool(body.get("force_retranslate"))
+    if task_center_task_id is not None and "video_covers" in content_types:
+        force_retranslate = True
+
     task_id = bulk_translate_runtime.create_bulk_translate_task(
         user_id=user_id,
         product_id=product_id,
         target_langs=target_langs,
         content_types=content_types,
-        force_retranslate=bool(body.get("force_retranslate")),
+        force_retranslate=force_retranslate,
         video_params=body.get("video_params") or {},
         initiator=initiator,
         raw_source_ids=raw_ids_int,
