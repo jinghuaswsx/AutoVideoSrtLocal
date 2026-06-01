@@ -361,6 +361,9 @@
     var detailEraseTypeGroup = document.getElementById("srDetailEraseTypeGroup");
     var stateEraseType = document.getElementById("srStateEraseType");
     var stateEraseTypeItem = stateEraseType && stateEraseType.closest ? stateEraseType.closest(".sr-status-item") : null;
+    var stateTaskSubmittedAt = document.getElementById("srStateTaskSubmittedAt");
+    var stateResultReturnedAt = document.getElementById("srStateResultReturnedAt");
+    var stateProcessingElapsed = document.getElementById("srStateProcessingElapsed");
     var pendingActionMode = "submit";
     var DEFAULT_SELECTION_TOP_RATIO = 0.7;
     var DEFAULT_SELECTION_HEIGHT = 100;
@@ -399,6 +402,56 @@
           "'": "&#39;",
         }[ch];
       });
+    }
+
+    function formatTimestampForDisplay(value, emptyText) {
+      var raw = String(value == null ? "" : value).trim();
+      if (!raw) {
+        return emptyText;
+      }
+      var match = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+      if (match) {
+        return match[1] + " " + match[2];
+      }
+      var numeric = Number(raw);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        var date = new Date(numeric < 1000000000000 ? numeric * 1000 : numeric);
+        if (!Number.isNaN(date.getTime())) {
+          return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0"),
+          ].join("-") + " " + [
+            String(date.getHours()).padStart(2, "0"),
+            String(date.getMinutes()).padStart(2, "0"),
+            String(date.getSeconds()).padStart(2, "0"),
+          ].join(":");
+        }
+      }
+      return raw;
+    }
+
+    function formatElapsedForDisplay(value) {
+      if (value == null || value === "") {
+        return "未完成";
+      }
+      var seconds = Number(value);
+      if (!Number.isFinite(seconds) || seconds < 0) {
+        return "未完成";
+      }
+      seconds = Math.floor(seconds);
+      var hours = Math.floor(seconds / 3600);
+      var minutes = Math.floor((seconds % 3600) / 60);
+      var rest = seconds % 60;
+      var parts = [];
+      if (hours) {
+        parts.push(hours + "小时");
+      }
+      if (minutes) {
+        parts.push(minutes + "分");
+      }
+      parts.push(rest + "秒");
+      return parts.join("") + (seconds >= 60 ? "（" + seconds + "秒）" : "");
     }
 
     function getContainedMediaRect(container, mediaInfo) {
@@ -827,6 +880,15 @@
       bootstrap = Object.assign({}, bootstrap, state);
       if (stateStatus && state.status) {
         stateStatus.textContent = state.status;
+      }
+      if (stateTaskSubmittedAt) {
+        stateTaskSubmittedAt.textContent = formatTimestampForDisplay(state.task_submitted_at, "未提交");
+      }
+      if (stateResultReturnedAt) {
+        stateResultReturnedAt.textContent = formatTimestampForDisplay(state.result_returned_at, "未返回");
+      }
+      if (stateProcessingElapsed) {
+        stateProcessingElapsed.textContent = formatElapsedForDisplay(state.processing_elapsed_seconds);
       }
       if (stateBackend) {
         stateBackend.textContent = backendLabel((state && state.subtitle_backend) || "volc");

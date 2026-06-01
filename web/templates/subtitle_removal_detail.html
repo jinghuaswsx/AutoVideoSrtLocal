@@ -126,6 +126,18 @@
           <strong id="srStateStatus">{{ state.status or project.status or 'uploaded' }}</strong>
         </div>
         <div class="sr-status-item">
+          <span class="sr-status-label">任务提交时间</span>
+          <strong id="srStateTaskSubmittedAt">{{ state.task_submitted_at or '未提交' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">结果返回时间</span>
+          <strong id="srStateResultReturnedAt">{{ state.result_returned_at or '未返回' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">处理耗时</span>
+          <strong id="srStateProcessingElapsed">{% if state.processing_elapsed_seconds is not none %}{{ state.processing_elapsed_seconds }} 秒{% else %}未完成{% endif %}</strong>
+        </div>
+        <div class="sr-status-item">
           <span class="sr-status-label">处理范围</span>
           <strong id="srStateMode">{% if sr_remove_mode == 'box' %}框选去除{% else %}全屏去除{% endif %}</strong>
         </div>
@@ -153,7 +165,8 @@
         <div id="srResultPanel" class="sr-result-panel"></div>
         <div class="sr-action-row sr-result-actions">
           <button id="srResumeSubtitleRemoval" type="button" class="btn btn-secondary">继续轮询</button>
-          <button id="srResubmitSubtitleRemoval" type="button" class="btn btn-secondary">从零开始</button>
+          <button id="srResubmitSubtitleRemoval" type="button" class="btn btn-secondary">重提</button>
+          <button id="srTaskCenterRerunNiuma" type="button" class="btn btn-danger">重跑</button>
           <button id="srDeleteSubtitleRemoval" type="button" class="btn btn-danger">删除</button>
         </div>
       </div>
