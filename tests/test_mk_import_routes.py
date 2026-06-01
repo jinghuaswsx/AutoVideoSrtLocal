@@ -8,6 +8,28 @@ def test_mk_import_check_returns_empty_for_blank_query(authed_client_no_db):
     assert resp.get_json() == {"imported": [], "missing": []}
 
 
+def test_mk_import_probe_url_returns_probe_result(authed_client_no_db, monkeypatch):
+    from web.routes import mk_import as route
+
+    monkeypatch.setattr(
+        route.mk_import_svc,
+        "_probe_product_link",
+        lambda url: (False, "HTTP 404"),
+    )
+
+    resp = authed_client_no_db.get(
+        "/mk-import/probe-url",
+        query_string={"url": "https://cozyhoome.com/products/demo-rjc"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "ok": False,
+        "status_code": 404,
+        "detail": "HTTP 404",
+    }
+
+
 def test_mk_import_check_rejects_too_many_filenames(authed_client_no_db):
     filenames = ",".join(f"{idx}.mp4" for idx in range(101))
 

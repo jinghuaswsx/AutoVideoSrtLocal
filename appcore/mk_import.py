@@ -57,12 +57,26 @@ def _product_code_with_rjc(code: str | None) -> str:
     return f"{normalized}-rjc" if normalized else ""
 
 
+def _product_link_handle(product_link: str | None) -> str:
+    parsed = urlparse(str(product_link or "").strip())
+    parts = [part for part in parsed.path.split("/") if part]
+    if "products" not in parts:
+        return ""
+    index = parts.index("products")
+    if index + 1 >= len(parts):
+        return ""
+    return unquote(parts[index + 1]).strip().lower()
+
+
 def _canonical_product_link(product_link: str | None, product_code: str) -> str:
     raw_link = str(product_link or "").strip()
     code = _product_code_with_rjc(product_code) if product_code else ""
     if not code:
         return raw_link
     domain = product_link_domains.domain_from_url(raw_link)
+    raw_handle = _product_link_handle(raw_link)
+    if domain and raw_handle and _normalize_product_code(raw_handle) == _normalize_product_code(product_code):
+        return raw_link
     if not domain:
         domain = product_link_domains.DEFAULT_PRODUCT_LINK_DOMAINS[0]
     return product_link_domains.build_product_page_url(domain, "en", code)
@@ -129,17 +143,20 @@ def _product_link_warning(url: str) -> dict | None:
 
 def _check_product_links_availability(product: dict, default_link: str) -> dict | None:
     rows = product_link_domains.resolve_product_page_url_rows(product, "en")
-    if not rows:
-        return _product_link_warning(default_link)
-
+    candidates = [str(default_link or "").strip()]
+    candidates.extend(str(row.get("url") or "").strip() for row in rows or [])
     checked_warnings = []
-    for row in rows:
-        warning = _product_link_warning(row["url"])
+    seen = set()
+    for url in candidates:
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        warning = _product_link_warning(url)
         if not warning:
             return None
         checked_warnings.append(warning)
 
-    return checked_warnings[0] if checked_warnings else None
+    return checked_warnings[0] if checked_warnings else _product_link_warning(default_link)
 
 
 def _append_step_result(
