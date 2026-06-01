@@ -35,6 +35,23 @@ def test_create_product_payload_uses_rjc_product_code_and_link():
     assert payload["product_code"] == "abc-def-rjc"
     assert payload["product_link"] == "https://omurio.com/products/abc-def-rjc"
 
+def test_create_product_payload_preserves_matching_source_link_without_rjc_suffix():
+    payload = mk_import._build_create_product_payload(
+        {
+            "product_name": "Demo",
+            "product_code": "rainproof-lifelike-artificial-flowers-with-uv-shield-coating",
+            "product_link": "https://cozyhoome.com/products/rainproof-lifelike-artificial-flowers-with-uv-shield-coating",
+        },
+        translator_id=1,
+    )
+
+    assert payload["product_code"] == (
+        "rainproof-lifelike-artificial-flowers-with-uv-shield-coating-rjc"
+    )
+    assert payload["product_link"] == (
+        "https://cozyhoome.com/products/rainproof-lifelike-artificial-flowers-with-uv-shield-coating"
+    )
+
 
 def test_create_product_payload_extracts_chinese_name_from_filename():
     payload = mk_import._build_create_product_payload(
@@ -725,6 +742,37 @@ def test_check_product_links_availability_multi_domain(monkeypatch):
     product = {"id": 123, "product_code": "demo-rjc", "product_link": "https://cozyhoome.com/products/demo-rjc"}
     warning = mk_import._check_product_links_availability(product, product["product_link"])
     assert warning is None
+
+
+def test_check_product_links_availability_accepts_reachable_default_link(monkeypatch):
+    calls = []
+
+    def fake_probe_product_link(url):
+        calls.append(url)
+        if url == "https://cozyhoome.com/products/demo":
+            return True, None
+        return False, "HTTP 404"
+
+    monkeypatch.setattr(mk_import, "_probe_product_link", fake_probe_product_link)
+    monkeypatch.setattr(
+        mk_import.product_link_domains,
+        "resolve_product_page_url_rows",
+        lambda product, lang: [
+            {"domain": "newjoyloo.com", "url": "https://newjoyloo.com/products/demo-rjc"},
+        ],
+    )
+
+    product = {
+        "id": 0,
+        "product_code": "demo-rjc",
+        "product_link": "https://cozyhoome.com/products/demo",
+    }
+    warning = mk_import._check_product_links_availability(
+        product,
+        "https://cozyhoome.com/products/demo",
+    )
+    assert warning is None
+    assert calls[0] == "https://cozyhoome.com/products/demo"
 
 
 import pytest

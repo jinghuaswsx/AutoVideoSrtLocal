@@ -1,7 +1,7 @@
 """mk-import Blueprint — A 子系统：明空选品自动入素材库 API。"""
 from __future__ import annotations
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore import mk_import as mk_import_svc
