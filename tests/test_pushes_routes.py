@@ -1473,13 +1473,13 @@ def test_push_material_success_syncs_localized_texts_no_db(
             "target_url": "http://downstream.invalid/push",
             "payload": {"mode": "create", "item_id": 7},
             "headers": {"Content-Type": "application/json"},
-            "timeout": 30,
+            "timeout": 120,
         },
         {
             "target_url": "https://os.wedev.vip/api/marketing/medias/66/texts",
             "payload": localized_payload,
             "headers": {"Content-Type": "application/json", "Authorization": "Bearer token"},
-            "timeout": 30,
+            "timeout": 120,
         },
     ]
 
@@ -1672,7 +1672,7 @@ def test_push_route_delegates_downstream_post_to_appcore_helper_no_db(
         "target_url": "http://downstream.invalid/push",
         "payload": {"mode": "create", "item_id": 7},
         "headers": {"Content-Type": "application/json"},
-        "timeout": 30,
+        "timeout": 120,
     }
     assert calls["record_success"]["response_body"] == "created-full"
 
@@ -1917,7 +1917,7 @@ def test_push_localized_texts_route_delegates_downstream_post_to_appcore_helper_
         "target_url": "https://os.wedev.vip/api/marketing/medias/66/texts",
         "payload": {"texts": [{"lang": "German", "title": "T", "message": "M", "description": "D"}]},
         "headers": {"Content-Type": "application/json", "Authorization": "Bearer token"},
-        "timeout": 30,
+        "timeout": 120,
     }
 
 

@@ -125,7 +125,12 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
     if not body.get("texts"):
         return {"ok": False, "error": "localized_texts_empty", "status_code": 400}, 400
 
-    post_result = pushes.post_json_payload(target_url, body, headers=headers, timeout=30)
+    post_result = pushes.post_json_payload(
+        target_url,
+        body,
+        headers=headers,
+        timeout=pushes.PUSH_REQUEST_TIMEOUT_SECONDS,
+    )
     if post_result.get("error") == "downstream_unreachable":
         detail = str(post_result.get("detail") or "")
         _audit_push_action(
@@ -653,7 +658,7 @@ def api_push(item_id: int):
         push_url,
         payload,
         headers={"Content-Type": "application/json"},
-        timeout=30,
+        timeout=pushes.PUSH_REQUEST_TIMEOUT_SECONDS,
     )
     if post_result.get("error") == "downstream_unreachable":
         detail = str(post_result.get("detail") or "")

@@ -46,6 +46,25 @@ def test_post_json_payload_success(monkeypatch):
     }
 
 
+def test_post_json_payload_default_timeout_is_two_minutes(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        return _JsonPostResponse()
+
+    monkeypatch.setattr("appcore.pushes.requests.post", fake_post)
+
+    result = pushes.post_json_payload(
+        "https://downstream.example/push",
+        {"mode": "create"},
+    )
+
+    assert result["ok"] is True
+    assert pushes.PUSH_REQUEST_TIMEOUT_SECONDS == 120
+    assert captured["timeout"] == pushes.PUSH_REQUEST_TIMEOUT_SECONDS
+
+
 def test_post_json_payload_network_error(monkeypatch):
     import requests as _requests
 

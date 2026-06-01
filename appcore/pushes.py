@@ -32,6 +32,7 @@ _PUSH_SETTING_ENV_FALLBACK = {
 }
 
 _PRODUCT_LINKS_PUSH_PATH = "/dify/shopify/medias/links"
+PUSH_REQUEST_TIMEOUT_SECONDS = 120
 
 
 def _get_push_setting(key: str) -> str:
@@ -217,7 +218,7 @@ def post_json_payload(
     payload: dict[str, Any],
     *,
     headers: dict[str, str] | None = None,
-    timeout: int | float = 30,
+    timeout: int | float = PUSH_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     try:
         resp = requests.post(
@@ -1150,7 +1151,7 @@ def push_product_links(product: dict | None) -> dict:
             target_url,
             json=payload,
             headers=headers,
-            timeout=30,
+            timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
         return {
@@ -1302,7 +1303,7 @@ def _post_unsuitable_push_type(
             target_url,
             json=payload,
             headers=headers,
-            timeout=30,
+            timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
         return {
@@ -1589,7 +1590,12 @@ def push_product_localized_texts(product: dict | None) -> dict:
     target_url = preview["target_url"]
     payload = preview["payload"]
     try:
-        resp = requests.post(target_url, json=payload, headers=headers, timeout=30)
+        resp = requests.post(
+            target_url,
+            json=payload,
+            headers=headers,
+            timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+        )
     except requests.RequestException as exc:
         return {
             "ok": False,
