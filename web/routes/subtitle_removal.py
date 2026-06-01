@@ -525,6 +525,35 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     store.set_step(task_id, "submit", "queued")
     store.set_step_message(task_id, "submit", "等待后台提交去字幕任务")
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
+
+    # Check if task is task center raw video task
+    parent_task_id = _task_center_parent_task_id_from_subtitle_task(task_id)
+    if parent_task_id:
+        from appcore import task_raw_video_processing
+        # Update parent task status to raw_in_progress
+        db_execute(
+            "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+            "WHERE id=%s AND parent_task_id IS NULL",
+            ("raw_in_progress", parent_task_id),
+        )
+        # Write event raw_niuma_force_rerun to parent task
+        task_raw_video_processing._write_event(
+            parent_task_id,
+            "raw_niuma_force_rerun",
+            current_user.id,
+            {
+                "previous_subtitle_task_id": task_id,
+                "assignee_id": current_user.id,
+                "from_scratch": True,
+            },
+        )
+        # Start a watcher thread to monitor this task and attach the result when done!
+        task_raw_video_processing._start_watcher_thread(
+            parent_task_id=parent_task_id,
+            subtitle_task_id=task_id,
+            actor_user_id=current_user.id,
+        )
+
     return _json_response({"task_id": task_id, "status": "queued"}), 202
 
 
