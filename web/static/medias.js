@@ -8353,6 +8353,13 @@
     return '';
   }
 
+  function itemTaskLinkHtml(it) {
+    const taskId = Number(it && it.task_id || 0);
+    if (!taskId) return '';
+    const taskUrl = it && it.task_url ? String(it.task_url) : `/tasks/detail/${encodeURIComponent(String(taskId))}`;
+    return `<div class="vsource vsource-task" title="关联任务 #${escapeHtml(taskId)}"><a href="${escapeHtml(taskUrl)}" target="_blank" rel="noopener noreferrer">关联任务 #${escapeHtml(taskId)}</a></div>`;
+  }
+
   function edRenderItems(items) {
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
@@ -8364,6 +8371,7 @@
       const sourceHtml = sourceLabel
         ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
         : '';
+      const taskHtml = itemTaskLinkHtml(it);
       const versionsCount = Number(it.versions_count || 0);
       const historyHtml = versionsCount > 0
         ? `<button class="oc-btn text sm" type="button" data-act="history" title="历史版本">${icon('film', 12)}<span>历史版本 (${versionsCount})</span></button>`
@@ -8387,6 +8395,7 @@
           </div>
         </div>
         ${sourceHtml}
+        ${taskHtml}
         <div class="vtabs">
           <button type="button" class="vtab active" data-tab="img">图片</button>
           <button type="button" class="vtab" data-tab="video">视频</button>

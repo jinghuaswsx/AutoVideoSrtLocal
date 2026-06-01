@@ -530,6 +530,13 @@
   overflow:hidden;
   text-overflow:ellipsis;
 }
+.oc-vitem .vsource a {
+  color:inherit;
+  text-decoration:none;
+}
+.oc-vitem .vsource a:hover {
+  text-decoration:underline;
+}
 .oc-vitem .vtabs { display:flex; gap:var(--oc-sp-1); border-bottom:1px solid var(--oc-border); }
 .oc-vitem .vtab { flex:1; height:28px; background:none; border:none; color:var(--oc-fg-muted); font-size:12px; font-family:inherit; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-vitem .vtab:hover { color:var(--oc-fg); }

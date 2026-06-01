@@ -279,6 +279,7 @@ def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) 
     has_user_cover = bool(it.get("cover_object_key"))
     raw_sources_by_id = raw_sources_by_id or {}
     source_raw_id = _int_or_none(it.get("source_raw_id"))
+    task_id = _int_or_none(it.get("task_id"))
     if source_raw_id is None and it.get("auto_translated"):
         source_raw_id = _int_or_none(it.get("source_ref_id"))
     source_raw = raw_sources_by_id.get(source_raw_id or 0)
@@ -309,6 +310,8 @@ def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) 
         "bulk_task_id": it.get("bulk_task_id") or "",
         "auto_translated": bool(it.get("auto_translated")),
         "source_raw": source_raw_payload,
+        "task_id": task_id,
+        "task_url": f"/tasks/detail/{task_id}" if task_id else "",
         "versions_count": int(it.get("versions_count") or 0),
         "created_at": it["created_at"].isoformat() if it.get("created_at") else None,
     }

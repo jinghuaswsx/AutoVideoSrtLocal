@@ -141,3 +141,33 @@ def test_build_product_detail_response_includes_item_versions_count():
 
     assert count_calls == [[44]]
     assert payload["items"] == [{"id": 44, "versions_count": 2}]
+
+
+def test_serialize_item_includes_task_center_link_for_task_material():
+    from web.routes.medias._serializers import _serialize_item
+
+    payload = _serialize_item(
+        {
+            "id": 44,
+            "product_id": 123,
+            "lang": "de",
+            "filename": "translated.mp4",
+            "display_name": "translated.mp4",
+            "object_key": "media/translated.mp4",
+            "cover_object_key": None,
+            "thumbnail_path": None,
+            "duration_seconds": None,
+            "file_size": None,
+            "source_raw_id": 88,
+            "source_ref_id": None,
+            "bulk_task_id": "",
+            "auto_translated": False,
+            "task_id": 456,
+            "versions_count": 0,
+            "created_at": None,
+        },
+        {88: {"id": 88, "display_name": "raw-88.mp4"}},
+    )
+
+    assert payload["task_id"] == 456
+    assert payload["task_url"] == "/tasks/detail/456"

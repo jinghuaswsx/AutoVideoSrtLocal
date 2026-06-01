@@ -375,6 +375,22 @@ def test_medias_js_material_filename_validation_checks_spaces_before_localized_p
     assert no_space_pos < supplement_pos
 
 
+def test_medias_js_video_card_shows_task_link_under_source():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    render_start = script.index("function edRenderItems")
+    render_block = script[
+        render_start:
+        script.index("g.querySelectorAll('[data-item]", render_start)
+    ]
+
+    assert "function itemTaskLinkHtml(it)" in script
+    assert "关联任务" in script
+    assert "const taskHtml = itemTaskLinkHtml(it);" in render_block
+    assert render_block.index("${sourceHtml}") < render_block.index("${taskHtml}")
+    assert render_block.index("${taskHtml}") < render_block.index('<div class="vtabs">')
+
+
 def test_medias_search_input_runs_live_search():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
