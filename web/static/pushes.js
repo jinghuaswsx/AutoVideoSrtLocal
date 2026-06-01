@@ -2072,20 +2072,30 @@
     body.appendChild(contentCard);
 
     const respWrap = el('section', { class: 'pm-section pm-response', hidden: true });
+    const respHeader = el('div', { class: 'pm-response-header' });
     const respTitle = el('h4', {}, '推送响应');
+    const respToggle = el('button', { type: 'button', class: 'pm-response-toggle' }, '收起');
+    const respSummary = el('button', { type: 'button', class: 'pm-response-summary', hidden: true }, '展开推送信息');
+    const respBody = el('div', { class: 'pm-response-body' });
     const respPre = el('pre', { class: 'pm-json' });
     const respMkIdTip = el('div', { class: 'pm-mk-id-tip', hidden: true });
     const respLocalizedTextTip = el('div', { class: 'pm-localized-text-result', hidden: true });
+    const respLocalizedTargetUrl = el('div', { class: 'pm-localized-text-target-url', hidden: true });
     const respLocalizedPayloadWrap = el('div', { class: 'pm-localized-text-payload-wrap', hidden: true });
     const respLocalizedPayloadTitle = el('div', { class: 'pm-localized-text-payload-title' }, '文案推送报文');
     const respLocalizedPayloadPre = el('pre', { class: 'pm-localized-text-payload' });
     respLocalizedPayloadWrap.appendChild(respLocalizedPayloadTitle);
     respLocalizedPayloadWrap.appendChild(respLocalizedPayloadPre);
-    respWrap.appendChild(respTitle);
-    respWrap.appendChild(respPre);
-    respWrap.appendChild(respMkIdTip);
-    respWrap.appendChild(respLocalizedTextTip);
-    respWrap.appendChild(respLocalizedPayloadWrap);
+    respHeader.appendChild(respTitle);
+    respHeader.appendChild(respToggle);
+    respBody.appendChild(respPre);
+    respBody.appendChild(respMkIdTip);
+    respBody.appendChild(respLocalizedTextTip);
+    respBody.appendChild(respLocalizedTargetUrl);
+    respBody.appendChild(respLocalizedPayloadWrap);
+    respWrap.appendChild(respHeader);
+    respWrap.appendChild(respSummary);
+    respWrap.appendChild(respBody);
     mainPanel.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
@@ -2305,6 +2315,7 @@
     function showResponse(obj, isError, title) {
       respWrap.hidden = false;
       respTitle.textContent = title || '推送响应';
+      setResponseCollapsed(false);
       respPre.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
       respPre.classList.toggle('pm-json-error', !!isError);
       respMkIdTip.hidden = true;
@@ -2312,9 +2323,24 @@
       respLocalizedTextTip.hidden = true;
       respLocalizedTextTip.textContent = '';
       respLocalizedTextTip.classList.remove('is-success', 'is-error');
+      respLocalizedTargetUrl.hidden = true;
+      respLocalizedTargetUrl.textContent = '';
       respLocalizedPayloadWrap.hidden = true;
       respLocalizedPayloadPre.textContent = '';
     }
+
+    function setResponseCollapsed(collapsed) {
+      const title = respTitle.textContent || '推送响应';
+      respWrap.classList.toggle('is-collapsed', !!collapsed);
+      respToggle.textContent = collapsed ? '展开' : '收起';
+      respToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      respSummary.hidden = !collapsed;
+      respSummary.textContent = `展开推送信息：${title}`;
+      respSummary.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
+
+    respToggle.addEventListener('click', () => setResponseCollapsed(true));
+    respSummary.addEventListener('click', () => setResponseCollapsed(false));
 
     function showMkIdMatch(match) {
       if (!match) return;
@@ -2357,7 +2383,18 @@
       respLocalizedTextTip.classList.toggle('is-success', !!result.ok);
       respLocalizedTextTip.classList.toggle('is-error', !result.ok);
       respLocalizedTextTip.textContent = localizedTextPushResultMessage(result);
+      renderLocalizedTextPushTargetUrl(result.target_url);
       renderLocalizedTextPushPayload(result.payload);
+    }
+
+    function renderLocalizedTextPushTargetUrl(targetUrl) {
+      if (!targetUrl) {
+        respLocalizedTargetUrl.hidden = true;
+        respLocalizedTargetUrl.textContent = '';
+        return;
+      }
+      respLocalizedTargetUrl.hidden = false;
+      respLocalizedTargetUrl.textContent = `文案推送地址：${targetUrl}`;
     }
 
     function renderLocalizedTextPushPayload(payload) {
