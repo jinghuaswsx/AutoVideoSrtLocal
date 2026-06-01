@@ -144,6 +144,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
             "error": "downstream_unreachable",
             "detail": detail,
             "target_url": target_url,
+            "payload": body,
             "status_code": 502,
         }, 502
 
@@ -158,6 +159,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
             "upstream_status": post_result.get("upstream_status"),
             "response_body": post_result.get("response_body") or "",
             "target_url": target_url,
+            "payload": body,
             "status_code": 200,
         }, 200
 
@@ -173,6 +175,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
         "upstream_status": post_result.get("upstream_status"),
         "response_body": post_result.get("response_body") or "",
         "target_url": target_url,
+        "payload": body,
         "status_code": 502,
     }, 502
 

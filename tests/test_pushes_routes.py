@@ -1468,6 +1468,7 @@ def test_push_material_success_syncs_localized_texts_no_db(
     assert body["ok"] is True
     assert body["localized_texts_push"]["ok"] is True
     assert body["localized_texts_push"]["target_url"] == "https://os.wedev.vip/api/marketing/medias/66/texts"
+    assert body["localized_texts_push"]["payload"] == localized_payload
     assert posts == [
         {
             "target_url": "http://downstream.invalid/push",
@@ -1546,6 +1547,9 @@ def test_push_material_success_reports_localized_texts_failure_no_db(
     assert body["localized_texts_push"]["error"] == "downstream_error"
     assert body["localized_texts_push"]["upstream_status"] == 500
     assert body["localized_texts_push"]["response_body"] == "text failed"
+    assert body["localized_texts_push"]["payload"] == {
+        "texts": [{"lang": "French", "title": "T", "message": "M", "description": "D"}],
+    }
 
 
 def test_push_success_marks_pushed(logged_in_client, seeded_item, monkeypatch):
@@ -1913,6 +1917,9 @@ def test_push_localized_texts_route_delegates_downstream_post_to_appcore_helper_
 
     assert response.status_code == 200
     assert response.get_json()["target_url"] == "https://os.wedev.vip/api/marketing/medias/66/texts"
+    assert response.get_json()["payload"] == {
+        "texts": [{"lang": "German", "title": "T", "message": "M", "description": "D"}],
+    }
     assert calls["post"] == {
         "target_url": "https://os.wedev.vip/api/marketing/medias/66/texts",
         "payload": {"texts": [{"lang": "German", "title": "T", "message": "M", "description": "D"}]},
@@ -2451,9 +2458,14 @@ def test_pushes_modal_displays_backend_localized_texts_result_after_material_pus
     assert "async function pushLocalizedTexts()" in script
     assert "showLocalizedTextPushResult(body.localized_texts_push);" in script
     assert "文案推送结果" in script
+    assert "renderLocalizedTextPushPayload(result.payload)" in script
+    assert "文案推送报文" in script
     assert "autoPushLocalizedTextsAfterFirstMkPairing" not in script
     assert ".pm-localized-text-result" in style
-    assert "font-size: 2em" in style
+    assert ".pm-localized-text-payload" in style
+    assert "font-size: 2em" not in style
+    assert "max-height: 320px" in style
+    assert "overflow: auto" in style
 
 
 # ================================================================

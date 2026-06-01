@@ -2068,10 +2068,16 @@
     const respPre = el('pre', { class: 'pm-json' });
     const respMkIdTip = el('div', { class: 'pm-mk-id-tip', hidden: true });
     const respLocalizedTextTip = el('div', { class: 'pm-localized-text-result', hidden: true });
+    const respLocalizedPayloadWrap = el('div', { class: 'pm-localized-text-payload-wrap', hidden: true });
+    const respLocalizedPayloadTitle = el('div', { class: 'pm-localized-text-payload-title' }, '文案推送报文');
+    const respLocalizedPayloadPre = el('pre', { class: 'pm-localized-text-payload' });
+    respLocalizedPayloadWrap.appendChild(respLocalizedPayloadTitle);
+    respLocalizedPayloadWrap.appendChild(respLocalizedPayloadPre);
     respWrap.appendChild(respTitle);
     respWrap.appendChild(respPre);
     respWrap.appendChild(respMkIdTip);
     respWrap.appendChild(respLocalizedTextTip);
+    respWrap.appendChild(respLocalizedPayloadWrap);
     mainPanel.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
@@ -2298,6 +2304,8 @@
       respLocalizedTextTip.hidden = true;
       respLocalizedTextTip.textContent = '';
       respLocalizedTextTip.classList.remove('is-success', 'is-error');
+      respLocalizedPayloadWrap.hidden = true;
+      respLocalizedPayloadPre.textContent = '';
     }
 
     function showMkIdMatch(match) {
@@ -2341,6 +2349,17 @@
       respLocalizedTextTip.classList.toggle('is-success', !!result.ok);
       respLocalizedTextTip.classList.toggle('is-error', !result.ok);
       respLocalizedTextTip.textContent = localizedTextPushResultMessage(result);
+      renderLocalizedTextPushPayload(result.payload);
+    }
+
+    function renderLocalizedTextPushPayload(payload) {
+      if (!payload) {
+        respLocalizedPayloadWrap.hidden = true;
+        respLocalizedPayloadPre.textContent = '';
+        return;
+      }
+      respLocalizedPayloadWrap.hidden = false;
+      respLocalizedPayloadPre.textContent = JSON.stringify(payload, null, 2);
     }
 
     function close() {

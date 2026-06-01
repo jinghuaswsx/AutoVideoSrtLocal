@@ -1688,13 +1688,38 @@
 .pm-localized-text-result {
   margin-top: var(--oc-sp-3);
   color: #0f67d1;
-  font-weight: 800;
-  font-size: 2em;
-  line-height: 1.25;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.55;
   word-break: break-word;
 }
 .pm-localized-text-result.is-error {
   color: #0f67d1;
+}
+.pm-localized-text-payload-wrap {
+  margin-top: var(--oc-sp-3);
+}
+.pm-localized-text-payload-title {
+  margin-bottom: var(--oc-sp-2);
+  color: var(--oc-fg-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.pm-localized-text-payload {
+  margin: 0;
+  padding: var(--oc-sp-3);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-family: "JetBrains Mono", "Geist Mono", ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .pm-footer {
   display: flex;
