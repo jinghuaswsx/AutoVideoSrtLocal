@@ -8401,7 +8401,12 @@
     if (!keyword) return '/xuanpin/mk';
     const params = new URLSearchParams();
     params.set('q', keyword);
-    return `/xuanpin/mk?q=${params.toString()}`;
+    return `/xuanpin/mk?${params.toString()}`;
+  }
+
+  function edIsLocalizedSourceVideo(it, sourceItem) {
+    if (!sourceItem || !Number(sourceItem.id || 0)) return false;
+    return String((it && it.lang) || 'en').trim().toLowerCase() !== 'en';
   }
 
   function itemSourceHtml(it) {
@@ -8409,12 +8414,13 @@
     if (!sourceLabel) return '';
     const sourceItem = edFindSourceEnglishItem(it, sourceLabel);
     const sourceName = edItemDisplayName(sourceItem) || sourceLabel;
-    const sourceMkMaterial = (it && it.source_mk_material)
-      || (sourceItem && sourceItem.source_mk_material)
-      || null;
-    const sourceHref = sourceMkMaterial
-      ? edBuildMingkongSourceHref(sourceMkMaterial, sourceName)
-      : edBuildMingkongSourceHref(null, sourceName || sourceLabel);
+    const isLocalizedSourceVideo = edIsLocalizedSourceVideo(it, sourceItem);
+    const sourceMkMaterial = (it && it.source_mk_material) || null;
+    const sourceHref = isLocalizedSourceVideo
+      ? edBuildSourceVideoHref(it, sourceItem, sourceLabel)
+      : (sourceMkMaterial
+          ? edBuildMingkongSourceHref(sourceMkMaterial, sourceName)
+          : edBuildMingkongSourceHref(null, sourceName || sourceLabel));
     const sourceNameHtml = sourceHref
       ? `<a href="${escapeHtml(sourceHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceName)}</a>`
       : `<span>${escapeHtml(sourceName)}</span>`;

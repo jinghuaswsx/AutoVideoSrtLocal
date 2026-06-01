@@ -4,7 +4,8 @@
 
 ## 规则
 
-- 如果素材本身绑定了明空素材记录，来源视频链接直达 `/xuanpin/mk/videos/<material_key>`。
+- 小语种/本地化视频卡片如果能匹配到 EN 来源素材，来源视频链接继续跳素材管理库的 EN 卡片聚焦链接，避免误跳明空选品素材。
+- 如果 EN 原素材卡片本身绑定了明空素材记录，来源视频链接直达 `/xuanpin/mk/videos/<material_key>`。
 - 如果绑定记录没有保存 `material_key`，用明空现有规则根据 `product_code + mk_product_id + video_path` 反推。
 - 如果没有明空绑定，则用素材名生成 `/xuanpin/mk?q=<搜索词>` 搜索链接。
 - 明空选品页加载时识别 `q` 参数并填充搜索框；点击搜索时同步更新 URL 参数。
