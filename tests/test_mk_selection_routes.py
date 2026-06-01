@@ -292,16 +292,24 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "新进Top100" not in template
 
 
-def test_mk_selection_material_archive_tabs_do_not_use_product_snapshot_selector():
+def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day_snapshot():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
+    assert template.index('id="snapshotRangeSelect"') < template.index('id="snapshotSelect"')
+    assert '<option value="all">全部</option>' in template
+    assert "function syncMkSnapshotModeControls()" in template
+    assert "function loadMkMaterialSnapshots()" in template
+    assert "function ensureMkSnapshotOptionsForTab" in template
+    assert "/xuanpin/api/mk-material-library/snapshots?limit=60" in template
+    assert "let selectedMkSnapshotSource = '';" in template
+    assert "snapshotSelect.hidden = Boolean(selectedMkRange);" in template
     assert (
         "const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}"
         "&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-material-library?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkLibraryStatusQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
@@ -346,7 +354,7 @@ def test_mk_selection_manual_video_search_clears_active_product_code_before_load
     assert "function runMkSearch(options = {})" in template
     assert "if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {" in template
     assert "activeMkProductCode = '';" in template
-    assert "switchMkLibraryTab('videos', {preserveProductCode: true});" in template
+    assert "switchMkLibraryTab('videos', {preserveProductCode: true, forceLoad: true});" in template
 
 
 def test_mk_material_search_index_migration_is_idempotent():

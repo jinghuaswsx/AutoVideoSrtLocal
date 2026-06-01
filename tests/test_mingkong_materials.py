@@ -1138,6 +1138,199 @@ def test_list_material_library_keyword_matches_video_filename_and_uses_same_filt
     assert "s.video_path LIKE %s" in list_sql
 
 
+def test_list_material_snapshot_options_lists_successful_material_runs(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+
+    def fake_query(sql, args=()):
+        captured.append((sql, args))
+        assert "FROM mingkong_material_sync_runs" in sql
+        assert "status = 'success'" in sql
+        return [
+            {
+                "snapshot_date": date(2026, 6, 1),
+                "snapshot_at": datetime(2026, 6, 1, 5, 0, 4),
+                "snapshot_slot": "0500",
+                "material_count": 4920,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_snapshot_options(limit=60)
+
+    assert result == {
+        "items": [
+            {
+                "snapshot": "2026-06-01",
+                "snapshot_at": "2026-06-01 05:00:04",
+                "snapshot_slot": "0500",
+                "material_count": 4920,
+            }
+        ],
+        "default_snapshot": "2026-06-01",
+    }
+    assert captured[0][1] == (60,)
+
+
+def test_list_material_library_all_without_keyword_reads_all_historical_snapshots(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", lambda items: items)
+    monkeypatch.setattr(mm, "_enrich_material_yesterday_delta", lambda items, **_: items)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "COUNT(*) AS cnt" in sql:
+            assert "BETWEEN" not in sql
+            assert "snapshot_date = %s" not in sql
+            return {"cnt": 1}
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        assert "BETWEEN" not in sql
+        assert "snapshot_date = %s" not in sql
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "abc",
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "product_name": "Cool Widget",
+                "product_url": "https://shop.example/products/cool-widget",
+                "mk_product_id": 901,
+                "mk_product_name": "MK Cool",
+                "mk_product_link": "https://shop.example/products/cool-widget-rjc",
+                "video_name": "winner.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "local_cover_object_key": "",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
+                "cumulative_90_spend": 12000,
+                "video_ads_count": 9,
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(range_key="all", page=1, page_size=100)
+
+    assert result["range"] == "all"
+    assert result["snapshot"] == ""
+    assert result["total"] == 1
+    assert result["items"][0]["video_name"] == "winner.mp4"
+    assert any(
+        "GROUP BY s.material_key" in sql
+        for kind, sql, _args in captured
+        if kind == "query"
+    )
+
+
+def test_list_material_library_all_keyword_uses_live_search_and_rjc_variant(monkeypatch):
+    searched = []
+    fetched_ids = []
+
+    keyword = "scratch-free-5-finger-wash-mitt-rjc"
+    base_code = "scratch-free-5-finger-wash-mitt"
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", lambda items: items)
+    monkeypatch.setattr(mm, "query_one", lambda sql, args=(): (_ for _ in ()).throw(AssertionError(sql)))
+    monkeypatch.setattr(mm, "query", lambda sql, args=(): (_ for _ in ()).throw(AssertionError(sql)))
+    monkeypatch.setattr(mm, "_mk_headers", lambda: {"Authorization": "Bearer test"})
+    monkeypatch.setattr(mm, "_mk_base_url", lambda: "https://mk.example")
+
+    def fake_search(session, *, base_url, headers, product_code, timeout_seconds, allow_login_refresh=True):
+        searched.append(product_code)
+        if product_code == keyword:
+            return [
+                {
+                    "id": 3754,
+                    "product_name": "五指洗车手套 RJC",
+                    "product_links": [f"https://shop.example/products/{keyword}"],
+                }
+            ]
+        if product_code == base_code:
+            return [
+                {
+                    "id": 3337,
+                    "product_name": "五指洗车手套",
+                    "product_links": [f"https://shop.example/products/{base_code}"],
+                }
+            ]
+        return []
+
+    def fake_fetch(session, *, base_url, headers, mk_product, timeout_seconds, allow_login_refresh=True):
+        fetched_ids.append(int(mk_product["id"]))
+        if int(mk_product["id"]) == 3337:
+            return {
+                **mk_product,
+                "main_image": "https://cdn.example/base.jpg",
+                "videos": [
+                    {
+                        "name": "2026.03.20-五指洗车手套-原素材-指派-李文龙.mp4",
+                        "path": "uploads2/2026.03.20-五指洗车手套-原素材-指派-李文龙.mp4",
+                        "image_path": "uploads2/base.jpg",
+                        "spends": "8.04万",
+                        "ads_count": 29,
+                        "author": "李文龙",
+                    }
+                ],
+            }
+        return {
+            **mk_product,
+            "main_image": "https://cdn.example/rjc.jpg",
+            "videos": [
+                {
+                    "name": "2026.04.22-scratch-free-5-finger-wash-mitt-AI图片素材-11-陈绍坤.png",
+                    "path": "uploads2/localized.png",
+                    "image_path": "uploads2/localized.jpg",
+                    "spends": "295",
+                    "ads_count": 2,
+                    "author": "陈绍坤",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mm, "_search_mingkong_items", fake_search)
+    monkeypatch.setattr(mm, "_fetch_mingkong_product_detail", fake_fetch)
+
+    result = mm.list_material_library(
+        range_key="all",
+        keyword=keyword,
+        page=1,
+        page_size=100,
+    )
+
+    assert result["range"] == "all"
+    assert result["snapshot"] == ""
+    assert keyword in searched
+    assert base_code in searched
+    assert set(fetched_ids) == {3337, 3754}
+    assert result["total"] == 2
+    names = [item["video_name"] for item in result["items"]]
+    assert "2026.03.20-五指洗车手套-原素材-指派-李文龙.mp4" in names
+    original = next(
+        item for item in result["items"]
+        if item["mk_product_id"] == 3337
+    )
+    assert original["product_code"] == base_code
+    assert round(original["video_spends"], 2) == 80400.0
+    assert original["video_author"] == "李文龙"
+
+
 def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypatch):
     captured = []
 

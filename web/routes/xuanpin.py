@@ -325,6 +325,17 @@ def api_mk_material_library():
     return jsonify(result)
 
 
+@bp.route("/api/mk-material-library/snapshots", methods=["GET"])
+@login_required
+def api_mk_material_library_snapshots():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_materials().list_material_snapshot_options(
+        limit=request.args.get("limit") or 60,
+    )
+    return jsonify(result)
+
+
 @bp.route("/api/mk-yesterday-top300", methods=["GET"])
 @bp.route("/api/mk-yesterday-top100", methods=["GET"])
 @login_required
