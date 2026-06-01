@@ -1164,6 +1164,110 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
     assert captured["args"] == (44,)
 
 
+def test_get_child_readiness_uses_source_fallback_for_unified_output(monkeypatch):
+    from appcore import pushes, tasks
+
+    lookup_calls = []
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "media_product_id": 9,
+            "media_item_id": 1093,
+            "country_code": "DE",
+            "product_code": "robot-kit-rjc",
+            "ad_supported_langs": "de,fr",
+        },
+    )
+
+    def fake_find_child_item(**kwargs):
+        lookup_calls.append(kwargs)
+        if kwargs.get("allow_source_fallback"):
+            return {
+                "id": 5,
+                "product_id": 9,
+                "lang": "de",
+                "filename": "robot-kit-de.mp4",
+                "display_name": "德语视频",
+                "object_key": "1/medias/9/robot-kit-de.mp4",
+                "cover_object_key": "1/medias/9/robot-kit-de-cover.jpg",
+                "file_size": 10485760,
+                "source_raw_id": 251,
+                "task_id": 316,
+            }
+        return None
+
+    monkeypatch.setattr(tasks, "_find_child_task_target_lang_item", fake_find_child_item)
+    monkeypatch.setattr(
+        tasks,
+        "_find_product",
+        lambda product_id: {"id": product_id, "ad_supported_langs": "de,fr"},
+    )
+    monkeypatch.setattr(
+        pushes,
+        "compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(pushes, "is_ready", lambda readiness: True)
+    monkeypatch.setattr(tasks, "_copywriting_evidence", lambda product_id, lang: [])
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_recent_copywriting_translate_task_id",
+        lambda *args, **kwargs: "",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_recent_detail_image_translate_task_id",
+        lambda *args, **kwargs: "",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_detail_image_preview_rows",
+        lambda *args, **kwargs: [],
+        raising=False,
+    )
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+
+    payload = tasks.get_child_readiness(314)
+
+    assert payload["media_item_id"] == 5
+    assert lookup_calls == [
+        {
+            "task_id": 314,
+            "row": {
+                "media_product_id": 9,
+                "media_item_id": 1093,
+                "country_code": "DE",
+                "product_code": "robot-kit-rjc",
+                "ad_supported_langs": "de,fr",
+            },
+            "allow_source_fallback": True,
+        }
+    ]
+    assert payload["checks"][0]["key"] == "localized_media_item"
+    assert payload["checks"][0]["ok"] is True
+
+
 def test_get_child_readiness_computes_payload(monkeypatch):
     from appcore import pushes, tasks
 

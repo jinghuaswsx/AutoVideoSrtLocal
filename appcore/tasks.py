@@ -2998,7 +2998,11 @@ def _child_readiness_payload_for_row(
 ) -> dict:
     from appcore import pushes
 
-    item = _find_child_task_target_lang_item(task_id=int(task_id), row=row)
+    item = _find_child_task_target_lang_item(
+        task_id=int(task_id),
+        row=row,
+        allow_source_fallback=True,
+    )
     if not item:
         return _child_acceptance_payload(
             task_id=int(task_id),

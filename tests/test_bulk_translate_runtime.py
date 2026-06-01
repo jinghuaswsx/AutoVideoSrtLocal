@@ -2387,6 +2387,43 @@ def test_materialize_multi_translate_cover_never_uses_video_thumbnail_without_tr
     assert result == ""
 
 
+def test_materialize_multi_translate_video_uses_unified_object_key(
+    runtime_env,
+    monkeypatch,
+    tmp_path,
+):
+    mod, _fake_db = runtime_env
+    video = tmp_path / "hard.mp4"
+    video.write_bytes(b"translated-video")
+    writes = []
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 33,
+            "video_object_key": "33/medias/6/raw_sources/source.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        mod.local_media_storage,
+        "write_bytes",
+        lambda object_key, payload: writes.append((object_key, payload)),
+    )
+
+    object_key = mod._materialize_multi_translate_video(
+        product_id=6,
+        lang="it",
+        source_raw_id=19,
+        child_task_id="video-child-abc123",
+        child_state={"result": {"hard_video": str(video)}},
+    )
+
+    assert object_key == "33/medias/6/it_source.mp4"
+    assert writes == [(object_key, b"translated-video")]
+
+
 def test_sync_child_result_refreshes_video_covers_for_any_translation_kind(runtime_env, monkeypatch):
     mod, _fake_db = runtime_env
     refreshed = []
