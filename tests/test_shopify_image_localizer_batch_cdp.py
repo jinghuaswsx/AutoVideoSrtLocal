@@ -1105,6 +1105,7 @@ def test_apply_uploaded_replacements_keeps_large_target_size_responsive_when_dis
     assert "max-height" not in updated
 
 
+@pytest.mark.allow_shopify_browser_automation
 def test_fetch_storefront_display_sizes_indexes_html_src_when_current_src_differs(monkeypatch):
     calls: list[tuple] = []
     html_src = "https://cdn.example.com/images/original-detail.jpg?v=1"
@@ -2313,6 +2314,7 @@ def test_ez_replace_many_marks_final_missing_language_markers_failed(monkeypatch
     assert "[轮播图] 整体完成：请求=2 成功=1 跳过=0 失败=1" in output
 
 
+@pytest.mark.allow_shopify_browser_automation
 def test_preload_opens_business_page_after_google_first_tab(monkeypatch):
     calls: list[tuple] = []
 
@@ -2494,6 +2496,7 @@ def test_google_home_tab_is_restored_when_first_tab_was_closed_or_reused():
     ]
 
 
+@pytest.mark.allow_shopify_browser_automation
 def test_open_managed_tab_uses_business_tab_and_applies_tab_limit(monkeypatch):
     calls: list[tuple] = []
 
@@ -2683,6 +2686,7 @@ def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch,
     assert ("wait_for_timeout", 1000) in calls
 
 
+@pytest.mark.allow_shopify_browser_automation
 def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypatch):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -2724,6 +2728,7 @@ def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypat
     assert urls[1] == "https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589"
 
 
+@pytest.mark.allow_shopify_browser_automation
 def test_ensure_cdp_chrome_restarts_alive_port_owned_by_other_profile(monkeypatch):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
