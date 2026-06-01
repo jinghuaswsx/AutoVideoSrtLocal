@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Callable
+from urllib.parse import quote
 
 from flask import jsonify
 
-from appcore import medias, product_roas
+from appcore import media_video_materials, medias, product_roas
+from web.services.media_mk_selection import normalize_mk_media_path
 
 
 SerializeProductFn = Callable[..., dict]
 SerializeItemFn = Callable[[dict, dict[int, dict]], dict]
+_MATERIAL_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def product_detail_flask_response(payload: dict):
@@ -71,12 +76,88 @@ def _source_english_item_payload(item: dict | None) -> dict | None:
         return None
     filename = str(item.get("filename") or "").strip()
     display_name = _source_item_name(item) or filename
-    return {
+    payload = {
         "id": item_id,
         "filename": filename,
         "display_name": display_name,
         "lang": str(item.get("lang") or "en").strip().lower() or "en",
     }
+    source_mk_material = item.get("source_mk_material")
+    if source_mk_material:
+        payload["source_mk_material"] = source_mk_material
+    return payload
+
+
+def _material_key_from_binding(binding: dict) -> str:
+    metadata = binding.get("mk_video_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    direct_key = str(metadata.get("material_key") or binding.get("material_key") or "").strip().lower()
+    if _MATERIAL_KEY_RE.fullmatch(direct_key):
+        return direct_key
+    video_path = normalize_mk_media_path(
+        str(binding.get("mk_video_path") or metadata.get("video_path") or "")
+    )
+    if not video_path:
+        return ""
+    product_code = str(
+        metadata.get("product_code")
+        or binding.get("product_code")
+        or ""
+    ).strip().lower()
+    mk_product_id = str(
+        binding.get("mk_product_id")
+        or metadata.get("mk_product_id")
+        or metadata.get("mk_id")
+        or ""
+    ).strip()
+    raw = "|".join([product_code, mk_product_id, video_path])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _mk_source_material_payload(item: dict, binding: dict | None) -> dict | None:
+    if not binding:
+        return None
+    metadata = binding.get("mk_video_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    display_name = str(
+        binding.get("mk_video_name")
+        or metadata.get("filename")
+        or metadata.get("video_name")
+        or item.get("display_name")
+        or item.get("filename")
+        or ""
+    ).strip()
+    video_path = normalize_mk_media_path(
+        str(binding.get("mk_video_path") or metadata.get("video_path") or "")
+    )
+    material_key = _material_key_from_binding(binding)
+    payload = {
+        "material_key": material_key,
+        "detail_url": f"/xuanpin/mk/videos/{material_key}" if material_key else "",
+        "search_url": f"/xuanpin/mk?q={quote(display_name, safe='')}" if display_name else "/xuanpin/mk",
+        "display_name": display_name,
+        "mk_product_id": binding.get("mk_product_id"),
+        "mk_product_name": binding.get("mk_product_name") or "",
+        "video_path": video_path,
+    }
+    return payload
+
+
+def _annotate_source_mk_materials(
+    items: list[dict],
+    bindings_by_item_id: dict[int, dict],
+) -> list[dict]:
+    annotated: list[dict] = []
+    for item in items:
+        item_id = _int_or_none(item.get("id"))
+        source_mk_material = _mk_source_material_payload(
+            item,
+            bindings_by_item_id.get(item_id or 0),
+        )
+        annotated.append({**item, "source_mk_material": source_mk_material})
+    return annotated
 
 
 def _annotate_source_english_items(
@@ -118,6 +199,7 @@ def build_product_detail_response(
     list_copywritings_fn=None,
     get_configured_rmb_per_usd_fn=None,
     count_item_versions_fn=None,
+    list_item_mk_bindings_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
     serialize_item_fn: SerializeItemFn | None = None,
 ) -> dict:
@@ -128,6 +210,9 @@ def build_product_detail_response(
     list_xmyc_unit_prices_fn = list_xmyc_unit_prices_fn or medias.list_xmyc_unit_prices
     list_copywritings_fn = list_copywritings_fn or medias.list_copywritings
     count_item_versions_fn = count_item_versions_fn or medias.count_item_versions
+    list_item_mk_bindings_fn = (
+        list_item_mk_bindings_fn or media_video_materials.list_mk_bindings_for_items
+    )
     get_configured_rmb_per_usd_fn = (
         get_configured_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd
     )
@@ -145,6 +230,7 @@ def build_product_detail_response(
         }
     item_ids = [int(item["id"]) for item in items if item.get("id") is not None]
     version_counts = count_item_versions_fn(item_ids)
+    mk_bindings_by_item_id = list_item_mk_bindings_fn(item_ids)
     items = [
         {
             **item,
@@ -153,6 +239,7 @@ def build_product_detail_response(
         }
         for item in items
     ]
+    items = _annotate_source_mk_materials(items, mk_bindings_by_item_id)
     items = _annotate_source_english_items(items, raw_sources_by_id)
     skus = list_product_skus_fn(product_id)
     xmyc_index = list_xmyc_unit_prices_fn(

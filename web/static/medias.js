@@ -8346,6 +8346,8 @@
   }
 
   function itemSourceLabel(it) {
+    const mkSource = it && it.source_mk_material;
+    if (mkSource && mkSource.display_name) return mkSource.display_name;
     const source = it && it.source_raw;
     if (source && source.display_name) return source.display_name;
     const rawId = it && (it.source_raw_id || (it.auto_translated && it.source_ref_id));
@@ -8389,12 +8391,30 @@
     return `/medias/?${params.toString()}`;
   }
 
+  function edBuildMingkongSourceHref(sourceMaterial, sourceLabel) {
+    const source = sourceMaterial || {};
+    const directHref = String(source.detail_url || '').trim();
+    if (directHref) return directHref;
+    const searchHref = String(source.search_url || '').trim();
+    if (searchHref) return searchHref;
+    const keyword = String(sourceLabel || source.display_name || '').trim();
+    if (!keyword) return '/xuanpin/mk';
+    const params = new URLSearchParams();
+    params.set('q', keyword);
+    return `/xuanpin/mk?q=${params.toString()}`;
+  }
+
   function itemSourceHtml(it) {
     const sourceLabel = itemSourceLabel(it);
     if (!sourceLabel) return '';
     const sourceItem = edFindSourceEnglishItem(it, sourceLabel);
     const sourceName = edItemDisplayName(sourceItem) || sourceLabel;
-    const sourceHref = sourceItem ? edBuildSourceVideoHref(it, sourceItem, sourceLabel) : '';
+    const sourceMkMaterial = (it && it.source_mk_material)
+      || (sourceItem && sourceItem.source_mk_material)
+      || null;
+    const sourceHref = sourceMkMaterial
+      ? edBuildMingkongSourceHref(sourceMkMaterial, sourceName)
+      : edBuildMingkongSourceHref(null, sourceName || sourceLabel);
     const sourceNameHtml = sourceHref
       ? `<a href="${escapeHtml(sourceHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceName)}</a>`
       : `<span>${escapeHtml(sourceName)}</span>`;

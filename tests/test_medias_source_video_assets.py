@@ -9,6 +9,9 @@ def test_medias_js_renders_source_video_as_two_line_deep_link():
 
     assert "function edFindSourceEnglishItem" in script
     assert "function edBuildSourceVideoHref" in script
+    assert "function edBuildMingkongSourceHref" in script
+    assert "source_mk_material" in script
+    assert "return `/xuanpin/mk?q=${params.toString()}`;" in script
     assert "params.set('focus', 'source_video')" in script
     assert 'class="vsource-label">来源视频</span>' in script
     assert 'class="vsource-name"' in script

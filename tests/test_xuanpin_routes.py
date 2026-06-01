@@ -251,10 +251,24 @@ def test_xuanpin_mk_video_import_metadata_includes_mk_paths(authed_client_no_db)
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
+    assert 'data-mki-material-key="${escapeHtml(r.material_key || \'\')}"' in body
     assert 'data-mki-video-path="${escapeHtml(videoPath)}"' in body
     assert 'data-mki-cover-path="${escapeHtml(coverPath)}"' in body
+    assert "material_key: btn.dataset.mkiMaterialKey || null" in body
     assert "video_path: btn.dataset.mkiVideoPath || null" in body
     assert "cover_path: btn.dataset.mkiCoverPath || null" in body
+
+
+def test_xuanpin_mk_page_supports_query_param_search_url(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "function initMkSearchQueryFromUrl()" in body
+    assert "params.get('q') || params.get('keyword')" in body
+    assert "function syncMkSearchQueryToUrl()" in body
+    assert "params.set('q', kw)" in body
+    assert "window.history.pushState(null, '', nextUrl)" in body
 
 
 def test_xuanpin_mk_video_cards_use_backend_material_status_for_import_button(authed_client_no_db):

@@ -313,6 +313,39 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def list_mk_bindings_for_items(item_ids: list[int]) -> dict[int, dict[str, Any]]:
+    ids = sorted({int(item_id) for item_id in item_ids if _int_value(item_id) > 0})
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = query(
+        "SELECT b.media_item_id, b.mk_product_id, b.mk_product_name, "
+        "       b.mk_video_path, b.mk_video_name, b.mk_video_image_path, "
+        "       b.mk_video_metadata_json, p.product_code "
+        "FROM media_item_mk_bindings b "
+        "JOIN media_items i ON i.id=b.media_item_id "
+        "JOIN media_products p ON p.id=i.product_id "
+        f"WHERE b.media_item_id IN ({placeholders}) AND i.deleted_at IS NULL",
+        tuple(ids),
+    )
+    bindings: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        item_id = _int_value(row.get("media_item_id"))
+        if item_id <= 0:
+            continue
+        bindings[item_id] = {
+            "media_item_id": item_id,
+            "mk_product_id": row.get("mk_product_id"),
+            "mk_product_name": row.get("mk_product_name") or "",
+            "mk_video_path": normalize_mk_media_path(str(row.get("mk_video_path") or "")),
+            "mk_video_name": row.get("mk_video_name") or "",
+            "mk_video_image_path": normalize_mk_media_path(str(row.get("mk_video_image_path") or "")),
+            "mk_video_metadata": _json_loads(row.get("mk_video_metadata_json"), {}) or {},
+            "product_code": row.get("product_code") or "",
+        }
+    return bindings
+
+
 def get_video_material(item_id: int) -> dict[str, Any] | None:
     return query_one(
         "SELECT i.id, i.product_id FROM media_items i "
