@@ -1213,7 +1213,36 @@ function renderMkMaterialDetailHref(r) {
   return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
 }
 
+function initMkSearchQueryFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const kw = String(params.get('q') || params.get('keyword') || '').trim();
+  if (kw) {
+    document.getElementById('searchInput').value = kw;
+  }
+  return kw;
+}
+
+function syncMkSearchQueryToUrl() {
+  if (!window.history || !window.history.replaceState) return;
+  const input = document.getElementById('searchInput');
+  const kw = String(input && input.value || '').trim();
+  const params = new URLSearchParams(window.location.search || '');
+  params.delete('keyword');
+  if (kw) {
+    params.set('q', kw);
+  } else {
+    params.delete('q');
+  }
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? '?' + query : ''}${window.location.hash || ''}`;
+  const currentUrl = `${window.location.pathname}${window.location.search || ''}${window.location.hash || ''}`;
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(null, '', nextUrl);
+  }
+}
+
 async function runMkSearch(options = {}) {
+  if (!options.skipUrlSync) syncMkSearchQueryToUrl();
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
@@ -1402,7 +1431,11 @@ async function switchMkLibraryTab(tab, options = {}) {
 }
 
 function initMkLibraryTabFromHash() {
+  const initialKeyword = initMkSearchQueryFromUrl();
   currentMkLibraryTab = normalizeMkLibraryTab(location.hash.replace('#', ''));
+  if (!location.hash && initialKeyword) {
+    currentMkLibraryTab = 'videos';
+  }
   applyMkLibraryTabState();
   return currentMkLibraryTab;
 }
@@ -1728,6 +1761,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-filename="${escapeHtml(r.video_name || '')}"
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-material-key="${escapeHtml(r.material_key || '')}"
         data-mki-cover-url="${safeCoverUrl}"
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-video-path="${escapeHtml(videoPath)}"
@@ -1755,6 +1789,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-filename="${escapeHtml(r.video_name || '')}"
         data-mki-mp4-url="${safeVideoUrl}"
         data-mki-duration="${escapeHtml(r.video_duration_seconds || 0)}"
+        data-mki-material-key="${escapeHtml(r.material_key || '')}"
         data-mki-cover-url="${safeCoverUrl}"
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-video-path="${escapeHtml(videoPath)}"
@@ -1916,6 +1951,7 @@ async function openDetail(mkId, mkName) {
             data-mki-filename="${escapeHtml(v.name || '')}"
             data-mki-mp4-url="${safeVideoUrl}"
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
+            data-mki-material-key=""
             data-mki-cover-url="${safeCoverUrl}"
             data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
             data-mki-video-path="${escapeHtml(videoPath)}"
@@ -1942,6 +1978,7 @@ async function openDetail(mkId, mkName) {
             data-mki-filename="${escapeHtml(v.name || '')}"
             data-mki-mp4-url="${safeVideoUrl}"
             data-mki-duration="${escapeHtml(v.duration_seconds || v.duration || 0)}"
+            data-mki-material-key=""
             data-mki-cover-url="${safeCoverUrl}"
             data-mki-cover-object-key="${escapeHtml(v.local_cover_object_key || '')}"
             data-mki-video-path="${escapeHtml(videoPath)}"
@@ -5102,6 +5139,7 @@ async function mkiHandleClick(btn) {
       mp4_url: btn.dataset.mkiMp4Url,
       filename: btn.dataset.mkiFilename,
       duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
+      material_key: btn.dataset.mkiMaterialKey || null,
       cover_url: btn.dataset.mkiCoverUrl || null,
       cover_object_key: btn.dataset.mkiCoverObjectKey || null,
       video_path: btn.dataset.mkiVideoPath || null,
