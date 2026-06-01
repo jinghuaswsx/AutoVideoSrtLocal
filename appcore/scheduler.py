@@ -26,6 +26,8 @@ def get_scheduler() -> BackgroundScheduler:
         subtitle_removal_vod_scheduler.register(_scheduler)
         from appcore import task_center_raw_niuma_scheduler
         task_center_raw_niuma_scheduler.register(_scheduler)
+        from appcore import task_center_auto_archive_scheduler
+        task_center_auto_archive_scheduler.register(_scheduler)
         from appcore import material_evaluation_scheduler
         material_evaluation_scheduler.register(_scheduler)
         from appcore import push_quality_check_scheduler

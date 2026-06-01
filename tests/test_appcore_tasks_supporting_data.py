@@ -608,6 +608,179 @@ def test_archive_task_marks_unfinished_task_and_records_event(monkeypatch):
     assert calls[1][1] == (44, "archived", 7, None)
 
 
+def _install_auto_archive_conn(monkeypatch, tasks, status_by_task):
+    import json
+
+    calls = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 0
+            self._row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            normalized = " ".join(str(sql).split())
+            if normalized.startswith("SELECT id, status, archived_at FROM tasks"):
+                task_id = int(args[0])
+                self._row = {
+                    "id": task_id,
+                    "status": status_by_task[task_id],
+                    "archived_at": None,
+                }
+                calls.append(("select", args))
+                return
+            if normalized.startswith("UPDATE tasks SET archived_at=NOW(), archived_by=NULL"):
+                self.rowcount = 1
+                calls.append(("update", args))
+                return
+            if normalized.startswith("INSERT INTO task_events"):
+                calls.append(("event", args[0], args[1], args[2], json.loads(args[3])))
+                return
+            calls.append(("other", normalized, args))
+
+        def fetchone(self):
+            return self._row
+
+    class FakeConn:
+        def begin(self):
+            calls.append(("begin",))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit",))
+
+        def rollback(self):
+            calls.append(("rollback",))
+
+        def close(self):
+            calls.append(("close",))
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    return calls
+
+
+def test_auto_archive_completed_pushed_tasks_archives_done_child_with_pushed_material(monkeypatch):
+    from appcore import tasks
+
+    def fake_query_all(sql, args=()):
+        if "FROM tasks t" in sql:
+            assert "mi.pushed_at IS NOT NULL" in sql
+            return [
+                {
+                    "task_id": 44,
+                    "task_status": tasks.CHILD_DONE,
+                    "media_item_id": 88,
+                    "pushed_at": datetime(2026, 6, 1, 5, 33, 0),
+                }
+            ]
+        if "FROM tasks p" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    calls = _install_auto_archive_conn(monkeypatch, tasks, {44: tasks.CHILD_DONE})
+
+    summary = tasks.auto_archive_completed_pushed_tasks()
+
+    assert summary["archived_children"] == 1
+    assert summary["archived_parents"] == 0
+    assert summary["task_ids"] == [44]
+    assert ("update", (44,)) in calls
+    event = [call for call in calls if call[0] == "event"][0]
+    assert event[1:4] == (44, "auto_archived", None)
+    assert event[4]["source"] == "task_center_auto_archive"
+    assert event[4]["reason"] == "child_done_and_material_pushed"
+    assert event[4]["media_item_id"] == 88
+    assert event[4]["task_status"] == tasks.CHILD_DONE
+    assert event[4]["pushed_at"] == "2026-06-01T05:33:00"
+
+
+def test_auto_archive_completed_pushed_tasks_skips_unpushed_children(monkeypatch):
+    from appcore import tasks
+
+    captured = []
+
+    def fake_query_all(sql, args=()):
+        captured.append((sql, args))
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    monkeypatch.setattr(tasks, "get_conn", lambda: (_ for _ in ()).throw(AssertionError("no archive expected")))
+
+    summary = tasks.auto_archive_completed_pushed_tasks()
+
+    assert summary["archived_children"] == 0
+    assert summary["archived_parents"] == 0
+    child_sql = captured[0][0]
+    assert "t.status=%s" in child_sql
+    assert "pushed_at IS NOT NULL" in child_sql
+
+
+def test_auto_archive_completed_pushed_tasks_never_selects_raw_done_parent(monkeypatch):
+    from appcore import tasks
+
+    captured_parent_args = []
+
+    def fake_query_all(sql, args=()):
+        if "FROM tasks p" in sql:
+            captured_parent_args.append(args)
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    summary = tasks.auto_archive_completed_pushed_tasks()
+
+    assert summary["archived_parents"] == 0
+    assert captured_parent_args
+    assert tasks.PARENT_ALL_DONE in captured_parent_args[0]
+    assert tasks.PARENT_RAW_DONE not in captured_parent_args[0]
+
+
+def test_auto_archive_completed_pushed_tasks_archives_all_done_parent_when_done_children_pushed(monkeypatch):
+    from appcore import tasks
+
+    def fake_query_all(sql, args=()):
+        if "FROM tasks t" in sql:
+            return []
+        if "FROM tasks p" in sql:
+            assert "p.status=%s" in sql
+            assert "NOT EXISTS" in sql
+            return [
+                {
+                    "task_id": 70,
+                    "task_status": tasks.PARENT_ALL_DONE,
+                    "child_count": 2,
+                    "child_task_ids": "10,11",
+                    "child_media_item_ids": "100,101",
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    calls = _install_auto_archive_conn(monkeypatch, tasks, {70: tasks.PARENT_ALL_DONE})
+
+    summary = tasks.auto_archive_completed_pushed_tasks()
+
+    assert summary["archived_children"] == 0
+    assert summary["archived_parents"] == 1
+    assert summary["task_ids"] == [70]
+    event = [call for call in calls if call[0] == "event"][0]
+    assert event[1:4] == (70, "auto_archived", None)
+    assert event[4]["reason"] == "parent_all_done_and_children_pushed"
+    assert event[4]["child_count"] == 2
+    assert event[4]["child_task_ids"] == [10, 11]
+    assert event[4]["child_media_item_ids"] == [100, 101]
+    assert event[4]["task_status"] == tasks.PARENT_ALL_DONE
+
+
 def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch):
     from appcore import tasks
 
