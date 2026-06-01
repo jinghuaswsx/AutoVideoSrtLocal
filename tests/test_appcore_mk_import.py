@@ -705,6 +705,28 @@ def test_probe_product_link_falls_back_to_get_on_head_failure(monkeypatch):
     assert "User-Agent" in get_calls[0][1]["headers"]
 
 
+def test_check_product_links_availability_multi_domain(monkeypatch):
+    def fake_probe_product_link(url):
+        if "newjoyloo.com" in url:
+            return True, None
+        return False, "HTTP 404"
+
+    monkeypatch.setattr(mk_import, "_probe_product_link", fake_probe_product_link)
+
+    monkeypatch.setattr(
+        mk_import.product_link_domains,
+        "resolve_product_page_url_rows",
+        lambda product, lang: [
+            {"domain": "cozyhoome.com", "url": "https://cozyhoome.com/products/demo-rjc"},
+            {"domain": "newjoyloo.com", "url": "https://newjoyloo.com/products/demo-rjc"},
+        ]
+    )
+
+    product = {"id": 123, "product_code": "demo-rjc", "product_link": "https://cozyhoome.com/products/demo-rjc"}
+    warning = mk_import._check_product_links_availability(product, product["product_link"])
+    assert warning is None
+
+
 import pytest
 from appcore.db import execute, query_one
 
