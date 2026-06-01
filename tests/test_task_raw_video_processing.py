@@ -365,6 +365,7 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
             "assignee_id": 9,
             "filename": "demo.mp4",
             "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
         },
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
