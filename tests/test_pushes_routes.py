@@ -2458,12 +2458,22 @@ def test_pushes_modal_displays_backend_localized_texts_result_after_material_pus
     assert "async function pushLocalizedTexts()" in script
     assert "showLocalizedTextPushResult(body.localized_texts_push);" in script
     assert "文案推送结果" in script
+    assert "文案推送地址" in script
+    assert "renderLocalizedTextPushTargetUrl(result.target_url)" in script
     assert "renderLocalizedTextPushPayload(result.payload)" in script
     assert "文案推送报文" in script
+    assert "pm-response-toggle" in script
+    assert "收起" in script
+    assert "展开推送信息" in script
+    assert "setResponseCollapsed" in script
     assert "autoPushLocalizedTextsAfterFirstMkPairing" not in script
     assert ".pm-localized-text-result" in style
+    assert ".pm-localized-text-target-url" in style
     assert ".pm-localized-text-payload" in style
-    assert "font-size: 2em" not in style
+    assert ".pm-response.is-collapsed" in style
+    assert ".pm-response-summary" in style
+    localized_result_style = style.split(".pm-localized-text-result {", 1)[1].split("}", 1)[0]
+    assert "font-size: 2em" not in localized_result_style
     assert "max-height: 320px" in style
     assert "overflow: auto" in style
 
