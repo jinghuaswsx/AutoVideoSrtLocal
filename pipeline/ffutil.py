@@ -20,14 +20,14 @@ def get_media_duration(path: str) -> float:
 
 
 def probe_media_info(path: str) -> dict:
-    """Return width, height, resolution, and duration from ffprobe."""
-    empty = {"width": 0, "height": 0, "resolution": "", "duration": 0.0}
+    """Return width, height, resolution, duration, and video_codec from ffprobe."""
+    empty = {"width": 0, "height": 0, "resolution": "", "duration": 0.0, "video_codec": None}
     try:
         result = subprocess.run(
             [
                 "ffprobe", "-v", "error",
                 "-select_streams", "v:0",
-                "-show_entries", "stream=width,height:format=duration",
+                "-show_entries", "stream=width,height,codec_name:format=duration",
                 "-of", "json",
                 path,
             ],
@@ -39,12 +39,14 @@ def probe_media_info(path: str) -> dict:
         stream = (payload.get("streams") or [{}])[0]
         width = int(stream.get("width") or 0)
         height = int(stream.get("height") or 0)
+        codec_name = stream.get("codec_name")
         duration = float((payload.get("format") or {}).get("duration") or 0.0)
         return {
             "width": width,
             "height": height,
             "resolution": f"{width}x{height}" if width and height else "",
             "duration": duration,
+            "video_codec": codec_name,
         }
     except (IndexError, ValueError, OSError, json.JSONDecodeError, subprocess.SubprocessError):
         return empty
@@ -84,3 +86,31 @@ def extract_frame_at_timestamp(
         return frame_path if os.path.exists(frame_path) else None
     except Exception:
         return None
+
+
+def ensure_h264_video(input_path: str, output_path: str) -> bool:
+    """Check if the video at input_path is encoded in h264.
+    If not, transcode it to h264 and save to output_path.
+    If it is already h264, copy it to output_path.
+    Returns True if transcoded/copied successfully, False otherwise.
+    """
+    import shutil
+    try:
+        info = probe_media_info(input_path)
+        video_codec = info.get("video_codec")
+        if video_codec == "h264":
+            shutil.copyfile(input_path, output_path)
+            return True
+
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-c:v", "libx264", "-preset", "superfast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "128k",
+            output_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, timeout=120)
+        if res.returncode == 0 and os.path.exists(output_path):
+            return True
+        return False
+    except Exception:
+        return False

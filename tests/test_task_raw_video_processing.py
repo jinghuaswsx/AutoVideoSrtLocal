@@ -352,12 +352,15 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     events = []
     executed = []
     marked = []
+    written = {}
 
     monkeypatch.setattr(
         processing,
         "_load_parent_task_payload",
         lambda task_id: {
             "task_id": task_id,
+            "media_product_id": 7,
+            "item_user_id": 9,
             "media_item_id": 11,
             "assignee_id": 9,
             "filename": "demo.mp4",
@@ -368,6 +371,11 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     monkeypatch.setattr(processing, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
     monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
+    monkeypatch.setattr(
+        processing.local_media_storage,
+        "write_stream",
+        lambda key, stream: written.setdefault(key, stream.read()),
+    )
 
     processing.attach_niuma_result_to_parent_task(
         parent_task_id=5,
@@ -376,8 +384,7 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
         result_video_path=str(result_path),
     )
 
-    assert destination.read_bytes() == b"cleaned"
-    assert executed[0][1] == (len(b"cleaned"), 11)
+    assert written["9/medias/7/raw_sources/demo.mp4"] == b"cleaned"
     assert events[0][1] == "raw_niuma_done"
     assert marked == [{"task_id": 5, "actor_user_id": 9}]
 

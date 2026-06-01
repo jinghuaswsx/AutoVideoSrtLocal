@@ -19,7 +19,7 @@ from appcore import tos_clients
 from appcore.safe_paths import PathSafetyError, remove_file_under_roots
 from appcore.vod_erase_provider import VodEraseError, get_play_info
 from config import OUTPUT_DIR, UPLOAD_DIR
-from pipeline.ffutil import extract_thumbnail, probe_media_info
+from pipeline.ffutil import ensure_h264_video, extract_thumbnail, probe_media_info
 from web import store
 from web.services.artifact_download import safe_task_file_response
 from web.services import subtitle_removal_runner
@@ -844,6 +844,16 @@ def complete_upload():
 
     if not os.path.exists(video_path):
         return _json_response({"error": "uploaded video file missing"}), 400
+
+    # Ensure H.264 video encoding before staging and uploading to TOS
+    try:
+        temp_h264_path = video_path + ".h264.mp4"
+        if ensure_h264_video(video_path, temp_h264_path):
+            if os.path.exists(temp_h264_path):
+                # Replace the original uploaded file with the H.264 version
+                os.replace(temp_h264_path, video_path)
+    except Exception as exc:
+        log.warning("[subtitle_removal] failed to ensure H.264 encoding for manual upload task_id=%s: %s", task_id, exc)
 
     if subtitle_backend != "local_vsr" and not tos_clients.object_exists(object_key):
         try:

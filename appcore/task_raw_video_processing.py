@@ -12,7 +12,7 @@ from pathlib import Path
 from config import OUTPUT_DIR
 from appcore import local_media_storage, subtitle_removal_source_storage, task_state
 from appcore.db import execute, query_all, query_one
-from pipeline.ffutil import extract_thumbnail, probe_media_info
+from pipeline.ffutil import ensure_h264_video, extract_thumbnail, probe_media_info
 
 
 WATCH_TIMEOUT_SECONDS = 10 * 60
@@ -530,7 +530,12 @@ def _prepare_subtitle_source_copy(source_path: Path, task_dir: str, filename: st
     suffix = Path(filename or source_path.name).suffix or source_path.suffix or ".mp4"
     destination = task_path / f"source{suffix}"
     if source_path.resolve(strict=False) != destination.resolve(strict=False):
-        shutil.copyfile(source_path, destination)
+        try:
+            success = ensure_h264_video(str(source_path), str(destination))
+            if not success:
+                shutil.copyfile(source_path, destination)
+        except Exception:
+            shutil.copyfile(source_path, destination)
     return destination
 
 
