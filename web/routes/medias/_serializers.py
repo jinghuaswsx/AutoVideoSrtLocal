@@ -294,6 +294,18 @@ def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) 
             "video_url": f"/medias/raw-sources/{source_raw_id}/video",
             "cover_url": f"/medias/raw-sources/{source_raw_id}/cover",
         }
+    source_english_item = it.get("source_english_item") or None
+    if source_english_item:
+        source_english_item = {
+            "id": _int_or_none(source_english_item.get("id")),
+            "filename": source_english_item.get("filename") or "",
+            "display_name": (
+                source_english_item.get("display_name")
+                or source_english_item.get("filename")
+                or ""
+            ),
+            "lang": source_english_item.get("lang") or "en",
+        }
     return {
         "id": it["id"],
         "lang": it.get("lang") or "en",
@@ -310,6 +322,7 @@ def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) 
         "bulk_task_id": it.get("bulk_task_id") or "",
         "auto_translated": bool(it.get("auto_translated")),
         "source_raw": source_raw_payload,
+        "source_english_item": source_english_item,
         "task_id": task_id,
         "task_url": f"/tasks/detail/{task_id}" if task_id else "",
         "versions_count": int(it.get("versions_count") or 0),

@@ -46,6 +46,66 @@ def _items_need_raw_sources(items: list[dict]) -> bool:
     )
 
 
+def _source_item_name(item: dict | None) -> str:
+    if not item:
+        return ""
+    return str(item.get("display_name") or item.get("filename") or "").strip()
+
+
+def _source_item_key(value: str | None) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _source_raw_id_for_item(item: dict) -> int | None:
+    source_raw_id = _int_or_none(item.get("source_raw_id"))
+    if source_raw_id is None and item.get("auto_translated"):
+        source_raw_id = _int_or_none(item.get("source_ref_id"))
+    return source_raw_id
+
+
+def _source_english_item_payload(item: dict | None) -> dict | None:
+    if not item:
+        return None
+    item_id = _int_or_none(item.get("id"))
+    if item_id is None:
+        return None
+    filename = str(item.get("filename") or "").strip()
+    display_name = _source_item_name(item) or filename
+    return {
+        "id": item_id,
+        "filename": filename,
+        "display_name": display_name,
+        "lang": str(item.get("lang") or "en").strip().lower() or "en",
+    }
+
+
+def _annotate_source_english_items(
+    items: list[dict],
+    raw_sources_by_id: dict[int, dict],
+) -> list[dict]:
+    english_items_by_name: dict[str, dict] = {}
+    for item in items:
+        if str(item.get("lang") or "en").strip().lower() != "en":
+            continue
+        for name in {item.get("display_name"), item.get("filename")}:
+            key = _source_item_key(name)
+            if key and key not in english_items_by_name:
+                english_items_by_name[key] = item
+
+    annotated: list[dict] = []
+    for item in items:
+        source_english_item = None
+        if str(item.get("lang") or "").strip().lower() != "en":
+            source_raw_id = _source_raw_id_for_item(item)
+            source_raw = raw_sources_by_id.get(source_raw_id or 0)
+            source_name = _source_item_name(source_raw)
+            source_english_item = _source_english_item_payload(
+                english_items_by_name.get(_source_item_key(source_name))
+            )
+        annotated.append({**item, "source_english_item": source_english_item})
+    return annotated
+
+
 def build_product_detail_response(
     product_id: int,
     *,
@@ -93,6 +153,7 @@ def build_product_detail_response(
         }
         for item in items
     ]
+    items = _annotate_source_english_items(items, raw_sources_by_id)
     skus = list_product_skus_fn(product_id)
     xmyc_index = list_xmyc_unit_prices_fn(
         [sku.get("dianxiaomi_sku") or "" for sku in skus]
