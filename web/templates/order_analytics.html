@@ -1907,10 +1907,10 @@
               <th>产品主图</th>
               <th>订单数</th>
               <th>销售件数</th>
-              <th>商品净销售额</th>
-              <th>运费</th>
               <th>总销售额</th>
               <th>ROAS</th>
+              <th>商品净销售额</th>
+              <th>运费</th>
             </tr>
           </thead>
           <tbody id="realtimeProductSalesBody"></tbody>
@@ -2097,7 +2097,7 @@
   <div class="oar-subpanel" id="nplSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>商品销售额</th><th>运费</th><th>总销售额</th><th>ROAS</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>总销售额</th><th>ROAS</th><th>商品销售额</th><th>运费</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubCampaigns">
@@ -4763,13 +4763,14 @@
 
       addTextCell(tr, fmtInt(row.order_count));
       addTextCell(tr, fmtInt(row.units));
-      addTextCell(tr, fmtMoney(row.product_net_sales));
-      addTextCell(tr, fmtMoney(row.shipping));
       addTextCell(tr, fmtMoney(row.total_sales));
 
       var spend = spendMap[row.product_id] || 0;
       var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
       addTextCell(tr, roas);
+
+      addTextCell(tr, fmtMoney(row.product_net_sales));
+      addTextCell(tr, fmtMoney(row.shipping));
 
       body.appendChild(tr);
     });
@@ -5491,13 +5492,14 @@
 
       addTextCell(tr, fmtInt(row.order_count));
       addTextCell(tr, fmtInt(row.units));
-      addTextCell(tr, fmtMoney(row.product_net_sales));
-      addTextCell(tr, fmtMoney(row.shipping));
       addTextCell(tr, fmtMoney(row.total_sales));
 
       var spend = spendMap[row.product_id] || 0;
       var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
       addTextCell(tr, roas);
+
+      addTextCell(tr, fmtMoney(row.product_net_sales));
+      addTextCell(tr, fmtMoney(row.shipping));
 
       body.appendChild(tr);
     });
