@@ -100,6 +100,78 @@ def _audit_push_action(
     )
 
 
+def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tuple[dict, int]:
+    if not medias.is_product_listed(product):
+        return {"ok": False, "error": "product_not_listed", "status_code": 409}, 409
+    try:
+        mk_id = pushes.get_exact_product_mk_id(product)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "localized_texts_payload_invalid",
+            "message": str(exc),
+            "status_code": 400,
+        }, 400
+
+    target_url = pushes.build_localized_texts_target_url(mk_id)
+    if not target_url:
+        return {"ok": False, "error": "push_localized_texts_base_url_missing", "status_code": 500}, 500
+
+    headers = pushes.build_localized_texts_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return {"ok": False, "error": "push_localized_texts_credentials_missing", "status_code": 500}, 500
+
+    body = pushes.build_localized_texts_request(item)
+    if not body.get("texts"):
+        return {"ok": False, "error": "localized_texts_empty", "status_code": 400}, 400
+
+    post_result = pushes.post_json_payload(target_url, body, headers=headers, timeout=30)
+    if post_result.get("error") == "downstream_unreachable":
+        detail = str(post_result.get("detail") or "")
+        _audit_push_action(
+            item_id,
+            "push_localized_texts_failed",
+            status="failed",
+            detail={"error": "downstream_unreachable"},
+        )
+        return {
+            "ok": False,
+            "error": "downstream_unreachable",
+            "detail": detail,
+            "target_url": target_url,
+            "status_code": 502,
+        }, 502
+
+    if post_result.get("ok"):
+        _audit_push_action(
+            item_id,
+            "push_localized_texts_succeeded",
+            detail={"upstream_status": post_result.get("upstream_status")},
+        )
+        return {
+            "ok": True,
+            "upstream_status": post_result.get("upstream_status"),
+            "response_body": post_result.get("response_body") or "",
+            "target_url": target_url,
+            "status_code": 200,
+        }, 200
+
+    _audit_push_action(
+        item_id,
+        "push_localized_texts_failed",
+        status="failed",
+        detail={"upstream_status": post_result.get("upstream_status")},
+    )
+    return {
+        "ok": False,
+        "error": "downstream_error",
+        "upstream_status": post_result.get("upstream_status"),
+        "response_body": post_result.get("response_body") or "",
+        "target_url": target_url,
+        "status_code": 502,
+    }, 502
+
+
 def _serialize_ai_score(value):
     if value in (None, ""):
         return None
@@ -529,7 +601,7 @@ def api_retry_quality_check(item_id: int):
 @login_required
 @admin_required
 def api_push(item_id: int):
-    """推送入口：进程内组装 payload + 写日志/状态，只对下游外部系统发一次 HTTP。"""
+    """推送入口：先推素材；素材成功后同步复用文案推送逻辑。"""
     push_url = pushes.get_push_target_url()
     if not push_url:
         return _json_response({"error": "push_target_not_configured"}, 500)
@@ -646,6 +718,7 @@ def api_push(item_id: int):
             "mk_id": None,
             "first_pairing": False,
         }
+        localized_texts_product = dict(product)
         try:
             matched_mk_id, status = pushes.lookup_mk_id(product_code)
         except Exception as exc:  # defensive — 任何异常都不能破坏推送成功响应
@@ -657,6 +730,7 @@ def api_push(item_id: int):
         if matched_mk_id:
             try:
                 medias.update_product(product["id"], mk_id=int(matched_mk_id))
+                localized_texts_product["mk_id"] = int(matched_mk_id)
                 mk_id_match["first_pairing"] = had_no_mk_id
                 if had_no_success_push:
                     from appcore.db import execute as db_execute
@@ -674,11 +748,27 @@ def api_push(item_id: int):
                 int(matched_mk_id)
             )
 
+        try:
+            localized_texts_push, _localized_texts_status = _push_localized_texts_result(
+                item_id,
+                item,
+                localized_texts_product,
+            )
+        except Exception as exc:  # defensive: material push success must remain the source of truth
+            log.warning("push localized texts after material push failed unexpectedly: %s", exc, exc_info=True)
+            localized_texts_push = {
+                "ok": False,
+                "error": "localized_texts_push_unexpected_error",
+                "message": str(exc),
+                "status_code": 500,
+            }
+
         return _json_response({
             "ok": True,
             "upstream_status": post_result.get("upstream_status"),
             "response_body": post_result.get("response_body") or "",
             "mk_id_match": mk_id_match,
+            "localized_texts_push": localized_texts_push,
             "manual_link_confirmed": manual_link_confirmed,
         })
 
@@ -832,64 +922,8 @@ def api_push_localized_texts(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return _json_response({"error": "product_not_found"}, 404)
-    if not medias.is_product_listed(product):
-        return _json_response({"error": "product_not_listed"}, 409)
-    try:
-        mk_id = pushes.get_exact_product_mk_id(product)
-    except Exception as exc:
-        return _json_response({"error": "localized_texts_payload_invalid", "message": str(exc)}, 400)
-
-    target_url = pushes.build_localized_texts_target_url(mk_id)
-    if not target_url:
-        return _json_response({"error": "push_localized_texts_base_url_missing"}, 500)
-
-    headers = pushes.build_localized_texts_headers()
-    if "Authorization" not in headers and "Cookie" not in headers:
-        return _json_response({"error": "push_localized_texts_credentials_missing"}, 500)
-
-    body = pushes.build_localized_texts_request(item)
-    if not body.get("texts"):
-        return _json_response({"error": "localized_texts_empty"}, 400)
-
-    post_result = pushes.post_json_payload(target_url, body, headers=headers, timeout=30)
-    if post_result.get("error") == "downstream_unreachable":
-        detail = str(post_result.get("detail") or "")
-        _audit_push_action(
-            item_id,
-            "push_localized_texts_failed",
-            status="failed",
-            detail={"error": "downstream_unreachable"},
-        )
-        return _json_response({
-            "error": "downstream_unreachable",
-            "detail": detail,
-            "target_url": target_url,
-        }, 502)
-
-    if post_result.get("ok"):
-        _audit_push_action(
-            item_id,
-            "push_localized_texts_succeeded",
-            detail={"upstream_status": post_result.get("upstream_status")},
-        )
-        return _json_response({
-            "ok": True,
-            "upstream_status": post_result.get("upstream_status"),
-            "response_body": post_result.get("response_body") or "",
-            "target_url": target_url,
-        })
-    _audit_push_action(
-        item_id,
-        "push_localized_texts_failed",
-        status="failed",
-        detail={"upstream_status": post_result.get("upstream_status")},
-    )
-    return _json_response({
-        "error": "downstream_error",
-        "upstream_status": post_result.get("upstream_status"),
-        "response_body": post_result.get("response_body") or "",
-        "target_url": target_url,
-    }, 502)
+    result, status_code = _push_localized_texts_result(item_id, item, product)
+    return _json_response(result, status_code)
 
 
 @bp.route("/api/items/<int:item_id>/product-links-push", methods=["POST"])

@@ -1685,6 +1685,17 @@
   font-size: 14px;
   line-height: 1.55;
 }
+.pm-localized-text-result {
+  margin-top: var(--oc-sp-3);
+  color: #0f67d1;
+  font-weight: 800;
+  font-size: 2em;
+  line-height: 1.25;
+  word-break: break-word;
+}
+.pm-localized-text-result.is-error {
+  color: #0f67d1;
+}
 .pm-footer {
   display: flex;
   gap: 20px;

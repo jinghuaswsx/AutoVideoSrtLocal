@@ -2067,9 +2067,11 @@
     const respTitle = el('h4', {}, '推送响应');
     const respPre = el('pre', { class: 'pm-json' });
     const respMkIdTip = el('div', { class: 'pm-mk-id-tip', hidden: true });
+    const respLocalizedTextTip = el('div', { class: 'pm-localized-text-result', hidden: true });
     respWrap.appendChild(respTitle);
     respWrap.appendChild(respPre);
     respWrap.appendChild(respMkIdTip);
+    respWrap.appendChild(respLocalizedTextTip);
     mainPanel.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
@@ -2293,6 +2295,9 @@
       respPre.classList.toggle('pm-json-error', !!isError);
       respMkIdTip.hidden = true;
       respMkIdTip.textContent = '';
+      respLocalizedTextTip.hidden = true;
+      respLocalizedTextTip.textContent = '';
+      respLocalizedTextTip.classList.remove('is-success', 'is-error');
     }
 
     function showMkIdMatch(match) {
@@ -2305,6 +2310,37 @@
       } else {
         respMkIdTip.textContent = '配对 mk_id 失败，请检查，当前无法完成文案推送，缺失 mk_id';
       }
+    }
+
+    function localizedTextPushResultMessage(result) {
+      if (!result) return '';
+      const status = result.upstream_status ? `HTTP ${result.upstream_status}` : '';
+      if (result.ok) {
+        return `文案推送结果：成功${status ? `（${status}）` : ''}`;
+      }
+      let detail = result.detail || result.message || result.response_body || result.error || '未知失败';
+      if (result.error === 'push_localized_texts_base_url_missing') {
+        detail = '未配置 wedev Base URL';
+      } else if (result.error === 'push_localized_texts_credentials_missing') {
+        detail = '未配置 wedev Authorization 或 Cookie';
+      } else if (result.error === 'localized_texts_payload_invalid') {
+        detail = result.message || '文案推送数据不完整';
+      } else if (result.error === 'localized_texts_empty') {
+        detail = '当前没有可推送文案';
+      } else if (result.error === 'product_not_listed') {
+        detail = '产品已下架，不能推送文案';
+      } else if (result.error === 'downstream_error' && status) {
+        detail = (result.response_body || '').slice(0, 200) || '下游返回失败';
+      }
+      return `文案推送结果：失败${status ? `（${status}）` : ''} - ${detail}`;
+    }
+
+    function showLocalizedTextPushResult(result) {
+      if (!result) return;
+      respLocalizedTextTip.hidden = false;
+      respLocalizedTextTip.classList.toggle('is-success', !!result.ok);
+      respLocalizedTextTip.classList.toggle('is-error', !result.ok);
+      respLocalizedTextTip.textContent = localizedTextPushResultMessage(result);
     }
 
     function close() {
@@ -2621,19 +2657,10 @@
         headers: { 'Content-Type': 'application/json' },
       });
       showResponse(body, false, '文案推送响应');
+      showLocalizedTextPushResult(body);
       localizedPushed = true;
       anyPushSucceeded = true;
       return body;
-    }
-
-    async function autoPushLocalizedTextsAfterFirstMkPairing(materialBody) {
-      const match = materialBody && materialBody.mk_id_match;
-      if (!match || !match.first_pairing || !match.mk_id) return;
-      setMode(PUSH_MODAL_MODES.LOCALIZED_TEXT);
-      if (!canPushLocalizedTexts()) return;
-      btnPush.disabled = true;
-      btnPush.textContent = '推送中…';
-      await pushLocalizedTexts();
     }
 
     btnPush.addEventListener('click', async () => {
@@ -2660,7 +2687,9 @@
           });
           showResponse(body, false, '素材推送响应');
           showMkIdMatch(body.mk_id_match);
+          showLocalizedTextPushResult(body.localized_texts_push);
           materialPushed = true;
+          localizedPushed = !!(body.localized_texts_push && body.localized_texts_push.ok);
           anyPushSucceeded = true;
           // mk_id 匹配成功 → 同步刷新顶部信息 + 文案 pane + JSON 预览 + 推送按钮状态
           if (body.mk_id_match && body.mk_id_match.mk_id) {
@@ -2678,7 +2707,6 @@
             }, null, 2);
             syncPushButton();
           }
-          await autoPushLocalizedTextsAfterFirstMkPairing(body);
         }
       } catch (err) {
         showResponse(describeError(err), true,
