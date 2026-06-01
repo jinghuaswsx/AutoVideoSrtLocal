@@ -185,7 +185,10 @@ def index():
 def mk_selection_page():
     if not _is_admin():
         abort(403)
-    return render_template("mk_selection.html")
+    return render_template(
+        "mk_selection.html",
+        initial_search_query=(request.args.get("q") or "").strip(),
+    )
 
 
 @bp.route("/mk/videos/<material_key>", methods=["GET"])

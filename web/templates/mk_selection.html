@@ -775,7 +775,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="video_imported">视频已入库</option>
         <option value="video_not_imported">视频未入库</option>
       </select>
-      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" style="width:480px">
+      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" value="{{ initial_search_query or '' }}" style="width:480px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
     </div>
@@ -1213,7 +1213,28 @@ function renderMkMaterialDetailHref(r) {
   return `/xuanpin/mk/videos/${encodeURIComponent(r.material_key || '')}`;
 }
 
+function syncMkSearchQueryToUrl() {
+  const input = document.getElementById('searchInput');
+  const query = input ? input.value.trim() : '';
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  if (query) {
+    params.set('q', query);
+  } else {
+    params.delete('q');
+  }
+  const nextSearch = params.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash || ''}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    history.pushState(null, '', nextUrl);
+  }
+}
+
 async function runMkSearch(options = {}) {
+  if (options.syncUrl !== false) {
+    syncMkSearchQueryToUrl();
+  }
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;

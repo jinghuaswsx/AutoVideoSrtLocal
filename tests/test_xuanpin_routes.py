@@ -111,6 +111,19 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "/xuanpin/api/mk-yesterday-top300" in body
 
 
+def test_xuanpin_mk_page_syncs_search_query_with_url(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk?q=baseball%20cap%20%26%20organizer")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="searchInput"' in body
+    assert 'value="baseball cap &amp; organizer"' in body
+    assert "function syncMkSearchQueryToUrl()" in body
+    assert "params.set('q', query)" in body
+    assert "params.delete('q')" in body
+    assert "history.pushState" in body
+
+
 def test_xuanpin_mk_video_cards_clamp_copy_and_hide_missing_sales(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 
