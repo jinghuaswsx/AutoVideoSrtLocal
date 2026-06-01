@@ -1879,6 +1879,12 @@ def list_items_for_push(
     order_direction = "ASC" if sort == "created_at_asc" else "DESC"
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
+        f"       NOT EXISTS ("
+        f"         SELECT 1 FROM media_items pushed_item "
+        f"         JOIN media_push_logs push_log ON push_log.item_id = pushed_item.id "
+        f"         WHERE pushed_item.product_id = p.id "
+        f"           AND push_log.status = 'success'"
+        f"       ) AS is_new_product_for_push, "
         f"       p.localized_links_json, p.ad_supported_langs, "
         f"       p.shopify_image_status_json, "
         f"       p.selling_points, p.importance, "

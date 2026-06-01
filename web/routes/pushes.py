@@ -336,6 +336,7 @@ def _serialize_row(
         "product_id": row["product_id"],
         "product_name": row.get("product_name"),
         "product_code": row.get("product_code"),
+        "is_new_product_for_push": _truthy(row.get("is_new_product_for_push")),
         "product_owner_name": row.get("owner_name") or "",
         "mk_id": row.get("mk_id"),
         "product_page_url": pushes.resolve_product_page_url(
