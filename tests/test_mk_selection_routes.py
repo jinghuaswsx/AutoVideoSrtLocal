@@ -124,6 +124,19 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "昨日消耗" in template
 
 
+def test_mk_selection_video_heat_matches_mk_backend_ads_count_rules():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "function heatLevel(adsCount)" in template
+    assert "const count = Number(adsCount || 0);" in template
+    assert "if (count >= 10) return {label:'高', cls:'high'};" in template
+    assert "if (count >= 5) return {label:'中', cls:'med'};" in template
+    assert "function spendHeatLevel(spends)" in template
+    assert "const heat = spendHeatLevel(r.mk_total_spends);" in template
+    assert "const heat = heatLevel(r.video_ads_count);" in template
+    assert "const heat = heatLevel(v.ads_count);" in template
+
+
 def test_mk_selection_import_success_warnings_are_toasted():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 

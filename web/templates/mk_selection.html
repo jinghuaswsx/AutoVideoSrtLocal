@@ -890,7 +890,14 @@ function fmtMoney(v) {
   return '$' + v.toFixed(0);
 }
 
-function heatLevel(spends) {
+function heatLevel(adsCount) {
+  const count = Number(adsCount || 0);
+  if (count >= 10) return {label:'高', cls:'high'};
+  if (count >= 5) return {label:'中', cls:'med'};
+  return {label:'低', cls:'low'};
+}
+
+function spendHeatLevel(spends) {
   if (spends >= 50000) return {label:'高', cls:'high'};
   if (spends >= 10000) return {label:'中', cls:'med'};
   return {label:'低', cls:'low'};
@@ -1370,7 +1377,7 @@ async function loadData(page) {
   }
 
   tbody.innerHTML = data.items.map((r, i) => {
-    const heat = heatLevel(r.mk_total_spends);
+    const heat = spendHeatLevel(r.mk_total_spends);
     const libraryStatus = r.library_status || {};
     const rowStatusClass = libraryStatus.card_status && libraryStatus.card_status !== 'none'
       ? ` class="mk-library-row--${escapeHtml(libraryStatus.card_status)}"`
@@ -1531,7 +1538,7 @@ async function setYesterdayTop300Sort(sortOrder) {
 
 function renderMkVideoMaterialCard(r) {
   const spends = Number(r.video_spends || 0);
-  const heat = heatLevel(spends);
+  const heat = heatLevel(r.video_ads_count);
   const coverPath = normalizeMkMediaPath(r.video_image_path);
   const localCoverUrl = safeMediaSrc(r.local_cover_url || '');
   const coverUrl = localCoverUrl || (coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '');
@@ -1797,7 +1804,7 @@ async function openDetail(mkId, mkName) {
     html += `<div class="mk-video-grid">`;
     videos.forEach(v => {
       const spends = parseSpends(v.spends);
-      const heat = heatLevel(spends);
+      const heat = heatLevel(v.ads_count);
       const coverPath = normalizeMkMediaPath(v.image_path);
       const coverUrl = coverPath ? '/xuanpin/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
       const videoPath = normalizeMkMediaPath(v.path);
