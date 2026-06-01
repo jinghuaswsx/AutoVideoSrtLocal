@@ -127,6 +127,21 @@ def _product_link_warning(url: str) -> dict | None:
     }
 
 
+def _check_product_links_availability(product: dict, default_link: str) -> dict | None:
+    rows = product_link_domains.resolve_product_page_url_rows(product, "en")
+    if not rows:
+        return _product_link_warning(default_link)
+
+    checked_warnings = []
+    for row in rows:
+        warning = _product_link_warning(row["url"])
+        if not warning:
+            return None
+        checked_warnings.append(warning)
+
+    return checked_warnings[0] if checked_warnings else None
+
+
 def _append_step_result(
     step_results: dict[str, list[dict]],
     step_key: str,
@@ -686,7 +701,12 @@ def import_mk_video(
     )
     product_link = payload.get("product_link") if is_new else _existing_product_link(meta, existing)
     warnings = []
-    product_link_warning = _product_link_warning(product_link)
+    product_dict = existing if existing else {
+        "id": 0,
+        "product_code": payload["product_code"],
+        "product_link": product_link,
+    }
+    product_link_warning = _check_product_links_availability(product_dict, product_link)
     if product_link_warning:
         warnings.append(product_link_warning)
 
@@ -1052,7 +1072,7 @@ def find_existing_product_item_by_meta(mk_video_metadata: dict) -> dict | None:
     if not existing:
         return None
     warnings = []
-    product_link_warning = _product_link_warning(_existing_product_link(mk_video_metadata, existing))
+    product_link_warning = _check_product_links_availability(existing, _existing_product_link(mk_video_metadata, existing))
     if product_link_warning:
         warnings.append(product_link_warning)
     item = query_one(
