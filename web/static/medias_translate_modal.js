@@ -156,11 +156,19 @@
     return count;
   }
 
-  function pruneCompletedSelectedLangs() {
-    if (!state.selectedContentTypes.has('videos')) return;
-    state.selectedLangs = new Set(
-      Array.from(state.selectedLangs).filter((langCode) => !selectedRawTranslationStats(langCode).complete)
-    );
+  function selectedCompletedVideoPairCount() {
+    if (!state.selectedContentTypes.has('videos')) return 0;
+    let count = 0;
+    selectedRawSources().forEach((raw) => {
+      state.selectedLangs.forEach((langCode) => {
+        if (rawHasTranslation(raw, langCode)) count += 1;
+      });
+    });
+    return count;
+  }
+
+  function hasCompletedVideoPairs() {
+    return selectedCompletedVideoPairCount() > 0;
   }
 
   function syncVideoConfigState() {
@@ -228,22 +236,22 @@
       langList.innerHTML = '<div class="mt-empty">当前没有可用的小语种。</div>';
       return;
     }
-    pruneCompletedSelectedLangs();
     const bridgeLang = taskBridgeLang();
     langList.innerHTML = langs.map((lang) => {
       const stats = selectedRawTranslationStats(lang.code);
       const checkVideoCompletion = state.selectedContentTypes.has('videos');
       const bridgeLocked = bridgeLang && lang.code !== bridgeLang;
-      const disabled = bridgeLocked || (checkVideoCompletion && stats.complete);
+      const alreadyTranslated = checkVideoCompletion && stats.translated > 0;
+      const disabled = bridgeLocked;
       const statusText = bridgeLocked
         ? '来自任务中心，只能提交当前子任务语种'
         : (!checkVideoCompletion
         ? lang.code.toUpperCase()
         : (stats.complete
-        ? `已完成 ${stats.translated}/${stats.total}，本次跳过`
-        : (stats.partial ? `已完成 ${stats.translated}/${stats.total}，仅补未完成` : '未翻译')));
+        ? `已完成 ${stats.translated}/${stats.total}，已完成过一次翻译，仍可创建`
+        : (stats.partial ? `已完成 ${stats.translated}/${stats.total}，会重新创建已完成组合并补齐未完成` : '未翻译')));
       return `
-      <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''} ${bridgeLocked ? 'mt-choice--bridge-locked' : ''}">
+      <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''} ${alreadyTranslated && !disabled ? 'mt-choice--already-translated' : ''} ${bridgeLocked ? 'mt-choice--bridge-locked' : ''}">
         <input type="checkbox" value="${lang.code}" ${state.selectedLangs.has(lang.code) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
         <span class="mt-choice__body">
           <strong>${esc(languageName(lang.code))}</strong>
@@ -270,10 +278,6 @@
       summary.textContent = extra;
       return;
     }
-    if (state.selectedContentTypes.has('videos') && state.selectedRawIds.size > 0 && state.selectedLangs.size === 0) {
-      summary.textContent = '所选原始视频的可用目标语种都已有视频成品，本次不会重复创建视频翻译';
-      return;
-    }
     if (!state.selectedContentTypes.size || !state.selectedRawIds.size || !state.selectedLangs.size) {
       summary.textContent = '请选择翻译范围、原始视频和目标语言';
       return;
@@ -282,17 +286,19 @@
     const langCount = state.selectedLangs.size;
     const types = CONTENT_TYPES.filter((item) => state.selectedContentTypes.has(item.code)).map((item) => item.label);
     const missingPairs = missingVideoPairCount();
-    if (state.selectedContentTypes.has('videos') && missingPairs === 0) {
-      summary.textContent = '所选原始视频的目标语种都已有视频成品，本次不会重复创建视频翻译';
-      return;
+    const completedPairs = selectedCompletedVideoPairCount();
+    let suffix = '';
+    if (state.selectedContentTypes.has('videos')) {
+      const parts = [];
+      if (missingPairs > 0) parts.push(`${missingPairs} 个视频组合待翻译`);
+      if (completedPairs > 0) parts.push(`${completedPairs} 个视频组合已完成过一次翻译，将随本次任务重新创建`);
+      suffix = parts.length ? `，其中 ${parts.join('，')}` : '，视频组合将按当前选择创建';
     }
-    const suffix = state.selectedContentTypes.has('videos') ? `，其中 ${missingPairs} 个视频组合待翻译` : '';
     summary.textContent = `将为 ${rawCount} 条原始视频发起 ${langCount} 个语种的 ${types.join(' / ')} 任务${suffix}，实际费用将在任务成功后生成`;
   }
 
   function updateSubmitState() {
-    const hasVideoWork = !state.selectedContentTypes.has('videos') || missingVideoPairCount() > 0;
-    const ready = !state.busy && state.selectedContentTypes.size > 0 && state.selectedRawIds.size > 0 && state.selectedLangs.size > 0 && hasVideoWork;
+    const ready = !state.busy && state.selectedContentTypes.size > 0 && state.selectedRawIds.size > 0 && state.selectedLangs.size > 0;
     submitBtn.disabled = !ready;
     submitBtn.textContent = state.busy ? '创建中...' : '创建翻译任务';
   }
@@ -529,6 +535,7 @@
       raw_ids: Array.from(state.selectedRawIds),
       target_langs: Array.from(state.selectedLangs),
       content_types: Array.from(state.selectedContentTypes),
+      force_retranslate: hasCompletedVideoPairs(),
       video_params: {
         subtitle_font: state.videoFont,
         subtitle_size: state.videoSize,
@@ -660,6 +667,17 @@
       }
       .mt-choice--done:hover {
         border-color: var(--border, oklch(91% 0.012 230));
+      }
+      .mt-choice--already-translated {
+        border-color: var(--warning-border, oklch(82% 0.105 82));
+        background: var(--warning-bg, oklch(96% 0.04 88));
+      }
+      .mt-choice--already-translated:hover {
+        border-color: var(--warning-fg, oklch(48% 0.10 72));
+      }
+      .mt-choice--already-translated .mt-choice__body small {
+        color: var(--warning-fg, oklch(48% 0.10 72));
+        font-weight: 600;
       }
       .mt-choice input {
         margin-top: 3px;

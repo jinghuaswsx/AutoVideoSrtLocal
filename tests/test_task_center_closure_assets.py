@@ -72,6 +72,18 @@ def test_translate_modal_locks_language_when_opened_from_task_center():
     assert "来自任务中心，只能提交当前子任务语种" in source
 
 
+def test_translate_modal_allows_completed_language_with_warning():
+    source = (ROOT / "web" / "static" / "medias_translate_modal.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "const disabled = bridgeLocked;" in source
+    assert "mt-choice--already-translated" in source
+    assert "已完成过一次翻译，仍可创建" in source
+    assert "selectedCompletedVideoPairCount()" in source
+    assert "force_retranslate: hasCompletedVideoPairs()" in source
+
+
 def test_medias_item_upload_payload_carries_task_center_child_id():
     source = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
