@@ -143,6 +143,63 @@ def test_build_product_detail_response_includes_item_versions_count():
     assert payload["items"] == [{"id": 44, "versions_count": 2}]
 
 
+def test_build_product_detail_response_links_localized_item_to_english_source_item():
+    from web.services.media_product_detail import build_product_detail_response
+
+    source_filename = "2026.03.24-demo-source.mp4"
+
+    payload = build_product_detail_response(
+        123,
+        product={"id": 123, "name": "Demo"},
+        get_product_covers_fn=lambda pid: {},
+        list_items_fn=lambda pid: [
+            {
+                "id": 10,
+                "product_id": 123,
+                "lang": "en",
+                "filename": source_filename,
+                "display_name": source_filename,
+                "source_raw_id": None,
+                "auto_translated": False,
+            },
+            {
+                "id": 44,
+                "product_id": 123,
+                "lang": "it",
+                "filename": "translated.mp4",
+                "display_name": "translated.mp4",
+                "source_raw_id": 88,
+                "source_ref_id": None,
+                "auto_translated": False,
+            },
+        ],
+        list_raw_sources_fn=lambda pid: [{"id": 88, "display_name": source_filename}],
+        list_product_skus_fn=lambda pid: [],
+        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_copywritings_fn=lambda pid: [],
+        get_configured_rmb_per_usd_fn=lambda: 6.83,
+        count_item_versions_fn=lambda item_ids: {},
+        serialize_product_fn=lambda row, *args, **kwargs: {"id": row["id"]},
+        serialize_item_fn=lambda item, raw_sources_by_id: {
+            "id": item["id"],
+            "source_english_item": item.get("source_english_item"),
+        },
+    )
+
+    assert payload["items"] == [
+        {"id": 10, "source_english_item": None},
+        {
+            "id": 44,
+            "source_english_item": {
+                "id": 10,
+                "filename": source_filename,
+                "display_name": source_filename,
+                "lang": "en",
+            },
+        },
+    ]
+
+
 def test_serialize_item_includes_task_center_link_for_task_material():
     from web.routes.medias._serializers import _serialize_item
 
@@ -171,3 +228,43 @@ def test_serialize_item_includes_task_center_link_for_task_material():
 
     assert payload["task_id"] == 456
     assert payload["task_url"] == "/tasks/detail/456"
+
+
+def test_serialize_item_includes_source_english_item_for_source_video_link():
+    from web.routes.medias._serializers import _serialize_item
+
+    payload = _serialize_item(
+        {
+            "id": 44,
+            "product_id": 123,
+            "lang": "it",
+            "filename": "translated.mp4",
+            "display_name": "translated.mp4",
+            "object_key": "media/translated.mp4",
+            "cover_object_key": None,
+            "thumbnail_path": None,
+            "duration_seconds": None,
+            "file_size": None,
+            "source_raw_id": 88,
+            "source_ref_id": None,
+            "bulk_task_id": "",
+            "auto_translated": False,
+            "task_id": None,
+            "versions_count": 0,
+            "source_english_item": {
+                "id": 10,
+                "filename": "2026.03.24-demo-source.mp4",
+                "display_name": "2026.03.24-demo-source.mp4",
+                "lang": "en",
+            },
+            "created_at": None,
+        },
+        {88: {"id": 88, "display_name": "2026.03.24-demo-source.mp4"}},
+    )
+
+    assert payload["source_english_item"] == {
+        "id": 10,
+        "filename": "2026.03.24-demo-source.mp4",
+        "display_name": "2026.03.24-demo-source.mp4",
+        "lang": "en",
+    }

@@ -8353,6 +8353,58 @@
     return '';
   }
 
+  function edItemDisplayName(it) {
+    return String((it && (it.display_name || it.filename)) || '').trim();
+  }
+
+  function edSourceNameKey(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function edFindSourceEnglishItem(it, sourceLabel) {
+    const direct = it && it.source_english_item;
+    if (direct && Number(direct.id || 0)) return direct;
+    const sourceKey = edSourceNameKey(sourceLabel);
+    if (!sourceKey) return null;
+    const allItems = (edState.productData && edState.productData.items) || [];
+    return allItems.find(row => {
+      if (String(row && row.lang || 'en').trim().toLowerCase() !== 'en') return false;
+      return edSourceNameKey(row.display_name) === sourceKey
+        || edSourceNameKey(row.filename) === sourceKey;
+    }) || null;
+  }
+
+  function edBuildSourceVideoHref(it, sourceItem, sourceLabel) {
+    const product = (edState.productData && edState.productData.product) || {};
+    const params = new URLSearchParams();
+    const productCode = String(product.product_code || '').trim();
+    const productId = product.id || (it && it.product_id) || '';
+    if (productCode) params.set('q', productCode);
+    if (productId) params.set('product', productId);
+    params.set('lang', 'en');
+    params.set('action', 'video');
+    params.set('focus', 'source_video');
+    if (sourceItem && sourceItem.id) params.set('item', sourceItem.id);
+    if (sourceLabel) params.set('source_name', sourceLabel);
+    return `/medias/?${params.toString()}`;
+  }
+
+  function itemSourceHtml(it) {
+    const sourceLabel = itemSourceLabel(it);
+    if (!sourceLabel) return '';
+    const sourceItem = edFindSourceEnglishItem(it, sourceLabel);
+    const sourceName = edItemDisplayName(sourceItem) || sourceLabel;
+    const sourceHref = sourceItem ? edBuildSourceVideoHref(it, sourceItem, sourceLabel) : '';
+    const sourceNameHtml = sourceHref
+      ? `<a href="${escapeHtml(sourceHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceName)}</a>`
+      : `<span>${escapeHtml(sourceName)}</span>`;
+    return `
+        <div class="vsource" title="${escapeHtml(sourceName)}">
+          <span class="vsource-label">来源视频</span>
+          <span class="vsource-name">${sourceNameHtml}</span>
+        </div>`;
+  }
+
   function itemTaskLinkHtml(it) {
     const taskId = Number(it && it.task_id || 0);
     if (!taskId) return '';
@@ -8367,10 +8419,7 @@
       const coverSrc = coverUrl ? withCacheBuster(coverUrl) : '';
       const rawName = it.display_name || it.filename || '';
       const name = escapeHtml(rawName);
-      const sourceLabel = itemSourceLabel(it);
-      const sourceHtml = sourceLabel
-        ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
-        : '';
+      const sourceHtml = itemSourceHtml(it);
       const taskHtml = itemTaskLinkHtml(it);
       const versionsCount = Number(it.versions_count || 0);
       const historyHtml = versionsCount > 0
@@ -8383,7 +8432,7 @@
         ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">${playBtnHtml}`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
-      <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}">
+      <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}" data-filename="${escapeHtml(rawName)}">
         <div class="vname oc-vitem-name-editor">
           <div class="vname-text" title="${name}">${name}</div>
           <textarea class="oc-input sm vname-input" title="${name}" data-original="${name}"

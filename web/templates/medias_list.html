@@ -464,7 +464,23 @@
 
 /* 编辑弹窗：每条视频素材卡（图片/视频 双 tab） */
 #edItemsGrid { grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4); }
-.oc-vitem { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg); padding:var(--oc-sp-3); }
+.oc-vitem { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg); padding:var(--oc-sp-3); transition:border-color var(--oc-dur-fast) var(--oc-ease), background-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
+@keyframes oc-deeplink-pulse {
+  0%, 100% { box-shadow:0 0 0 3px oklch(64% 0.13 220 / 0.32), 0 8px 22px oklch(45% 0.12 220 / 0.16); }
+  45% { box-shadow:0 0 0 6px oklch(64% 0.13 220 / 0.42), 0 12px 28px oklch(45% 0.12 220 / 0.22); }
+}
+.oc-vitem.oc-deeplink-highlight,
+.oc-deeplink-highlight {
+  border-color:oklch(58% 0.16 225) !important;
+  background:oklch(96% 0.035 220) !important;
+  animation:oc-deeplink-pulse 1.05s var(--oc-ease-out) 0s 3;
+}
+.oc-vitem.oc-deeplink-highlight .vname-text,
+.oc-vitem.oc-deeplink-highlight .vsource-name {
+  background:oklch(92% 0.055 215);
+  border-radius:var(--oc-r-sm);
+  padding:2px 4px;
+}
 .oc-vitem .vname {
   font-size:12px;
   font-weight:500;
@@ -515,9 +531,11 @@
   font-size:12px;
 }
 .oc-vitem .vsource {
-  display:inline-flex;
-  align-items:center;
-  align-self:flex-start;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr);
+  gap:2px;
+  align-items:start;
+  align-self:stretch;
   max-width:100%;
   padding:3px 8px;
   border:1px solid var(--oc-border);
@@ -526,9 +544,17 @@
   color:var(--oc-accent);
   font-size:11px;
   line-height:1.4;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+  white-space:normal;
+}
+.oc-vitem .vsource-label {
+  font-weight:700;
+}
+.oc-vitem .vsource-name {
+  display:block;
+  min-width:0;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 .oc-vitem .vsource a {
   color:inherit;
@@ -3855,7 +3881,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 <!-- AI 视频分析（每个视频卡片底部两按钮调用，依赖 window.VideoAiReview） -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
 <script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>
-<script src="{{ url_for('static', filename='medias.js', v='fix-link-check-ui-20260527') }}"></script>
+<script src="{{ url_for('static', filename='medias.js', v='source-video-link-20260601') }}"></script>
 <script src="{{ url_for('static', filename='media_video_materials.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>
@@ -3865,17 +3891,20 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 (function mbridgeFromTask() {
   var params = new URLSearchParams(window.location.search);
   var fromTask = params.get('from_task');
-  if (!fromTask) return;
-
-  // Expose task_id globally so item creation APIs can pick it up
-  window.MEDIAS_TASK_BRIDGE_TASK_ID = parseInt(fromTask, 10) || null;
-
   var productId = parseInt(params.get('product') || '0', 10);
   var lang      = (params.get('lang') || '').toLowerCase().trim();
   var action    = params.get('action') || '';
   var itemId    = params.get('item') || '';
   var focus     = params.get('focus') || '';
   var detailImageId = params.get('detail_image') || '';
+  var sourceName = params.get('source_name') || '';
+
+  if (!fromTask && !productId) return;
+
+  if (fromTask) {
+    // Expose task_id globally so item creation APIs can pick it up
+    window.MEDIAS_TASK_BRIDGE_TASK_ID = parseInt(fromTask, 10) || null;
+  }
 
   /* ── 1. Banner ── */
   var banner = document.createElement('div');
@@ -3899,6 +3928,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
   /* Insert banner at top of the main content area (.oc-page, .oc, or body fallback) */
   function insertBanner() {
+    if (!fromTask) return;
     var host = document.querySelector('.oc-page') ||
                document.querySelector('.oc')      ||
                document.querySelector('main')     ||
@@ -3933,7 +3963,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     /* Scroll + flash highlight */
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     row.style.transition = 'background 600ms';
-    row.style.background = 'oklch(96% 0.05 85)';
+    row.style.background = 'oklch(96% 0.035 220)';
     setTimeout(function() { row.style.background = ''; }, 2500);
 
     function clickRowAction(selector) {
@@ -3950,13 +3980,10 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     function mbridgeHighlight(el) {
       if (!el) return false;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.style.transition = 'box-shadow 180ms, background 180ms';
-      el.style.boxShadow = '0 0 0 3px oklch(72% 0.16 85)';
-      el.style.background = 'oklch(97% 0.04 85)';
-      setTimeout(function() {
-        el.style.boxShadow = '';
-        el.style.background = '';
-      }, 2800);
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      try { el.focus({ preventScroll: true }); } catch (_) {}
+      el.classList.add('oc-deeplink-highlight');
+      setTimeout(function() { el.classList.remove('oc-deeplink-highlight'); }, 3600);
       return true;
     }
     function mbridgeFocusTarget() {
@@ -3985,8 +4012,13 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         return mbridgeHighlight(document.getElementById('edDetailImagesSection'));
       }
       if (action === 'video' || action === 'cover') {
+        var itemCard = null;
         if (itemId) {
-          var itemCard = document.querySelector('.oc-vitem[data-item="' + mbridgeCssEscape(itemId) + '"]');
+          itemCard = document.querySelector('.oc-vitem[data-item="' + mbridgeCssEscape(itemId) + '"]');
+          if (mbridgeHighlight(itemCard)) return true;
+        }
+        if (sourceName) {
+          itemCard = document.querySelector('.oc-vitem[data-filename="' + mbridgeCssEscape(sourceName) + '"]');
           if (mbridgeHighlight(itemCard)) return true;
         }
         return mbridgeHighlight(document.getElementById('edItemsSection'));
