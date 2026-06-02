@@ -367,6 +367,11 @@ def test_start_not_found(phase5_client, monkeypatch):
 
 def test_start_forbidden_other_user(phase5_client, monkeypatch):
     _install_fake_task(monkeypatch, user_id=2)   # 不是当前用户
+    fake_user = {"id": 1, "username": "t", "role": "user", "is_active": 1}
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: fake_user if int(user_id) == 1 else None,
+    )
     resp = phase5_client.post("/api/bulk-translate/bt_xxx/start")
     assert resp.status_code == 403
 
@@ -584,6 +589,11 @@ def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
 ])
 def test_endpoints_enforce_ownership(phase5_client, monkeypatch, path, method):
     _install_fake_task(monkeypatch, user_id=999)  # 不同用户
+    fake_user = {"id": 1, "username": "t", "role": "user", "is_active": 1}
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: fake_user if int(user_id) == 1 else None,
+    )
     resp = getattr(phase5_client, method)(path, json={"idx": 0})
     assert resp.status_code == 403
 

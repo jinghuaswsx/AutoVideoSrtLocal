@@ -269,8 +269,8 @@ def _load_and_check_ownership(task_id: str):
     task = get_task(task_id)
     if not task:
         return None, _json_response({"error": "Task not found"}, 404)
-    admin_scope = getattr(current_user, "is_admin", False) and request.args.get("scope") == "admin"
-    if task["user_id"] != current_user.id and not admin_scope:
+    is_admin = bool(getattr(current_user, "is_admin", False))
+    if task["user_id"] != current_user.id and not is_admin:
         return None, _json_response({"error": "Forbidden"}, 403)
     return task, None
 
