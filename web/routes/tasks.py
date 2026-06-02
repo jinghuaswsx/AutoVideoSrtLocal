@@ -347,9 +347,14 @@ def api_list():
 @login_required
 @admin_required
 def api_stats():
-    from datetime import datetime
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    stats = tasks_svc.get_employee_task_stats(today_str)
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    if not start_date:
+        from datetime import datetime
+        start_date = datetime.now().strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = start_date
+    stats = tasks_svc.get_employee_task_stats(start_date, end_date)
     return _json_response({"stats": stats})
 
 

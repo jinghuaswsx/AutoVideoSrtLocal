@@ -466,6 +466,45 @@
     top: calc(52px + var(--tc-sticky-top-height, 192px));
   }
 }
+
+/* 统计日期筛选工具栏 */
+.tc-stats-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--tc-bg);
+  border-radius: var(--tc-r-md);
+  border: 1px solid var(--tc-border);
+  flex-wrap: wrap;
+}
+.tc-stats-toolbar label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tc-fg);
+}
+.tc-date-shortcut-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-r);
+  background: var(--tc-bg);
+  color: var(--tc-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tc-date-shortcut-btn:hover {
+  background: var(--tc-bg-muted);
+  border-color: var(--tc-accent);
+  color: var(--tc-accent);
+}
+.tc-date-shortcut-btn.active {
+  background: var(--tc-accent);
+  border-color: var(--tc-accent);
+  color: #fff;
+}
 {% endblock %}
 {% block content %}
 <div id="tcRoot" class="tc">
@@ -596,6 +635,17 @@ let TC_CURRENT_SECTION = '{{ active_section|default("overview") }}';
 let TC_CURRENT_BUCKET = '{{ active_bucket|default("all") }}';
 let TC_TASK_PAGE = 1;
 const TC_TASK_PAGE_SIZE = 50;
+let TC_STATS_SHORTCUT = 'today';
+let TC_STATS_DATE_FROM = '';
+let TC_STATS_DATE_TO = '';
+const TC_STATS_SHORTCUT_LABELS = {
+  'today': '今天',
+  'yesterday': '昨天',
+  'this-week': '本周',
+  'last-week': '上周',
+  'this-month': '本月',
+  'last-month': '上月'
+};
 let TC_TASK_CACHE = new Map();
 let TC_ASSIGNEE_FILTER_LOAD_PROMISE = null;
 const TC_LANGUAGE_FALLBACKS = {
@@ -619,6 +669,117 @@ const TC_SHOPIFY_IMAGE_REPLACE_LABELS = {
   none: '未替换',
   confirmed: '图片正常',
 };
+
+function tcGetShortcutDates(type) {
+  const today = new Date();
+  const formatDate = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  let fromDate, toDate;
+  switch (type) {
+    case 'today':
+      fromDate = formatDate(today);
+      toDate = formatDate(today);
+      break;
+    case 'yesterday': {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      fromDate = formatDate(yesterday);
+      toDate = formatDate(yesterday);
+      break;
+    }
+    case 'this-week': {
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diffToMonday);
+      
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      
+      fromDate = formatDate(monday);
+      toDate = formatDate(sunday);
+      break;
+    }
+    case 'last-week': {
+      const day = today.getDay();
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const thisMonday = new Date(today);
+      thisMonday.setDate(today.getDate() + diffToMonday);
+      
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+      
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      
+      fromDate = formatDate(lastMonday);
+      toDate = formatDate(lastSunday);
+      break;
+    }
+    case 'this-month': {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      fromDate = formatDate(firstDay);
+      toDate = formatDate(lastDay);
+      break;
+    }
+    case 'last-month': {
+      const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+      fromDate = formatDate(firstDay);
+      toDate = formatDate(lastDay);
+      break;
+    }
+    default:
+      fromDate = formatDate(today);
+      toDate = formatDate(today);
+      break;
+  }
+  return { fromDate, toDate };
+}
+
+function tcStatsApplyShortcut(type) {
+  TC_STATS_SHORTCUT = type;
+  const dates = tcGetShortcutDates(type);
+  TC_STATS_DATE_FROM = dates.fromDate;
+  TC_STATS_DATE_TO = dates.toDate;
+  
+  const fromInput = document.getElementById('tcStatsDateFrom');
+  const toInput = document.getElementById('tcStatsDateTo');
+  if (fromInput) fromInput.value = TC_STATS_DATE_FROM;
+  if (toInput) toInput.value = TC_STATS_DATE_TO;
+  
+  document.querySelectorAll('.tc-date-shortcut-btn').forEach(btn => {
+    if (btn.dataset.type === type) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  
+  tcRefreshStatsTable();
+}
+
+function tcStatsOnDateChange() {
+  const fromInput = document.getElementById('tcStatsDateFrom');
+  const toInput = document.getElementById('tcStatsDateTo');
+  if (!fromInput || !toInput) return;
+  
+  TC_STATS_DATE_FROM = fromInput.value;
+  TC_STATS_DATE_TO = toInput.value;
+  TC_STATS_SHORTCUT = 'custom';
+  
+  document.querySelectorAll('.tc-date-shortcut-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  
+  tcRefreshStatsTable();
+}
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function tcAttr(s) { return tcEsc(s).replace(/"/g, '&quot;'); }
@@ -2064,12 +2225,49 @@ async function tcRender() {
 }
 
 async function tcRenderStatsTab(wrap) {
-  wrap.innerHTML = '<div class="tc-empty">统计数据加载中...</div>';
+  // Compute initial dates for "today" on first load
+  const todayDates = tcGetShortcutDates('today');
+  TC_STATS_SHORTCUT = 'today';
+  TC_STATS_DATE_FROM = todayDates.fromDate;
+  TC_STATS_DATE_TO = todayDates.toDate;
+
+  wrap.innerHTML = `
+    <div class="tc-stats-toolbar">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <label for="tcStatsDateFrom">统计日期区间:</label>
+        <input type="date" id="tcStatsDateFrom" class="tc-input" style="width: 140px; height: 32px; padding: 0 8px;" value="${TC_STATS_DATE_FROM}" onchange="tcStatsOnDateChange()" />
+        <span style="color: var(--tc-fg-muted);">至</span>
+        <input type="date" id="tcStatsDateTo" class="tc-input" style="width: 140px; height: 32px; padding: 0 8px;" value="${TC_STATS_DATE_TO}" onchange="tcStatsOnDateChange()" />
+      </div>
+      <div class="tc-date-shortcuts" style="display: flex; gap: 6px; flex-wrap: wrap;">
+        <button type="button" class="tc-date-shortcut-btn active" data-type="today" onclick="tcStatsApplyShortcut('today')">今天</button>
+        <button type="button" class="tc-date-shortcut-btn" data-type="yesterday" onclick="tcStatsApplyShortcut('yesterday')">昨天</button>
+        <button type="button" class="tc-date-shortcut-btn" data-type="this-week" onclick="tcStatsApplyShortcut('this-week')">本周</button>
+        <button type="button" class="tc-date-shortcut-btn" data-type="last-week" onclick="tcStatsApplyShortcut('last-week')">上周</button>
+        <button type="button" class="tc-date-shortcut-btn" data-type="this-month" onclick="tcStatsApplyShortcut('this-month')">本月</button>
+        <button type="button" class="tc-date-shortcut-btn" data-type="last-month" onclick="tcStatsApplyShortcut('last-month')">上月</button>
+      </div>
+    </div>
+    <div id="tcStatsTableWrap"></div>
+  `;
+
+  tcRefreshStatsTable();
+}
+
+async function tcRefreshStatsTable() {
+  const tableWrap = document.getElementById('tcStatsTableWrap');
+  if (!tableWrap) return;
+  
+  tableWrap.innerHTML = '<div class="tc-empty">统计数据加载中...</div>';
   try {
-    const data = await tcFetchJson('/tasks/api/stats');
+    const params = new URLSearchParams({
+      start_date: TC_STATS_DATE_FROM,
+      end_date: TC_STATS_DATE_TO
+    });
+    const data = await tcFetchJson('/tasks/api/stats?' + params.toString());
     const stats = data.stats || [];
     if (!stats.length) {
-      wrap.innerHTML = '<div class="tc-empty">暂无统计数据</div>';
+      tableWrap.innerHTML = '<div class="tc-empty">暂无统计数据</div>';
       return;
     }
     
@@ -2084,14 +2282,17 @@ async function tcRenderStatsTab(wrap) {
       </tr>`;
     }).join('');
     
-    wrap.innerHTML = `
+    // Dynamic completed tasks header
+    const completedHeader = (TC_STATS_SHORTCUT_LABELS[TC_STATS_SHORTCUT] || '所选期间') + '已完成';
+    
+    tableWrap.innerHTML = `
       <div class="tc-table-scroll" style="margin-top: 10px;">
         <table class="tc-table tc-stats-table">
           <thead>
             <tr>
               <th>员工中文名</th>
-              <th>今天已完成</th>
-              <th>今天待完成</th>
+              <th>${completedHeader}</th>
+              <th>当前待完成</th>
               <th>任务总数</th>
               <th>去字幕任务</th>
               <th>翻译任务</th>
@@ -2104,7 +2305,7 @@ async function tcRenderStatsTab(wrap) {
       </div>
     `;
   } catch (e) {
-    wrap.innerHTML = `<div class="tc-empty">加载统计失败：${tcEsc(e.message)}</div>`;
+    tableWrap.innerHTML = `<div class="tc-empty">加载统计失败：${tcEsc(e.message)}</div>`;
   }
 }
 
