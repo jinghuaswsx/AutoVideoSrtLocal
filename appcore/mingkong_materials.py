@@ -3497,7 +3497,8 @@ def resolve_and_save_english_title(product_url: str, product_code: str = None) -
 
 
 def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Callable = None) -> list[dict[str, Any]]:
-    """Enrich items with shopify_title or product_english_title from database.
+    """Enrich items with shopify_title or product_english_title from database,
+    as well as product_cn_name.
     If missing but product_url is present, schedules background fetch to backfill.
     """
     if not items:
@@ -3527,43 +3528,60 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         if url:
             product_urls.add(str(url).strip())
 
-    # 1. Fetch from media_products.shopify_title
+    # 1. Fetch from media_products.shopify_title and name
     shopify_titles_by_id: dict[int, str] = {}
     shopify_titles_by_code: dict[str, str] = {}
+    shopify_cn_names_by_id: dict[int, str] = {}
+    shopify_cn_names_by_code: dict[str, str] = {}
+
     if media_product_ids:
         placeholders = ",".join(["%s"] * len(media_product_ids))
         try:
             rows = q_fn(
-                f"SELECT id, product_code, shopify_title FROM media_products WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                f"SELECT id, product_code, name, shopify_title FROM media_products WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                 list(media_product_ids)
             )
             for r in rows or []:
                 title = str(r.get("shopify_title") or "").strip()
+                name = str(r.get("name") or "").strip()
+                pid = int(r["id"])
                 if title:
-                    shopify_titles_by_id[int(r["id"])] = title
-                    c = str(r.get("product_code") or "").strip().lower()
-                    if c:
+                    shopify_titles_by_id[pid] = title
+                if name:
+                    shopify_cn_names_by_id[pid] = name
+                
+                c = str(r.get("product_code") or "").strip().lower()
+                if c:
+                    if title:
                         shopify_titles_by_code[c] = title
+                    if name:
+                        shopify_cn_names_by_code[c] = name
         except BaseException as e:
-            logger.warning("[english_title] failed to fetch shopify_titles by id: %s", e)
+            logger.warning("[english_title] failed to fetch shopify_titles/names by id: %s", e)
 
     if product_codes:
         placeholders = ",".join(["%s"] * len(product_codes))
         try:
             rows = q_fn(
-                f"SELECT product_code, shopify_title FROM media_products WHERE LOWER(product_code) IN ({placeholders}) AND deleted_at IS NULL",
+                f"SELECT product_code, name, shopify_title FROM media_products WHERE LOWER(product_code) IN ({placeholders}) AND deleted_at IS NULL",
                 list(product_codes)
             )
             for r in rows or []:
                 title = str(r.get("shopify_title") or "").strip()
+                name = str(r.get("name") or "").strip()
+                c = str(r["product_code"]).strip().lower()
                 if title:
-                    shopify_titles_by_code[str(r["product_code"]).strip().lower()] = title
+                    shopify_titles_by_code[c] = title
+                if name:
+                    shopify_cn_names_by_code[c] = name
         except BaseException as e:
-            logger.warning("[english_title] failed to fetch shopify_titles by code: %s", e)
+            logger.warning("[english_title] failed to fetch shopify_titles/names by code: %s", e)
 
     # 2. Fetch from dianxiaomi_product_assets
     asset_titles_by_code: dict[str, str] = {}
     asset_titles_by_url: dict[str, str] = {}
+    asset_cn_names_by_code: dict[str, str] = {}
+    asset_cn_names_by_url: dict[str, str] = {}
     
     asset_keys: set[str] = set()
     for code in product_codes:
@@ -3579,20 +3597,26 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         placeholders = ",".join(["%s"] * len(asset_keys))
         try:
             rows = q_fn(
-                f"SELECT product_code, product_url, product_name, product_english_title FROM dianxiaomi_product_assets WHERE asset_key IN ({placeholders})",
+                f"SELECT product_code, product_url, product_name, product_english_title, product_cn_name FROM dianxiaomi_product_assets WHERE asset_key IN ({placeholders})",
                 list(asset_keys)
             )
             for r in rows or []:
                 title = str(r.get("product_english_title") or r.get("product_name") or "").strip()
+                cn_name = str(r.get("product_cn_name") or "").strip()
+                c = str(r.get("product_code") or "").strip().lower()
+                u = str(r.get("product_url") or "").strip()
                 if title:
-                    c = str(r.get("product_code") or "").strip().lower()
                     if c:
                         asset_titles_by_code[c] = title
-                    u = str(r.get("product_url") or "").strip()
                     if u:
                         asset_titles_by_url[u] = title
+                if cn_name:
+                    if c:
+                        asset_cn_names_by_code[c] = cn_name
+                    if u:
+                        asset_cn_names_by_url[u] = cn_name
         except BaseException as e:
-            logger.warning("[english_title] failed to fetch asset_titles: %s", e)
+            logger.warning("[english_title] failed to fetch asset_titles/cn_names: %s", e)
 
     # 3. Map back and schedule fetch if missing
     for item in items:
@@ -3602,7 +3626,27 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         url = str(item.get("product_url") or item.get("mk_product_link") or item.get("product_link") or "").strip()
         
         resolved_title = ""
+        resolved_cn_name = ""
         
+        # Determine Chinese name
+        if mp_id:
+            try:
+                resolved_cn_name = shopify_cn_names_by_id.get(int(mp_id)) or ""
+            except (TypeError, ValueError):
+                pass
+        
+        if not resolved_cn_name and code:
+            resolved_cn_name = shopify_cn_names_by_code.get(code) or ""
+            
+        if not resolved_cn_name and code:
+            resolved_cn_name = asset_cn_names_by_code.get(code) or ""
+            
+        if not resolved_cn_name and url:
+            resolved_cn_name = asset_cn_names_by_url.get(url) or ""
+            
+        item["product_cn_name"] = resolved_cn_name
+
+        # Determine English name
         if mp_id:
             try:
                 resolved_title = shopify_titles_by_id.get(int(mp_id)) or ""
