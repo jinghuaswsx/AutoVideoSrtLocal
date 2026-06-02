@@ -764,13 +764,18 @@ def set_goods_mark_status(
 def next_pending_local_videos(limit: int, max_attempts: int = 5, *, query_fn: QueryFn = query) -> list[dict]:
     return query_fn(
         """
-        SELECT video_id, author_name, tk_video_url, local_video_attempts
-        FROM tabcut_videos
-        WHERE local_video_status = 'pending'
-           OR (local_video_status = 'failed'
-               AND local_video_attempts < %s
-               AND (local_video_last_attempt_at IS NULL OR local_video_last_attempt_at < DATE_SUB(NOW(), INTERVAL 12 HOUR)))
-        ORDER BY local_video_attempts ASC, video_id ASC
+        SELECT v.video_id, v.author_name, v.tk_video_url, v.local_video_attempts
+        FROM tabcut_videos v
+        LEFT JOIN (
+            SELECT video_id, MAX(item_sold_count) AS max_sales, MAX(play_count) AS max_plays
+            FROM tabcut_video_candidates
+            GROUP BY video_id
+        ) c ON c.video_id = v.video_id
+        WHERE v.local_video_status = 'pending'
+           OR (v.local_video_status = 'failed'
+               AND v.local_video_attempts < %s
+               AND (v.local_video_last_attempt_at IS NULL OR v.local_video_last_attempt_at < DATE_SUB(NOW(), INTERVAL 12 HOUR)))
+        ORDER BY v.local_video_attempts ASC, COALESCE(c.max_sales, 0) DESC, COALESCE(c.max_plays, 0) DESC, v.video_id ASC
         LIMIT %s
         """,
         [max_attempts, limit],

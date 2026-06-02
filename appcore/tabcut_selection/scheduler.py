@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 TASK_CODE = "tabcut_video_localization_tick"
 
 
-def video_localization_tick_once(limit: int = 20, max_attempts: int = 5) -> dict[str, Any]:
+def video_localization_tick_once(limit: int = 10, max_attempts: int = 5) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(TASK_CODE)

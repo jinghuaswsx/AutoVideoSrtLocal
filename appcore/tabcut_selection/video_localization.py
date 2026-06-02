@@ -137,7 +137,7 @@ def localize_video(video_item: dict, max_attempts: int = 5) -> dict[str, Any]:
     }
 
 
-def run_localization_round(limit: int = 20, max_attempts: int = 5) -> dict[str, Any]:
+def run_localization_round(limit: int = 10, max_attempts: int = 5) -> dict[str, Any]:
     """
     Main entry point for localizing a batch of videos.
     """
