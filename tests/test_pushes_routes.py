@@ -1351,7 +1351,7 @@ def test_push_first_mk_pairing_marks_response_for_auto_localized_texts_no_db(
     item = {"id": 7, "product_id": 18, "lang": "de", "pushed_at": None}
     product = {"id": 18, "product_code": "first-pair-rjc", "mk_id": None}
     updates = {}
-    executed = []
+    mark_calls = []
 
     monkeypatch.setattr(
         "web.routes.pushes.pushes.get_push_target_url",
@@ -1385,7 +1385,10 @@ def test_push_first_mk_pairing_marks_response_for_auto_localized_texts_no_db(
     )
     monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
     monkeypatch.setattr(db, "query_one", lambda *args, **kwargs: None)
-    monkeypatch.setattr(db, "execute", lambda sql, params=None: executed.append((sql, params)))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.mark_new_product_push_once",
+        lambda log_id, product_id: mark_calls.append((log_id, product_id)) or True,
+    )
 
     response = authed_client_no_db.post("/pushes/api/items/7/push")
 
@@ -1398,7 +1401,7 @@ def test_push_first_mk_pairing_marks_response_for_auto_localized_texts_no_db(
         "https://os.wedev.vip/api/marketing/medias/5678/texts"
     )
     assert updates["mk_id"] == 5678
-    assert executed == [("UPDATE media_push_logs SET is_new_product_push = 1 WHERE id = %s", (101,))]
+    assert mark_calls == [(101, 18)]
 
 
 def test_push_material_success_syncs_localized_texts_no_db(
