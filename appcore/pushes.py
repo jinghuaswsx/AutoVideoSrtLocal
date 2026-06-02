@@ -813,7 +813,7 @@ def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) 
     if not ids:
         return {}
     rows = query(
-        "SELECT item_id, status, readiness_json, computed_at "
+        "SELECT item_id, latest_push_id, pushed_at, skip_push, status, readiness_json, computed_at "
         f"FROM media_push_status_cache WHERE item_id IN ({_placeholders(ids)})",
         tuple(ids),
     )
@@ -828,6 +828,9 @@ def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) 
             continue
         result[item_id] = {
             "item_id": item_id,
+            "latest_push_id": _safe_int(row.get("latest_push_id")) or None,
+            "pushed_at": row.get("pushed_at"),
+            "skip_push": 1 if row.get("skip_push") else 0,
             "status": status,
             "readiness": readiness,
             "computed_at": row.get("computed_at"),
@@ -858,10 +861,37 @@ def refresh_push_status_cache_rows(rows: list[dict] | tuple[dict, ...]) -> dict[
     }
 
 
-def _cache_entry_is_stale(entry: dict[str, Any] | None, *, max_age_seconds: int | None) -> bool:
+def _cache_entry_source_state_changed(
+    entry: dict[str, Any] | None,
+    row: dict[str, Any] | None,
+) -> bool:
+    if not entry or not row:
+        return False
+    if _safe_int(entry.get("latest_push_id")) != _safe_int(row.get("latest_push_id")):
+        return True
+    if _safe_int(entry.get("skip_push")) != _safe_int(row.get("skip_push")):
+        return True
+
+    cached_pushed_at = entry.get("pushed_at")
+    row_pushed_at = row.get("pushed_at")
+    if bool(cached_pushed_at) != bool(row_pushed_at):
+        return True
+    if cached_pushed_at and row_pushed_at and str(cached_pushed_at) != str(row_pushed_at):
+        return True
+    return False
+
+
+def _cache_entry_is_stale(
+    entry: dict[str, Any] | None,
+    *,
+    row: dict[str, Any] | None = None,
+    max_age_seconds: int | None,
+) -> bool:
     if not entry:
         return True
     if not entry.get("status") or not entry.get("readiness"):
+        return True
+    if _cache_entry_source_state_changed(entry, row):
         return True
     if max_age_seconds is None:
         return False
@@ -888,7 +918,11 @@ def status_cache_for_rows(
     stale_rows = [
         row
         for item_id, row in row_by_id.items()
-        if _cache_entry_is_stale(cached.get(item_id), max_age_seconds=max_age_seconds)
+        if _cache_entry_is_stale(
+            cached.get(item_id),
+            row=row,
+            max_age_seconds=max_age_seconds,
+        )
     ]
     if stale_rows:
         try:

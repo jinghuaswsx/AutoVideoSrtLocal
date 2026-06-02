@@ -478,6 +478,52 @@ def test_status_cache_for_rows_refreshes_missing_and_stale_rows(monkeypatch):
     assert result == refreshed
 
 
+def test_status_cache_for_rows_refreshes_when_source_push_state_changed(monkeypatch):
+    now = datetime.now()
+    rows = [
+        {
+            "id": 77,
+            "product_id": 7,
+            "pushed_at": now,
+            "latest_push_id": 101,
+            "skip_push": 0,
+        }
+    ]
+    cached = {
+        77: {
+            "item_id": 77,
+            "status": "pending",
+            "readiness": {"has_object": True},
+            "computed_at": now,
+            "pushed_at": None,
+            "latest_push_id": None,
+            "skip_push": 0,
+        }
+    }
+    refreshed = {
+        77: {
+            "item_id": 77,
+            "status": "pushed",
+            "readiness": {"has_object": True},
+            "computed_at": now,
+        }
+    }
+    seen = {}
+
+    monkeypatch.setattr(pushes, "get_push_status_cache_map", lambda item_ids: cached)
+
+    def fake_refresh(stale_rows):
+        seen["rows"] = stale_rows
+        return refreshed
+
+    monkeypatch.setattr(pushes, "refresh_push_status_cache_rows", fake_refresh)
+
+    result = pushes.status_cache_for_rows(rows, max_age_seconds=300)
+
+    assert result == refreshed
+    assert seen["rows"] == rows
+
+
 def test_refresh_push_status_cache_for_item_refreshes_single_joined_row(monkeypatch):
     row = {"id": 77, "product_id": 7, "lang": "de"}
     seen = {}
