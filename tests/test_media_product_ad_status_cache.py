@@ -151,6 +151,68 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     assert "INTERVAL 6 DAY" not in joined
 
 
+def test_refresh_all_falls_back_when_realtime_ad_tables_are_missing(monkeypatch):
+    from pymysql.err import ProgrammingError
+
+    from appcore import media_product_ad_status_cache as cache
+
+    calls: list[str] = []
+
+    class FakeCursor:
+        rowcount = 0
+
+        def __init__(self):
+            self._next_fetchone = {"ok": 1}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            calls.append(sql)
+            if "information_schema.TABLES" in sql:
+                table_name = (params or ("",))[0]
+                self._next_fetchone = None if table_name == "meta_ad_realtime_daily_ad_metrics" else {"ok": 1}
+                return
+            if "meta_ad_realtime_daily_ad_metrics" in sql:
+                raise ProgrammingError(1146, "missing realtime ad table")
+            if "INSERT INTO media_product_ad_summary_cache" in sql:
+                self.rowcount = 7
+            elif "INSERT INTO media_product_lang_ad_summary_cache" in sql:
+                self.rowcount = 11
+            else:
+                self.rowcount = 0
+
+        def fetchone(self):
+            return self._next_fetchone
+
+    class FakeConn:
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cache, "get_conn", lambda: FakeConn())
+
+    summary = cache.refresh_all()
+
+    assert summary == {"product_rows": 7, "lang_rows": 11}
+    lang_insert_sql = next(sql for sql in calls if "INSERT INTO media_product_lang_ad_summary_cache" in sql)
+    assert "meta_ad_realtime_daily_ad_metrics" not in lang_insert_sql
+
+
 def test_refresh_sql_includes_today_realtime_latest_snapshots():
     from appcore import media_product_ad_status_cache as cache
 

@@ -27,6 +27,7 @@ Date: 2026-05-28
 - 产品级 `ad_spend_usd` 继续以 campaign 粒度汇总，历史读取 `meta_ad_daily_campaign_metrics`，今天读取 `meta_ad_realtime_daily_campaign_metrics`。
 - 语种级 `ad_roas` 继续以 ad 粒度汇总，历史读取 `meta_ad_daily_ad_metrics`，今天读取 `meta_ad_realtime_daily_ad_metrics`。
 - 实时表只取 `data_completeness='realtime_partial'` 的最新快照，并且必须按 `(business_date, ad_account_id)` 分组取 `MAX(snapshot_at)`，不能用单个全局最新时间。
+- 如果某个环境尚未创建对应 realtime 表，缓存刷新必须自动降级为 daily-only SQL，避免定时任务失败；已建表环境继续并入今天实时数据。
 - 列表请求仍只读 `media_product_ad_summary_cache` 和 `media_product_lang_ad_summary_cache`，不在请求内实时拉取 Meta。
 
 ### Per-Language Video Ad ROAS
