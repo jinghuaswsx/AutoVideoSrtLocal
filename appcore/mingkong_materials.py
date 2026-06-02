@@ -1814,6 +1814,7 @@ def _list_all_historical_material_library(
     size: int,
     offset: int,
     status_filter: str,
+    sort_by: str = "spend_90",
 ) -> dict[str, Any]:
     where = ["r.status = 'success'"]
     args: list[Any] = []
@@ -1839,8 +1840,14 @@ def _list_all_historical_material_library(
             tuple(args),
         ) or {}
 
-    limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
-    query_args = args + ([] if status_filter else [size, offset])
+    python_paginate = (status_filter != "") or (sort_by == "spend_yesterday")
+    limit_clause = "" if python_paginate else "LIMIT %s OFFSET %s"
+    query_args = args + ([] if python_paginate else [size, offset])
+
+    order_clause = "s.cumulative_90_spend DESC, s.video_ads_count DESC"
+    if sort_by == "ads_count":
+        order_clause = "s.video_ads_count DESC, s.cumulative_90_spend DESC"
+
     rows = query(
         f"""
         SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
@@ -1863,7 +1870,7 @@ def _list_all_historical_material_library(
           WHERE r2.status = 'success'
           GROUP BY s2.snapshot_at, s2.product_code
         ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
-        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+        ORDER BY {order_clause}, s.id ASC
         {limit_clause}
         """,
         tuple(query_args),
@@ -1877,8 +1884,16 @@ def _list_all_historical_material_library(
             snapshot_at=first.get("snapshot_at"),
         )
     items = _filter_by_library_status(_enrich_material_card_items(serialized), status_filter)
-    total = len(items) if status_filter else _as_int(count_row.get("cnt"))
-    page_items = items[offset : offset + size] if status_filter else items
+    if python_paginate:
+        if sort_by == "spend_yesterday":
+            items.sort(key=lambda x: (float(x.get("yesterday_spend_delta") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+        elif sort_by == "ads_count":
+            items.sort(key=lambda x: (int(x.get("video_ads_count") or 0), float(x.get("cumulative_90_spend") or 0.0)), reverse=True)
+        elif sort_by == "spend_90":
+            items.sort(key=lambda x: (float(x.get("cumulative_90_spend") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+
+    total = len(items) if python_paginate else _as_int(count_row.get("cnt"))
+    page_items = items[offset : offset + size] if python_paginate else items
     return {
         "items": page_items,
         "snapshot": "",
@@ -1901,6 +1916,7 @@ def _list_live_mingkong_material_library(
     size: int,
     offset: int,
     status_filter: str,
+    sort_by: str = "spend_90",
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
     headers = _mk_headers()
@@ -1953,15 +1969,26 @@ def _list_live_mingkong_material_library(
             _as_int(previous.get("video_ads_count")),
         ):
             deduped[key] = row
-    sorted_rows = sorted(
-        deduped.values(),
-        key=lambda item: (
-            _as_float(item.get("cumulative_90_spend")),
-            _as_int(item.get("video_ads_count")),
-            _as_int(item.get("mk_product_id")),
-        ),
-        reverse=True,
-    )
+    if sort_by == "ads_count":
+        sorted_rows = sorted(
+            deduped.values(),
+            key=lambda item: (
+                _as_int(item.get("video_ads_count")),
+                _as_float(item.get("cumulative_90_spend")),
+                _as_int(item.get("mk_product_id")),
+            ),
+            reverse=True,
+        )
+    else:  # spend_90 or spend_yesterday (fallback)
+        sorted_rows = sorted(
+            deduped.values(),
+            key=lambda item: (
+                _as_float(item.get("cumulative_90_spend")),
+                _as_int(item.get("video_ads_count")),
+                _as_int(item.get("mk_product_id")),
+            ),
+            reverse=True,
+        )
     items = _filter_by_library_status(_enrich_material_card_items(sorted_rows), status_filter)
     total = len(items)
     return {
@@ -2207,6 +2234,7 @@ def list_material_library(
     page: int | str | None = 1,
     page_size: int | str | None = 100,
     library_status: str = "",
+    sort_by: str = "spend_90",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     normalized_range_key = str(range_key or "").strip().lower().replace("-", "_")
@@ -2222,6 +2250,7 @@ def list_material_library(
                 size=size,
                 offset=offset,
                 status_filter=status_filter,
+                sort_by=sort_by,
             )
         return _list_all_historical_material_library(
             keyword=kw,
@@ -2229,6 +2258,7 @@ def list_material_library(
             size=size,
             offset=offset,
             status_filter=status_filter,
+            sort_by=sort_by,
         )
 
     range_bounds = _material_range_bounds(range_key)
@@ -2269,8 +2299,15 @@ def list_material_library(
                 """,
                 tuple(args),
             ) or {}
-        limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
-        query_args = args + [range_start, range_end] + ([] if status_filter else [size, offset])
+        
+        python_paginate = (status_filter != "") or (sort_by == "spend_yesterday")
+        limit_clause = "" if python_paginate else "LIMIT %s OFFSET %s"
+        query_args = args + [range_start, range_end] + ([] if python_paginate else [size, offset])
+        
+        order_clause = "s.cumulative_90_spend DESC, s.video_ads_count DESC"
+        if sort_by == "ads_count":
+            order_clause = "s.video_ads_count DESC, s.cumulative_90_spend DESC"
+
         rows = query(
             f"""
             SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
@@ -2292,7 +2329,7 @@ def list_material_library(
               WHERE r2.status = 'success' AND s2.snapshot_date BETWEEN %s AND %s
               GROUP BY s2.snapshot_at, s2.product_code
             ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
-            ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+            ORDER BY {order_clause}, s.id ASC
             {limit_clause}
             """,
             tuple(query_args),
@@ -2308,8 +2345,17 @@ def list_material_library(
         items = _filter_by_library_status(_enrich_material_card_items(
             serialized
         ), status_filter)
-        total = len(items) if status_filter else _as_int(count_row.get("cnt"))
-        page_items = items[offset : offset + size] if status_filter else items
+        
+        if python_paginate:
+            if sort_by == "spend_yesterday":
+                items.sort(key=lambda x: (float(x.get("yesterday_spend_delta") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+            elif sort_by == "ads_count":
+                items.sort(key=lambda x: (int(x.get("video_ads_count") or 0), float(x.get("cumulative_90_spend") or 0.0)), reverse=True)
+            elif sort_by == "spend_90":
+                items.sort(key=lambda x: (float(x.get("cumulative_90_spend") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+
+        total = len(items) if python_paginate else _as_int(count_row.get("cnt"))
+        page_items = items[offset : offset + size] if python_paginate else items
         return {
             "items": page_items,
             "snapshot": "",
@@ -2341,8 +2387,15 @@ def list_material_library(
             f"SELECT COUNT(*) AS cnt FROM mingkong_material_daily_snapshots s WHERE {where_sql}",
             tuple(args),
         ) or {}
-    limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
-    query_args = [selected_snapshot_at] + args + ([] if status_filter else [size, offset])
+    
+    python_paginate = (status_filter != "") or (sort_by == "spend_yesterday")
+    limit_clause = "" if python_paginate else "LIMIT %s OFFSET %s"
+    query_args = [selected_snapshot_at] + args + ([] if python_paginate else [size, offset])
+    
+    order_clause = "s.cumulative_90_spend DESC, s.video_ads_count DESC"
+    if sort_by == "ads_count":
+        order_clause = "s.video_ads_count DESC, s.cumulative_90_spend DESC"
+
     rows = query(
         f"""
         SELECT s.*, COALESCE(mp.total_90_spend, pt.product_total_90_spend, s.cumulative_90_spend)
@@ -2357,7 +2410,7 @@ def list_material_library(
           GROUP BY snapshot_at, product_code
         ) pt ON pt.snapshot_at = s.snapshot_at AND pt.product_code = s.product_code
         WHERE {where_sql}
-        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+        ORDER BY {order_clause}, s.id ASC
         {limit_clause}
         """,
         tuple(query_args),
@@ -2370,8 +2423,17 @@ def list_material_library(
             snapshot_at=selected_snapshot_at,
         )
     ), status_filter)
-    total = len(items) if status_filter else _as_int(count_row.get("cnt"))
-    page_items = items[offset : offset + size] if status_filter else items
+    
+    if python_paginate:
+        if sort_by == "spend_yesterday":
+            items.sort(key=lambda x: (float(x.get("yesterday_spend_delta") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+        elif sort_by == "ads_count":
+            items.sort(key=lambda x: (int(x.get("video_ads_count") or 0), float(x.get("cumulative_90_spend") or 0.0)), reverse=True)
+        elif sort_by == "spend_90":
+            items.sort(key=lambda x: (float(x.get("cumulative_90_spend") or 0.0), int(x.get("video_ads_count") or 0)), reverse=True)
+
+    total = len(items) if python_paginate else _as_int(count_row.get("cnt"))
+    page_items = items[offset : offset + size] if python_paginate else items
     return {
         "items": page_items,
         "snapshot": snapshot,
@@ -2485,9 +2547,17 @@ def list_yesterday_top100(
             tuple(base_args),
         ) or {}
 
-    order_clause = "is_new_top100_entry DESC, yesterday_spend_delta DESC"
-    if sort_order == "normal":
+    if sort_order == "spend_yesterday":
         order_clause = "yesterday_spend_delta DESC"
+    elif sort_order == "spend_90":
+        order_clause = "current_cumulative_90_spend DESC"
+    elif sort_order == "ads_count":
+        order_clause = "video_ads_count DESC"
+    elif sort_order == "normal":
+        order_clause = "yesterday_spend_delta DESC"
+    else:
+        order_clause = "is_new_top100_entry DESC, yesterday_spend_delta DESC"
+        
     limit_clause = "" if status_filter else "LIMIT %s OFFSET %s"
     query_args = base_args + ([] if status_filter else [size, offset])
 

@@ -38,6 +38,24 @@ def _int_or_none(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fmt_spend_text(parsed: float) -> str:
+    if parsed >= 10000:
+        val = round(parsed / 10000, 2)
+        return f"{val:.2f}".rstrip("0").rstrip(".") + "万"
+    if parsed >= 1000:
+        val = round(parsed / 1000, 1)
+        return f"{val:.1f}".rstrip("0").rstrip(".") + "千"
+    return str(round(parsed))
+
+
+
 def _dt(value: Any) -> str | None:
     if value in (None, ""):
         return None
@@ -82,6 +100,8 @@ def _serialize_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
         return None
     media_product_id = _int_or_none(row.get("media_product_id"))
     media_item_id = _int_or_none(row.get("media_item_id"))
+    cumulative_90_spend = _float_or_zero(row.get("cumulative_90_spend"))
+    video_ads_count = _int_or_none(row.get("video_ads_count")) or 0
     out = {
         "material_key": _text(row.get("material_key")),
         "product_code": _text(row.get("product_code")),
@@ -101,6 +121,9 @@ def _serialize_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "source_snapshot_at": _dt(row.get("source_snapshot_at")),
         "has_local_material_in_library": bool(media_item_id),
         "is_preselected": True,
+        "video_spends": cumulative_90_spend,
+        "video_spends_text": _fmt_spend_text(cumulative_90_spend),
+        "video_ads_count": video_ads_count,
     }
     out["preselection"] = _preselection_from_row(row)
     return out
@@ -112,9 +135,18 @@ def get_preselection(material_key: str) -> dict[str, Any] | None:
         return None
     row = query_one(
         """
-        SELECT *
-        FROM mingkong_material_preselections
-        WHERE material_key = %s
+        SELECT p.*, ds.cumulative_90_spend, ds.video_ads_count
+        FROM mingkong_material_preselections p
+        LEFT JOIN (
+          SELECT s1.material_key, s1.cumulative_90_spend, s1.video_ads_count
+          FROM mingkong_material_daily_snapshots s1
+          JOIN (
+            SELECT material_key, MAX(snapshot_at) AS max_snapshot_at
+            FROM mingkong_material_daily_snapshots
+            GROUP BY material_key
+          ) s2 ON s1.material_key = s2.material_key AND s1.snapshot_at = s2.max_snapshot_at
+        ) ds ON ds.material_key = p.material_key
+        WHERE p.material_key = %s
         """,
         (key,),
     )
@@ -253,12 +285,29 @@ def list_preselections(filters: Mapping[str, Any] | None = None) -> dict[str, An
         """,
         tuple(args),
     )
+    
+    sort_by = (filters.get("sort") or filters.get("sort_by") or "").strip().lower()
+    order_clause = "p.updated_at DESC, p.id DESC"
+    if sort_by == "spend_90":
+        order_clause = "ds.cumulative_90_spend DESC, p.updated_at DESC, p.id DESC"
+    elif sort_by == "ads_count":
+        order_clause = "ds.video_ads_count DESC, ds.cumulative_90_spend DESC, p.updated_at DESC, p.id DESC"
+
     rows = query(
         f"""
-        SELECT *
-        FROM mingkong_material_preselections
+        SELECT p.*, ds.cumulative_90_spend, ds.video_ads_count
+        FROM mingkong_material_preselections p
+        LEFT JOIN (
+          SELECT s1.material_key, s1.cumulative_90_spend, s1.video_ads_count
+          FROM mingkong_material_daily_snapshots s1
+          JOIN (
+            SELECT material_key, MAX(snapshot_at) AS max_snapshot_at
+            FROM mingkong_material_daily_snapshots
+            GROUP BY material_key
+          ) s2 ON s1.material_key = s2.material_key AND s1.snapshot_at = s2.max_snapshot_at
+        ) ds ON ds.material_key = p.material_key
         WHERE {where_sql}
-        ORDER BY updated_at DESC, id DESC
+        ORDER BY {order_clause}
         LIMIT %s OFFSET %s
         """,
         tuple(args + [page_size, offset]),

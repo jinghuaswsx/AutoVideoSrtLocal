@@ -805,6 +805,11 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="processed">已处理</option>
         <option value="unprocessed">未处理</option>
       </select>
+      <select id="mkSortSelect" class="oc-input oc-select" aria-label="排序逻辑" onchange="onMkSortChange()">
+        <option value="spend_90">90天消耗排序</option>
+        <option value="ads_count">广告数排序</option>
+        <option value="spend_yesterday">昨日消耗排序</option>
+      </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" value="{{ initial_search_query or '' }}" style="width:480px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
       <button class="oc-btn oc-btn--ghost" onclick="resetMkSearch()">重置</button>
@@ -1316,6 +1321,10 @@ function initMkSearchQueryFromUrl() {
     const inventoryFilter = document.getElementById('mkInventoryFilter');
     if (inventoryFilter) inventoryFilter.value = libraryStatus;
   }
+
+  const sort = String(params.get('sort') || params.get('sort_by') || 'spend_90').trim();
+  const sortSelect = document.getElementById('mkSortSelect');
+  if (sortSelect) sortSelect.value = sort;
   
   return kw;
 }
@@ -1327,6 +1336,8 @@ function syncMkSearchQueryToUrl() {
   const range = String(selectedMkRange || '').trim();
   const snapshot = String(selectedMkSnapshot || '').trim();
   const libraryStatus = currentMkLibraryStatus();
+  const sortSelect = document.getElementById('mkSortSelect');
+  const sort = sortSelect ? String(sortSelect.value || 'spend_90').trim() : 'spend_90';
 
   const url = new URL(window.location.href);
   const params = url.searchParams;
@@ -1357,6 +1368,12 @@ function syncMkSearchQueryToUrl() {
     params.set('library_status', libraryStatus);
   } else {
     params.delete('library_status');
+  }
+
+  if (sort && sort !== 'spend_90') {
+    params.set('sort', sort);
+  } else {
+    params.delete('sort');
   }
 
   const nextSearch = params.toString();
@@ -1399,8 +1416,25 @@ function resetMkSearch() {
   const rangeSelect = document.getElementById('snapshotRangeSelect');
   selectedMkRange = '';
   if (rangeSelect) rangeSelect.value = '';
+  const sortSelect = document.getElementById('mkSortSelect');
+  if (sortSelect) sortSelect.value = 'spend_90';
   syncMkSnapshotModeControls();
   activeMkProductCode = '';
+  runMkSearch();
+}
+
+function currentMkSort() {
+  const select = document.getElementById('mkSortSelect');
+  const value = select ? String(select.value || '').trim() : '';
+  return ['spend_90', 'ads_count', 'spend_yesterday'].includes(value) ? value : 'spend_90';
+}
+
+function mkSortQueryParam() {
+  const value = currentMkSort();
+  return value ? `&sort=${encodeURIComponent(value)}` : '';
+}
+
+function onMkSortChange() {
   runMkSearch();
 }
 
@@ -1621,7 +1655,7 @@ function openProductMaterialLibrary(productCode, productName) {
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
-  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;
+  const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}${mkSortQueryParam()}`;
 
   const resp = await fetch(url);
   const data = await resp.json();
@@ -1701,7 +1735,7 @@ async function loadMkLocalMaterialLibrary(page) {
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索${loadingScope}...` : `正在读取${loadingScope}...`;
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1739,7 +1773,7 @@ async function loadMkYesterdayTop100(page) {
   clearMkArchivePager(pagerIds);
   status.textContent = '正在读取昨天消耗前300归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}`;
+    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1783,7 +1817,7 @@ async function loadMkMaterialPreselections(page) {
   grid.innerHTML = '<div class="oc-empty">加载中...</div>';
   syncMkSearchQueryToUrl();
   try {
-    const url = `${MK_PRESELECTION_API}?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkPreselectionLibraryStatusQueryParam()}${mkPreselectionProcessedQueryParam()}`;
+    const url = `${MK_PRESELECTION_API}?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkPreselectionLibraryStatusQueryParam()}${mkPreselectionProcessedQueryParam()}${mkSortQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '素材预选加载失败');

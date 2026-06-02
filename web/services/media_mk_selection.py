@@ -889,8 +889,14 @@ def build_mk_selection_response(
         "dr.mk_first_material_url" if has_mk_first_material_url else None,
         "mk_first_material_url",
     )
+    sort_by = (args.get("sort") or args.get("sort_by") or "").strip().lower()
     legacy_spend_expr = "dr.mk_total_spends" if has_mk_total_spends else "0"
-    order_by = f"COALESCE(mps.total_90_spend, {legacy_spend_expr}, 0) DESC, dr.rank_position ASC"
+    legacy_ads_expr = "dr.mk_total_ads" if has_mk_total_ads else "0"
+
+    if sort_by == "ads_count":
+        order_by = f"COALESCE(mps.total_ads, {legacy_ads_expr}, 0) DESC, COALESCE(mps.total_90_spend, {legacy_spend_expr}, 0) DESC, dr.rank_position ASC"
+    else:  # spend_90 or spend_yesterday (fallback)
+        order_by = f"COALESCE(mps.total_90_spend, {legacy_spend_expr}, 0) DESC, dr.rank_position ASC"
 
     count_expr = "COUNT(DISTINCT dr.id)" if has_product_assets_table else "COUNT(*)"
     count_row = db_query_fn(

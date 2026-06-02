@@ -335,6 +335,7 @@ def api_mk_material_library():
         keyword=(request.args.get("keyword") or "").strip(),
         page=request.args.get("page") or 1,
         page_size=request.args.get("page_size") or 100,
+        sort_by=(request.args.get("sort") or request.args.get("sort_by") or "").strip(),
         library_status=(request.args.get("library_status") or request.args.get("inventory_status") or "").strip(),
     )
     return jsonify(result)
@@ -357,8 +358,12 @@ def api_mk_material_library_snapshots():
 def api_mk_yesterday_top300():
     if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
-    from appcore import api_keys
-    sort_order = api_keys.get_key(current_user.id, "yesterday_top300_sort") or "new_entry_first"
+    url_sort = (request.args.get("sort") or request.args.get("sort_by") or "").strip()
+    if url_sort:
+        sort_order = url_sort
+    else:
+        from appcore import api_keys
+        sort_order = api_keys.get_key(current_user.id, "yesterday_top300_sort") or "new_entry_first"
     result = _mingkong_materials().list_yesterday_top100(
         snapshot_date=(request.args.get("snapshot") or "").strip() or None,
         snapshot_at=(request.args.get("snapshot_at") or "").strip() or None,

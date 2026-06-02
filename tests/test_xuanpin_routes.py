@@ -1186,6 +1186,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
         "page": "2",
         "page_size": "24",
         "library_status": "video_not_imported",
+        "sort_by": "",
     }
 
 
