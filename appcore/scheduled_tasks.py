@@ -507,8 +507,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "tabcut_video_localization_tick",
         "name": "Tabcut US 视频本地化",
         "description": (
-            "每 10 分钟串行下载 Tabcut 未本地化的视频，默认每轮最多 10 条（按销量和播放量倒序下载）；"
-            "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载、时长、首帧封面结果写回 local_video_* 字段。"
+            "每 10 分钟串行下载 Tabcut 未本地化的视频，默认每轮最多 30 条（按销量和播放量倒序下载）；"
+            "每条下载完成或失败后至少间隔 15 秒再处理下一条，下载、时长、首帧封面结果写回 local_video_* 字段。"
             "失败视频至少 12 小时后才重试，最多尝试 5 次，仍失败则标记 unavailable；"
             "页面优先使用本地 MP4，缺失时回退 TikTok iframe。Docs-anchor: "
             "docs/superpowers/specs/2026-06-02-tabcut-local-video-design.md"
