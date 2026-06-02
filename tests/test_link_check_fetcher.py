@@ -176,6 +176,50 @@ def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     assert items[1]["source_url"] == "https://img.example.com/detail.jpg?width=800"
 
 
+def test_extract_images_from_html_keeps_lazy_srcset_detail_images():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    carousel_html = "\n".join(
+        f"""
+        <div class="t4s-product__media-item" data-media-id="{idx}">
+          <img src="https://cdn.shopify.com/files/carousel-{idx}.jpg?v=1">
+        </div>
+        """
+        for idx in range(9)
+    )
+    detail_html = """
+      <div class="product__description">
+        <img src="https://img.example.com/demo-1.gif">
+        <img
+          src="data:image/svg+xml,%3Csvg%3Eplaceholder%3C/svg%3E"
+          data-srcset="https://img.example.com/demo-2_360.jpeg 360w, https://img.example.com/demo-2_720.jpeg 720w">
+        <img src="https://img.example.com/demo-3.gif?w=400&h=438">
+        <img
+          src="data:image/svg+xml,%3Csvg%3Eplaceholder%3C/svg%3E"
+          data-srcset="https://img.example.com/demo-4_360.jpeg 360w, https://img.example.com/demo-4_720.jpeg 720w">
+        <img
+          src="data:image/svg+xml,%3Csvg%3Eplaceholder%3C/svg%3E"
+          srcset="https://img.example.com/demo-5_450.jpg 450w, https://img.example.com/demo-5_900.jpg 900w">
+        <img src="https://img.example.com/demo-6.png?w=480&h=114">
+      </div>
+    """
+    html = f"<html lang='en'><body>{carousel_html}{detail_html}</body></html>"
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/products/demo")
+
+    assert len(items) == 15
+    assert [item["kind"] for item in items[:9]] == ["carousel"] * 9
+    assert [item["kind"] for item in items[9:]] == ["detail"] * 6
+    assert [item["source_url"] for item in items[9:]] == [
+        "https://img.example.com/demo-1.gif",
+        "https://img.example.com/demo-2_720.jpeg",
+        "https://img.example.com/demo-3.gif?w=400&h=438",
+        "https://img.example.com/demo-4_720.jpeg",
+        "https://img.example.com/demo-5_900.jpg",
+        "https://img.example.com/demo-6.png?w=480&h=114",
+    ]
+
+
 def test_extract_images_from_html_keeps_payment_method_screenshots():
     from appcore.link_check_fetcher import extract_images_from_html
 

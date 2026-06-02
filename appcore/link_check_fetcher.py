@@ -123,6 +123,31 @@ def _is_placeholder_src(src: str) -> bool:
     return lowered.startswith("data:image/svg") or lowered.startswith("data:") or "svg" in lowered and "placeholder" in lowered
 
 
+def _srcset_source(srcset: str | None) -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for raw_part in str(srcset or "").split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        pieces = part.split()
+        url = pieces[0].strip()
+        if not url or _is_placeholder_src(url):
+            continue
+        width = 0
+        for descriptor in pieces[1:]:
+            if descriptor.endswith("w"):
+                try:
+                    width = int(descriptor[:-1])
+                except ValueError:
+                    width = 0
+                break
+        candidates.append((width, url))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[-1][1]
+
+
 def _image_source(node) -> str | None:
     # 1. Prefer 'src' if it is present and NOT a placeholder (e.g. populated after lazy load or browser execution)
     src_val = node.get("src")
@@ -130,9 +155,13 @@ def _image_source(node) -> str | None:
         return src_val
 
     # 2. Otherwise fall back to lazy-loading attributes or placeholder 'src'
-    for attr in ("data-master", "data-src", "src"):
+    for attr in ("data-master", "data-src"):
         value = node.get(attr)
-        if value and not (attr == "src" and _is_placeholder_src(value)):
+        if value:
+            return value
+    for attr in ("data-srcset", "srcset"):
+        value = _srcset_source(node.get(attr))
+        if value:
             return value
     return None
 
@@ -360,6 +389,10 @@ def extract_images_from_html(html: str, *, base_url: str, target_language: str =
     for node in soup.find_all("img"):
         for attr in ("src", "data-src", "data-master"):
             val = node.get(attr)
+            if val:
+                all_urls.append(_absolute_image_url(val, base_url))
+        for attr in ("srcset", "data-srcset"):
+            val = _srcset_source(node.get(attr))
             if val:
                 all_urls.append(_absolute_image_url(val, base_url))
 
