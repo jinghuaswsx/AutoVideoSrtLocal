@@ -1,8 +1,11 @@
 """推送管理蓝图骨架测试。"""
 
 
+import json
 from decimal import Decimal
 from datetime import datetime
+
+import pytest
 
 
 def _stub_push_list_context(monkeypatch, context=None):
@@ -2836,6 +2839,68 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
     assert item["ad_campaign_count"] == 2
     assert item["ad_spend_total"] == 300.0
     assert item["ad_roas"] == 2.0
+
+
+def test_pushes_api_history_includes_current_realtime_ad_metrics(authed_client_no_db, monkeypatch):
+    material_name = "2026.06.01-大冰球制冰机-原素材-小语种翻译素材(意大利语)-20250805崔心仪-蔡靖华.mp4"
+    rows = [
+        {
+            "log_id": 903,
+            "item_id": 1665,
+            "operator_user_id": 1,
+            "status": "success",
+            "request_payload": json.dumps({
+                "videos": [{"name": material_name, "url": "a.mp4"}],
+                "texts": [],
+                "product_links": [],
+            }, ensure_ascii=False),
+            "response_body": "",
+            "pushed_at": datetime(2026, 6, 1, 18, 8, 4),
+            "lang": "it",
+            "display_name": material_name,
+            "filename": material_name,
+            "duration_seconds": 10.0,
+            "file_size": 1000,
+            "product_id": 335,
+            "product_name": "大冰球制冰机",
+            "product_code": "ice-ball-molds-rjc",
+            "operator_username": "admin",
+            "product_owner_name": "顾倩",
+            "is_new_product_push": 0,
+        }
+    ]
+
+    db_calls = []
+
+    def fake_db_query(sql, args=()):
+        db_calls.append((sql, args))
+        if "media_push_logs" in sql:
+            return rows
+        if "meta_ad_realtime_daily_ad_metrics" in sql:
+            return [{
+                "total_spend": 11.59,
+                "total_purchase_value": 87.96,
+                "campaign_count": 1,
+            }]
+        if "meta_ad_daily_ad_metrics" in sql:
+            return [{
+                "total_spend": 0.0,
+                "total_purchase_value": 0.0,
+                "campaign_count": 0,
+            }]
+        return []
+
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+
+    resp = authed_client_no_db.get("/pushes/api/history?page=1")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["has_ad_plan"] is True
+    assert item["ad_campaign_count"] == 1
+    assert item["ad_spend_total"] == 11.59
+    assert item["ad_roas"] == pytest.approx(87.96 / 11.59)
+    assert any("meta_ad_realtime_daily_ad_metrics" in sql for sql, _args in db_calls)
 
 
 def test_pushes_api_history_date_range_normalization(authed_client_no_db, monkeypatch):
