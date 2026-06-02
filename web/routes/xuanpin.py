@@ -1013,3 +1013,58 @@ def api_today_recommendations_adopt():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(result)
+
+
+@bp.route("/api/tabcut/videos/<video_id>/local-video", methods=["GET"])
+@login_required
+def api_tabcut_video_play(video_id: str):
+    if not _is_admin():
+        abort(403)
+
+    from appcore.db import query
+    import config
+    import os
+
+    rows = query("SELECT local_video_path, local_video_status FROM tabcut_videos WHERE video_id = %s", [str(video_id)])
+    if not rows or not rows[0].get("local_video_path"):
+        abort(404, description="Local video not found")
+
+    local_video_path = rows[0]["local_video_path"]
+    video_abs_path = os.path.join(config.OUTPUT_DIR, local_video_path)
+    if not os.path.exists(video_abs_path):
+        abort(404, description="Local video file not found on disk")
+
+    return send_file(video_abs_path, mimetype="video/mp4", conditional=True)
+
+
+@bp.route("/api/tabcut/videos/<video_id>/local-cover", methods=["GET"])
+@login_required
+def api_tabcut_video_cover(video_id: str):
+    if not _is_admin():
+        abort(403)
+
+    from appcore.db import query
+    import config
+    import os
+
+    rows = query(
+        "SELECT local_video_cover_path, video_cover_url FROM tabcut_videos WHERE video_id = %s",
+        [str(video_id)]
+    )
+    if not rows:
+        abort(404, description="Video not found")
+
+    cover_path = rows[0].get("local_video_cover_path")
+    original_cover_url = rows[0].get("video_cover_url")
+
+    if cover_path:
+        cover_abs_path = os.path.join(config.OUTPUT_DIR, cover_path)
+        if os.path.exists(cover_abs_path):
+            return send_file(cover_abs_path, mimetype="image/jpeg", conditional=True)
+
+    # Fallback via redirect to original cover URL if local cover is missing
+    if original_cover_url:
+        return redirect(original_cover_url)
+
+    abort(404, description="No cover available")
+

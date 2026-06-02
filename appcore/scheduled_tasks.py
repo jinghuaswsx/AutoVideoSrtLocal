@@ -503,6 +503,24 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "log_table": "scheduled_task_runs",
         "output_file": "/data/autovideosrt/tabcut/daily/",
     },
+    "tabcut_video_localization_tick": {
+        "code": "tabcut_video_localization_tick",
+        "name": "Tabcut US 视频本地化",
+        "description": (
+            "每 10 分钟串行下载 Tabcut 未本地化的视频，默认每轮最多 20 条；"
+            "每条下载完成或失败后至少间隔 30 秒再处理下一条，下载、时长、首帧封面结果写回 local_video_* 字段。"
+            "失败视频至少 12 小时后才重试，最多尝试 5 次，仍失败则标记 unavailable；"
+            "页面优先使用本地 MP4，缺失时回退 TikTok iframe。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-02-tabcut-local-video-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "tabcut_video_localization_tick",
+        "runner": "appcore.tabcut_selection.scheduler.video_localization_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "active_task_pre_restart_check": {
         "code": "active_task_pre_restart_check",
         "name": "Active task pre-restart check",

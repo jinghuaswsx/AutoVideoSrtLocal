@@ -228,6 +228,8 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
                v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
                v.author_avatar_url, v.video_duration_ms, v.create_time,
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
+               v.local_video_path, v.local_video_cover_path, v.local_video_status,
+               v.local_video_duration_seconds,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
                gs.primary_item_sold_count AS primary_item_sold_count
@@ -756,4 +758,86 @@ def set_goods_mark_status(
         WHERE item_id=%s
         """,
         [status_value, mark_value, mark_value, mark_value, _actor_id(user_id), str(item_id)],
+    )
+
+
+def next_pending_local_videos(limit: int, max_attempts: int = 5, *, query_fn: QueryFn = query) -> list[dict]:
+    return query_fn(
+        """
+        SELECT video_id, author_name, tk_video_url, local_video_attempts
+        FROM tabcut_videos
+        WHERE local_video_status = 'pending'
+           OR (local_video_status = 'failed'
+               AND local_video_attempts < %s
+               AND (local_video_last_attempt_at IS NULL OR local_video_last_attempt_at < DATE_SUB(NOW(), INTERVAL 12 HOUR)))
+        ORDER BY local_video_attempts ASC, video_id ASC
+        LIMIT %s
+        """,
+        [max_attempts, limit],
+    )
+
+
+def mark_local_video_downloading(video_id: str, *, execute_fn: ExecuteFn = execute) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET local_video_status = 'downloading',
+            local_video_attempts = local_video_attempts + 1,
+            local_video_last_attempt_at = NOW()
+        WHERE video_id = %s
+        """,
+        [str(video_id)],
+    )
+
+
+def finish_local_video_download_success(
+    video_id: str,
+    local_video_path: str,
+    local_video_duration_seconds: float,
+    local_video_cover_path: str,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET local_video_status = 'success',
+            local_video_path = %s,
+            local_video_duration_seconds = %s,
+            local_video_cover_path = %s,
+            local_video_error = NULL
+        WHERE video_id = %s
+        """,
+        [local_video_path, local_video_duration_seconds, local_video_cover_path, str(video_id)],
+    )
+
+
+def finish_local_video_download_failure(
+    video_id: str,
+    error_message: str,
+    max_attempts: int = 5,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET local_video_status = CASE WHEN local_video_attempts >= %s THEN 'unavailable' ELSE 'failed' END,
+            local_video_error = %s
+        WHERE video_id = %s
+        """,
+        [max_attempts, error_message, str(video_id)],
+    )
+
+
+def reset_stale_running_local_videos(*, execute_fn: ExecuteFn = execute) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET local_video_status = 'failed',
+            local_video_error = 'Stale download task reset'
+        WHERE local_video_status = 'downloading'
+          AND local_video_last_attempt_at < DATE_SUB(NOW(), INTERVAL 2 HOUR)
+        """,
+        [],
     )

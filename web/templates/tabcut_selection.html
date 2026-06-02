@@ -263,7 +263,8 @@
         <button class="tiktok-modal-close" type="button" onclick="closeTiktokBrowserModal()" aria-label="关闭">&times;</button>
       </div>
       <div class="tiktok-modal-body">
-        <iframe id="tiktokIframe" class="tiktok-iframe" sandbox="allow-scripts allow-same-origin allow-popups" src=""></iframe>
+        <iframe id="tiktokIframe" class="tiktok-iframe" sandbox="allow-scripts allow-same-origin allow-popups" src="" style="width:100%; height:100%; border:none; background:#000;"></iframe>
+        <video id="tiktokLocalVideo" controls playsinline style="display:none; width:100%; height:100%; object-fit:contain; background:#000; outline:none;"></video>
       </div>
       <div class="tiktok-modal-footer">
         <a id="tiktokFallbackLink" class="tiktok-modal-fallback" href="" target="_blank" rel="noopener noreferrer">直接在 TikTok 中打开</a>
@@ -327,19 +328,45 @@ function renderTags(row) {
   return tags.map(tag => `#${esc(tag)}`).join(" ");
 }
 function renderVideoCover(row) {
-  const cover = row.video_cover_url || row.primary_item_pic_url || "";
+  let cover = row.video_cover_url || row.primary_item_pic_url || "";
+  if (row.local_video_status === "success" && row.local_video_cover_path) {
+    cover = `/xuanpin/api/tabcut/videos/${encodeURIComponent(row.video_id)}/local-cover`;
+  }
   const duration = durationText(row.video_duration_ms);
   const inner = cover
     ? `<img class="tabcut-video-cover" src="${esc(cover)}" loading="lazy" alt="">`
     : `<span class="tabcut-cover-placeholder">No Image Available</span>`;
-  
-  const videoId = esc(row.video_id || "");
-  const authorName = esc(row.author_name || "");
-  const playBtn = `<button class="tabcut-video-play-btn" type="button" aria-label="播放视频" onclick="openTiktokBrowserModal('${videoId}', '${authorName}')"></button>`;
 
-  const frame = `<span class="tabcut-cover-frame" onclick="openTiktokBrowserModal('${videoId}', '${authorName}')">${inner}<span class="tabcut-video-badges"><span class="tabcut-video-badge">美国</span>${duration ? `<span class="tabcut-video-badge">${esc(duration)}</span>` : ""}</span>${playBtn}</span>`;
-  
+  const videoId = String(row.video_id || "");
+  const authorName = String(row.author_name || "");
+  const localVideoPath = String(row.local_video_path || "");
+  const localVideoStatus = String(row.local_video_status || "pending");
+
+  const playBtn = `<button class="tabcut-video-play-btn" type="button" aria-label="播放视频"></button>`;
+
+  const frame = `<span class="tabcut-cover-frame"
+      data-video-id="${esc(videoId)}"
+      data-author-name="${esc(authorName)}"
+      data-local-video-path="${esc(localVideoPath)}"
+      data-local-video-status="${esc(localVideoStatus)}"
+      onclick="playTabcutVideo(this)">
+      ${inner}
+      <span class="tabcut-video-badges">
+        <span class="tabcut-video-badge">美国</span>
+        ${duration ? `<span class="tabcut-video-badge">${esc(duration)}</span>` : ""}
+      </span>
+      ${playBtn}
+    </span>`;
+
   return `<div class="tabcut-video-cover-link" style="cursor: pointer;">${frame}</div>`;
+}
+
+function playTabcutVideo(el) {
+  const videoId = el.getAttribute("data-video-id");
+  const authorName = el.getAttribute("data-author-name");
+  const localVideoPath = el.getAttribute("data-local-video-path");
+  const localVideoStatus = el.getAttribute("data-local-video-status");
+  openTiktokBrowserModal(videoId, authorName, localVideoPath, localVideoStatus);
 }
 function renderProductMini(row) {
   const image = row.primary_item_pic_url ? `<img src="${esc(row.primary_item_pic_url)}" loading="lazy" alt="">` : `<span class="tabcut-product-img-empty"></span>`;
@@ -613,29 +640,56 @@ async function refreshTabcut() {
   await fetch("/xuanpin/api/tabcut/refresh", { method:"POST", headers:{ "Content-Type":"application/json", "X-CSRFToken":csrf }, body:JSON.stringify({ days:30 }) });
 }
 
-function openTiktokBrowserModal(videoId, authorName) {
+function openTiktokBrowserModal(videoId, authorName, localVideoPath, localVideoStatus) {
   const modal = qs("tiktokBrowserModal");
   const iframe = qs("tiktokIframe");
+  const video = qs("tiktokLocalVideo");
   const fallback = qs("tiktokFallbackLink");
-  if (!modal || !iframe) return;
+  if (!modal) return;
 
-  const embedUrl = `https://www.tiktok.com/embed/v2/${encodeURIComponent(videoId)}`;
   const author = String(authorName || "").replace(/^@/, "").trim();
-  const directUrl = author 
+  const directUrl = author
     ? `https://www.tiktok.com/@${encodeURIComponent(author)}/video/${encodeURIComponent(videoId)}`
     : `https://www.tiktok.com/video/${encodeURIComponent(videoId)}`;
 
-  iframe.src = embedUrl;
   fallback.href = directUrl;
-  
+
+  if (localVideoStatus === "success" && localVideoPath) {
+    // Hide iframe, show native video player
+    if (iframe) {
+      iframe.style.display = "none";
+      iframe.src = "";
+    }
+    if (video) {
+      video.style.display = "block";
+      video.src = `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-video`;
+      video.play().catch(e => console.log("Auto-play blocked or failed", e));
+    }
+  } else {
+    // Hide native video player, show iframe
+    if (video) {
+      video.style.display = "none";
+      video.src = "";
+    }
+    if (iframe) {
+      iframe.style.display = "block";
+      iframe.src = `https://www.tiktok.com/embed/v2/${encodeURIComponent(videoId)}`;
+    }
+  }
+
   modal.classList.add("open");
 }
 
 function closeTiktokBrowserModal() {
   const modal = qs("tiktokBrowserModal");
   const iframe = qs("tiktokIframe");
+  const video = qs("tiktokLocalVideo");
   if (modal) modal.classList.remove("open");
   if (iframe) iframe.src = "";
+  if (video) {
+    video.pause();
+    video.src = "";
+  }
 }
 
 let isZoomed = localStorage.getItem("tabcut_card_zoomed") === "true";
