@@ -236,6 +236,30 @@ def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_
     ]
 
 
+def test_pair_carousel_images_prefers_filename_match_when_source_indices_include_detail_images():
+    product_images = [
+        {"src": "https://cdn.shopify.com/files/816c3zYqhmL._AC_SL1500.jpg?v=1"},
+        {"src": "https://cdn.shopify.com/files/71uIcW9VsXL._AC_SL1500.jpg?v=1"},
+        {"src": "https://cdn.shopify.com/files/71ypcaEcGYL._AC_SL1500.jpg?v=1"},
+    ]
+    localized_images = [
+        _localized("loc_from_url_en_00_387b010f619c8defef27e7fee611a80eb9b01f38.jpg"),
+        _localized("loc_from_url_en_03_8e56bc2ebe8592a7b1576b01575ba061212d874c.webp.png"),
+        _localized("loc_from_url_en_04_1b2ee8b4353d7297ce61f6d5bcd7becdfe5f1381.webp.png"),
+        _localized("loc_from_url_en_09_816c3zYqhmL._AC_SL1500.jpg"),
+        _localized("loc_from_url_en_10_71uIcW9VsXL._AC_SL1500.png"),
+        _localized("loc_from_url_en_11_71ypcaEcGYL._AC_SL1500.png"),
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [
+        (0, str(Path("C:/tmp") / "loc_from_url_en_09_816c3zYqhmL._AC_SL1500.jpg")),
+        (1, str(Path("C:/tmp") / "loc_from_url_en_10_71uIcW9VsXL._AC_SL1500.png")),
+        (2, str(Path("C:/tmp") / "loc_from_url_en_11_71ypcaEcGYL._AC_SL1500.png")),
+    ]
+
+
 def test_pair_carousel_images_uses_domain_alias_source_index_when_target_token_differs():
     canonical_product = {
         "images": [

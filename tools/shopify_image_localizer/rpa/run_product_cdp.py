@@ -111,11 +111,63 @@ def _localized_by_source_index(localized_images: list[dict]) -> dict[int, list[d
     return taa_cdp.build_localized_candidates_by_source_index(localized_images)
 
 
+def _localized_by_source_name_key(localized_images: list[dict]) -> dict[str, list[dict[str, Any]]]:
+    candidates: dict[str, list[dict[str, Any]]] = {}
+    for item in localized_images or []:
+        filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
+        local_path = str(item.get("local_path") or "")
+        source_name_key = taa_cdp.source_name_key(filename)
+        if not source_name_key or not local_path:
+            continue
+        row = {
+            **item,
+            "token": ez_cdp.md5_token(filename),
+            "source_index": taa_cdp.source_index_from_filename(filename),
+            "source_name_key": source_name_key,
+            "local_path": local_path,
+            "filename": filename,
+        }
+        candidates.setdefault(source_name_key, []).append(row)
+    for rows in candidates.values():
+        rows.sort(key=lambda row: (row.get("source_index") is None, row.get("source_index") or 9999, row.get("filename") or ""))
+    return candidates
+
+
+def _choose_carousel_name_candidate(
+    *,
+    slot_idx: int,
+    src_key: str | None,
+    candidates_by_source_name_key: dict[str, list[dict[str, Any]]] | None,
+    source_index: int | None,
+) -> dict[str, Any] | None:
+    if not src_key:
+        return None
+    candidates = (candidates_by_source_name_key or {}).get(src_key) or []
+    if not candidates:
+        return None
+    preferred_indices: list[int] = []
+    for value in (source_index, slot_idx, slot_idx + 1):
+        if value is not None and value not in preferred_indices:
+            preferred_indices.append(value)
+    for preferred_index in preferred_indices:
+        exact = [row for row in candidates if row.get("source_index") == preferred_index]
+        if exact:
+            return exact[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    no_index = [row for row in candidates if row.get("source_index") is None]
+    if len(no_index) == 1:
+        return no_index[0]
+    options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
+    raise ValueError(f"ambiguous carousel filename source for slot {slot_idx} key {src_key}: {options}")
+
+
 def _choose_carousel_candidate(
     slot_idx: int,
     src: str,
     candidates_by_token: dict[str, list[dict[str, Any]]],
     candidates_by_source_index: dict[int, list[dict[str, Any]]] | None = None,
+    candidates_by_source_name_key: dict[str, list[dict[str, Any]]] | None = None,
     domain_mapping: domain_image_mapping.DomainImageMapping | None = None,
 ) -> dict[str, Any] | None:
     token = ez_cdp.md5_token(src)
@@ -152,12 +204,20 @@ def _choose_carousel_candidate(
         domain_mapping.carousel_source_index_for(src, slot_idx)
         if domain_mapping is not None else None
     )
+    src_key = taa_cdp.source_name_key(src)
+    name_candidate = _choose_carousel_name_candidate(
+        slot_idx=slot_idx,
+        src_key=src_key,
+        candidates_by_source_name_key=candidates_by_source_name_key,
+        source_index=source_index,
+    )
+    if name_candidate is not None:
+        return name_candidate
     if source_index is None:
         source_index = slot_idx
     source_index_candidates = (candidates_by_source_index or {}).get(source_index) or []
     if not source_index_candidates:
         return None
-    src_key = taa_cdp.source_name_key(src)
     if src_key:
         exact_name = [row for row in source_index_candidates if row.get("source_name_key") == src_key]
         if exact_name:
@@ -176,6 +236,7 @@ def pair_carousel_images(
 ) -> list[tuple[int, str]]:
     candidates_by_token = _localized_by_token(localized_images)
     candidates_by_source_index = _localized_by_source_index(localized_images)
+    candidates_by_source_name_key = _localized_by_source_name_key(localized_images)
     pairs: list[tuple[int, str]] = []
     for idx, image in enumerate(product_images):
         if isinstance(image, str):
@@ -190,6 +251,7 @@ def pair_carousel_images(
             src,
             candidates_by_token,
             candidates_by_source_index,
+            candidates_by_source_name_key,
             domain_mapping=domain_mapping,
         )
         if candidate is None:
