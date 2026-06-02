@@ -73,11 +73,11 @@ overall_roas = (SUM(order line amount) + SUM(shipping amount)) / SUM(product ad 
 
 产品投放情况按产品广告消耗判断：
 
-- `投放中`：产品有任意广告消耗，且最近 7 天有消耗
-- `终止投放`：产品有历史广告消耗，但最近 7 天无消耗
+- `投放中`：产品有任意广告消耗，且最新同步的实时广告快照在最近 6 小时内有有效消耗
+- `终止投放`：产品有历史广告消耗，但最新同步的实时广告快照最近 6 小时内无有效消耗
 - `未投`：产品没有任何广告消耗
 
-最近 7 天按 `COALESCE(meta_business_date, report_date) >= CURDATE() - INTERVAL 6 DAY`。
+“最近 6 小时”只看 `meta_ad_realtime_daily_campaign_metrics` / `meta_ad_realtime_daily_ad_metrics` 的最新同步快照：`snapshot_at >= NOW() - INTERVAL 6 HOUR` 且 `spend_usd > 0`。历史日终表仍参与总消耗和 ROAS 计算，但不再让产品进入 `投放中`。
 
 ## Data Model
 
@@ -92,7 +92,7 @@ overall_roas = (SUM(order line amount) + SUM(shipping amount)) / SUM(product ad 
 - `shipping_revenue_usd`
 - `total_revenue_usd`
 - `ad_spend_usd`
-- `active_7d_ad_spend_usd`
+- `active_7d_ad_spend_usd`（历史字段名沿用；当前含义为最近 6 小时最新实时快照里的有效消耗）
 - `overall_roas`
 - `delivery_status`: `active | stopped | never`
 - `computed_at`, `created_at`, `updated_at`
@@ -107,7 +107,7 @@ overall_roas = (SUM(order line amount) + SUM(shipping amount)) / SUM(product ad 
 - `ad_spend_usd`
 - `purchase_value_usd`
 - `ad_roas`
-- `active_7d_ad_spend_usd`
+- `active_7d_ad_spend_usd`（历史字段名沿用；当前含义为最近 6 小时最新实时快照里的有效消耗）
 - `computed_at`, `created_at`, `updated_at`
 
 ## Request Flow

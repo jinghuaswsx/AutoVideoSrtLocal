@@ -146,9 +146,9 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     assert "meta_ad_daily_campaign_metrics" in joined
     assert "meta_ad_daily_ad_metrics" in joined
     assert "media_push_logs" in joined
-    assert "DATE(COALESCE(meta_business_date, report_date)) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()" in joined
-    assert "DATE(matched.activity_date) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()" in joined
+    assert "snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)" in joined
     assert "INTERVAL 6 DAY" not in joined
+    assert "INTERVAL 2 DAY" not in joined
 
 
 def test_refresh_all_falls_back_when_realtime_ad_tables_are_missing(monkeypatch):
@@ -227,6 +227,20 @@ def test_refresh_sql_includes_today_realtime_latest_snapshots():
     assert "GROUP BY business_date, ad_account_id" in lang_sql
     assert "business_date = CURDATE()" in product_sql
     assert "business_date = CURDATE()" in lang_sql
+
+
+def test_refresh_sql_only_marks_recent_realtime_spend_active():
+    from appcore import media_product_ad_status_cache as cache
+
+    product_sql = cache._PRODUCT_REFRESH_SQL
+    lang_sql = cache._LANG_REFRESH_SQL
+
+    assert "DATE(COALESCE(meta_business_date, report_date)) < CURDATE()" in product_sql
+    assert "DATE(COALESCE(m.meta_business_date, m.report_date)) < CURDATE()" in lang_sql
+    assert product_sql.count("snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)") >= 1
+    assert lang_sql.count("snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)") >= 1
+    assert "WHEN m.snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)" in product_sql
+    assert "WHEN matched.snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)" in lang_sql
 
 
 def test_language_refresh_falls_back_to_market_country_when_material_filename_changes():
