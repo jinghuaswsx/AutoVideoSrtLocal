@@ -218,6 +218,9 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert "winner.mp4" in body
     assert "投放热度" in body
     assert "mk-detail-heat-panel" in body
+    assert "mk-detail-heat-card" in body
+    assert ".mk-detail-heat-panel { display:flex; justify-content:center; margin:-4px 0 16px; }" in body
+    assert ".mk-detail-heat-card { display:inline-flex; align-items:center; justify-content:center; gap:14px; min-width:260px; max-width:100%; border:1px solid var(--mkd-border); border-radius:var(--mkd-radius); background:#fff; padding:12px 16px; }" in body
     assert "mk-detail-heat-badge high" in body
     assert ".mk-detail-heat-badge.high { background:var(--oc-success-bg); color:var(--oc-success-fg); }" in body
     assert ".mk-detail-heat-badge.med { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }" in body

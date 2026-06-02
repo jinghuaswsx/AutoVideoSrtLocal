@@ -35,8 +35,10 @@
 .mk-detail-subtitle { display:flex; flex-wrap:wrap; gap:8px 14px; color:var(--mkd-muted); font-size:13px; line-height:1.45; }
 .mk-detail-subtitle a { color:var(--mkd-accent); text-decoration:none; }
 .mk-detail-subtitle a:hover { text-decoration:underline; }
-.mk-detail-heat-panel { display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid oklch(84% 0.08 62); border-radius:var(--mkd-radius); background:oklch(98% 0.02 68); padding:14px 16px; margin:-4px 0 16px; }
-.mk-detail-heat-label { color:oklch(38% 0.12 50); font-size:13px; line-height:1.35; font-weight:700; }
+.mk-detail-heat-panel { display:flex; justify-content:center; margin:-4px 0 16px; }
+.mk-detail-heat-card { display:inline-flex; align-items:center; justify-content:center; gap:14px; min-width:260px; max-width:100%; border:1px solid var(--mkd-border); border-radius:var(--mkd-radius); background:#fff; padding:12px 16px; }
+.mk-detail-heat-card > div { text-align:center; }
+.mk-detail-heat-label { color:var(--mkd-fg); font-size:13px; line-height:1.35; font-weight:700; }
 .mk-detail-heat-copy { color:var(--mkd-muted); font-size:13px; line-height:1.45; margin-top:4px; }
 .mk-detail-heat-badge { display:inline-flex; align-items:center; justify-content:center; min-width:58px; height:38px; padding:0 14px; border:1px solid transparent; border-radius:var(--mkd-radius); font-size:20px; line-height:1; font-weight:800; }
 .mk-detail-heat-badge.high { background:var(--oc-success-bg); color:var(--oc-success-fg); }
@@ -68,7 +70,7 @@
 }
 @media (max-width: 640px) {
   .mk-detail-top { flex-direction:column; }
-  .mk-detail-heat-panel { align-items:flex-start; flex-direction:column; }
+  .mk-detail-heat-card { flex-direction:column; }
   .mk-detail-meta-grid { grid-template-columns:1fr; }
   .mk-detail-title { font-size:20px; }
 }
@@ -98,11 +100,13 @@
   </div>
 
   <section class="mk-detail-heat-panel" aria-label="投放热度">
-    <div>
-      <div class="mk-detail-heat-label">投放热度</div>
-      <div class="mk-detail-heat-copy">广告数 {{ heat_ads_count }} · 90天消耗 {{ heat_spend_text }}</div>
+    <div class="mk-detail-heat-card">
+      <div>
+        <div class="mk-detail-heat-label">投放热度</div>
+        <div class="mk-detail-heat-copy">广告数 {{ heat_ads_count }} · 90天消耗 {{ heat_spend_text }}</div>
+      </div>
+      <span class="mk-detail-heat-badge {{ heat_class }}">{{ heat_label }}</span>
     </div>
-    <span class="mk-detail-heat-badge {{ heat_class }}">{{ heat_label }}</span>
   </section>
 
   <div class="mk-detail-meta-grid">
