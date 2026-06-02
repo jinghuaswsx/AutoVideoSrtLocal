@@ -67,16 +67,25 @@ def _stringify_time(value) -> str:
     return str(value)
 
 
-def _load_copy_row(copy_id) -> dict | None:
+def _load_copy_row(copy_id, fallback_product_id: int | None = None, fallback_lang: str | None = None) -> dict | None:
     normalized = _positive_int(copy_id)
-    if not normalized:
-        return None
-    row = query_one(
-        "SELECT id, product_id, lang, idx, title, body, description, "
-        "ad_carrier, ad_copy, ad_keywords, created_at, updated_at "
-        "FROM media_copywritings WHERE id=%s",
-        (normalized,),
-    )
+    row = None
+    if normalized:
+        row = query_one(
+            "SELECT id, product_id, lang, idx, title, body, description, "
+            "ad_carrier, ad_copy, ad_keywords, created_at, updated_at "
+            "FROM media_copywritings WHERE id=%s",
+            (normalized,),
+        )
+    if not row and fallback_product_id and fallback_lang:
+        row = query_one(
+            "SELECT id, product_id, lang, idx, title, body, description, "
+            "ad_carrier, ad_copy, ad_keywords, created_at, updated_at "
+            "FROM media_copywritings "
+            "WHERE product_id=%s AND lang=%s "
+            "ORDER BY idx ASC, id DESC LIMIT 1",
+            (fallback_product_id, fallback_lang),
+        )
     return dict(row) if row else None
 
 
@@ -94,13 +103,16 @@ def _load_copywriting_translate_detail(task_id: str) -> dict:
     state = _parse_state_json(row.get("state_json"))
     source_copy_id = _positive_int(state.get("source_copy_id"))
     target_copy_id = _positive_int(state.get("target_copy_id"))
+    product_id = _positive_int(state.get("product_id"))
+    source_lang = state.get("source_lang") or "en"
+    target_lang = state.get("target_lang")
     parent_task_id = str(state.get("parent_task_id") or "").strip()
     return {
         "task": {
             "id": str(row.get("id") or task_id),
             "status": row.get("status") or "",
-            "source_lang": state.get("source_lang") or "",
-            "target_lang": state.get("target_lang") or "",
+            "source_lang": source_lang,
+            "target_lang": target_lang or "",
             "parent_task_id": parent_task_id,
             "parent_task_url": f"/tasks/{parent_task_id}" if parent_task_id else "",
             "source_copy_id": source_copy_id,
@@ -110,8 +122,8 @@ def _load_copywriting_translate_detail(task_id: str) -> dict:
             "created_at": _stringify_time(row.get("created_at")),
             "updated_at": _stringify_time(row.get("created_at")),
         },
-        "source_copy": _load_copy_row(source_copy_id),
-        "target_copy": _load_copy_row(target_copy_id),
+        "source_copy": _load_copy_row(source_copy_id, fallback_product_id=product_id, fallback_lang=source_lang),
+        "target_copy": _load_copy_row(target_copy_id, fallback_product_id=product_id, fallback_lang=target_lang),
     }
 
 

@@ -306,3 +306,78 @@ def test_start_unauthenticated_rejected():
                    json={"source_copy_id": 1, "target_lang": "de"})
     # login_required 默认会 302 到登录页,或返回 401
     assert resp.status_code in (302, 401)
+
+
+def test_detail_api_uses_fallback_if_ids_missing(client_patched, monkeypatch):
+    """当 state_json 中指定的特定 source_copy_id 和 target_copy_id 在数据库中被硬删除时，
+    系统应当能够通过 product_id, source_lang, target_lang 兜底查询到对应产品当前的最新文案。
+    """
+    def fake_query_one(sql, args=()):
+        print("MOCK SQL CALL:", repr(sql), repr(args))
+        if "FROM projects" in sql:
+            return {
+                "id": "copy-fallback-1",
+                "user_id": 1,
+                "status": "done",
+                "state_json": json.dumps(
+                    {
+                        "product_id": 9,
+                        "source_copy_id": 999101,  # 假装被硬删除了
+                        "source_lang": "en",
+                        "target_lang": "de",
+                        "parent_task_id": "bulk-1",
+                        "target_copy_id": 999202,  # 假装被硬删除了
+                        "tokens_used": 50,
+                    },
+                    ensure_ascii=False,
+                ),
+                "created_at": "2026-05-21 10:00:00",
+            }
+        
+        # 精确匹配具体的 copy_id，返回 None 模拟被硬删除
+        if "FROM media_copywritings" in sql and "WHERE id=%s" in sql:
+            return None
+        
+        # 匹配 fallback 兜底逻辑的 SQL
+        if "FROM media_copywritings" in sql and "product_id=%s AND lang=%s" in sql:
+            pid, lang = args
+            if pid == 9 and lang == "en":
+                ret = {
+                    "id": 12001,  # 最新的英文文案 ID
+                    "product_id": 9,
+                    "lang": "en",
+                    "title": "Fallback Source",
+                    "body": "Fallback Source body",
+                    "description": "Fallback Source description",
+                }
+                print("MOCK RETURNING EN:", ret)
+                return ret
+            if pid == 9 and lang == "de":
+                ret = {
+                    "id": 12002,  # 最新的德文文案 ID
+                    "product_id": 9,
+                    "lang": "de",
+                    "title": "Fallback Ziel",
+                    "body": "Fallback Ziel body",
+                    "description": "Fallback Ziel description",
+                }
+                print("MOCK RETURNING DE:", ret)
+                return ret
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(
+        "web.routes.copywriting_translate.query_one",
+        fake_query_one,
+        raising=False,
+    )
+
+    resp = client_patched.get("/api/copywriting-translate/copy-fallback-1")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    
+    # 成功通过兜底拿到最新的文案内容
+    assert data["source_copy"]["title"] == "Fallback Source"
+    assert data["source_copy"]["body"] == "Fallback Source body"
+    assert data["target_copy"]["title"] == "Fallback Ziel"
+    assert data["target_copy"]["body"] == "Fallback Ziel body"
+
