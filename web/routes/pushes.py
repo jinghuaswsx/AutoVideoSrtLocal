@@ -627,16 +627,6 @@ def api_push(item_id: int):
     existing_mk_id = product.get("mk_id")
     had_no_mk_id = existing_mk_id is None or str(existing_mk_id).strip() in ("", "0")
 
-    # Check if this product has ever been successfully pushed before
-    from appcore.db import query_one as db_query_one
-    exist_row = db_query_one(
-        "SELECT 1 FROM media_push_logs l "
-        "JOIN media_items i ON i.id = l.item_id "
-        "WHERE i.product_id = %s AND l.status = 'success' LIMIT 1",
-        (product["id"],)
-    )
-    had_no_success_push = not exist_row
-
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
         missing = [k for k, v in readiness.items() if not v]
@@ -741,11 +731,10 @@ def api_push(item_id: int):
                 medias.update_product(product["id"], mk_id=int(matched_mk_id))
                 localized_texts_product["mk_id"] = int(matched_mk_id)
                 mk_id_match["first_pairing"] = had_no_mk_id
-                if had_no_success_push:
-                    pushes.mark_new_product_push_once(
-                        log_id=int(log_id),
-                        product_id=int(product["id"]),
-                    )
+                pushes.mark_new_product_push_once(
+                    log_id=int(log_id),
+                    product_id=int(product["id"]),
+                )
             except Exception as exc:
                 # 唯一键冲突（已被其他产品占用）或别的 DB 错误
                 log.warning("update_product mk_id failed: %s", exc)
