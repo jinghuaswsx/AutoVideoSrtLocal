@@ -4305,17 +4305,73 @@
   document.addEventListener('click', closeAllMenus);
 
   function renderPager(total, page, pageSize) {
+    const pagers = [$('topPager'), $('pager')].filter(Boolean);
+    if (!pagers.length) return;
     const pages = Math.max(1, Math.ceil(total / pageSize));
-    const p = $('pager');
-    if (pages <= 1) { p.innerHTML = ''; return; }
-    let html = '';
-    for (let i = 1; i <= pages; i++) {
-      html += `<button class="${i === page ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    const currentPage = Math.min(pages, Math.max(1, Number(page || 1)));
+
+    if (pages <= 1) {
+      pagers.forEach(pager => {
+        pager.innerHTML = '';
+        pager.hidden = true;
+      });
+      if (typeof window.updateMediaStickyOffsets === 'function') {
+        window.requestAnimationFrame(() => window.updateMediaStickyOffsets());
+      }
+      return;
     }
-    p.innerHTML = html;
-    p.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => {
-      state.page = +b.dataset.page; loadList();
-    }));
+
+    const firstDisabled = currentPage <= 1 ? ' disabled aria-disabled="true"' : '';
+    const lastDisabled = currentPage >= pages ? ' disabled aria-disabled="true"' : '';
+    const buttons = [
+      `<span class="oc-vm-page-summary" data-page-summary>第 ${currentPage} / ${pages} 页 · 共 ${pages} 页</span>`,
+      `<button type="button" data-page="1"${firstDisabled}>首页</button>`,
+    ];
+    for (let p = Math.max(1, currentPage - 2); p <= Math.min(pages, currentPage + 2); p++) {
+      buttons.push(`<button type="button" class="${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`);
+    }
+    buttons.push(`<button type="button" data-page="${pages}"${lastDisabled}>末页</button>`);
+    buttons.push(`
+      <label class="oc-vm-page-jump">
+        <span>去</span>
+        <input type="number" min="1" max="${pages}" value="${currentPage}" inputmode="numeric" pattern="[0-9]*" data-page-jump aria-label="跳转到指定页">
+        <span>页</span>
+      </label>
+    `);
+    buttons.push(`<span class="oc-vm-page-summary">共 ${total} 条数据</span>`);
+
+    pagers.forEach(pager => {
+      pager.hidden = false;
+      pager.innerHTML = buttons.join('');
+      pager.querySelectorAll('[data-page]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.page = Number(btn.dataset.page || 1);
+          loadList();
+        });
+      });
+      const jumpInput = pager.querySelector('[data-page-jump]');
+      if (jumpInput) {
+        jumpInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const requested = Number.parseInt(jumpInput.value, 10);
+            if (!Number.isFinite(requested)) {
+              jumpInput.value = String(currentPage);
+              return;
+            }
+            const target = Math.min(pages, Math.max(1, requested));
+            jumpInput.value = String(target);
+            if (target === state.page) return;
+            state.page = target;
+            loadList();
+          }
+        });
+      }
+    });
+
+    if (typeof window.updateMediaStickyOffsets === 'function') {
+      window.requestAnimationFrame(() => window.updateMediaStickyOffsets());
+    }
   }
 
   async function deleteProduct(pid) {
