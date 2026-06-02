@@ -1331,6 +1331,92 @@ def test_list_material_library_all_keyword_uses_live_search_and_rjc_variant(monk
     assert original["video_author"] == "李文龙"
 
 
+def test_list_material_library_all_keyword_enriches_live_cards_with_yesterday_top300(
+    monkeypatch,
+):
+    keyword = "cool-widget"
+    material_key = mm.material_key_for(keyword, 901, "uploads2/winner.mp4")
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", lambda items: items)
+    monkeypatch.setattr(mm, "_mk_headers", lambda: {"Authorization": "Bearer test"})
+    monkeypatch.setattr(mm, "_mk_base_url", lambda: "https://mk.example")
+
+    def fake_query_one(sql, args=()):
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 6, 1),
+                "snapshot_at": datetime(2026, 6, 1, 5, 0, 0),
+                "snapshot_slot": "0500",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        if "FROM mingkong_material_daily_top100" in sql and "material_key IN" in sql:
+            assert args == ("2026-06-01 05:00:00", material_key)
+            return [
+                {
+                    "material_key": material_key,
+                    "snapshot_date": date(2026, 6, 1),
+                    "snapshot_at": datetime(2026, 6, 1, 5, 0, 0),
+                    "snapshot_slot": "0500",
+                    "previous_snapshot_date": date(2026, 5, 31),
+                    "previous_snapshot_at": datetime(2026, 5, 31, 5, 0, 0),
+                    "previous_snapshot_slot": "0500",
+                    "comparison_interval_seconds": 86400,
+                    "previous_cumulative_90_spend": 10800,
+                    "current_cumulative_90_spend": 12345,
+                    "yesterday_spend_delta": 1545,
+                    "is_new_material": 0,
+                    "is_new_top100_entry": 1,
+                }
+            ]
+        raise AssertionError(sql)
+
+    def fake_search(session, *, base_url, headers, product_code, timeout_seconds, allow_login_refresh=True):
+        return [
+            {
+                "id": 901,
+                "product_name": "Cool Widget",
+                "product_links": [f"https://shop.example/products/{keyword}"],
+            }
+        ] if product_code == keyword else []
+
+    def fake_fetch(session, *, base_url, headers, mk_product, timeout_seconds, allow_login_refresh=True):
+        return {
+            **mk_product,
+            "main_image": "https://cdn.example/winner.jpg",
+            "videos": [
+                {
+                    "name": "winner.mp4",
+                    "path": "uploads2/winner.mp4",
+                    "image_path": "uploads2/winner.jpg",
+                    "spends": "1.23万",
+                    "ads_count": 9,
+                    "author": "Alice",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+    monkeypatch.setattr(mm, "_search_mingkong_items", fake_search)
+    monkeypatch.setattr(mm, "_fetch_mingkong_product_detail", fake_fetch)
+
+    result = mm.list_material_library(
+        range_key="all",
+        keyword=keyword,
+        page=1,
+        page_size=100,
+    )
+
+    item = result["items"][0]
+    assert item["material_key"] == material_key
+    assert item["yesterday_spend_delta"] == 1545.0
+    assert item["previous_snapshot_at"] == "2026-05-31 05:00:00"
+    assert item["is_new_top100_entry"] is True
+
+
 def test_list_material_library_range_sorts_by_video_90_day_spend_first(monkeypatch):
     captured = []
 
