@@ -71,6 +71,25 @@ def test_build_order_profit_summary_two_decimal_rounding():
     assert margin == round(margin, 2)
 
 
+def test_build_order_profit_summary_includes_cost_ratio_fields():
+    rows = [_row(total_revenue=200.0, purchase=80.0, logistics=20.0, shopify_fee=5.0, ad_cost=30.0)]
+    summary = _build_order_profit_summary(rows, total_ad_spend_usd=40.0)
+
+    assert summary["total_ad_spend_ratio_pct"] == 20.0
+    assert summary["purchase_cost_ratio_pct"] == 40.0
+    assert summary["logistics_cost_ratio_pct"] == 10.0
+    assert summary["shopify_fee_ratio_pct"] == 2.5
+
+
+def test_build_order_profit_summary_cost_ratios_are_none_without_revenue():
+    summary = _build_order_profit_summary([], total_ad_spend_usd=40.0)
+
+    assert summary["total_ad_spend_ratio_pct"] is None
+    assert summary["purchase_cost_ratio_pct"] is None
+    assert summary["logistics_cost_ratio_pct"] is None
+    assert summary["shopify_fee_ratio_pct"] is None
+
+
 def test_build_order_profit_summary_from_status_includes_margin():
     status = {
         "total_revenue_usd": 200.0,
@@ -85,6 +104,28 @@ def test_build_order_profit_summary_from_status_includes_margin():
     assert summary["total_revenue_usd"] == 200.0
     assert summary["profit_with_estimate_usd"] == 50.0
     assert summary["profit_with_estimate_margin_pct"] == 25.0
+
+
+def test_build_order_profit_summary_from_status_includes_cost_ratios():
+    status = {
+        "total_revenue_usd": 200.0,
+        "purchase_cost_with_estimate_usd": 80.0,
+        "shipping_cost_with_estimate_usd": 20.0,
+        "unallocated_ad_spend_usd": 10.0,
+        "overview": {"line_count": 3, "total_profit_usd": 50.0},
+        "summary": {
+            "ok": {"ad_cost": 30.0, "shopify_fee": 4.0},
+            "incomplete": {"ad_cost": 0.0, "shopify_fee": 1.0},
+        },
+        "estimated": {"lines": 0},
+    }
+
+    summary = _build_order_profit_summary_from_status(status, order_count=3)
+
+    assert summary["total_ad_spend_ratio_pct"] == 20.0
+    assert summary["purchase_cost_ratio_pct"] == 40.0
+    assert summary["logistics_cost_ratio_pct"] == 10.0
+    assert summary["shopify_fee_ratio_pct"] == 2.5
 
 
 def test_build_order_profit_summary_from_status_zero_revenue_returns_none():

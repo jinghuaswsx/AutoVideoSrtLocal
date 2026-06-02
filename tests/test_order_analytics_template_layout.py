@@ -187,6 +187,40 @@ def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
     assert 'id="realtimeUnmatchedSpend"' in panel
 
 
+def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():
+    panel = _realtime_panel_source()
+
+    assert "采购成本" in panel
+    assert "物流成本" in panel
+    assert "手续费" in panel
+    for prefix in ("realtime", "realtimeNew", "realtimeOld", "realtimeUnmatched"):
+        assert f'id="{prefix}SpendRatio"' in panel
+        assert f'id="{prefix}PurchaseCost"' in panel
+        assert f'id="{prefix}PurchaseCostRatio"' in panel
+        assert f'id="{prefix}LogisticsCost"' in panel
+        assert f'id="{prefix}LogisticsCostRatio"' in panel
+        assert f'id="{prefix}ShopifyFee"' in panel
+        assert f'id="{prefix}ShopifyFeeRatio"' in panel
+
+
+def test_realtime_scope_cards_js_renders_cost_breakdown_and_ratios():
+    template = _template_source()
+    render_block = template[
+        template.index("function renderRealtimeScopeSummary"):
+        template.index("function renderRealtimeFreshness")
+    ]
+
+    assert "function formatRealtimeCostRatio" in template
+    assert "function renderRealtimeCostMetric" in template
+    assert "purchase_cost_with_estimate_usd" in render_block
+    assert "logistics_cost_with_estimate_usd" in render_block
+    assert "shopify_fee_total_usd" in render_block
+    assert "total_ad_spend_ratio_pct" in render_block
+    assert "purchase_cost_ratio_pct" in render_block
+    assert "logistics_cost_ratio_pct" in render_block
+    assert "shopify_fee_ratio_pct" in render_block
+
+
 def test_realtime_scope_cards_explain_launch_window_in_business_terms():
     template = _template_source()
     scope_text_block = template[

@@ -248,6 +248,31 @@ def _global_break_even_roas(summary: dict[str, Any]) -> float | None:
     )
 
 
+def _ratio_pct(amount: Any, total_revenue: Any) -> float | None:
+    try:
+        denominator = Decimal(str(total_revenue or 0))
+        numerator = Decimal(str(amount or 0))
+    except (InvalidOperation, ValueError):
+        return None
+    if denominator <= 0:
+        return None
+    return float((numerator / denominator * Decimal("100")).quantize(Decimal("0.01")))
+
+
+def _attach_order_profit_cost_ratios(summary: dict[str, Any]) -> None:
+    revenue = summary.get("total_revenue_usd")
+    summary["total_ad_spend_ratio_pct"] = _ratio_pct(summary.get("total_ad_spend_usd"), revenue)
+    summary["purchase_cost_ratio_pct"] = _ratio_pct(
+        summary.get("purchase_cost_with_estimate_usd"),
+        revenue,
+    )
+    summary["logistics_cost_ratio_pct"] = _ratio_pct(
+        summary.get("logistics_cost_with_estimate_usd"),
+        revenue,
+    )
+    summary["shopify_fee_ratio_pct"] = _ratio_pct(summary.get("shopify_fee_total_usd"), revenue)
+
+
 def _empty_order_profit_summary() -> dict[str, Any]:
     return {
         "order_count": 0,
@@ -269,6 +294,10 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "ad_cost_usd": 0.0,
         "unallocated_ad_spend_usd": 0.0,
         "total_ad_spend_usd": 0.0,
+        "total_ad_spend_ratio_pct": None,
+        "purchase_cost_ratio_pct": None,
+        "logistics_cost_ratio_pct": None,
+        "shopify_fee_ratio_pct": None,
         "profit_with_estimate_usd": 0.0,
         "profit_with_estimate_margin_pct": None,
         "global_break_even_roas": None,
@@ -365,6 +394,7 @@ def _build_order_profit_summary(
         )
     else:
         summary["profit_with_estimate_margin_pct"] = None
+    _attach_order_profit_cost_ratios(summary)
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -429,6 +459,7 @@ def _build_order_profit_summary_from_status(
         )
     else:
         summary["profit_with_estimate_margin_pct"] = None
+    _attach_order_profit_cost_ratios(summary)
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
