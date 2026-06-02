@@ -213,7 +213,7 @@ def test_refresh_all_falls_back_when_realtime_ad_tables_are_missing(monkeypatch)
     assert "meta_ad_realtime_daily_ad_metrics" not in lang_insert_sql
 
 
-def test_refresh_sql_includes_today_realtime_latest_snapshots():
+def test_refresh_sql_includes_latest_realtime_business_day_snapshots():
     from appcore import media_product_ad_status_cache as cache
 
     product_sql = cache._PRODUCT_REFRESH_SQL
@@ -221,12 +221,16 @@ def test_refresh_sql_includes_today_realtime_latest_snapshots():
 
     assert "meta_ad_realtime_daily_campaign_metrics" in product_sql
     assert "meta_ad_realtime_daily_ad_metrics" in lang_sql
-    assert "MAX(snapshot_at) AS max_snapshot_at" in product_sql
-    assert "MAX(snapshot_at) AS max_snapshot_at" in lang_sql
-    assert "GROUP BY business_date, ad_account_id" in product_sql
-    assert "GROUP BY business_date, ad_account_id" in lang_sql
-    assert "business_date = CURDATE()" in product_sql
-    assert "business_date = CURDATE()" in lang_sql
+    assert "MAX(rt.snapshot_at) AS max_snapshot_at" in product_sql
+    assert "MAX(rt.snapshot_at) AS max_snapshot_at" in lang_sql
+    assert "MAX(business_date) AS business_date" in product_sql
+    assert "MAX(business_date) AS business_date" in lang_sql
+    assert "GROUP BY latest_day.business_date, latest_day.ad_account_id" in product_sql
+    assert "GROUP BY latest_day.business_date, latest_day.ad_account_id" in lang_sql
+    assert "realtime_open_day.business_date IS NULL" in product_sql
+    assert "realtime_open_day.business_date IS NULL" in lang_sql
+    assert "business_date = CURDATE()" not in product_sql
+    assert "business_date = CURDATE()" not in lang_sql
 
 
 def test_refresh_sql_only_marks_recent_realtime_spend_active():

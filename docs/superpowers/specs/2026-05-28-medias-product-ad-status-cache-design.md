@@ -22,7 +22,9 @@ Date: 2026-05-28
 
 ### Today Realtime Supplement
 
-缓存刷新口径需要把当前自然日 `CURDATE()` 的 Meta 实时快照并入广告消耗：
+- 实时“今天”按每个 `ad_account_id` 最新 `realtime_partial` Meta 业务日取数，不直接等同于数据库 `CURDATE()`；同一 `(business_date, ad_account_id)` 已用实时快照时，daily 行要跳过，避免 open-day 数据重复计入。
+
+缓存刷新口径需要把每个广告账号最新 `realtime_partial` Meta 业务日的实时快照并入广告消耗；该业务日可能因 Meta 账号时区不同而不等于数据库 `CURDATE()`：
 
 - 产品级 `ad_spend_usd` 继续以 campaign 粒度汇总，历史读取 `meta_ad_daily_campaign_metrics`，今天读取 `meta_ad_realtime_daily_campaign_metrics`。
 - 语种级 `ad_roas` 继续以 ad 粒度汇总，历史读取 `meta_ad_daily_ad_metrics`，今天读取 `meta_ad_realtime_daily_ad_metrics`。
