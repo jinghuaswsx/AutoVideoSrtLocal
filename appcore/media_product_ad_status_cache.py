@@ -167,11 +167,7 @@ LEFT JOIN (
     SELECT
       product_id,
       COALESCE(spend_usd, 0) AS spend_usd,
-      CASE
-        WHEN DATE(COALESCE(meta_business_date, report_date)) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
-        THEN COALESCE(spend_usd, 0)
-        ELSE 0
-      END AS active_spend_usd
+      0 AS active_spend_usd
     FROM meta_ad_daily_campaign_metrics
     WHERE product_id IS NOT NULL
       AND COALESCE(spend_usd, 0) > 0
@@ -181,7 +177,7 @@ LEFT JOIN (
       p_rt.id AS product_id,
       COALESCE(m.spend_usd, 0) AS spend_usd,
       CASE
-        WHEN m.business_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
+        WHEN m.snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
         THEN COALESCE(m.spend_usd, 0)
         ELSE 0
       END AS active_spend_usd
@@ -262,7 +258,7 @@ LEFT JOIN (
     SUM(matched.purchase_value_usd) AS purchase_value_usd,
     SUM(
       CASE
-        WHEN DATE(matched.activity_date) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
+        WHEN matched.snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
         THEN matched.spend_usd
         ELSE 0
       END
@@ -274,7 +270,8 @@ LEFT JOIN (
       CONCAT('daily:', m.id) AS metric_id,
       COALESCE(m.spend_usd, 0) AS spend_usd,
       COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
-      COALESCE(m.meta_business_date, m.report_date) AS activity_date
+      COALESCE(m.meta_business_date, m.report_date) AS activity_date,
+      NULL AS snapshot_at
     FROM media_items i
     JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
     JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
@@ -322,7 +319,8 @@ LEFT JOIN (
       CONCAT('realtime:', m.id) AS metric_id,
       COALESCE(m.spend_usd, 0) AS spend_usd,
       COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
-      m.business_date AS activity_date
+      m.business_date AS activity_date,
+      m.snapshot_at AS snapshot_at
     FROM media_items i
     JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
     JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
