@@ -2147,6 +2147,63 @@ def _should_try_realtime_snapshot(
     return int(row.get("n") or 0) == 0
 
 
+def _has_daily_campaign_rows(
+    target: date,
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...] | None = None,
+) -> bool:
+    product_sql, product_args = _product_filter_sql(
+        "product_id",
+        product_id,
+        product_ids=product_ids,
+        unmatched=unmatched_ads,
+    )
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    account_sql = ""
+    account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        if not allowed_account_ids:
+            return False
+        placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+        account_sql = f"AND ad_account_id IN ({placeholders}) "
+        account_args = list(allowed_account_ids)
+    rows = query(
+        "SELECT COUNT(*) AS n "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date = %s "
+        + product_sql + account_sql,
+        tuple([target] + product_args + account_args),
+    )
+    row = rows[0] if rows else {}
+    return int(row.get("n") or 0) > 0
+
+
+def _should_use_realtime_campaign_details(
+    target: date,
+    current_business_date: date,
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...] | None = None,
+) -> bool:
+    if target >= current_business_date:
+        return True
+    if target != current_business_date - timedelta(days=1):
+        return False
+    return not _has_daily_campaign_rows(
+        target,
+        product_id=product_id,
+        product_ids=product_ids,
+        unmatched_ads=unmatched_ads,
+        site_codes=site_codes,
+    )
+
+
 def _get_realtime_product_sales_stats(
     target: date,
     data_until: datetime,
@@ -3207,7 +3264,17 @@ def get_realtime_roas_overview(
         tuple([day_start, day_end] + product_args),
     )
     realtime_ad_summary = None
-    if (site_filter_active or normalized_launch_scope) and target >= current_business_date:
+    if (
+        (site_filter_active or normalized_launch_scope)
+        and _should_use_realtime_campaign_details(
+            target,
+            current_business_date,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            site_codes=normalized_site_codes,
+        )
+    ):
         realtime_ad_summary = _get_realtime_ad_summary_from_campaigns(
             target,
             data_until,
