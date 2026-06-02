@@ -1909,6 +1909,7 @@
               <th>销售件数</th>
               <th>总销售额</th>
               <th>ROAS</th>
+              <th>META ROAS</th>
               <th>商品净销售额</th>
               <th>运费</th>
             </tr>
@@ -2097,7 +2098,7 @@
   <div class="oar-subpanel" id="nplSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>总销售额</th><th>ROAS</th><th>商品销售额</th><th>运费</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>总销售额</th><th>ROAS</th><th>META ROAS</th><th>商品销售额</th><th>运费</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubCampaigns">
@@ -4610,7 +4611,7 @@
   function setNewProductLaunchLoading() {
     setNewProductLaunchTable('nplOrderBody', 11, '加载中...');
     setNewProductLaunchTable('nplOrderProfitBody', 18, '加载中...');
-    setNewProductLaunchTable('nplProductSalesBody', 8, '加载中...');
+    setNewProductLaunchTable('nplProductSalesBody', 9, '加载中...');
     setNewProductLaunchTable('nplCampaignBody', 10, '加载中...');
     setNewProductLaunchTable('nplHourlyBody', 8, '加载中...');
   }
@@ -4618,7 +4619,7 @@
   function setNewProductLaunchError(message) {
     setNewProductLaunchTable('nplOrderBody', 11, message);
     setNewProductLaunchTable('nplOrderProfitBody', 18, message);
-    setNewProductLaunchTable('nplProductSalesBody', 8, message);
+    setNewProductLaunchTable('nplProductSalesBody', 9, message);
     setNewProductLaunchTable('nplCampaignBody', 10, message);
     setNewProductLaunchTable('nplHourlyBody', 8, message);
     var note = document.getElementById('nplRangeNote');
@@ -4808,9 +4809,11 @@
     if (!body) return;
     body.innerHTML = '';
     var spendMap = {};
+    var purchaseValueMap = {};
     (campaigns || []).forEach(function(c) {
       if (c.matched_product_id) {
         spendMap[c.matched_product_id] = (spendMap[c.matched_product_id] || 0) + Number(c.spend_usd || 0);
+        purchaseValueMap[c.matched_product_id] = (purchaseValueMap[c.matched_product_id] || 0) + Number(c.purchase_value_usd || 0);
       }
     });
     (rows || []).forEach(function(row) {
@@ -4825,14 +4828,16 @@
 
       var spend = spendMap[row.product_id] || 0;
       var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      var metaRoas = spend > 0 ? ((purchaseValueMap[row.product_id] || 0) / spend).toFixed(2) : '-';
       addTextCell(tr, roas);
+      addTextCell(tr, metaRoas);
 
       addTextCell(tr, fmtMoney(row.product_net_sales));
       addTextCell(tr, fmtMoney(row.shipping));
 
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 8, '暂无产品销量数据');
+    if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 9, '暂无产品销量数据');
   }
 
   function renderNewProductLaunchCampaigns(rows) {
@@ -5109,7 +5114,7 @@
     if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
     if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">加载中...</td></tr>';
     if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">加载中...</td></tr>';
-    if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
     if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
     resetRealtimeProfitPage();
     realtimeState.orderLoading = true;
@@ -5123,7 +5128,7 @@
       if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
       if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
-      if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+      if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
       return;
     }
@@ -5197,7 +5202,7 @@
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
-        if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+        if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
         if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
         renderRealtimeOrderPagination(null, 0);
         renderRealtimeOrderProfitPagination(null, 0);
@@ -5535,9 +5540,11 @@
     if (!body) return;
     body.innerHTML = '';
     var spendMap = {};
+    var purchaseValueMap = {};
     (campaigns || []).forEach(function(c) {
       if (c.matched_product_id) {
         spendMap[c.matched_product_id] = (spendMap[c.matched_product_id] || 0) + Number(c.spend_usd || 0);
+        purchaseValueMap[c.matched_product_id] = (purchaseValueMap[c.matched_product_id] || 0) + Number(c.purchase_value_usd || 0);
       }
     });
     (rows || []).forEach(function(row) {
@@ -5554,7 +5561,9 @@
 
       var spend = spendMap[row.product_id] || 0;
       var roas = spend > 0 ? (Number(row.total_sales || 0) / spend).toFixed(2) : '-';
+      var metaRoas = spend > 0 ? ((purchaseValueMap[row.product_id] || 0) / spend).toFixed(2) : '-';
       addTextCell(tr, roas);
+      addTextCell(tr, metaRoas);
 
       addTextCell(tr, fmtMoney(row.product_net_sales));
       addTextCell(tr, fmtMoney(row.shipping));
@@ -5562,7 +5571,7 @@
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="8">暂无产品销量数据</td></tr>';
+      body.innerHTML = '<tr><td colspan="9">暂无产品销量数据</td></tr>';
     }
   }
 
