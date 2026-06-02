@@ -1737,6 +1737,125 @@ def record_push_success(item_id: int, operator_user_id: int,
     return log_id
 
 
+def mark_new_product_push_once(log_id: int, product_id: int) -> bool:
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM media_products WHERE id=%s FOR UPDATE",
+                    (int(product_id),),
+                )
+                if not cur.fetchone():
+                    conn.rollback()
+                    return False
+
+                cur.execute(
+                    "SELECT prior_log.id "
+                    "FROM media_push_logs prior_log "
+                    "JOIN media_items prior_item ON prior_item.id = prior_log.item_id "
+                    "WHERE prior_item.product_id = %s "
+                    "  AND prior_log.status = 'success' "
+                    "  AND prior_log.is_new_product_push = 1 "
+                    "  AND prior_log.id <> %s "
+                    "LIMIT 1",
+                    (int(product_id), int(log_id)),
+                )
+                if cur.fetchone():
+                    conn.rollback()
+                    return False
+
+                cur.execute(
+                    "UPDATE media_push_logs "
+                    "SET is_new_product_push = 1 "
+                    "WHERE id = %s "
+                    "  AND status = 'success' "
+                    "  AND item_id IN (SELECT id FROM media_items WHERE product_id = %s)",
+                    (int(log_id), int(product_id)),
+                )
+                changed = cur.rowcount > 0
+            if changed:
+                conn.commit()
+            else:
+                conn.rollback()
+            return changed
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
+def normalize_new_product_push_flags(*, dry_run: bool = True) -> dict[str, Any]:
+    rows = query(
+        "SELECT l.id AS log_id, i.product_id, l.created_at AS pushed_at, "
+        "       l.is_new_product_push "
+        "FROM media_push_logs l "
+        "JOIN media_items i ON i.id = l.item_id "
+        "WHERE l.status = 'success' "
+        "  AND i.product_id IN ("
+        "    SELECT DISTINCT marked_item.product_id "
+        "    FROM media_push_logs marked_log "
+        "    JOIN media_items marked_item ON marked_item.id = marked_log.item_id "
+        "    WHERE marked_log.status = 'success' "
+        "      AND marked_log.is_new_product_push = 1"
+        "  ) "
+        "ORDER BY i.product_id ASC, l.created_at ASC, l.id ASC"
+    )
+
+    product_rows: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        try:
+            product_id = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not product_id:
+            continue
+        product_rows.setdefault(product_id, []).append(row)
+
+    changes: list[dict[str, Any]] = []
+    for product_id, grouped_rows in product_rows.items():
+        if not grouped_rows:
+            continue
+        first_log_id = int(grouped_rows[0].get("log_id") or 0)
+        for row in grouped_rows:
+            log_id = int(row.get("log_id") or 0)
+            if not log_id:
+                continue
+            desired = log_id == first_log_id
+            current = bool(row.get("is_new_product_push"))
+            if current == desired:
+                continue
+            changes.append({
+                "product_id": product_id,
+                "log_id": log_id,
+                "pushed_at": row.get("pushed_at"),
+                "current_is_new_product_push": current,
+                "desired_is_new_product_push": desired,
+            })
+
+    if not dry_run:
+        for change in changes:
+            execute(
+                "UPDATE media_push_logs SET is_new_product_push = %s WHERE id = %s",
+                (
+                    1 if change["desired_is_new_product_push"] else 0,
+                    int(change["log_id"]),
+                ),
+            )
+
+    return {
+        "dry_run": dry_run,
+        "scanned_products": len(product_rows),
+        "scanned_logs": len(rows),
+        "update_count": len(changes),
+        "set_true_count": sum(1 for change in changes if change["desired_is_new_product_push"]),
+        "clear_count": sum(1 for change in changes if not change["desired_is_new_product_push"]),
+        "changes": changes,
+    }
+
+
 def record_push_failure(item_id: int, operator_user_id: int,
                         payload: dict, error_message: str | None,
                         response_body: str | None) -> int:

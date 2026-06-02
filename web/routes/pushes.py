@@ -742,10 +742,9 @@ def api_push(item_id: int):
                 localized_texts_product["mk_id"] = int(matched_mk_id)
                 mk_id_match["first_pairing"] = had_no_mk_id
                 if had_no_success_push:
-                    from appcore.db import execute as db_execute
-                    db_execute(
-                        "UPDATE media_push_logs SET is_new_product_push = 1 WHERE id = %s",
-                        (log_id,)
+                    pushes.mark_new_product_push_once(
+                        log_id=int(log_id),
+                        product_id=int(product["id"]),
                     )
             except Exception as exc:
                 # 唯一键冲突（已被其他产品占用）或别的 DB 错误
