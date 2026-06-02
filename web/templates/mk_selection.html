@@ -5031,6 +5031,22 @@ async function mkiImportProgressSaveDomains() {
       ? `已同步 ${enabledIds.length} 个发布域名到链接管理`
       : '未找到默认发布域名';
     mkiImportProgressSetStep('domains', 'done', domainDetail);
+
+    // 清理旧的发布域名探测子卡片
+    const domainsStepEl = document.querySelector('[data-mki-progress-step="domains"]');
+    const subcardsEl = domainsStepEl && domainsStepEl.querySelector('[data-mki-progress-subcards]');
+    if (subcardsEl) {
+      subcardsEl.innerHTML = '';
+      subcardsEl.hidden = true;
+    }
+
+    // 渲染新增的域名产品链接探测卡片
+    if (Array.isArray(data.probe_results)) {
+      data.probe_results.forEach(result => {
+        mkiImportProgressAppendStepResult('domains', result);
+      });
+    }
+
     mkiImportProgressSetStep('next', 'done', '发布域名已确认，可以创建小语种任务');
     mkiImportProgressShowNextActions();
     mkiImportProgressSetDomainNotice(enabledIds.length ? '发布域名已同步到产品链接管理。' : '没有可用默认域名，请稍后到链接管理补充。', enabledIds.length ? '' : 'danger');
@@ -5043,6 +5059,7 @@ async function mkiImportProgressSaveDomains() {
     submit.textContent = '确定发布域名';
   }
 }
+
 
 function mkiImportProgressRetryDomains() {
   if (mkiImportProgressProductId) mkiImportProgressLoadDomains(mkiImportProgressProductId);

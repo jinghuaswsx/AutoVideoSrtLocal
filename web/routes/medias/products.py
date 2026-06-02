@@ -363,10 +363,35 @@ def api_set_product_link_domains(pid: int):
     body = request.get_json(silent=True) or {}
     enabled_ids = _parse_enabled_domain_ids(body)
     product_link_domains.set_product_domain_enabled_ids(pid, enabled_ids)
+
+    # 重新加载最新的产品状态，确保能根据最新的生效域名解析完整的产品页面链接
+    p = medias.get_product(pid)
+    from appcore import mk_import as mk_import_svc
+
+    probe_results = []
+    product_urls = product_link_domains.resolve_product_page_url_rows(p, "en")
+    for row in product_urls:
+        domain = row.get("domain")
+        url = row.get("url")
+        if not url:
+            continue
+        ok, detail = mk_import_svc._probe_product_link(url)
+        status = "done" if ok else "warning"
+        message = "商品链接探测通过" if ok else "商品链接可能不可访问"
+        probe_results.append({
+            "key": f"domain_link_probe_{domain}",
+            "title": f"发布域名链接探测 ({domain})",
+            "status": status,
+            "message": message,
+            "logs": [url, detail or "探测通过"],
+        })
+
     return {
         "ok": True,
         "domains": product_link_domains.list_product_domain_options(pid),
+        "probe_results": probe_results,
     }
+
 
 
 @bp.route("/api/products/<int:pid>/parcel-cost-suggest", methods=["GET"])

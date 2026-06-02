@@ -52,6 +52,16 @@ def test_medias_product_link_domains_post_saves_enabled_ids(
         lambda product_id: [{"id": 2, "domain": "omurio.com", "product_enabled": True}],
         raising=False,
     )
+    monkeypatch.setattr(
+        "appcore.product_link_domains.resolve_product_page_url_rows",
+        lambda p, lang: [{"domain": "omurio.com", "url": "https://omurio.com/products/demo-rjc"}],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.mk_import._probe_product_link",
+        lambda url: (True, "探测通过"),
+        raising=False,
+    )
 
     resp = authed_client_no_db.post(
         "/medias/api/products/10/product-link-domains",
@@ -60,8 +70,18 @@ def test_medias_product_link_domains_post_saves_enabled_ids(
 
     assert resp.status_code == 200
     assert captured == {"product_id": 10, "ids": [2, 3]}
-    assert resp.get_json()["domains"] == [
+    json_data = resp.get_json()
+    assert json_data["domains"] == [
         {"id": 2, "domain": "omurio.com", "product_enabled": True}
+    ]
+    assert json_data["probe_results"] == [
+        {
+            "key": "domain_link_probe_omurio.com",
+            "title": "发布域名链接探测 (omurio.com)",
+            "status": "done",
+            "message": "商品链接探测通过",
+            "logs": ["https://omurio.com/products/demo-rjc", "探测通过"],
+        }
     ]
 
 
@@ -82,12 +102,19 @@ def test_medias_product_link_domains_post_allows_empty_enabled_ids(
         lambda product_id: [],
         raising=False,
     )
+    monkeypatch.setattr(
+        "appcore.product_link_domains.resolve_product_page_url_rows",
+        lambda p, lang: [],
+        raising=False,
+    )
 
     resp = authed_client_no_db.post(
         "/medias/api/products/10/product-link-domains",
         json={"enabled_domain_ids": []},
     )
 
+
     assert resp.status_code == 200
     assert captured == {"product_id": 10, "ids": []}
-    assert resp.get_json() == {"ok": True, "domains": []}
+    assert resp.get_json() == {"ok": True, "domains": [], "probe_results": []}
+
