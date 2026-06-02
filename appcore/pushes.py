@@ -1758,11 +1758,29 @@ def mark_new_product_push_once(log_id: int, product_id: int) -> bool:
                     "WHERE prior_item.product_id = %s "
                     "  AND prior_log.status = 'success' "
                     "  AND prior_log.is_new_product_push = 1 "
-                    "  AND prior_log.id <> %s "
                     "LIMIT 1",
-                    (int(product_id), int(log_id)),
+                    (int(product_id),),
                 )
                 if cur.fetchone():
+                    conn.rollback()
+                    return False
+
+                cur.execute(
+                    "SELECT first_log.id "
+                    "FROM media_push_logs first_log "
+                    "JOIN media_items first_item ON first_item.id = first_log.item_id "
+                    "WHERE first_item.product_id = %s "
+                    "  AND first_log.status = 'success' "
+                    "ORDER BY first_log.created_at ASC, first_log.id ASC "
+                    "LIMIT 1",
+                    (int(product_id),),
+                )
+                first_log = cur.fetchone()
+                if not first_log:
+                    conn.rollback()
+                    return False
+                target_log_id = int(first_log.get("id") or 0)
+                if not target_log_id:
                     conn.rollback()
                     return False
 
@@ -1771,8 +1789,8 @@ def mark_new_product_push_once(log_id: int, product_id: int) -> bool:
                     "SET is_new_product_push = 1 "
                     "WHERE id = %s "
                     "  AND status = 'success' "
-                    "  AND item_id IN (SELECT id FROM media_items WHERE product_id = %s)",
-                    (int(log_id), int(product_id)),
+                    "  AND is_new_product_push = 0",
+                    (target_log_id,),
                 )
                 changed = cur.rowcount > 0
             if changed:
@@ -1791,16 +1809,11 @@ def normalize_new_product_push_flags(*, dry_run: bool = True) -> dict[str, Any]:
     rows = query(
         "SELECT l.id AS log_id, i.product_id, l.created_at AS pushed_at, "
         "       l.is_new_product_push "
-        "FROM media_push_logs l "
-        "JOIN media_items i ON i.id = l.item_id "
+        "FROM media_products p "
+        "JOIN media_items i ON i.product_id = p.id "
+        "JOIN media_push_logs l ON l.item_id = i.id "
         "WHERE l.status = 'success' "
-        "  AND i.product_id IN ("
-        "    SELECT DISTINCT marked_item.product_id "
-        "    FROM media_push_logs marked_log "
-        "    JOIN media_items marked_item ON marked_item.id = marked_log.item_id "
-        "    WHERE marked_log.status = 'success' "
-        "      AND marked_log.is_new_product_push = 1"
-        "  ) "
+        "  AND p.mk_id IS NOT NULL "
         "ORDER BY i.product_id ASC, l.created_at ASC, l.id ASC"
     )
 

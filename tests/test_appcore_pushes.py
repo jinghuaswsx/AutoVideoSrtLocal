@@ -650,6 +650,78 @@ def test_mark_new_product_push_once_locks_product_and_skips_existing_new_marker(
     assert any("prior_item.product_id = %s" in sql for sql, _args in calls)
 
 
+def test_mark_new_product_push_once_marks_first_success_when_mk_match_is_late(monkeypatch):
+    calls = []
+    updated = []
+
+    class FakeCursor:
+        rowcount = 0
+
+        def __init__(self):
+            self._next = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            calls.append((sql, args))
+            if "FROM media_products" in sql:
+                self._next = {"id": 18}
+                return
+            if "prior_log.is_new_product_push = 1" in sql:
+                self._next = None
+                return
+            if "ORDER BY first_log.created_at ASC" in sql:
+                self._next = {"id": 101}
+                return
+            if sql.startswith("UPDATE media_push_logs"):
+                updated.append(args)
+                self.rowcount = 1
+                return
+
+        def fetchone(self):
+            result = self._next
+            self._next = None
+            return result
+
+    class FakeConn:
+        def __init__(self):
+            self.began = False
+            self.committed = False
+            self.rolled_back = False
+            self.closed = False
+
+        def begin(self):
+            self.began = True
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            self.committed = True
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            self.closed = True
+
+    conn = FakeConn()
+    monkeypatch.setattr(pushes, "get_conn", lambda: conn)
+
+    changed = pushes.mark_new_product_push_once(log_id=202, product_id=18)
+
+    assert changed is True
+    assert updated == [(101,)]
+    assert conn.began is True
+    assert conn.committed is True
+    assert conn.rolled_back is False
+    assert conn.closed is True
+
+
 def test_normalize_new_product_push_flags_moves_marker_to_first_success(monkeypatch):
     rows = [
         {
@@ -676,31 +748,52 @@ def test_normalize_new_product_push_flags_moves_marker_to_first_success(monkeypa
             "pushed_at": "2026-06-02 18:00:00",
             "is_new_product_push": 1,
         },
+        {
+            "log_id": 30,
+            "product_id": 9,
+            "pushed_at": "2026-06-02 19:00:00",
+            "is_new_product_push": 0,
+        },
+        {
+            "log_id": 31,
+            "product_id": 9,
+            "pushed_at": "2026-06-02 19:01:00",
+            "is_new_product_push": 0,
+        },
     ]
     executed = []
+    captured = {}
 
-    monkeypatch.setattr(pushes, "query", lambda sql, args=(): rows)
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        return rows
+
+    monkeypatch.setattr(pushes, "query", fake_query)
     monkeypatch.setattr(pushes, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
 
     dry_run = pushes.normalize_new_product_push_flags(dry_run=True)
 
-    assert dry_run["scanned_products"] == 2
-    assert dry_run["scanned_logs"] == 4
-    assert dry_run["update_count"] == 3
-    assert dry_run["set_true_count"] == 1
+    assert "media_products p" in captured["sql"]
+    assert "p.mk_id IS NOT NULL" in captured["sql"]
+    assert dry_run["scanned_products"] == 3
+    assert dry_run["scanned_logs"] == 6
+    assert dry_run["update_count"] == 4
+    assert dry_run["set_true_count"] == 2
     assert dry_run["clear_count"] == 2
-    assert [change["log_id"] for change in dry_run["changes"]] == [10, 11, 12]
+    assert [change["log_id"] for change in dry_run["changes"]] == [10, 11, 12, 30]
     assert dry_run["changes"][0]["desired_is_new_product_push"] is True
     assert dry_run["changes"][1]["desired_is_new_product_push"] is False
+    assert dry_run["changes"][3]["desired_is_new_product_push"] is True
     assert executed == []
 
     applied = pushes.normalize_new_product_push_flags(dry_run=False)
 
-    assert applied["update_count"] == 3
+    assert applied["update_count"] == 4
     assert executed == [
         ("UPDATE media_push_logs SET is_new_product_push = %s WHERE id = %s", (1, 10)),
         ("UPDATE media_push_logs SET is_new_product_push = %s WHERE id = %s", (0, 11)),
         ("UPDATE media_push_logs SET is_new_product_push = %s WHERE id = %s", (0, 12)),
+        ("UPDATE media_push_logs SET is_new_product_push = %s WHERE id = %s", (1, 30)),
     ]
 
 
