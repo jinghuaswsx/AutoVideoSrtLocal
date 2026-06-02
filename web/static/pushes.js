@@ -1309,6 +1309,15 @@
       : `<div class="product-code-row"><span class="product-code"></span></div>`;
     const productOwnerName = String(it.product_owner_name || '').trim();
     const mkId = (it.mk_id === null || it.mk_id === undefined || it.mk_id === '') ? '—' : String(it.mk_id);
+    const filename = it.display_name || it.filename || '';
+    const copyFilenameBtn = filename
+      ? `<button type="button" class="product-copy-btn" data-copy-filename="${escapeAttr(filename)}" title="复制素材文件名" style="margin-left: 6px; display: inline-flex; vertical-align: middle; width: 22px; height: 22px; align-items: center; justify-content: center; flex-shrink: 0;">
+           <svg class="icon-copy" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+           </svg>
+         </button>`
+      : '';
     return `<tr data-id="${it.id}">
       <td class="push-thumb-cell">${thumb}</td>
       <td class="push-product-cell">
@@ -1320,7 +1329,10 @@
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
       <td class="push-item-cell">
-        <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
+        <div class="item-name-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; min-width: 0;">
+          <div class="item-name" style="word-break: break-all; min-width: 0; flex-grow: 1;">${escapeHtml(filename)}</div>
+          ${copyFilenameBtn}
+        </div>
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
           ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
@@ -2830,7 +2842,7 @@
 
   document.addEventListener('click', async ev => {
     const copyBtn = ev.target.closest(
-      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag], button[data-copy-both], button[data-copy-product-name]',
+      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag], button[data-copy-both], button[data-copy-product-name], button[data-copy-filename]',
     );
     if (!copyBtn) return;
     try {
@@ -2840,6 +2852,7 @@
           || copyBtn.getAttribute('data-copy-payload-tag')
           || copyBtn.getAttribute('data-copy-both')
           || copyBtn.getAttribute('data-copy-product-name')
+          || copyBtn.getAttribute('data-copy-filename')
           || '',
       );
       flashCopyButton(copyBtn, '已复制');
