@@ -137,7 +137,7 @@ def localize_video(video_item: dict, max_attempts: int = 5) -> dict[str, Any]:
     }
 
 
-def run_localization_round(limit: int = 10, max_attempts: int = 5) -> dict[str, Any]:
+def run_localization_round(limit: int = 30, max_attempts: int = 5) -> dict[str, Any]:
     """
     Main entry point for localizing a batch of videos.
     """
@@ -162,10 +162,10 @@ def run_localization_round(limit: int = 10, max_attempts: int = 5) -> dict[str, 
     for idx, item in enumerate(candidates):
         video_id = str(item["video_id"])
 
-        # Rate limit delay: 30 seconds before downloading (except the first one)
+        # Rate limit delay: 15 seconds before downloading (except the first one)
         if idx > 0:
-            log.info("Sleeping 30 seconds for rate limit...")
-            time.sleep(30)
+            log.info("Sleeping 15 seconds for rate limit...")
+            time.sleep(15)
 
         try:
             res = localize_video(item, max_attempts=max_attempts)
