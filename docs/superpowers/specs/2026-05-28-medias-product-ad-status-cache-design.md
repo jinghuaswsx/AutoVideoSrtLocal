@@ -20,6 +20,15 @@ Date: 2026-05-28
 
 ## Metrics
 
+### Today Realtime Supplement
+
+缓存刷新口径需要把当前自然日 `CURDATE()` 的 Meta 实时快照并入广告消耗：
+
+- 产品级 `ad_spend_usd` 继续以 campaign 粒度汇总，历史读取 `meta_ad_daily_campaign_metrics`，今天读取 `meta_ad_realtime_daily_campaign_metrics`。
+- 语种级 `ad_roas` 继续以 ad 粒度汇总，历史读取 `meta_ad_daily_ad_metrics`，今天读取 `meta_ad_realtime_daily_ad_metrics`。
+- 实时表只取 `data_completeness='realtime_partial'` 的最新快照，并且必须按 `(business_date, ad_account_id)` 分组取 `MAX(snapshot_at)`，不能用单个全局最新时间。
+- 列表请求仍只读 `media_product_ad_summary_cache` 和 `media_product_lang_ad_summary_cache`，不在请求内实时拉取 Meta。
+
 ### Per-Language Video Ad ROAS
 
 语种广告 ROAS 按 `product_id + lang` 聚合：

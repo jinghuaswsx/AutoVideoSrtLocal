@@ -151,6 +151,22 @@ def test_refresh_all_rebuilds_product_and_language_caches(monkeypatch):
     assert "INTERVAL 6 DAY" not in joined
 
 
+def test_refresh_sql_includes_today_realtime_latest_snapshots():
+    from appcore import media_product_ad_status_cache as cache
+
+    product_sql = cache._PRODUCT_REFRESH_SQL
+    lang_sql = cache._LANG_REFRESH_SQL
+
+    assert "meta_ad_realtime_daily_campaign_metrics" in product_sql
+    assert "meta_ad_realtime_daily_ad_metrics" in lang_sql
+    assert "MAX(snapshot_at) AS max_snapshot_at" in product_sql
+    assert "MAX(snapshot_at) AS max_snapshot_at" in lang_sql
+    assert "GROUP BY business_date, ad_account_id" in product_sql
+    assert "GROUP BY business_date, ad_account_id" in lang_sql
+    assert "business_date = CURDATE()" in product_sql
+    assert "business_date = CURDATE()" in lang_sql
+
+
 def test_language_refresh_falls_back_to_market_country_when_material_filename_changes():
     from appcore import media_product_ad_status_cache as cache
 

@@ -162,15 +162,51 @@ LEFT JOIN (
   SELECT
     product_id,
     SUM(COALESCE(spend_usd, 0)) AS ad_spend_usd,
-    SUM(
+    SUM(COALESCE(active_spend_usd, 0)) AS active_7d_ad_spend_usd
+  FROM (
+    SELECT
+      product_id,
+      COALESCE(spend_usd, 0) AS spend_usd,
       CASE
         WHEN DATE(COALESCE(meta_business_date, report_date)) BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
         THEN COALESCE(spend_usd, 0)
         ELSE 0
-      END
-    ) AS active_7d_ad_spend_usd
-  FROM meta_ad_daily_campaign_metrics
-  WHERE product_id IS NOT NULL AND COALESCE(spend_usd, 0) > 0
+      END AS active_spend_usd
+    FROM meta_ad_daily_campaign_metrics
+    WHERE product_id IS NOT NULL
+      AND COALESCE(spend_usd, 0) > 0
+      AND DATE(COALESCE(meta_business_date, report_date)) < CURDATE()
+    UNION ALL
+    SELECT
+      p_rt.id AS product_id,
+      COALESCE(m.spend_usd, 0) AS spend_usd,
+      CASE
+        WHEN m.business_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 2 DAY) AND CURDATE()
+        THEN COALESCE(m.spend_usd, 0)
+        ELSE 0
+      END AS active_spend_usd
+    FROM meta_ad_realtime_daily_campaign_metrics m
+    INNER JOIN (
+      SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at
+      FROM meta_ad_realtime_daily_campaign_metrics
+      WHERE business_date = CURDATE() AND data_completeness = 'realtime_partial'
+      GROUP BY business_date, ad_account_id
+    ) latest
+      ON m.business_date = latest.business_date
+     AND m.ad_account_id = latest.ad_account_id
+     AND m.snapshot_at = latest.max_snapshot_at
+    JOIN media_products p_rt
+      ON p_rt.deleted_at IS NULL
+     AND p_rt.product_code IS NOT NULL
+     AND p_rt.product_code <> ''
+     AND (
+       LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%')
+       OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%')
+     )
+    WHERE m.business_date = CURDATE()
+      AND m.data_completeness = 'realtime_partial'
+      AND COALESCE(m.spend_usd, 0) > 0
+  ) product_ads
   GROUP BY product_id
 ) a ON a.product_id = p.id
 WHERE p.deleted_at IS NULL
@@ -235,7 +271,7 @@ LEFT JOIN (
     SELECT DISTINCT
       i.product_id,
       i.lang,
-      m.id AS metric_id,
+      CONCAT('daily:', m.id) AS metric_id,
       COALESCE(m.spend_usd, 0) AS spend_usd,
       COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
       COALESCE(m.meta_business_date, m.report_date) AS activity_date
@@ -245,6 +281,7 @@ LEFT JOIN (
     JOIN meta_ad_daily_ad_metrics m
       ON m.product_id = i.product_id
      AND COALESCE(m.spend_usd, 0) > 0
+     AND DATE(COALESCE(m.meta_business_date, m.report_date)) < CURDATE()
      AND (
        m.ad_name LIKE CONCAT('%%', i.filename, '%%')
        OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
@@ -276,7 +313,46 @@ LEFT JOIN (
            ELSE NULL
          END
        )
+      )
+     WHERE i.deleted_at IS NULL
+    UNION ALL
+    SELECT DISTINCT
+      i.product_id,
+      i.lang,
+      CONCAT('realtime:', m.id) AS metric_id,
+      COALESCE(m.spend_usd, 0) AS spend_usd,
+      COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
+      m.business_date AS activity_date
+    FROM media_items i
+    JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
+    JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
+    JOIN meta_ad_realtime_daily_ad_metrics m
+      ON m.business_date = CURDATE()
+     AND m.data_completeness = 'realtime_partial'
+     AND COALESCE(m.spend_usd, 0) > 0
+     AND p.product_code IS NOT NULL
+     AND p.product_code <> ''
+     AND (
+       LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+       OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+       OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+       OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
      )
+     AND (
+       m.ad_name LIKE CONCAT('%%', i.filename, '%%')
+       OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
+       OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
+       OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+     )
+    INNER JOIN (
+      SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at
+      FROM meta_ad_realtime_daily_ad_metrics
+      WHERE business_date = CURDATE() AND data_completeness = 'realtime_partial'
+      GROUP BY business_date, ad_account_id
+    ) latest
+      ON m.business_date = latest.business_date
+     AND m.ad_account_id = latest.ad_account_id
+     AND m.snapshot_at = latest.max_snapshot_at
     WHERE i.deleted_at IS NULL
   ) matched
   GROUP BY matched.product_id, matched.lang
