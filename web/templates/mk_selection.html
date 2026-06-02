@@ -746,7 +746,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
 .mk-preselection-btn { height:26px; padding:0 10px; border:1px solid var(--oc-accent); border-radius:999px; background:#fff; color:var(--oc-accent); font-size:12px; font-weight:800; cursor:pointer; }
 .mk-preselection-btn:hover { background:var(--oc-accent-soft); }
 .mk-preselection-modal-backdrop { display:none; position:fixed; inset:0; z-index:2200; align-items:center; justify-content:center; background:rgba(15,23,42,.45); }
-.mk-preselection-modal { width:min(720px, calc(100vw - 28px)); max-height:90vh; overflow:auto; background:#fff; border-radius:12px; box-shadow:0 18px 60px rgba(15,23,42,.28); }
+.mk-preselection-modal { width:min(1040px, 94vw); max-height:86vh; overflow:auto; background:#fff; border-radius:12px; box-shadow:0 18px 60px rgba(15,23,42,.28); }
 .mk-preselection-modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid var(--oc-border); }
 .mk-preselection-modal-title { margin:0; font-size:18px; font-weight:800; }
 .mk-preselection-modal-body { display:grid; gap:14px; padding:16px 18px; }
@@ -755,10 +755,7 @@ strong.mk-video-product-name { color:var(--oc-fg); }
 .mk-preselection-product-lines { display:grid; gap:6px; min-width:0; }
 .mk-preselection-product-line { display:grid; grid-template-columns:86px minmax(0,1fr); gap:8px; color:var(--oc-fg-muted); font-size:13px; }
 .mk-preselection-product-line strong { color:var(--oc-fg); overflow-wrap:anywhere; }
-.mk-preselection-lang-grid { display:flex; flex-wrap:wrap; gap:8px; }
-.mk-preselection-lang { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--oc-border-strong); border-radius:999px; cursor:pointer; background:#fff; font-size:13px; }
-.mk-preselection-lang input { accent-color:var(--oc-accent); }
-.mk-preselection-ai { padding:10px 12px; border-radius:8px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-size:12px; line-height:1.5; }
+.mk-preselection-fine-ai { margin-bottom:2px; }
 .mk-preselection-note-input { min-height:88px; width:100%; resize:vertical; border:1px solid var(--oc-border-strong); border-radius:8px; padding:10px 12px; font:inherit; }
 .mk-preselection-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 16px; border-top:1px solid var(--oc-border); }
 @media (max-width: 768px) {
@@ -927,11 +924,11 @@ strong.mk-video-product-name { color:var(--oc-fg); }
           <div class="mk-preselection-product-line"><span>视频</span><strong id="mkPreselectionVideoName">--</strong></div>
         </div>
       </div>
-      <div>
-        <div class="mki-xiao-label" style="margin-bottom:8px;">预选语言（至少选择一个）</div>
-        <div id="mkPreselectionLangs" class="mk-preselection-lang-grid"></div>
+      <section id="mkPreselectionFineAi" class="mki-progress-fine-ai mki-xiao-fine-ai mk-preselection-fine-ai" aria-label="AI 精细评估建议"></section>
+      <div class="mki-xiao-field">
+        <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
+        <div id="mkPreselectionLangs" class="mki-xiao-lang-pills"></div>
       </div>
-      <div id="mkPreselectionAiInfo" class="mk-preselection-ai">AI评估信息会结合卡片上的 AI 评估 / AI 精细评估结果辅助判断。</div>
       <label class="mki-xiao-label" for="mkPreselectionNote">运营备注</label>
       <textarea id="mkPreselectionNote" class="mk-preselection-note-input" maxlength="2000" placeholder="填写给管理员看的素材预选备注"></textarea>
       <div id="mkPreselectionStatus" class="mki-xiao-status" hidden></div>
@@ -2105,11 +2102,15 @@ function renderMkVideoMaterialCard(r) {
 }
 
 let mkiPreselectionCurrentPayload = null;
+let mkiPreselectionSourceButton = null;
 
 function mkiOpenPreselectionModalFromCard(btn) {
   const raw = btn && btn.dataset ? String(btn.dataset.mkiPreselectionPayload || '{}') : '{}';
   let payload = {};
   try { payload = JSON.parse(raw); } catch (_) { payload = {}; }
+  mkiPreselectionSourceButton = btn || null;
+  const fineAiResult = mkiFineAiResultFromButton(btn);
+  if (fineAiResult) payload.fine_ai_evaluation = fineAiResult;
   mkiOpenPreselectionModal(payload);
 }
 
@@ -2125,6 +2126,7 @@ function mkiClosePreselectionModal() {
   const modal = document.getElementById('mkPreselectionModal');
   if (modal) modal.style.display = 'none';
   mkiPreselectionCurrentPayload = null;
+  mkiPreselectionSourceButton = null;
 }
 
 function mkiPreselectionSelectedCountries() {
@@ -2133,15 +2135,27 @@ function mkiPreselectionSelectedCountries() {
     .filter(Boolean);
 }
 
-function mkiRenderPreselectionAiInfo(payload) {
-  const fine = payload && payload.fine_ai_evaluation ? mkiFineAiNormalizeResult(payload.fine_ai_evaluation) : null;
-  if (fine && fine.summary) {
-    const summary = fine.summary || {};
-    const recommendation = summary.overall_recommendation || fine.status || '-';
-    const score = summary.average_score ? ' · 平均分 ' + summary.average_score : '';
-    return `<strong>AI精细评估</strong><div>综合建议：${escapeHtml(recommendation)}${escapeHtml(score)}</div>`;
+function mkiPreselectionOpenFineAi() {
+  const card = mkiPreselectionSourceButton && (mkiPreselectionSourceButton.closest('.mk-video-card') || mkiPreselectionSourceButton.closest('.mki-detail-video-card'));
+  const fineAiBtn = card && card.querySelector('.mki-fine-ai-btn');
+  if (!fineAiBtn || fineAiBtn.disabled) {
+    mkiToast('warning', '当前卡片缺少商品链接或视频，无法发起 AI 精细评估');
+    return;
   }
-  return '<strong>AI评估信息</strong><div>可参考卡片上的 AI评估结果 和 AI精细评估结果，再选择要翻译的语言。</div>';
+  mkiFineAiEvaluateFromCard(fineAiBtn);
+  setTimeout(() => {
+    document.querySelectorAll('.ect-modal-overlay').forEach(node => {
+      node.style.zIndex = '2300';
+    });
+  }, 0);
+}
+
+function mkiRenderPreselectionFineAiPanel(result) {
+  mkiRenderFineAiPanelInto('mkPreselectionFineAi', result, {
+    emptyAction: 'mkiPreselectionOpenFineAi()',
+    emptyText: '还没有可用的 5 国精细评估结果。可以继续保存素材预选，但建议先查看 DE/FR/IT/ES/JP 的投放建议。',
+    actionText: '查看/重跑精细评估'
+  });
 }
 
 async function mkiOpenPreselectionModal(payload) {
@@ -2159,7 +2173,8 @@ async function mkiOpenPreselectionModal(payload) {
     img.hidden = !imageUrl;
   }
   document.getElementById('mkPreselectionNote').value = payload.operator_note || '';
-  document.getElementById('mkPreselectionAiInfo').innerHTML = mkiRenderPreselectionAiInfo(payload);
+  const fineAiResult = mkiFineAiNormalizeResult(payload.fine_ai_evaluation || null);
+  mkiRenderPreselectionFineAiPanel(fineAiResult);
   const selected = new Set((payload.selected_countries || []).map(code => String(code || '').trim().toUpperCase()).filter(Boolean));
   const langBox = document.getElementById('mkPreselectionLangs');
   langBox.innerHTML = '<span class="oc-empty">语言加载中...</span>';
@@ -2176,13 +2191,13 @@ async function mkiOpenPreselectionModal(payload) {
   if (!langs.length && selected.size) {
     langs = Array.from(selected).map(code => ({code, label: code}));
   }
-  langBox.innerHTML = langs.map(lang => {
-    const code = mkiXiaoLangCode(lang);
-    if (!code) return '';
-    const label = mkiXiaoLangLabel(lang);
-    const checked = selected.has(code) ? ' checked' : '';
-    return `<label class="mk-preselection-lang"><input type="checkbox" value="${escapeHtml(code)}"${checked}><span>${escapeHtml(label)}</span></label>`;
-  }).join('') || '<span class="oc-empty">暂无可选语言</span>';
+  langBox.innerHTML = mkiXiaoRenderLanguageChoiceCards(langs, Array.from(selected), {
+    respectExisting: false,
+    includeForceButton: false
+  }) || '<span class="oc-empty">暂无可选语言</span>';
+  const legacyAiDetail = mkiAiEvaluationResultFromStatus(payload.product_ad_status || {});
+  const aiSuggestionDetail = mkiFineAiHasUsableResult(fineAiResult) ? fineAiResult : legacyAiDetail;
+  mkiApplyAiSuggestionsToLanguageCards('#mkPreselectionLangs', aiSuggestionDetail || null);
 }
 
 async function mkiSavePreselection() {
@@ -3286,18 +3301,23 @@ function mkiXiaoOpenFineAi() {
   }, 0);
 }
 
-function mkiXiaoRenderFineAiPanel(result) {
-  const panel = document.getElementById('mkiXiaoFineAi');
+function mkiRenderFineAiPanelInto(panelId, result, options = {}) {
+  const panel = document.getElementById(panelId);
   if (!panel) return;
   const hasResult = mkiFineAiHasUsableResult(result);
+  const emptyAction = String(options.emptyAction || '').trim();
+  const emptyText = options.emptyText || '还没有可用的 5 国精细评估结果。可以继续创建小语种任务，但建议先查看 DE/FR/IT/ES/JP 的投放建议。';
+  const emptyButton = emptyAction
+    ? `<button type="button" class="oc-btn oc-btn--primary" onclick="${escapeHtml(emptyAction)}">AI 精细评估</button>`
+    : '';
   if (!hasResult) {
     panel.innerHTML = `
       <div class="mki-progress-fine-ai-empty">
         <div>
           <strong>建议先完成 AI 精细评估</strong>
-          <div>还没有可用的 5 国精细评估结果。可以继续创建小语种任务，但建议先查看 DE/FR/IT/ES/JP 的投放建议。</div>
+          <div>${escapeHtml(emptyText)}</div>
         </div>
-        <button type="button" class="oc-btn oc-btn--primary" onclick="mkiXiaoOpenFineAi()">AI 精细评估</button>
+        ${emptyButton}
       </div>`;
     return;
   }
@@ -3305,6 +3325,11 @@ function mkiXiaoRenderFineAiPanel(result) {
   const summary = normalized.summary || {};
   const overall = summary.overall_recommendation || normalized.status || '';
   const avg = summary.average_score || '';
+  const action = String(options.action || options.emptyAction || '').trim();
+  const actionText = options.actionText || '查看/重跑精细评估';
+  const actionButton = action
+    ? `<button type="button" class="oc-btn oc-btn--ghost" onclick="${escapeHtml(action)}">${escapeHtml(actionText)}</button>`
+    : '';
   panel.innerHTML = `
     <div class="mki-progress-fine-ai-head">
       <div>
@@ -3312,11 +3337,18 @@ function mkiXiaoRenderFineAiPanel(result) {
         <p class="mki-progress-fine-ai-subtitle">综合建议：${escapeHtml(overall || '-')} ${avg ? '· 平均分 ' + escapeHtml(avg) : ''}</p>
       </div>
       <div class="mki-progress-fine-ai-actions">
-        <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiXiaoOpenFineAi()">查看/重跑精细评估</button>
+        ${actionButton}
       </div>
     </div>
     ${mkiImportProgressFineAiTable(result)}
   `;
+}
+
+function mkiXiaoRenderFineAiPanel(result) {
+  mkiRenderFineAiPanelInto('mkiXiaoFineAi', result, {
+    emptyAction: 'mkiXiaoOpenFineAi()',
+    actionText: '查看/重跑精细评估'
+  });
 }
 
 function mkiAiSuggestionTitle(row) {
@@ -5733,6 +5765,39 @@ function mkiXiaoLangLabel(lang) {
   return fallback ? fallback + ' (' + code + ')' : code;
 }
 
+function mkiXiaoRenderLanguageChoiceCards(langs, defaultCountries = [], options = {}) {
+  const defaults = new Set((Array.isArray(defaultCountries) ? defaultCountries : [])
+    .map(function(code) { return String(code || '').trim().toUpperCase(); })
+    .filter(Boolean));
+  const respectExisting = options.respectExisting !== false;
+  const includeForceButton = options.includeForceButton !== false;
+  return (Array.isArray(langs) ? langs : []).map(function(l) {
+    var code = mkiXiaoLangCode(l);
+    var label = mkiXiaoLangLabel(l);
+    if (!code) return '';
+    var isExisting = respectExisting && !!l.existing;
+    var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
+    var checkedAttr = (!isExisting && defaults.has(code)) ? ' checked' : '';
+    var labelText = isExisting ? label + ' (已有任务)' : label;
+    var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
+    var emptyTitle = isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果';
+    var forceBtnHtml = (isExisting && includeForceButton)
+      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center; pointer-events: auto !important;">强制创建</button>'
+      : '';
+    return '<label class="mki-xiao-lang-pill">'
+      + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + emptyTitle + '">'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + checkedAttr + disabledAttr + '>'
+      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + emptyTitle + '">'
+      + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
+      + '</span>'
+      + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
+      + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
+      + forceBtnHtml
+      + '</small>'
+      + '</span></label>';
+  }).join('');
+}
+
 function mkiXiaoAiSuggestionElement(code) {
   return document.querySelector(`#mkiXiaoLangs [data-mki-ai-lang-card="${code}"]`);
 }
@@ -5806,11 +5871,13 @@ function mkiXiaoSetSuggestionCardTone(card, tone) {
   if (tone) card.classList.add('mki-xiao-lang-card--' + tone);
 }
 
-function mkiXiaoApplyAiSuggestions(detail, state = '') {
+function mkiApplyAiSuggestionsToLanguageCards(root, detail, state = '') {
+  const rootEl = typeof root === 'string' ? document.querySelector(root) : root;
+  if (!rootEl) return;
   const fineCountryIndex = mkiFineAiCountryIndex(detail);
   const useFineAi = Object.keys(fineCountryIndex).length > 0;
   const countryIndex = useFineAi ? fineCountryIndex : mkiAiCountryIndex(detail);
-  document.querySelectorAll('#mkiXiaoLangs .mki-xiao-lang-card').forEach(card => {
+  rootEl.querySelectorAll('.mki-xiao-lang-card').forEach(card => {
     const code = String(card.dataset.mkiAiLangCard || '').toUpperCase();
     const box = card.querySelector('.mki-xiao-lang-pill-box');
     const small = card.querySelector('.mki-xiao-ai-suggestion');
@@ -5843,6 +5910,10 @@ function mkiXiaoApplyAiSuggestions(detail, state = '') {
       if (box) box.title = isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果';
     }
   });
+}
+
+function mkiXiaoApplyAiSuggestions(detail, state = '') {
+  mkiApplyAiSuggestionsToLanguageCards('#mkiXiaoLangs', detail, state);
 }
 
 
@@ -6018,30 +6089,10 @@ async function mkiXiaoOpenModal(options = {}) {
   var defaultCountries = new Set((Array.isArray(options.defaultCountries) ? options.defaultCountries : [])
     .map(function(code) { return String(code || '').trim().toUpperCase(); })
     .filter(Boolean));
-  langsDiv.innerHTML = langs.map(function(l) {
-    var code = mkiXiaoLangCode(l);
-    var label = mkiXiaoLangLabel(l);
-    if (!code) return '';
-    var isExisting = !!l.existing;
-    var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
-    var checkedAttr = (!isExisting && defaultCountries.has(code)) ? ' checked' : '';
-    var labelText = isExisting ? label + ' (已有任务)' : label;
-    var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
-    var forceBtnHtml = isExisting
-      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center; pointer-events: auto !important;">强制创建</button>'
-      : '';
-    return '<label class="mki-xiao-lang-pill">'
-      + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
-      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + checkedAttr + disabledAttr + '>'
-      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
-      + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
-      + '</span>'
-      + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
-      + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
-      + forceBtnHtml
-      + '</small>'
-      + '</span></label>';
-  }).join('');
+  langsDiv.innerHTML = mkiXiaoRenderLanguageChoiceCards(langs, Array.from(defaultCountries), {
+    respectExisting: true,
+    includeForceButton: true
+  });
   if (options.fineAiResult) {
     mkiXiaoApplyAiSuggestions(options.fineAiResult);
   } else if (mkiXiaoAiProductId) {

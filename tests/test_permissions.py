@@ -6,6 +6,7 @@ import json
 import pytest
 
 from appcore.permissions import (
+    HOME_REDIRECT_ORDER,
     PERMISSION_CODES,
     PERMISSION_META,
     ROLE_ADMIN,
@@ -41,6 +42,13 @@ def test_mk_material_preselection_permission_defaults():
     assert PERMISSION_META["mk_material_preselection"]["group"] == "management"
     assert default_permissions_for_role(ROLE_ADMIN)["mk_material_preselection"] is True
     assert default_permissions_for_role(ROLE_USER)["mk_material_preselection"] is False
+
+
+def test_home_redirect_order_includes_material_preselection_before_meta_hot_posts():
+    order = [code for code, _path in HOME_REDIRECT_ORDER]
+
+    assert ("mk_material_preselection", "/xuanpin/mk") in HOME_REDIRECT_ORDER
+    assert order.index("mk_material_preselection") < order.index("meta_hot_posts")
 
 
 def test_default_permissions_for_superadmin_is_all_true():

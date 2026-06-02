@@ -962,7 +962,7 @@
       </details>
       {% endif %}
       {% set selection_center_href = "" %}
-      {% if current_user.is_admin and has_permission('mk_selection') %}
+      {% if has_permission('mk_selection') or has_permission('mk_material_preselection') %}
         {% set selection_center_href = "/xuanpin/mk" %}
       {% elif has_permission('meta_hot_posts') %}
         {% set selection_center_href = "/xuanpin/meta-hot-posts" %}
