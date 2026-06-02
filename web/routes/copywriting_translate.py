@@ -82,7 +82,7 @@ def _load_copy_row(copy_id) -> dict | None:
 
 def _load_copywriting_translate_detail(task_id: str) -> dict:
     row = query_one(
-        "SELECT id, user_id, status, state_json, created_at, updated_at "
+        "SELECT id, user_id, status, state_json, created_at "
         "FROM projects "
         "WHERE id=%s AND type='copywriting_translate' AND deleted_at IS NULL",
         (task_id,),
@@ -108,7 +108,7 @@ def _load_copywriting_translate_detail(task_id: str) -> dict:
             "tokens_used": int(state.get("tokens_used") or 0),
             "last_error": state.get("last_error") or "",
             "created_at": _stringify_time(row.get("created_at")),
-            "updated_at": _stringify_time(row.get("updated_at")),
+            "updated_at": _stringify_time(row.get("created_at")),
         },
         "source_copy": _load_copy_row(source_copy_id),
         "target_copy": _load_copy_row(target_copy_id),

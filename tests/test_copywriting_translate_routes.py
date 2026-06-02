@@ -199,7 +199,6 @@ def _copywriting_translate_detail_query(project_user_id: int = 1):
                     ensure_ascii=False,
                 ),
                 "created_at": "2026-05-21 10:00:00",
-                "updated_at": "2026-05-21 10:03:00",
             }
         if args == (101,):
             return {
@@ -247,7 +246,7 @@ def test_detail_api_returns_readonly_payload(client_patched, monkeypatch):
         "tokens_used": 88,
         "last_error": "",
         "created_at": "2026-05-21 10:00:00",
-        "updated_at": "2026-05-21 10:03:00",
+        "updated_at": "2026-05-21 10:00:00",
     }
     assert data["source_copy"]["body"] == "Source body"
     assert data["target_copy"]["title"] == "Ziel"
