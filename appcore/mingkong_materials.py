@@ -17,6 +17,7 @@ import requests
 
 from appcore import local_media_storage, mingkong_login_autofill, pushes, scheduled_tasks
 from appcore.db import execute, get_conn, query, query_one
+from appcore.mingkong_material_preselections import enrich_items_with_preselection
 from web.services.media_mk_selection import normalize_mk_media_path
 
 
@@ -869,6 +870,18 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         # raw source materials, so the card icon means local library match only.
         item["has_local_material_running_ad"] = material_in_library
     return items
+
+
+def _enrich_material_card_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched = _enrich_cached_ad_statuses(items)
+    try:
+        return enrich_items_with_preselection(enriched, query_fn=query)
+    except Exception as exc:
+        logger.warning("mingkong material preselection enrichment skipped: %s", exc)
+        for item in enriched:
+            item.setdefault("is_preselected", False)
+            item.setdefault("preselection", None)
+        return enriched
 
 
 def _normalize_library_status_filter(value: Any) -> str:
@@ -1863,7 +1876,7 @@ def _list_all_historical_material_library(
             snapshot_date=first.get("snapshot_date") or "",
             snapshot_at=first.get("snapshot_at"),
         )
-    items = _filter_by_library_status(_enrich_cached_ad_statuses(serialized), status_filter)
+    items = _filter_by_library_status(_enrich_material_card_items(serialized), status_filter)
     total = len(items) if status_filter else _as_int(count_row.get("cnt"))
     page_items = items[offset : offset + size] if status_filter else items
     return {
@@ -1949,7 +1962,7 @@ def _list_live_mingkong_material_library(
         ),
         reverse=True,
     )
-    items = _filter_by_library_status(_enrich_cached_ad_statuses(sorted_rows), status_filter)
+    items = _filter_by_library_status(_enrich_material_card_items(sorted_rows), status_filter)
     total = len(items)
     return {
         "items": items[offset : offset + size],
@@ -2292,7 +2305,7 @@ def list_material_library(
                 snapshot_date=first.get("snapshot_date") or range_end,
                 snapshot_at=first.get("snapshot_at"),
             )
-        items = _filter_by_library_status(_enrich_cached_ad_statuses(
+        items = _filter_by_library_status(_enrich_material_card_items(
             serialized
         ), status_filter)
         total = len(items) if status_filter else _as_int(count_row.get("cnt"))
@@ -2350,7 +2363,7 @@ def list_material_library(
         tuple(query_args),
     )
     serialized = [_serialize_material_row(row) for row in rows or []]
-    items = _filter_by_library_status(_enrich_cached_ad_statuses(
+    items = _filter_by_library_status(_enrich_material_card_items(
         _enrich_material_yesterday_delta(
             serialized,
             snapshot_date=snapshot,
@@ -2492,7 +2505,7 @@ def list_yesterday_top100(
     )
     items = _filter_by_library_status(
         enrich_and_fetch_english_titles(
-            _enrich_cached_ad_statuses([_serialize_top100_row(row) for row in rows or []])
+            _enrich_material_card_items([_serialize_top100_row(row) for row in rows or []])
         ),
         status_filter,
     )

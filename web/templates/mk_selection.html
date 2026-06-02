@@ -739,10 +739,35 @@ strong.mk-video-product-name { color:var(--oc-fg); }
 .mk-material-cell { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; }
 .mk-product-material-btn { height:28px; padding:0 10px; font-size:13px; }
 .mk-material-state { font-size:12px; line-height:1; }
+.mk-preselection-pills { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.mk-preselection-pill { display:inline-flex; align-items:center; min-height:22px; padding:0 8px; border-radius:999px; background:#e0f2fe; color:#075985; font-size:12px; font-weight:800; }
+.mk-preselection-note { margin:8px 0; padding:8px 10px; border:1px solid #bae6fd; border-radius:8px; background:#f0f9ff; color:#0f172a; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.mk-preselection-note strong { display:block; margin-bottom:3px; color:#0369a1; font-size:12px; }
+.mk-preselection-btn { height:26px; padding:0 10px; border:1px solid var(--oc-accent); border-radius:999px; background:#fff; color:var(--oc-accent); font-size:12px; font-weight:800; cursor:pointer; }
+.mk-preselection-btn:hover { background:var(--oc-accent-soft); }
+.mk-preselection-modal-backdrop { display:none; position:fixed; inset:0; z-index:2200; align-items:center; justify-content:center; background:rgba(15,23,42,.45); }
+.mk-preselection-modal { width:min(720px, calc(100vw - 28px)); max-height:90vh; overflow:auto; background:#fff; border-radius:12px; box-shadow:0 18px 60px rgba(15,23,42,.28); }
+.mk-preselection-modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px 18px; border-bottom:1px solid var(--oc-border); }
+.mk-preselection-modal-title { margin:0; font-size:18px; font-weight:800; }
+.mk-preselection-modal-body { display:grid; gap:14px; padding:16px 18px; }
+.mk-preselection-product { display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:start; }
+.mk-preselection-product img { width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--oc-border); background:var(--oc-bg-muted); }
+.mk-preselection-product-lines { display:grid; gap:6px; min-width:0; }
+.mk-preselection-product-line { display:grid; grid-template-columns:86px minmax(0,1fr); gap:8px; color:var(--oc-fg-muted); font-size:13px; }
+.mk-preselection-product-line strong { color:var(--oc-fg); overflow-wrap:anywhere; }
+.mk-preselection-lang-grid { display:flex; flex-wrap:wrap; gap:8px; }
+.mk-preselection-lang { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--oc-border-strong); border-radius:999px; cursor:pointer; background:#fff; font-size:13px; }
+.mk-preselection-lang input { accent-color:var(--oc-accent); }
+.mk-preselection-ai { padding:10px 12px; border-radius:8px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-size:12px; line-height:1.5; }
+.mk-preselection-note-input { min-height:88px; width:100%; resize:vertical; border:1px solid var(--oc-border-strong); border-radius:8px; padding:10px 12px; font:inherit; }
+.mk-preselection-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 16px; border-top:1px solid var(--oc-border); }
 @media (max-width: 768px) {
   .mk-library-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; -ms-overflow-style:none; }
   .mk-library-tabs::-webkit-scrollbar { display:none; }
   .mk-library-tab { flex-shrink:0; min-width:80px; white-space:nowrap; }
+  .mk-preselection-product { grid-template-columns:72px minmax(0,1fr); }
+  .mk-preselection-product img { width:72px; height:72px; }
+  .mk-preselection-product-line { grid-template-columns:1fr; gap:2px; }
 }
 {% endblock %}
 
@@ -753,7 +778,10 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">
     <button class="mk-library-tab active" type="button" role="tab" aria-selected="true" onclick="switchMkLibraryTab('videos')" data-mk-library-tab="videos">视频素材库</button>
     <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('yesterday-top300')" data-mk-library-tab="yesterday-top300">昨天消耗前300</button>
+    <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('preselection')" data-mk-library-tab="preselection">素材预选</button>
+    {% if mk_can_admin_operate %}
     <button class="mk-library-tab" type="button" role="tab" aria-selected="false" onclick="switchMkLibraryTab('products')" data-mk-library-tab="products">产品库</button>
+    {% endif %}
   </div>
   <div class="oc-header oc-header--actions">
     <div class="oc-search">
@@ -774,6 +802,11 @@ strong.mk-video-product-name { color:var(--oc-fg); }
         <option value="product_not_imported">产品未入库</option>
         <option value="video_imported">视频已入库</option>
         <option value="video_not_imported">视频未入库</option>
+      </select>
+      <select id="mkPreselectionProcessedFilter" class="oc-input oc-select oc-select--inventory" aria-label="处理状态" onchange="onMkPreselectionFilterChange()">
+        <option value="">全部处理状态</option>
+        <option value="processed">已处理</option>
+        <option value="unprocessed">未处理</option>
       </select>
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名 / product code / 视频文件名" value="{{ initial_search_query or '' }}" style="width:480px">
       <button class="oc-btn oc-btn--primary" onclick="runMkSearch()">搜索</button>
@@ -854,6 +887,18 @@ strong.mk-video-product-name { color:var(--oc-fg); }
     </div>
     <div class="oc-pager" id="mkYesterdayTop100PagerBottom"></div>
   </section>
+
+  <section id="mkMaterialPreselectionPanel" class="mk-library-panel" hidden>
+    <div class="mk-video-library-head">
+      <span id="mkMaterialPreselectionStatus">切换到素材预选后加载运营预选素材</span>
+      <button type="button" class="mk-sort-btn mk-zoom-btn" id="mkPreselectionZoomBtn" onclick="toggleMkCardZoom()">卡片放大 2x</button>
+    </div>
+    <div class="oc-pager" id="mkPreselectionPagerTop"></div>
+    <div class="mk-video-grid mk-video-library-grid" id="mkMaterialPreselectionGrid">
+      <div class="oc-empty">加载中...</div>
+    </div>
+    <div class="oc-pager" id="mkPreselectionPagerBottom"></div>
+  </section>
 </div>
 
 <!-- 素材详情居中弹窗 -->
@@ -866,9 +911,44 @@ strong.mk-video-product-name { color:var(--oc-fg); }
   <div id="detailContent" style="padding:20px 24px; overflow-y:auto; max-height:calc(94vh - 60px);">加载中...</div>
 </div>
 
+<div id="mkPreselectionModal" class="mk-preselection-modal-backdrop" onclick="if(event.target===this)mkiClosePreselectionModal()">
+  <div class="mk-preselection-modal" role="dialog" aria-modal="true" aria-labelledby="mkPreselectionTitle">
+    <div class="mk-preselection-modal-head">
+      <h3 id="mkPreselectionTitle" class="mk-preselection-modal-title">素材预选</h3>
+      <button type="button" class="close-btn" onclick="mkiClosePreselectionModal()" aria-label="关闭">&times;</button>
+    </div>
+    <div class="mk-preselection-modal-body">
+      <div class="mk-preselection-product">
+        <img id="mkPreselectionProductImage" alt="产品主图">
+        <div class="mk-preselection-product-lines">
+          <div class="mk-preselection-product-line"><span>中文名</span><strong id="mkPreselectionProductName">--</strong></div>
+          <div class="mk-preselection-product-line"><span>英文名</span><strong id="mkPreselectionProductEnglishName">--</strong></div>
+          <div class="mk-preselection-product-line"><span>产品Code</span><strong id="mkPreselectionProductCode">--</strong></div>
+          <div class="mk-preselection-product-line"><span>视频</span><strong id="mkPreselectionVideoName">--</strong></div>
+        </div>
+      </div>
+      <div>
+        <div class="mki-xiao-label" style="margin-bottom:8px;">预选语言（至少选择一个）</div>
+        <div id="mkPreselectionLangs" class="mk-preselection-lang-grid"></div>
+      </div>
+      <div id="mkPreselectionAiInfo" class="mk-preselection-ai">AI评估信息会结合卡片上的 AI 评估 / AI 精细评估结果辅助判断。</div>
+      <label class="mki-xiao-label" for="mkPreselectionNote">运营备注</label>
+      <textarea id="mkPreselectionNote" class="mk-preselection-note-input" maxlength="2000" placeholder="填写给管理员看的素材预选备注"></textarea>
+      <div id="mkPreselectionStatus" class="mki-xiao-status" hidden></div>
+    </div>
+    <div class="mk-preselection-actions">
+      <button type="button" class="oc-btn oc-btn--ghost" onclick="mkiClosePreselectionModal()">取消</button>
+      <button type="button" class="oc-btn oc-btn--primary" onclick="mkiSavePreselection()">保存预选</button>
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script>
 const MK_PROXY = "/xuanpin/api/mk-detail";
+const MK_CAN_ADMIN_OPERATE = {{ mk_can_admin_operate | tojson }};
+const MK_PRESELECTION_ONLY = {{ mk_preselection_only | tojson }};
+const MK_PRESELECTION_API = "/xuanpin/api/mk-material-preselections";
 let currentPage = 1;
 let currentMkLibraryTab = 'videos';
 let mkProductsLoaded = false;
@@ -876,6 +956,8 @@ let mkVideoPage = 1;
 let mkVideoMaterialsLoaded = false;
 let mkYesterdayTop100Page = 1;
 let mkYesterdayTop100Loaded = false;
+let mkPreselectionPage = 1;
+let mkPreselectionLoaded = false;
 let selectedMkSnapshot = '';
 let selectedMkRange = '';
 let selectedMkSnapshotSource = '';
@@ -1295,6 +1377,7 @@ async function runMkSearch(options = {}) {
   mkProductsLoaded = false;
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
+  mkPreselectionLoaded = false;
   if (currentMkLibraryTab === 'videos' && options.preserveProductCode !== true) {
     activeMkProductCode = '';
   }
@@ -1303,6 +1386,8 @@ async function runMkSearch(options = {}) {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top300') {
     loadMkYesterdayTop100(1);
+  } else if (currentMkLibraryTab === 'preselection') {
+    loadMkMaterialPreselections(1);
   } else {
     loadData(1);
   }
@@ -1312,6 +1397,8 @@ function resetMkSearch() {
   document.getElementById('searchInput').value = '';
   const inventoryFilter = document.getElementById('mkInventoryFilter');
   if (inventoryFilter) inventoryFilter.value = '';
+  const processedFilter = document.getElementById('mkPreselectionProcessedFilter');
+  if (processedFilter) processedFilter.value = '';
   const rangeSelect = document.getElementById('snapshotRangeSelect');
   selectedMkRange = '';
   if (rangeSelect) rangeSelect.value = '';
@@ -1331,6 +1418,24 @@ function mkLibraryStatusQueryParam() {
   return value ? `&library_status=${encodeURIComponent(value)}` : '';
 }
 
+function mkPreselectionLibraryStatusQueryParam() {
+  const value = currentMkLibraryStatus();
+  if (value === 'video_imported') return '&library_status=imported';
+  if (value === 'video_not_imported') return '&library_status=not_imported';
+  return '';
+}
+
+function currentMkPreselectionProcessedStatus() {
+  const select = document.getElementById('mkPreselectionProcessedFilter');
+  const value = select ? String(select.value || '').trim() : '';
+  return ['processed', 'unprocessed'].includes(value) ? value : '';
+}
+
+function mkPreselectionProcessedQueryParam() {
+  const value = currentMkPreselectionProcessedStatus();
+  return value ? `&processed_status=${encodeURIComponent(value)}` : '';
+}
+
 function currentMkLibraryStatusLabel() {
   const select = document.getElementById('mkInventoryFilter');
   if (!select || !select.value) return '';
@@ -1340,6 +1445,12 @@ function currentMkLibraryStatusLabel() {
 function onMkInventoryFilterChange() {
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
+  mkPreselectionLoaded = false;
+  runMkSearch({preserveProductCode: true});
+}
+
+function onMkPreselectionFilterChange() {
+  mkPreselectionLoaded = false;
   runMkSearch({preserveProductCode: true});
 }
 
@@ -1455,7 +1566,8 @@ function onMkRangeChange() {
 
 function normalizeMkLibraryTab(tab) {
   if (tab === 'yesterday-top100') return 'yesterday-top300';
-  return ['products', 'videos', 'yesterday-top300'].includes(tab) ? tab : 'videos';
+  if (tab === 'products' && !MK_CAN_ADMIN_OPERATE) return 'videos';
+  return ['products', 'videos', 'yesterday-top300', 'preselection'].includes(tab) ? tab : 'videos';
 }
 
 function applyMkLibraryTabState() {
@@ -1467,6 +1579,7 @@ function applyMkLibraryTabState() {
   document.getElementById('mkProductsPanel').hidden = currentMkLibraryTab !== 'products';
   document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
   document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top300';
+  document.getElementById('mkMaterialPreselectionPanel').hidden = currentMkLibraryTab !== 'preselection';
 }
 
 async function switchMkLibraryTab(tab, options = {}) {
@@ -1480,6 +1593,8 @@ async function switchMkLibraryTab(tab, options = {}) {
     loadMkLocalMaterialLibrary(1);
   } else if (currentMkLibraryTab === 'yesterday-top300' && (!mkYesterdayTop100Loaded || options.forceLoad)) {
     loadMkYesterdayTop100(1);
+  } else if (currentMkLibraryTab === 'preselection' && (!mkPreselectionLoaded || options.forceLoad)) {
+    loadMkMaterialPreselections(1);
   } else if (currentMkLibraryTab === 'products' && (!mkProductsLoaded || options.forceLoad)) {
     loadData(1);
   }
@@ -1661,6 +1776,36 @@ async function loadMkYesterdayTop100(page) {
   }
 }
 
+async function loadMkMaterialPreselections(page) {
+  mkPreselectionPage = page;
+  const kw = document.getElementById('searchInput').value.trim();
+  const status = document.getElementById('mkMaterialPreselectionStatus');
+  const grid = document.getElementById('mkMaterialPreselectionGrid');
+  if (!grid) return;
+  if (status) status.textContent = '正在加载素材预选...';
+  grid.innerHTML = '<div class="oc-empty">加载中...</div>';
+  syncMkSearchQueryToUrl();
+  try {
+    const url = `${MK_PRESELECTION_API}?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkPreselectionLibraryStatusQueryParam()}${mkPreselectionProcessedQueryParam()}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.message || data.error || '素材预选加载失败');
+    const total = Number(data.total || (data.items || []).length || 0);
+    mkPreselectionLoaded = true;
+    if (status) status.textContent = `素材预选 ${total.toLocaleString()} 条`;
+    if (!data.items || !data.items.length) {
+      grid.innerHTML = '<div class="oc-empty">暂无素材预选</div>';
+    } else {
+      grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
+      mkiCheckRenderedButtons();
+    }
+    renderMkArchivePager(['mkPreselectionPagerTop', 'mkPreselectionPagerBottom'], 'loadMkMaterialPreselections', page, total);
+  } catch (e) {
+    if (status) status.textContent = '素材预选加载失败';
+    grid.innerHTML = `<div class="oc-empty" style="color:var(--oc-danger);">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
 async function setYesterdayTop300Sort(sortOrder) {
   const status = document.getElementById('mkYesterdayTop100Status');
   const oldStatusText = status.textContent;
@@ -1687,6 +1832,54 @@ async function setYesterdayTop300Sort(sortOrder) {
     status.textContent = '保存排序设置失败: ' + err.message;
     setTimeout(() => { status.textContent = oldStatusText; }, 3000);
   }
+}
+
+function mkiPreselectionCountriesFromRecord(r) {
+  const preselection = r && r.preselection && typeof r.preselection === 'object' ? r.preselection : {};
+  const countries = preselection.selected_countries || preselection.countries || [];
+  return Array.isArray(countries)
+    ? Array.from(new Set(countries.map(c => String(c || '').trim().toUpperCase()).filter(Boolean)))
+    : [];
+}
+
+function mkiPreselectionNoteFromRecord(r) {
+  const preselection = r && r.preselection && typeof r.preselection === 'object' ? r.preselection : {};
+  return String(preselection.operator_note || preselection.note || '').trim();
+}
+
+function mkiRenderPreselectionNote(note, label = '运营备注') {
+  const text = String(note || '').trim();
+  return text ? `<div class="mk-preselection-note"><strong>${escapeHtml(label)}</strong>${escapeHtml(text)}</div>` : '';
+}
+
+function mkiRenderPreselectionPills(countries) {
+  const list = Array.isArray(countries) ? countries : [];
+  if (!list.length) return '';
+  return `<div class="mk-preselection-pills">${list.map(code => `<span class="mk-preselection-pill">${escapeHtml(code)}</span>`).join('')}</div>`;
+}
+
+function mkiPreselectionCardPayload(r) {
+  const preselection = r && r.preselection && typeof r.preselection === 'object' ? r.preselection : {};
+  return {
+    material_key: r.material_key || '',
+    product_code: r.product_code || r.product_handle || '',
+    mk_product_id: r.mk_product_id || '',
+    product_name: r.mk_product_name || r.product_name || '',
+    product_english_name: r.product_english_title || r.product_english_name || '',
+    product_url: r.mk_product_link || r.product_url || '',
+    product_main_image_url: r.main_image || r.product_main_image_url || r.local_cover_url || '',
+    video_name: r.video_name || '',
+    video_path: r.video_path || '',
+    video_cover_url: r.video_image_path || r.video_cover_url || r.local_cover_url || '',
+    media_product_id: (r.product_ad_status || {}).media_product_id || r.media_product_id || '',
+    media_item_id: (r.material_ad_status || {}).media_item_id || r.media_item_id || '',
+    selected_countries: mkiPreselectionCountriesFromRecord(r),
+    operator_note: mkiPreselectionNoteFromRecord(r),
+    source_snapshot_at: r.snapshot_at || '',
+    product_ad_status: r.product_ad_status || {},
+    material_ad_status: r.material_ad_status || {},
+    fine_ai_evaluation: (r.product_ad_status || {}).fine_ai_evaluation || null
+  };
 }
 
 function renderMkVideoMaterialCard(r) {
@@ -1777,8 +1970,21 @@ function renderMkVideoMaterialCard(r) {
   const newTop100Html = r.is_new_top100_entry
     ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top300</span></span></span>'
     : '';
+  const preselectionCountries = mkiPreselectionCountriesFromRecord(r);
+  const preselectionNote = mkiPreselectionNoteFromRecord(r);
+  const preselectionPayload = mkiPreselectionCardPayload(r);
+  const preselectionPayloadJson = escapeHtml(JSON.stringify(preselectionPayload));
+  const preselectionPillsHtml = mkiRenderPreselectionPills(preselectionCountries);
+  const preselectionNoteHtml = mkiRenderPreselectionNote(preselectionNote);
+  const preselectionActionHtml = r.material_key
+    ? `<span class="mk-video-summary-item"><button type="button" class="mk-preselection-btn" data-mki-preselection-payload="${preselectionPayloadJson}" onclick="mkiOpenPreselectionModalFromCard(this)">素材预选</button></span>`
+    : '';
+  const preselectionDataAttrs = `data-mki-preselection-key="${escapeHtml(r.material_key || '')}" data-mki-preselection-countries="${escapeHtml(preselectionCountries.join(','))}" data-mki-preselection-note="${escapeHtml(preselectionNote)}"`;
+  const adminButtonHidden = MK_CAN_ADMIN_OPERATE ? '' : ' style="display:none"';
   return `<div class="mk-video-card">
     ${statusIconsHtml}
+    ${preselectionPillsHtml}
+    ${preselectionNoteHtml}
     <div class="mk-video-product-line">
       ${safeProductUrl ? `<a class="mk-video-product-name mk-line-clamp mk-line-clamp--2" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong class="mk-video-product-name mk-line-clamp mk-line-clamp--2" title="${safeProductName}">${safeProductName}</strong>`}
       <div class="mk-video-product-code-row">
@@ -1796,6 +2002,7 @@ function renderMkVideoMaterialCard(r) {
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
       <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
       ${yesterdayDeltaHtml}
+      ${preselectionActionHtml}
       ${newTop100Html}
     </div>
     <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
@@ -1811,7 +2018,7 @@ function renderMkVideoMaterialCard(r) {
       <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
       <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
     </div>
-    <button class="mki-btn mki-btn--add ${isMaterialImported ? 'mki-btn--disabled' : ''}"
+    <button class="mki-btn mki-btn--add ${isMaterialImported ? 'mki-btn--disabled' : ''}"${adminButtonHidden}
         title="${escapeHtml(materialImportTitle)}"
         data-mki-filename="${escapeHtml(r.video_name || '')}"
         data-mki-mp4-url="${safeVideoUrl}"
@@ -1834,11 +2041,12 @@ function renderMkVideoMaterialCard(r) {
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
         data-mki-spends="${escapeHtml(spendText)}"
+        ${preselectionDataAttrs}
         ${isMaterialImported ? 'disabled' : ''}
         onclick="mkiHandleClick(this)">
       ${isMaterialImported ? '已入库' : '加入素材库'}
     </button>
-    <button class="mki-btn mki-btn--xiao"
+    <button class="mki-btn mki-btn--xiao"${adminButtonHidden}
         ${canCreateSmallLangTask ? '' : 'disabled'}
         title="${canCreateSmallLangTask ? '创建小语种翻译任务' : '先加入素材库后才能创建小语种任务'}"
         data-mki-filename="${escapeHtml(r.video_name || '')}"
@@ -1859,10 +2067,11 @@ function renderMkVideoMaterialCard(r) {
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
+        ${preselectionDataAttrs}
         onclick="mkiXiaoCreateFromImportedMaterial(this)">
       创建小语种翻译任务
     </button>
-    <button class="mki-btn mki-ai-btn"
+    <button class="mki-btn mki-ai-btn"${adminButtonHidden}
         ${existingProductId ? '' : 'disabled'}
         title="${aiButtonTitle}"
         data-mki-ai-product-id="${escapeHtml(existingProductId || '')}"
@@ -1873,7 +2082,7 @@ function renderMkVideoMaterialCard(r) {
         onclick="mkiAiEvaluateFromCard(this)">
       ${aiButtonLabel}
     </button>
-    <button class="mki-btn mki-fine-ai-btn"
+    <button class="mki-btn mki-fine-ai-btn"${adminButtonHidden}
         ${canFineAiEvaluate ? '' : 'disabled'}
         title="${fineAiButtonTitle}"
         data-mki-fine-ai-product-id="${escapeHtml(existingProductId || '')}"
@@ -1893,6 +2102,118 @@ function renderMkVideoMaterialCard(r) {
       ${escapeHtml(fineAiButtonLabel)}${fineAiChannelBadge}
     </button>
   </div>`;
+}
+
+let mkiPreselectionCurrentPayload = null;
+
+function mkiOpenPreselectionModalFromCard(btn) {
+  const raw = btn && btn.dataset ? String(btn.dataset.mkiPreselectionPayload || '{}') : '{}';
+  let payload = {};
+  try { payload = JSON.parse(raw); } catch (_) { payload = {}; }
+  mkiOpenPreselectionModal(payload);
+}
+
+function mkiSetPreselectionStatus(type, html) {
+  const el = document.getElementById('mkPreselectionStatus');
+  if (!el) return;
+  el.hidden = !html;
+  el.className = 'mki-xiao-status' + (type ? ' ' + type : '');
+  el.innerHTML = html || '';
+}
+
+function mkiClosePreselectionModal() {
+  const modal = document.getElementById('mkPreselectionModal');
+  if (modal) modal.style.display = 'none';
+  mkiPreselectionCurrentPayload = null;
+}
+
+function mkiPreselectionSelectedCountries() {
+  return Array.from(document.querySelectorAll('#mkPreselectionLangs input[type=checkbox]:checked'))
+    .map(cb => String(cb.value || '').trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function mkiRenderPreselectionAiInfo(payload) {
+  const fine = payload && payload.fine_ai_evaluation ? mkiFineAiNormalizeResult(payload.fine_ai_evaluation) : null;
+  if (fine && fine.summary) {
+    const summary = fine.summary || {};
+    const recommendation = summary.overall_recommendation || fine.status || '-';
+    const score = summary.average_score ? ' · 平均分 ' + summary.average_score : '';
+    return `<strong>AI精细评估</strong><div>综合建议：${escapeHtml(recommendation)}${escapeHtml(score)}</div>`;
+  }
+  return '<strong>AI评估信息</strong><div>可参考卡片上的 AI评估结果 和 AI精细评估结果，再选择要翻译的语言。</div>';
+}
+
+async function mkiOpenPreselectionModal(payload) {
+  mkiPreselectionCurrentPayload = payload || {};
+  const modal = document.getElementById('mkPreselectionModal');
+  if (!modal) return;
+  document.getElementById('mkPreselectionProductName').textContent = payload.product_name || '--';
+  document.getElementById('mkPreselectionProductEnglishName').textContent = payload.product_english_name || '--';
+  document.getElementById('mkPreselectionProductCode').textContent = payload.product_code || '--';
+  document.getElementById('mkPreselectionVideoName').textContent = payload.video_name || '--';
+  const img = document.getElementById('mkPreselectionProductImage');
+  const imageUrl = safeMediaSrc(payload.product_main_image_url || payload.video_cover_url || '');
+  if (img) {
+    img.src = imageUrl || '';
+    img.hidden = !imageUrl;
+  }
+  document.getElementById('mkPreselectionNote').value = payload.operator_note || '';
+  document.getElementById('mkPreselectionAiInfo').innerHTML = mkiRenderPreselectionAiInfo(payload);
+  const selected = new Set((payload.selected_countries || []).map(code => String(code || '').trim().toUpperCase()).filter(Boolean));
+  const langBox = document.getElementById('mkPreselectionLangs');
+  langBox.innerHTML = '<span class="oc-empty">语言加载中...</span>';
+  modal.style.display = 'flex';
+  mkiSetPreselectionStatus('', '');
+  let langs = [];
+  try {
+    const resp = await fetch('/tasks/api/languages');
+    const data = await resp.json();
+    langs = data.languages || [];
+  } catch (_) {
+    langs = [];
+  }
+  if (!langs.length && selected.size) {
+    langs = Array.from(selected).map(code => ({code, label: code}));
+  }
+  langBox.innerHTML = langs.map(lang => {
+    const code = mkiXiaoLangCode(lang);
+    if (!code) return '';
+    const label = mkiXiaoLangLabel(lang);
+    const checked = selected.has(code) ? ' checked' : '';
+    return `<label class="mk-preselection-lang"><input type="checkbox" value="${escapeHtml(code)}"${checked}><span>${escapeHtml(label)}</span></label>`;
+  }).join('') || '<span class="oc-empty">暂无可选语言</span>';
+}
+
+async function mkiSavePreselection() {
+  if (!mkiPreselectionCurrentPayload) return;
+  const countries = mkiPreselectionSelectedCountries();
+  if (!countries.length) {
+    mkiSetPreselectionStatus('error', '请至少选择一个语言');
+    return;
+  }
+  const payload = Object.assign({}, mkiPreselectionCurrentPayload, {
+    selected_countries: countries,
+    operator_note: document.getElementById('mkPreselectionNote').value || ''
+  });
+  mkiSetPreselectionStatus('running', '正在保存素材预选...');
+  try {
+    const resp = await fetch(MK_PRESELECTION_API, {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.error) throw new Error(data.error || data.message || resp.statusText);
+    mkiToast('success', '素材预选已保存');
+    mkiClosePreselectionModal();
+    mkVideoMaterialsLoaded = false;
+    mkYesterdayTop100Loaded = false;
+    mkPreselectionLoaded = false;
+    runMkSearch({preserveProductCode: true, syncUrl: false});
+  } catch (err) {
+    mkiSetPreselectionStatus('error', escapeHtml(err.message || '保存失败'));
+  }
 }
 
 async function openDetail(mkId, mkName) {
@@ -4693,6 +5014,12 @@ function mkiImportProgressOpen(meta) {
       }
     }
   }
+  const preselectionNoteEl = document.getElementById('mkiImportProgressPreselectionNote');
+  const preselectionNote = mkiPreselectionNoteFromButton(mkiImportProgressButton);
+  if (preselectionNoteEl) {
+    preselectionNoteEl.hidden = !preselectionNote;
+    preselectionNoteEl.innerHTML = preselectionNote ? `<strong>运营备注</strong>${escapeHtml(preselectionNote)}` : '';
+  }
   mkiImportProgressRenderFineAiPanel(mkiImportProgressButton);
   document.getElementById('mkiImportProgressError').hidden = true;
   document.getElementById('mkiImportProgressError').textContent = '';
@@ -5142,7 +5469,9 @@ async function mkiImportProgressCreateSmallLangTask() {
     productId: mkiImportProgressProductId,
     itemId: mkiImportProgressItemId,
     fineAiResult: mkiFineAiResultFromButton(mkiImportProgressButton),
-    sourceButton: mkiImportProgressButton
+    sourceButton: mkiImportProgressButton,
+    defaultCountries: mkiPreselectionCountriesFromButton(mkiImportProgressButton),
+    preselectionNote: mkiPreselectionNoteFromButton(mkiImportProgressButton)
   });
   if (!selection) return;
   if (!selection.countries.length) {
@@ -5187,6 +5516,9 @@ async function mkiImportProgressCreateSmallLangTask() {
     if (tasksBtn && mkiImportProgressTaskId) {
       tasksBtn.dataset.href = `/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`;
     }
+    if (mkiImportProgressTaskId) {
+      await mkiMarkPreselectionProcessedFromButton(mkiImportProgressButton, mkiImportProgressTaskId);
+    }
     if (mkiImportProgressTaskId) mkiXiaoShowCreateSuccess(mkiImportProgressTaskId);
     mkiToast('success', taskText);
   } catch (err) {
@@ -5201,6 +5533,33 @@ async function mkiImportProgressCreateSmallLangTask() {
 
 function mkiImportProgressContinueTask() {
   mkiImportProgressCreateSmallLangTask();
+}
+
+function mkiPreselectionCountriesFromButton(btn) {
+  return String((btn && btn.dataset && btn.dataset.mkiPreselectionCountries) || '')
+    .split(',')
+    .map(code => String(code || '').trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function mkiPreselectionNoteFromButton(btn) {
+  return String((btn && btn.dataset && btn.dataset.mkiPreselectionNote) || '').trim();
+}
+
+async function mkiMarkPreselectionProcessedFromButton(btn, taskId) {
+  const key = String((btn && btn.dataset && btn.dataset.mkiPreselectionKey) || '').trim();
+  const id = Number(taskId || 0);
+  if (!key || !id) return;
+  try {
+    await fetch(`${MK_PRESELECTION_API}/${encodeURIComponent(key)}/processed`, {
+      method: 'POST',
+      headers: mkiImportProgressHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({parent_task_id: id})
+    });
+    mkPreselectionLoaded = false;
+  } catch (err) {
+    console.warn('mark preselection processed failed', err);
+  }
 }
 
 async function mkiHandleClick(btn) {
@@ -5635,6 +5994,12 @@ async function mkiXiaoOpenModal(options = {}) {
   if (rawDefault) rawSel.value = String(rawDefault);
   const titleEl = document.getElementById('mkiXiaoTitle');
   if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+  const preselectionNoteEl = document.getElementById('mkiXiaoPreselectionNote');
+  const preselectionNote = String(options.preselectionNote || '').trim();
+  if (preselectionNoteEl) {
+    preselectionNoteEl.hidden = !preselectionNote;
+    preselectionNoteEl.innerHTML = preselectionNote ? `<strong>运营备注</strong>${escapeHtml(preselectionNote)}` : '';
+  }
   mkiXiaoRenderFineAiPanel(options.fineAiResult || null);
 
   // Load languages
@@ -5650,12 +6015,16 @@ async function mkiXiaoOpenModal(options = {}) {
     langs = []; 
   }
   var langsDiv = document.getElementById('mkiXiaoLangs');
+  var defaultCountries = new Set((Array.isArray(options.defaultCountries) ? options.defaultCountries : [])
+    .map(function(code) { return String(code || '').trim().toUpperCase(); })
+    .filter(Boolean));
   langsDiv.innerHTML = langs.map(function(l) {
     var code = mkiXiaoLangCode(l);
     var label = mkiXiaoLangLabel(l);
     if (!code) return '';
     var isExisting = !!l.existing;
     var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
+    var checkedAttr = (!isExisting && defaultCountries.has(code)) ? ' checked' : '';
     var labelText = isExisting ? label + ' (已有任务)' : label;
     var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
     var forceBtnHtml = isExisting
@@ -5663,7 +6032,7 @@ async function mkiXiaoOpenModal(options = {}) {
       : '';
     return '<label class="mki-xiao-lang-pill">'
       + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
-      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + checkedAttr + disabledAttr + '>'
       + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
       + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
       + '</span>'
@@ -5739,7 +6108,9 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     productId: productId,
     itemId: itemId,
     fineAiResult: mkiFineAiResultFromButton(btn),
-    sourceButton: btn
+    sourceButton: btn,
+    defaultCountries: mkiPreselectionCountriesFromButton(btn),
+    preselectionNote: mkiPreselectionNoteFromButton(btn)
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -5769,6 +6140,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
     if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
     var taskId = Number(data.parent_task_id || 0);
     if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    await mkiMarkPreselectionProcessedFromButton(btn, taskId);
     btn.textContent = '任务 #' + taskId;
     btn.classList.add('mki-btn--disabled');
     mkiXiaoShowCreateSuccess(taskId);
@@ -5818,6 +6190,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
           <span id="mkiImportProgressSpends" class="mki-progress-info-value">--</span>
         </div>
       </div>
+      <section id="mkiImportProgressPreselectionNote" class="mk-preselection-note" hidden></section>
       <div class="mki-progress-meta">
         <div class="mki-progress-meta-item">
           <span class="mki-progress-meta-label">素材</span>
@@ -5839,6 +6212,7 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
 <div id="mkiXiaoModal" class="mki-xiao-backdrop">
   <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
     <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+    <section id="mkiXiaoPreselectionNote" class="mk-preselection-note" hidden></section>
     <section id="mkiXiaoFineAi" class="mki-progress-fine-ai mki-xiao-fine-ai" aria-label="AI 精细评估建议"></section>
     <div class="mki-xiao-field">
       <label class="mki-xiao-label" for="mkiXiaoTranslator">小语种翻译负责人：</label>

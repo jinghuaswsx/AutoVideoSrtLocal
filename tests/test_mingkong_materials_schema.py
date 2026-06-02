@@ -145,3 +145,50 @@ def test_mingkong_material_product_aggregate_migration_declares_columns_and_inde
         assert f"ADD COLUMN {column}" in body
 
     assert "idx_mk_material_products_latest_stats" in body
+
+
+def test_mingkong_material_preselection_migration_declares_table_and_guqian_grant():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_06_02_mingkong_material_preselections.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS mingkong_material_preselections" in body
+    for column in [
+        "material_key",
+        "product_code",
+        "mk_product_id",
+        "product_name",
+        "product_english_name",
+        "product_url",
+        "product_main_image_url",
+        "video_name",
+        "video_path",
+        "video_cover_url",
+        "media_product_id",
+        "media_item_id",
+        "selected_countries_json",
+        "operator_note",
+        "source_snapshot_at",
+        "created_by",
+        "updated_by",
+        "processed_by",
+        "processed_parent_task_id",
+        "processed_at",
+    ]:
+        assert column in body
+
+    for key in [
+        "uk_mk_material_preselections_material_key",
+        "idx_mk_material_preselections_processed",
+        "idx_mk_material_preselections_updated",
+        "idx_mk_material_preselections_media_item",
+        "idx_mk_material_preselections_product_code",
+    ]:
+        assert key in body
+
+    assert "$.mk_material_preselection" in body
+    assert "WHERE username = 'guqian'" in body
+    assert "JSON_VALID" in body

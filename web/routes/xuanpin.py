@@ -33,6 +33,10 @@ def _can_access_meta_hot_posts() -> bool:
     return _is_admin() or _has_permission("meta_hot_posts")
 
 
+def _can_access_mk_material_preselection() -> bool:
+    return _is_admin() or _has_permission("mk_selection") or _has_permission("mk_material_preselection")
+
+
 def _medias_routes():
     from web.routes import medias as routes
 
@@ -65,6 +69,12 @@ def _meta_hot_posts():
 
 def _mingkong_materials():
     from appcore import mingkong_materials as service
+
+    return service
+
+
+def _mingkong_material_preselections():
+    from appcore import mingkong_material_preselections as service
 
     return service
 
@@ -173,7 +183,7 @@ def _require_fine_ai_admin():
 @bp.route("/", methods=["GET"])
 @login_required
 def index():
-    if _is_admin():
+    if _can_access_mk_material_preselection():
         return redirect(url_for("xuanpin.mk_selection_page"))
     if _can_access_meta_hot_posts():
         return redirect(url_for("xuanpin.meta_hot_posts_page"))
@@ -183,11 +193,13 @@ def index():
 @bp.route("/mk", methods=["GET"])
 @login_required
 def mk_selection_page():
-    if not _is_admin():
+    if not _can_access_mk_material_preselection():
         abort(403)
     return render_template(
         "mk_selection.html",
         initial_search_query=(request.args.get("q") or "").strip(),
+        mk_preselection_only=(not _is_admin() and _has_permission("mk_material_preselection")),
+        mk_can_admin_operate=_is_admin(),
     )
 
 
@@ -314,7 +326,7 @@ def api_mk_video_materials():
 @bp.route("/api/mk-material-library", methods=["GET"])
 @login_required
 def api_mk_material_library():
-    if not _is_admin():
+    if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
     result = _mingkong_materials().list_material_library(
         snapshot_date=(request.args.get("snapshot") or "").strip() or None,
@@ -331,7 +343,7 @@ def api_mk_material_library():
 @bp.route("/api/mk-material-library/snapshots", methods=["GET"])
 @login_required
 def api_mk_material_library_snapshots():
-    if not _is_admin():
+    if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
     result = _mingkong_materials().list_material_snapshot_options(
         limit=request.args.get("limit") or 60,
@@ -343,7 +355,7 @@ def api_mk_material_library_snapshots():
 @bp.route("/api/mk-yesterday-top100", methods=["GET"])
 @login_required
 def api_mk_yesterday_top300():
-    if not _is_admin():
+    if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
     from appcore import api_keys
     sort_order = api_keys.get_key(current_user.id, "yesterday_top300_sort") or "new_entry_first"
@@ -357,6 +369,48 @@ def api_mk_yesterday_top300():
         library_status=(request.args.get("library_status") or request.args.get("inventory_status") or "").strip(),
     )
     result["sort_order"] = sort_order
+    return jsonify(result)
+
+
+@bp.route("/api/mk-material-preselections", methods=["GET"])
+@login_required
+def api_mk_material_preselections():
+    if not _can_access_mk_material_preselection():
+        return jsonify({"error": "forbidden"}), 403
+    result = _mingkong_material_preselections().list_preselections(request.args)
+    return jsonify(result)
+
+
+@bp.route("/api/mk-material-preselections", methods=["POST"])
+@login_required
+def api_mk_material_preselection_save():
+    if not _can_access_mk_material_preselection():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = _mingkong_material_preselections().upsert_preselection(
+            payload,
+            user_id=int(getattr(current_user, "id", 0) or 0),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@bp.route("/api/mk-material-preselections/<material_key>/processed", methods=["POST"])
+@login_required
+def api_mk_material_preselection_mark_processed(material_key: str):
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = _mingkong_material_preselections().mark_processed(
+            material_key,
+            parent_task_id=payload.get("parent_task_id") or payload.get("parent_id"),
+            user_id=int(getattr(current_user, "id", 0) or 0),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify(result)
 
 

@@ -36,6 +36,13 @@ def test_mk_selection_permission_label_is_selection_center():
     assert PERMISSION_META["mk_selection"]["label"] == "选品中心"
 
 
+def test_mk_material_preselection_permission_defaults():
+    assert "mk_material_preselection" in PERMISSION_CODES
+    assert PERMISSION_META["mk_material_preselection"]["group"] == "management"
+    assert default_permissions_for_role(ROLE_ADMIN)["mk_material_preselection"] is True
+    assert default_permissions_for_role(ROLE_USER)["mk_material_preselection"] is False
+
+
 def test_default_permissions_for_superadmin_is_all_true():
     perms = default_permissions_for_role(ROLE_SUPERADMIN)
     assert set(perms.keys()) == set(PERMISSION_CODES)
@@ -264,6 +271,12 @@ def test_user_permissions_overlay_user_grant_lab():
     assert u.has_permission("lab") is True
     # 系统级权限不能通过这种方式获得（默认就是 False，stored 没给就维持 False）
     assert u.has_permission("user_management") is False
+
+
+def test_user_permissions_overlay_user_grant_mk_material_preselection():
+    u = User(_make_row(ROLE_USER, permissions=json.dumps({"mk_material_preselection": True})))
+    assert u.has_permission("mk_material_preselection") is True
+    assert u.has_permission("mk_selection") is False
 
 
 def test_user_permissions_overlay_user_grant_user_management_works_via_stored():
