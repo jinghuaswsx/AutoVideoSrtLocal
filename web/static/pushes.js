@@ -1189,6 +1189,12 @@
       : '';
   }
 
+  function renderPushTaskLink(it) {
+    const taskId = String((it && it.task_id) || '').trim();
+    if (!taskId) return '';
+    return `<a href="/tasks/detail/${encodeURIComponent(taskId)}" class="push-task-badge" title="查看任务 #${escapeAttr(taskId)}" target="_blank" rel="noopener noreferrer">任务#${escapeHtml(taskId)}</a>`;
+  }
+
   function showAuditDetail(itemId) {
     const item = state.items.find(i => Number(i.id) === Number(itemId));
     if (!item) return;
@@ -1232,6 +1238,7 @@
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
+    const productOwnerName = String(it.product_owner_name || '').trim();
     return `<tr data-id="${escapeAttr(it.id)}">
       <td class="push-thumb-cell">${thumb}</td>
       <td class="push-product-cell">
@@ -1241,7 +1248,7 @@
         </div>
       </td>
       <td class="push-product-tag-cell">${renderNewProductTag(it)}</td>
-      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
+      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span>${renderPushTaskLink(it)}</td>
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
@@ -1326,7 +1333,7 @@
       </td>
       <td class="push-product-tag-cell">${renderNewProductTag(it)}</td>
       <td class="push-main-image-cell">${mainImage}</td>
-      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
+      <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span>${renderPushTaskLink(it)}</td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
       <td class="push-item-cell">
         <div class="item-name-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; min-width: 0;">
@@ -1335,7 +1342,6 @@
         </div>
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
-          ${it.task_id ? ` · <a href="/tasks/?task_id=${it.task_id}" class="push-task-badge" title="查看任务 #${it.task_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:var(--oc-accent); text-decoration:none; margin-left:4px;">任务#${it.task_id}</a>` : ''}
         </div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>

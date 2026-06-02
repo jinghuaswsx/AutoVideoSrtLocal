@@ -3974,6 +3974,18 @@ def test_pushes_scripts_render_new_product_tag():
     assert "新品" in pushes_js
 
 
+def test_pushes_scripts_render_task_link_under_owner():
+    pushes_js = (
+        Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.js"
+    ).read_text(encoding="utf-8")
+
+    assert "function renderPushTaskLink" in pushes_js
+    assert 'href="/tasks/detail/${encodeURIComponent(taskId)}"' in pushes_js
+    assert "任务#${escapeHtml(taskId)}" in pushes_js
+    assert '<td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || \'-\')}</span>${renderPushTaskLink(it)}</td>' in pushes_js
+    assert 'href="/tasks/?task_id=${it.task_id}"' not in pushes_js
+
+
 def test_pushes_css_styles_new_product_tag():
     pushes_css = (
         Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.css"
