@@ -385,6 +385,24 @@
         await loadTask();
       });
     });
+
+    box.querySelectorAll('[data-rebackfill-idx]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const idx = parseInt(b.dataset.rebackfillIdx, 10);
+        if (!confirm('将重新从该子任务详情中读取最新结果并回填。确定继续吗？')) return;
+        const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/rebackfill-item`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idx }),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          alert('失败: ' + (e.error || r.status));
+          return;
+        }
+        await loadTask();
+      });
+    });
   }
 
   function splitTaskCards(plan) {
@@ -425,10 +443,13 @@
     const openChild = childUrl
       ? `<a class="bt-btn bt-btn--ghost bt-task-card__button" href="${esc(childUrl)}" target="_blank" rel="noopener noreferrer">${status === 'awaiting_voice' ? '去选声音' : '查看详情'}</a>`
       : '';
+    const rebackfill = (childTaskId && !['pending', 'dispatching', 'running', 'syncing_result'].includes(status))
+      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-rebackfill-idx="${item.idx}" title="重新从该子任务详情中读取最新结果并回填">重新回填</button>`
+      : '';
     const error = item.error
       ? `<div class="mtt-item__error">失败原因：${esc(item.error)}</div>`
       : '';
-    const actions = [forceBackfill, openChild, retry].filter(Boolean).join('');
+    const actions = [forceBackfill, rebackfill, openChild, retry].filter(Boolean).join('');
     const child = childTaskId
       ? `<span>子任务 <code>${esc(String(childTaskId).slice(0, 8))}</code>${esc(childTaskType)}</span>`
       : '';
@@ -687,6 +708,7 @@
 
   function actionLabel(action) {
     if (action === 'force_backfill_item') return '强制回填';
+    if (action === 'rebackfill_item') return '重新回填';
     return {
       create: '创建任务',
       start: '开始执行',

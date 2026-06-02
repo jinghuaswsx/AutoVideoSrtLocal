@@ -128,6 +128,9 @@
     if (item.detail_url) {
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '人工选声音' : '查看详情'}</a>`);
     }
+    if (item.child_task_id && !['pending', 'dispatching', 'running', 'syncing_result'].includes(item.status)) {
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="rebackfill-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="重新从该子任务详情中读取最新结果并回填">重新回填</button>');
+    }
     if (item.retryable) {
       actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>');
     }
@@ -383,6 +386,7 @@
         'retry-failed': '将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？',
         'retry-item': '将只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？',
         'force-backfill-item': '将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。确定继续吗？',
+        'rebackfill-item': '将重新从该子任务详情中读取最新结果并回填至商品及素材库。确定继续吗？',
       };
       if (confirmMap[action] && !window.confirm(confirmMap[action])) {
         return;
@@ -398,6 +402,9 @@
         payload = { idx: Number(itemIdx) };
       } else if (action === 'force-backfill-item') {
         url = `/api/bulk-translate/${taskId}/force-backfill-item`;
+        payload = { idx: Number(itemIdx) };
+      } else if (action === 'rebackfill-item') {
+        url = `/api/bulk-translate/${taskId}/rebackfill-item`;
         payload = { idx: Number(itemIdx) };
       } else {
         return;

@@ -27,6 +27,7 @@ from appcore.bulk_translate_runtime import (
     force_backfill_item,
     get_task,
     pause_task,
+    rebackfill_item,
     resume_task,
     retry_failed_items,
     retry_item,
@@ -496,6 +497,29 @@ def force_backfill_item_endpoint(task_id):
 
 
 # ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/rebackfill-item
+# ------------------------------------------------------------
+@bp.post("/<task_id>/rebackfill-item")
+@login_required
+def rebackfill_item_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    idx = payload.get("idx")
+    if not isinstance(idx, int):
+        return _json_response({"error": "idx 必填且为 int"}, 400)
+    try:
+        rebackfill_item(task_id, idx=idx, user_id=current_user.id)
+    except ValueError as e:
+        return _json_response({"error": str(e)}, 400)
+    except Exception as e:
+        log.exception("rebackfill failed for task_id=%s idx=%s", task_id, idx)
+        return _json_response({"error": str(e)}, 500)
+    return _json_response({"ok": True}, 200)
+
+
+# ----------------------------------------------------------------------------
 # GET /api/bulk-translate/<id>/audit  — audit_events 时间线
 # ------------------------------------------------------------
 @bp.get("/<task_id>/audit")

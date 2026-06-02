@@ -578,6 +578,7 @@ def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
     ("/api/bulk-translate/bt_xxx/cancel", "post"),
     ("/api/bulk-translate/bt_xxx/retry-failed", "post"),
     ("/api/bulk-translate/bt_xxx/force-backfill-item", "post"),
+    ("/api/bulk-translate/bt_xxx/rebackfill-item", "post"),
     ("/api/bulk-translate/bt_xxx", "get"),
     ("/api/bulk-translate/bt_xxx/audit", "get"),
 ])
@@ -585,3 +586,30 @@ def test_endpoints_enforce_ownership(phase5_client, monkeypatch, path, method):
     _install_fake_task(monkeypatch, user_id=999)  # 不同用户
     resp = getattr(phase5_client, method)(path, json={"idx": 0})
     assert resp.status_code == 403
+
+
+def test_rebackfill_item_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="done")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.rebackfill_item",
+        lambda task_id, idx, user_id: called.append((task_id, idx, user_id)),
+        raising=False,
+    )
+    resp = phase5_client.post(
+        "/api/bulk-translate/bt_xxx/rebackfill-item",
+        json={"idx": 1},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert called == [("bt_xxx", 1, 1)]
+
+
+def test_rebackfill_item_requires_idx(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="done")
+    resp = phase5_client.post(
+        "/api/bulk-translate/bt_xxx/rebackfill-item",
+        json={},
+    )
+    assert resp.status_code == 400
+    assert "idx 必填且为 int" in resp.get_json()["error"]

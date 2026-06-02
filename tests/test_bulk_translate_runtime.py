@@ -2298,6 +2298,87 @@ def test_force_backfill_item_marks_detail_image_item_done_and_rolls_up_cost(
     assert state["audit_events"][-1]["detail"]["idx"] == 0
 
 
+def test_rebackfill_item_marks_item_done_and_syncs_result(
+    runtime_env,
+    monkeypatch,
+):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(
+                0,
+                kind="videos",
+                status="failed",
+                ref={"source_raw_id": 301},
+            )
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {"id": raw_id, "duration_seconds": 120.0},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "omni-child-1",
+            "sub_task_id": "omni-child-1",
+            "child_task_type": "omni_translate",
+            "error": "failed previously",
+            "finished_at": "2026-04-23T10:00:00+00:00",
+        }
+    )
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows["omni-child-1"] = {
+        "id": "omni-child-1",
+        "user_id": 1,
+        "type": "omni_translate",
+        "status": "done",
+        "state_json": json.dumps(
+            {
+                "final_video": "demo.mp4",
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": None,
+    }
+
+    synced_calls = []
+    monkeypatch.setattr(
+        mod,
+        "_sync_child_result",
+        lambda parent_task_id, item, parent_state, child_state: synced_calls.append(
+            (parent_task_id, item["idx"])
+        ),
+        raising=False,
+    )
+
+    mod.rebackfill_item(task_id, idx=0, user_id=9)
+
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    item = state["plan"][0]
+    assert item["status"] == "done"
+    assert item["result_synced"] is True
+    assert item["error"] is None
+    assert synced_calls == [(task_id, 0)]
+    assert state["audit_events"][-1]["action"] == "rebackfill_item"
+    assert state["audit_events"][-1]["detail"]["idx"] == 0
+
+
 def test_force_backfill_item_accepts_interrupted_detail_image_item(
     runtime_env,
     monkeypatch,
