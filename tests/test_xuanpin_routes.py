@@ -1,5 +1,34 @@
 from __future__ import annotations
 
+import json
+
+
+def _client_for_xuanpin_user(monkeypatch, *, permissions: dict, role: str = "user", user_id: int = 77):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
+    from web.app import create_app
+
+    fake_user = {
+        "id": user_id,
+        "username": "guqian",
+        "role": role,
+        "is_active": 1,
+        "permissions": json.dumps(permissions),
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == user_id else None)
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    return client
+
 
 def _assert_unified_xuanpin_tabs(body: str, active_href: str, active_label: str) -> None:
     assert '<nav class="xuanpin-tabs" role="tablist" aria-label="选品中心类型">' in body
@@ -109,6 +138,85 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "mkLibraryStatusQueryParam()" in body
     assert "/xuanpin/api/mk-material-library" in body
     assert "/xuanpin/api/mk-yesterday-top300" in body
+
+
+def test_mk_selection_template_contains_material_preselection_ui(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "素材预选" in body
+    assert "mkMaterialPreselectionPanel" in body
+    assert "/xuanpin/api/mk-material-preselections" in body
+    assert "mkiOpenPreselectionModal" in body
+    assert "mkiRenderPreselectionNote" in body
+    assert "defaultCountries" in body
+    assert "preselectionNote" in body
+
+
+def test_xuanpin_mk_page_allows_material_preselection_permission(monkeypatch):
+    client = _client_for_xuanpin_user(
+        monkeypatch,
+        permissions={"mk_selection": False, "mk_material_preselection": True},
+    )
+
+    resp = client.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+
+
+def test_xuanpin_mk_material_library_api_allows_preselection_permission(monkeypatch):
+    client = _client_for_xuanpin_user(
+        monkeypatch,
+        permissions={"mk_selection": False, "mk_material_preselection": True},
+    )
+    monkeypatch.setattr(
+        "appcore.mingkong_materials.list_material_library",
+        lambda **kwargs: {"items": [{"video_name": "winner.mp4"}], "total": 1},
+    )
+
+    resp = client.get("/xuanpin/api/mk-material-library?page=1&page_size=20")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_name": "winner.mp4"}]
+
+
+def test_xuanpin_material_preselection_save_allows_preselection_permission(monkeypatch):
+    client = _client_for_xuanpin_user(
+        monkeypatch,
+        permissions={"mk_selection": False, "mk_material_preselection": True},
+    )
+    captured = {}
+
+    def fake_upsert(payload, *, user_id):
+        captured["payload"] = payload
+        captured["user_id"] = user_id
+        return {"material_key": payload["material_key"], "preselection": {"selected_countries": ["DE"]}}
+
+    monkeypatch.setattr("appcore.mingkong_material_preselections.upsert_preselection", fake_upsert)
+
+    resp = client.post(
+        "/xuanpin/api/mk-material-preselections",
+        json={"material_key": "a" * 64, "selected_countries": ["de"]},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["preselection"]["selected_countries"] == ["DE"]
+    assert captured["user_id"] == 77
+
+
+def test_xuanpin_material_preselection_processed_requires_admin(monkeypatch):
+    client = _client_for_xuanpin_user(
+        monkeypatch,
+        permissions={"mk_selection": False, "mk_material_preselection": True},
+    )
+
+    resp = client.post(
+        f"/xuanpin/api/mk-material-preselections/{'a' * 64}/processed",
+        json={"parent_task_id": 9001},
+    )
+
+    assert resp.status_code == 403
 
 
 def test_xuanpin_mk_page_syncs_search_query_with_url(authed_client_no_db):

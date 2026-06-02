@@ -275,12 +275,13 @@ def test_mk_selection_library_subtabs_match_meta_hot_posts_placement_and_state_l
     assert "width:max-content" in template
     assert "function normalizeMkLibraryTab(tab)" in template
     assert "if (tab === 'yesterday-top100') return 'yesterday-top300';" in template
-    assert "return ['products', 'videos', 'yesterday-top300'].includes(tab) ? tab : 'videos';" in template
+    assert "return ['products', 'videos', 'yesterday-top300', 'preselection'].includes(tab) ? tab : 'videos';" in template
     assert "function initMkLibraryTabFromHash()" in template
     assert "location.hash = currentMkLibraryTab;" in template
     assert "let currentMkLibraryTab = 'videos';" in template
     assert "loadMkLocalMaterialLibrary" in template
     assert "loadMkYesterdayTop100" in template
+    assert "loadMkMaterialPreselections" in template
     assert "mkSnapshotQueryParam()" in template
     assert "mkRangeQueryParam()" in template
     assert "if (initialTab === 'videos')" in template
