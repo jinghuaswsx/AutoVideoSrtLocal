@@ -723,10 +723,13 @@
 .mk-library-panel[hidden] { display:none; }
 .mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
 .mk-video-library-grid { min-height:180px; }
-.mk-video-product-line { display:flex; flex-direction:column; gap:4px; min-height:calc((1.35em * 4) + 4px); color:var(--oc-fg-muted); }
-.mk-video-product-name { color:var(--oc-accent); text-decoration:none; font-weight:700; font-size:13px; line-height:1.35; }
-.mk-video-product-name:hover { text-decoration:underline; }
-strong.mk-video-product-name { color:var(--oc-fg); }
+.mk-video-product-line { display:flex; flex-direction:column; gap:4px; min-height:calc((1.35em * 4.5) + 6px); color:var(--oc-fg-muted); }
+.mk-video-product-name-link { text-decoration:none; display:block; }
+.mk-video-product-name-link:hover .mk-video-product-cn-name { text-decoration:underline; }
+.mk-video-product-name-block { display:block; }
+.mk-video-product-cn-name { color:var(--oc-accent); font-weight:700; font-size:13px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
+.mk-video-product-name-block .mk-video-product-cn-name { color:var(--oc-fg); }
+.mk-video-product-en-name { color:var(--oc-fg-muted); font-size:10px; font-weight:500; line-height:1.3; margin-top:1px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; opacity:0.85; }
 .mk-video-product-code { color:var(--oc-fg-muted); font-size:12px; line-height:1.35; }
 .mk-video-product-code-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
 .mk-video-product-actions { display:inline-flex; align-items:center; gap:4px; }
@@ -1752,6 +1755,7 @@ async function loadMkLocalMaterialLibrary(page) {
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
     } else {
+      mkiBuildAndInjectSharedNamesMap(data.items);
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
@@ -1797,6 +1801,7 @@ async function loadMkYesterdayTop100(page) {
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前300归档</div>';
     } else {
+      mkiBuildAndInjectSharedNamesMap(data.items);
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
@@ -1827,6 +1832,7 @@ async function loadMkMaterialPreselections(page) {
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无素材预选</div>';
     } else {
+      mkiBuildAndInjectSharedNamesMap(data.items);
       grid.innerHTML = data.items.map(renderMkVideoMaterialCard).join('');
       mkiCheckRenderedButtons();
     }
@@ -1913,6 +1919,60 @@ function mkiPreselectionCardPayload(r) {
   };
 }
 
+function extractProductCnNameFromFilename(filename) {
+  const basename = String(filename || '').split(/[/\\]/).pop().trim();
+  if (!basename) return "";
+  const stem = basename.replace(/\.[A-Za-z0-9]{1,8}$/, "");
+  const rest = stem.replace(/^\d{4}\.\d{2}\.\d{2}-/, "");
+  const marker = "-原素材";
+  if (rest.includes(marker)) {
+    return rest.split(marker)[0].trim();
+  }
+  const parts = rest.split("-").map(p => p.trim()).filter(Boolean);
+  return parts[0] || rest.trim();
+}
+
+function mkiBuildAndInjectSharedNamesMap(items) {
+  const cnNamesMap = {};
+  const enNamesMap = {};
+  (items || []).forEach(item => {
+    const code = String(item.product_code || item.product_handle || '').trim().toLowerCase();
+    if (!code) return;
+    
+    const extractedCn = extractProductCnNameFromFilename(item.video_name || item.video_path);
+    let itemCn = "";
+    if (/[\u4e00-\u9fa5]/.test(extractedCn)) {
+      itemCn = extractedCn;
+    } else if (/[\u4e00-\u9fa5]/.test(item.product_cn_name || '')) {
+      itemCn = item.product_cn_name;
+    } else if (/[\u4e00-\u9fa5]/.test(item.mk_product_name || '')) {
+      itemCn = item.mk_product_name;
+    } else if (/[\u4e00-\u9fa5]/.test(item.product_name || '')) {
+      itemCn = item.product_name;
+    }
+    if (itemCn) {
+      cnNamesMap[code] = itemCn;
+    }
+    
+    let itemEn = (item.product_english_title || item.product_english_name || '').trim();
+    if (itemEn && /[\u4e00-\u9fa5]/.test(itemEn)) {
+      itemEn = "";
+    }
+    if (!itemEn) {
+      if (item.product_name && !/[\u4e00-\u9fa5]/.test(item.product_name)) {
+        itemEn = item.product_name.trim();
+      } else if (item.mk_product_name && !/[\u4e00-\u9fa5]/.test(item.mk_product_name)) {
+        itemEn = item.mk_product_name.trim();
+      }
+    }
+    if (itemEn) {
+      enNamesMap[code] = itemEn;
+    }
+  });
+  window.currentCnNamesMap = cnNamesMap;
+  window.currentEnNamesMap = enNamesMap;
+}
+
 function renderMkVideoMaterialCard(r) {
   const spends = Number(r.video_spends || 0);
   const heat = heatLevel(r.video_ads_count);
@@ -1931,15 +1991,46 @@ function renderMkVideoMaterialCard(r) {
   const productLinkHtml = productLinkRaw
     ? `<div class="mk-video-product-link-row">${safeProductUrl ? `<a class="mk-video-product-link mk-line-clamp mk-line-clamp--1" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${productLinkLabel}">${productLinkLabel}</a>` : `<span class="mk-video-product-link mk-line-clamp mk-line-clamp--1" title="${productLinkLabel}">${productLinkLabel}</span>`}${productLinkCopyHtml}</div>`
     : '';
-  const englishTitle = (r.product_english_title || '').trim();
-  const safeEnglishTitle = escapeHtml(englishTitle);
-  const englishTitleCopyHtml = renderMkProductEnglishTitleCopyButton(englishTitle);
-  const englishTitleHtml = englishTitle
-    ? `<div class="mk-video-english-title-row">
-         <span class="mk-video-english-title mk-line-clamp mk-line-clamp--1" title="${safeEnglishTitle}">${safeEnglishTitle}</span>
-         ${englishTitleCopyHtml}
-       </div>`
-    : '';
+
+  const productCodeKey = String(r.product_code || r.product_handle || '').trim().toLowerCase();
+  
+  // 中文名判定：第一逻辑：全局共享字典；第二逻辑：卡片本地提取
+  let cnName = window.currentCnNamesMap && window.currentCnNamesMap[productCodeKey] || "";
+  if (!cnName) {
+    const extractedCn = extractProductCnNameFromFilename(r.video_name || r.video_path);
+    if (/[\u4e00-\u9fa5]/.test(extractedCn)) {
+      cnName = extractedCn;
+    } else if (/[\u4e00-\u9fa5]/.test(r.product_cn_name || '')) {
+      cnName = r.product_cn_name;
+    } else if (/[\u4e00-\u9fa5]/.test(r.mk_product_name || '')) {
+      cnName = r.mk_product_name;
+    } else if (/[\u4e00-\u9fa5]/.test(r.product_name || '')) {
+      cnName = r.product_name;
+    }
+  }
+
+  // 英文名判定：第一逻辑：全局共享字典；第二逻辑：卡片本地
+  let enName = window.currentEnNamesMap && window.currentEnNamesMap[productCodeKey] || "";
+  if (!enName) {
+    enName = (r.product_english_title || r.product_english_name || '').trim();
+    if (enName && /[\u4e00-\u9fa5]/.test(enName)) enName = "";
+    if (!enName) {
+      if (r.product_name && !/[\u4e00-\u9fa5]/.test(r.product_name)) {
+        enName = r.product_name.trim();
+      } else if (r.mk_product_name && !/[\u4e00-\u9fa5]/.test(r.mk_product_name)) {
+        enName = r.mk_product_name.trim();
+      }
+    }
+  }
+
+  const rawProductName = cnName || r.mk_product_name || r.product_name || '--';
+  const rawProductHandle = r.product_handle || r.product_code || '';
+  const safeProductName = escapeHtml(rawProductName);
+  const productHandle = escapeHtml(rawProductHandle);
+  const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
+  
+  const englishTitleCopyHtml = renderMkProductEnglishTitleCopyButton(enName);
+  
   const materialDetailHref = renderMkMaterialDetailHref(r);
   const detailLinkHtml = materialDetailHref
     ? `<a class="mk-video-detail-link" href="${escapeHtml(materialDetailHref)}" target="_blank" rel="noopener noreferrer">详情</a>`
@@ -1948,11 +2039,6 @@ function renderMkVideoMaterialCard(r) {
   const titleActionsHtml = (filenameCopyHtml || detailLinkHtml)
     ? `<span class="mk-video-title-actions">${detailLinkHtml}${filenameCopyHtml}</span>`
     : '';
-  const rawProductName = r.mk_product_name || r.product_name || '--';
-  const rawProductHandle = r.product_handle || r.product_code || '';
-  const safeProductName = escapeHtml(rawProductName);
-  const productHandle = escapeHtml(rawProductHandle);
-  const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
   const statusIconsHtml = renderMkStatusIconCluster(r);
   const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
   const productCodeCopyHtml = renderMkProductCodeCopyButton(rawProductHandle);
@@ -2004,6 +2090,8 @@ function renderMkVideoMaterialCard(r) {
   const preselectionCountries = mkiPreselectionCountriesFromRecord(r);
   const preselectionNote = mkiPreselectionNoteFromRecord(r);
   const preselectionPayload = mkiPreselectionCardPayload(r);
+  if (cnName) preselectionPayload.product_name = cnName;
+  if (enName) preselectionPayload.product_english_name = enName;
   const preselectionPayloadJson = escapeHtml(JSON.stringify(preselectionPayload));
   const preselectionPillsHtml = mkiRenderPreselectionPills(preselectionCountries);
   const preselectionNoteHtml = mkiRenderPreselectionNote(preselectionNote);
@@ -2017,7 +2105,16 @@ function renderMkVideoMaterialCard(r) {
     ${preselectionPillsHtml}
     ${preselectionNoteHtml}
     <div class="mk-video-product-line">
-      ${safeProductUrl ? `<a class="mk-video-product-name mk-line-clamp mk-line-clamp--2" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${safeProductName}">${safeProductName}</a>` : `<strong class="mk-video-product-name mk-line-clamp mk-line-clamp--2" title="${safeProductName}">${safeProductName}</strong>`}
+      ${safeProductUrl
+        ? `<a class="mk-video-product-name-link" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer">
+             ${cnName ? `<div class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</div>` : ''}
+             ${enName ? `<div class="mk-video-product-en-name" title="${escapeHtml(enName)}"><span>${escapeHtml(enName)}</span>${englishTitleCopyHtml}</div>` : ''}
+           </a>`
+        : `<div class="mk-video-product-name-block">
+             ${cnName ? `<div class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</div>` : ''}
+             ${enName ? `<div class="mk-video-product-en-name" title="${escapeHtml(enName)}"><span>${escapeHtml(enName)}</span>${englishTitleCopyHtml}</div>` : ''}
+           </div>`
+      }
       <div class="mk-video-product-code-row">
         <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
         ${productCodeActionsHtml}
@@ -2028,7 +2125,6 @@ function renderMkVideoMaterialCard(r) {
       ${titleActionsHtml}
     </div>
     ${productLinkHtml}
-    ${englishTitleHtml}
     <div class="mk-video-summary-row">
       <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
       <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
@@ -2059,12 +2155,12 @@ function renderMkVideoMaterialCard(r) {
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-video-path="${escapeHtml(videoPath)}"
         data-mki-cover-path="${escapeHtml(coverPath)}"
-        data-mki-product-name="${safeProductName}"
+        data-mki-product-name="${escapeHtml(cnName || rawProductName)}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
         data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
         data-mki-product-code="${productHandle}"
-        data-mki-product-english-title="${escapeHtml(englishTitle)}"
+        data-mki-product-english-title="${escapeHtml(enName)}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
         data-mki-local-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-has-local-product="${hasLocalProduct ? '1' : ''}"
@@ -2088,7 +2184,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-cover-object-key="${escapeHtml(r.local_cover_object_key || '')}"
         data-mki-video-path="${escapeHtml(videoPath)}"
         data-mki-cover-path="${escapeHtml(coverPath)}"
-        data-mki-product-name="${safeProductName}"
+        data-mki-product-name="${escapeHtml(cnName || rawProductName)}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-main-image="${escapeHtml(r.main_image || r.product_main_image_url || '')}"
         data-mki-main-image-object-key="${escapeHtml(r.product_main_image_object_key || '')}"
@@ -2108,7 +2204,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-ai-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
         data-mki-ai-has-result="${hasAiEvaluationResult ? '1' : ''}"
-        data-mki-product-name="${safeProductName}"
+        data-mki-product-name="${escapeHtml(cnName || rawProductName)}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         onclick="mkiAiEvaluateFromCard(this)">
       ${aiButtonLabel}
@@ -2118,7 +2214,7 @@ function renderMkVideoMaterialCard(r) {
         title="${fineAiButtonTitle}"
         data-mki-fine-ai-product-id="${escapeHtml(existingProductId || '')}"
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
-        data-mki-product-name="${safeProductName}"
+        data-mki-product-name="${escapeHtml(cnName || rawProductName)}"
         data-mki-product-link="${escapeHtml(r.mk_product_link || r.product_url || '')}"
         data-mki-product-code="${productHandle}"
         data-mki-mk-id="${escapeHtml(r.mk_product_id || '')}"
