@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 
 def _client_for_xuanpin_user(monkeypatch, *, permissions: dict, role: str = "user", user_id: int = 77):
@@ -152,6 +153,19 @@ def test_mk_selection_template_contains_material_preselection_ui(authed_client_n
     assert "mkiRenderPreselectionNote" in body
     assert "defaultCountries" in body
     assert "preselectionNote" in body
+    assert 'id="mkPreselectionFineAi"' in body
+    assert 'id="mkPreselectionLangs" class="mki-xiao-lang-pills"' in body
+    assert "function mkiRenderPreselectionFineAiPanel(result)" in body
+    assert "mkiXiaoRenderLanguageChoiceCards(langs, Array.from(selected)" in body
+    assert "mkiApplyAiSuggestionsToLanguageCards('#mkPreselectionLangs'" in body
+    assert 'id="mkPreselectionAiInfo"' not in body
+
+
+def test_layout_selection_center_link_allows_material_preselection_permission():
+    source = Path("web/templates/layout.html").read_text(encoding="utf-8")
+
+    assert "has_permission('mk_selection') or has_permission('mk_material_preselection')" in source
+    assert '{% set selection_center_href = "/xuanpin/mk" %}' in source
 
 
 def test_xuanpin_mk_page_allows_material_preselection_permission(monkeypatch):

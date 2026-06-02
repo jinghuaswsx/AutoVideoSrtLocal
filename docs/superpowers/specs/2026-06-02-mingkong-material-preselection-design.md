@@ -71,6 +71,12 @@ Behavior:
 - The admin user-management permission modal must show `明空素材预选`, so future
   operations users can be granted or revoked without code changes.
 
+Navigation:
+
+- The sidebar `Selection Center` entry and generic home redirect must treat
+  `mk_material_preselection` as enough access for `/xuanpin/mk`; otherwise
+  operators can only reach the preselection page by direct URL.
+
 Initial grant:
 
 - Add an idempotent migration that updates the existing `guqian` row:
@@ -199,8 +205,12 @@ Preselection modal:
 
 - Top: product basic info, including Chinese name, English name, product code, and
   main image.
-- Middle: language/country capsule buttons from the existing enabled small-language
-  source. AI evaluation hints are shown next to the language choices when available.
+- Middle: AI evaluation and language/country choice must use the same visual design as
+  the existing "create small-language translation task" modal:
+  - Render the same fine-AI country comparison panel when fine-AI data exists.
+  - Render the same target-country cards with per-country AI suggestion colors/text.
+  - Prefer fine-AI decisions for country suggestions, then fall back to the older AI
+    evaluation country detail if fine-AI is unavailable.
 - Bottom: operations note textarea.
 - Save requires at least one selected language.
 

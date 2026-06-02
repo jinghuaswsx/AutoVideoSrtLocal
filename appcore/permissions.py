@@ -132,6 +132,7 @@ HOME_REDIRECT_ORDER = [
     ("image_translate",  "/image-translate"),
     ("drawing_studio",   "/drawing-studio/sso"),
     ("subtitle_removal", "/subtitle-removal"),
+    ("mk_material_preselection", "/xuanpin/mk"),
     ("meta_hot_posts",   "/xuanpin/meta-hot-posts"),
     ("mk_selection",     "/xuanpin/mk"),
     ("task_center",      "/tasks/"),
