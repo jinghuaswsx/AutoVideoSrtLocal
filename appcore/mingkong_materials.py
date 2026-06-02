@@ -1909,6 +1909,77 @@ def _list_all_historical_material_library(
     }
 
 
+def _enrich_live_material_yesterday_archive(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    keys = sorted(
+        {
+            str(item.get("material_key") or "")
+            for item in items
+            if str(item.get("material_key") or "")
+        }
+    )
+    if not keys:
+        return items
+
+    try:
+        identity = _latest_snapshot_identity("mingkong_material_daily_top100")
+        snapshot_at = identity.get("snapshot_at") or ""
+        snapshot_date = identity.get("snapshot_date") or ""
+        if snapshot_at:
+            snapshot_where = "snapshot_at = %s"
+            snapshot_arg = snapshot_at
+        elif snapshot_date:
+            snapshot_where = "snapshot_date = %s"
+            snapshot_arg = snapshot_date
+        else:
+            return items
+
+        placeholders = ",".join(["%s"] * len(keys))
+        rows = query(
+            f"""
+            SELECT material_key, snapshot_date, snapshot_at, snapshot_slot,
+                   previous_snapshot_date, previous_snapshot_at, previous_snapshot_slot,
+                   comparison_interval_seconds, previous_cumulative_90_spend,
+                   current_cumulative_90_spend, yesterday_spend_delta,
+                   is_new_material, is_new_top100_entry
+            FROM mingkong_material_daily_top100
+            WHERE {snapshot_where}
+              AND material_key IN ({placeholders})
+            """,
+            tuple([snapshot_arg] + keys),
+        )
+    except Exception as exc:
+        logger.warning("mingkong live material yesterday archive enrichment skipped: %s", exc)
+        return items
+
+    archived_by_key = {
+        str(row.get("material_key") or ""): row
+        for row in rows or []
+        if row.get("material_key")
+    }
+    for item in items:
+        archived = archived_by_key.get(str(item.get("material_key") or ""))
+        if not archived:
+            continue
+        item["yesterday_spend_delta"] = _as_float(archived.get("yesterday_spend_delta"))
+        item["current_cumulative_90_spend"] = _as_float(archived.get("current_cumulative_90_spend"))
+        item["previous_cumulative_90_spend"] = (
+            None
+            if archived.get("previous_cumulative_90_spend") is None
+            else _as_float(archived.get("previous_cumulative_90_spend"))
+        )
+        item["previous_snapshot_date"] = _coerce_date(archived.get("previous_snapshot_date"))
+        item["previous_snapshot_at"] = _coerce_datetime(archived.get("previous_snapshot_at"))
+        item["previous_snapshot_slot"] = str(archived.get("previous_snapshot_slot") or "")
+        item["comparison_interval_seconds"] = (
+            None
+            if archived.get("comparison_interval_seconds") is None
+            else _as_int(archived.get("comparison_interval_seconds"))
+        )
+        item["is_new_material"] = bool(archived.get("is_new_material"))
+        item["is_new_top100_entry"] = bool(archived.get("is_new_top100_entry"))
+    return items
+
+
 def _list_live_mingkong_material_library(
     *,
     keyword: str,
@@ -1989,7 +2060,10 @@ def _list_live_mingkong_material_library(
             ),
             reverse=True,
         )
-    items = _filter_by_library_status(_enrich_material_card_items(sorted_rows), status_filter)
+    items = _filter_by_library_status(
+        _enrich_material_card_items(_enrich_live_material_yesterday_archive(sorted_rows)),
+        status_filter,
+    )
     total = len(items)
     return {
         "items": items[offset : offset + size],

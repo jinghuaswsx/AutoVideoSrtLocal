@@ -306,15 +306,15 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     assert "snapshotSelect.hidden = Boolean(selectedMkRange);" in template
     assert (
         "const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}"
-        "&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}`;"
+        "&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-material-library?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 
