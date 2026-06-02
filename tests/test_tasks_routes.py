@@ -2200,3 +2200,30 @@ def test_overview_bucket_route_renders_for_admin(authed_client_no_db):
 def test_overview_invalid_bucket_returns_404(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/overview/invalid_bucket")
     assert rsp.status_code == 404
+
+
+def test_api_stats_endpoint_delegates_to_tasks_service(authed_client_no_db, monkeypatch):
+    captured = []
+    
+    def fake_get_employee_task_stats(start_date, end_date=None):
+        captured.append((start_date, end_date))
+        return [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10}]
+        
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_employee_task_stats",
+        fake_get_employee_task_stats,
+        raising=False,
+    )
+    
+    # 1. Test default parameter (today)
+    rsp = authed_client_no_db.get("/tasks/api/stats")
+    assert rsp.status_code == 200
+    res = rsp.get_json()
+    assert res == {"stats": [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10}]}
+    assert len(captured) == 1
+    assert len(captured[0][0]) == 10  # date string YYYY-MM-DD
+    
+    # 2. Test explicit start_date and end_date
+    rsp = authed_client_no_db.get("/tasks/api/stats?start_date=2026-05-01&end_date=2026-05-15")
+    assert rsp.status_code == 200
+    assert captured[1] == ("2026-05-01", "2026-05-15")

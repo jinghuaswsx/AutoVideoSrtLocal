@@ -4120,8 +4120,8 @@ def on_product_owner_changed(
     return 0
 
 
-def get_employee_task_stats(today_str: str) -> list[dict]:
-    """获取当前所有被指派了任务的员工的任务统计数据。
+def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]:
+    """获取当前所有被指派了任务的员工的任务统计数据（支持日期范围筛选）。
 
     返回字段：
       - assignee_id (int)
@@ -4132,12 +4132,14 @@ def get_employee_task_stats(today_str: str) -> list[dict]:
       - raw_tasks (int)
       - translate_tasks (int)
     """
+    if not end_date:
+        end_date = start_date
     expr = _user_display_name_expr("u")
     sql = (
         "SELECT "
         "  t.assignee_id, "
         f"  {expr} AS employee_name, "
-        "  SUM(CASE WHEN DATE(t.completed_at) = %s AND ("
+        "  SUM(CASE WHEN DATE(t.completed_at) BETWEEN %s AND %s AND ("
         "      (t.parent_task_id IS NULL AND t.status IN ('raw_done', 'all_done')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status = 'done')"
         "  ) THEN 1 ELSE 0 END) AS today_completed, "
@@ -4154,7 +4156,7 @@ def get_employee_task_stats(today_str: str) -> list[dict]:
         "GROUP BY t.assignee_id, employee_name "
         "ORDER BY total_tasks DESC"
     )
-    rows = query_all(sql, (today_str,))
+    rows = query_all(sql, (start_date, end_date))
     return [
         {
             "assignee_id": int(row["assignee_id"]),
