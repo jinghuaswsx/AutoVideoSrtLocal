@@ -2116,7 +2116,12 @@ function renderMkVideoMaterialCard(r) {
   const rawProductHandle = r.product_handle || r.product_code || '';
   const safeProductName = escapeHtml(rawProductName);
   const productHandle = escapeHtml(rawProductHandle);
-  const rankProductText = escapeHtml(`#${r.rank_position || '--'}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`);
+  const hasRank = r.rank_position && r.rank_position !== '--';
+  const rankProductText = escapeHtml(
+    hasRank
+      ? `#${r.rank_position}${rawProductHandle ? ` · ${rawProductHandle}` : ''}`
+      : (rawProductHandle || '')
+  );
   
   const englishTitleCopyHtml = renderMkProductEnglishTitleCopyButton(enName);
   
