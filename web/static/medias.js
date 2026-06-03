@@ -3156,7 +3156,7 @@
     // --- Line 1: Chinese Name ---
     const nameText = p.name || '';
     const nameLine = `
-      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 4px;">
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
         <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(nameText)}">
           ${productDetailHref
             ? `<a href="${productDetailHref}">${escapeHtml(nameText)}</a>`
@@ -3169,7 +3169,7 @@
     // --- Line 2: English Name ---
     const shopifyTitle = (p.shopify_title || '').trim();
     const englishLine = `
-      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 4px;">
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
         <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(shopifyTitle)}">
           ${shopifyTitle ? escapeHtml(shopifyTitle) : '<span class="muted">—</span>'}
         </span>
@@ -3179,7 +3179,7 @@
     // --- Line 3: Product Code / ID ---
     const productUrl = _defaultProductUrl('en', productCode);
     const codeLine = `
-      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px;">
         <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
           ${productCode
             ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a>`
