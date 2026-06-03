@@ -2407,6 +2407,24 @@ def _get_realtime_ad_updated_at(target: date, snapshot_at: datetime | None) -> d
     return row[0].get("last_ad_updated_at")
 
 
+def _get_realtime_ad_updated_at_until(
+    target: date,
+    snapshot_until: datetime | None,
+    *,
+    site_codes: tuple[str, ...] | None = None,
+) -> datetime | None:
+    if not snapshot_until:
+        return None
+    latest_at = _get_latest_realtime_snapshot_at(
+        target,
+        snapshot_until,
+        site_codes=site_codes,
+    )
+    if latest_at is None:
+        return _get_realtime_ad_updated_at(target, snapshot_until)
+    return _get_realtime_ad_updated_at(target, latest_at) or latest_at
+
+
 def _get_realtime_order_updated_at(
     target: date,
     snapshot_at: datetime | None,
@@ -3010,7 +3028,11 @@ def get_realtime_roas_overview(
                 snap.get("source_run_id"),
                 site_codes=normalized_site_codes,
             )
-            last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
+            last_ad_updated_at = _get_realtime_ad_updated_at_until(
+                target,
+                snapshot_at,
+                site_codes=normalized_site_codes,
+            )
             revenue_with_shipping = order_summary["revenue_with_shipping"]
             return {
                 "period": {
@@ -3165,7 +3187,11 @@ def get_realtime_roas_overview(
             snap.get("source_run_id"),
             site_codes=normalized_site_codes,
         )
-        last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
+        last_ad_updated_at = _get_realtime_ad_updated_at_until(
+            target,
+            snapshot_at,
+            site_codes=normalized_site_codes,
+        )
         return {
             "period": {
                 "date": target,
@@ -3297,7 +3323,11 @@ def get_realtime_roas_overview(
             "ad_spend": realtime_ad_summary["ad_spend"],
             "meta_purchase_value": realtime_ad_summary["meta_purchase_value"],
             "meta_purchases": realtime_ad_summary["meta_purchases"],
-            "last_ad_updated_at": _get_realtime_ad_updated_at(target, data_until),
+            "last_ad_updated_at": _get_realtime_ad_updated_at_until(
+                target,
+                data_until,
+                site_codes=normalized_site_codes,
+            ),
         }]
         ad_source = "meta_ad_realtime_daily_campaign_metrics"
         ad_granularity = "campaign_realtime_snapshot"

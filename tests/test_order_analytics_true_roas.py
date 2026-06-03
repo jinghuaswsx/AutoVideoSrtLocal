@@ -1473,6 +1473,90 @@ def test_realtime_recent_closed_business_day_uses_snapshot_when_daily_ads_missin
     assert result["snapshots"][0]["id"] == 777
 
 
+def test_realtime_snapshot_freshness_uses_latest_ad_snapshot_before_order_snapshot(monkeypatch):
+    target = oa._parse_meta_date("2026-05-07")
+    order_snapshot_at = datetime(2026, 5, 8, 16, 0)
+    ad_snapshot_at = datetime(2026, 5, 8, 15, 40)
+    ad_import_finished_at = datetime(2026, 5, 8, 15, 42)
+    ad_account_id = "1861285821213497"
+
+    def fake_query(sql, args=()):
+        if "COUNT(*) AS n" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"n": 0}]
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 778,
+                    "snapshot_at": order_snapshot_at,
+                    "source_run_id": 702,
+                    "order_count": 78,
+                    "line_count": 79,
+                    "units": 91,
+                    "order_revenue_usd": 1918.09,
+                    "shipping_revenue_usd": 634.29,
+                    "ad_spend_usd": 12680.47,
+                    "last_order_at": datetime(2026, 5, 8, 15, 58),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 5, 8, 16, 1)}]
+        if "COALESCE(MAX(r.finished_at)" in sql:
+            snapshot_arg = args[1] if len(args) > 1 else None
+            return [
+                {
+                    "last_ad_updated_at": (
+                        ad_import_finished_at
+                        if snapshot_arg == ad_snapshot_at
+                        else None
+                    )
+                }
+            ]
+        if (
+            "SELECT ad_account_id, MAX(snapshot_at) AS latest_at" in sql
+            and "GROUP BY ad_account_id" in sql
+        ):
+            return [{"ad_account_id": ad_account_id, "latest_at": ad_snapshot_at}]
+        if "SELECT MAX(snapshot_at) AS latest_at" in sql:
+            return [{"latest_at": ad_snapshot_at}]
+        if (
+            "FROM meta_ad_realtime_daily_campaign_metrics" in sql
+            and "ad_account_id=%s" in sql
+        ):
+            return [
+                {
+                    "ad_account_id": ad_account_id,
+                    "ad_account_name": "Newjoyloo",
+                    "campaign_id": "cmp-1",
+                    "campaign_name": "newjoyloo-rjc",
+                    "normalized_campaign_code": "newjoyloo-rjc",
+                    "result_count": 585,
+                    "spend_usd": 12680.47,
+                    "purchase_value_usd": 0,
+                    "impressions": 1000,
+                    "clicks": 20,
+                }
+            ]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-07",
+        now=datetime(2026, 5, 8, 16, 12),
+    )
+
+    assert result["summary"]["ad_spend"] == 12680.47
+    assert result["period"]["data_until_at"] == order_snapshot_at
+    assert result["freshness"]["last_ad_updated_at"] == ad_import_finished_at
+
+
 def test_get_realtime_roas_overview_fallback_includes_order_profit_details(monkeypatch):
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:
