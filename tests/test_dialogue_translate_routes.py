@@ -74,11 +74,13 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     body = resp.get_data(as_text=True)
     assert "Dialogue Detail" in body
     assert "A/B 音色匹配" in body
-    assert body.index("A/B 音色匹配") < body.index("处理进度")
+    assert 'id="step-speaker_detect"' in body
+    assert 'id="step-voice_match_ab"' in body
     assert 'id="dialogueSegmentTimeline"' in body
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
+    assert 'id="voice-selector-multi"' not in body
     assert "dialogue_translate.localize" not in body
 
 
@@ -219,6 +221,8 @@ def test_dialogue_detail_allows_visible_to_all_for_permitted_user(
     body = resp.get_data(as_text=True)
     assert "Shared Dialogue" in body
     assert "A/B 音色匹配" in body
+    assert 'id="step-speaker_detect"' in body
+    assert 'id="step-voice_match_ab"' in body
 
 
 def test_dialogue_translate_list_template_uses_omni_project_management_shell():
@@ -249,6 +253,16 @@ def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
     assert "source_audio_relpath" in js
     assert "artifact-path?path=" in js
     assert "audio.controls = true" in js
+
+
+def test_dialogue_translate_detail_js_renders_omni_style_voice_candidates():
+    js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
+
+    assert "repositionPanel" in js
+    assert "dialogueVoiceCandidates" in js
+    assert "AI #" in js
+    assert "语速参考" in js
+    assert "llm_reason_summary" in js
 
 
 def test_dialogue_translate_restart_uses_dialogue_step_order(

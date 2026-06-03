@@ -394,7 +394,7 @@
 </p>
 {% endif %}
 {% block detail_before_workbench %}{% endblock %}
-{% if detail_mode in ('multi', 'ja', 'av_sync') %}
+{% if detail_mode in ('multi', 'ja', 'av_sync') and (pipeline_kind|default('') != 'dialogue_translate') %}
 {% include "_voice_selector_multi.html" %}
 {% endif %}
 {% include "_task_workbench.html" %}
@@ -404,7 +404,7 @@
 {% block scripts %}
 {% if not project.deleted_at %}
 {% include "_task_workbench_scripts.html" %}
-{% if detail_mode in ('multi', 'ja', 'av_sync') %}
+{% if detail_mode in ('multi', 'ja', 'av_sync') and (pipeline_kind|default('') != 'dialogue_translate') %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
 <script>

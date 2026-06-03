@@ -522,7 +522,9 @@
   {% set show_separate_step = (extended_pipeline and not pipeline_steps) or ('separate' in pipeline_steps) %}
   {% set show_shot_decompose_step = 'shot_decompose' in pipeline_steps %}
   {% set show_asr_normalize_step = pipeline_kind == 'multi_translate' or ('asr_normalize' in pipeline_steps) %}
-  {% set show_asr_clean_step = is_omni_pipeline and ('asr_clean' in pipeline_steps) %}
+  {% set show_asr_clean_step = 'asr_clean' in pipeline_steps %}
+  {% set show_speaker_detect_step = 'speaker_detect' in pipeline_steps %}
+  {% set show_voice_match_ab_step = 'voice_match_ab' in pipeline_steps %}
   {% set show_av_sync_audit_step = 'av_sync_audit' in pipeline_steps %}
   {% set show_loudness_step = (extended_pipeline and not pipeline_steps) or ('loudness_match' in pipeline_steps) %}
   {% macro step_icon(name, fallback) -%}
@@ -724,6 +726,36 @@
       </div>
       {% endif %}
       <div class="step-preview" id="preview-asr_clean"></div>
+    </div>
+    {% endif %}
+    {% if show_speaker_detect_step %}
+    <div class="step" id="step-speaker_detect">
+      <div class="step-main">
+        <div class="step-icon" id="icon-speaker_detect">{{ step_icon('speaker_detect', 4) }}</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">说话人识别</span>
+            <button class="resume-btn hidden" id="resume-speaker_detect" data-step="speaker_detect">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-speaker_detect">等待中...<span class="step-model-tag hidden" id="model-tag-speaker_detect"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-speaker_detect"></div>
+    </div>
+    {% endif %}
+    {% if show_voice_match_ab_step %}
+    <div class="step" id="step-voice_match_ab">
+      <div class="step-main">
+        <div class="step-icon" id="icon-voice_match_ab">{{ step_icon('voice_match_ab', 5) }}</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">A/B 音色匹配</span>
+            <button class="resume-btn hidden" id="resume-voice_match_ab" data-step="voice_match_ab">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-voice_match_ab">等待中...<span class="step-model-tag hidden" id="model-tag-voice_match_ab"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-voice_match_ab"></div>
     </div>
     {% endif %}
     <div class="step" id="step-alignment">
