@@ -1132,6 +1132,10 @@ def build_mk_video_materials_response(
             continue
         for index, video in enumerate(videos[:max_videos], start=1):
             out.append(_serialize_mk_video_material(row, handle, mk_product, video, index))
+
+    from appcore.mingkong_materials import enrich_and_fetch_english_titles
+    enrich_and_fetch_english_titles(out, query_fn=db_query_fn)
+
     stats["videos"] = len(out)
     return MkSelectionResponse(
         {
