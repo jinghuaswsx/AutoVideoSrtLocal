@@ -15,11 +15,12 @@ def test_mingkong_material_daily_snapshot_registered():
     assert task["source_ref"] == "autovideosrt-mingkong-material-daily-snapshot.timer"
     assert task["runner"] == "tools/mingkong_material_daily_snapshot.py"
     assert task["log_table"] == "scheduled_task_runs"
-    assert "Top500" in task["description"]
+    assert "近30天销量大于10" in task["description"]
     assert "昨日消耗前300" in task["description"]
     assert "05:00" in task["schedule"]
     assert "17:00" in task["schedule"]
     assert "2026-05-20-mingkong-product-local-aggregate-stats-design.md" in task["description"]
+    assert "2026-06-03-dxm02-listing-30d-min-sales-design.md" in task["description"]
     assert enriched["control_strategy"] == "systemd"
     assert enriched["log_source"] == "db:scheduled_task_runs"
     assert enriched["log_link_available"] is True

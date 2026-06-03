@@ -631,6 +631,16 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  function fmtDateTimeLines(s) {
+    if (!s) return '<span class="muted">—</span>';
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return '<span class="muted">—</span>';
+    const pad = (n) => String(n).padStart(2, '0');
+    const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const timePart = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `<div style="line-height:1.25;">${datePart}</div><div style="line-height:1.25; font-size:11px; opacity:0.8;">${timePart}</div>`;
+  }
+
   function escapeHtml(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -2540,6 +2550,366 @@
     };
   }
 
+  // ---------- Created Date Range Picker ----------
+  function initCreatedDateRangePicker() {
+    var root = document.querySelector("[data-created-date-range]");
+    if (!root) return;
+
+    var fromInput = document.getElementById("createdFrom");
+    var toInput = document.getElementById("createdTo");
+    var trigger = root.querySelector("[data-created-date-range-trigger]");
+    var panel = root.querySelector("[data-created-date-range-panel]");
+    var label = root.querySelector("[data-created-date-range-label]");
+    var clearBtn = root.querySelector("[data-created-date-clear]");
+    var summary = root.querySelector("[data-created-date-range-summary]");
+    var previousButton = root.querySelector('[data-created-calendar-nav="prev"]');
+    var nextButton = root.querySelector('[data-created-calendar-nav="next"]');
+    var calendars = root.querySelectorAll("[data-created-calendar]");
+    var shortcutButtons = root.querySelectorAll("[data-range-shortcut]");
+
+    if (!fromInput || !toInput || !trigger || !panel || !label || !summary) return;
+
+    var monthAnchor = null;
+    var pendingStart = null;
+    var waitingForEnd = false;
+
+    function parseIsoDate(value) {
+      var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+      if (!match) return null;
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    function cloneDate(date) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    function todayDate() {
+      return cloneDate(new Date());
+    }
+
+    function monthStart(date) {
+      return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function shiftDays(date, amount) {
+      var next = cloneDate(date);
+      next.setDate(next.getDate() + amount);
+      return next;
+    }
+
+    function formatIsoDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "-" + month + "-" + day;
+    }
+
+    function formatLabelDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "/" + month + "/" + day;
+    }
+
+    function formatMonthTitle(date) {
+      return date.getFullYear() + "年" + String(date.getMonth() + 1).padStart(2, "0") + "月";
+    }
+
+    function sameDate(left, right) {
+      return !!left && !!right
+        && left.getFullYear() === right.getFullYear()
+        && left.getMonth() === right.getMonth()
+        && left.getDate() === right.getDate();
+    }
+
+    function timeValue(date) {
+      return date ? date.getTime() : 0;
+    }
+
+    function currentStart() {
+      return parseIsoDate(fromInput.value);
+    }
+
+    function currentEnd() {
+      return parseIsoDate(toInput.value);
+    }
+
+    function activeStart() {
+      return waitingForEnd && pendingStart ? pendingStart : currentStart();
+    }
+
+    function activeEnd() {
+      return waitingForEnd ? null : currentEnd();
+    }
+
+    function shortcutRange(kind) {
+      var today = todayDate();
+      if (kind === "today") {
+        return { start: today, end: today };
+      }
+      if (kind === "yesterday") {
+        var yesterday = shiftDays(today, -1);
+        return { start: yesterday, end: yesterday };
+      }
+      if (kind === "last7") {
+        return { start: shiftDays(today, -6), end: today };
+      }
+      if (kind === "last30") {
+        return { start: shiftDays(today, -29), end: today };
+      }
+      return null;
+    }
+
+    function updateShortcuts() {
+      var start = currentStart();
+      var end = currentEnd();
+      shortcutButtons.forEach(function (button) {
+        var shortcutKind = button.getAttribute("data-range-shortcut");
+        if (shortcutKind === "all") {
+          button.setAttribute("aria-pressed", (!start && !end) ? "true" : "false");
+          return;
+        }
+        var range = shortcutRange(shortcutKind);
+        if (!range) return;
+        var pressed = sameDate(start, range.start) && sameDate(end, range.end);
+        button.setAttribute("aria-pressed", pressed ? "true" : "false");
+      });
+    }
+
+    function updateTriggerText() {
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        label.textContent = "创建时间：" + formatLabelDate(start) + " - " + formatLabelDate(end);
+        if (clearBtn) clearBtn.removeAttribute('hidden');
+      } else {
+        label.textContent = "创建时间：全部";
+        if (clearBtn) clearBtn.setAttribute('hidden', 'true');
+      }
+    }
+
+    function updateSummary() {
+      if (waitingForEnd && pendingStart) {
+        summary.textContent = "已选开始：" + formatLabelDate(pendingStart) + "，请再选一个日期作为结束。";
+        return;
+      }
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        summary.textContent = "已选范围：" + formatLabelDate(start) + " 至 " + formatLabelDate(end);
+        return;
+      }
+      summary.textContent = "点击第一个日期作为开始，第二个日期作为结束。";
+    }
+
+    function applyRange(start, end) {
+      fromInput.value = formatIsoDate(start);
+      toInput.value = formatIsoDate(end);
+      monthAnchor = monthStart(start);
+      updateTriggerText();
+      updateSummary();
+      updateShortcuts();
+      renderCalendars();
+    }
+
+    function closePanel() {
+      pendingStart = null;
+      waitingForEnd = false;
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function openPanel() {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      monthAnchor = monthAnchor || monthStart(currentStart() || todayDate());
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function togglePanel() {
+      if (panel.hidden) {
+        closePanel();
+        return;
+      }
+      openPanel();
+    }
+
+    function renderCalendars() {
+      var displayMonth = monthAnchor || monthStart(currentStart() || todayDate());
+      var selectedStart = activeStart();
+      var selectedEnd = activeEnd();
+      var today = todayDate();
+
+      calendars.forEach(function (calendar, calendarIndex) {
+        var monthDate = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + calendarIndex, 1);
+        var title = calendar.querySelector("[data-created-calendar-title]");
+        var grid = calendar.querySelector("[data-created-calendar-grid]");
+        var firstWeekday = monthDate.getDay();
+        var offset = firstWeekday === 0 ? 6 : firstWeekday - 1;
+        var daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+        var rendered = 0;
+
+        if (title) {
+          title.textContent = formatMonthTitle(monthDate);
+        }
+        if (!grid) return;
+
+        grid.innerHTML = "";
+
+        while (rendered < offset) {
+          var spacer = document.createElement("span");
+          spacer.className = "oc-calendar-spacer";
+          grid.appendChild(spacer);
+          rendered += 1;
+        }
+
+        for (var day = 1; day <= daysInMonth; day += 1) {
+          var current = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+          var dayButton = document.createElement("button");
+          dayButton.type = "button";
+          dayButton.className = "oc-calendar-day";
+          dayButton.textContent = String(day);
+          dayButton.setAttribute("data-created-calendar-day", formatIsoDate(current));
+
+          if (sameDate(current, today)) {
+            dayButton.classList.add("is-today");
+          }
+          if (selectedStart && selectedEnd && timeValue(current) > timeValue(selectedStart) && timeValue(current) < timeValue(selectedEnd)) {
+            dayButton.classList.add("is-in-range");
+          }
+          if ((selectedStart && sameDate(current, selectedStart)) || (selectedEnd && sameDate(current, selectedEnd))) {
+            dayButton.classList.add("is-selected");
+          }
+
+          grid.appendChild(dayButton);
+          rendered += 1;
+        }
+
+        while (rendered % 7 !== 0) {
+          var tail = document.createElement("span");
+          tail.className = "oc-calendar-spacer";
+          grid.appendChild(tail);
+          rendered += 1;
+        }
+      });
+    }
+
+    function applyShortcut(kind) {
+      if (kind === "all") {
+        fromInput.value = "";
+        toInput.value = "";
+        pendingStart = null;
+        waitingForEnd = false;
+        updateTriggerText();
+        updateSummary();
+        updateShortcuts();
+        renderCalendars();
+        closePanel();
+        runSearchNow();
+        return;
+      }
+      var range = shortcutRange(kind);
+      if (!range) return;
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(range.start, range.end);
+      closePanel();
+      runSearchNow();
+    }
+
+    function selectDay(isoValue) {
+      var clickedDate = parseIsoDate(isoValue);
+      if (!clickedDate) return;
+
+      if (!waitingForEnd || !pendingStart) {
+        pendingStart = clickedDate;
+        waitingForEnd = true;
+        monthAnchor = monthStart(clickedDate);
+        updateTriggerText();
+        updateSummary();
+        renderCalendars();
+        return;
+      }
+
+      var start = pendingStart;
+      var end = clickedDate;
+      if (timeValue(end) < timeValue(start)) {
+        var swapped = start;
+        start = end;
+        end = swapped;
+      }
+
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(start, end);
+      closePanel();
+      runSearchNow();
+    }
+
+    trigger.addEventListener("click", function (e) {
+      if (clearBtn && clearBtn.contains(e.target)) return;
+      togglePanel();
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        fromInput.value = "";
+        toInput.value = "";
+        pendingStart = null;
+        waitingForEnd = false;
+        updateTriggerText();
+        updateSummary();
+        updateShortcuts();
+        renderCalendars();
+        runSearchNow();
+      });
+    }
+
+    previousButton.addEventListener("click", function () {
+      var curr = monthAnchor || monthStart(currentStart() || todayDate());
+      monthAnchor = new Date(curr.getFullYear(), curr.getMonth() - 1, 1);
+      renderCalendars();
+    });
+
+    nextButton.addEventListener("click", function () {
+      var curr = monthAnchor || monthStart(currentStart() || todayDate());
+      monthAnchor = new Date(curr.getFullYear(), curr.getMonth() + 1, 1);
+      renderCalendars();
+    });
+
+    shortcutButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        applyShortcut(button.getAttribute("data-range-shortcut"));
+      });
+    });
+
+    panel.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.hasAttribute("data-created-calendar-day")) return;
+      selectDay(target.getAttribute("data-created-calendar-day"));
+    });
+
+    document.addEventListener("mousedown", function (event) {
+      if (panel.hidden || root.contains(event.target)) return;
+      closePanel();
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !panel.hidden) {
+        closePanel();
+      }
+    });
+
+    updateTriggerText();
+    updateSummary();
+    updateShortcuts();
+    renderCalendars();
+  }
+
   // ---------- List ----------
   async function loadList() {
     const kwInput = $('kw');
@@ -2562,6 +2932,14 @@
     const deliveryStatusEl = $('filterDeliveryStatus');
     if (deliveryStatusEl && deliveryStatusEl.value && deliveryStatusEl.value !== 'all') {
       params.set('delivery_status', deliveryStatusEl.value);
+    }
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    if (createdFromEl && createdFromEl.value) {
+      params.set('created_from', createdFromEl.value);
+    }
+    if (createdToEl && createdToEl.value) {
+      params.set('created_to', createdToEl.value);
     }
     renderSkeleton();
     try {
@@ -2600,6 +2978,20 @@
       url.searchParams.set('page', state.page);
     } else {
       url.searchParams.delete('page');
+    }
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    const createdFrom = createdFromEl ? createdFromEl.value : '';
+    const createdTo = createdToEl ? createdToEl.value : '';
+    if (createdFrom) {
+      url.searchParams.set('created_from', createdFrom);
+    } else {
+      url.searchParams.delete('created_from');
+    }
+    if (createdTo) {
+      url.searchParams.set('created_to', createdTo);
+    } else {
+      url.searchParams.delete('created_to');
     }
     window.history.replaceState(null, '', url);
   }
@@ -2649,17 +3041,15 @@
         <colgroup>
         <col style="width:48px">
         <col style="width:128px">
-        <col style="width:130px">
-        <col style="width:120px">
-        <col style="width:160px">
+        <col style="width:210px">
         <col style="width:140px">
         <col style="width:80px">
-        <col style="width:68px">
-        <col style="width:120px">
+        <col style="width:130px">
         <col style="width:80px">
         <col style="width:88px">
         <col style="width:56px">
         <col style="width:300px">
+        <col style="width:92px">
         <col style="width:92px">
         <col style="width:92px">
         <col style="width:104px">
@@ -2669,18 +3059,16 @@
         <tr>
           <th>ID</th>
           <th>主图</th>
-          <th>产品名称</th>
-          <th>产品 ID</th>
-          <th>英文名</th>
+          <th>产品信息</th>
           <th>ERP SKU</th>
           <th>明空 ID</th>
-          <th>AI评分</th>
-          <th>AI评估结果</th>
+          <th style="text-align: center;">AI评估</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
           <th>语种和投放情况</th>
           <th>投放情况</th>
+          <th>创建时间</th>
           <th>修改时间</th>
           <th>投放推送</th>
           <th>操作</th>
@@ -3146,10 +3534,45 @@
     const coverCell = productDetailHref
       ? `<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>`
       : cover;
-    const nameCell = (productDetailHref
-      ? `<a href="${productDetailHref}" title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</a>`
-      : `<span title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</span>`)
-      + ` <button type="button" class="oc-btn text sm oc-product-name-copy" data-product-name="${escapeHtml(p.name)}" data-copy-label="" title="复制产品名称" aria-label="复制产品名称" style="display:inline-flex; vertical-align:middle; margin-left:4px; padding:2px; height:20px; min-width:20px; width:auto; justify-content:center; align-items:center;">${icon('copy', 12)}</button>`;
+
+    // --- Line 1: Chinese Name ---
+    const nameText = p.name || '';
+    const nameLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(nameText)}">
+          ${productDetailHref
+            ? `<a href="${productDetailHref}" title="${escapeHtml(nameText)}">${escapeHtml(nameText)}</a>`
+            : `<span>${escapeHtml(nameText)}</span>`
+          }
+        </span>
+        ${nameText ? `<button type="button" class="oc-btn text sm oc-product-name-copy" data-product-name="${escapeHtml(nameText)}" data-copy-label="" title="复制产品名称" aria-label="复制产品名称" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    // --- Line 2: English Name ---
+    const shopifyTitle = (p.shopify_title || '').trim();
+    const englishLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(shopifyTitle)}">
+          ${shopifyTitle ? escapeHtml(shopifyTitle) : '<span class="muted">—</span>'}
+        </span>
+        ${shopifyTitle ? `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    // --- Line 3: Product Code / ID ---
+    const productUrl = _defaultProductUrl('en', productCode);
+    const codeLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
+          ${productCode
+            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</a>`
+            : '<span class="muted">—</span>'
+          }
+        </span>
+        ${productCode ? `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    const productInfoCell = `<div class="product-info-cell" style="display: flex; flex-direction: column;">${nameLine}${englishLine}${codeLine}</div>`;
+
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
@@ -3160,37 +3583,33 @@
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
-    const productUrl = _defaultProductUrl('en', productCode);
-    const productCodeCell = productCode
-      ? `<div class="oc-product-id-main"><a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
-        + `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID">${icon('copy', 12)}<span>复制</span></button>`
-      : '<span class="muted">—</span>';
-    const shopifyTitle = (p.shopify_title || '').trim();
-    const shopifyTitleCell = shopifyTitle
-      ? `<div class="shopify-title-main" title="${escapeHtml(shopifyTitle)}" style="line-height:1.35; overflow-wrap:anywhere; word-break:break-all;">${escapeHtml(shopifyTitle)}</div>`
-        + `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名">${icon('copy', 12)}<span>复制</span></button>`
-      : '<span class="muted">—</span>';
     const skuCell = renderSkuSummary(p);
+
+    // --- AI Evaluation cell ---
+    const aiScoreText = p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>';
+    const aiResultText = compactCellText(p.ai_evaluation_result);
+    const aiEvalCell = `
+      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; width: 100%;">
+        <div class="ai-score" style="font-weight: bold; font-family: monospace;">${aiScoreText}</div>
+        <div class="ai-result-text" title="${escapeHtml(p.ai_evaluation_result || '')}" style="font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${aiResultText}</div>
+        <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}" style="margin-top: 2px;">评估详情</button>
+      </div>`;
+
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
-        <td class="name wrap">${nameCell}</td>
-        <td class="mono wrap oc-product-id-cell" title="${escapeHtml(productCode)}">${productCodeCell}</td>
-        <td class="wrap shopify-title-cell">${shopifyTitleCell}</td>
+        <td class="wrap product-info-td">${productInfoCell}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
-        <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
-        <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">
-          <div class="ai-result-text">${compactCellText(p.ai_evaluation_result)}</div>
-          <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}">评估详情</button>
-        </td>
+        <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
-        <td class="muted">${fmtDate(p.updated_at)}</td>
+        <td class="muted mono">${fmtDateTimeLines(p.created_at)}</td>
+        <td class="muted mono">${fmtDateTimeLines(p.updated_at)}</td>
         <td class="product-push-cell">
           <div class="product-push-actions">
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
@@ -8954,6 +9373,18 @@
 
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
+    // 解析 URL 参数初始化日期
+    const url = new URL(window.location.href);
+    const initialCreatedFrom = url.searchParams.get('created_from') || '';
+    const initialCreatedTo = url.searchParams.get('created_to') || '';
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    if (createdFromEl && initialCreatedFrom) createdFromEl.value = initialCreatedFrom;
+    if (createdToEl && initialCreatedTo) createdToEl.value = initialCreatedTo;
+
+    // 初始化日期选择器
+    initCreatedDateRangePicker();
+
     const searchBtn = $('searchBtn');
     const kwInput = $('kw');
     if (kwInput && window.MEDIAS_LIST_INITIAL_QUERY && !kwInput.value) {

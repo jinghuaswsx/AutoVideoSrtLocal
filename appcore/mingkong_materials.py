@@ -1366,22 +1366,24 @@ def cache_local_cover_for_material(
     return out
 
 
-def latest_top_products(*, limit: int = 300) -> tuple[str, list[dict[str, Any]]]:
+def latest_top_products(*, limit: int = 0) -> tuple[str, list[dict[str, Any]]]:
     row = query_one("SELECT MAX(snapshot_date) AS snapshot_date FROM dianxiaomi_rankings") or {}
     snapshot_date = _coerce_date(row.get("snapshot_date"))
     if not snapshot_date:
         return "", []
-    rows = query(
-        """
+    safe_limit = max(0, int(limit or 0))
+    sql = """
         SELECT rank_position, product_id, product_name, product_url, store,
                sales_count, order_count, revenue_main
         FROM dianxiaomi_rankings
         WHERE snapshot_date = %s
         ORDER BY rank_position ASC
-        LIMIT %s
-        """,
-        (snapshot_date, int(limit)),
-    )
+        """
+    args: tuple[Any, ...] = (snapshot_date,)
+    if safe_limit > 0:
+        sql += "LIMIT %s"
+        args = (snapshot_date, safe_limit)
+    rows = query(sql, args)
     products: list[dict[str, Any]] = []
     for item in rows or []:
         handle = _product_handle(item.get("product_url"))
@@ -3367,7 +3369,7 @@ def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> 
 
 def run_daily_snapshot(
     *,
-    source_limit: int = 500,
+    source_limit: int = 0,
     batch_size: int = 10,
     sleep_after_products: int = 2,
     sleep_seconds: float = 30,

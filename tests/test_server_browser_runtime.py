@@ -237,18 +237,19 @@ def test_visible_dxm_environment_services_and_watchdog_ports():
     assert "OnUnitActiveSec=60" in timer
 
 
-def test_dianxiaomi_listing_ranking_sync_timer_uses_dxm02_at_1240_for_recent_7_days():
+def test_dianxiaomi_listing_ranking_sync_timer_uses_dxm02_at_1240_for_30_day_sales_gt_10():
     service = _read("deploy/server_browser/autovideosrt-dianxiaomi-listing-ranking-sync.service")
     timer = _read("deploy/server_browser/autovideosrt-dianxiaomi-listing-ranking-sync.timer")
 
     assert "autovideosrt-dxm02-mk-vnc.service" in service
     assert "DXM_LISTING_BROWSER_CDP_URL=http://127.0.0.1:9223" in service
     assert "--browser-cdp-url http://127.0.0.1:9223" in service
-    assert "--mode rolling" in service
-    assert "--rolling-days 7" in service
+    assert "--mode daily" in service
     assert "--daily-offset-days 0" in service
-    assert "--target-rows 500" in service
-    assert "--target-rows 1000" not in service
+    assert "--snapshot-window-days 30" in service
+    assert "--target-rows 0" in service
+    assert "--min-sales-count 10" in service
+    assert "--target-rows 500" not in service
     assert "OnCalendar=*-*-* 12:40:00" in timer
     assert "Persistent=true" in timer
 
@@ -257,6 +258,7 @@ def test_mingkong_material_snapshot_service_runs_serially_without_sleep():
     service = _read("deploy/server_browser/autovideosrt-mingkong-material-daily-snapshot.service")
 
     assert "tools/mingkong_material_daily_snapshot.py" in service
+    assert "--source-limit 0" in service
     assert "--sleep-after-products 0" in service
     assert "--sleep-seconds 0" in service
 

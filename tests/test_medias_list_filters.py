@@ -102,15 +102,28 @@ def test_list_products_delivery_status_invalid_falls_back(monkeypatch):
     assert "media_product_ad_summary_cache" not in text
 
 
+def test_list_products_filters_created_at(monkeypatch):
+    captured = _capture_sql(monkeypatch)
+    medias.list_products(None, created_from="2026-06-01", created_to="2026-06-03")
+    text = _joined(captured)
+    assert "p.created_at >= %s" in text
+    assert "p.created_at <= %s" in text
+    params = captured[1][1]
+    assert "2026-06-01 00:00:00" in params
+    assert "2026-06-03 23:59:59" in params
+
+
 def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
     captured = {}
 
     def fake_list_products(user_id, *, keyword="", archived=False, offset=0, limit=20,
-                           xmyc_match="all", roas_status="all", delivery_status="all"):
+                           xmyc_match="all", roas_status="all", delivery_status="all", **kwargs):
         captured["xmyc_match"] = xmyc_match
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
         captured["keyword"] = keyword
+        captured["created_from"] = kwargs.get("created_from")
+        captured["created_to"] = kwargs.get("created_to")
         return [], 0
 
     monkeypatch.setattr(medias, "list_products", fake_list_products)
@@ -122,20 +135,22 @@ def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(medias, "get_product_covers_batch", lambda pids: {})
 
     resp = authed_client_no_db.get(
-        "/medias/api/products?xmyc_match=unmatched&roas_status=missing_actual&delivery_status=stopped&keyword=foo"
+        "/medias/api/products?xmyc_match=unmatched&roas_status=missing_actual&delivery_status=stopped&keyword=foo&created_from=2026-06-01&created_to=2026-06-03"
     )
     assert resp.status_code == 200
     assert captured["xmyc_match"] == "unmatched"
     assert captured["roas_status"] == "missing_actual"
     assert captured["delivery_status"] == "stopped"
     assert captured["keyword"] == "foo"
+    assert captured["created_from"] == "2026-06-01"
+    assert captured["created_to"] == "2026-06-03"
 
 
 def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db, monkeypatch):
     captured = {}
 
     def fake_list_products(user_id, *, keyword="", archived=False, offset=0, limit=20,
-                           xmyc_match="all", roas_status="all", delivery_status="all"):
+                           xmyc_match="all", roas_status="all", delivery_status="all", **kwargs):
         captured["xmyc_match"] = xmyc_match
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
@@ -154,6 +169,7 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
     assert captured["xmyc_match"] == "all"
     assert captured["roas_status"] == "all"
     assert captured["delivery_status"] == "all"
+
 
 
 def test_medias_list_html_has_filter_dropdowns():
@@ -198,7 +214,7 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert 'id="createBtn"' in action_block
     assert "oc-tool-download-btn" in action_block
 
-    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr));" in html
+    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1.4fr;" in html
     mobile_start = html.index("@media (max-width: 760px)")
     mobile_end = html.index("/* ────────── Buttons", mobile_start)
     mobile_block = html[mobile_start:mobile_end]

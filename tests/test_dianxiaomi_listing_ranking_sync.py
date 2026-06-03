@@ -3,17 +3,18 @@ from __future__ import annotations
 from datetime import date
 
 
-def test_build_listing_payload_uses_rolling_7_day_window_and_sales_sort():
+def test_build_listing_payload_uses_rolling_30_day_window_and_sales_sort():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
     payload = sync.build_listing_payload(
         date(2026, 5, 12),
         page_no=2,
         page_size=100,
-        window_days=7,
+        window_days=sync.DEFAULT_SNAPSHOT_WINDOW_DAYS,
     )
 
-    assert payload["beginDate"] == "2026-05-06"
+    assert sync.DEFAULT_SNAPSHOT_WINDOW_DAYS == 30
+    assert payload["beginDate"] == "2026-04-13"
     assert payload["endDate"] == "2026-05-12"
     assert payload["pageNo"] == 2
     assert payload["pageSize"] == 100
@@ -253,7 +254,7 @@ def test_extract_product_cn_name_from_mingkong_first_material():
     }
 
 
-def test_collect_top_rankings_fetches_all_pages_and_filters_zero_sales_when_uncapped():
+def test_collect_top_rankings_fetches_all_pages_and_filters_sales_lte_10_when_uncapped():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
     calls: list[int] = []
@@ -273,7 +274,14 @@ def test_collect_top_rankings_fetches_all_pages_and_filters_zero_sales_when_unca
                         {
                             "productId": str(start + index + 1),
                             "productName": f"Product {start + index + 1}",
-                            "paidProductCount": 0 if start + index + 1 in {2, 4} else 10 - start - index,
+                            "paidProductCount": {
+                                1: 16,
+                                2: 10,
+                                3: 11,
+                                4: 0,
+                                5: 9,
+                                6: 12,
+                            }[start + index + 1],
                         }
                         for index in range(page_size)
                     ],
@@ -289,14 +297,14 @@ def test_collect_top_rankings_fetches_all_pages_and_filters_zero_sales_when_unca
     )
 
     assert calls == [1, 2, 3]
-    assert [row["rank_position"] for row in rows] == [1, 3, 5, 6]
-    assert [row["product_id"] for row in rows] == ["1", "3", "5", "6"]
+    assert [row["rank_position"] for row in rows] == [1, 3, 6]
+    assert [row["product_id"] for row in rows] == ["1", "3", "6"]
     assert stats["pages_fetched"] == 3
     assert stats["api_total_size"] == 6
-    assert stats["rows_fetched"] == 4
+    assert stats["rows_fetched"] == 3
 
 
-def test_collect_top_rankings_defaults_to_top_500():
+def test_collect_top_rankings_defaults_to_uncapped_sales_gt_10():
     from tools import dianxiaomi_listing_ranking_sync as sync
 
     calls: list[int] = []
@@ -317,7 +325,7 @@ def test_collect_top_rankings_defaults_to_top_500():
                         {
                             "productId": str(start + index + 1),
                             "productName": f"Product {start + index + 1}",
-                            "paidProductCount": 1000 - start - index,
+                            "paidProductCount": 12 if start + index < 650 else 10,
                         }
                         for index in range(page_size)
                     ],
@@ -331,10 +339,11 @@ def test_collect_top_rankings_defaults_to_top_500():
         page_size=100,
     )
 
-    assert sync.DEFAULT_TARGET_ROWS == 500
-    assert len(rows) == 500
-    assert calls == [1, 2, 3, 4, 5]
-    assert stats["rows_fetched"] == 500
+    assert sync.DEFAULT_TARGET_ROWS == 0
+    assert sync.DEFAULT_MIN_SALES_COUNT == 10
+    assert len(rows) == 650
+    assert calls == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert stats["rows_fetched"] == 650
 
 
 def test_persist_rankings_writes_assets_once_per_product_not_per_ranking_row(monkeypatch):

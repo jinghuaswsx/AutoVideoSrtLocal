@@ -2,7 +2,7 @@
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
-<span class="selection-center-title-note">店小秘近7天有销量全量归档 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
+<span class="selection-center-title-note">店小秘近30天销量 &gt;10 全量归档 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
 {% endblock %}
 {% block extra_style %}
 {% include "_xuanpin_tabs_style.html" %}
@@ -180,7 +180,8 @@
 .mk-status-half { flex:0 0 50%; width:50%; height:36px; display:flex; align-items:center; }
 .mk-status-half--left { justify-content:flex-end; padding-right:4px; }
 .mk-status-half--right { justify-content:flex-start; padding-left:4px; }
-.mk-status-icon { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); }
+.mk-status-icon { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); text-decoration:none; transition: filter 0.2s ease, opacity 0.2s ease; }
+.mk-status-icon:hover { text-decoration:none; filter:brightness(0.95); opacity:0.95; }
 .mk-status-icon svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-status-icon-emoji { font-size:22px; line-height:1; }
 .mk-status-icon--product { color:var(--oc-accent); }
@@ -1280,13 +1281,25 @@ function renderMkStatusIconHeaderRow(r) {
     return '';
   }
   
-  const productTitle = r.has_local_product_running_ad ? '产品已在素材库且有消耗广告计划' : '产品已在素材库';
+  const productCodeSearch = mkiProductCodeWithRjc(r.product_handle || r.product_code || '');
+  const productSearchUrl = productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias';
+  
   const productIconHtml = hasProductInLibrary 
-    ? `<span class="mk-status-icon mk-status-icon--product" title="${productTitle}" aria-label="${productTitle}">${mkStatusIconSvg('product')}</span>` 
+    ? `<a class="mk-status-icon mk-status-icon--product" href="${escapeHtml(productSearchUrl)}" target="_blank" rel="noopener noreferrer" title="产品已入库" aria-label="产品已入库">${mkStatusIconSvg('product')}</a>` 
     : '';
     
+  const productStatus = r.product_ad_status || {};
+  const materialStatus = r.material_ad_status || {};
+  const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
+  const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
+  const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
+  
+  const videoSearchUrl = (productCodeSearch && existingProductId && localItemId)
+    ? `/medias/?q=${encodeURIComponent(productCodeSearch)}&product=${existingProductId}&lang=en&action=video&item=${localItemId}`
+    : (productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias');
+    
   const videoIconHtml = hasVideoInLibrary
-    ? `<span class="mk-status-icon mk-status-icon--video" title="视频素材已在素材库" aria-label="视频素材已在素材库">${mkStatusIconSvg('video')}</span>`
+    ? `<a class="mk-status-icon mk-status-icon--video" href="${escapeHtml(videoSearchUrl)}" target="_blank" rel="noopener noreferrer" title="视频已入库" aria-label="视频已入库">${mkStatusIconSvg('video')}</a>`
     : '';
     
   return `<div class="mk-status-header-row">
@@ -4768,7 +4781,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
   await mkiFineAiOpenLatestOrStart(context);
 }
 
-function mkiEnsureImportedStatusIcon(card) {
+function mkiEnsureImportedStatusIcon(card, metadata, btn) {
   if (!card || card.querySelector('.mk-status-icon--video')) return;
   let cluster = card.querySelector('.mk-status-header-row');
   if (!cluster) {
@@ -4777,10 +4790,31 @@ function mkiEnsureImportedStatusIcon(card) {
     cluster.innerHTML = '<div class="mk-status-half mk-status-half--left"></div><div class="mk-status-half mk-status-half--right"></div>';
     card.insertBefore(cluster, card.firstChild);
   }
+  
+  const leftHalf = cluster.querySelector('.mk-status-half--left');
+  if (leftHalf && !leftHalf.querySelector('.mk-status-icon--product')) {
+    const hasLocalProduct = btn && btn.dataset && btn.dataset.mkiHasLocalProduct === '1';
+    const localProductId = btn && btn.dataset && btn.dataset.mkiLocalProductId;
+    if (hasLocalProduct || localProductId || (metadata && (metadata.media_product_id || metadata.product_id))) {
+      const productCode = btn && btn.dataset && btn.dataset.mkiProductCode;
+      const productCodeSearch = mkiProductCodeWithRjc(productCode);
+      const productSearchUrl = productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias';
+      leftHalf.innerHTML = `<a class="mk-status-icon mk-status-icon--product" href="${escapeHtml(productSearchUrl)}" target="_blank" rel="noopener noreferrer" title="产品已入库" aria-label="产品已入库">${mkStatusIconSvg('product')}</a>`;
+    }
+  }
+
   const rightHalf = cluster.querySelector('.mk-status-half--right');
   if (rightHalf) {
-    const title = '视频素材已在素材库';
-    rightHalf.innerHTML = `<span class="mk-status-icon mk-status-icon--video" title="${title}" aria-label="${title}">${mkStatusIconSvg('video')}</span>`;
+    const productCode = btn && btn.dataset && btn.dataset.mkiProductCode;
+    const productCodeSearch = mkiProductCodeWithRjc(productCode);
+    const productId = metadata ? (metadata.media_product_id || metadata.product_id) : (btn ? btn.dataset.mkiLocalProductId : '');
+    const itemId = metadata ? (metadata.media_item_id || metadata.item_id) : (btn ? btn.dataset.mkiLocalItemId : '');
+    
+    const videoSearchUrl = (productCodeSearch && productId && itemId)
+      ? `/medias/?q=${encodeURIComponent(productCodeSearch)}&product=${productId}&lang=en&action=video&item=${itemId}`
+      : (productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias');
+      
+    rightHalf.innerHTML = `<a class="mk-status-icon mk-status-icon--video" href="${escapeHtml(videoSearchUrl)}" target="_blank" rel="noopener noreferrer" title="视频已入库" aria-label="视频已入库">${mkStatusIconSvg('video')}</a>`;
   }
 }
 
@@ -4790,8 +4824,11 @@ function mkiMarkImportedButton(btn) {
   btn.disabled = true;
   btn.classList.add('mki-btn--disabled');
   btn.dataset.mkiMaterialImported = '1';
+  
+  const fn = btn.dataset.mkiFilename;
+  const metadata = MKI_IMPORTED_METADATA.get(fn) || null;
   try {
-    mkiEnsureImportedStatusIcon(btn.closest('.mk-video-card'));
+    mkiEnsureImportedStatusIcon(btn.closest('.mk-video-card'), metadata, btn);
   } catch (e) {
     console.warn('mki imported status icon failed', e);
   }
