@@ -325,21 +325,69 @@ def set_product_skus(product_id: int, skus: list[str], *, matched_by: int | None
 
 def _refresh_product_purchase_price(product_id: int) -> Decimal | None:
     pid = int(product_id)
-    skus_rows = query(
-        "SELECT sku, unit_price FROM xmyc_storage_skus "
-        "WHERE product_id = %s AND unit_price IS NOT NULL",
-        (pid,),
-    )
-    if not skus_rows:
+    
+    # 1. Fetch SKUs that are associated with the product in xmyc_storage_skus
+    skus = set()
+    try:
+        rows = query("SELECT sku FROM xmyc_storage_skus WHERE product_id = %s", (pid,))
+        for r in rows:
+            if r.get("sku"):
+                skus.add(r["sku"])
+    except Exception as exc:
+        log.warning("Failed to query xmyc_storage_skus for SKUs: %s", exc)
+
+    # 2. Also fetch SKUs that are associated with the product in dianxiaomi_order_lines
+    try:
+        rows = query(
+            "SELECT DISTINCT product_display_sku FROM dianxiaomi_order_lines "
+            "WHERE product_id = %s AND product_display_sku IS NOT NULL AND product_display_sku != ''",
+            (pid,)
+        )
+        for r in rows:
+            skus.add(r["product_display_sku"])
+    except Exception as exc:
+        log.warning("Failed to query dianxiaomi_order_lines for SKUs: %s", exc)
+
+    if not skus:
         execute(
             "UPDATE media_products SET purchase_price = NULL WHERE id = %s",
             (pid,),
         )
         return None
-    sku_to_price = {r["sku"]: r["unit_price"] for r in skus_rows if r.get("unit_price") is not None}
+
+    # 3. Lookup SKU prices in dianxiaomi_yuncang_skus first (filtering for price > 0)
+    sku_to_price = {}
+    placeholders = ",".join(["%s"] * len(skus))
+    try:
+        dxm_prices = query(
+            f"SELECT sku, unit_price FROM dianxiaomi_yuncang_skus "
+            f"WHERE sku IN ({placeholders}) AND unit_price IS NOT NULL AND unit_price > 0",
+            tuple(skus)
+        )
+        for r in dxm_prices:
+            sku_to_price[r["sku"]] = r["unit_price"]
+    except Exception as exc:
+        log.warning("Failed to query dianxiaomi_yuncang_skus: %s", exc)
+
+    # 4. Fallback to xmyc_storage_skus price > 0 if not found in dianxiaomi_yuncang_skus
+    try:
+        xmyc_prices = query(
+            f"SELECT sku, unit_price FROM xmyc_storage_skus "
+            f"WHERE sku IN ({placeholders}) AND unit_price IS NOT NULL AND unit_price > 0",
+            tuple(skus)
+        )
+        for r in xmyc_prices:
+            sku = r["sku"]
+            if sku not in sku_to_price:
+                sku_to_price[sku] = r["unit_price"]
+    except Exception as exc:
+        log.warning("Failed to query xmyc_storage_skus: %s", exc)
+
     if not sku_to_price:
         execute("UPDATE media_products SET purchase_price = NULL WHERE id = %s", (pid,))
         return None
+
+    # 5. Resolve primary price based on order line counts
     counts = query(
         "SELECT product_display_sku AS sku, COUNT(*) AS cnt FROM dianxiaomi_order_lines "
         "WHERE product_id = %s AND product_display_sku IS NOT NULL "
@@ -352,13 +400,164 @@ def _refresh_product_purchase_price(product_id: int) -> Decimal | None:
         if sku in sku_to_price:
             primary_price = sku_to_price[sku]
             break
-    if primary_price is None:
+    if primary_price is None and sku_to_price:
         primary_price = sorted(sku_to_price.values())[len(sku_to_price) // 2]
+
+    if primary_price is None or primary_price <= 0:
+        execute("UPDATE media_products SET purchase_price = NULL WHERE id = %s", (pid,))
+        return None
+
     execute(
         "UPDATE media_products SET purchase_price = %s WHERE id = %s",
         (primary_price, pid),
     )
     return primary_price
+
+
+def sync_dianxiaomi_yuncang_skus(cdp_url: str = "http://127.0.0.1:9225") -> dict[str, Any]:
+    # 1. Initialize table
+    execute("""
+    CREATE TABLE IF NOT EXISTS dianxiaomi_yuncang_skus (
+      sku VARCHAR(128) NOT NULL PRIMARY KEY,
+      sku_code VARCHAR(128) DEFAULT NULL,
+      goods_name VARCHAR(500) DEFAULT NULL,
+      stock_available INT DEFAULT 0,
+      unit_price DECIMAL(10,2) DEFAULT NULL,
+      raw_json JSON DEFAULT NULL,
+      synced_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+    
+    # 2. Scrape from Dianxiaomi
+    all_items = []
+    from playwright.sync_api import sync_playwright
+    
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(cdp_url)
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        page = ctx.new_page()
+        try:
+            page.goto("https://www.dianxiaomi.com/yuncangWarehouseSku/index.htm", timeout=30000)
+            page.wait_for_load_state("networkidle")
+            time.sleep(3)
+            
+            # Click 300 page size to speed up scraping
+            try:
+                page.select_option('select[name="pageselct"]', '300')
+                page.wait_for_load_state("networkidle")
+                time.sleep(4)
+            except Exception:
+                pass
+                
+            while True:
+                html = page.content()
+                soup = BeautifulSoup(html, "html.parser")
+                
+                table = None
+                for t in soup.find_all("table"):
+                    headers = [th.get_text().strip() for th in t.find_all("th")]
+                    if "商品信息" in headers:
+                        table = t
+                        break
+                
+                if not table:
+                    break
+                    
+                rows = table.find_all("tr", class_="content")
+                if not rows:
+                    break
+                    
+                for r in rows:
+                    tds = r.find_all("td", recursive=False)
+                    if len(tds) < 10:
+                        continue
+                    
+                    info_td = tds[1]
+                    copy_divs = info_td.select(".copyDataContentText")
+                    
+                    title = ""
+                    sku_code = ""
+                    if len(copy_divs) >= 2:
+                        title = _norm(copy_divs[0].get("data-content", ""))
+                        sku_code = _norm(copy_divs[1].get("data-content", ""))
+                    elif len(copy_divs) == 1:
+                        title = _norm(copy_divs[0].get("data-content", ""))
+                    
+                    sku = ""
+                    platform_sku_el = info_td.select_one(".limingcentUrlpic span")
+                    if platform_sku_el:
+                        sku = _norm(platform_sku_el.get_text())
+                    
+                    if not sku:
+                        continue
+                        
+                    available_stock = _to_int(tds[5].get_text()) or 0
+                    unit_price = _to_decimal(tds[8].get_text())
+                    
+                    all_items.append({
+                        "sku": sku,
+                        "sku_code": sku_code,
+                        "goods_name": title,
+                        "stock_available": available_stock,
+                        "unit_price": unit_price
+                    })
+                
+                # Check next page button inside #upPage specifically to avoid strict mode violations
+                next_page_btn = page.locator('#upPage a[title="下一页"]')
+                if not next_page_btn.count():
+                    break
+                    
+                parent_li = page.locator('#upPage a[title="下一页"]').locator('xpath=..')
+                li_class = parent_li.get_attribute("class") or ""
+                if "disabled" in li_class:
+                    break
+                    
+                next_page_btn.click()
+                time.sleep(3)
+                page.wait_for_load_state("networkidle")
+                
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+                
+    # 3. Clear and save to DB
+    inserted = 0
+    if all_items:
+        execute("TRUNCATE TABLE dianxiaomi_yuncang_skus")
+        sql = """
+        INSERT INTO dianxiaomi_yuncang_skus (sku, sku_code, goods_name, stock_available, unit_price, raw_json)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          sku_code = VALUES(sku_code),
+          goods_name = VALUES(goods_name),
+          stock_available = VALUES(stock_available),
+          unit_price = VALUES(unit_price),
+          raw_json = VALUES(raw_json)
+        """
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for item in all_items:
+                    cur.execute(sql, (
+                        item["sku"],
+                        item["sku_code"] or None,
+                        item["goods_name"] or None,
+                        item["stock_available"],
+                        item["unit_price"],
+                        json.dumps(item, ensure_ascii=False, default=str)
+                    ))
+                    inserted += 1
+            conn.commit()
+
+    # 4. Refresh matched prices
+    refresh_summary = refresh_purchase_prices_for_matched()
+    
+    return {
+        "fetched": len(all_items),
+        "inserted": inserted,
+        "refresh_prices": refresh_summary
+    }
 
 
 _SKU_EDITABLE_FIELDS = frozenset({
