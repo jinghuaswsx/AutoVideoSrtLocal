@@ -2680,7 +2680,7 @@
           <th>产品信息</th>
           <th>ERP SKU</th>
           <th>明空 ID</th>
-          <th>AI评估</th>
+          <th style="text-align: center;">AI评估</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
@@ -3207,7 +3207,7 @@
     const aiScoreText = p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>';
     const aiResultText = compactCellText(p.ai_evaluation_result);
     const aiEvalCell = `
-      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; width: 100%;">
         <div class="ai-score" style="font-weight: bold; font-family: monospace;">${aiScoreText}</div>
         <div class="ai-result-text" title="${escapeHtml(p.ai_evaluation_result || '')}" style="font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${aiResultText}</div>
         <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}" style="margin-top: 2px;">评估详情</button>
@@ -3220,7 +3220,7 @@
         <td class="wrap product-info-td">${productInfoCell}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
-        <td class="wrap">${aiEvalCell}</td>
+        <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
