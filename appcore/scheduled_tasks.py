@@ -49,6 +49,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上待部署",
         "log_table": "scheduled_task_runs",
     },
+    "dianxiaomi_yuncang_sync": {
+        "code": "dianxiaomi_yuncang_sync",
+        "name": "店小秘云仓货品同步",
+        "description": "从店小秘云仓货品列表页面拉取全部 SKU 货品数据，更新 dianxiaomi_yuncang_skus，并重新计算关联产品的采购成本价格。",
+        "schedule": "每天凌晨 12:31（错峰执行）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-dianxiaomi-yuncang-sync.timer",
+        "runner": "tools/dianxiaomi_yuncang_sync.py",
+        "deployment": "线上待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "shopifyid_windows_daily": {
         "code": "shopifyid_windows_daily",
         "name": "Shopify ID 获取（Windows 本机）",
