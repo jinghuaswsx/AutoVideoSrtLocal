@@ -2659,7 +2659,7 @@
         <colgroup>
         <col style="width:48px">
         <col style="width:128px">
-        <col style="width:320px">
+        <col style="width:240px">
         <col style="width:140px">
         <col style="width:80px">
         <col style="width:130px">
