@@ -5099,7 +5099,7 @@
       profitSummary.total_ad_spend_ratio_pct,
       costRatioDenominator
     );
-    setRealtimeProfitText(prefix + 'Roas', fmtRoasValue(s.true_roas));
+    setRealtimeProfitText(prefix + 'Roas', fmtRealtimeRoasWithPrecision(s.true_roas));
     var metaSpend = Number(s.ad_spend);
     var metaPurchase = Number(s.meta_purchase_value);
     var metaRoas = (Number.isFinite(metaSpend) && metaSpend > 0 && Number.isFinite(metaPurchase))
@@ -5406,7 +5406,13 @@
 
   function setRealtimeProfitText(id, value) {
     var el = document.getElementById(id);
-    if (el) el.textContent = value;
+    if (el) {
+      if (typeof value === 'string' && value.indexOf('<') !== -1) {
+        el.innerHTML = value;
+      } else {
+        el.textContent = value;
+      }
+    }
   }
 
   function setRealtimeProfitNote(id, text, isWarning) {
@@ -6129,6 +6135,15 @@
 
   function fmtRoasValue(value) {
     return value === null || value === undefined ? '-' : Number(value).toFixed(2);
+  }
+
+  function fmtRealtimeRoasWithPrecision(value) {
+    if (value === null || value === undefined) return '-';
+    var num = Number(value);
+    if (isNaN(num)) return '-';
+    var v2 = num.toFixed(2);
+    var v3 = num.toFixed(3);
+    return v2 + '<span style="font-size: 0.5em; font-weight: normal; margin-left: 0.25em; color: var(--fg-subtle); vertical-align: middle;">(' + v3 + ')</span>';
   }
 
   function escapeHtml(value) {
