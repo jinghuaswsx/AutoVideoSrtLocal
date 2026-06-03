@@ -103,6 +103,7 @@ def build_products_list_response(
     delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(
         str(_request_arg(args, "delivery_status", "all") or "all").strip().lower()
     )
+    product_source = str(_request_arg(args, "product_source", "all") or "all").strip()
 
     rows, total = list_products_fn(
         None,
@@ -113,6 +114,7 @@ def build_products_list_response(
         xmyc_match=xmyc_match,
         roas_status=roas_status,
         delivery_status=delivery_status,
+        product_source=product_source,
     )
     pids = [row["id"] for row in rows]
     counts = count_items_by_product_fn(pids)

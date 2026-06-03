@@ -72,9 +72,12 @@ def build_product_create_response(
         if get_product_by_code_fn(product_code):
             return ProductMutationResponse({"error": "product_code already exists"}, 409)
 
+    source = (body.get("source") or "").strip() or None
+
     product_id = create_product_fn(
         user_id,
         name,
+        source=source,
         product_code=product_code,
     )
     return ProductMutationResponse({"id": product_id}, 201)
@@ -128,6 +131,9 @@ def build_product_update_response(
 
     if "shopifyid" in body:
         update_fields["shopifyid"] = body.get("shopifyid")
+
+    if "source" in body:
+        update_fields["source"] = body.get("source")
 
     for key in (
         "remark",

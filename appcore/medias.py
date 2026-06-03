@@ -207,6 +207,8 @@ def delete_language(code: str) -> None:
 def create_product(user_id: int, name: str, color_people: str | None = None,
                    source: str | None = None, product_code: str | None = None,
                    cover_object_key: str | None = None) -> int:
+    if not source:
+        source = "明空"
     return execute(
         "INSERT INTO media_products "
         "(user_id, name, product_code, color_people, source, cover_object_key) "
@@ -473,7 +475,8 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
                   offset: int = 0, limit: int = 20,
                   xmyc_match: str = "all",
                   roas_status: str = "all",
-                  delivery_status: str = "all") -> tuple[list[dict], int]:
+                  delivery_status: str = "all",
+                  product_source: str = "all") -> tuple[list[dict], int]:
     where = ["p.deleted_at IS NULL"]
     args: list[Any] = []
     delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(delivery_status)
@@ -520,6 +523,9 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
             ")"
         )
         args.append(delivery_status)
+    if product_source and product_source != "all":
+        where.append("p.source = %s")
+        args.append(product_source)
     where_sql = " AND ".join(where)
     owner_name_expr = _media_product_owner_name_expr()
 

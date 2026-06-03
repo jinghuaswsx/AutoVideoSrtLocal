@@ -50,7 +50,7 @@
 
 /* ────────── Toolbar ────────── */
 .oc-toolbar { display:block; padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:0; position:sticky; top:var(--sticky-toolbar-top,130px); z-index:21; }
-.oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--oc-sp-3); align-items:center; width:100%; }
+.oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:var(--oc-sp-3); align-items:center; width:100%; }
 .oc-search { position:relative; min-width:0; max-width:none; width:100%; }
 .oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
@@ -681,6 +681,72 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-listing-pill.off { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
 .oc-listing-select { height:32px; min-width:74px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; padding:0 8px; outline:none; }
 .oc-listing-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+
+/* --- Product Source Styles --- */
+.oc-source-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--oc-r, 4px);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.oc-source-pill.mk {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.2);
+}
+.oc-source-pill.mk-hot {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  border-color: rgba(249, 115, 22, 0.2);
+}
+.oc-source-pill.self {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border-color: rgba(100, 116, 139, 0.2);
+}
+.oc-source-pill.tk {
+  background: rgba(236, 72, 153, 0.15);
+  color: #ec4899;
+  border-color: rgba(236, 72, 153, 0.2);
+}
+.oc-source-pill.meta {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.2);
+}
+.oc-source-pill.dy {
+  background: rgba(20, 184, 166, 0.15);
+  color: #14b8a6;
+  border-color: rgba(20, 184, 166, 0.2);
+}
+.oc-source-select {
+  height: 28px;
+  min-width: 90px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-md, 6px);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-size: 12px;
+  padding: 0 4px;
+  outline: none;
+}
+.oc-source-select:focus {
+  border-color: var(--oc-accent);
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.source-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
 .bt-row-btn:disabled { opacity:.48; cursor:not-allowed; }
 
 .oc-thumb-sm { width:96px; height:96px; border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); }
@@ -921,7 +987,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   gap:var(--oc-sp-5);
   align-items:start;
 }
-.oc-add-hero-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-add-hero-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 .oc-add-main-grid { grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); }
 .oc-add-video-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 .oc-add-panel { height:100%; }
@@ -1057,7 +1123,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   gap:var(--oc-sp-4);
   align-items:start;
 }
-.oc-edit-hero-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-edit-hero-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 .oc-edit-main-grid { grid-template-columns:minmax(280px, 320px) minmax(0, 1fr); }
 .oc-edit-audit-stack {
   display:flex;
@@ -3284,6 +3350,15 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
         <option value="active">投放中</option>
         <option value="stopped">终止投放</option>
         <option value="never">未投</option>
+      </select>
+      <select id="filterProductSource" class="oc-select" title="按产品来源筛选">
+        <option value="all">产品来源：全部</option>
+        <option value="明空">明空</option>
+        <option value="明空爆款">明空爆款</option>
+        <option value="自选">自选</option>
+        <option value="TK">TK</option>
+        <option value="META热帖">META热帖</option>
+        <option value="抖音">抖音</option>
       </select>
     </div>
   </div>

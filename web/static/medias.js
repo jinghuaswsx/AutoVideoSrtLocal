@@ -1536,6 +1536,34 @@
       </select>`;
   }
 
+  const PRODUCT_SOURCES = ['明空', '明空爆款', '自选', 'TK', 'META热帖', '抖音'];
+
+  function productSourceClass(source) {
+    switch (source) {
+      case '明空爆款': return 'mk-hot';
+      case '自选': return 'self';
+      case 'TK': return 'tk';
+      case '明空': return 'mk';
+      case 'META热帖': return 'meta';
+      case '抖音': return 'dy';
+      default: return 'mk';
+    }
+  }
+
+  function productSourcePill(source) {
+    const val = source || '明空';
+    const cls = productSourceClass(val);
+    return `<span class="oc-source-pill ${cls}">${escapeHtml(val)}</span>`;
+  }
+
+  function productSourceSelect(source) {
+    const val = source || '明空';
+    return `
+      <select class="oc-source-select" aria-label="产品来源">
+        ${PRODUCT_SOURCES.map(src => `<option value="${escapeHtml(src)}" ${val === src ? 'selected' : ''}>${escapeHtml(src)}</option>`).join('')}
+      </select>`;
+  }
+
   function listingActionTitleForStatus(status) {
     return status === '下架' ? '产品已下架，不能执行翻译等生产操作' : '基于原始视频发起多语言翻译';
   }
@@ -2573,6 +2601,10 @@
     if (deliveryStatusEl && deliveryStatusEl.value && deliveryStatusEl.value !== 'all') {
       params.set('delivery_status', deliveryStatusEl.value);
     }
+    const productSourceEl = $('filterProductSource');
+    if (productSourceEl && productSourceEl.value && productSourceEl.value !== 'all') {
+      params.set('product_source', productSourceEl.value);
+    }
     renderSkeleton();
     try {
       await ensureLanguages();
@@ -2660,6 +2692,7 @@
         <col style="width:48px">
         <col style="width:128px">
         <col style="width:210px">
+        <col style="width:110px">
         <col style="width:140px">
         <col style="width:80px">
         <col style="width:130px">
@@ -2678,6 +2711,7 @@
           <th>ID</th>
           <th>主图</th>
           <th>产品信息</th>
+          <th>产品来源</th>
           <th>ERP SKU</th>
           <th>明空 ID</th>
           <th>AI评估</th>
@@ -2773,6 +2807,8 @@
         e.stopPropagation();
         copyProductEnglishName(b);
       }));
+    grid.querySelectorAll('td.source-cell').forEach(td =>
+      td.addEventListener('click', (e) => { e.stopPropagation(); startSourceInlineEdit(td); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
     grid.querySelectorAll('td.listing-status-cell').forEach(td =>
@@ -3218,6 +3254,7 @@
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
         <td class="wrap product-info-td">${productInfoCell}</td>
+        <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">${productSourcePill(p.source || '明空')}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="wrap">${aiEvalCell}</td>
@@ -4144,6 +4181,54 @@
     input.addEventListener('blur', commit);
   }
 
+  async function startSourceInlineEdit(td) {
+    if (td.dataset.editing === '1') return;
+    td.dataset.editing = '1';
+    const pid = +td.dataset.pid;
+    const original = td.dataset.source || '明空';
+    td.innerHTML = productSourceSelect(original);
+    const select = td.querySelector('select');
+    select.focus();
+
+    let settled = false;
+
+    function restore(source) {
+      td.dataset.source = source;
+      td.dataset.editing = '';
+      td.innerHTML = productSourcePill(source);
+    }
+
+    async function commit() {
+      if (settled) return;
+      settled = true;
+      const nextSource = select.value;
+      if (nextSource === original) {
+        restore(original);
+        return;
+      }
+      select.disabled = true;
+      try {
+        await fetchJSON('/medias/api/products/' + pid, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: nextSource }),
+        });
+        restore(nextSource);
+      } catch (e) {
+        alert('保存产品来源失败：' + (e.message || e));
+        restore(original);
+      }
+    }
+
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', commit);
+    select.addEventListener('blur', commit);
+    select.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); select.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); settled = true; restore(original); }
+    });
+  }
+
   async function startListingStatusInlineEdit(td) {
     if (td.dataset.listingEdit === '1') return;
     td.dataset.listingEdit = '1';
@@ -4504,6 +4589,7 @@
     $('modalTitle').textContent = '添加产品素材';
     $('mName').value = '';
     $('mCode').value = '';
+    if ($('mSource')) $('mSource').value = '明空';
     setCover(null);
     setItemCover(null);
     renderCopywritings([]);
@@ -4686,9 +4772,10 @@
     if (!name) { alert('请先填写产品名称'); $('mName').focus(); return null; }
     if (!SLUG_RE.test(code)) { alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–128）'); $('mCode').focus(); return null; }
     try {
+      const source = $('mSource') ? $('mSource').value : '明空';
       const res = await fetchJSON('/medias/api/products', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, product_code: code }),
+        body: JSON.stringify({ name, product_code: code, source }),
       });
       const full = await fetchJSON('/medias/api/products/' + res.id);
       state.current = full;
@@ -4773,10 +4860,12 @@
     const cw = collectCopywritings();
     const pid = state.current.product.id;
     try {
+      const source = $('mSource') ? $('mSource').value : '明空';
       await fetchJSON('/medias/api/products/' + pid, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name, product_code: code,
+          source,
           cover_object_key: state.current.product.cover_object_key,
           copywritings: { en: cw },
         }),
@@ -5471,6 +5560,7 @@
       payload: {
         name,
         product_code: code,
+        source: $('edSource') ? $('edSource').value : '明空',
         mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
         shopifyid: shopifyIdRaw,
         copywritings,
@@ -5664,6 +5754,9 @@
       edState.linkCheckDetailError = '';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
+      if ($('edSource')) {
+        $('edSource').value = data.product.source || '明空';
+      }
       $('edMkId').value = (data.product.mk_id === null || data.product.mk_id === undefined)
         ? '' : String(data.product.mk_id);
       const shopifyIdText = (data.product.shopifyid === null || data.product.shopifyid === undefined)
@@ -9007,6 +9100,8 @@
     if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
     const filterDelivery = $('filterDeliveryStatus');
     if (filterDelivery) filterDelivery.addEventListener('change', () => runSearchNow());
+    const filterSource = $('filterProductSource');
+    if (filterSource) filterSource.addEventListener('change', () => runSearchNow());
 
     const syncChip = (chipId, inputId) => {
       const chip = $(chipId), inp = $(inputId);
