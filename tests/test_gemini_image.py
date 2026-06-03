@@ -1464,3 +1464,96 @@ def test_independence_of_doubao_rows():
         # doubao_asr 同理
         with pytest.raises(lpc.ProviderConfigError, match="doubao_asr"):
             lpc.require_provider_api_key("doubao_asr")
+
+
+def test_resolve_gemini_image_credentials_fallback_aistudio():
+    from appcore import gemini_image
+    from appcore.llm_provider_configs import LlmProviderConfig
+
+    configs = {
+        "gemini_aistudio_image": LlmProviderConfig(
+            provider_code="gemini_aistudio_image",
+            display_name="image",
+            group_code="image",
+            api_key="",
+            enabled=True
+        ),
+        "gemini_aistudio_text": LlmProviderConfig(
+            provider_code="gemini_aistudio_text",
+            display_name="text",
+            group_code="text_llm",
+            api_key="fallback-text-key",
+            enabled=True
+        )
+    }
+
+    def fake_require(code):
+        return configs[code]
+
+    with patch("appcore.gemini_image.require_provider_config", fake_require):
+        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("aistudio")
+        assert api_key == "fallback-text-key"
+
+
+def test_resolve_gemini_image_credentials_fallback_cloud():
+    from appcore import gemini_image
+    from appcore.llm_provider_configs import LlmProviderConfig
+
+    configs = {
+        "gemini_cloud_image": LlmProviderConfig(
+            provider_code="gemini_cloud_image",
+            display_name="image",
+            group_code="image",
+            api_key="",
+            extra_config={},
+            enabled=True
+        ),
+        "gemini_cloud_text": LlmProviderConfig(
+            provider_code="gemini_cloud_text",
+            display_name="text",
+            group_code="text_llm",
+            api_key="fallback-cloud-key",
+            extra_config={"project": "fallback-cloud-project", "location": "us-west1"},
+            enabled=True
+        )
+    }
+
+    def fake_require(code):
+        return configs[code]
+
+    with patch("appcore.gemini_image.require_provider_config", fake_require):
+        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("cloud")
+        assert api_key == "fallback-cloud-key"
+        assert project == "fallback-cloud-project"
+        assert location == "us-west1"
+
+
+def test_resolve_gemini_image_credentials_fallback_cloud_adc():
+    from appcore import gemini_image
+    from appcore.llm_provider_configs import LlmProviderConfig
+
+    configs = {
+        "gemini_vertex_adc_image": LlmProviderConfig(
+            provider_code="gemini_vertex_adc_image",
+            display_name="image",
+            group_code="image",
+            extra_config={},
+            enabled=True
+        ),
+        "gemini_vertex_adc_text": LlmProviderConfig(
+            provider_code="gemini_vertex_adc_text",
+            display_name="text",
+            group_code="text_llm",
+            extra_config={"project": "fallback-adc-project", "location": "global"},
+            enabled=True
+        )
+    }
+
+    def fake_require(code):
+        return configs[code]
+
+    with patch("appcore.gemini_image.require_provider_config", fake_require):
+        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("cloud_adc")
+        assert api_key == ""
+        assert project == "fallback-adc-project"
+        assert location == "global"
