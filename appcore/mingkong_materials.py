@@ -3608,6 +3608,12 @@ def resolve_and_save_english_title(product_url: str, product_code: str = None) -
             (asset_key, product_url, code or None, title)
         )
         logger.info("[english_title] successfully fetched and saved: %s for %s", title, product_url)
+        if code and title:
+            try:
+                from appcore.product_name_dictionary import sync_names
+                sync_names(code, None, title)
+            except Exception as e:
+                logger.warning("[english_title] failed to sync background title for %s: %s", code, e)
     except Exception as e:
         logger.warning("[english_title] failed to fetch title for %s: %s", product_url, e)
     finally:
@@ -3737,6 +3743,21 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         except BaseException as e:
             logger.warning("[english_title] failed to fetch asset_titles/cn_names: %s", e)
 
+    # 2.5 Fetch from product_name_dictionary
+    dict_cn_names: dict[str, str] = {}
+    dict_en_names: dict[str, str] = {}
+    if product_codes:
+        try:
+            from appcore.product_name_dictionary import get_names
+            dict_names = get_names(list(product_codes), query_fn=q_fn)
+            for c, names in dict_names.items():
+                if names.get("cn_name"):
+                    dict_cn_names[c] = names["cn_name"]
+                if names.get("en_name"):
+                    dict_en_names[c] = names["en_name"]
+        except Exception as e:
+            logger.warning("[english_title] failed to fetch names from dictionary: %s", e)
+
     # 3. Map back and schedule fetch if missing
     for item in items:
         ad_status = item.get("product_ad_status") or {}
@@ -3763,6 +3784,9 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         if not resolved_cn_name and url:
             resolved_cn_name = asset_cn_names_by_url.get(url) or ""
             
+        if not resolved_cn_name and code:
+            resolved_cn_name = dict_cn_names.get(code) or ""
+            
         item["product_cn_name"] = resolved_cn_name
 
         # Determine English name
@@ -3781,7 +3805,17 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         if not resolved_title and url:
             resolved_title = asset_titles_by_url.get(url) or ""
             
+        if not resolved_title and code:
+            resolved_title = dict_en_names.get(code) or ""
+            
         item["product_english_title"] = resolved_title
+        
+        if code and (resolved_cn_name or resolved_title):
+            try:
+                from appcore.product_name_dictionary import sync_names
+                sync_names(code, resolved_cn_name, resolved_title, execute_fn=q_fn)
+            except Exception as e:
+                logger.warning("[english_title] failed to sync resolved names for %s: %s", code, e)
         
         if not resolved_title and url and url.startswith(("http://", "https://")):
             with _SUBMITTED_LOCK:
