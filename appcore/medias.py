@@ -473,9 +473,17 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
                   offset: int = 0, limit: int = 20,
                   xmyc_match: str = "all",
                   roas_status: str = "all",
-                  delivery_status: str = "all") -> tuple[list[dict], int]:
+                  delivery_status: str = "all",
+                  created_from: str | None = None,
+                  created_to: str | None = None) -> tuple[list[dict], int]:
     where = ["p.deleted_at IS NULL"]
     args: list[Any] = []
+    if created_from and created_from.strip():
+        where.append("p.created_at >= %s")
+        args.append(f"{created_from.strip()} 00:00:00")
+    if created_to and created_to.strip():
+        where.append("p.created_at <= %s")
+        args.append(f"{created_to.strip()} 23:59:59")
     delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(delivery_status)
     if user_id is not None:
         where.append("p.user_id=%s")

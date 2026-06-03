@@ -50,7 +50,7 @@
 
 /* ────────── Toolbar ────────── */
 .oc-toolbar { display:block; padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:0; position:sticky; top:var(--sticky-toolbar-top,130px); z-index:21; }
-.oc-toolbar-filter-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--oc-sp-3); align-items:center; width:100%; }
+.oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1.4fr; gap:var(--oc-sp-3); align-items:center; width:100%; }
 .oc-search { position:relative; min-width:0; max-width:none; width:100%; }
 .oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
@@ -3140,6 +3140,204 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   outline: 3px solid rgba(14, 165, 233, .55);
   outline-offset: 3px;
 }
+
+/* ────────── DateRangePicker ────────── */
+.oc-range-picker {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+.oc-range-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+  transition: border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-range-trigger:focus {
+  border-color: var(--oc-accent);
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.oc-range-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.oc-range-clear {
+  margin-left: 6px;
+  color: var(--oc-fg-subtle);
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.oc-range-clear:hover {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg);
+}
+.oc-range-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 580px;
+  background: var(--oc-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-lg);
+  box-shadow: var(--oc-shadow-lg, 0 10px 25px rgba(0,0,0,0.08));
+  padding: var(--oc-sp-4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-sp-4);
+}
+.oc-range-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.oc-range-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--oc-fg);
+}
+.oc-range-panel-note {
+  font-size: 12px;
+  color: var(--oc-fg-muted);
+  margin-top: 2px;
+}
+.oc-range-nav {
+  display: flex;
+  gap: var(--oc-sp-2);
+}
+.oc-range-nav-btn {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+.oc-range-nav-btn:hover {
+  color: var(--oc-fg);
+  background: var(--oc-bg-muted);
+}
+.oc-range-calendars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--oc-sp-4);
+}
+.oc-calendar {
+  display: flex;
+  flex-direction: column;
+}
+.oc-calendar-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: var(--oc-sp-2);
+  color: var(--oc-fg);
+}
+.oc-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--oc-fg-subtle);
+  margin-bottom: 4px;
+}
+.oc-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.oc-calendar-spacer {
+  aspect-ratio: 1;
+}
+.oc-calendar-day {
+  aspect-ratio: 1;
+  border: none;
+  background: transparent;
+  color: var(--oc-fg);
+  font-size: 12px;
+  border-radius: var(--oc-r);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.oc-calendar-day:hover {
+  background: var(--oc-bg-muted);
+}
+.oc-calendar-day.is-today {
+  font-weight: bold;
+  box-shadow: inset 0 0 0 1px var(--oc-accent);
+}
+.oc-calendar-day.is-selected {
+  background: var(--oc-accent) !important;
+  color: #fff !important;
+}
+.oc-calendar-day.is-in-range {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+}
+.oc-range-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--oc-sp-2);
+  border-top: 1px solid var(--oc-border);
+  padding-top: var(--oc-sp-3);
+}
+.oc-range-shortcut {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-full, 9999px);
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.oc-range-shortcut:hover {
+  color: var(--oc-fg);
+  background: var(--oc-bg-muted);
+}
+.oc-range-shortcut.active {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  border-color: var(--oc-accent);
+}
+
+@media (max-width: 600px) {
+  .oc-range-panel {
+    width: calc(100vw - 32px);
+    right: 50%;
+    transform: translateX(50%);
+    box-sizing: border-box;
+  }
+  .oc-range-calendars {
+    grid-template-columns: 1fr;
+  }
+}
 {% endblock %}
 
 {% block content %}
@@ -3245,6 +3443,56 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
         <option value="stopped">终止投放</option>
         <option value="never">未投</option>
       </select>
+      <div class="oc-range-picker" data-created-date-range>
+        <button
+          type="button"
+          class="oc-range-trigger"
+          data-created-date-range-trigger
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          title="按创建时间筛选"
+        >
+          <span class="oc-range-trigger-label">
+            <strong data-created-date-range-label>创建日期：全部</strong>
+          </span>
+          <span class="oc-range-clear" data-created-date-clear hidden>✕</span>
+        </button>
+        <input type="hidden" id="createdFrom" value="">
+        <input type="hidden" id="createdTo" value="">
+        
+        <div class="oc-range-panel" data-created-date-range-panel hidden>
+          <div class="oc-range-panel-head">
+            <div>
+              <div class="oc-range-panel-title">选择创建日期范围</div>
+              <div class="oc-range-panel-note" data-created-date-range-summary>
+                先点开始日期，再点结束日期。
+              </div>
+            </div>
+            <div class="oc-range-nav">
+              <button type="button" class="oc-range-nav-btn" data-created-calendar-nav="prev">上个月</button>
+              <button type="button" class="oc-range-nav-btn" data-created-calendar-nav="next">下个月</button>
+            </div>
+          </div>
+          <div class="oc-range-calendars">
+            {% for index in [0, 1] %}
+            <section class="oc-calendar" data-created-calendar="{{ index }}">
+              <div class="oc-calendar-title" data-created-calendar-title></div>
+              <div class="oc-calendar-weekdays">
+                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+              </div>
+              <div class="oc-calendar-grid" data-created-calendar-grid></div>
+            </section>
+            {% endfor %}
+          </div>
+          <div class="oc-range-shortcuts">
+            <button type="button" class="oc-range-shortcut" data-range-shortcut="today">今天</button>
+            <button type="button" class="oc-range-shortcut" data-range-shortcut="yesterday">昨天</button>
+            <button type="button" class="oc-range-shortcut" data-range-shortcut="last7">近七天</button>
+            <button type="button" class="oc-range-shortcut" data-range-shortcut="last30">近一个月</button>
+            <button type="button" class="oc-range-shortcut" data-range-shortcut="all">全部时间</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
